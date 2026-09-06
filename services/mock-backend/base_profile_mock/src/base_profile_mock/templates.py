@@ -9,6 +9,7 @@ building a separate inference mock.
 from __future__ import annotations
 
 import datetime as _dt
+import uuid
 
 from base_profile_mock.state import Stream
 
@@ -96,4 +97,5 @@ No notable events were detected in the mock analysis.
 
 def report_filename(now: _dt.datetime | None = None) -> str:
     now = now or _dt.datetime.now(tz=_dt.UTC)
-    return f"agent_report_{now.strftime('%Y%m%d_%H%M%S')}.md"
+    suffix = uuid.uuid4().hex[:8]
+    return f"agent_report_{now.strftime('%Y%m%d_%H%M%S')}_{suffix}.md"
