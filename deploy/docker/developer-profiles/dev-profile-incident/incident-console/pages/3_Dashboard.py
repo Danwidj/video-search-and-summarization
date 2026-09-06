@@ -13,84 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Dashboard: filters + aggregate insights over verified reports."""
+"""Analytics dashboard with an isolated, optional seed preview."""
 
-from __future__ import annotations
-
-import pandas as pd
 import streamlit as st
 
-from incident_report import build_insights, dedupe_types
-from ui import bootstrap, get_db_or_notice, notifications_panel
+from dashboard_view import frame, from_reports, render
+from theme import apply_base_style
+from ui import get_db_or_notice, notifications_panel
 
-bootstrap("Dashboard", "Aggregate insights over verified incident reports")
-
+st.set_page_config(page_title="Analytics Dashboard - RISE UP", layout="wide")
+apply_base_style()
+st.markdown(
+    '<div style="font-weight:800;font-size:25px;letter-spacing:2px">RISE UP <span style="font-size:10px;letter-spacing:1px;color:#527f00;background:#edf5df;padding:6px 10px;border-radius:20px">NVIDIA POWERED</span></div>',
+    unsafe_allow_html=True,
+)
+st.title("Analytics Dashboard")
+st.caption("Incident patterns, review priorities, and linked evidence at a glance.")
 handle = get_db_or_notice()
 notifications_panel(handle)
+# Preserve the production query and its verified-report scope.
+reports = handle.list_reports(status="verified") if handle is not None else []
+preview = handle is None and st.toggle("Preview mock / seed data", value=True)
+if preview:
+    from fixtures.dashboard_seed import load_seed
 
-# Manager-facing analytics only cover verified reports.
-# TODO: confirm this boundary against team spec.
-reports: list[dict] = handle.list_reports(status="verified") if handle is not None else []
-
-if not reports:
-    st.caption("No verified reports yet." if handle is not None else "Connect a database to see the dashboard.")
-    st.stop()
-
-df = pd.DataFrame(reports)
-all_types = dedupe_types(df.get("incident_type", pd.Series(dtype=str)).dropna().tolist())
-all_locations = dedupe_types((df.get("location", pd.Series(dtype=str)).fillna("unknown location")).tolist())
-
-c1, c2, c3 = st.columns(3)
-with c1:
-    sel_types = st.multiselect("Incident types", all_types, default=all_types)
-with c2:
-    sel_locs = st.multiselect("Locations", all_locations, default=all_locations)
-with c3:
-    lo, hi = st.select_slider("Severity range", options=[1, 2, 3, 4, 5], value=(1, 5))
-
-mask = df["incident_type"].isin(sel_types) if "incident_type" in df else pd.Series(True, index=df.index)
-if "location" in df:
-    mask &= df["location"].fillna("unknown location").isin(sel_locs)
-if "severity" in df:
-    mask &= df["severity"].fillna(0).astype(int).between(lo, hi)
-view = df[mask]
-
-if st.button("Clear filters"):
-    st.rerun()
-
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Reports in view", len(view))
-m2.metric("Distinct types", int(view["incident_type"].nunique()) if "incident_type" in view else 0)
-m3.metric(
-    "Severity 4-5",
-    int((view["severity"].fillna(0).astype(int) >= 4).sum()) if "severity" in view else 0,
-)
-m4.metric(
-    "Avg confidence",
-    f"{view['confidence'].dropna().mean():.0%}"
-    if "confidence" in view and not view["confidence"].dropna().empty
-    else "n/a",
-)
-
-st.subheader("Insights")
-for line in build_insights(view.to_dict("records")):
-    st.markdown(f"- {line}")
-
-if not view.empty:
-    col_a, col_b = st.columns(2, gap="large")
-    with col_a:
-        st.markdown("##### Count by type")
-        st.bar_chart(view["incident_type"].value_counts())
-    with col_b:
-        st.markdown("##### Count by severity")
-        st.bar_chart(view["severity"].fillna(0).astype(int).value_counts().sort_index())
-
-    st.markdown("##### Records")
-    cols = [
-        c
-        for c in ["id", "incident_type", "location", "severity", "confidence", "incident_start", "verified_by"]
-        if c in view.columns
-    ]
-    st.dataframe(view[cols].sort_values("severity", ascending=False), hide_index=True, width="stretch")
+    seed = load_seed()
+    st.warning(
+        "MOCK / SEED PREVIEW · 18 synthetic incidents. No database writes. Locations and workflow statuses are not supplied.",
+        icon="🧪",
+    )
+    render(frame(seed["Incident"]), seed["Entity"], seed["Instrument"])
 else:
-    st.info("No records match the current filters.")
+    st.caption("Live scope: verified reports only. Linked entity/instrument data is not supplied by this query.")
+    render(from_reports(reports), [], [], reports)
