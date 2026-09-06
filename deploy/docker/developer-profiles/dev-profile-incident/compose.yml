@@ -13,9 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Developer profile: incident search & reporting capstone.
+#
+# See docs/incident-plan/ for the full plan. This profile reuses NVIDIA's
+# bp_developer_search compose tag (BP_PROFILE in .env is left unchanged) so the
+# resulting compose-profile set is a superset of everything the base + search
+# pipelines need. The only profile-exclusive service is the incident-console
+# Streamlit app, defined under ./incident-console/ rather than the shared
+# deploy/docker/services/ tree. Unlike dev-profile-search we do not pull in a
+# kibana-init-container block - this profile does not use Kibana.
+
 include:
-  - path: ./dev-profile-base/compose.yml
-  - path: ./dev-profile-lvs/compose.yml
-  - path: ./dev-profile-alerts/compose.yml
-  - path: ./dev-profile-search/compose.yml
-  - path: ./dev-profile-incident/compose.yml
+  - path: ./incident-console/compose.yml

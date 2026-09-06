@@ -5,7 +5,7 @@ This tree is the Docker Compose packaging for **Video Search & Summarization**. 
 | Include | Role |
 |---------|------|
 | **`services/compose.yml`** | Shared microservices (infra, VIOS, UI, RTVI, NIMs, etc.) |
-| **`developer-profiles/compose.yml`** | Developer profiles: **base**, **lvs**, **alerts**, **search** |
+| **`developer-profiles/compose.yml`** | Developer profiles: **base**, **lvs**, **alerts**, **search**; plus **incident**, which rides on the `search` compose tag rather than the `dev-profile` helper (see [`dev-profile-incident/incident-console/README.md`](developer-profiles/dev-profile-incident/incident-console/README.md)) |
 | **`industry-profiles/compose.yml`** | Industry blueprints (e.g. **warehouse-operations**) |
 
 Run Compose from **`deploy/docker`** so relative paths resolve correctly.

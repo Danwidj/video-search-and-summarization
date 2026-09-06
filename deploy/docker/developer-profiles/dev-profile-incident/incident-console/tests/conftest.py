@@ -13,9 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-include:
-  - path: ./dev-profile-base/compose.yml
-  - path: ./dev-profile-lvs/compose.yml
-  - path: ./dev-profile-alerts/compose.yml
-  - path: ./dev-profile-search/compose.yml
-  - path: ./dev-profile-incident/compose.yml
+"""Hermetic fixtures - no live Postgres / agent / GPU."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from db import IncidentDB  # noqa: E402
+
+
+@pytest.fixture
+def incident_db(tmp_path) -> IncidentDB:
+    handle = IncidentDB.from_dsn(f"sqlite:///{tmp_path / 'incidents.db'}")
+    handle.init_schema()
+    return handle
