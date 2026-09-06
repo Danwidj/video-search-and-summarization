@@ -38,10 +38,9 @@ set -a; source /srv/rise-up/.ngc_env; set +a
   --host-ip 10.131.1.5 \
   --external-ip localhost \
   --llm nvidia/nvidia-nemotron-nano-9b-v2 --llm-device-id 0 \
-  --llm-env-file /srv/rise-up/vss-llm-override.env \
-  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1 \
-  --vlm-env-file /srv/rise-up/vss-vlm-override.env
+  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1
 ```
+GPU tuning values now live in `deploy/docker/services/nim/nvidia-nemotron-nano-9b-v2/hw-OTHER.env` and `deploy/docker/services/nim/cosmos3-reasoner/hw-OTHER.env` directly — `--llm-env-file`/`--vlm-env-file` are no longer needed (verified: dedicated-split local deploy confirmed working from `hw-OTHER.env` alone, no override flags).
 
 **Base — remote LLM/VLM (chat verified working; report generation not re-tested on this exact config — see note below):**
 ```bash
@@ -49,17 +48,16 @@ cd /srv/rise-up/vss
 set -a; source /srv/rise-up/.ngc_env; set +a
 export LLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
 export VLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
-export OPENAI_API_KEY="$NVIDIA_API_KEY"
 
 ./deploy/docker/scripts/dev-profile.sh up --profile base --hardware-profile OTHER \
   --host-ip 10.131.1.5 \
   --external-ip localhost \
-  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
-  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type nim \
+  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type nim
 ```
-Corrected from an earlier version that used `--host-ip localhost` — see Implementation doc (remote), §3 for why that was wrong and what's actually been verified.
+Corrected from an earlier version that used `--host-ip localhost` — see Implementation doc (remote), §3 for why that was wrong and what's actually been verified. Also corrected from an earlier version that used `--llm-model-type openai`/`--vlm-model-type openai` plus `export OPENAI_API_KEY="$NVIDIA_API_KEY"`: without an explicit `--llm-model-type`/`--vlm-model-type` flag, `dev-profile.sh` silently falls back to whatever `LLM_MODEL_TYPE`/`VLM_MODEL_TYPE` is already sitting in the source `.env` (not a safe default on a fresh clone). Using `nim` here instead of `openai` also means the client authenticates with the real `NVIDIA_API_KEY` directly (via `langchain-nvidia-ai-endpoints`, confirmed in `services/agent/pyproject.toml`) — no `OPENAI_API_KEY` alias needed — and sidesteps the `openai_vlm` missing-`base_url` bug entirely, since `nim_llm`/`nim_vlm` blocks in `config.yml` already have `base_url: ${LLM_BASE_URL}/v1` / `${VLM_BASE_URL}/v1`. **Not yet live-tested with this `nim`-type change** — TODO once remote work resumes.
 
-**Search — local LLM/VLM (derived from VSS docs, not yet run live):**
+**Search — local LLM/VLM (derived from VSS docs, not yet run live).** **TODO: search profile deployment (local and remote) is deferred — device layout below is known-broken for this 2-GPU host and needs redesign before use. Do not rely on this block yet.**
 ```bash
 cd /srv/rise-up/vss
 set -a; source /srv/rise-up/.ngc_env; set +a
@@ -73,7 +71,7 @@ set -a; source /srv/rise-up/.ngc_env; set +a
 ```
 Same `--llm`/`--vlm` flags as Base above (they apply to any profile), device IDs flipped to match search's layout. `RT_CV_DEVICE_ID`/`RT_EMBED_DEVICE_ID`/`NUM_STREAMS` have no CLI flag — set via `dev-profile-search/generated.env` — see Implementation doc (local), §3.
 
-**Search — remote LLM/VLM (derived from VSS docs, not yet tested):**
+**Search — remote LLM/VLM (derived from VSS docs, not yet tested).** **TODO: same deferral as Search — local above; also missing `--llm-model-type`/`--vlm-model-type` (see Base — remote note above for why that matters).**
 ```bash
 cd /srv/rise-up/vss
 set -a; source /srv/rise-up/.ngc_env; set +a
