@@ -11,3 +11,14 @@ A video-driven incident search and reporting system is being built on this VSS b
 When working on this project, read the Overview doc first, then whichever Implementation doc(s) match the task.
 
 Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
+
+## UI development without GPU/NIM containers
+
+[`services/mock-backend/base_profile_mock/`](services/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. This is unrelated to the sibling `services/mock-backend/mock_data/` module (a different, not-yet-built Postgres schema mock for the incident-console app above).
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
