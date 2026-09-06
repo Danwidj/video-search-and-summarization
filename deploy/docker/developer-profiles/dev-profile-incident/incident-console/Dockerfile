@@ -19,7 +19,7 @@
 FROM python:3.12-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
 WORKDIR /app
-COPY pyproject.toml uv.lock .
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY . .
 CMD ["uv", "run", "streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.headless=true"]
