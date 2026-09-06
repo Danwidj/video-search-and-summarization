@@ -1,22 +1,48 @@
 #!/bin/bash
-# post-checkout: run the shared working-tree setup (.env propagation +
-# incident-console uv venv) on every checkout, branch switch and
-# `git worktree add` (which performs a checkout internally). See
-# setup-worktree.sh for the full behavior description.
+# post-checkout: propagate real (non-generated) .env files into new worktrees.
 #
-# One-time setup per clone (this lives in .githooks/, not .git/hooks/, so it
-# is tracked and shareable - but git only runs hooks from the configured
-# hooks path, so each contributor must point git at this directory once):
-#   .githooks/activate.sh   # runs: git config core.hooksPath .githooks
+# One-time setup per clone (this lives in .githooks/, not .git/hooks/, so it's
+# tracked and shareable - but git only runs hooks from .git/hooks by default,
+# so each contributor must point git at this directory once):
+#   git config core.hooksPath .githooks
 #
-# The git-lfs post-checkout invocation below is preserved from the original
-# hook. It warns (instead of failing the checkout) on machines without
-# git-lfs so the env/venv setup still runs there.
+# git worktree add triggers this hook (it performs a checkout), and hooks live
+# in the shared .git/hooks dir, so this one script covers every worktree.
+# Only fires when the checked-out worktree is missing a given .env file -
+# never overwrites one you've already customized there.
+#
+# Covers: dev-profile-*/.env (base/search/incident/alerts/lvs/industry
+# profiles), the new UI's .env.local (services/ui/apps/nv-metropolis-bp-vss-ui,
+# once you create one), and mock-backend's own .env if one is ever added
+# (services/mock-backend/base_profile_mock) - none exist there yet, so it's a
+# no-op for that path today, but this hook will pick it up automatically the
+# moment one appears in the main worktree.
+#
+# Deliberately excludes generated.env (gitignored, regenerated fresh by
+# dev-profile.sh on every deploy - never meant to be copied/reused).
 
-set -uo pipefail
+set -euo pipefail
 
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-"$HOOK_DIR/setup-worktree.sh"
+main_worktree=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+current_dir=$(git rev-parse --show-toplevel)
 
-command -v git-lfs >/dev/null 2>&1 || { echo >&2 "post-checkout: git-lfs not found, skipping lfs post-checkout"; exit 0; }
+# Don't do anything when checking out inside the main worktree itself.
+if [ "$current_dir" = "$main_worktree" ]; then
+    exit 0
+fi
+
+find "$main_worktree" \
+    \( -name node_modules -o -name .venv -o -name .git -o -path '*/.git/*' \) -prune -o \
+    \( -name '.env' -o -name '.env.*' -o -name '*.env_file' \) -type f -print |
+while read -r src; do
+    rel="${src#"$main_worktree"/}"
+    dest="$current_dir/$rel"
+    if [ ! -f "$dest" ]; then
+        mkdir -p "$(dirname "$dest")"
+        cp "$src" "$dest"
+        echo "post-checkout: copied $rel"
+    fi
+done
+
+command -v git-lfs >/dev/null 2>&1 || { echo >&2 "\nThis repository is configured for Git LFS but 'git-lfs' was not found on your path. If you no longer wish to use Git LFS, remove this hook.\n"; exit 2; }
 git lfs post-checkout "$@"
