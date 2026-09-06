@@ -1,4 +1,4 @@
-# services/mock-backend
+# mock-backend
 
 Parent directory for independent mock backends used in local development. Each
 sibling is its own package with its own `pyproject.toml` - `uv sync`/run one without
