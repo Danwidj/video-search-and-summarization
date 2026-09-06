@@ -42,20 +42,27 @@ set -a; source /srv/rise-up/.ngc_env; set +a
 ```
 GPU tuning values now live in `deploy/docker/services/nim/nvidia-nemotron-nano-9b-v2/hw-OTHER.env` and `deploy/docker/services/nim/cosmos3-reasoner/hw-OTHER.env` directly — `--llm-env-file`/`--vlm-env-file` are no longer needed (verified: dedicated-split local deploy confirmed working from `hw-OTHER.env` alone, no override flags).
 
-**Base — remote LLM/VLM (chat verified working; report generation not re-tested on this exact config — see note below):**
+**Base — remote LLM/VLM (`openai`-type; verified working end-to-end: real chat completion + real video-understanding call against actual footage):**
 ```bash
 cd /srv/rise-up/vss
 set -a; source /srv/rise-up/.ngc_env; set +a
 export LLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
 export VLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
+export OPENAI_API_KEY="$NVIDIA_API_KEY"
 
 ./deploy/docker/scripts/dev-profile.sh up --profile base --hardware-profile OTHER \
   --host-ip 10.131.1.5 \
   --external-ip localhost \
-  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type nim \
-  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type nim
+  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type openai \
+  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type openai
 ```
-Corrected from an earlier version that used `--host-ip localhost` — see Implementation doc (remote), §3 for why that was wrong and what's actually been verified. Also corrected from an earlier version that used `--llm-model-type openai`/`--vlm-model-type openai` plus `export OPENAI_API_KEY="$NVIDIA_API_KEY"`: without an explicit `--llm-model-type`/`--vlm-model-type` flag, `dev-profile.sh` silently falls back to whatever `LLM_MODEL_TYPE`/`VLM_MODEL_TYPE` is already sitting in the source `.env` (not a safe default on a fresh clone). Using `nim` here instead of `openai` also means the client authenticates with the real `NVIDIA_API_KEY` directly (via `langchain-nvidia-ai-endpoints`, confirmed in `services/agent/pyproject.toml`) — no `OPENAI_API_KEY` alias needed — and sidesteps the `openai_vlm` missing-`base_url` bug entirely, since `nim_llm`/`nim_vlm` blocks in `config.yml` already have `base_url: ${LLM_BASE_URL}/v1` / `${VLM_BASE_URL}/v1`. **Not yet live-tested with this `nim`-type change** — TODO once remote work resumes.
+Corrected from an earlier version that used `--host-ip localhost` — see Implementation doc (remote), §3 for why that was wrong and what's actually been verified. **`openai`-type, not `nim`-type**: a prior fix attempt switched this block to `--llm-model-type nim --vlm-model-type nim` (reasoning: authenticate directly via `NVIDIA_API_KEY`, sidestep the `openai_vlm` missing-`base_url` bug) — live verification found `nim`-type currently non-functional, 100% call failure, due to an upstream `nvidia-nat` bug (`nim_langchain`'s builder leaks `verify_ssl` into the request body; tracked upstream as issue #1894/PR #1862, unmerged, no fixed release exists as of 2026-09-06). `openai`-type does not hit that bug and is the confirmed-working path. This does require patching the `openai_vlm` missing-`base_url` bug (see below) — that fix is real and still needed, just applied here instead of sidestepped.
+
+Required config fix for this path: `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` and `config_rag.yml`'s `openai_vlm` client block is missing `base_url` (present on every sibling block — `nim_llm`, `openai_llm`, `nim_vlm`); without it, remote VLM calls default to the real `https://api.openai.com` instead of NVIDIA's endpoint. Add `base_url: ${VLM_BASE_URL}/v1` to that block, mirroring the sibling blocks exactly.
+
+Known separate, non-blocking issue if reused for longer clips: `config.yml`'s shared `max_frames: 30` (sampled at `max_fps=2`) exceeds this hosted model's 12-image-per-prompt cap for clips longer than ~12 seconds — produces a `500: At most 12 image(s) may be provided in one prompt` error. Not specific to `openai`-type (would affect `nim`-type equally once its bug is fixed). No fix applied yet — options are lowering `max_frames`/`max_fps` for remote use, or chunking longer clips into sub-12-image windows (as done to verify this path) rather than sending a whole long clip in one call.
+
+Known non-blocking condition either way: NVIDIA's free hosted tier has a shared, global 16-concurrent-request ceiling (`503 ResourceExhausted`) — `nvidia-nat`'s own automatic retry-with-backoff handles it transparently in practice.
 
 **Search — local LLM/VLM (derived from VSS docs, not yet run live).** **TODO: search profile deployment (local and remote) is deferred — device layout below is known-broken for this 2-GPU host and needs redesign before use. Do not rely on this block yet.**
 ```bash
@@ -71,7 +78,7 @@ set -a; source /srv/rise-up/.ngc_env; set +a
 ```
 Same `--llm`/`--vlm` flags as Base above (they apply to any profile), device IDs flipped to match search's layout. `RT_CV_DEVICE_ID`/`RT_EMBED_DEVICE_ID`/`NUM_STREAMS` have no CLI flag — set via `dev-profile-search/generated.env` — see Implementation doc (local), §3.
 
-**Search — remote LLM/VLM (derived from VSS docs, not yet tested).** **TODO: same deferral as Search — local above; also missing `--llm-model-type`/`--vlm-model-type` (see Base — remote note above for why that matters).**
+**Search — remote LLM/VLM (derived from VSS docs, not yet tested).** **TODO: same deferral as Search — local above; also missing `--llm-model-type`/`--vlm-model-type` — use `openai` per the now-verified Base — remote block above, not `nim` (see that block's note for why).**
 ```bash
 cd /srv/rise-up/vss
 set -a; source /srv/rise-up/.ngc_env; set +a
@@ -81,8 +88,8 @@ export OPENAI_API_KEY="$NVIDIA_API_KEY"
 
 ./deploy/docker/scripts/dev-profile.sh up --profile search --hardware-profile OTHER \
   --host-ip 10.131.1.5 --external-ip localhost \
-  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
-  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type openai \
+  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type openai
 ```
 `RT_CV_DEVICE_ID`/`RT_EMBED_DEVICE_ID`/`NUM_STREAMS` still go in `dev-profile-search/generated.env` (perception/embedding stay local even under remote LLM/VLM, and have no CLI flag) — see Implementation doc (remote), §3.
 
