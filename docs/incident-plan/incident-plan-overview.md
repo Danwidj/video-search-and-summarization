@@ -16,7 +16,7 @@ Daniel's team is building a video-driven incident search and reporting system on
 
 - This VM is the shared dev/deploy target. Teammates on Tailscale hit the deployed stack directly.
 - For active UI/agent-code iteration without contending over the one VM, see the Implementation doc, §2 Docker + Local Dev Guide.
-- Push WIP branches early so teammates can review without SSH access to this VM.
+- Push work-in-progress (WIP) branches early so teammates can review without SSH access to this VM.
 - Persistent memory file `project_incident_search_capstone.md` is the source of truth for scope/roles across sessions — update it once the current epics are approved, since it currently reflects the original problem statement, not this level of detail.
 
 ### 1.2 Operational hazards (read before your first deploy, either mode)
