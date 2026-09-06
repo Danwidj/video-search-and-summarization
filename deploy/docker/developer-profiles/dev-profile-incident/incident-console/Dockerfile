@@ -13,9 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-include:
-  - path: ./dev-profile-base/compose.yml
-  - path: ./dev-profile-lvs/compose.yml
-  - path: ./dev-profile-alerts/compose.yml
-  - path: ./dev-profile-search/compose.yml
-  - path: ./dev-profile-incident/compose.yml
+# VM deploy only. Local development runs `uv run streamlit run app.py` directly
+# (see README.md); this image is never used for the local dev loop.
+
+FROM python:3.12-slim AS build
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+WORKDIR /app
+COPY pyproject.toml uv.lock .
+RUN uv sync --frozen --no-dev
+COPY . .
+CMD ["uv", "run", "streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.headless=true"]
