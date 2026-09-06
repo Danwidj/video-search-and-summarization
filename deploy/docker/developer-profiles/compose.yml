@@ -18,3 +18,4 @@ include:
   - path: ./dev-profile-lvs/compose.yml
   - path: ./dev-profile-alerts/compose.yml
   - path: ./dev-profile-search/compose.yml
+  - path: ./dev-profile-incident/compose.yml

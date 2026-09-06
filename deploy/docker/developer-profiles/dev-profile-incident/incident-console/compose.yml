@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# incident-console - the profile-exclusive Streamlit app for the incident
+# search & reporting capstone. VM-deploy only: local development runs the app
+# natively (uv run streamlit run app.py), never through this compose file.
+# See README.md for the local dev loop.
+
+services:
+
+  incident-console:
+    build:
+      context: ${VSS_APPS_DIR}/developer-profiles/dev-profile-incident/incident-console
+      dockerfile: Dockerfile
+    container_name: vss-incident-console
+    profiles: ["bp_developer_search_2d"]
+    network_mode: "host"
+    environment:
+      # Direct-Postgres data layer (via Hyperdrive in deployment). Unset -> the
+      # app renders a "database not configured" state instead of failing.
+      - INCIDENT_DB_DSN=${INCIDENT_DB_DSN:-}
+      # vss-agent's profile-agnostic upload + AI-trigger API.
+      - INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL:-http://localhost:8000}
+      # OpenAI-compatible chat-completions base URL (real NIM/agent on the VM).
+      - INCIDENT_LLM_BASE_URL=${INCIDENT_LLM_BASE_URL:-}
+      # Public/presigned URL prefix that st.video plays back from (R2).
+      - INCIDENT_VIDEO_BASE_URL=${INCIDENT_VIDEO_BASE_URL:-}
+      - INCIDENT_SEVERITY_NOTIFY_THRESHOLD=${INCIDENT_SEVERITY_NOTIFY_THRESHOLD:-4}
+      - INCIDENT_SEVERITY_EVAL_DISAGREE_THRESHOLD=${INCIDENT_SEVERITY_EVAL_DISAGREE_THRESHOLD:-1}
+      - STREAMLIT_SERVER_PORT=${INCIDENT_CONSOLE_PORT:-8501}
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+    restart: unless-stopped

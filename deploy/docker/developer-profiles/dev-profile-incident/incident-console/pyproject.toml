@@ -1,0 +1,49 @@
+[project]
+name = "incident-console"
+version = "0.1.0"
+description = "Streamlit console for the VSS incident search & reporting capstone"
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    # Frontend
+    "streamlit>=1.59,<2",
+    "pandas>=2.2,<3",
+    "plotly>=5.24,<6",
+    # Direct-Postgres data layer (sync, matches Streamlit's per-rerun model)
+    "SQLAlchemy>=2.0,<3",
+    "psycopg2-binary>=2.9,<3",
+    # Agent / AI-trigger HTTP client
+    "httpx>=0.28,<1",
+    # Config + schema
+    "python-dotenv>=1.0,<2",
+    "pydantic>=2.10,<3",
+    # mock_llm_server.py (local-dev only, but shipped in the package)
+    "fastapi>=0.116,<1",
+    "uvicorn[standard]>=0.30,<1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.9,<1",
+]
+
+[tool.uv]
+# App, not a distributable library - uv installs the dependencies but does not
+# build/install this project itself (so the Docker build needs only
+# pyproject.toml + uv.lock, per incident-plan-implementation-shared.md S3).
+package = false
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "C4", "UP", "SIM"]
+ignore = ["E501", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
