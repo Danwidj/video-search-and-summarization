@@ -6,6 +6,8 @@
 
 **Assumes you've read the repo root `README.md` and `deploy/docker/README.md`** — baseline `dev-profile.sh`/Compose mechanics (profile flags, `--llm-env-file`, `generated.env`, the `/v1`-suffix rule) aren't re-explained here. This doc only covers what's specific to `dev-profile-incident` or wasn't already documented there.
 
+**This project only ever deploys via Docker Compose (`deploy/docker/`) — `deploy/helm/` is upstream NVIDIA Kubernetes tooling, not used here.** The §1 citation below points into it only as evidence for a config value, not as a deployment instruction.
+
 **Note on scope:** this plan was originally organized around the team's epic/story numbering. Since that document is still being refined, every citation like "Story X.Y" has been replaced with a plain description of the capability itself — the technical content is unchanged, it's just no longer pinned to a numbering scheme that will drift. If a specific number/threshold below (e.g. a severity cutoff) isn't explicitly marked as sourced from the team's own spec, treat it as a reasonable default proposed here, not a confirmed requirement — check it against whatever the current epic/story doc says before building.
 
 ---
