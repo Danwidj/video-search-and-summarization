@@ -337,6 +337,50 @@ class IncidentDB:
                 pass
         return {"notified": notified, "severity": severity}
 
+    def set_report_review_status(self, report_id: int, *, status: str, reviewed_by: str, notify_threshold: int) -> dict:
+        """Persist review transitions with existing attribution columns, atomically.
+
+        No new schema fields. Repeating a status does not duplicate alerts.
+        Existing verify_report remains available to its other callers.
+        """
+        if status not in {"unreviewed", "under review", "verified"}:
+            raise ValueError("Invalid review status")
+        if not reviewed_by.strip():
+            raise ValueError("Reviewer name is required")
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(incident_reports).where(incident_reports.c.id == report_id).with_for_update()
+            ).first()
+            if row is None:
+                raise ValueError("Report not found")
+            current = row._mapping
+            if current["status"] == status:
+                return {"notified": False, "severity": current["severity"]}
+            now = _utcnow()
+            conn.execute(
+                update(incident_reports)
+                .where(incident_reports.c.id == report_id)
+                .values(
+                    status=status,
+                    edited_by=reviewed_by.strip(),
+                    edited_at=now,
+                    verified_by=reviewed_by.strip() if status == "verified" else None,
+                    verified_at=now if status == "verified" else None,
+                )
+            )
+            severity = current["severity"]
+            notified = status == "verified" and severity is not None and severity >= notify_threshold
+            if notified:
+                conn.execute(
+                    notifications.insert().values(
+                        report_id=report_id,
+                        severity=severity,
+                        created_at=now,
+                        acknowledged=False,
+                    )
+                )
+            return {"notified": notified, "severity": severity}
+
     def delete_report(self, report_id: int) -> None:
         with self.engine.begin() as conn:
             conn.execute(delete(incident_reports).where(incident_reports.c.id == report_id))

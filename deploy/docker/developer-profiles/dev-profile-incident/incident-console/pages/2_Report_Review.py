@@ -13,160 +13,113 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Report review: verify, edit fields, and jump to the incident timestamp."""
-
-from __future__ import annotations
-
-import json
+"""Incident library and detail view over the existing dashboard seed data."""
 
 import streamlit as st
 
-import config
-from incident_report import (
-    INCIDENT_TYPES,
-    REPORT_STATUSES,
-    playback_start_seconds,
-    seconds_to_timestamp,
-    timestamp_to_seconds,
+from local_reports import LocalReports
+from r2_videos import demo_video
+from report_detail import (
+    SEVERITY_COLORS,
+    STATUS_LABELS,
+    confidence_label,
+    normalized,
+    pill,
+    render_detail,
+    severity_label,
+    time_label,
 )
-from theme import severity_badge, status_badge
-from ui import bootstrap, get_db_or_notice, notifications_panel, video_playback_url
+from theme import apply_base_style
 
-bootstrap("Report Review", "Review, verify, edit, and seek generated incident reports")
-
-handle = get_db_or_notice()
-notifications_panel(handle)
-
-f1, f2, f3 = st.columns(3)
-with f1:
-    type_q = st.selectbox("Type", ["All", *INCIDENT_TYPES])
-with f2:
-    status_q = st.selectbox("Status", ["All", *REPORT_STATUSES])
-with f3:
-    kw = st.text_input("Keyword", placeholder="description / location...").strip()
-
-reports: list[dict] = []
-if handle is not None:
-    reports = handle.list_reports(incident_type=type_q, status=status_q, keyword=kw or None)
-
-if not reports:
-    st.caption("No reports to show." if handle is not None else "Connect a database to review reports.")
-    st.stop()
-
-by_id = {r["id"]: r for r in reports}
-picked = st.selectbox(
-    "Report",
-    options=list(by_id),
-    format_func=lambda i: (
-        f"#{i} - {by_id[i].get('incident_type', 'other')} (sev {by_id[i].get('severity')}, {by_id[i].get('status')})"
-    ),
-)
-report = by_id[picked]
-
+st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
+apply_base_style()
 st.markdown(
-    f"{status_badge(report.get('status', 'unreviewed'))} &nbsp; {severity_badge(report.get('severity'))}",
+    '<div style="font-size:26px;font-weight:800;letter-spacing:1px">RISE UP <span style="font-size:11px;color:#598d00;background:#eff7e4;padding:5px 10px;border-radius:20px">NVIDIA POWERED</span></div>',
     unsafe_allow_html=True,
 )
-
-col_video, col_edit = st.columns([3, 2], gap="large")
-
-with col_video:
-    st.markdown("##### Footage")
-    video_row = handle.get_video(report["video_id"]) if report.get("video_id") else {}
-    url = video_playback_url(video_row) if video_row else None
-    start = playback_start_seconds(report)
-    if not report.get("incident_start_confirmed"):
-        st.caption("⚠️ Incident start unconfirmed - playback defaults to 0:00.")
-    if url:
-        try:
-            st.video(url, start_time=start)
-        except Exception as exc:  # noqa: BLE001
-            st.warning(f"Could not load video: {exc}")
-        st.caption(f"Seek target: {seconds_to_timestamp(start)} (`{url}`)")
-    else:
-        st.info(
-            "No playback URL. Set `INCIDENT_VIDEO_BASE_URL` and ensure the video "
-            "row has an `r2_key`. Incident window: "
-            f"{report.get('incident_start')} - {report.get('incident_end')}."
-        )
-
-with col_edit:
-    st.markdown("##### Edit & verify")
-    with st.form("edit_report"):
-        itype = st.selectbox(
-            "Incident type",
-            INCIDENT_TYPES,
-            index=INCIDENT_TYPES.index(report["incident_type"])
-            if report.get("incident_type") in INCIDENT_TYPES
-            else len(INCIDENT_TYPES) - 1,
-        )
-        sev = st.slider("Severity", 1, 5, value=int(report.get("severity") or 1))
-        conf = st.slider("Confidence", 0.0, 1.0, value=float(report.get("confidence") or 0.0), step=0.01)
-        c1, c2 = st.columns(2)
-        with c1:
-            start_ts = st.text_input("Start (mm:ss)", value=report.get("incident_start") or "0:00")
-        with c2:
-            end_ts = st.text_input("End (mm:ss)", value=report.get("incident_end") or "0:00")
-        confirmed = st.checkbox("Start confirmed", value=bool(report.get("incident_start_confirmed")))
-        location = st.text_input("Location", value=report.get("location") or "")
-        desc = st.text_area("Description", value=report.get("description") or "", height=140)
-        persons_raw = st.text_area(
-            "Persons (JSON list of {description, actions})",
-            value=json.dumps(report.get("persons") or [], indent=2),
-            height=120,
-        )
-        editor = st.text_input("Edited by", placeholder="your name (freeform)")
-        save = st.form_submit_button("Save changes", type="primary")
-
-    if save:
-        if not editor.strip():
-            st.error("Enter a name in 'Edited by'.")
-        else:
-            try:
-                persons = json.loads(persons_raw) if persons_raw.strip() else []
-            except json.JSONDecodeError as exc:
-                persons = None
-                st.error(f"Persons JSON invalid: {exc}")
-            if persons is not None:
-                handle.update_report(
-                    picked,
-                    fields={
-                        "incident_type": itype,
-                        "severity": sev,
-                        "confidence": conf,
-                        "incident_start": seconds_to_timestamp(timestamp_to_seconds(start_ts)),
-                        "incident_end": seconds_to_timestamp(timestamp_to_seconds(end_ts)),
-                        "incident_start_confirmed": confirmed,
-                        "location": location or None,
-                        "description": desc,
-                        "persons": persons,
-                    },
-                    edited_by=editor.strip(),
-                )
-                st.success("Saved.")
-                st.rerun()
-
-    st.markdown("---")
-    verifier = st.text_input("Verified by", key="verifier", placeholder="your name (freeform)")
-    if st.button("Verify report", type="primary", disabled=report.get("status") == "verified"):
-        if not verifier.strip():
-            st.error("Enter a name in 'Verified by'.")
-        else:
-            outcome = handle.verify_report(
-                picked,
-                verified_by=verifier.strip(),
-                notify_threshold=config.severity_notify_threshold(),
-            )
-            st.success("Report verified.")
-            if outcome.get("notified"):
-                st.toast(
-                    f"High-severity alert raised (severity {outcome.get('severity')} "
-                    f">= {config.severity_notify_threshold()}).",
-                    icon="🔔",
-                )
-            st.rerun()
-
-    if st.button("Delete report"):
-        handle.delete_report(picked)
-        st.warning("Deleted.")
+st.caption("AI-Powered Post-Incident Video Analysis and Intelligent Reporting Platform")
+handle = LocalReports(st.session_state)
+st.caption(
+    "Sample data · Same 18 incidents as the dashboard · Edits and review statuses are session-only. Only video playback uses external storage."
+)
+if notice := st.session_state.pop("detail_notice", None):
+    st.success(notice)
+if close_id := st.session_state.pop("detail_close_edit", None):
+    st.session_state[f"detail_edit_{close_id}"] = False
+selected = st.query_params.get("report")
+if selected is not None:
+    if st.button("← Back to Incident Reports"):
+        del st.query_params["report"]
         st.rerun()
+    st.title("Incident Report Details")
+    report = handle.get_report(selected)
+    if not report:
+        st.info("This incident report was not found. Return to the library to select an incident.", icon="📄")
+        st.stop()
+
+    def source_video():
+        video = handle.get_video(selected)
+        if not video:
+            video = demo_video(report)
+        with st.expander("Link source video from Cloudflare R2", expanded=not bool(video)):
+            st.caption(
+                "Optional override: paste a public or presigned video URL. Only the video uses external storage; this override lasts for the session."
+            )
+            with st.form(f"link_video_{selected}"):
+                url = st.text_input("Video playback URL", value=handle.get_video(selected).get("Filepath", ""))
+                link = st.form_submit_button("Use this video")
+            if link:
+                try:
+                    handle.link_video(selected, url.strip())
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.rerun()
+        return video
+
+    render_detail(handle, report, source_video)
+
+else:
+    st.title("Incident Reports")
+    # Restore filters after leaving the detail view (Streamlit cleans hidden widgets).
+    saved = st.session_state.get("library_filters", {})
+    for key, value in saved.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+    f1, f2, f3 = st.columns([2, 1, 1])
+    kw = f1.text_input("Search incidents", placeholder="Description, type, filename…", key="review_keyword")
+    type_q = f2.selectbox(
+        "Type", ["All", *sorted({r["incident_type"] for r in handle.list_reports()})], key="review_type"
+    )
+    status_q = f3.selectbox(
+        "Status",
+        ["All", *STATUS_LABELS],
+        key="review_status",
+        format_func=lambda s: STATUS_LABELS.get(s, "All Statuses"),
+    )
+    st.session_state["library_filters"] = {
+        key: st.session_state[key] for key in ("review_keyword", "review_type", "review_status")
+    }
+    reports = handle.list_reports(incident_type=type_q, status=status_q, keyword=kw.strip())
+    st.caption(f"{len(reports)} incidents")
+    if not reports:
+        st.info("No incidents match your filters. Clear the search or choose All.", icon="🔎")
+    for offset in range(0, len(reports), 3):
+        columns = st.columns(3)
+        for column, report in zip(columns, reports[offset : offset + 3], strict=False):
+            with column, st.container(border=True):
+                fields = normalized(report)
+                pill(
+                    STATUS_LABELS[report["status"]].upper(),
+                    {"verified": "#16854a", "under review": "#ac7800"}.get(report["status"], "#667085"),
+                )
+                st.caption(f"Incident {report['id']}")
+                st.subheader(report["incident_type"].capitalize())
+                st.caption(f"Time: {time_label(fields['Start_Timestamp'])} – {time_label(fields['End_Timestamp'])}")
+                description = report["description"] or "Description not supplied"
+                st.text(description[:135] + ("…" if len(description) > 135 else ""))
+                pill(severity_label(report["severity"]), SEVERITY_COLORS.get(report["severity"], "#667085"))
+                st.caption(f"Confidence: {confidence_label(report['confidence'])}")
+                if st.button("View and Verify Details", key=f"open_{report['id']}", width="stretch"):
+                    st.query_params["report"] = report["id"]
+                    st.rerun()
