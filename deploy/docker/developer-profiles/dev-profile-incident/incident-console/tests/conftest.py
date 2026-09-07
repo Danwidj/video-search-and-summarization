@@ -32,3 +32,9 @@ def incident_db(tmp_path) -> IncidentDB:
     handle = IncidentDB.from_dsn(f"sqlite:///{tmp_path / 'incidents.db'}")
     handle.init_schema()
     return handle
+
+
+@pytest.fixture(autouse=True)
+def no_live_r2(monkeypatch):
+    """App tests never use developer credentials or make live storage requests."""
+    monkeypatch.setattr("r2_videos.configured", lambda: False)
