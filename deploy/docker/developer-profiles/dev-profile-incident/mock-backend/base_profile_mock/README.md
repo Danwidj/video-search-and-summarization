@@ -16,7 +16,7 @@ persistence layer.
 ## Run it
 
 ```sh
-cd services/mock-backend/base_profile_mock
+cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
 uv sync
 uv run uvicorn base_profile_mock.app:create_app --factory --port 7777 --reload
 ```
