@@ -18,6 +18,7 @@
 import streamlit as st
 
 from dashboard_view import frame, from_reports, render
+from db_reports import DBReports
 from theme import alert, apply_base_style, page_header
 from ui import get_db_or_notice, notifications_panel
 
@@ -71,7 +72,7 @@ def _evidence_rows(db_handle, reports):
     return entities, instruments, assets
 
 
-reports = handle.list_reports() if handle is not None else []
+reports = DBReports(handle).list_reports() if handle is not None else []
 preview = handle is None and st.toggle("Preview mock / seed data", value=True)
 if preview:
     from fixtures.dashboard_seed import load_seed

@@ -72,3 +72,21 @@ def test_dashboard_renders_charts_from_db_incidents(db_pages):
     assert app.metric[0].value == "8"
     # Evidence-driven widgets have content (entity donut / threat matrix).
     assert not any("No linked entities" in i.value for i in app.info)
+
+
+def test_dashboard_records_log_filename_column_is_populated(db_pages):
+    app = AppTest.from_file("../pages/3_Dashboard.py", default_timeout=15).run()
+    assert not app.exception
+    filenames = [
+        value
+        for element in app.dataframe
+        if "Filename" in getattr(element.value, "columns", [])
+        for value in element.value["Filename"].tolist()
+    ]
+    assert filenames
+    assert all(name for name in filenames)
+    expected = {
+        video["filename"] or video["r2_key"]
+        for video in (db_pages.get_video(r["video_id"]) for r in db_pages.list_reports())
+    }
+    assert set(filenames) <= expected
