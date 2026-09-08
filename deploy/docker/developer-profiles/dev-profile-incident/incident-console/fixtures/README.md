@@ -26,7 +26,11 @@ seconds, `Severity`, and `Confidence_Score` omitted entirely when blank). Every
 row in every file carries a `synthetic` column (`false` / `true`) — this is the
 load-bearing separator the graders and the eval flow filter on. `Video` rows are
 still generated in code, one per incident (`ID=V<n>`), because the sheet provides
-no Video data; `Report` and `Query` stay empty lists.
+no Video data. Each generated row carries the matching `Incident_ID` and
+`Filename`; the report view resolves that filename to one distinct Cloudflare
+R2 object at runtime. Exact filename matches win, and unused category clips are
+assigned to synthetic rows when the bucket has fewer clips than the fixture.
+`Report` and `Query` stay empty lists.
 
 These are plain CSV data files, so they carry no SPDX/licence header (the repo
 only applies that header to source, not to data fixtures).

@@ -8,15 +8,13 @@ import re
 
 import streamlit as st
 
-import config
 from incident_report import INCIDENT_TYPES, seconds_to_timestamp
+from theme import SEVERITY_COLORS, SEVERITY_LABELS, missing_value
 from ui import video_playback_url
 
-STATUS_LABELS = {"unreviewed": "Unreviewed", "under review": "Under Review", "verified": "Verified"}
-SEVERITY_LABELS = {1: "Very Low", 2: "Low", 3: "Moderate", 4: "High", 5: "Critical"}
-SEVERITY_COLORS = {1: "#36954c", 2: "#16856c", 3: "#bd8500", 4: "#df6818", 5: "#cf3434"}
 FIELD_MAP = {
     "ID": "id",
+    "Filename": "filename",
     "Type": "incident_type",
     "Start_Timestamp": "incident_start",
     "End_Timestamp": "incident_end",
@@ -24,6 +22,7 @@ FIELD_MAP = {
     "Description": "description",
     "Severity_Level": "severity",
     "Confidence_Score": "confidence",
+    "Source": "source",
 }
 
 
@@ -54,6 +53,8 @@ def normalized(record):
 def confidence_label(value):
     try:
         number = float(value)
+        if math.isnan(number):
+            return "Not supplied / invalid"
         return f"{number:.1%}" if math.isfinite(number) and 0 <= number <= 1 else "Not supplied / invalid"
     except (TypeError, ValueError):
         return "Not supplied"
@@ -98,7 +99,7 @@ def video_panel(record, video, fields):
         st.caption("Incident start is missing or invalid; playback defaults to 0:00.")
     elif record.get("incident_start_confirmed") is False:
         st.caption("The supplied start timestamp has not been confirmed. Playback opens at that timestamp for review.")
-    st.markdown(f"**Incident window:** {time_label(start)} → {time_label(end)}")
+    st.markdown(f"**Incident window** · {time_label(start)} → {time_label(end)}")
     a, b = st.columns(2)
     for column, label, target in ((a, "Jump to incident start", start), (b, "Jump to incident end", end)):
         if column.button(label, disabled=not url or target is None, key=f"{label}_{record['id']}"):
@@ -109,10 +110,9 @@ def video_panel(record, video, fields):
     if duration and start is not None and end is not None and 0 <= start <= end <= duration:
         left, width = start / duration * 100, (end - start) / duration * 100
         st.markdown(
-            f'<div role="img" aria-label="Incident range within full video" style="height:9px;background:#e6e9ed;border-radius:8px;overflow:hidden"><div style="margin-left:{left}%;width:{width}%;height:100%;background:#76b900"></div></div>',
+            f'<div role="img" aria-label="Incident range within full video" style="height:10px;background:#e6e9ed;border-radius:8px;overflow:hidden"><div style="margin-left:{left}%;width:{width}%;height:100%;background:#76b900"></div></div><div class="muted" style="display:flex;justify-content:space-between;margin-top:.25rem"><span>0:00</span><span>Flagged {time_label(start)}–{time_label(end)}</span><span>{time_label(duration)}</span></div>',
             unsafe_allow_html=True,
         )
-        st.caption(f"Flagged range within full footage · 0:00 — {time_label(duration)}")
     with st.expander("Video details"):
         st.caption("Source file")
         st.text(
@@ -122,6 +122,7 @@ def video_panel(record, video, fields):
 
 
 def edit_form(handle, record, fields):
+    st.markdown('<div class="editing-banner">Editing mode · changes are not saved until you select Save changes.</div>', unsafe_allow_html=True)
     with st.form(f"edit_detail_{record['id']}", border=False):
         st.caption("Incident ID")
         st.text(str(fields["ID"]))
@@ -150,8 +151,6 @@ def edit_form(handle, record, fields):
             "Confidence Score (0–1; blank if missing)",
             value="" if fields["Confidence_Score"] is None else str(fields["Confidence_Score"]),
         )
-        confirmed = st.checkbox("Start timestamp confirmed", value=bool(record.get("incident_start_confirmed")))
-        editor = st.text_input("Edited by", placeholder="Your name")
         save_col, cancel_col = st.columns(2)
         save = save_col.form_submit_button("Save changes", type="primary", width="stretch")
         cancel = cancel_col.form_submit_button("Cancel", width="stretch")
@@ -168,10 +167,6 @@ def edit_form(handle, record, fields):
             conf = float(confidence) if confidence.strip() else None
             if conf is not None and (not math.isfinite(conf) or not 0 <= conf <= 1):
                 raise ValueError("Confidence must be between 0 and 1, or blank.")
-            if confirmed and start_s is None:
-                raise ValueError("Supply a start timestamp before confirming it.")
-            if not editor.strip():
-                raise ValueError("Enter your name to save changes.")
         except ValueError as exc:
             st.error(str(exc))
         else:
@@ -185,9 +180,7 @@ def edit_form(handle, record, fields):
                         "description": description,
                         "severity": severity,
                         "confidence": conf,
-                        "incident_start_confirmed": confirmed,
                     },
-                    edited_by=editor.strip(),
                 )
             except Exception:
                 st.error("Changes could not be saved. Your entries remain here; please retry.")
@@ -207,18 +200,11 @@ def render_detail(handle, record, video):
         video_panel(record, video, fields)
     with right, st.container(border=True):
         st.subheader(fields["Type"] or "Incident type not supplied")
-        st.caption(f"Report #{record['id']}")
-        status = record.get("status")
-        pill(
-            STATUS_LABELS.get(status, "Status not supplied").upper(),
-            {"verified": "#16854a", "under review": "#ac7800"}.get(status, "#667085"),
-        )
+        st.caption(f"Incident {fields['ID']} · {fields['Filename'] or 'Filename not supplied'}")
         a, b = st.columns(2)
         with a:
             pill(severity_label(fields["Severity_Level"]), SEVERITY_COLORS.get(fields["Severity_Level"], "#667085"))
         b.markdown(f"**Confidence:** {confidence_label(fields['Confidence_Score'])}")
-        st.markdown("##### AI Summary")
-        st.info("AI summary not yet generated for this incident.", icon="✨")
         heading, action = st.columns([2, 1])
         heading.markdown("##### Incident fields")
         with action:
@@ -230,7 +216,10 @@ def render_detail(handle, record, video):
 
             def field(label, value, help_text=None):
                 st.caption(label, help=help_text)
-                st.text(str(value) if value is not None and value != "" else "Not supplied")
+                if value is None or value == "":
+                    st.markdown(missing_value(), unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div>{html.escape(str(value))}</div>", unsafe_allow_html=True)
 
             identity, category = st.columns(2)
             with identity:
@@ -254,46 +243,6 @@ def render_detail(handle, record, video):
                 )
             with confidence_col:
                 field("Confidence Score", confidence_label(fields["Confidence_Score"]))
+            field("Source", fields["Source"])
         st.divider()
-        st.markdown("##### Verification")
-        with st.form(f"status_detail_{record['id']}"):
-            options = list(STATUS_LABELS)
-            chosen = st.selectbox(
-                "Review status",
-                options,
-                index=options.index(status) if status in options else 0,
-                format_func=STATUS_LABELS.get,
-            )
-            reviewer = st.text_input("Reviewed by", placeholder="Your name")
-            submitted = st.form_submit_button("Save review status", type="primary", disabled=edit)
-        if edit:
-            st.caption("Finish field editing before changing review status.")
-        if submitted:
-            if not reviewer.strip():
-                st.error("Enter your name to change review status.")
-            elif chosen == status:
-                st.info("This report already has the selected status.")
-            elif (
-                chosen == "verified"
-                and fields["Start_Timestamp"] is not None
-                and fields["End_Timestamp"] is not None
-                and fields["End_Timestamp"] < fields["Start_Timestamp"]
-            ):
-                st.error("Correct the reversed incident timestamps before verifying.")
-            else:
-                try:
-                    handle.set_report_review_status(
-                        record["id"],
-                        status=chosen,
-                        reviewed_by=reviewer.strip(),
-                        notify_threshold=config.severity_notify_threshold(),
-                    )
-                except Exception:
-                    st.error("Review status could not be saved. Please retry.")
-                else:
-                    st.session_state["detail_notice"] = f"Report marked {STATUS_LABELS[chosen]}."
-                    st.rerun()
-        if record.get("verified_by"):
-            st.caption(f"Verified by {record['verified_by']} · {record.get('verified_at') or 'Time not supplied'}")
-        elif record.get("edited_by"):
-            st.caption(f"Last updated by {record['edited_by']} · {record.get('edited_at') or 'Time not supplied'}")
+        st.caption("Changes save directly to fixtures/data/incidents.csv and are visible on the Dashboard after refresh.")
