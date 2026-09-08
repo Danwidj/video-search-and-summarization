@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import html
+from urllib.parse import quote
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-COLORS = ["#579900", "#a4b820", "#d4a600", "#ed7825", "#d73535"]
+from theme import BORDER, MUTED, SEVERITY_COLORS, SEVERITY_LABELS, TYPE_COLORS, severity_badge
+
+COLORS = [SEVERITY_COLORS[level] for level in range(1, 6)]
 INCIDENT_COLUMNS = [
     "Incident_ID",
+    "Filename",
     "Type",
     "Start_Timestamp",
     "End_Timestamp",
@@ -33,6 +39,7 @@ def from_reports(reports):
         rows.append(
             {
                 "Incident_ID": report.get("id"),
+                "Filename": report.get("filename"),
                 "Type": report.get("incident_type"),
                 "Start_Timestamp": start,
                 "End_Timestamp": end,
@@ -63,7 +70,7 @@ def chart(data, mark, x, y, color=None, height=190):
     result = getattr(alt.Chart(data), mark)().encode(x=x, y=y, tooltip=list(data.columns))
     if color is not None:
         result = result.encode(color=color)
-    st.altair_chart(result.properties(height=height), width="stretch")
+    st.altair_chart(result.properties(height=height).configure_view(stroke=None).configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED), width="stretch")
 
 
 def metric(column, icon, title, value, help_text):
@@ -105,19 +112,12 @@ def render(df, entities, instruments, reports=None):
     st.caption(
         f"{len(view)} of {len(df)} incidents · All metrics follow the filters · Confidence review threshold: below 70%"
     )
-    cols = st.columns(4)
+    cols = st.columns(3)
     metric(cols[0], "▦", "Total Logged Incidents", len(view), "Within the available data scope")
-    metric(
-        cols[1],
-        "◷",
-        "Active Under Review",
-        "—",
-        "Workflow status unavailable in seed; live query includes verified reports only.",
-    )
-    metric(cols[2], "⚑", "Critical Alerts (Sev 4–5)", int((view.Severity >= 4).sum()), "Incidents at severity 4 or 5")
+    metric(cols[1], "⚑", "Critical Alerts (Sev 4–5)", int((view.Severity >= 4).sum()), "Incidents at severity 4 or 5")
     confidence = view.Confidence_Score.dropna()
     metric(
-        cols[3],
+        cols[2],
         "◎",
         "Avg Confidence Score",
         f"{confidence.mean():.0%}" if len(confidence) else "—",
@@ -142,14 +142,14 @@ def render(df, entities, instruments, reports=None):
             data = counts.rename_axis("Clip start (seconds)").reset_index(name="Incidents")
             line = (
                 alt.Chart(data)
-                .mark_line(point=True, color="#76b900")
+                .mark_line(point=True, color="#76B900")
                 .encode(
                     x=alt.X("Clip start (seconds):Q"),
                     y=alt.Y("Incidents:Q", axis=alt.Axis(tickMinStep=1)),
                     tooltip=list(data.columns),
                 )
             )
-            st.altair_chart(line.properties(height=190), width="stretch")
+            st.altair_chart(line.properties(height=190).configure_view(stroke=None).configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED), width="stretch")
     with b, st.container(border=True):
         st.markdown("##### Avg Incident Duration")
         durations = pd.to_numeric(view.Duration, errors="coerce").dropna()
@@ -165,8 +165,13 @@ def render(df, entities, instruments, reports=None):
             empty("No missing or low confidence scores in this selection.")
         for row in queue.head(4).itertuples():
             score = "Missing confidence" if pd.isna(row.Confidence_Score) else f"{row.Confidence_Score:.0%} confidence"
-            st.markdown(f"**{row.Incident_ID} · {score}**")
-            st.caption(f"Severity {row.Severity} · {row.Description}")
+            with st.container(key=f"queue_{row.Incident_ID}"):
+                target = quote(str(row.Incident_ID), safe="")
+                st.markdown(
+                    f'<a class="queue-link" href="/?report={target}">↗&nbsp; {html.escape(str(row.Incident_ID))} · {html.escape(score)}</a>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f'<div class="queue-item">{severity_badge(row.Severity)} <span class="muted">{row.Description or "No description supplied"}</span></div>', unsafe_allow_html=True)
         if len(queue) > 4:
             st.caption(f"Showing 4 of {len(queue)} · Remaining incidents appear in the records log.")
 
@@ -179,7 +184,7 @@ def render(df, entities, instruments, reports=None):
             empty("No incidents match these filters.")
         else:
             counts = view.Type.value_counts().rename_axis("Category").reset_index(name="Count")
-            chart(counts, "mark_bar", "Count:Q", "Category:N", alt.value("#76b900"))
+            chart(counts, "mark_bar", "Count:Q", "Category:N", alt.Color("Category:N", scale=alt.Scale(domain=list(TYPE_COLORS), range=list(TYPE_COLORS.values())), legend=None))
     with b, st.container(border=True):
         st.markdown("##### Incidents by Severity Level")
         if view.empty:
@@ -198,22 +203,35 @@ def render(df, entities, instruments, reports=None):
         if linked.empty:
             empty("No linked entities available. Human, animal and unknown counts appear once entities are supplied.")
         else:
-            counts = linked.Type.value_counts().rename_axis("Entity type").reset_index(name="Count")
-            donut = (
-                alt.Chart(counts)
-                .mark_arc(innerRadius=48)
-                .encode(
-                    theta="Count:Q",
-                    color=alt.Color(
-                        "Entity type:N",
-                        scale=alt.Scale(domain=["human", "animal", "unknown"], range=["#435569", "#76b900", "#c8cfd8"]),
-                        legend=alt.Legend(orient="bottom"),
-                    ),
-                    tooltip=["Entity type", "Count"],
-                )
+            counts = (
+                linked.assign(Type=linked.Type.fillna("unknown").str.lower())
+                .Type.value_counts()
+                .reindex(["human", "animal", "unknown"], fill_value=0)
+                .rename_axis("Entity type")
+                .reset_index(name="Count")
             )
-            st.altair_chart(donut.properties(height=190), width="stretch")
-            st.caption(f"{len(linked)} entity rows · IDs are scoped to each incident")
+            counts = counts[counts.Count > 0]
+            if counts.empty:
+                empty("Entity rows are present, but no human, animal or unknown types are populated.")
+                counts = None
+            if counts is None:
+                st.caption("Entity type values are missing in the current selection.")
+            else:
+                donut = (
+                    alt.Chart(counts)
+                    .mark_arc(innerRadius=48)
+                    .encode(
+                        theta="Count:Q",
+                        color=alt.Color(
+                            "Entity type:N",
+                            scale=alt.Scale(domain=["human", "animal", "unknown"], range=["#435569", "#76b900", "#c8cfd8"]),
+                            legend=alt.Legend(orient="bottom"),
+                        ),
+                        tooltip=["Entity type", "Count"],
+                    )
+                )
+                st.altair_chart(donut.properties(height=190).configure_view(stroke=None), width="stretch")
+                st.caption(f"{len(linked)} entity rows · IDs are scoped to each incident")
     with d, st.container(border=True):
         st.markdown("##### Threat Level vs Severity")
         linked = related(instruments, view)
@@ -238,7 +256,7 @@ def render(df, entities, instruments, reports=None):
                 tooltip=["Threat_Level", "Severity", "Count"],
             )
             cells = base.mark_rect(stroke="white", strokeWidth=2).encode(
-                color=alt.Color("Threat_Level:O", scale=scale, legend=None),
+                color=alt.Color("Severity:O", scale=scale, legend=alt.Legend(title="Severity")),
                 opacity=alt.condition("datum.Count > 0", alt.value(0.85), alt.value(0.12)),
             )
             labels = base.mark_text(color="#18212a").encode(text="Count:Q")
@@ -246,7 +264,11 @@ def render(df, entities, instruments, reports=None):
             st.caption(
                 f"{len(linked)} instrument links across {linked.Incident_ID.nunique()} incidents · Numbers count links; 0 means none."
             )
-    st.caption("Severity / threat scale: 🟢 1 Low · 🟡 2 Guarded · 🟨 3 Moderate · 🟠 4 High · 🔴 5 Critical")
+    legend = " · ".join(
+        f'<span style="color:{SEVERITY_COLORS[level]}">●</span> {level} {SEVERITY_LABELS[level]}'
+        for level in range(1, 6)
+    )
+    st.markdown(f'<div class="muted">Severity / threat scale: {legend}</div>', unsafe_allow_html=True)
     st.markdown("#### Filtered Records Log")
     if view.empty:
         empty("No records match. Reset filters to restore the available incidents.")
@@ -261,23 +283,35 @@ def render(df, entities, instruments, reports=None):
             }
         ).copy()
         table["Confidence (%)"] = table["Confidence (%)"] * 100
-        metadata = {r["id"]: r for r in (reports or [])}
-        table["Location"] = table.ID.map(lambda key: metadata.get(key, {}).get("location") or "Not supplied")
-        table["Status"] = table.ID.map(lambda key: metadata.get(key, {}).get("status") or "Not supplied")
         table = table[
-            ["ID", "Incident Type", "Location", "Start", "End", "Severity", "Confidence (%)", "Status"]
+            ["ID", "Incident Type", "Filename", "Start", "End", "Duration", "Severity", "Confidence (%)"]
         ].sort_values("Severity", ascending=False)
+        table["ID"] = table["ID"].map(lambda value: f"/?report={quote(str(value))}")
 
         def severity_style(value):
             return (
-                f"background-color: {COLORS[int(value) - 1]}22; color: #18212a; border-left: 4px solid {COLORS[int(value) - 1]}"
+                f"background-color: {SEVERITY_COLORS[int(value)]}; color: #ffffff; border-left: 4px solid {SEVERITY_COLORS[int(value)]}"
                 if pd.notna(value) and 1 <= value <= 5
                 else ""
             )
 
+        numeric = ["Start", "End", "Duration", "Severity", "Confidence (%)"]
+        table_style = (
+            table.style
+            .map(severity_style, subset=["Severity"])
+            .set_properties(subset=numeric, **{"text-align": "right"})
+            .set_properties(subset=["Filename"], **{"font-family": "ui-monospace, SFMono-Regular, monospace"})
+            .set_table_styles([
+                {"selector": "tbody tr:nth-child(even)", "props": [("background-color", "#f8fafc")]},
+                {"selector": "th", "props": [("text-align", "left"), ("position", "sticky"), ("top", "0px")]},
+            ])
+        )
         st.dataframe(
-            table.style.map(severity_style, subset=["Severity"]),
+            table_style,
             hide_index=True,
             width="stretch",
-            column_config={"Confidence (%)": st.column_config.NumberColumn(format="%.0f%%")},
+            column_config={
+                "ID": st.column_config.LinkColumn("ID", display_text=r".*/\?report=(.*)"),
+                "Confidence (%)": st.column_config.NumberColumn(format="%.0f%%"),
+            },
         )

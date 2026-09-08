@@ -154,12 +154,15 @@ def test_synthetic_fills_explosion_and_confidence_gaps():
     assert any(r.get("Confidence_Score", 0) >= 0.7 for r in syn)
 
 
-def test_images_are_none_and_videos_generated():
+def test_images_are_none_and_videos_linked_to_incidents():
     seed = load_seed()
     for name in ("Entity", "Instrument", "Asset"):
         assert all(row["Image"] is None for row in seed[name])
     assert len(seed["Video"]) == len(seed["Incident"])
     assert seed["Video"][0]["ID"] == "V1"
+    assert {row["Incident_ID"] for row in seed["Video"]} == {row["Incident_ID"] for row in seed["Incident"]}
+    assert {row["Filename"] for row in seed["Video"]} == {row["Filename"] for row in seed["Incident"]}
+    assert len({row["Filename"] for row in seed["Video"]}) == len(seed["Video"])
     assert all("example.invalid" in v["Filepath"] for v in seed["Video"])
     assert seed["Report"] == [] and seed["Query"] == []
 

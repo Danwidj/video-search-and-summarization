@@ -21,7 +21,7 @@ import streamlit as st
 
 import config
 import db
-from theme import apply_base_style, page_header
+from theme import alert, apply_base_style, page_header
 
 
 def bootstrap(title: str, subtitle: str = "") -> None:
@@ -34,23 +34,15 @@ def bootstrap(title: str, subtitle: str = "") -> None:
 def get_db_or_notice() -> db.IncidentDB | None:
     """Return the DB handle, or render a visible degraded state and return None."""
     if not db.is_configured():
-        st.info(
-            "**Database not configured.** Set `INCIDENT_DB_DSN` in "
-            "`dev-profile-incident/.env` to enable catalog / report / dashboard / "
-            "eval data. The rest of the page still renders so it stays reviewable.",
-            icon="🗄️",
-        )
+        alert("<strong>Database not configured.</strong> Set <code>INCIDENT_DB_DSN</code> in <code>dev-profile-incident/.env</code> to enable catalog, report, dashboard and evaluation data. The page remains reviewable with the available seed data.", "info", "🗄️")
         return None
     handle = db.get_db()
     if handle is None:
-        st.error(
-            "`INCIDENT_DB_DSN` is set but the database could not be reached. "
-            "Check the DSN / network. The page still renders below."
-        )
+        alert("<strong>Database unavailable.</strong> Check the DSN and network. The page still renders below.", "error", "!")
         return None
     ok, detail = handle.healthcheck()
     if not ok:
-        st.error(f"Database configured but unreachable: {detail}")
+        alert(f"<strong>Database configured but unreachable.</strong> {detail}", "error", "!")
         return None
     return handle
 

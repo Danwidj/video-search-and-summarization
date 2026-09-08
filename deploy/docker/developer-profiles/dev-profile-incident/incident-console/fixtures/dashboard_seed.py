@@ -29,7 +29,10 @@ Incident_ID. See fixtures/README.md for the full real/synthetic breakdown and th
 known-gap list carried over from the ground-truth NOTES.
 """
 
+import contextlib
 import csv
+import os
+import tempfile
 from pathlib import Path
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -68,6 +71,49 @@ def _rows(name):
         return list(csv.DictReader(handle))
 
 
+def update_incident(incident_id, values):
+    """Persist editable Incident fields back to the committed CSV.
+
+    The CSV is the local source of truth for the fixture preview. Only columns
+    already present in incidents.csv can be changed; IDs and filenames remain
+    stable join keys for the related tables and videos.
+    """
+    path = DATA_DIR / "incidents.csv"
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    allowed = {
+        "Type",
+        "Start_Timestamp_sec",
+        "End_Timestamp_sec",
+        "Duration_sec",
+        "Description",
+        "Severity_Level",
+        "Confidence_Score",
+    }
+    updates = {key: value for key, value in values.items() if key in allowed}
+    found = False
+    for row in rows:
+        if row.get("Incident_ID") == incident_id:
+            row.update({key: "" if value is None else str(value) for key, value in updates.items()})
+            found = True
+            break
+    if not found:
+        raise KeyError(f"Unknown Incident_ID: {incident_id}")
+    fd, temporary = tempfile.mkstemp(prefix="incidents-", suffix=".csv", dir=path.parent, text=True)
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(temporary, path)
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+        raise
+
+
 def load_seed():
     data = {name: [] for name in ("Incident", "Entity", "Instrument", "Asset", "Report", "Video", "Query")}
 
@@ -97,6 +143,8 @@ def load_seed():
         data["Video"].append(
             {
                 "ID": f"V{n}",
+                "Incident_ID": incident_id,
+                "Filename": filename,
                 "Filepath": f"{url}/{filename}",
                 "Uploaded_DateTime": "2026-09-01T09:00:00Z",
                 "Duration": (start or 0) + (duration or 0) + 5,
