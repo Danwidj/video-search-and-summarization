@@ -24,6 +24,7 @@ page = st.navigation(
     ]
 )
 with st.sidebar:
+    st.caption("SMU IS483 · Incident intelligence")
     st.divider()
     st.caption("SMU IS483 Group Project")
     st.caption("Rise Up")

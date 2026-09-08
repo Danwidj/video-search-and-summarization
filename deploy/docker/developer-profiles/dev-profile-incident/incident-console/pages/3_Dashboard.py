@@ -18,17 +18,12 @@
 import streamlit as st
 
 from dashboard_view import frame, from_reports, render
-from theme import apply_base_style
+from theme import alert, apply_base_style, page_header
 from ui import get_db_or_notice, notifications_panel
 
 st.set_page_config(page_title="Analytics Dashboard - RISE UP", layout="wide")
 apply_base_style()
-st.markdown(
-    '<div style="font-weight:800;font-size:25px;letter-spacing:2px">RISE UP <span style="font-size:10px;letter-spacing:1px;color:#527f00;background:#edf5df;padding:6px 10px;border-radius:20px">NVIDIA POWERED</span></div>',
-    unsafe_allow_html=True,
-)
-st.title("Analytics Dashboard")
-st.caption("Incident patterns, review priorities, and linked evidence at a glance.")
+page_header("Analytics Dashboard", "Incident patterns, review priorities, and linked evidence at a glance.", "CSV-backed incident data · Presentation-only analytics scope")
 handle = get_db_or_notice()
 notifications_panel(handle)
 # Preserve the production query and its verified-report scope.
@@ -38,11 +33,7 @@ if preview:
     from fixtures.dashboard_seed import load_seed
 
     seed = load_seed()
-    st.warning(
-        "MOCK / SEED PREVIEW · Real ground-truth incidents plus a clearly-flagged synthetic half. "
-        "No database writes. Locations and workflow statuses are not supplied.",
-        icon="🧪",
-    )
+    alert("<strong>MOCK / SEED PREVIEW.</strong> Real ground-truth incidents plus clearly flagged synthetic rows. No database writes; locations and workflow statuses are not supplied.", "warning", "🧪")
     render(frame(seed["Incident"]), seed["Entity"], seed["Instrument"])
 else:
     st.caption("Live scope: verified reports only. Linked entity/instrument data is not supplied by this query.")
