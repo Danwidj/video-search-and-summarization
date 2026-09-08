@@ -5,8 +5,10 @@ Incident Reports and Analytics Dashboard. Details are an internal view of
 Incident Reports, selected by the report query parameter. Older catalog and
 evaluation source files remain in the repository but are not registered pages.
 
-Incident Reports uses the existing 18 incidents from fixtures/dashboard_seed.py.
-local_reports.py adapts those rows without changing the fixture or dashboard.
+Incident Reports uses the incidents from fixtures/dashboard_seed.py (the
+capstone group's real ground truth plus a clearly-flagged synthetic half; see
+fixtures/README.md for the split and counts). local_reports.py adapts those rows
+without changing the fixture or dashboard.
 Review status starts Unreviewed as local workflow state. Edits, verification and
 video mappings last only for the current Streamlit session; they do not update
 the fixture, Dashboard, Postgres, or Cloudflare R2.
