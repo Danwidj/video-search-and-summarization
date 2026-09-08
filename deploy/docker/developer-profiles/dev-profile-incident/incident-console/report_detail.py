@@ -121,8 +121,128 @@ def video_panel(record, video, fields):
         st.caption(f"Video duration: {time_label(duration)}")
 
 
+def review_status_control(handle, record):
+    """DB-backed review-status transition. Persists through Supabase."""
+    from db_reports import REVIEW_STATUSES
+
+    current = record.get("status") or "unreviewed"
+    st.markdown("##### Review status")
+    options = REVIEW_STATUSES if current in REVIEW_STATUSES else [current, *REVIEW_STATUSES]
+    with st.form(f"review_status_{record['id']}", border=False):
+        choice = st.selectbox("Status", options, index=options.index(current))
+        reviewer = st.text_input("Reviewed by", value="", placeholder="your name (freeform)")
+        submitted = st.form_submit_button("Save review status", type="primary")
+    if submitted:
+        if choice == current:
+            st.info("Status unchanged.")
+        elif not reviewer.strip():
+            st.error("Enter a reviewer name.")
+        else:
+            try:
+                handle.set_review_status(record["id"], status=choice, reviewed_by=reviewer.strip())
+            except Exception as exc:  # noqa: BLE001 - surfaced to the reviewer
+                st.error(f"Could not save review status: {exc}")
+            else:
+                st.session_state["detail_notice"] = f"Review status set to “{choice}”."
+                st.rerun()
+    st.caption(f"Current: {current}")
+
+
+def source_video_picker(handle, record):
+    """Browse every playable object in the R2 bucket and re-link this incident."""
+    from r2_videos import configured, filter_keys, list_video_keys, top_level_prefixes
+
+    st.markdown("##### Link source video from Cloudflare R2")
+    if not configured():
+        st.caption("R2 is not configured; the linked clip cannot be changed here.")
+        return
+    linked = record.get("r2_key")
+    st.caption(f"Currently linked: `{linked}`" if linked else "No clip linked yet.")
+    try:
+        keys = list_video_keys()
+    except Exception:
+        st.warning("Could not list the R2 bucket. Try again shortly.")
+        return
+    prefixes = ["All", *top_level_prefixes(keys)]
+    a, b = st.columns([1, 2])
+    prefix = a.selectbox("Folder", prefixes, key=f"vp_prefix_{record['id']}")
+    query = b.text_input("Search", placeholder="filename fragment…", key=f"vp_query_{record['id']}")
+    matches = filter_keys(keys, prefix=prefix, query=query.strip() or None)
+    st.caption(f"{len(matches)} of {len(keys)} objects match")
+    if not matches:
+        return
+    limit = 500
+    shown = matches[:limit]
+    # Keep the currently linked clip selectable even when it sorts past the cap.
+    if linked in matches and linked not in shown:
+        shown = [linked, *shown[: limit - 1]]
+    if len(matches) > len(shown):
+        st.caption(f"Showing {len(shown)} of {len(matches)} matches — narrow the search to see more.")
+    default = shown.index(linked) if linked in shown else 0
+    picked = st.selectbox("Bucket object", shown, index=default, key=f"vp_pick_{record['id']}")
+    if st.button("Link this clip to the incident", key=f"vp_link_{record['id']}", disabled=picked == linked):
+        try:
+            handle.link_video(record["id"], picked, edited_by="reviewer")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not link the clip: {exc}")
+        else:
+            st.session_state.pop(f"seek_{record['id']}", None)
+            st.session_state["detail_notice"] = "Source video re-linked."
+            st.rerun()
+
+
+def _screenshot(image_key):
+    """Render an evidence screenshot from its R2 key, degrading cleanly when absent."""
+    if not image_key:
+        return
+    try:
+        from r2_videos import configured, image_url
+
+        if configured():
+            st.image(image_url(image_key), width="stretch")
+        else:
+            st.caption(f"Screenshot: `{image_key}`")
+    except Exception:
+        st.caption(f"Screenshot unavailable: `{image_key}`")
+
+
+def evidence_section(handle, record):
+    """Entities / instruments / assets linked to a DB-backed incident."""
+    data = handle.list_evidence(record["id"])
+    if not any(data.values()):
+        return
+    st.markdown("##### Linked evidence")
+    if data["entities"]:
+        st.caption("Entities")
+        for row in data["entities"]:
+            st.markdown(
+                f"- **{row.get('local_id') or '?'}** · {row.get('type') or 'unknown'} — {row.get('description') or ''}"
+            )
+            _screenshot(row.get("image_key"))
+    if data["instruments"]:
+        st.caption("Instruments")
+        for row in data["instruments"]:
+            threat = row.get("threat_level")
+            threat_txt = f" · threat {threat}" if threat is not None else ""
+            held = f" (held by {row['entity_local_id']})" if row.get("entity_local_id") else ""
+            st.markdown(
+                f"- **{row.get('local_id') or '?'}** · {row.get('name') or ''}{threat_txt}{held} — {row.get('description') or ''}"
+            )
+            _screenshot(row.get("image_key"))
+    if data["assets"]:
+        st.caption("Assets")
+        for row in data["assets"]:
+            st.markdown(
+                f"- **{row.get('local_id') or '?'}** · {row.get('name') or ''} — {row.get('description') or ''}"
+            )
+            _screenshot(row.get("image_key"))
+
+
 def edit_form(handle, record, fields):
-    st.markdown('<div class="editing-banner">Editing mode · changes are not saved until you select Save changes.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="editing-banner">Editing mode · changes are not saved until you select Save changes.</div>',
+        unsafe_allow_html=True,
+    )
     with st.form(f"edit_detail_{record['id']}", border=False):
         st.caption("Incident ID")
         st.text(str(fields["ID"]))
@@ -194,10 +314,14 @@ def edit_form(handle, record, fields):
 def render_detail(handle, record, video):
     fields = normalized(record)
     left, right = st.columns([1.1, 1], gap="large")
+    db_backed = getattr(handle, "supports_db", False)
     with left, st.container(border=True):
         if callable(video):
             video = video()
         video_panel(record, video, fields)
+        if db_backed:
+            st.divider()
+            source_video_picker(handle, record)
     with right, st.container(border=True):
         st.subheader(fields["Type"] or "Incident type not supplied")
         st.caption(f"Incident {fields['ID']} · {fields['Filename'] or 'Filename not supplied'}")
@@ -244,5 +368,15 @@ def render_detail(handle, record, video):
             with confidence_col:
                 field("Confidence Score", confidence_label(fields["Confidence_Score"]))
             field("Source", fields["Source"])
+        if db_backed:
+            st.divider()
+            review_status_control(handle, record)
+            st.divider()
+            evidence_section(handle, record)
         st.divider()
-        st.caption("Changes save directly to fixtures/data/incidents.csv and are visible on the Dashboard after refresh.")
+        if db_backed:
+            st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")
+        else:
+            st.caption(
+                "Changes save directly to fixtures/data/incidents.csv and are visible on the Dashboard after refresh."
+            )

@@ -15,7 +15,28 @@ SURFACE = "#FFFFFF"
 BACKGROUND = "#F4F6F8"
 SEVERITY_COLORS = {1: "#2E7D5B", 2: "#4AAE7D", 3: "#D39A19", 4: "#E4742B", 5: "#C93C47"}
 SEVERITY_LABELS = {1: "Very Low", 2: "Low", 3: "Moderate", 4: "High", 5: "Critical"}
-TYPE_COLORS = {"animal": "#4AAE7D", "road accident": "#D39A19", "burglary": "#7B61A8", "explosion": "#C93C47", "fighting": "#E4742B", "robbery": "#7B61A8", "vandalism": "#4D82A8", "stealing": "#8B6F47", "shooting": "#C93C47", "abuse": "#A05A7D", "": "#AAB4BF"}
+# Keys cover both the offline CSV fixture taxonomy (animal / burglary / …) and the
+# Supabase 8-mock taxonomy (warehouse safety / equipment / …). Unknown types fall
+# back to the "" entry.
+TYPE_COLORS = {
+    "animal": "#4AAE7D",
+    "road accident": "#D39A19",
+    "burglary": "#7B61A8",
+    "explosion": "#C93C47",
+    "fighting": "#E4742B",
+    "robbery": "#7B61A8",
+    "vandalism": "#4D82A8",
+    "stealing": "#8B6F47",
+    "shooting": "#C93C47",
+    "abuse": "#A05A7D",
+    "warehouse safety": "#4AAE7D",
+    "equipment": "#4D82A8",
+    "pedestrian": "#D39A19",
+    "traffic": "#E4742B",
+    "structural": "#7B61A8",
+    "other": "#8B95A1",
+    "": "#AAB4BF",
+}
 
 _CSS = f"""
 <style>
@@ -50,11 +71,16 @@ def apply_base_style() -> None:
 def page_header(title: str, subtitle: str = "", metadata: str = "") -> None:
     suffix = f" · {html.escape(subtitle)}" if subtitle else ""
     meta = f'<div class="meta-line">{html.escape(metadata)}</div>' if metadata else ""
-    st.markdown(f'<div class="rise-header"><div><span class="wordmark">RISE UP</span><span class="nvidia-pill">NVIDIA POWERED</span></div><div class="tagline">{html.escape(title)}{suffix}</div>{meta}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="rise-header"><div><span class="wordmark">RISE UP</span><span class="nvidia-pill">NVIDIA POWERED</span></div><div class="tagline">{html.escape(title)}{suffix}</div>{meta}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def alert(message: str, kind: str = "info", icon: str = "ⓘ") -> None:
-    st.markdown(f'<div class="alert alert-{kind}"><span>{icon}</span><div>{message}</div></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="alert alert-{kind}"><span>{icon}</span><div>{message}</div></div>', unsafe_allow_html=True
+    )
 
 
 def status_badge(status: str) -> str:

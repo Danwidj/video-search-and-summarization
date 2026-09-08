@@ -1,0 +1,3 @@
+# Untracked local secrets for the incident console (Supabase DSN, R2 keys).
+# config.py loads this in addition to the committed placeholder .env.
+.env.local

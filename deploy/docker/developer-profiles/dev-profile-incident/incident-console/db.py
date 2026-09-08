@@ -78,6 +78,8 @@ videos = Table(
     Column("metadata_edited_at", DateTime),
     Column("sensor_id", String(256)),
     Column("error_message", Text),
+    # Additive: clip length in seconds when known (probed from the source).
+    Column("duration_sec", Integer),
 )
 
 incident_reports = Table(
@@ -100,6 +102,55 @@ incident_reports = Table(
     Column("edited_by", String(256)),
     Column("edited_at", DateTime),
     Column("created_at", DateTime, default=_utcnow),
+    # Additive columns (see dev-profile-incident 8-mock seed task). Existing
+    # profiles keep working: is_synthetic defaults true, the other two are
+    # nullable and simply stay NULL for rows that never set them.
+    Column("is_synthetic", Boolean, nullable=False, default=True),
+    Column("duration_sec", Integer),
+    Column("model_version", String(128)),
+)
+
+# Structured evidence linked to an incident report, modeled on
+# fixtures/data/{entities,instruments,assets}.csv. Additive: no existing profile
+# reads or writes these; the 8-mock Supabase seed is their only current source.
+incident_entities = Table(
+    "incident_entities",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
+    Column("local_id", String(16)),  # incident-scoped handle, e.g. "E1"
+    Column("type", String(16)),  # human / animal / unknown
+    Column("description", Text),
+    # Object-storage key (R2) for a cropped screenshot. Bytes never live in
+    # Postgres; the file is uploaded separately and only its key is stored.
+    Column("image_key", String(1024)),
+    Column("is_synthetic", Boolean, nullable=False, default=True),
+)
+
+incident_instruments = Table(
+    "incident_instruments",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
+    Column("local_id", String(16)),  # e.g. "I1"
+    Column("entity_local_id", String(16)),  # the wielding entity's local_id, if any
+    Column("name", String(256)),
+    Column("description", Text),
+    Column("threat_level", Integer),  # 1-5 rubric, NULL when not rated
+    Column("image_key", String(1024)),  # R2 screenshot key; see incident_entities
+    Column("is_synthetic", Boolean, nullable=False, default=True),
+)
+
+incident_assets = Table(
+    "incident_assets",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
+    Column("local_id", String(16)),  # e.g. "A1"
+    Column("name", String(256)),
+    Column("description", Text),
+    Column("image_key", String(1024)),  # R2 screenshot key; see incident_entities
+    Column("is_synthetic", Boolean, nullable=False, default=True),
 )
 
 notifications = Table(
@@ -147,6 +198,53 @@ class IncidentDB:
 
     def init_schema(self) -> None:
         metadata.create_all(self.engine, checkfirst=True)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """Additive, idempotent column backfill for tables that predate this file.
+
+        ``MetaData.create_all`` only creates whole missing tables; it never adds a
+        column to a table that already exists. The columns below were appended to
+        ``videos`` / ``incident_reports`` after other profiles had already created
+        those tables, so bring an older schema forward here. Every column is
+        nullable or carries a default, so the ``ALTER`` is safe to repeat.
+        """
+        from sqlalchemy import inspect as _inspect
+        from sqlalchemy import text as _text
+
+        pending: dict[str, list[str]] = {
+            "videos": ["duration_sec"],
+            "incident_reports": ["is_synthetic", "duration_sec", "model_version"],
+            "incident_entities": ["image_key"],
+            "incident_instruments": ["image_key"],
+            "incident_assets": ["image_key"],
+        }
+        ddl = {
+            ("videos", "duration_sec"): "INTEGER",
+            ("incident_reports", "duration_sec"): "INTEGER",
+            ("incident_reports", "model_version"): "VARCHAR(128)",
+            ("incident_reports", "is_synthetic"): "BOOLEAN NOT NULL DEFAULT TRUE",
+            ("incident_entities", "image_key"): "VARCHAR(1024)",
+            ("incident_instruments", "image_key"): "VARCHAR(1024)",
+            ("incident_assets", "image_key"): "VARCHAR(1024)",
+        }
+        inspector = _inspect(self.engine)
+        existing_tables = set(inspector.get_table_names())
+        statements: list[str] = []
+        for table_name, columns in pending.items():
+            if table_name not in existing_tables:
+                continue  # create_all just made it with every column
+            have = {c["name"] for c in inspector.get_columns(table_name)}
+            statements.extend(
+                f"ALTER TABLE {table_name} ADD COLUMN {column} {ddl[(table_name, column)]}"
+                for column in columns
+                if column not in have
+            )
+        if not statements:
+            return
+        with self.engine.begin() as conn:
+            for statement in statements:
+                conn.execute(_text(statement))
 
     def healthcheck(self) -> tuple[bool, str]:
         try:
@@ -166,6 +264,7 @@ class IncidentDB:
         location: str | None = None,
         camera_source: str | None = None,
         sensor_id: str | None = None,
+        duration_sec: int | None = None,
     ) -> int:
         with self.engine.begin() as conn:
             result = conn.execute(
@@ -176,10 +275,39 @@ class IncidentDB:
                     location=location,
                     camera_source=camera_source,
                     sensor_id=sensor_id,
+                    duration_sec=duration_sec,
                     uploaded_at=_utcnow(),
                 )
             )
             return int(result.inserted_primary_key[0])
+
+    def get_video_by_r2_key(self, r2_key: str) -> dict:
+        with self.engine.connect() as conn:
+            return _row_to_dict(conn.execute(select(videos).where(videos.c.r2_key == r2_key)).first())
+
+    def upsert_video_by_r2_key(
+        self,
+        *,
+        r2_key: str,
+        filename: str,
+        status: str = "analyzed",
+        duration_sec: int | None = None,
+    ) -> int:
+        """Insert or update the catalog row for one R2 object, keyed on ``r2_key``.
+
+        The stable natural key lets the one-time Supabase seed importer re-run
+        without creating duplicate ``videos`` rows.
+        """
+        existing = self.get_video_by_r2_key(r2_key)
+        if existing:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    update(videos)
+                    .where(videos.c.id == existing["id"])
+                    .values(filename=filename, status=status, duration_sec=duration_sec)
+                )
+            return int(existing["id"])
+        return self.insert_video(filename=filename, r2_key=r2_key, status=status, duration_sec=duration_sec)
 
     def list_videos(
         self,
@@ -243,10 +371,15 @@ class IncidentDB:
                 "description",
                 "persons",
                 "location",
+                "duration_sec",
+                "model_version",
             )
         }
         payload["video_id"] = video_id
         payload["status"] = report.get("status", "unreviewed")
+        # Additive column: default true so unmarked callers still validate; the
+        # 8-mock seed sets it explicitly.
+        payload["is_synthetic"] = report.get("is_synthetic", True)
         payload["created_at"] = _utcnow()
         with self.engine.begin() as conn:
             result = conn.execute(incident_reports.insert().values(**payload))
@@ -280,6 +413,17 @@ class IncidentDB:
                 conn.execute(select(incident_reports).where(incident_reports.c.id == report_id)).first()
             )
 
+    def get_report_by_video_id(self, video_id: int) -> dict:
+        """First report attached to a video. The 8-mock seed keeps one per clip."""
+        with self.engine.connect() as conn:
+            return _row_to_dict(
+                conn.execute(
+                    select(incident_reports)
+                    .where(incident_reports.c.video_id == video_id)
+                    .order_by(incident_reports.c.id.asc())
+                ).first()
+            )
+
     def update_report(self, report_id: int, *, fields: dict, edited_by: str) -> None:
         allowed = {
             k: v
@@ -295,6 +439,9 @@ class IncidentDB:
                 "description",
                 "persons",
                 "location",
+                "duration_sec",
+                "model_version",
+                "is_synthetic",
             }
         }
         allowed["edited_by"] = edited_by
@@ -384,6 +531,120 @@ class IncidentDB:
     def delete_report(self, report_id: int) -> None:
         with self.engine.begin() as conn:
             conn.execute(delete(incident_reports).where(incident_reports.c.id == report_id))
+
+    def link_report_video(self, report_id: int, video_id: int | None, *, edited_by: str | None = None) -> None:
+        """Point a report at a different ``videos`` row (or clear the link)."""
+        values: dict[str, Any] = {"video_id": video_id}
+        if edited_by:
+            values["edited_by"] = edited_by
+            values["edited_at"] = _utcnow()
+        with self.engine.begin() as conn:
+            conn.execute(update(incident_reports).where(incident_reports.c.id == report_id).values(**values))
+
+    # -- incident evidence (entities / instruments / assets) ------- #
+    @staticmethod
+    def _evidence_table(kind: str) -> Table:
+        return {
+            "entities": incident_entities,
+            "instruments": incident_instruments,
+            "assets": incident_assets,
+        }[kind]
+
+    def add_incident_entity(
+        self,
+        report_id: int,
+        *,
+        local_id: str | None = None,
+        type: str | None = None,
+        description: str | None = None,
+        image_key: str | None = None,
+        is_synthetic: bool = True,
+    ) -> int:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                incident_entities.insert().values(
+                    report_id=report_id,
+                    local_id=local_id,
+                    type=type,
+                    description=description,
+                    image_key=image_key,
+                    is_synthetic=is_synthetic,
+                )
+            )
+            return int(result.inserted_primary_key[0])
+
+    def add_incident_instrument(
+        self,
+        report_id: int,
+        *,
+        local_id: str | None = None,
+        entity_local_id: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        threat_level: int | None = None,
+        image_key: str | None = None,
+        is_synthetic: bool = True,
+    ) -> int:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                incident_instruments.insert().values(
+                    report_id=report_id,
+                    local_id=local_id,
+                    entity_local_id=entity_local_id,
+                    name=name,
+                    description=description,
+                    threat_level=threat_level,
+                    image_key=image_key,
+                    is_synthetic=is_synthetic,
+                )
+            )
+            return int(result.inserted_primary_key[0])
+
+    def add_incident_asset(
+        self,
+        report_id: int,
+        *,
+        local_id: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        image_key: str | None = None,
+        is_synthetic: bool = True,
+    ) -> int:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                incident_assets.insert().values(
+                    report_id=report_id,
+                    local_id=local_id,
+                    name=name,
+                    description=description,
+                    image_key=image_key,
+                    is_synthetic=is_synthetic,
+                )
+            )
+            return int(result.inserted_primary_key[0])
+
+    def list_incident_entities(self, report_id: int | None = None) -> list[dict]:
+        return self._list_evidence("entities", report_id)
+
+    def list_incident_instruments(self, report_id: int | None = None) -> list[dict]:
+        return self._list_evidence("instruments", report_id)
+
+    def list_incident_assets(self, report_id: int | None = None) -> list[dict]:
+        return self._list_evidence("assets", report_id)
+
+    def _list_evidence(self, kind: str, report_id: int | None) -> list[dict]:
+        table = self._evidence_table(kind)
+        stmt = select(table).order_by(table.c.id.asc())
+        if report_id is not None:
+            stmt = stmt.where(table.c.report_id == report_id)
+        with self.engine.connect() as conn:
+            return [_row_to_dict(r) for r in conn.execute(stmt)]
+
+    def clear_incident_evidence(self, report_id: int) -> None:
+        """Drop all entity/instrument/asset rows for a report (seed re-import)."""
+        with self.engine.begin() as conn:
+            for table in (incident_entities, incident_instruments, incident_assets):
+                conn.execute(delete(table).where(table.c.report_id == report_id))
 
     # -- notifications --------------------------------------------- #
     def list_notifications(self, *, only_unacknowledged: bool = False) -> list[dict]:

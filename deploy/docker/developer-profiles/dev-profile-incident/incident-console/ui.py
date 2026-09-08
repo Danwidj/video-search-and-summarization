@@ -34,11 +34,19 @@ def bootstrap(title: str, subtitle: str = "") -> None:
 def get_db_or_notice() -> db.IncidentDB | None:
     """Return the DB handle, or render a visible degraded state and return None."""
     if not db.is_configured():
-        alert("<strong>Database not configured.</strong> Set <code>INCIDENT_DB_DSN</code> in <code>dev-profile-incident/.env</code> to enable catalog, report, dashboard and evaluation data. The page remains reviewable with the available seed data.", "info", "🗄️")
+        alert(
+            "<strong>Database not configured.</strong> Set <code>INCIDENT_DB_DSN</code> in <code>dev-profile-incident/.env</code> to enable catalog, report, dashboard and evaluation data. The page remains reviewable with the available seed data.",
+            "info",
+            "🗄️",
+        )
         return None
     handle = db.get_db()
     if handle is None:
-        alert("<strong>Database unavailable.</strong> Check the DSN and network. The page still renders below.", "error", "!")
+        alert(
+            "<strong>Database unavailable.</strong> Check the DSN and network. The page still renders below.",
+            "error",
+            "!",
+        )
         return None
     ok, detail = handle.healthcheck()
     if not ok:

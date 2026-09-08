@@ -62,7 +62,10 @@ class LocalReports:
             rows = [
                 row
                 for row in rows
-                if query in " ".join(str(row.get(key) or "") for key in ("id", "filename", "incident_type", "description")).casefold()
+                if query
+                in " ".join(
+                    str(row.get(key) or "") for key in ("id", "filename", "incident_type", "description")
+                ).casefold()
             ]
         return deepcopy(rows)
 

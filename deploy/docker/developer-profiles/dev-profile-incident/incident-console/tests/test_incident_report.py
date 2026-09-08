@@ -117,7 +117,7 @@ def test_build_insights_templates():
 def test_incident_report_from_dict_clamps_and_normalizes():
     report = incident_report_from_dict(
         {
-            "incident_type": "ROBBERY",
+            "incident_type": "TRAFFIC",
             "severity": 9,
             "confidence": 87.0,
             "incident_start": 65,
@@ -125,7 +125,7 @@ def test_incident_report_from_dict_clamps_and_normalizes():
             "persons": [{"description": "p1", "actions": "ran"}, "p2"],
         }
     )
-    assert report.incident_type == "robbery"
+    assert report.incident_type == "traffic"
     assert report.severity == 5
     assert report.confidence == pytest.approx(0.87)
     assert report.incident_start == "1:05"
@@ -135,11 +135,11 @@ def test_incident_report_from_dict_clamps_and_normalizes():
 
 
 def test_parse_incident_report_from_fenced_json_and_bare_and_plain():
-    fenced = 'noise\n```json\n{"incident_type": "vandalism", "severity": 3}\n```\ntail'
-    assert parse_incident_report(fenced).incident_type == "vandalism"
+    fenced = 'noise\n```json\n{"incident_type": "traffic", "severity": 3}\n```\ntail'
+    assert parse_incident_report(fenced).incident_type == "traffic"
 
-    bare = 'lead {"incident_type": "burglary", "severity": 2} trail'
-    assert parse_incident_report(bare).incident_type == "burglary"
+    bare = 'lead {"incident_type": "equipment", "severity": 2} trail'
+    assert parse_incident_report(bare).incident_type == "equipment"
 
     plain = parse_incident_report("no structure here")
     assert plain.incident_type == "other"
@@ -147,9 +147,9 @@ def test_parse_incident_report_from_fenced_json_and_bare_and_plain():
 
 
 def test_completion_payload_roundtrips_through_parser():
-    report = canned_incident_report("there is a knife")
+    report = canned_incident_report("worker on the ladder top rung")
     payload = to_completion_payload(report)
     content = extract_message_content(payload)
     parsed = parse_incident_report(content)
-    assert parsed.incident_type == "weapon presence"
-    assert parsed.severity == 5
+    assert parsed.incident_type == "warehouse safety"
+    assert parsed.severity == 4

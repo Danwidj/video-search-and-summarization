@@ -24,6 +24,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import db as _db  # noqa: E402
 from db import IncidentDB  # noqa: E402
 
 
@@ -35,6 +36,27 @@ def incident_db(tmp_path) -> IncidentDB:
 
 
 @pytest.fixture(autouse=True)
-def no_live_r2(monkeypatch):
-    """App tests never use developer credentials or make live storage requests."""
+def no_live_infra(monkeypatch):
+    """Keep the whole suite hermetic.
+
+    A developer's git-ignored ``.env.local`` (real Supabase DSN + R2 keys) is
+    loaded by ``config`` on import. Scrub those here so tests never touch live
+    infrastructure; a test that wants a database sets a SQLite DSN explicitly.
+    """
     monkeypatch.setattr("r2_videos.configured", lambda: False)
+    for name in ("INCIDENT_DB_DSN", "R2_ACCOUNT_ID", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET"):
+        monkeypatch.delenv(name, raising=False)
+    _db.reset_cache()
+    yield
+    _db.reset_cache()
+
+
+@pytest.fixture
+def db_reports(incident_db, monkeypatch):
+    """A DB-backed report view model wired to the hermetic SQLite fixture."""
+    from db_reports import DBReports
+
+    monkeypatch.setattr("config.incident_db_dsn", lambda: str(incident_db.engine.url))
+    _db.reset_cache()
+    monkeypatch.setattr("db.get_db", lambda: incident_db)
+    return DBReports(incident_db)
