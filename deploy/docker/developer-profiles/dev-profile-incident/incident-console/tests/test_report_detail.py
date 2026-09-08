@@ -1,3 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Detail-view tests use existing canned test content, never UI seed data."""
 
 import pytest
@@ -41,22 +56,22 @@ def test_review_transitions(incident_db):
 def test_detail_navigation_edit_and_status():
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=10).run()
     assert not app.exception
-    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 18
+    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 72
     next(b for b in app.button if b.label == "View and Verify Details").click().run()
     assert not app.exception
-    assert app.query_params["report"] == ["MOCK-001"]
+    assert app.query_params["report"] == ["Burglary001"]
     assert any("AI summary not yet generated" in i.value for i in app.info)
     app.toggle[0].set_value(True).run()
     next(t for t in app.text_input if t.label == "Edited by").set_value("Reviewer")
     next(b for b in app.button if b.label == "Save changes").click().run()
     assert not app.exception
-    assert app.session_state["local_incident_reports"]["MOCK-001"]["confidence"] is None
+    assert app.session_state["local_incident_reports"]["Burglary001"]["confidence"] is None
     assert app.toggle[0].value is False
     next(s for s in app.selectbox if s.label == "Review status").set_value("under review")
     next(t for t in app.text_input if t.label == "Reviewed by").set_value("Reviewer")
     next(b for b in app.button if b.label == "Save review status").click().run()
     assert not app.exception
-    assert app.session_state["local_incident_reports"]["MOCK-001"]["status"] == "under review"
+    assert app.session_state["local_incident_reports"]["Burglary001"]["status"] == "under review"
     next(b for b in app.button if b.label == "← Back to Incident Reports").click().run()
     assert not app.exception
     assert "report" not in app.query_params
@@ -72,9 +87,9 @@ def test_missing_record():
 
 def test_inline_edit_cancel_discards_draft():
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=10)
-    app.query_params["report"] = "MOCK-001"
+    app.query_params["report"] = "Burglary001"
     app.run()
-    original = app.session_state["local_incident_reports"]["MOCK-001"]["description"]
+    original = app.session_state["local_incident_reports"]["Burglary001"]["description"]
     app.toggle[0].set_value(True).run()
     assert not app.exception
     assert len(app.text_area) == 1
@@ -84,6 +99,6 @@ def test_inline_edit_cancel_discards_draft():
     next(b for b in app.button if b.label == "Cancel").click().run()
     assert not app.exception
     assert app.toggle[0].value is False
-    assert app.session_state["local_incident_reports"]["MOCK-001"]["description"] == original
+    assert app.session_state["local_incident_reports"]["Burglary001"]["description"] == original
     app.toggle[0].set_value(True).run()
     assert app.text_area[0].value == original
