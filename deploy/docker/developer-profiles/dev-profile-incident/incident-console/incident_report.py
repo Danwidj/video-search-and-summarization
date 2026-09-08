@@ -30,16 +30,16 @@ from collections.abc import Iterable, Sequence
 
 from pydantic import BaseModel, Field
 
-# Proposed default taxonomy - drawn from the problem statement's examples, NOT
-# confirmed against any team spec. TODO: confirm against team spec.
+# Taxonomy for the Supabase 8-mock dataset: warehouse-safety / operations /
+# traffic / pedestrian / structural footage the captain uploaded to R2. The
+# offline CSV fixture keeps its own crime taxonomy (burglary / explosion / …)
+# and is filtered as free text, so it is unaffected by this list.
 INCIDENT_TYPES: list[str] = [
-    "robbery",
-    "burglary",
-    "vandalism",
-    "assault/fighting",
-    "trespassing",
-    "suspicious behavior",
-    "weapon presence",
+    "warehouse safety",
+    "equipment",
+    "pedestrian",
+    "traffic",
+    "structural",
     "other",
 ]
 
@@ -304,30 +304,34 @@ def canned_incident_report(prompt: str = "") -> IncidentReport:
     """Deterministic sample report - used by the mock server and tests."""
     text = (prompt or "").lower()
     report = IncidentReport(
-        incident_type="suspicious behavior",
+        incident_type="warehouse safety",
         severity=2,
         confidence=0.78,
         incident_start="0:07",
         incident_end="0:29",
         incident_start_confirmed=True,
         description=(
-            "An individual loiters near the main entrance, repeatedly checking a side "
-            "door before leaving the frame. No contact with other people."
+            "a warehouse operator lifts a carton from a low pallet with a rounded "
+            "back and no knee bend, close to occupied racking. no other people in frame."
         ),
-        persons=[Person(description="Adult in a dark hooded jacket", actions="Loitering, testing a door handle")],
-        location="Main Entrance Camera",
+        persons=[Person(description="operator in a hi-vis vest", actions="manual lift with poor back posture")],
+        location="Warehouse Floor Camera",
     )
-    if any(k in text for k in ("weapon", "gun", "knife", "firearm")):
-        report.incident_type = "weapon presence"
-        report.severity = 5
-        report.confidence = 0.91
-    elif any(k in text for k in ("fight", "assault", "punch", "brawl")):
-        report.incident_type = "assault/fighting"
+    if any(k in text for k in ("ladder", "fall", "height", "top rung")):
+        report.incident_type = "warehouse safety"
         report.severity = 4
+        report.confidence = 0.55
+    elif any(k in text for k in ("forklift", "conveyor", "pallet jack", "equipment")):
+        report.incident_type = "equipment"
+        report.severity = 3
         report.confidence = 0.86
-    elif any(k in text for k in ("robbery", "armed")):
-        report.incident_type = "robbery"
-        report.severity = 5
+    elif any(k in text for k in ("pedestrian", "cross", "jaywalk")):
+        report.incident_type = "pedestrian"
+        report.severity = 3
+        report.confidence = 0.66
+    elif any(k in text for k in ("bridge", "crack", "structural", "rebar")):
+        report.incident_type = "structural"
+        report.severity = 4
         report.confidence = 0.9
     return report
 

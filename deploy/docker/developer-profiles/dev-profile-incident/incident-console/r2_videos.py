@@ -105,6 +105,31 @@ def playback_url(key):
     )
 
 
+# Screenshots for entities / instruments / assets are ordinary objects in the
+# same bucket; a presigned inline GET is all the detail view needs.
+image_url = playback_url
+
+
+def top_level_prefixes(keys):
+    """Distinct ``anomaly/<cat>/`` / ``normal_videos/`` prefixes across the bucket."""
+    prefixes = set()
+    for key in keys:
+        parts = PurePosixPath(key).parts
+        prefixes.add("/".join(parts[:2]) + "/" if len(parts) > 2 else f"{parts[0]}/" if len(parts) > 1 else "")
+    return sorted(p for p in prefixes if p)
+
+
+def filter_keys(keys, *, prefix=None, query=None):
+    """Narrow the bucket listing for the manual video picker."""
+    result = keys
+    if prefix and prefix != "All":
+        result = [k for k in result if k.startswith(prefix)]
+    if query:
+        needle = query.casefold()
+        result = [k for k in result if needle in k.casefold()]
+    return result
+
+
 def demo_video(report):
     """Render a category-matched demo source picker and return a playable video."""
     if not configured():

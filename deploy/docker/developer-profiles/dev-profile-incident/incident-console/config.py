@@ -23,10 +23,17 @@ from are documented in ``dev-profile-incident/.env``.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
+# The committed dev-profile-incident/.env holds documented placeholders and is
+# found by walking up from the process CWD. Real secrets (Supabase DSN, R2 keys)
+# live in incident-console/.env.local, which is git-ignored (see
+# incident-console/.gitignore) and loaded here with override so it wins over the
+# placeholders. Missing files are ignored, so the app still runs with neither.
 load_dotenv()
+load_dotenv(Path(__file__).with_name(".env.local"), override=True)
 
 # Proposed defaults from the incident plan - NOT sourced from any team spec.
 # TODO: confirm against team spec.
