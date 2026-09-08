@@ -40,7 +40,7 @@ st.markdown(
 st.caption("AI-Powered Post-Incident Video Analysis and Intelligent Reporting Platform")
 handle = LocalReports(st.session_state)
 st.caption(
-    "Sample data · Same 18 incidents as the dashboard · Edits and review statuses are session-only. Only video playback uses external storage."
+    "Sample data · Same incidents as the dashboard (real ground truth + a synthetic half) · Edits and review statuses are session-only. Only video playback uses external storage."
 )
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
@@ -89,7 +89,9 @@ else:
     f1, f2, f3 = st.columns([2, 1, 1])
     kw = f1.text_input("Search incidents", placeholder="Description, type, filename…", key="review_keyword")
     type_q = f2.selectbox(
-        "Type", ["All", *sorted({r["incident_type"] for r in handle.list_reports()})], key="review_type"
+        "Type",
+        ["All", *sorted({r["incident_type"] for r in handle.list_reports() if r["incident_type"]})],
+        key="review_type",
     )
     status_q = f3.selectbox(
         "Status",
@@ -114,7 +116,7 @@ else:
                     {"verified": "#16854a", "under review": "#ac7800"}.get(report["status"], "#667085"),
                 )
                 st.caption(f"Incident {report['id']}")
-                st.subheader(report["incident_type"].capitalize())
+                st.subheader((report["incident_type"] or "Untyped").capitalize())
                 st.caption(f"Time: {time_label(fields['Start_Timestamp'])} – {time_label(fields['End_Timestamp'])}")
                 description = report["description"] or "Description not supplied"
                 st.text(description[:135] + ("…" if len(description) > 135 else ""))
