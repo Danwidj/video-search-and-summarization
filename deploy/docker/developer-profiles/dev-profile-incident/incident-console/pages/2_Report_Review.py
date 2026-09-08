@@ -15,33 +15,55 @@
 
 """Incident library and detail view over the existing dashboard seed data."""
 
+import html
+import json
+from urllib.parse import quote
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 from local_reports import LocalReports
-from r2_videos import demo_video
 from report_detail import (
-    SEVERITY_COLORS,
-    STATUS_LABELS,
     confidence_label,
     normalized,
-    pill,
     render_detail,
-    severity_label,
     time_label,
 )
-from theme import apply_base_style
+from theme import TYPE_COLORS, apply_base_style, page_header, severity_badge
+from ui import video_playback_url
+
+
+def render_card_preview(url: str | None, start: int | None) -> None:
+    """Render a paused start-frame with a five-second hover preview."""
+    if not url:
+        st.markdown('<div class="card-preview"><div class="card-preview-poster">🎥</div></div>', unsafe_allow_html=True)
+        return
+    source = json.dumps(url)
+    offset = int(start or 0)
+    components.html(
+        f"""
+        <style>html,body{{margin:0;background:#eef2f5;overflow:hidden}}video{{display:block;width:100%;aspect-ratio:16/9;height:auto;object-fit:cover;border-radius:8px;background:#eef2f5}}</style>
+        <video id="preview" muted playsinline preload="metadata"></video>
+        <script>
+        const v=document.getElementById('preview'), start={offset}, stop=start+5, src={source};
+        let hovering=false;
+        v.src=src;
+        v.addEventListener('loadedmetadata',()=>{{v.currentTime=start;}});
+        v.addEventListener('loadeddata',()=>{{if(!hovering){{v.currentTime=start;v.pause();}}}});
+        v.addEventListener('seeked',()=>{{if(!hovering)v.pause();}});
+        v.addEventListener('mouseenter',()=>{{hovering=true;v.currentTime=start;v.play();}});
+        v.addEventListener('mouseleave',()=>{{hovering=false;v.pause();v.currentTime=start;}});
+        v.addEventListener('timeupdate',()=>{{if(v.currentTime>=stop){{v.pause();v.currentTime=start;}}}});
+        </script>
+        """,
+        height=185,
+        scrolling=False,
+    )
 
 st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
 apply_base_style()
-st.markdown(
-    '<div style="font-size:26px;font-weight:800;letter-spacing:1px">RISE UP <span style="font-size:11px;color:#598d00;background:#eff7e4;padding:5px 10px;border-radius:20px">NVIDIA POWERED</span></div>',
-    unsafe_allow_html=True,
-)
-st.caption("AI-Powered Post-Incident Video Analysis and Intelligent Reporting Platform")
+page_header("Incident Reports", "AI-powered post-incident video analysis and reporting platform", "CSV-backed incident data · Changes persist to fixtures/data/incidents.csv · Video playback uses Cloudflare R2")
 handle = LocalReports(st.session_state)
-st.caption(
-    "Sample data · Same incidents as the dashboard (real ground truth + a synthetic half) · Edits and review statuses are session-only. Only video playback uses external storage."
-)
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
 if close_id := st.session_state.pop("detail_close_edit", None):
@@ -57,27 +79,10 @@ if selected is not None:
         st.info("This incident report was not found. Return to the library to select an incident.", icon="📄")
         st.stop()
 
-    def source_video():
-        video = handle.get_video(selected)
-        if not video:
-            video = demo_video(report)
-        with st.expander("Link source video from Cloudflare R2", expanded=not bool(video)):
-            st.caption(
-                "Optional override: paste a public or presigned video URL. Only the video uses external storage; this override lasts for the session."
-            )
-            with st.form(f"link_video_{selected}"):
-                url = st.text_input("Video playback URL", value=handle.get_video(selected).get("Filepath", ""))
-                link = st.form_submit_button("Use this video")
-            if link:
-                try:
-                    handle.link_video(selected, url.strip())
-                except ValueError as exc:
-                    st.error(str(exc))
-                else:
-                    st.rerun()
-        return video
-
-    render_detail(handle, report, source_video)
+    video = handle.get_video(selected)
+    if not video:
+        st.warning("No matching Cloudflare R2 object was found for this incident Filename.", icon="🎥")
+    render_detail(handle, report, video)
 
 else:
     st.title("Incident Reports")
@@ -86,24 +91,21 @@ else:
     for key, value in saved.items():
         if key not in st.session_state:
             st.session_state[key] = value
-    f1, f2, f3 = st.columns([2, 1, 1])
+    f1, f2 = st.columns([2, 1])
     kw = f1.text_input("Search incidents", placeholder="Description, type, filename…", key="review_keyword")
     type_q = f2.selectbox(
         "Type",
         ["All", *sorted({r["incident_type"] for r in handle.list_reports() if r["incident_type"]})],
         key="review_type",
     )
-    status_q = f3.selectbox(
-        "Status",
-        ["All", *STATUS_LABELS],
-        key="review_status",
-        format_func=lambda s: STATUS_LABELS.get(s, "All Statuses"),
-    )
-    st.session_state["library_filters"] = {
-        key: st.session_state[key] for key in ("review_keyword", "review_type", "review_status")
-    }
-    reports = handle.list_reports(incident_type=type_q, status=status_q, keyword=kw.strip())
-    st.caption(f"{len(reports)} incidents")
+    st.session_state["library_filters"] = {key: st.session_state[key] for key in ("review_keyword", "review_type")}
+    reports = handle.list_reports(incident_type=type_q, keyword=kw.strip())
+    active = []
+    if kw.strip():
+        active.append(f'query “{kw.strip()}”')
+    if type_q != "All":
+        active.append(type_q)
+    st.markdown(f'<div class="muted"><strong>{len(reports)}</strong> incidents shown · {" · ".join(active) if active else "All available records"}</div>', unsafe_allow_html=True)
     if not reports:
         st.info("No incidents match your filters. Clear the search or choose All.", icon="🔎")
     for offset in range(0, len(reports), 3):
@@ -111,17 +113,24 @@ else:
         for column, report in zip(columns, reports[offset : offset + 3], strict=False):
             with column, st.container(border=True):
                 fields = normalized(report)
-                pill(
-                    STATUS_LABELS[report["status"]].upper(),
-                    {"verified": "#16854a", "under review": "#ac7800"}.get(report["status"], "#667085"),
-                )
-                st.caption(f"Incident {report['id']}")
-                st.subheader((report["incident_type"] or "Untyped").capitalize())
+                type_name = (report["incident_type"] or "No classification yet")
+                card_class = "untitled" if not report["incident_type"] else ""
+                color = TYPE_COLORS.get((report["incident_type"] or "").lower(), TYPE_COLORS[""])
+                st.markdown(f'<div class="incident-card {card_class}" style="border-left-color:{color}"><div class="muted">{report["id"]}</div><div class="incident-card-title">{type_name.capitalize()}</div>', unsafe_allow_html=True)
                 st.caption(f"Time: {time_label(fields['Start_Timestamp'])} – {time_label(fields['End_Timestamp'])}")
-                description = report["description"] or "Description not supplied"
-                st.text(description[:135] + ("…" if len(description) > 135 else ""))
-                pill(severity_label(report["severity"]), SEVERITY_COLORS.get(report["severity"], "#667085"))
-                st.caption(f"Confidence: {confidence_label(report['confidence'])}")
+                description = report["description"] or "No description supplied for this incident."
+                safe_description = html.escape(description[:145] + ("…" if len(description) > 145 else ""))
+                st.markdown(f'<div class="incident-card-description">{safe_description}</div>', unsafe_allow_html=True)
+                video = handle.get_video(report["id"])
+                video_url = video_playback_url({"r2_key": video.get("Filepath")}) if video and video.get("Filepath") else None
+                if video_url:
+                    render_card_preview(video_url, fields["Start_Timestamp"])
+                else:
+                    render_card_preview(None, fields["Start_Timestamp"])
+                st.markdown(f'{severity_badge(report["severity"])} <span class="muted">Confidence: {confidence_label(report["confidence"])}</span>', unsafe_allow_html=True)
+                filename = html.escape(report["filename"] or "Filename not supplied")
+                href = f'?report={quote(str(report["id"]))}'
+                st.markdown(f'<a class="source-chip" href="{href}" style="display:inline-block;margin-top:.55rem;color:#5c9200;text-decoration:none">{filename}</a></div>', unsafe_allow_html=True)
                 if st.button("View and Verify Details", key=f"open_{report['id']}", width="stretch"):
                     st.query_params["report"] = report["id"]
                     st.rerun()

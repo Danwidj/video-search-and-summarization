@@ -45,6 +45,8 @@ def list_video_keys():
 
 
 def category_matches(category, keys):
+    if not category:
+        return []
     aliases = CATEGORY_ALIASES.get(category, (category,))
 
     def clean(value):
@@ -60,6 +62,38 @@ def category_matches(category, keys):
         if matches:
             return sorted(matches)
     return []
+
+
+def map_incidents_to_video_keys(incidents, keys):
+    """Assign one distinct R2 object to each incident.
+
+    Existing filenames win when the object exists. Synthetic CSV rows use the
+    next unused object in the same category, so every report still has a real,
+    stable video without pretending that the demo clip is its ground truth.
+    """
+    by_filename = {PurePosixPath(key).name: key for key in keys}
+    assignments = {}
+    used = set()
+    for incident in incidents:
+        exact = by_filename.get(incident.get("Filename"))
+        if exact and exact not in used:
+            assignments[incident["Incident_ID"]] = exact
+            used.add(exact)
+    for incident in incidents:
+        incident_id = incident["Incident_ID"]
+        if incident_id in assignments:
+            continue
+        candidates = [key for key in category_matches(incident.get("Type"), keys) if key not in used]
+        if not candidates:
+            # A category may have fewer source clips than fixture rows (the
+            # current R2 bucket has 15 animal clips and 20 animal incidents).
+            # Use a distinct bucket clip rather than showing the same video for
+            # multiple reports; the UI exposes the source filename clearly.
+            candidates = [key for key in keys if key not in used]
+        if candidates:
+            assignments[incident_id] = candidates[0]
+            used.add(candidates[0])
+    return assignments
 
 
 @st.cache_data(ttl=900, show_spinner=False)
