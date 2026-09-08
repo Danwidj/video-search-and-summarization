@@ -26,9 +26,9 @@ def test_detail_automatically_loads_category_video():
         patch("r2_videos.playback_url", return_value="https://example.invalid/video.mp4"),
     ):
         app = AppTest.from_file("../pages/2_Report_Review.py")
-        app.query_params["report"] = "MOCK-001"
+        app.query_params["report"] = "Animal007"  # real animal incident: starts at 00:00:21
         app.run()
         assert not app.exception
-        assert app.get("video")[0].proto.start_time == 4
+        assert app.get("video")[0].proto.start_time == 21
         assert app.get("video")[0].proto.url == "https://example.invalid/video.mp4"
         assert any("not the actual event" in c.value for c in app.caption)

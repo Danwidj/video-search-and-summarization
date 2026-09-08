@@ -39,7 +39,8 @@ if preview:
 
     seed = load_seed()
     st.warning(
-        "MOCK / SEED PREVIEW · 18 synthetic incidents. No database writes. Locations and workflow statuses are not supplied.",
+        "MOCK / SEED PREVIEW · Real ground-truth incidents plus a clearly-flagged synthetic half. "
+        "No database writes. Locations and workflow statuses are not supplied.",
         icon="🧪",
     )
     render(frame(seed["Incident"]), seed["Entity"], seed["Instrument"])
