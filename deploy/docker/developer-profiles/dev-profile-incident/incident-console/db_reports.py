@@ -90,6 +90,14 @@ class DBReports:
             "model_version": row.get("model_version"),
             "video_id": row.get("video_id"),
             "r2_key": video.get("r2_key"),
+            "location": row.get("location"),
+            # Review/edit attribution: written by ``IncidentDB.set_report_review_status``
+            # and ``update_report`` but previously dropped here, so a saved
+            # "Reviewed by" name never rendered after navigating away and back.
+            "verified_by": row.get("verified_by"),
+            "verified_at": row.get("verified_at"),
+            "edited_by": row.get("edited_by"),
+            "edited_at": row.get("edited_at"),
         }
 
     # -- reads ------------------------------------------------------- #
