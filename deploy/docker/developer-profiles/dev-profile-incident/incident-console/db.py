@@ -103,9 +103,8 @@ incident_reports = Table(
     Column("edited_at", DateTime),
     Column("created_at", DateTime, default=_utcnow),
     # Additive columns (see dev-profile-incident 8-mock seed task). Existing
-    # profiles keep working: is_synthetic defaults true, the other two are
-    # nullable and simply stay NULL for rows that never set them.
-    Column("is_synthetic", Boolean, nullable=False, default=True),
+    # profiles keep working: both are nullable and simply stay NULL for rows
+    # that never set them.
     Column("duration_sec", Integer),
     Column("model_version", String(128)),
 )
@@ -118,13 +117,12 @@ incident_entities = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
-    Column("local_id", String(16)),  # incident-scoped handle, e.g. "E1"
+    Column("entity_id", String(16)),  # incident-scoped handle, e.g. "E1"
     Column("type", String(16)),  # human / animal / unknown
     Column("description", Text),
     # Object-storage key (R2) for a cropped screenshot. Bytes never live in
     # Postgres; the file is uploaded separately and only its key is stored.
     Column("image_key", String(1024)),
-    Column("is_synthetic", Boolean, nullable=False, default=True),
 )
 
 incident_instruments = Table(
@@ -132,13 +130,12 @@ incident_instruments = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
-    Column("local_id", String(16)),  # e.g. "I1"
-    Column("entity_local_id", String(16)),  # the wielding entity's local_id, if any
+    Column("instrument_id", String(16)),  # e.g. "I1"
+    Column("entity_id", String(16)),  # the wielding entity's entity_id, if any
     Column("name", String(256)),
     Column("description", Text),
     Column("threat_level", Integer),  # 1-5 rubric, NULL when not rated
     Column("image_key", String(1024)),  # R2 screenshot key; see incident_entities
-    Column("is_synthetic", Boolean, nullable=False, default=True),
 )
 
 incident_assets = Table(
@@ -146,11 +143,10 @@ incident_assets = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("report_id", Integer, ForeignKey("incident_reports.id", ondelete="CASCADE"), nullable=False),
-    Column("local_id", String(16)),  # e.g. "A1"
+    Column("asset_id", String(16)),  # e.g. "A1"
     Column("name", String(256)),
     Column("description", Text),
     Column("image_key", String(1024)),  # R2 screenshot key; see incident_entities
-    Column("is_synthetic", Boolean, nullable=False, default=True),
 )
 
 notifications = Table(
@@ -214,7 +210,7 @@ class IncidentDB:
 
         pending: dict[str, list[str]] = {
             "videos": ["duration_sec"],
-            "incident_reports": ["is_synthetic", "duration_sec", "model_version"],
+            "incident_reports": ["duration_sec", "model_version"],
             "incident_entities": ["image_key"],
             "incident_instruments": ["image_key"],
             "incident_assets": ["image_key"],
@@ -223,7 +219,6 @@ class IncidentDB:
             ("videos", "duration_sec"): "INTEGER",
             ("incident_reports", "duration_sec"): "INTEGER",
             ("incident_reports", "model_version"): "VARCHAR(128)",
-            ("incident_reports", "is_synthetic"): "BOOLEAN NOT NULL DEFAULT TRUE",
             ("incident_entities", "image_key"): "VARCHAR(1024)",
             ("incident_instruments", "image_key"): "VARCHAR(1024)",
             ("incident_assets", "image_key"): "VARCHAR(1024)",
@@ -377,9 +372,6 @@ class IncidentDB:
         }
         payload["video_id"] = video_id
         payload["status"] = report.get("status", "unreviewed")
-        # Additive column: default true so unmarked callers still validate; the
-        # 8-mock seed sets it explicitly.
-        payload["is_synthetic"] = report.get("is_synthetic", True)
         payload["created_at"] = _utcnow()
         with self.engine.begin() as conn:
             result = conn.execute(incident_reports.insert().values(**payload))
@@ -441,7 +433,6 @@ class IncidentDB:
                 "location",
                 "duration_sec",
                 "model_version",
-                "is_synthetic",
             }
         }
         allowed["edited_by"] = edited_by
@@ -554,21 +545,19 @@ class IncidentDB:
         self,
         report_id: int,
         *,
-        local_id: str | None = None,
+        entity_id: str | None = None,
         type: str | None = None,
         description: str | None = None,
         image_key: str | None = None,
-        is_synthetic: bool = True,
     ) -> int:
         with self.engine.begin() as conn:
             result = conn.execute(
                 incident_entities.insert().values(
                     report_id=report_id,
-                    local_id=local_id,
+                    entity_id=entity_id,
                     type=type,
                     description=description,
                     image_key=image_key,
-                    is_synthetic=is_synthetic,
                 )
             )
             return int(result.inserted_primary_key[0])
@@ -577,25 +566,23 @@ class IncidentDB:
         self,
         report_id: int,
         *,
-        local_id: str | None = None,
-        entity_local_id: str | None = None,
+        instrument_id: str | None = None,
+        entity_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
         threat_level: int | None = None,
         image_key: str | None = None,
-        is_synthetic: bool = True,
     ) -> int:
         with self.engine.begin() as conn:
             result = conn.execute(
                 incident_instruments.insert().values(
                     report_id=report_id,
-                    local_id=local_id,
-                    entity_local_id=entity_local_id,
+                    instrument_id=instrument_id,
+                    entity_id=entity_id,
                     name=name,
                     description=description,
                     threat_level=threat_level,
                     image_key=image_key,
-                    is_synthetic=is_synthetic,
                 )
             )
             return int(result.inserted_primary_key[0])
@@ -604,21 +591,19 @@ class IncidentDB:
         self,
         report_id: int,
         *,
-        local_id: str | None = None,
+        asset_id: str | None = None,
         name: str | None = None,
         description: str | None = None,
         image_key: str | None = None,
-        is_synthetic: bool = True,
     ) -> int:
         with self.engine.begin() as conn:
             result = conn.execute(
                 incident_assets.insert().values(
                     report_id=report_id,
-                    local_id=local_id,
+                    asset_id=asset_id,
                     name=name,
                     description=description,
                     image_key=image_key,
-                    is_synthetic=is_synthetic,
                 )
             )
             return int(result.inserted_primary_key[0])

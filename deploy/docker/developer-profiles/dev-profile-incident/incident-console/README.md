@@ -65,9 +65,8 @@ uv run python scripts/seed_supabase.py
 
 It upserts 8 `videos` rows (natural key: `r2_key`, all under `normal_videos/`),
 one `incident_reports` row per clip linked by a fixed FK, and each incident's
-fabricated entities / instruments / assets (`is_synthetic = true` throughout).
-Re-running updates in place — row counts do not grow. The dataset lives in
-`scripts/seed_data.py`.
+fabricated entities / instruments / assets. Re-running updates in place — row
+counts do not grow. The dataset lives in `scripts/seed_data.py`.
 
 ### Mock LLM (exercise the AI-trigger path with zero GPU)
 

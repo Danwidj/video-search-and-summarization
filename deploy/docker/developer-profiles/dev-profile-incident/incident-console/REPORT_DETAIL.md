@@ -12,7 +12,7 @@ fields are written atomically back to fixtures/data/incidents.csv, so they
 survive refreshes and are immediately visible to the Dashboard.
 
 R2 footage is listed read-only and mapped once per Incident_ID. Existing
-filename matches win; when synthetic filenames do not exist in R2, the next
+filename matches win; when a fixture filename does not exist in R2, the next
 unused category clip is used, then an unused bucket clip as a last resort.
 These clips are explicitly labeled as demo footage, not evidence for the sample event.
 The local environment needs R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY and

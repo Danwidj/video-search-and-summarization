@@ -67,9 +67,9 @@ def category_matches(category, keys):
 def map_incidents_to_video_keys(incidents, keys):
     """Assign one distinct R2 object to each incident.
 
-    Existing filenames win when the object exists. Synthetic CSV rows use the
-    next unused object in the same category, so every report still has a real,
-    stable video without pretending that the demo clip is its ground truth.
+    Existing filenames win when the object exists. Rows with no matching object
+    use the next unused object in the same category, so every report still has a
+    real, stable video without pretending that the demo clip is its ground truth.
     """
     by_filename = {PurePosixPath(key).name: key for key in keys}
     assignments = {}

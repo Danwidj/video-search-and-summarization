@@ -216,7 +216,7 @@ def evidence_section(handle, record):
         st.caption("Entities")
         for row in data["entities"]:
             st.markdown(
-                f"- **{row.get('local_id') or '?'}** · {row.get('type') or 'unknown'} — {row.get('description') or ''}"
+                f"- **{row.get('entity_id') or '?'}** · {row.get('type') or 'unknown'} — {row.get('description') or ''}"
             )
             _screenshot(row.get("image_key"))
     if data["instruments"]:
@@ -224,16 +224,16 @@ def evidence_section(handle, record):
         for row in data["instruments"]:
             threat = row.get("threat_level")
             threat_txt = f" · threat {threat}" if threat is not None else ""
-            held = f" (held by {row['entity_local_id']})" if row.get("entity_local_id") else ""
+            held = f" (held by {row['entity_id']})" if row.get("entity_id") else ""
             st.markdown(
-                f"- **{row.get('local_id') or '?'}** · {row.get('name') or ''}{threat_txt}{held} — {row.get('description') or ''}"
+                f"- **{row.get('instrument_id') or '?'}** · {row.get('name') or ''}{threat_txt}{held} — {row.get('description') or ''}"
             )
             _screenshot(row.get("image_key"))
     if data["assets"]:
         st.caption("Assets")
         for row in data["assets"]:
             st.markdown(
-                f"- **{row.get('local_id') or '?'}** · {row.get('name') or ''} — {row.get('description') or ''}"
+                f"- **{row.get('asset_id') or '?'}** · {row.get('name') or ''} — {row.get('description') or ''}"
             )
             _screenshot(row.get("image_key"))
 

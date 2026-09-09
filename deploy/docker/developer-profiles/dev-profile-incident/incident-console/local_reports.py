@@ -35,7 +35,6 @@ def _report(row):
         "severity": row["Severity"],
         "confidence": row.get("Confidence_Score"),
         "source": row["Source"],
-        "synthetic": row["synthetic"],
     }
 
 

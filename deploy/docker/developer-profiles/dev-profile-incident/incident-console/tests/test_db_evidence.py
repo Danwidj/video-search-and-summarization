@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Additive schema: is_synthetic / duration_sec / model_version + evidence tables."""
+"""Additive schema: duration_sec / model_version + evidence tables."""
 
 from __future__ import annotations
 
@@ -24,9 +24,20 @@ def test_new_tables_and_columns_present(incident_db: IncidentDB):
     names = set(metadata.tables)
     assert {"incident_entities", "incident_instruments", "incident_assets"} <= names
     cols = {c.name for c in metadata.tables["incident_reports"].columns}
-    assert {"is_synthetic", "duration_sec", "model_version"} <= cols
-    for table in ("incident_entities", "incident_instruments", "incident_assets"):
-        assert "image_key" in {c.name for c in metadata.tables[table].columns}
+    assert {"duration_sec", "model_version"} <= cols
+    assert "is_synthetic" not in cols
+    id_cols = {
+        "incident_entities": "entity_id",
+        "incident_instruments": "instrument_id",
+        "incident_assets": "asset_id",
+    }
+    for table, id_col in id_cols.items():
+        names = {c.name for c in metadata.tables[table].columns}
+        assert "image_key" in names
+        assert id_col in names
+        assert "local_id" not in names
+    assert "entity_id" in {c.name for c in metadata.tables["incident_instruments"].columns}
+    assert "entity_local_id" not in {c.name for c in metadata.tables["incident_instruments"].columns}
     assert "duration_sec" in {c.name for c in metadata.tables["videos"].columns}
 
 
@@ -41,11 +52,9 @@ def test_report_carries_additive_fields(incident_db: IncidentDB):
             "severity": 3,
             "duration_sec": 15,
             "model_version": "mock-seed-v1",
-            "is_synthetic": True,
         },
     )
     row = incident_db.get_report(rid)
-    assert row["is_synthetic"] is True
     assert row["duration_sec"] == 15
     assert row["model_version"] == "mock-seed-v1"
 
@@ -55,30 +64,25 @@ def test_report_carries_additive_fields(incident_db: IncidentDB):
     assert row["model_version"] == "v2"
 
 
-def test_insert_report_defaults_is_synthetic_true(incident_db: IncidentDB):
-    vid = incident_db.insert_video(filename="d.mp4")
-    rid = incident_db.insert_report(video_id=vid, report={"incident_type": "traffic", "severity": 2})
-    assert incident_db.get_report(rid)["is_synthetic"] is True
-
-
 def test_evidence_crud_roundtrip(incident_db: IncidentDB):
     vid = incident_db.insert_video(filename="e.mp4", r2_key="normal_videos/e.mp4")
     rid = incident_db.insert_report(video_id=vid, report={"incident_type": "equipment", "severity": 3})
 
-    incident_db.add_incident_entity(rid, local_id="E1", type="human", description="operator")
+    incident_db.add_incident_entity(rid, entity_id="E1", type="human", description="operator")
     incident_db.add_incident_instrument(
-        rid, local_id="I1", entity_local_id="E1", name="forklift", description="laden", threat_level=3
+        rid, instrument_id="I1", entity_id="E1", name="forklift", description="laden", threat_level=3
     )
-    incident_db.add_incident_asset(rid, local_id="A1", name="racking", description="loaded bay")
+    incident_db.add_incident_asset(rid, asset_id="A1", name="racking", description="loaded bay")
 
     entities = incident_db.list_incident_entities(rid)
     instruments = incident_db.list_incident_instruments(rid)
     assets = incident_db.list_incident_assets(rid)
-    assert [e["local_id"] for e in entities] == ["E1"]
+    assert [e["entity_id"] for e in entities] == ["E1"]
     assert entities[0]["type"] == "human"
-    assert entities[0]["is_synthetic"] is True
     assert instruments[0]["threat_level"] == 3
-    assert instruments[0]["entity_local_id"] == "E1"
+    assert instruments[0]["instrument_id"] == "I1"
+    assert instruments[0]["entity_id"] == "E1"
+    assert assets[0]["asset_id"] == "A1"
     assert assets[0]["name"] == "racking"
 
     # Scoped to the report; another report sees nothing.

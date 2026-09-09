@@ -20,9 +20,9 @@ One incident per video clip the captain uploaded to the R2 bucket under
 (captain's decision - no exact tally required); the link itself is a fixed
 stored FK, set once by ``seed_supabase.py`` and never recomputed.
 
-Everything here is fabricated -> ``is_synthetic = true`` throughout. Timestamps
-are ``HH:MM:SS`` offsets inside each clip, kept between 0:02 and 0:25 so they
-land inside even the shortest (25 s) clip. Descriptions follow the merged CSV
+Everything here is fabricated. Timestamps are ``HH:MM:SS`` offsets inside each
+clip, kept between 0:02 and 0:25 so they land inside even the shortest (25 s)
+clip. Descriptions follow the merged CSV
 set's style: short, objective, lowercase. Threat levels follow the same rubric:
 firearm/IED-class 5, blade 4, bat/pipe/vehicle 3, tool/bottle 2, bag/trolley 1;
 road vehicles left blank where that fits.
@@ -59,12 +59,12 @@ INCIDENTS: list[dict] = [
             "back and straight legs beside occupied pallet racking."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "operator in a hi-vis vest and hard hat"},
+            {"entity_id": "E1", "type": "human", "description": "operator in a hi-vis vest and hard hat"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": "E1",
+                "instrument_id": "I1",
+                "entity_id": "E1",
                 "name": "cardboard carton",
                 "description": "oversized taped carton lifted two-handed",
                 "threat_level": 1,
@@ -72,7 +72,7 @@ INCIDENTS: list[dict] = [
         ],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "pallet racking bay",
                 "description": "loaded selective racking directly behind the lift",
             },
@@ -90,13 +90,13 @@ INCIDENTS: list[dict] = [
             "at the pedestrian gate or checking for traffic."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "worker on foot in the vehicle lane"},
-            {"local_id": "E2", "type": "human", "description": "forklift operator approaching from the cross aisle"},
+            {"entity_id": "E1", "type": "human", "description": "worker on foot in the vehicle lane"},
+            {"entity_id": "E2", "type": "human", "description": "forklift operator approaching from the cross aisle"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": "E2",
+                "instrument_id": "I1",
+                "entity_id": "E2",
                 "name": "counterbalance forklift",
                 "description": "laden forklift sharing the aisle",
                 "threat_level": 3,
@@ -104,7 +104,7 @@ INCIDENTS: list[dict] = [
         ],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "forklift traffic lane",
                 "description": "yellow-taped shared pedestrian and vehicle lane",
             },
@@ -122,19 +122,19 @@ INCIDENTS: list[dict] = [
             "while a forklift manoeuvres beneath it."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "forklift operator in the cab"},
+            {"entity_id": "E1", "type": "human", "description": "forklift operator in the cab"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": "E1",
+                "instrument_id": "I1",
+                "entity_id": "E1",
                 "name": "reach forklift",
                 "description": "reach truck working under the leaning load",
                 "threat_level": 3,
             },
             {
-                "local_id": "I2",
-                "entity_local_id": None,
+                "instrument_id": "I2",
+                "entity_id": None,
                 "name": "shrink-wrapped pallet load",
                 "description": "overheight pallet with an unstable top tier",
                 "threat_level": 1,
@@ -142,11 +142,11 @@ INCIDENTS: list[dict] = [
         ],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "storage shelving upright",
                 "description": "rack upright taking the sideways load",
             },
-            {"local_id": "A2", "name": "overloaded pallet", "description": "pallet stacked past the painted fill line"},
+            {"asset_id": "A2", "name": "overloaded pallet", "description": "pallet stacked past the painted fill line"},
         ],
     },
     {
@@ -161,12 +161,12 @@ INCIDENTS: list[dict] = [
             "a high shelf with no spotter present."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "worker balanced on the ladder top rung"},
+            {"entity_id": "E1", "type": "human", "description": "worker balanced on the ladder top rung"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": "E1",
+                "instrument_id": "I1",
+                "entity_id": "E1",
                 "name": "a-frame step ladder",
                 "description": "lightweight ladder used above its top safe step",
                 "threat_level": 2,
@@ -174,7 +174,7 @@ INCIDENTS: list[dict] = [
         ],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "upper storage shelf",
                 "description": "out-of-reach shelf the worker is stretching for",
             },
@@ -192,17 +192,17 @@ INCIDENTS: list[dict] = [
             "conveyor keeps running unattended."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "line operator returning to the jam"},
-            {"local_id": "E2", "type": "unknown", "description": "figure partly out of frame near the guard"},
+            {"entity_id": "E1", "type": "human", "description": "line operator returning to the jam"},
+            {"entity_id": "E2", "type": "unknown", "description": "figure partly out of frame near the guard"},
         ],
         "instruments": [],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "powered roller conveyor",
                 "description": "driven roller line still running during the jam",
             },
-            {"local_id": "A2", "name": "jammed carton", "description": "carton wedged across the transfer point"},
+            {"asset_id": "A2", "name": "jammed carton", "description": "carton wedged across the transfer point"},
         ],
     },
     {
@@ -216,19 +216,19 @@ INCIDENTS: list[dict] = [
             "a pedestrian crosses mid-block outside the marked crossing as vehicles approach in both directions."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "pedestrian crossing mid-block"},
+            {"entity_id": "E1", "type": "human", "description": "pedestrian crossing mid-block"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": None,
+                "instrument_id": "I1",
+                "entity_id": None,
                 "name": "approaching car",
                 "description": "car closing on the crossing point",
                 "threat_level": None,
             },
         ],
         "assets": [
-            {"local_id": "A1", "name": "through road", "description": "two-way road with no crossing at that point"},
+            {"asset_id": "A1", "name": "through road", "description": "two-way road with no crossing at that point"},
         ],
     },
     {
@@ -242,20 +242,20 @@ INCIDENTS: list[dict] = [
             "two vehicles brake hard and stop short of each other at an uncontrolled junction; no contact is seen."
         ),
         "entities": [
-            {"local_id": "E1", "type": "human", "description": "driver of the lead vehicle"},
-            {"local_id": "E2", "type": "human", "description": "driver of the second vehicle"},
+            {"entity_id": "E1", "type": "human", "description": "driver of the lead vehicle"},
+            {"entity_id": "E2", "type": "human", "description": "driver of the second vehicle"},
         ],
         "instruments": [
             {
-                "local_id": "I1",
-                "entity_local_id": "E1",
+                "instrument_id": "I1",
+                "entity_id": "E1",
                 "name": "sedan",
                 "description": "lead car braking into the junction",
                 "threat_level": None,
             },
             {
-                "local_id": "I2",
-                "entity_local_id": "E2",
+                "instrument_id": "I2",
+                "entity_id": "E2",
                 "name": "delivery van",
                 "description": "van braking hard behind the sedan",
                 "threat_level": 3,
@@ -263,7 +263,7 @@ INCIDENTS: list[dict] = [
         ],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "uncontrolled junction",
                 "description": "unsignalled crossroads with no give-way markings",
             },
@@ -281,17 +281,17 @@ INCIDENTS: list[dict] = [
             "reinforcement along a girder soffit."
         ),
         "entities": [
-            {"local_id": "E1", "type": "unknown", "description": "no people present in the inspection pass"},
+            {"entity_id": "E1", "type": "unknown", "description": "no people present in the inspection pass"},
         ],
         "instruments": [],
         "assets": [
             {
-                "local_id": "A1",
+                "asset_id": "A1",
                 "name": "bridge girder soffit",
                 "description": "underside of the span with visible spalling",
             },
             {
-                "local_id": "A2",
+                "asset_id": "A2",
                 "name": "exposed reinforcement bar",
                 "description": "corroded rebar showing through lost cover concrete",
             },

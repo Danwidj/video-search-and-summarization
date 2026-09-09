@@ -59,23 +59,14 @@ def test_seed_is_idempotent(incident_db: IncidentDB):
     assert fk_before == fk_after
 
 
-def test_seed_rows_are_synthetic_and_typed_for_the_footage(incident_db: IncidentDB):
+def test_seed_rows_are_typed_for_the_footage(incident_db: IncidentDB):
     seed(incident_db)
     for report in incident_db.list_reports():
-        assert report["is_synthetic"] is True
         assert report["incident_type"] in INCIDENT_TYPES
         assert report["model_version"] == "mock-seed-v1"
         video = incident_db.get_video(report["video_id"])
         assert video["r2_key"].startswith("normal_videos/")
         assert video["status"] == "analyzed"
-    for table_reports in (
-        incident_db.list_incident_entities,
-        incident_db.list_incident_instruments,
-        incident_db.list_incident_assets,
-    ):
-        for report in incident_db.list_reports():
-            for row in table_reports(report["id"]):
-                assert row["is_synthetic"] is True
 
 
 def test_low_confidence_and_null_confidence_present(incident_db: IncidentDB):

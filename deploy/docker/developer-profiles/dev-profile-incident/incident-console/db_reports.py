@@ -87,7 +87,6 @@ class DBReports:
             "confidence": row.get("confidence"),
             "source": video.get("r2_key"),
             "status": row.get("status"),
-            "is_synthetic": row.get("is_synthetic"),
             "model_version": row.get("model_version"),
             "video_id": row.get("video_id"),
             "r2_key": video.get("r2_key"),
