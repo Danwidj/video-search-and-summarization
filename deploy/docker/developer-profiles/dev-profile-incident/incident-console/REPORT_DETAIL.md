@@ -30,6 +30,10 @@ appears only if an actual video duration is supplied (none is invented for a
 manually linked video). Entity, Instrument and Asset UI are out of scope.
 
 Full severity rubric text is not available in this checkout; the tooltip says so.
-Status, location, reviewer and audit fields are not rendered because they are
-not present in fixtures/data/incidents.csv. Dashboard retains its database
-notice and reads the same CSV preview data when no database is configured.
+On the offline CSV path, status, location, reviewer and audit fields are not
+rendered because they are not present in fixtures/data/incidents.csv. On the
+DB-backed path the review-status control also renders a "Verified by" / "Last
+edited by" attribution caption from the persisted verified_by / edited_by
+columns, so a saved reviewer name survives navigating away and back. Dashboard
+retains its database notice and reads the same CSV preview data when no database
+is configured.
