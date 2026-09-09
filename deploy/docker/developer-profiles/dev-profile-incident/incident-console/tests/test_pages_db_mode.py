@@ -66,6 +66,36 @@ def test_report_review_edit_persists_across_a_rerun(db_pages):
     assert db_pages.get_report(rid)["description"] == "persisted through the database"
 
 
+def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
+    """Regression: after saving a review status + "Reviewed by" name, leaving the
+    detail view and re-opening it must still show both. Previously the status
+    reappeared (re-read from the DB every render) but the reviewer attribution
+    was dropped by ``DBReports._to_view`` and never rendered, so it looked lost.
+    """
+    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
+    app.query_params["report"] = str(rid)
+    app.run()
+
+    status_box = next(s for s in app.selectbox if s.label == "Status")
+    status_box.set_value("verified").run()
+    next(t for t in app.text_input if t.label == "Reviewed by").set_value("dana").run()
+    next(b for b in app.button if b.label == "Save review status").click().run()
+    assert not app.exception
+
+    # Leave the detail view (the in-app "← Back" clears the query param) ...
+    del app.query_params["report"]
+    app.run()
+    # ... then re-open the same incident.
+    app.query_params["report"] = str(rid)
+    app.run()
+    assert not app.exception
+
+    captions = " | ".join(c.value for c in app.caption)
+    assert "Current: verified" in captions
+    assert "dana" in captions
+
+
 def test_dashboard_renders_charts_from_db_incidents(db_pages):
     app = AppTest.from_file("../pages/3_Dashboard.py", default_timeout=15).run()
     assert not app.exception
