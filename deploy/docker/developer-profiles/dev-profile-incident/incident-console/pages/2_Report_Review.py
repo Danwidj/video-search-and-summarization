@@ -22,6 +22,8 @@ from urllib.parse import quote
 import streamlit as st
 import streamlit.components.v1 as components
 
+import db
+from db_reports import DBReports
 from local_reports import LocalReports
 from report_detail import (
     confidence_label,
@@ -30,7 +32,7 @@ from report_detail import (
     time_label,
 )
 from theme import TYPE_COLORS, apply_base_style, page_header, severity_badge
-from ui import video_playback_url
+from ui import get_db_or_notice, video_playback_url
 
 
 def render_card_preview(url: str | None, start: int | None) -> None:
@@ -60,10 +62,22 @@ def render_card_preview(url: str | None, start: int | None) -> None:
         scrolling=False,
     )
 
+
 st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
 apply_base_style()
-page_header("Incident Reports", "AI-powered post-incident video analysis and reporting platform", "CSV-backed incident data · Changes persist to fixtures/data/incidents.csv · Video playback uses Cloudflare R2")
-handle = LocalReports(st.session_state)
+
+# DB-backed when a DSN is configured (edits persist); otherwise the offline CSV
+# fixture, session-only, exactly as before - no notice when simply unconfigured.
+_db_handle = get_db_or_notice() if db.is_configured() else None
+if _db_handle is not None:
+    handle = DBReports(_db_handle, st.session_state)
+    _provenance = "Supabase Postgres · Field edits and review status persist · Video playback uses Cloudflare R2"
+else:
+    handle = LocalReports(st.session_state)
+    _provenance = (
+        "CSV-backed incident data · Changes persist to fixtures/data/incidents.csv · Video playback uses Cloudflare R2"
+    )
+page_header("Incident Reports", "AI-powered post-incident video analysis and reporting platform", _provenance)
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
 if close_id := st.session_state.pop("detail_close_edit", None):
@@ -102,10 +116,13 @@ else:
     reports = handle.list_reports(incident_type=type_q, keyword=kw.strip())
     active = []
     if kw.strip():
-        active.append(f'query “{kw.strip()}”')
+        active.append(f"query “{kw.strip()}”")
     if type_q != "All":
         active.append(type_q)
-    st.markdown(f'<div class="muted"><strong>{len(reports)}</strong> incidents shown · {" · ".join(active) if active else "All available records"}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="muted"><strong>{len(reports)}</strong> incidents shown · {" · ".join(active) if active else "All available records"}</div>',
+        unsafe_allow_html=True,
+    )
     if not reports:
         st.info("No incidents match your filters. Clear the search or choose All.", icon="🔎")
     for offset in range(0, len(reports), 3):
@@ -113,24 +130,35 @@ else:
         for column, report in zip(columns, reports[offset : offset + 3], strict=False):
             with column, st.container(border=True):
                 fields = normalized(report)
-                type_name = (report["incident_type"] or "No classification yet")
+                type_name = report["incident_type"] or "No classification yet"
                 card_class = "untitled" if not report["incident_type"] else ""
                 color = TYPE_COLORS.get((report["incident_type"] or "").lower(), TYPE_COLORS[""])
-                st.markdown(f'<div class="incident-card {card_class}" style="border-left-color:{color}"><div class="muted">{report["id"]}</div><div class="incident-card-title">{type_name.capitalize()}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="incident-card {card_class}" style="border-left-color:{color}"><div class="muted">{report["id"]}</div><div class="incident-card-title">{type_name.capitalize()}</div>',
+                    unsafe_allow_html=True,
+                )
                 st.caption(f"Time: {time_label(fields['Start_Timestamp'])} – {time_label(fields['End_Timestamp'])}")
                 description = report["description"] or "No description supplied for this incident."
                 safe_description = html.escape(description[:145] + ("…" if len(description) > 145 else ""))
                 st.markdown(f'<div class="incident-card-description">{safe_description}</div>', unsafe_allow_html=True)
                 video = handle.get_video(report["id"])
-                video_url = video_playback_url({"r2_key": video.get("Filepath")}) if video and video.get("Filepath") else None
+                video_url = (
+                    video_playback_url({"r2_key": video.get("Filepath")}) if video and video.get("Filepath") else None
+                )
                 if video_url:
                     render_card_preview(video_url, fields["Start_Timestamp"])
                 else:
                     render_card_preview(None, fields["Start_Timestamp"])
-                st.markdown(f'{severity_badge(report["severity"])} <span class="muted">Confidence: {confidence_label(report["confidence"])}</span>', unsafe_allow_html=True)
+                st.markdown(
+                    f'{severity_badge(report["severity"])} <span class="muted">Confidence: {confidence_label(report["confidence"])}</span>',
+                    unsafe_allow_html=True,
+                )
                 filename = html.escape(report["filename"] or "Filename not supplied")
-                href = f'?report={quote(str(report["id"]))}'
-                st.markdown(f'<a class="source-chip" href="{href}" style="display:inline-block;margin-top:.55rem;color:#5c9200;text-decoration:none">{filename}</a></div>', unsafe_allow_html=True)
+                href = f"?report={quote(str(report['id']))}"
+                st.markdown(
+                    f'<a class="source-chip" href="{href}" style="display:inline-block;margin-top:.55rem;color:#5c9200;text-decoration:none">{filename}</a></div>',
+                    unsafe_allow_html=True,
+                )
                 if st.button("View and Verify Details", key=f"open_{report['id']}", width="stretch"):
                     st.query_params["report"] = report["id"]
                     st.rerun()

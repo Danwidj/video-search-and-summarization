@@ -15,17 +15,17 @@
 
 """Review fixtures parsed from committed CSVs. Never imported by the database layer.
 
-`data/` holds four CSV files: the group's real ground-truth incidents
-(`synthetic` = ``false``) plus a generated synthetic half (`synthetic` = ``true``)
-that fills the gaps the real data lacks. `load_seed()` parses them with the
-stdlib :mod:`csv` module and returns the same dict shape the previous hardcoded
+`data/` holds four CSV files with 72 sample incidents (36 transcribed from the
+capstone group's ground-truth sheets, 36 with `SYN-` prefixed IDs generated to
+fill gaps the sheets lack). `load_seed()` parses them with the stdlib
+:mod:`csv` module and returns the same dict shape the previous hardcoded
 fixture returned, so every consumer keeps working unchanged.
 
 Timestamps are emitted as video-relative ``HH:MM:SS`` strings; Duration is an int
 number of seconds; Confidence_Score is 0-1 and is omitted entirely when absent.
 All URLs are opaque, deliberately non-resolving placeholders on example.invalid.
 IDs are local to an incident for entities/instruments/assets; joins include
-Incident_ID. See fixtures/README.md for the full real/synthetic breakdown and the
+Incident_ID. See fixtures/README.md for the composition notes and the
 known-gap list carried over from the ground-truth NOTES.
 """
 
@@ -53,11 +53,6 @@ def _int(value):
 def _float(value):
     value = (value or "").strip()
     return float(value) if value else None
-
-
-def _flag(value):
-    """The load-bearing real/synthetic separator from the ``synthetic`` column."""
-    return (value or "").strip().lower() == "true"
 
 
 def _timestamp(seconds):
@@ -134,7 +129,6 @@ def load_seed():
             "Description": _text(source["Description"]),
             "Severity": _int(source["Severity_Level"]),
             "Source": f"{url}/source",
-            "synthetic": _flag(source["synthetic"]),
         }
         confidence = _float(source["Confidence_Score"])
         if confidence is not None:
@@ -161,7 +155,6 @@ def load_seed():
                 "Type": _text(source["Type"]),
                 "Description": _text(source["Description"]),
                 "Image": None,
-                "synthetic": _flag(source["synthetic"]),
             }
         )
 
@@ -176,7 +169,6 @@ def load_seed():
                 "Description": _text(source["Description"]),
                 "Threat_Level": _int(source["Threat_Level"]),
                 "Image": None,
-                "synthetic": _flag(source["synthetic"]),
             }
         )
 
@@ -189,7 +181,6 @@ def load_seed():
                 "Name": _text(source["Name"]),
                 "Description": _text(source["Description"]),
                 "Image": None,
-                "synthetic": _flag(source["synthetic"]),
             }
         )
 
