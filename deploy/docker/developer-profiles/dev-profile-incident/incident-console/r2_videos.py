@@ -67,9 +67,9 @@ def category_matches(category, keys):
 def map_incidents_to_video_keys(incidents, keys):
     """Assign one distinct R2 object to each incident.
 
-    Existing filenames win when the object exists. Synthetic CSV rows use the
-    next unused object in the same category, so every report still has a real,
-    stable video without pretending that the demo clip is its ground truth.
+    Existing filenames win when the object exists. Rows with no matching object
+    use the next unused object in the same category, so every report still has a
+    real, stable video without pretending that the demo clip is its ground truth.
     """
     by_filename = {PurePosixPath(key).name: key for key in keys}
     assignments = {}
@@ -103,6 +103,31 @@ def playback_url(key):
         Params={"Bucket": os.environ["R2_BUCKET"], "Key": key, "ResponseContentDisposition": "inline"},
         ExpiresIn=3600,
     )
+
+
+# Screenshots for entities / instruments / assets are ordinary objects in the
+# same bucket; a presigned inline GET is all the detail view needs.
+image_url = playback_url
+
+
+def top_level_prefixes(keys):
+    """Distinct ``anomaly/<cat>/`` / ``normal_videos/`` prefixes across the bucket."""
+    prefixes = set()
+    for key in keys:
+        parts = PurePosixPath(key).parts
+        prefixes.add("/".join(parts[:2]) + "/" if len(parts) > 2 else f"{parts[0]}/" if len(parts) > 1 else "")
+    return sorted(p for p in prefixes if p)
+
+
+def filter_keys(keys, *, prefix=None, query=None):
+    """Narrow the bucket listing for the manual video picker."""
+    result = keys
+    if prefix and prefix != "All":
+        result = [k for k in result if k.startswith(prefix)]
+    if query:
+        needle = query.casefold()
+        result = [k for k in result if needle in k.casefold()]
+    return result
 
 
 def demo_video(report):

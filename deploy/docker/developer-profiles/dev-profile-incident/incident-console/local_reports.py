@@ -35,7 +35,6 @@ def _report(row):
         "severity": row["Severity"],
         "confidence": row.get("Confidence_Score"),
         "source": row["Source"],
-        "synthetic": row["synthetic"],
     }
 
 
@@ -62,7 +61,10 @@ class LocalReports:
             rows = [
                 row
                 for row in rows
-                if query in " ".join(str(row.get(key) or "") for key in ("id", "filename", "incident_type", "description")).casefold()
+                if query
+                in " ".join(
+                    str(row.get(key) or "") for key in ("id", "filename", "incident_type", "description")
+                ).casefold()
             ]
         return deepcopy(rows)
 

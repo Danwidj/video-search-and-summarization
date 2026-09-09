@@ -70,7 +70,12 @@ def chart(data, mark, x, y, color=None, height=190):
     result = getattr(alt.Chart(data), mark)().encode(x=x, y=y, tooltip=list(data.columns))
     if color is not None:
         result = result.encode(color=color)
-    st.altair_chart(result.properties(height=height).configure_view(stroke=None).configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED), width="stretch")
+    st.altair_chart(
+        result.properties(height=height)
+        .configure_view(stroke=None)
+        .configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED),
+        width="stretch",
+    )
 
 
 def metric(column, icon, title, value, help_text):
@@ -149,7 +154,12 @@ def render(df, entities, instruments, reports=None):
                     tooltip=list(data.columns),
                 )
             )
-            st.altair_chart(line.properties(height=190).configure_view(stroke=None).configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED), width="stretch")
+            st.altair_chart(
+                line.properties(height=190)
+                .configure_view(stroke=None)
+                .configure_axis(gridColor=BORDER, labelColor=MUTED, titleColor=MUTED),
+                width="stretch",
+            )
     with b, st.container(border=True):
         st.markdown("##### Avg Incident Duration")
         durations = pd.to_numeric(view.Duration, errors="coerce").dropna()
@@ -171,7 +181,10 @@ def render(df, entities, instruments, reports=None):
                     f'<a class="queue-link" href="/?report={target}">↗&nbsp; {html.escape(str(row.Incident_ID))} · {html.escape(score)}</a>',
                     unsafe_allow_html=True,
                 )
-                st.markdown(f'<div class="queue-item">{severity_badge(row.Severity)} <span class="muted">{row.Description or "No description supplied"}</span></div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="queue-item">{severity_badge(row.Severity)} <span class="muted">{row.Description or "No description supplied"}</span></div>',
+                    unsafe_allow_html=True,
+                )
         if len(queue) > 4:
             st.caption(f"Showing 4 of {len(queue)} · Remaining incidents appear in the records log.")
 
@@ -184,7 +197,17 @@ def render(df, entities, instruments, reports=None):
             empty("No incidents match these filters.")
         else:
             counts = view.Type.value_counts().rename_axis("Category").reset_index(name="Count")
-            chart(counts, "mark_bar", "Count:Q", "Category:N", alt.Color("Category:N", scale=alt.Scale(domain=list(TYPE_COLORS), range=list(TYPE_COLORS.values())), legend=None))
+            chart(
+                counts,
+                "mark_bar",
+                "Count:Q",
+                "Category:N",
+                alt.Color(
+                    "Category:N",
+                    scale=alt.Scale(domain=list(TYPE_COLORS), range=list(TYPE_COLORS.values())),
+                    legend=None,
+                ),
+            )
     with b, st.container(border=True):
         st.markdown("##### Incidents by Severity Level")
         if view.empty:
@@ -224,7 +247,9 @@ def render(df, entities, instruments, reports=None):
                         theta="Count:Q",
                         color=alt.Color(
                             "Entity type:N",
-                            scale=alt.Scale(domain=["human", "animal", "unknown"], range=["#435569", "#76b900", "#c8cfd8"]),
+                            scale=alt.Scale(
+                                domain=["human", "animal", "unknown"], range=["#435569", "#76b900", "#c8cfd8"]
+                            ),
                             legend=alt.Legend(orient="bottom"),
                         ),
                         tooltip=["Entity type", "Count"],
@@ -297,14 +322,15 @@ def render(df, entities, instruments, reports=None):
 
         numeric = ["Start", "End", "Duration", "Severity", "Confidence (%)"]
         table_style = (
-            table.style
-            .map(severity_style, subset=["Severity"])
+            table.style.map(severity_style, subset=["Severity"])
             .set_properties(subset=numeric, **{"text-align": "right"})
             .set_properties(subset=["Filename"], **{"font-family": "ui-monospace, SFMono-Regular, monospace"})
-            .set_table_styles([
-                {"selector": "tbody tr:nth-child(even)", "props": [("background-color", "#f8fafc")]},
-                {"selector": "th", "props": [("text-align", "left"), ("position", "sticky"), ("top", "0px")]},
-            ])
+            .set_table_styles(
+                [
+                    {"selector": "tbody tr:nth-child(even)", "props": [("background-color", "#f8fafc")]},
+                    {"selector": "th", "props": [("text-align", "left"), ("position", "sticky"), ("top", "0px")]},
+                ]
+            )
         )
         st.dataframe(
             table_style,
