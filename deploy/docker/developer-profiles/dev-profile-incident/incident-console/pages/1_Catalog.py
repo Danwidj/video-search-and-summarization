@@ -20,6 +20,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+
 import config
 from agent_client import AgentClient
 from incident_report import VIDEO_STATUSES, canned_incident_report
