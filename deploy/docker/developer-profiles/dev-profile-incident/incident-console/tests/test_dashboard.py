@@ -15,10 +15,10 @@
 
 """Fixture integrity and dashboard interactions without a database.
 
-The seed is parsed from fixtures/data/*.csv: the group's real ground-truth
-incidents (``synthetic`` false) plus a generated synthetic half (``synthetic``
-true). Known ground-truth gaps are asserted explicitly so a regression in the
-parser is visible rather than silently "fixed".
+The seed is parsed from fixtures/data/*.csv: 72 sample incidents, 36 transcribed
+from the group's ground-truth sheets and 36 with ``SYN-`` prefixed IDs generated
+to fill gaps the sheets lack. Known ground-truth gaps are asserted explicitly so
+a regression in the parser is visible rather than silently "fixed".
 """
 
 import re
@@ -36,36 +36,33 @@ EMPTY_INCIDENTS = {"Burglary005", "Burglary006", "Explosion007"}
 STRAY_ENTITY_INCIDENT = "RoadAccidents006"
 
 
-def test_real_and_synthetic_split():
+def _generated(row):
+    """A row belongs to the generated (``SYN-`` prefixed) half of the fixture."""
+    return row["Incident_ID"].startswith("SYN-")
+
+
+def test_transcribed_and_generated_split():
     seed = load_seed()
     incidents = seed["Incident"]
-    real = [r for r in incidents if r["synthetic"] is False]
-    synthetic = [r for r in incidents if r["synthetic"] is True]
-    assert len(real) == 36
-    assert len(synthetic) == 36
-    assert len(incidents) == len(real) + len(synthetic)
-    assert {r["Incident_ID"] for r in real} == {
+    transcribed = [r for r in incidents if not _generated(r)]
+    generated = [r for r in incidents if _generated(r)]
+    assert len(transcribed) == 36
+    assert len(generated) == 36
+    assert len(incidents) == len(transcribed) + len(generated)
+    assert {r["Incident_ID"] for r in transcribed} == {
         f"{prefix}{i:03d}"
         for prefix, count in (("Burglary", 7), ("Explosion", 9), ("RoadAccidents", 5), ("Animal", 15))
         for i in range(1, count + 1)
     }
-    assert all(r["Incident_ID"].startswith("SYN-") for r in synthetic)
-    # The synthetic half fills gaps the real data lacks.
-    assert any(r["Type"] == "fighting" and r["synthetic"] for r in incidents)
-    assert not any(r["Type"] == "fighting" and not r["synthetic"] for r in incidents)
+    # The generated half fills gaps the transcribed data lacks.
+    assert any(r["Type"] == "fighting" and _generated(r) for r in incidents)
+    assert not any(r["Type"] == "fighting" and not _generated(r) for r in incidents)
 
 
-def test_synthetic_flag_present_and_consistent():
+def test_seed_rows_present_for_every_table():
     seed = load_seed()
     for name in ("Incident", "Entity", "Instrument", "Asset"):
         assert seed[name], name
-        for row in seed[name]:
-            assert row["synthetic"] in (True, False), (name, row)
-    incident_flag = {r["Incident_ID"]: r["synthetic"] for r in seed["Incident"]}
-    for name in ("Entity", "Instrument", "Asset"):
-        for row in seed[name]:
-            if row["Incident_ID"] in incident_flag:
-                assert row["synthetic"] == incident_flag[row["Incident_ID"]], (name, row)
 
 
 def test_incident_shapes_and_blank_handling():
@@ -84,12 +81,12 @@ def test_incident_shapes_and_blank_handling():
         # Blank confidence is omitted entirely, never emitted as None/0.
         if "Confidence_Score" in row:
             assert 0 < row["Confidence_Score"] <= 1
-    # Real burglary / road-accident severities are blank in the sheet -> carried as None.
+    # Transcribed burglary / road-accident severities are blank in the sheet -> carried as None.
     for row in seed["Incident"]:
-        if not row["synthetic"] and row["Type"] in {"burglary", "road accident"}:
+        if not _generated(row) and row["Type"] in {"burglary", "road accident"}:
             assert row["Severity"] is None
-        # Real rows never carry a confidence score (all blank in the sheet).
-        if not row["synthetic"]:
+        # Transcribed rows never carry a confidence score (all blank in the sheet).
+        if not _generated(row):
             assert "Confidence_Score" not in row
 
 
@@ -122,36 +119,35 @@ def test_linked_rows_reference_incidents():
     for row in seed["Instrument"]:
         if row["Entity_ID"] is None:
             continue  # e.g. Burglary007 truck has no holder in the sheet
-        if not row["synthetic"]:
-            # Real data has a known gap: RoadAccidents005 instrument I2 points at E2,
+        if not row["Incident_ID"].startswith("SYN-"):
+            # Transcribed data has a known gap: RoadAccidents005 instrument I2 points at E2,
             # but that entity row was filed under the stray RoadAccidents006. Carried
-            # through as-is; flagged for the group. The synthetic half is kept clean.
+            # through as-is; flagged for the group. The generated half is kept clean.
             continue
         assert (row["Incident_ID"], row["Entity_ID"]) in entities, row
-    by_id = {r["Incident_ID"]: r for r in seed["Incident"]}
     for incident_id in incident_ids:
         count = sum(e["Incident_ID"] == incident_id for e in seed["Entity"])
-        if by_id[incident_id]["synthetic"]:
-            # Every synthetic incident gets 1-4 linked entities.
+        if incident_id.startswith("SYN-"):
+            # Every generated incident gets 1-4 linked entities.
             assert 1 <= count <= 4, (incident_id, count)
         elif incident_id in EMPTY_INCIDENTS:
             assert count == 0
-        # Real non-empty incidents may still have 0 entities (e.g. every real
-        # explosion: the sheet provided no explosion entities at all).
+        # Transcribed non-empty incidents may still have 0 entities (e.g. every
+        # transcribed explosion: the sheet provided no explosion entities at all).
 
 
-def test_synthetic_fills_explosion_and_confidence_gaps():
+def test_generated_rows_fill_explosion_and_confidence_gaps():
     seed = load_seed()
-    syn_explosion = {r["Incident_ID"] for r in seed["Incident"] if r["synthetic"] and r["Type"] == "explosion"}
+    syn_explosion = {r["Incident_ID"] for r in seed["Incident"] if _generated(r) and r["Type"] == "explosion"}
     assert syn_explosion
     assert any(e["Incident_ID"] in syn_explosion for e in seed["Entity"])
     assert any(i["Incident_ID"] in syn_explosion for i in seed["Instrument"])
     assert any(a["Incident_ID"] in syn_explosion for a in seed["Asset"])
-    # Synthetic rows carry a spread of confidence: some below 0.7, some missing.
-    syn = [r for r in seed["Incident"] if r["synthetic"]]
-    assert any("Confidence_Score" not in r for r in syn)
-    assert any(r.get("Confidence_Score", 1) < 0.7 for r in syn)
-    assert any(r.get("Confidence_Score", 0) >= 0.7 for r in syn)
+    # Generated rows carry a spread of confidence: some below 0.7, some missing.
+    generated = [r for r in seed["Incident"] if _generated(r)]
+    assert any("Confidence_Score" not in r for r in generated)
+    assert any(r.get("Confidence_Score", 1) < 0.7 for r in generated)
+    assert any(r.get("Confidence_Score", 0) >= 0.7 for r in generated)
 
 
 def test_images_are_none_and_videos_linked_to_incidents():

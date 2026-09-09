@@ -1,41 +1,41 @@
-Filename,Incident_ID,ID,Name,Description,Image,synthetic
-Burglary001_x264.mp4,Burglary001,A1,atm,"atm was carried away by the entities",,false
-Burglary002_x264.mp4,Burglary002,A1,fridge,"items were stolen from the fridge",,false
-Burglary003_x264.mp4,Burglary003,A1,boxes,"small rectangular boxes",,false
-Burglary004_x264.mp4,Burglary004,A1,atm,"atm was carried away by the entities",,false
-Burglary007_x264.mp4,Burglary007,A1,atm,"atm was towed away by the truck",,false
-RoadAccidents002_x264.mp4,RoadAccidents002,A1,sign post,"tall sign post about 2 metres with red signage",,false
-Animal001_x264.mp4,Animal001,A1,flower vase,"flower vase knocked down from table by monkey",,false
-Animal015_x264.mp4,Animal015,A1,trash can,"trash can knocked over by monitor lizard",,false
-SYN-Fighting001_x264.mp4,SYN-Fighting001,A1,bar stool,"bar stool knocked over during the fight",,true
-SYN-Fighting006_x264.mp4,SYN-Fighting006,A1,merchandise stand,"merchandise stand overturned on the concourse",,true
-SYN-Fighting008_x264.mp4,SYN-Fighting008,A1,scooter,"scooter knocked to the ground",,true
-SYN-Fighting012_x264.mp4,SYN-Fighting012,A1,silver sedan,"silver sedan with a dented front wing",,true
-SYN-Explosion001_x264.mp4,SYN-Explosion001,A1,motorcycle,"motorcycle destroyed by the fire",,true
-SYN-Explosion001_x264.mp4,SYN-Explosion001,A2,shop awning,"shop awning scorched by flying debris",,true
-SYN-Explosion002_x264.mp4,SYN-Explosion002,A1,gas cylinder,"gas cylinder that ruptured",,true
-SYN-Explosion002_x264.mp4,SYN-Explosion002,A2,food stall,"food stall reduced to debris",,true
-SYN-Explosion003_x264.mp4,SYN-Explosion003,A1,rubbish bin,"rubbish bin torn apart by the blast",,true
-SYN-Explosion004_x264.mp4,SYN-Explosion004,A1,transformer,"utility transformer emitting sparks and smoke",,true
-SYN-Explosion005_x264.mp4,SYN-Explosion005,A1,parked car,"parked car destroyed in the explosion",,true
-SYN-Explosion005_x264.mp4,SYN-Explosion005,A2,market stalls,"market stalls flattened by the shockwave",,true
-SYN-Explosion006_x264.mp4,SYN-Explosion006,A1,firework crate,"firework crate that ignited early",,true
-SYN-Explosion007_x264.mp4,SYN-Explosion007,A1,boiler,"industrial boiler that ruptured",,true
-SYN-Explosion007_x264.mp4,SYN-Explosion007,A2,steel walkway,"steel walkway buckled by the blast",,true
-SYN-Explosion008_x264.mp4,SYN-Explosion008,A1,courtyard wall,"courtyard wall cratered by the blast",,true
-SYN-Explosion009_x264.mp4,SYN-Explosion009,A1,building facade,"building facade partially collapsed onto the pavement",,true
-SYN-Burglary001_x264.mp4,SYN-Burglary001,A1,window,"rear window forced open",,true
-SYN-Burglary002_x264.mp4,SYN-Burglary002,A1,safe,"office safe removed on a trolley",,true
-SYN-Burglary003_x264.mp4,SYN-Burglary003,A1,display case,"jewellery display case smashed open",,true
-SYN-Burglary004_x264.mp4,SYN-Burglary004,A1,bicycle,"bicycle taken after the lock was cut",,true
-SYN-Burglary005_x264.mp4,SYN-Burglary005,A1,boxes,"warehouse boxes loaded into the van",,true
-SYN-RoadAccident001_x264.mp4,SYN-RoadAccident001,A1,car,"car with a dented boot",,true
-SYN-RoadAccident002_x264.mp4,SYN-RoadAccident002,A1,motorway lanes,"motorway lanes blocked by the trailer",,true
-SYN-RoadAccident003_x264.mp4,SYN-RoadAccident003,A1,bicycle,"bicycle left in the middle of the junction",,true
-SYN-RoadAccident004_x264.mp4,SYN-RoadAccident004,A1,bus stop shelter,"bus stop shelter sheared from its base",,true
-SYN-RoadAccident005_x264.mp4,SYN-RoadAccident005,A1,bridge railing,"bridge railing scraped by the spinning cars",,true
-SYN-Animal001_x264.mp4,SYN-Animal001,A1,classroom chairs,"stack of classroom chairs knocked over",,true
-SYN-Animal002_x264.mp4,SYN-Animal002,A1,fruit stall,"fruit stall scattered across the walkway",,true
-SYN-Animal003_x264.mp4,SYN-Animal003,A1,loading dock,"loading dock left unattended",,true
-SYN-Animal004_x264.mp4,SYN-Animal004,A1,paddock gate,"paddock gate left open",,true
-SYN-Animal005_x264.mp4,SYN-Animal005,A1,boat ramp,"boat ramp blocked to pedestrians",,true
+Filename,Incident_ID,ID,Name,Description,Image
+Burglary001_x264.mp4,Burglary001,A1,atm,"atm was carried away by the entities",
+Burglary002_x264.mp4,Burglary002,A1,fridge,"items were stolen from the fridge",
+Burglary003_x264.mp4,Burglary003,A1,boxes,"small rectangular boxes",
+Burglary004_x264.mp4,Burglary004,A1,atm,"atm was carried away by the entities",
+Burglary007_x264.mp4,Burglary007,A1,atm,"atm was towed away by the truck",
+RoadAccidents002_x264.mp4,RoadAccidents002,A1,sign post,"tall sign post about 2 metres with red signage",
+Animal001_x264.mp4,Animal001,A1,flower vase,"flower vase knocked down from table by monkey",
+Animal015_x264.mp4,Animal015,A1,trash can,"trash can knocked over by monitor lizard",
+SYN-Fighting001_x264.mp4,SYN-Fighting001,A1,bar stool,"bar stool knocked over during the fight",
+SYN-Fighting006_x264.mp4,SYN-Fighting006,A1,merchandise stand,"merchandise stand overturned on the concourse",
+SYN-Fighting008_x264.mp4,SYN-Fighting008,A1,scooter,"scooter knocked to the ground",
+SYN-Fighting012_x264.mp4,SYN-Fighting012,A1,silver sedan,"silver sedan with a dented front wing",
+SYN-Explosion001_x264.mp4,SYN-Explosion001,A1,motorcycle,"motorcycle destroyed by the fire",
+SYN-Explosion001_x264.mp4,SYN-Explosion001,A2,shop awning,"shop awning scorched by flying debris",
+SYN-Explosion002_x264.mp4,SYN-Explosion002,A1,gas cylinder,"gas cylinder that ruptured",
+SYN-Explosion002_x264.mp4,SYN-Explosion002,A2,food stall,"food stall reduced to debris",
+SYN-Explosion003_x264.mp4,SYN-Explosion003,A1,rubbish bin,"rubbish bin torn apart by the blast",
+SYN-Explosion004_x264.mp4,SYN-Explosion004,A1,transformer,"utility transformer emitting sparks and smoke",
+SYN-Explosion005_x264.mp4,SYN-Explosion005,A1,parked car,"parked car destroyed in the explosion",
+SYN-Explosion005_x264.mp4,SYN-Explosion005,A2,market stalls,"market stalls flattened by the shockwave",
+SYN-Explosion006_x264.mp4,SYN-Explosion006,A1,firework crate,"firework crate that ignited early",
+SYN-Explosion007_x264.mp4,SYN-Explosion007,A1,boiler,"industrial boiler that ruptured",
+SYN-Explosion007_x264.mp4,SYN-Explosion007,A2,steel walkway,"steel walkway buckled by the blast",
+SYN-Explosion008_x264.mp4,SYN-Explosion008,A1,courtyard wall,"courtyard wall cratered by the blast",
+SYN-Explosion009_x264.mp4,SYN-Explosion009,A1,building facade,"building facade partially collapsed onto the pavement",
+SYN-Burglary001_x264.mp4,SYN-Burglary001,A1,window,"rear window forced open",
+SYN-Burglary002_x264.mp4,SYN-Burglary002,A1,safe,"office safe removed on a trolley",
+SYN-Burglary003_x264.mp4,SYN-Burglary003,A1,display case,"jewellery display case smashed open",
+SYN-Burglary004_x264.mp4,SYN-Burglary004,A1,bicycle,"bicycle taken after the lock was cut",
+SYN-Burglary005_x264.mp4,SYN-Burglary005,A1,boxes,"warehouse boxes loaded into the van",
+SYN-RoadAccident001_x264.mp4,SYN-RoadAccident001,A1,car,"car with a dented boot",
+SYN-RoadAccident002_x264.mp4,SYN-RoadAccident002,A1,motorway lanes,"motorway lanes blocked by the trailer",
+SYN-RoadAccident003_x264.mp4,SYN-RoadAccident003,A1,bicycle,"bicycle left in the middle of the junction",
+SYN-RoadAccident004_x264.mp4,SYN-RoadAccident004,A1,bus stop shelter,"bus stop shelter sheared from its base",
+SYN-RoadAccident005_x264.mp4,SYN-RoadAccident005,A1,bridge railing,"bridge railing scraped by the spinning cars",
+SYN-Animal001_x264.mp4,SYN-Animal001,A1,classroom chairs,"stack of classroom chairs knocked over",
+SYN-Animal002_x264.mp4,SYN-Animal002,A1,fruit stall,"fruit stall scattered across the walkway",
+SYN-Animal003_x264.mp4,SYN-Animal003,A1,loading dock,"loading dock left unattended",
+SYN-Animal004_x264.mp4,SYN-Animal004,A1,paddock gate,"paddock gate left open",
+SYN-Animal005_x264.mp4,SYN-Animal005,A1,boat ramp,"boat ramp blocked to pedestrians",

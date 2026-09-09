@@ -1,73 +1,73 @@
-Filename,Incident_ID,Type,Start_Timestamp_sec,End_Timestamp_sec,Duration_sec,Description,Severity_Level,Confidence_Score,synthetic
-Burglary001_x264.mp4,Burglary001,burglary,8,117,109,"a van/suv crashed into the shop, 2 men came out of the vehicle to shift the atm from the store to their vehicle and drove off",,,false
-Burglary002_x264.mp4,Burglary002,burglary,4,97,93,"a guy sneaked into the building, took items from the fridge and left",,,false
-Burglary003_x264.mp4,Burglary003,burglary,0,39,39,"a guy taking items from a container with a crowbar in his hand",,,false
-Burglary004_x264.mp4,Burglary004,burglary,3,56,53,"an suv crashed into the store, 3 men came out of the suv to carry an atm back to their vehicle and drove off",,,false
-Burglary005_x264.mp4,Burglary005,,,,,,,,false
-Burglary006_x264.mp4,Burglary006,,,,0,,,,false
-Burglary007_x264.mp4,Burglary007,burglary,0,34,34,"2 entities standing outside the store, while a truck was used to break the door, 1 entity used a rope to attach an atm within the store to the truck. the truck then pulled the atm away while the 2 entities ran away",,,false
-Explosion001_x264.mp4,Explosion001,explosion,4,12,8,"a building suddenly exploded, causing broken debris of metal and glass to fly all over. a van was in the area but was not visibly damaged.",4,,false
-Explosion002_x264.mp4,Explosion002,explosion,49,93,44,"two men are fuelling a car at a petrol station. the car is suddenly set on fire. a third man appears and puts out the fire with a fire extinguisher.",3,,false
-Explosion003_x264.mp4,Explosion003,explosion,3,13,10,"a car in an expressway explodes but there is no fire. the car is stopped and two people get out of the car.",2,,false
-Explosion004_x264.mp4,Explosion004,explosion,2,28,26,"two men in protective suits are standing outside a door. an explosion happens from inside. the two men run, then one man returns and uses a hose to extinguish the fire.",4,,false
-Explosion005_x264.mp4,Explosion005,explosion,7,10,3,"a rickshaw that is already on fire collides into a truck on a road and is knocked to the side, breaking into pieces. the truck stops.",3,,false
-Explosion006_x264.mp4,Explosion006,explosion,4,9,5,"a car stops at a t-junction and explodes",3,,false
-Explosion007_x264.mp4,Explosion007,,,,0,,,,false
-Explosion008_x264.mp4,Explosion008,explosion,20,37,17,"four vans are driving along a road. a bomb explodes from where the vans are.",5,,false
-Explosion009_x264.mp4,Explosion009,explosion,6,14,8,"two men are in a building. a fire explodes from the side, the two men run.",4,,false
-RoadAccidents001_x264.mp4,RoadAccidents001,road accident,7,12,5,"at a t-junction, a motorbike sideswipes a car with the biker flung towards a porch house. there is a passerby checking on the scene",,,false
-RoadAccidents002_x264.mp4,RoadAccidents002,road accident,8,11,3,"a bus goes off road and drives onto the pavement, hitting a sign post and crashing into a lamp post",,,false
-RoadAccidents003_x264.mp4,RoadAccidents003,road accident,9,13,4,"a kid riding a bicycle crashes onto a ledge within a house",,,false
-RoadAccidents004_x264.mp4,RoadAccidents004,road accident,4,7,3,"a speeding car rams into another car in the opposite direction which is making a turn to the left",,,false
-RoadAccidents005_x264.mp4,RoadAccidents005,road accident,2,7,5,"a black car is moving on the road and another black car coming from the opposite direction hits the first car",,,false
-Animal001_x264.mp4,Animal001,animal,0,5,5,"monkey knocks over vase of sunflowers in someone's house",2,,false
-Animal002_x264.mp4,Animal002,animal,2,12,10,"monkey runs towards a man and kicks him down to the floor before climbing up a wall",2,,false
-Animal003_x264.mp4,Animal003,animal,9,22,13,"3 monkeys chase after a young boy and knock him down, boy stands up and flings a slipper at them with his feet before running away",2,,false
-Animal004_x264.mp4,Animal004,animal,0,8,8,"boy is sitting down and playing his phone next to the door when a leopard enters the house, boy runs out of house and closes door behind him",1,,false
-Animal005_x264.mp4,Animal005,animal,0,40,40,"leopard enters the home and attacks a dog sleeping outside the door, dog wakes up and barks at leopard while running away, leopard chases after dog",2,,false
-Animal006_x264.mp4,Animal006,animal,0,19,19,"pizza delivery man knocks on door, when door opens, squirrel on ceiling jumps through the door into the house",1,,false
-Animal007_x264.mp4,Animal007,animal,21,28,7,"squirrel jumps onto man inside garage and attacks his head, man runs away",3,,false
-Animal008_x264.mp4,Animal008,animal,12,27,15,"at the porch of a house, a squirrel jumps onto a delivery man's shoulders and climbs onto his head before jumping off",1,,false
-Animal009_x264.mp4,Animal009,animal,12,15,3,"snake attacks man, man runs away",2,,false
-Animal010_x264.mp4,Animal010,animal,2,15,13,"when man opens door to enter house, snake hanging from top of door bites his head, he runs away and trips and falls",3,,false
-Animal011_x264.mp4,Animal011,animal,20,31,11,"snake comes into house while woman is rocking baby on the hammock, when snake moves close to hammock, woman grabs baby off hammock and runs into another room",1,,false
-Animal012_x264.mp4,Animal012,animal,0,9,9,"woman carrying baby runs into house while monkey chases after her, closes the door and keeps the monkey out",1,,false
-Animal013_x264.mp4,Animal013,animal,0,28,28,"bear in house opens freezer and steals food from it, then leaves through window",1,,false
-Animal014_x264.mp4,Animal014,animal,0,9,9,"bear enters convenience store, steals a bag of chips and leaves",1,,false
-Animal015_x264.mp4,Animal015,animal,0,25,25,"monitor lizard enters shoe shop through door and runs around before going behind the counter, 2 women in shop hide while a man goes nearer to the monitor lizard, monitor lizard knocks over trash can",1,,false
-SYN-Fighting001_x264.mp4,SYN-Fighting001,fighting,5,27,22,"two men argue outside a bar then exchange punches until bystanders separate them",3,0.82,true
-SYN-Fighting002_x264.mp4,SYN-Fighting002,fighting,12,48,36,"a group of four people brawl in a parking lot, one person falls and is kicked repeatedly",4,0.61,true
-SYN-Fighting003_x264.mp4,SYN-Fighting003,fighting,3,19,16,"a man swings a wooden bat at another man who blocks it with his forearm",4,,true
-SYN-Fighting004_x264.mp4,SYN-Fighting004,fighting,8,30,22,"two women push and pull each other by the hair near a bus stop",2,0.55,true
-SYN-Fighting005_x264.mp4,SYN-Fighting005,fighting,20,41,21,"a man pulls a folding knife during a street fight and the other man backs away",5,0.9,true
-SYN-Fighting006_x264.mp4,SYN-Fighting006,fighting,15,63,48,"several football fans clash on a stadium concourse and throw bottles",4,0.48,true
-SYN-Fighting007_x264.mp4,SYN-Fighting007,fighting,6,26,20,"a bouncer restrains an aggressive customer who keeps trying to swing at him",3,0.77,true
-SYN-Fighting008_x264.mp4,SYN-Fighting008,fighting,4,18,14,"two delivery riders fight over a parking spot and shove each other into a scooter",2,,true
-SYN-Fighting009_x264.mp4,SYN-Fighting009,fighting,9,25,16,"a man shoves a shop worker and throws a chair before leaving",3,0.66,true
-SYN-Fighting010_x264.mp4,SYN-Fighting010,fighting,11,39,28,"a crowd forms around two teenagers fighting in a school corridor",3,0.7,true
-SYN-Fighting011_x264.mp4,SYN-Fighting011,fighting,7,33,26,"a man attacks another with a metal pipe in an alley until a passerby intervenes",5,0.63,true
-SYN-Fighting012_x264.mp4,SYN-Fighting012,fighting,14,34,20,"two drivers step out after a collision and trade punches on the roadside",3,,true
-SYN-Explosion001_x264.mp4,SYN-Explosion001,explosion,6,24,18,"a parked motorcycle catches fire and its fuel tank bursts, scattering debris",4,0.86,true
-SYN-Explosion002_x264.mp4,SYN-Explosion002,explosion,10,33,23,"a gas cylinder explodes inside a food stall and the vendor runs clear",4,0.58,true
-SYN-Explosion003_x264.mp4,SYN-Explosion003,explosion,3,11,8,"a small pipe bomb detonates in a rubbish bin on a quiet street",3,,true
-SYN-Explosion004_x264.mp4,SYN-Explosion004,explosion,2,9,7,"a transformer on a utility pole bursts in a shower of sparks and smoke",3,0.79,true
-SYN-Explosion005_x264.mp4,SYN-Explosion005,explosion,8,30,22,"a car bomb detonates in a market square and people scatter",5,0.92,true
-SYN-Explosion006_x264.mp4,SYN-Explosion006,explosion,5,27,22,"a firework crate ignites early at a festival and launches shells into the crowd",4,0.44,true
-SYN-Explosion007_x264.mp4,SYN-Explosion007,explosion,12,31,19,"an industrial boiler ruptures and steam and metal fragments fill the yard",4,,true
-SYN-Explosion008_x264.mp4,SYN-Explosion008,explosion,4,13,9,"a hand grenade is thrown into a courtyard and detonates near a wall",5,0.69,true
-SYN-Explosion009_x264.mp4,SYN-Explosion009,explosion,15,45,30,"a demolition charge misfires and part of a facade collapses onto the pavement",4,0.81,true
-SYN-Burglary001_x264.mp4,SYN-Burglary001,burglary,0,42,42,"a man pries open a rear window with a screwdriver and climbs into a house",3,0.74,true
-SYN-Burglary002_x264.mp4,SYN-Burglary002,burglary,5,88,83,"two people load a safe onto a hand trolley and wheel it out of an office",3,0.52,true
-SYN-Burglary003_x264.mp4,SYN-Burglary003,burglary,2,27,25,"a hooded figure smashes a jewellery display case with a hammer and fills a bag",4,,true
-SYN-Burglary004_x264.mp4,SYN-Burglary004,burglary,3,19,16,"a person cuts a bicycle lock with bolt cutters and rides the bicycle away",2,0.66,true
-SYN-Burglary005_x264.mp4,SYN-Burglary005,burglary,10,72,62,"a van backs up to a warehouse shutter and three people carry boxes into it",3,0.88,true
-SYN-RoadAccident001_x264.mp4,SYN-RoadAccident001,road accident,4,9,5,"a motorcyclist rear-ends a stopped car at a junction and is thrown onto the bonnet",3,0.83,true
-SYN-RoadAccident002_x264.mp4,SYN-RoadAccident002,road accident,6,18,12,"a lorry jackknifes on a wet motorway and blocks two lanes",4,0.59,true
-SYN-RoadAccident003_x264.mp4,SYN-RoadAccident003,road accident,3,8,5,"a car runs a red light and clips a cyclist who slides across the tarmac",4,,true
-SYN-RoadAccident004_x264.mp4,SYN-RoadAccident004,road accident,5,11,6,"a bus mounts the kerb and shears off a bus stop shelter",3,0.68,true
-SYN-RoadAccident005_x264.mp4,SYN-RoadAccident005,road accident,2,10,8,"two cars collide head-on on a narrow bridge and spin to a stop",5,0.95,true
-SYN-Animal001_x264.mp4,SYN-Animal001,animal,0,14,14,"a stray dog wanders into a classroom and knocks over a stack of chairs",1,0.72,true
-SYN-Animal002_x264.mp4,SYN-Animal002,animal,3,21,18,"a wild boar charges through a market and scatters a fruit stall",3,0.64,true
-SYN-Animal003_x264.mp4,SYN-Animal003,animal,5,35,30,"a swarm of bees drives workers away from a loading dock",2,,true
-SYN-Animal004_x264.mp4,SYN-Animal004,animal,2,24,22,"a horse bolts from a paddock and gallops down a residential street",2,0.8,true
-SYN-Animal005_x264.mp4,SYN-Animal005,animal,0,45,45,"a crocodile suns itself on a boat ramp and blocks people from passing",2,0.69,true
+Filename,Incident_ID,Type,Start_Timestamp_sec,End_Timestamp_sec,Duration_sec,Description,Severity_Level,Confidence_Score
+Burglary001_x264.mp4,Burglary001,burglary,8,117,109,"a van/suv crashed into the shop, 2 men came out of the vehicle to shift the atm from the store to their vehicle and drove off",,
+Burglary002_x264.mp4,Burglary002,burglary,4,97,93,"a guy sneaked into the building, took items from the fridge and left",,
+Burglary003_x264.mp4,Burglary003,burglary,0,39,39,"a guy taking items from a container with a crowbar in his hand",,
+Burglary004_x264.mp4,Burglary004,burglary,3,56,53,"an suv crashed into the store, 3 men came out of the suv to carry an atm back to their vehicle and drove off",,
+Burglary005_x264.mp4,Burglary005,,,,,,,
+Burglary006_x264.mp4,Burglary006,,,,0,,,
+Burglary007_x264.mp4,Burglary007,burglary,0,34,34,"2 entities standing outside the store, while a truck was used to break the door, 1 entity used a rope to attach an atm within the store to the truck. the truck then pulled the atm away while the 2 entities ran away",,
+Explosion001_x264.mp4,Explosion001,explosion,4,12,8,"a building suddenly exploded, causing broken debris of metal and glass to fly all over. a van was in the area but was not visibly damaged.",4,
+Explosion002_x264.mp4,Explosion002,explosion,49,93,44,"two men are fuelling a car at a petrol station. the car is suddenly set on fire. a third man appears and puts out the fire with a fire extinguisher.",3,
+Explosion003_x264.mp4,Explosion003,explosion,3,13,10,"a car in an expressway explodes but there is no fire. the car is stopped and two people get out of the car.",2,
+Explosion004_x264.mp4,Explosion004,explosion,2,28,26,"two men in protective suits are standing outside a door. an explosion happens from inside. the two men run, then one man returns and uses a hose to extinguish the fire.",4,
+Explosion005_x264.mp4,Explosion005,explosion,7,10,3,"a rickshaw that is already on fire collides into a truck on a road and is knocked to the side, breaking into pieces. the truck stops.",3,
+Explosion006_x264.mp4,Explosion006,explosion,4,9,5,"a car stops at a t-junction and explodes",3,
+Explosion007_x264.mp4,Explosion007,,,,0,,,
+Explosion008_x264.mp4,Explosion008,explosion,20,37,17,"four vans are driving along a road. a bomb explodes from where the vans are.",5,
+Explosion009_x264.mp4,Explosion009,explosion,6,14,8,"two men are in a building. a fire explodes from the side, the two men run.",4,
+RoadAccidents001_x264.mp4,RoadAccidents001,road accident,7,12,5,"at a t-junction, a motorbike sideswipes a car with the biker flung towards a porch house. there is a passerby checking on the scene",,
+RoadAccidents002_x264.mp4,RoadAccidents002,road accident,8,11,3,"a bus goes off road and drives onto the pavement, hitting a sign post and crashing into a lamp post",,
+RoadAccidents003_x264.mp4,RoadAccidents003,road accident,9,13,4,"a kid riding a bicycle crashes onto a ledge within a house",,
+RoadAccidents004_x264.mp4,RoadAccidents004,road accident,4,7,3,"a speeding car rams into another car in the opposite direction which is making a turn to the left",,
+RoadAccidents005_x264.mp4,RoadAccidents005,road accident,2,7,5,"a black car is moving on the road and another black car coming from the opposite direction hits the first car",,
+Animal001_x264.mp4,Animal001,animal,0,5,5,"monkey knocks over vase of sunflowers in someone's house",2,
+Animal002_x264.mp4,Animal002,animal,2,12,10,"monkey runs towards a man and kicks him down to the floor before climbing up a wall",2,
+Animal003_x264.mp4,Animal003,animal,9,22,13,"3 monkeys chase after a young boy and knock him down, boy stands up and flings a slipper at them with his feet before running away",2,
+Animal004_x264.mp4,Animal004,animal,0,8,8,"boy is sitting down and playing his phone next to the door when a leopard enters the house, boy runs out of house and closes door behind him",1,
+Animal005_x264.mp4,Animal005,animal,0,40,40,"leopard enters the home and attacks a dog sleeping outside the door, dog wakes up and barks at leopard while running away, leopard chases after dog",2,
+Animal006_x264.mp4,Animal006,animal,0,19,19,"pizza delivery man knocks on door, when door opens, squirrel on ceiling jumps through the door into the house",1,
+Animal007_x264.mp4,Animal007,animal,21,28,7,"squirrel jumps onto man inside garage and attacks his head, man runs away",3,
+Animal008_x264.mp4,Animal008,animal,12,27,15,"at the porch of a house, a squirrel jumps onto a delivery man's shoulders and climbs onto his head before jumping off",1,
+Animal009_x264.mp4,Animal009,animal,12,15,3,"snake attacks man, man runs away",2,
+Animal010_x264.mp4,Animal010,animal,2,15,13,"when man opens door to enter house, snake hanging from top of door bites his head, he runs away and trips and falls",3,
+Animal011_x264.mp4,Animal011,animal,20,31,11,"snake comes into house while woman is rocking baby on the hammock, when snake moves close to hammock, woman grabs baby off hammock and runs into another room",1,
+Animal012_x264.mp4,Animal012,animal,0,9,9,"woman carrying baby runs into house while monkey chases after her, closes the door and keeps the monkey out",1,
+Animal013_x264.mp4,Animal013,animal,0,28,28,"bear in house opens freezer and steals food from it, then leaves through window",1,
+Animal014_x264.mp4,Animal014,animal,0,9,9,"bear enters convenience store, steals a bag of chips and leaves",1,
+Animal015_x264.mp4,Animal015,animal,0,25,25,"monitor lizard enters shoe shop through door and runs around before going behind the counter, 2 women in shop hide while a man goes nearer to the monitor lizard, monitor lizard knocks over trash can",1,
+SYN-Fighting001_x264.mp4,SYN-Fighting001,fighting,5,27,22,"two men argue outside a bar then exchange punches until bystanders separate them",3,0.82
+SYN-Fighting002_x264.mp4,SYN-Fighting002,fighting,12,48,36,"a group of four people brawl in a parking lot, one person falls and is kicked repeatedly",4,0.61
+SYN-Fighting003_x264.mp4,SYN-Fighting003,fighting,3,19,16,"a man swings a wooden bat at another man who blocks it with his forearm",4,
+SYN-Fighting004_x264.mp4,SYN-Fighting004,fighting,8,30,22,"two women push and pull each other by the hair near a bus stop",2,0.55
+SYN-Fighting005_x264.mp4,SYN-Fighting005,fighting,20,41,21,"a man pulls a folding knife during a street fight and the other man backs away",5,0.9
+SYN-Fighting006_x264.mp4,SYN-Fighting006,fighting,15,63,48,"several football fans clash on a stadium concourse and throw bottles",4,0.48
+SYN-Fighting007_x264.mp4,SYN-Fighting007,fighting,6,26,20,"a bouncer restrains an aggressive customer who keeps trying to swing at him",3,0.77
+SYN-Fighting008_x264.mp4,SYN-Fighting008,fighting,4,18,14,"two delivery riders fight over a parking spot and shove each other into a scooter",2,
+SYN-Fighting009_x264.mp4,SYN-Fighting009,fighting,9,25,16,"a man shoves a shop worker and throws a chair before leaving",3,0.66
+SYN-Fighting010_x264.mp4,SYN-Fighting010,fighting,11,39,28,"a crowd forms around two teenagers fighting in a school corridor",3,0.7
+SYN-Fighting011_x264.mp4,SYN-Fighting011,fighting,7,33,26,"a man attacks another with a metal pipe in an alley until a passerby intervenes",5,0.63
+SYN-Fighting012_x264.mp4,SYN-Fighting012,fighting,14,34,20,"two drivers step out after a collision and trade punches on the roadside",3,
+SYN-Explosion001_x264.mp4,SYN-Explosion001,explosion,6,24,18,"a parked motorcycle catches fire and its fuel tank bursts, scattering debris",4,0.86
+SYN-Explosion002_x264.mp4,SYN-Explosion002,explosion,10,33,23,"a gas cylinder explodes inside a food stall and the vendor runs clear",4,0.58
+SYN-Explosion003_x264.mp4,SYN-Explosion003,explosion,3,11,8,"a small pipe bomb detonates in a rubbish bin on a quiet street",3,
+SYN-Explosion004_x264.mp4,SYN-Explosion004,explosion,2,9,7,"a transformer on a utility pole bursts in a shower of sparks and smoke",3,0.79
+SYN-Explosion005_x264.mp4,SYN-Explosion005,explosion,8,30,22,"a car bomb detonates in a market square and people scatter",5,0.92
+SYN-Explosion006_x264.mp4,SYN-Explosion006,explosion,5,27,22,"a firework crate ignites early at a festival and launches shells into the crowd",4,0.44
+SYN-Explosion007_x264.mp4,SYN-Explosion007,explosion,12,31,19,"an industrial boiler ruptures and steam and metal fragments fill the yard",4,
+SYN-Explosion008_x264.mp4,SYN-Explosion008,explosion,4,13,9,"a hand grenade is thrown into a courtyard and detonates near a wall",5,0.69
+SYN-Explosion009_x264.mp4,SYN-Explosion009,explosion,15,45,30,"a demolition charge misfires and part of a facade collapses onto the pavement",4,0.81
+SYN-Burglary001_x264.mp4,SYN-Burglary001,burglary,0,42,42,"a man pries open a rear window with a screwdriver and climbs into a house",3,0.74
+SYN-Burglary002_x264.mp4,SYN-Burglary002,burglary,5,88,83,"two people load a safe onto a hand trolley and wheel it out of an office",3,0.52
+SYN-Burglary003_x264.mp4,SYN-Burglary003,burglary,2,27,25,"a hooded figure smashes a jewellery display case with a hammer and fills a bag",4,
+SYN-Burglary004_x264.mp4,SYN-Burglary004,burglary,3,19,16,"a person cuts a bicycle lock with bolt cutters and rides the bicycle away",2,0.66
+SYN-Burglary005_x264.mp4,SYN-Burglary005,burglary,10,72,62,"a van backs up to a warehouse shutter and three people carry boxes into it",3,0.88
+SYN-RoadAccident001_x264.mp4,SYN-RoadAccident001,road accident,4,9,5,"a motorcyclist rear-ends a stopped car at a junction and is thrown onto the bonnet",3,0.83
+SYN-RoadAccident002_x264.mp4,SYN-RoadAccident002,road accident,6,18,12,"a lorry jackknifes on a wet motorway and blocks two lanes",4,0.59
+SYN-RoadAccident003_x264.mp4,SYN-RoadAccident003,road accident,3,8,5,"a car runs a red light and clips a cyclist who slides across the tarmac",4,
+SYN-RoadAccident004_x264.mp4,SYN-RoadAccident004,road accident,5,11,6,"a bus mounts the kerb and shears off a bus stop shelter",3,0.68
+SYN-RoadAccident005_x264.mp4,SYN-RoadAccident005,road accident,2,10,8,"two cars collide head-on on a narrow bridge and spin to a stop",5,0.95
+SYN-Animal001_x264.mp4,SYN-Animal001,animal,0,14,14,"a stray dog wanders into a classroom and knocks over a stack of chairs",1,0.72
+SYN-Animal002_x264.mp4,SYN-Animal002,animal,3,21,18,"a wild boar charges through a market and scatters a fruit stall",3,0.64
+SYN-Animal003_x264.mp4,SYN-Animal003,animal,5,35,30,"a swarm of bees drives workers away from a loading dock",2,
+SYN-Animal004_x264.mp4,SYN-Animal004,animal,2,24,22,"a horse bolts from a paddock and gallops down a residential street",2,0.8
+SYN-Animal005_x264.mp4,SYN-Animal005,animal,0,45,45,"a crocodile suns itself on a boat ramp and blocks people from passing",2,0.69

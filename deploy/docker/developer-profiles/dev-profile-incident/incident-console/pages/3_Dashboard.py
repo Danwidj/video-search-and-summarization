@@ -44,7 +44,7 @@ def _evidence_rows(db_handle, reports):
             entities.append(
                 {
                     "Incident_ID": rid,
-                    "ID": row.get("local_id"),
+                    "ID": row.get("entity_id"),
                     "Type": row.get("type"),
                     "Description": row.get("description"),
                 }
@@ -53,8 +53,8 @@ def _evidence_rows(db_handle, reports):
             instruments.append(
                 {
                     "Incident_ID": rid,
-                    "ID": row.get("local_id"),
-                    "Entity_ID": row.get("entity_local_id"),
+                    "ID": row.get("instrument_id"),
+                    "Entity_ID": row.get("entity_id"),
                     "Name": row.get("name"),
                     "Description": row.get("description"),
                     "Threat_Level": row.get("threat_level"),
@@ -64,7 +64,7 @@ def _evidence_rows(db_handle, reports):
             assets.append(
                 {
                     "Incident_ID": rid,
-                    "ID": row.get("local_id"),
+                    "ID": row.get("asset_id"),
                     "Name": row.get("name"),
                     "Description": row.get("description"),
                 }
@@ -79,7 +79,7 @@ if preview:
 
     seed = load_seed()
     alert(
-        "<strong>MOCK / SEED PREVIEW.</strong> Real ground-truth incidents plus clearly flagged synthetic rows. No database writes; locations and workflow statuses are not supplied.",
+        "<strong>MOCK / SEED PREVIEW.</strong> Sample incidents parsed from the offline CSV fixture. No database writes; locations and workflow statuses are not supplied.",
         "warning",
         "🧪",
     )

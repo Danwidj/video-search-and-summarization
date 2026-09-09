@@ -53,7 +53,6 @@ _EDITABLE = (
     "description",
     "duration_sec",
     "model_version",
-    "is_synthetic",
 )
 
 
@@ -80,7 +79,6 @@ def seed(database: IncidentDB) -> dict[str, int]:
             "description": incident["description"],
             "duration_sec": duration_sec_for(incident),
             "model_version": MODEL_VERSION,
-            "is_synthetic": True,
             "status": "unreviewed",
         }
         existing = database.get_report_by_video_id(video_id)
@@ -99,30 +97,27 @@ def seed(database: IncidentDB) -> dict[str, int]:
         for entity in incident["entities"]:
             database.add_incident_entity(
                 report_id,
-                local_id=entity["local_id"],
+                entity_id=entity["entity_id"],
                 type=entity["type"],
                 description=entity["description"],
-                is_synthetic=True,
             )
             counts["entities"] += 1
         for instrument in incident["instruments"]:
             database.add_incident_instrument(
                 report_id,
-                local_id=instrument["local_id"],
-                entity_local_id=instrument.get("entity_local_id"),
+                instrument_id=instrument["instrument_id"],
+                entity_id=instrument.get("entity_id"),
                 name=instrument["name"],
                 description=instrument["description"],
                 threat_level=instrument.get("threat_level"),
-                is_synthetic=True,
             )
             counts["instruments"] += 1
         for asset in incident["assets"]:
             database.add_incident_asset(
                 report_id,
-                local_id=asset["local_id"],
+                asset_id=asset["asset_id"],
                 name=asset["name"],
                 description=asset["description"],
-                is_synthetic=True,
             )
             counts["assets"] += 1
     return counts
