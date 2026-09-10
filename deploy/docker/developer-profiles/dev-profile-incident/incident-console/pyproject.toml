@@ -22,6 +22,7 @@ dependencies = [
     "boto3>=1.35,<2",
     # matching.py: optimal one-to-one assignment for similarity-based evaluation
     "scipy>=1.14,<2",
+    "numpy>=2.1,<3",
 ]
 
 [dependency-groups]
