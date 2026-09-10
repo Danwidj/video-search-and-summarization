@@ -109,9 +109,9 @@ incident_reports = Table(
     Column("model_version", String(128)),
 )
 
-# Structured evidence linked to an incident report, modeled on
-# fixtures/data/{entities,instruments,assets}.csv. Additive: no existing profile
-# reads or writes these; the 8-mock Supabase seed is their only current source.
+# Structured evidence linked to an incident report (entities / instruments /
+# assets). Additive: no existing profile reads or writes these; the 8-mock
+# Supabase seed is their only current source.
 incident_entities = Table(
     "incident_entities",
     metadata,

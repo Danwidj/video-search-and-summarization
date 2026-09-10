@@ -121,6 +121,33 @@ def video_panel(record, video, fields):
         st.caption(f"Video duration: {time_label(duration)}")
 
 
+def _attribution_when(value) -> str:
+    """Best-effort ``YYYY-MM-DD HH:MM UTC`` for a datetime or ISO-ish string."""
+    if value is None or value == "":
+        return ""
+    text = str(value)
+    if hasattr(value, "strftime"):
+        text = value.strftime("%Y-%m-%d %H:%M")
+    else:
+        text = text.replace("T", " ")[:16]
+    return f" · {text} UTC"
+
+
+def review_attribution_caption(record) -> None:
+    """Show who last reviewed / edited this incident (DB-backed path only).
+
+    The names come from the ``verified_by`` / ``edited_by`` columns that
+    ``set_review_status`` and ``update_report`` persist; carrying them here is
+    what makes a saved "Reviewed by" survive navigating away and back.
+    """
+    verified_by = record.get("verified_by")
+    if verified_by:
+        st.caption(f"Verified by {verified_by}{_attribution_when(record.get('verified_at'))}")
+    edited_by = record.get("edited_by")
+    if edited_by:
+        st.caption(f"Last edited by {edited_by}{_attribution_when(record.get('edited_at'))}")
+
+
 def review_status_control(handle, record):
     """DB-backed review-status transition. Persists through Supabase."""
     from db_reports import REVIEW_STATUSES
@@ -146,6 +173,7 @@ def review_status_control(handle, record):
                 st.session_state["detail_notice"] = f"Review status set to “{choice}”."
                 st.rerun()
     st.caption(f"Current: {current}")
+    review_attribution_caption(record)
 
 
 def source_video_picker(handle, record):
@@ -314,14 +342,12 @@ def edit_form(handle, record, fields):
 def render_detail(handle, record, video):
     fields = normalized(record)
     left, right = st.columns([1.1, 1], gap="large")
-    db_backed = getattr(handle, "supports_db", False)
     with left, st.container(border=True):
         if callable(video):
             video = video()
         video_panel(record, video, fields)
-        if db_backed:
-            st.divider()
-            source_video_picker(handle, record)
+        st.divider()
+        source_video_picker(handle, record)
     with right, st.container(border=True):
         st.subheader(fields["Type"] or "Incident type not supplied")
         st.caption(f"Incident {fields['ID']} · {fields['Filename'] or 'Filename not supplied'}")
@@ -368,15 +394,9 @@ def render_detail(handle, record, video):
             with confidence_col:
                 field("Confidence Score", confidence_label(fields["Confidence_Score"]))
             field("Source", fields["Source"])
-        if db_backed:
-            st.divider()
-            review_status_control(handle, record)
-            st.divider()
-            evidence_section(handle, record)
         st.divider()
-        if db_backed:
-            st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")
-        else:
-            st.caption(
-                "Changes save directly to fixtures/data/incidents.csv and are visible on the Dashboard after refresh."
-            )
+        review_status_control(handle, record)
+        st.divider()
+        evidence_section(handle, record)
+        st.divider()
+        st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")

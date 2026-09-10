@@ -35,7 +35,7 @@ def get_db_or_notice() -> db.IncidentDB | None:
     """Return the DB handle, or render a visible degraded state and return None."""
     if not db.is_configured():
         alert(
-            "<strong>Database not configured.</strong> Set <code>INCIDENT_DB_DSN</code> in the untracked <code>incident-console/.env.local</code> to enable catalog, report, dashboard and evaluation data. The page remains reviewable with the available seed data.",
+            "<strong>Database not configured.</strong> Set <code>INCIDENT_DB_DSN</code> in the untracked <code>incident-console/.env.local</code> to load report, dashboard and evidence data. The console is database-backed and has no offline mode.",
             "info",
             "🗄️",
         )

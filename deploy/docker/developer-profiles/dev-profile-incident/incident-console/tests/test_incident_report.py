@@ -18,7 +18,6 @@ from __future__ import annotations
 import pytest
 
 from incident_report import (
-    agreement_rate,
     build_insights,
     canned_incident_report,
     extract_message_content,
@@ -27,7 +26,6 @@ from incident_report import (
     parse_incident_report,
     playback_start_seconds,
     seconds_to_timestamp,
-    severity_disagreement,
     severity_triggers_notification,
     timestamp_to_seconds,
     to_completion_payload,
@@ -68,20 +66,6 @@ def test_severity_thresholds():
     assert severity_triggers_notification(4, 4) is True
     assert severity_triggers_notification(3, 4) is False
     assert severity_triggers_notification(None, 4) is False
-    assert severity_disagreement(5, 3, 1) is True
-    assert severity_disagreement(4, 3, 1) is False
-    assert severity_disagreement("x", 3, 1) is False
-
-
-def test_agreement_rate():
-    rows = [
-        {"ai_severity": 3, "human_severity": 3},
-        {"ai_severity": 3, "human_severity": 4},
-        {"ai_severity": 2, "human_severity": 2},
-        {"ai_severity": None, "human_severity": 2},
-    ]
-    assert agreement_rate(rows) == pytest.approx(2 / 3)
-    assert agreement_rate([]) == 0.0
 
 
 def test_group_notifications_windows_and_preserves_all():

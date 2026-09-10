@@ -14,7 +14,7 @@ this app implements the frontend half of
 This package is **profile-exclusive** — it lives here, not under the shared
 `deploy/docker/services/` tree.
 
-## Local dev loop (no Docker, no GPU, no live backend)
+## Local dev loop (no Docker, no GPU)
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
@@ -22,14 +22,14 @@ uv sync
 uv run streamlit run app.py
 ```
 
-The app starts cleanly with nothing else running. Every screen degrades
-gracefully:
+The app imports and starts with nothing else running, but it is **database-backed
+and has no offline mode**: `INCIDENT_DB_DSN` must be set for Report Review and the
+Dashboard to show any data (see the next section). Other dependencies still
+degrade gracefully:
 
-- **No `INCIDENT_DB_DSN`** → catalog / review / dashboard / eval show a visible
-  *database not configured* state instead of erroring. Report Review and the
-  Dashboard fall back to the offline CSV fixture (`fixtures/`), session-only:
-  edits do not persist.
-- **No agent** → upload and the two AI-trigger calls fail soft with a notice.
+- **No `INCIDENT_DB_DSN`** → every page shows a visible *database not configured*
+  state instead of erroring; no incident data is rendered.
+- **No agent** → the AI-trigger calls fail soft with a notice.
 - **No `INCIDENT_VIDEO_BASE_URL` and no R2 keys** → playback shows the stored key
   and the incident window instead of a player.
 
@@ -81,9 +81,9 @@ export INCIDENT_LLM_BASE_URL=http://localhost:8900/v1
 
 `POST /v1/chat/completions` returns a canned completion whose `content` is an
 `IncidentReport`-shaped JSON blob (`incident_type`, `severity` 1–5,
-`confidence`, `incident_start`/`incident_end`, `description`, `persons[]`). The
-"Draft report via mock LLM" button on the Catalog page calls it through the same
-route → parse → Postgres-write path the real agent will use.
+`confidence`, `incident_start`/`incident_end`, `description`, `persons[]`). It
+exercises the same route → parse → Postgres-write path the real agent will use
+for the deferred report-generation flow (`agent_client.py`).
 
 The two agent AI-trigger endpoints —
 `POST /api/v1/incidents/{id}/analyze` and `POST /api/v1/search` — do **not**
@@ -120,7 +120,6 @@ source are documented in [`dev-profile-incident/.env`](../.env).
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
 | `INCIDENT_VIDEO_BASE_URL` | Optional playback URL prefix; unset uses R2 presigned URLs | The R2 bucket public/presigned URL prefix |
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
-| `INCIDENT_SEVERITY_EVAL_DISAGREE_THRESHOLD` | Human/AI severity delta that flags a disagreement (default `1`) | **Plan default, not spec** — confirm with the team |
 
 ## VM deploy
 
@@ -133,14 +132,11 @@ uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
 
 | File | Role |
 |---|---|
-| `app.py` | Entry point / navigation home + environment panel |
-| `pages/1_Catalog.py` | Catalog + upload + metadata edit |
-| `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp; DB-backed when a DSN is set, offline CSV otherwise |
-| `pages/3_Dashboard.py` | Filters + aggregate insights; DB incidents + evidence when a DSN is set, offline CSV otherwise |
-| `pages/4_Severity_Eval.py` | Human-vs-AI severity eval |
+| `app.py` | Entry point / navigation |
+| `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
+| `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence |
 | `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos`, `incident_reports`, `incident_entities` / `incident_instruments` / `incident_assets`, `notifications`, `severity_eval_log` |
-| `db_reports.py` | Postgres-backed Incident view model (same shape as `local_reports.py`; edits persist) |
-| `local_reports.py` | Offline CSV-fixture view model (session-only edits) |
+| `db_reports.py` | Postgres-backed Incident view model (edits persist) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 8 mock incidents + evidence, and the one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |

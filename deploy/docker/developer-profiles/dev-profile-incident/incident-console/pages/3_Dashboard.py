@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Analytics dashboard with an isolated, optional seed preview."""
+"""Analytics dashboard over the database-backed incident reports."""
 
 import streamlit as st
 
-from dashboard_view import frame, from_reports, render
+from dashboard_view import from_reports, render
 from db_reports import DBReports
-from theme import alert, apply_base_style, page_header
+from theme import apply_base_style, page_header
 from ui import get_db_or_notice, notifications_panel
 
 st.set_page_config(page_title="Analytics Dashboard - RISE UP", layout="wide")
@@ -27,7 +27,7 @@ apply_base_style()
 page_header(
     "Analytics Dashboard",
     "Incident patterns, review priorities, and linked evidence at a glance.",
-    "Database incidents when configured · offline CSV fixture otherwise · presentation-only analytics scope",
+    "Database incidents and linked evidence · presentation-only analytics scope",
 )
 handle = get_db_or_notice()
 notifications_panel(handle)
@@ -72,22 +72,9 @@ def _evidence_rows(db_handle, reports):
     return entities, instruments, assets
 
 
-reports = DBReports(handle).list_reports() if handle is not None else []
-preview = handle is None and st.toggle("Preview mock / seed data", value=True)
-if preview:
-    from fixtures.dashboard_seed import load_seed
-
-    seed = load_seed()
-    alert(
-        "<strong>MOCK / SEED PREVIEW.</strong> Sample incidents parsed from the offline CSV fixture. No database writes; locations and workflow statuses are not supplied.",
-        "warning",
-        "🧪",
-    )
-    render(frame(seed["Incident"]), seed["Entity"], seed["Instrument"])
-elif handle is not None:
-    entities, instruments, _assets = _evidence_rows(handle, reports)
-    st.caption(f"Live scope: {len(reports)} incident(s) from the database, with linked entity / instrument evidence.")
-    render(from_reports(reports), entities, instruments, reports)
-else:
-    st.caption("Live scope: verified reports only. Linked entity/instrument data is not supplied by this query.")
-    render(from_reports(reports), [], [], reports)
+if handle is None:
+    st.stop()
+reports = DBReports(handle).list_reports()
+entities, instruments, _assets = _evidence_rows(handle, reports)
+st.caption(f"Live scope: {len(reports)} incident(s) from the database, with linked entity / instrument evidence.")
+render(from_reports(reports), entities, instruments, reports)
