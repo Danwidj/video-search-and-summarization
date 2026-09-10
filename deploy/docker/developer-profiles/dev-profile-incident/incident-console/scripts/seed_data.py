@@ -63,7 +63,9 @@ def _float(value):
 def _timestamp(seconds):
     if seconds is None:
         return None
-    return f"00:{seconds // 60:02d}:{seconds % 60:02d}"
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 def _rows(name):

@@ -20,8 +20,8 @@ docstring for the full table list and the `review_status` design note). `db.py` 
 this schema; the planning docs under `docs/incident-plan/` may still describe an earlier flat `incident_reports`
 shape and have not been reconciled with it. Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
 `videos.id`, no separate `video_id` column). `fixtures/data/*.csv` (72 sample incidents) is the seed source for
-both the offline CSV preview (`fixtures/dashboard_seed.py`) and the Postgres importer (`scripts/seed_supabase.py`),
-which seeds all 72 under one shared `model_run_id`.
+the Postgres importer (`scripts/seed_supabase.py`), which seeds all 72 under one shared `model_run_id`. The
+console is database-backed only; there is no offline CSV-preview UI mode.
 
 ## UI development without GPU/NIM containers
 
