@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""RISE UP: two top-level pages; details live within Incident Reports."""
+"""RISE UP: four top-level pages; details live within Incident Reports."""
 
 import streamlit as st
 

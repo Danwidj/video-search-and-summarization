@@ -23,9 +23,8 @@ uv run streamlit run app.py
 ```
 
 The app imports and starts with nothing else running, but it is **database-backed
-and has no offline mode**: `INCIDENT_DB_DSN` must be set for Report Review and the
-Dashboard to show any data (see the next section). Other dependencies still
-degrade gracefully:
+and has no offline mode**: `INCIDENT_DB_DSN` must be set for any page to show
+data (see the next section). Other dependencies still degrade gracefully:
 
 - **No `INCIDENT_DB_DSN`** → every page shows a visible *database not configured*
   state instead of erroring; no incident data is rendered.
@@ -35,9 +34,9 @@ degrade gracefully:
 
 ## Supabase Postgres + the 8-mock seed
 
-With `INCIDENT_DB_DSN` set, Report Review and the Dashboard read and write
-incidents through `db.py` (`IncidentDB`), so field edits, review-status changes
-and video re-links persist across a refresh. `init_schema()` creates every table
+With `INCIDENT_DB_DSN` set, the pages read and write incidents through `db.py`
+(`IncidentDB`), so field edits, review-status changes, video re-links and
+severity ratings persist across a refresh. `init_schema()` creates every table
 on first use (`checkfirst=True`; no additive column backfill — the schema is
 created fresh, not migrated).
 
