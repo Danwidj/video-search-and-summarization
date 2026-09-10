@@ -246,7 +246,7 @@ def evidence_section(handle, record):
             st.markdown(
                 f"- **{row.get('entity_id') or '?'}** · {row.get('type') or 'unknown'} — {row.get('description') or ''}"
             )
-            _screenshot(row.get("image_key"))
+            _screenshot(row.get("image"))
     if data["instruments"]:
         st.caption("Instruments")
         for row in data["instruments"]:
@@ -256,14 +256,14 @@ def evidence_section(handle, record):
             st.markdown(
                 f"- **{row.get('instrument_id') or '?'}** · {row.get('name') or ''}{threat_txt}{held} — {row.get('description') or ''}"
             )
-            _screenshot(row.get("image_key"))
+            _screenshot(row.get("image"))
     if data["assets"]:
         st.caption("Assets")
         for row in data["assets"]:
             st.markdown(
                 f"- **{row.get('asset_id') or '?'}** · {row.get('name') or ''} — {row.get('description') or ''}"
             )
-            _screenshot(row.get("image_key"))
+            _screenshot(row.get("image"))
 
 
 def edit_form(handle, record, fields):

@@ -13,17 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One-time, idempotent Supabase seed for the 8 mock incidents.
+"""One-time, idempotent Postgres seed from ``fixtures/data/*.csv``.
 
 Run it by hand once the DSN is configured (see incident-console/README.md):
 
     uv run python scripts/seed_supabase.py
 
-It upserts 8 ``videos`` rows (natural key: ``r2_key``), one ``incident_reports``
-row per clip (natural key: that video's id), and each incident's fabricated
-entities / instruments / assets. Re-running replaces the evidence rows and
-updates the incident in place, so row counts do not grow. It is never imported
-by the app and never runs on startup.
+It upserts one ``videos`` row per incident (natural key: the incident id -
+identity rule is 1 video = 1 incident), one shared ``model_runs`` row
+(``MR-SEED``), and each incident's model-output ``incidents`` / ``entities`` /
+``instruments`` / ``assets`` rows. Re-running replaces the incident and its
+evidence rows in place, so row counts do not grow. It never populates
+``reports`` or ``queries`` - those stay reserved for a future
+report-generation / query-submission workflow, out of scope here. Never
+imported by the app and never runs on startup.
 """
 
 from __future__ import annotations
@@ -35,91 +38,86 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import config  # noqa: E402  (loads .env / .env.local before anything reads it)
 from db import IncidentDB  # noqa: E402
-from scripts.seed_data import (  # noqa: E402
-    CLIP_DURATIONS,
-    INCIDENTS,
-    MODEL_VERSION,
-    duration_sec_for,
-    filename_for,
-)
-
-_EDITABLE = (
-    "incident_type",
-    "severity",
-    "confidence",
-    "incident_start",
-    "incident_end",
-    "incident_start_confirmed",
-    "description",
-    "duration_sec",
-    "model_version",
-)
+from scripts.seed_data import MODEL_NAME, MODEL_RUN_ID, MODEL_VERSION, PROMPT_VERSION, seed_rows  # noqa: E402
 
 
 def seed(database: IncidentDB) -> dict[str, int]:
     """Apply the seed and return the resulting row counts for the seeded set."""
-    counts = {"videos": 0, "reports": 0, "entities": 0, "instruments": 0, "assets": 0}
-    for incident in INCIDENTS:
-        r2_key = incident["r2_key"]
-        video_id = database.upsert_video_by_r2_key(
-            r2_key=r2_key,
-            filename=filename_for(r2_key),
-            status="analyzed",
-            duration_sec=CLIP_DURATIONS.get(r2_key),
+    data = seed_rows()
+    counts = {"videos": 0, "model_runs": 0, "incidents": 0, "entities": 0, "instruments": 0, "assets": 0}
+    # Known ground-truth gap (see scripts/seed_data.py docstring): entities.csv
+    # carries one stray row (RoadAccidents006/E2) with no incidents.csv row of
+    # its own. It links to no incident and is excluded here rather than
+    # violating the incidents FK.
+    incident_ids = {incident["Incident_ID"] for incident in data["Incident"]}
+
+    database.insert_model_run(
+        MODEL_RUN_ID, model_name=MODEL_NAME, model_version=MODEL_VERSION, prompt_version=PROMPT_VERSION
+    )
+    counts["model_runs"] = 1
+
+    for incident in data["Incident"]:
+        database.upsert_video(
+            incident["Incident_ID"], filepath=incident["Filepath"], duration=incident["Video_Duration"]
         )
         counts["videos"] += 1
 
-        report = {
-            "incident_type": incident["incident_type"],
-            "severity": incident["severity"],
-            "confidence": incident["confidence"],
-            "incident_start": incident["incident_start"],
-            "incident_end": incident["incident_end"],
-            "incident_start_confirmed": True,
-            "description": incident["description"],
-            "duration_sec": duration_sec_for(incident),
-            "model_version": MODEL_VERSION,
-            "status": "unreviewed",
-        }
-        existing = database.get_report_by_video_id(video_id)
-        if existing:
-            report_id = int(existing["id"])
-            database.update_report(
-                report_id,
-                fields={k: report[k] for k in _EDITABLE},
-                edited_by="seed-importer",
-            )
-        else:
-            report_id = database.insert_report(video_id=video_id, report=report)
-        counts["reports"] += 1
+    for incident in data["Incident"]:
+        incident_id, model_run_id = incident["Incident_ID"], incident["Model_Run_ID"]
+        database.insert_incident(
+            incident_id,
+            model_run_id,
+            fields={
+                "type": incident["Type"],
+                "start_timestamp": incident["Start_Timestamp"],
+                "end_timestamp": incident["End_Timestamp"],
+                "duration": incident["Duration"],
+                "description": incident["Description"],
+                "severity_level": incident["Severity"],
+                "confidence_score": incident.get("Confidence_Score"),
+            },
+        )
+        counts["incidents"] += 1
+        database.clear_incident_evidence(incident_id, model_run_id)
 
-        database.clear_incident_evidence(report_id)
-        for entity in incident["entities"]:
-            database.add_incident_entity(
-                report_id,
-                entity_id=entity["entity_id"],
-                type=entity["type"],
-                description=entity["description"],
-            )
-            counts["entities"] += 1
-        for instrument in incident["instruments"]:
-            database.add_incident_instrument(
-                report_id,
-                instrument_id=instrument["instrument_id"],
-                entity_id=instrument.get("entity_id"),
-                name=instrument["name"],
-                description=instrument["description"],
-                threat_level=instrument.get("threat_level"),
-            )
-            counts["instruments"] += 1
-        for asset in incident["assets"]:
-            database.add_incident_asset(
-                report_id,
-                asset_id=asset["asset_id"],
-                name=asset["name"],
-                description=asset["description"],
-            )
-            counts["assets"] += 1
+    for entity in data["Entity"]:
+        if entity["Incident_ID"] not in incident_ids:
+            continue
+        database.add_incident_entity(
+            entity["Incident_ID"],
+            entity["Model_Run_ID"],
+            entity_id=entity["ID"],
+            type=entity["Type"],
+            description=entity["Description"],
+        )
+        counts["entities"] += 1
+
+    for instrument in data["Instrument"]:
+        if instrument["Incident_ID"] not in incident_ids:
+            continue
+        database.add_incident_instrument(
+            instrument["Incident_ID"],
+            instrument["Model_Run_ID"],
+            instrument_id=instrument["ID"],
+            entity_id=instrument["Entity_ID"],
+            name=instrument["Name"],
+            description=instrument["Description"],
+            threat_level=instrument["Threat_Level"],
+        )
+        counts["instruments"] += 1
+
+    for asset in data["Asset"]:
+        if asset["Incident_ID"] not in incident_ids:
+            continue
+        database.add_incident_asset(
+            asset["Incident_ID"],
+            asset["Model_Run_ID"],
+            asset_id=asset["ID"],
+            name=asset["Name"],
+            description=asset["Description"],
+        )
+        counts["assets"] += 1
+
     return counts
 
 
@@ -127,7 +125,7 @@ def main() -> int:
     dsn = config.incident_db_dsn()
     if not dsn:
         print(
-            "INCIDENT_DB_DSN is not set. Put the Supabase DSN in incident-console/.env.local (git-ignored) and re-run.",
+            "INCIDENT_DB_DSN is not set. Put the Postgres DSN in incident-console/.env.local (git-ignored) and re-run.",
             file=sys.stderr,
         )
         return 1
