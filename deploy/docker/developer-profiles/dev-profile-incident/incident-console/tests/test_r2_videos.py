@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
-
-from fixtures.dashboard_seed import load_seed
-from local_reports import LocalReports
 from r2_videos import category_matches, map_incidents_to_video_keys
 
 
@@ -33,21 +29,10 @@ def test_exact_category_precedes_related_fallbacks():
     assert category_matches("explosion", keys) == []
 
 
-def test_detail_automatically_maps_exact_video():
-    key = "anomaly/animal_attacks/Animal001_x264.mp4"
-    with (
-        patch("local_reports.configured", return_value=True),
-        patch("local_reports.list_video_keys", return_value=[key]),
-        patch("local_reports.playback_url", return_value="https://example.invalid/video.mp4"),
-    ):
-        handle = LocalReports({})
-        video = handle.get_video("Animal001")
-        assert video["R2_Key"] == key
-        assert video["Filepath"] == "https://example.invalid/video.mp4"
-
-
 def test_each_incident_gets_a_distinct_video_key():
-    incidents = load_seed()["Incident"][:4]
+    incidents = [
+        {"Incident_ID": f"Burglary00{n}", "Filename": f"Burglary00{n}.mp4", "Type": "burglary"} for n in range(1, 5)
+    ]
     keys = [f"anomaly/burglary/Burglary00{n}_x264.mp4" for n in range(1, 5)]
     mapping = map_incidents_to_video_keys(incidents, keys)
     assert set(mapping) == {row["Incident_ID"] for row in incidents}

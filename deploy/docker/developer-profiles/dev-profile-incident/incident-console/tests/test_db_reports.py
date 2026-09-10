@@ -48,6 +48,11 @@ def test_list_and_get_expose_the_local_reports_shape(seeded):
         "confidence",
         "status",
         "r2_key",
+        "location",
+        "verified_by",
+        "verified_at",
+        "edited_by",
+        "edited_at",
     ):
         assert key in row
     assert row["filename"].endswith(".mp4")
@@ -76,6 +81,38 @@ def test_review_status_change_persists(seeded):
     assert DBReports(seeded).get_report(rid)["status"] == "under review"
     DBReports(seeded).set_review_status(rid, status="verified", reviewed_by="alice")
     assert DBReports(seeded).get_report(rid)["status"] == "verified"
+
+
+def test_review_status_change_round_trips_reviewer_attribution(seeded):
+    """Regression: ``_to_view`` dropped the attribution columns, so a saved
+    "Reviewed by" name was written to Postgres but never read back into the view
+    model - it looked unsaved after navigating away and back."""
+    rid = _first_report_id(seeded)
+    DBReports(seeded).set_review_status(rid, status="verified", reviewed_by="dana")
+    # A brand-new handle == a page refresh / in-app re-open.
+    reloaded = DBReports(seeded).get_report(rid)
+    assert reloaded["status"] == "verified"
+    assert reloaded["verified_by"] == "dana"
+    assert reloaded["edited_by"] == "dana"
+    assert reloaded["verified_at"] is not None
+    assert reloaded["edited_at"] is not None
+
+
+def test_non_verified_status_carries_editor_but_no_verifier(seeded):
+    rid = _first_report_id(seeded)
+    DBReports(seeded).set_review_status(rid, status="under review", reviewed_by="erin")
+    reloaded = DBReports(seeded).get_report(rid)
+    assert reloaded["edited_by"] == "erin"
+    assert reloaded["verified_by"] is None
+
+
+def test_field_edit_round_trips_edited_by_attribution(seeded):
+    rid = _first_report_id(seeded)
+    DBReports(seeded).update_report(rid, fields={"description": "reviewer correction"}, edited_by="fran")
+    reloaded = DBReports(seeded).get_report(rid)
+    assert reloaded["description"] == "reviewer correction"
+    assert reloaded["edited_by"] == "fran"
+    assert reloaded["edited_at"] is not None
 
 
 def test_relinking_video_persists_a_stable_fk(seeded):

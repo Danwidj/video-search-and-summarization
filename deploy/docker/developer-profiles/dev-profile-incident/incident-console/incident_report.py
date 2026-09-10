@@ -31,9 +31,7 @@ from collections.abc import Iterable, Sequence
 from pydantic import BaseModel, Field
 
 # Taxonomy for the Supabase 8-mock dataset: warehouse-safety / operations /
-# traffic / pedestrian / structural footage the captain uploaded to R2. The
-# offline CSV fixture keeps its own crime taxonomy (burglary / explosion / …)
-# and is filtered as free text, so it is unaffected by this list.
+# traffic / pedestrian / structural footage the captain uploaded to R2.
 INCIDENT_TYPES: list[str] = [
     "warehouse safety",
     "equipment",
@@ -43,7 +41,6 @@ INCIDENT_TYPES: list[str] = [
     "other",
 ]
 
-VIDEO_STATUSES: list[str] = ["unanalyzed", "analyzing", "analyzed", "failed"]
 REPORT_STATUSES: list[str] = ["unreviewed", "verified"]
 
 
@@ -120,22 +117,6 @@ def severity_triggers_notification(severity: int | None, threshold: int) -> bool
         return int(severity) >= int(threshold)
     except (TypeError, ValueError):
         return False
-
-
-def severity_disagreement(ai_severity: int | None, human_severity: int | None, threshold: int) -> bool:
-    try:
-        return abs(int(ai_severity) - int(human_severity)) > int(threshold)
-    except (TypeError, ValueError):
-        return False
-
-
-def agreement_rate(rows: Sequence[dict]) -> float:
-    """Fraction of eval rows where AI and human severity match exactly."""
-    rows = [r for r in rows if r.get("ai_severity") is not None and r.get("human_severity") is not None]
-    if not rows:
-        return 0.0
-    matches = sum(1 for r in rows if int(r["ai_severity"]) == int(r["human_severity"]))
-    return matches / len(rows)
 
 
 # --------------------------------------------------------------------------- #

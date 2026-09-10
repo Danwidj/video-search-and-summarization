@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Incident library and detail view over the existing dashboard seed data."""
+"""Incident library and detail view over the incident database."""
 
 import html
 import json
@@ -22,9 +22,7 @@ from urllib.parse import quote
 import streamlit as st
 import streamlit.components.v1 as components
 
-import db
 from db_reports import DBReports
-from local_reports import LocalReports
 from report_detail import (
     confidence_label,
     normalized,
@@ -65,19 +63,18 @@ def render_card_preview(url: str | None, start: int | None) -> None:
 
 st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
 apply_base_style()
+page_header(
+    "Incident Reports",
+    "AI-powered post-incident video analysis and reporting platform",
+    "Supabase Postgres · Field edits and review status persist · Video playback uses Cloudflare R2",
+)
 
-# DB-backed when a DSN is configured (edits persist); otherwise the offline CSV
-# fixture, session-only, exactly as before - no notice when simply unconfigured.
-_db_handle = get_db_or_notice() if db.is_configured() else None
-if _db_handle is not None:
-    handle = DBReports(_db_handle, st.session_state)
-    _provenance = "Supabase Postgres · Field edits and review status persist · Video playback uses Cloudflare R2"
-else:
-    handle = LocalReports(st.session_state)
-    _provenance = (
-        "CSV-backed incident data · Changes persist to fixtures/data/incidents.csv · Video playback uses Cloudflare R2"
-    )
-page_header("Incident Reports", "AI-powered post-incident video analysis and reporting platform", _provenance)
+# The console is database-backed: without a DSN the pages render the visible
+# "database not configured" state from get_db_or_notice() and stop here.
+_db_handle = get_db_or_notice()
+if _db_handle is None:
+    st.stop()
+handle = DBReports(_db_handle, st.session_state)
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
 if close_id := st.session_state.pop("detail_close_edit", None):
