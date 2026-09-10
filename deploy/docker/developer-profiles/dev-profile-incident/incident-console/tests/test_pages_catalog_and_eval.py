@@ -104,3 +104,49 @@ def test_severity_eval_submit_writes_a_log_row(db_pages):
     latest = db_pages.list_severity_evals()[0]
     assert latest["rater"] == "qa-bot"
     assert latest["human_severity"] == 3
+
+
+def _null_all_ai_severities(db):
+    for inc in db.list_latest_incidents():
+        db.update_incident(inc["incident_id"], inc["model_run_id"], fields={"severity_level": None})
+
+
+def test_severity_eval_excludes_reports_with_no_ai_severity(db_pages):
+    _null_all_ai_severities(db_pages)
+    app = AppTest.from_file("../pages/4_Severity_Eval.py", default_timeout=15).run()
+    assert not app.exception
+    assert not app.selectbox
+    assert any("No reports with an AI severity to rate" in c.value for c in app.caption)
+
+
+def test_severity_eval_submit_blocked_when_ai_severity_missing(db_pages):
+    inc = db_pages.list_latest_incidents()[0]
+    db_pages.update_incident(inc["incident_id"], inc["model_run_id"], fields={"severity_level": None})
+
+    app = AppTest.from_file("../pages/4_Severity_Eval.py", default_timeout=15).run()
+    assert not app.exception
+    # The null-severity report must not be offered in the picker.
+    assert inc["incident_id"] not in list(app.selectbox[0].options)
+
+
+def test_agreement_metric_ignores_eval_rows_without_ai_severity(db_pages):
+    inc = db_pages.list_latest_incidents()[0]
+    db_pages.insert_severity_eval(
+        incident_id=inc["incident_id"],
+        model_run_id=inc["model_run_id"],
+        ai_severity=None,
+        human_severity=2,
+        rater="legacy",
+    )
+
+    app = AppTest.from_file("../pages/4_Severity_Eval.py", default_timeout=15).run()
+    assert not app.exception
+    assert any("No ratings logged yet" in c.value for c in app.caption)
+
+    app.slider[0].set_value(int(app.slider[0].value))
+    next(t for t in app.text_input if t.label == "Rater").set_value("qa-bot")
+    next(b for b in app.button if b.label == "Submit rating").click().run()
+    assert not app.exception
+
+    metric = next(m for m in app.metric if m.label == "Exact agreement rate")
+    assert "1 rating(s)" in metric.help

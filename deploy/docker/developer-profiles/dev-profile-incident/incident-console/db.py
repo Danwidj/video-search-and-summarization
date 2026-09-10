@@ -445,11 +445,12 @@ class IncidentDB:
                 select(incidents.c.incident_id, func.count().label("report_count")).group_by(incidents.c.incident_id)
             ).all()
         counts = {r._mapping["incident_id"]: int(r._mapping["report_count"]) for r in count_rows}
+        latest_by_video = {r["incident_id"]: r for r in self.list_latest_incidents()}
         needle = (filename_like or "").strip().lower()
         result: list[dict] = []
         for video in self.list_videos():
             filename = (video.get("filepath") or "").rsplit("/", 1)[-1] or None
-            latest = self.get_latest_incident(video["id"])
+            latest = latest_by_video.get(video["id"])
             derived_status = (latest.get("status") or "unreviewed") if latest else "unanalyzed"
             if needle and needle not in (filename or "").lower():
                 continue

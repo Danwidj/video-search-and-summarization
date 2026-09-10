@@ -29,9 +29,9 @@ handle = get_db_or_notice()
 if handle is None:
     st.stop()
 
-reports = DBReports(handle).list_reports()
+reports = [r for r in DBReports(handle).list_reports() if r.get("severity") is not None]
 if not reports:
-    st.caption("No reports to rate.")
+    st.caption("No reports with an AI severity to rate.")
     st.stop()
 
 by_id = {r["id"]: r for r in reports}
@@ -41,17 +41,20 @@ picked = st.selectbox(
     format_func=lambda i: f"#{i} - {by_id[i].get('incident_type') or 'other'} (AI severity {by_id[i].get('severity')})",
 )
 report = by_id[picked]
-ai_sev = int(report.get("severity") or 1)
+raw_sev = report.get("severity")
+ai_sev = int(raw_sev) if raw_sev is not None else None
 
 with st.form("severity_eval"):
-    st.write(f"**AI severity:** {ai_sev}")
+    st.write(f"**AI severity:** {ai_sev if ai_sev is not None else '(none)'}")
     st.caption(report.get("description") or "(no description)")
-    human = st.slider("Your severity", 1, 5, value=ai_sev)
+    human = st.slider("Your severity", 1, 5, value=ai_sev if ai_sev is not None else 3)
     rater = st.text_input("Rater", placeholder="your name (freeform)")
     submit = st.form_submit_button("Submit rating", type="primary")
 
 if submit:
-    if not rater.strip():
+    if ai_sev is None:
+        st.error("This report has no AI severity to evaluate against.")
+    elif not rater.strip():
         st.error("Enter a rater name.")
     else:
         handle.insert_severity_eval(
@@ -67,7 +70,7 @@ if submit:
 st.divider()
 st.subheader("Agreement")
 
-evals = handle.list_severity_evals()
+evals = [e for e in handle.list_severity_evals() if e.get("ai_severity") is not None]
 if not evals:
     st.caption("No ratings logged yet.")
     st.stop()
