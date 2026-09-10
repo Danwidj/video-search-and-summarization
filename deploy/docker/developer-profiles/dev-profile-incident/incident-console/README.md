@@ -38,7 +38,8 @@ degrade gracefully:
 With `INCIDENT_DB_DSN` set, Report Review and the Dashboard read and write
 incidents through `db.py` (`IncidentDB`), so field edits, review-status changes
 and video re-links persist across a refresh. `init_schema()` creates every table
-(and back-fills the additive columns on a pre-existing schema) on first use.
+on first use (`checkfirst=True`; no additive column backfill — the schema is
+created fresh, not migrated).
 
 **Secrets never go in a tracked file.** `dev-profile-incident/.env` is committed
 and stays placeholders. Put the real Supabase DSN and Cloudflare R2 keys in
