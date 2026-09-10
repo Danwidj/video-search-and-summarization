@@ -101,7 +101,7 @@ def test_build_insights_templates():
 def test_incident_report_from_dict_clamps_and_normalizes():
     report = incident_report_from_dict(
         {
-            "incident_type": "TRAFFIC",
+            "incident_type": "EXPLOSION",
             "severity": 9,
             "confidence": 87.0,
             "incident_start": 65,
@@ -109,31 +109,31 @@ def test_incident_report_from_dict_clamps_and_normalizes():
             "persons": [{"description": "p1", "actions": "ran"}, "p2"],
         }
     )
-    assert report.incident_type == "traffic"
+    assert report.incident_type == "explosion"
     assert report.severity == 5
     assert report.confidence == pytest.approx(0.87)
     assert report.incident_start == "1:05"
     assert len(report.persons) == 2
-    # Unknown type falls back to "other".
-    assert incident_report_from_dict({"incident_type": "meteor"}).incident_type == "other"
+    # Unknown type falls back to the first entry of the controlled taxonomy.
+    assert incident_report_from_dict({"incident_type": "meteor"}).incident_type == "road accident"
 
 
 def test_parse_incident_report_from_fenced_json_and_bare_and_plain():
-    fenced = 'noise\n```json\n{"incident_type": "traffic", "severity": 3}\n```\ntail'
-    assert parse_incident_report(fenced).incident_type == "traffic"
+    fenced = 'noise\n```json\n{"incident_type": "explosion", "severity": 3}\n```\ntail'
+    assert parse_incident_report(fenced).incident_type == "explosion"
 
-    bare = 'lead {"incident_type": "equipment", "severity": 2} trail'
-    assert parse_incident_report(bare).incident_type == "equipment"
+    bare = 'lead {"incident_type": "fighting", "severity": 2} trail'
+    assert parse_incident_report(bare).incident_type == "fighting"
 
     plain = parse_incident_report("no structure here")
-    assert plain.incident_type == "other"
+    assert plain.incident_type == "road accident"
     assert plain.description == "no structure here"
 
 
 def test_completion_payload_roundtrips_through_parser():
-    report = canned_incident_report("worker on the ladder top rung")
+    report = canned_incident_report("two vehicles collide at the junction")
     payload = to_completion_payload(report)
     content = extract_message_content(payload)
     parsed = parse_incident_report(content)
-    assert parsed.incident_type == "warehouse safety"
+    assert parsed.incident_type == "road accident"
     assert parsed.severity == 4

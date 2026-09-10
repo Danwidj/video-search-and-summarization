@@ -12,6 +12,17 @@ When working on this project, read the Overview doc first, then whichever Implem
 
 Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
 
+## incident-console Postgres schema
+
+`deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a 12-table-plus-matches
+schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module
+docstring for the full table list and the `review_status` design note). `db.py` is the authoritative source for
+this schema; the planning docs under `docs/incident-plan/` may still describe an earlier flat `incident_reports`
+shape and have not been reconciled with it. Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
+`videos.id`, no separate `video_id` column). `fixtures/data/*.csv` (72 sample incidents) is the seed source for
+both the offline CSV preview (`fixtures/dashboard_seed.py`) and the Postgres importer (`scripts/seed_supabase.py`),
+which seeds all 72 under one shared `model_run_id`.
+
 ## UI development without GPU/NIM containers
 
 [`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. This is unrelated to the sibling `deploy/docker/developer-profiles/dev-profile-incident/mock-backend/mock_data/` module (a different, not-yet-built Postgres schema mock for the incident-console app above).

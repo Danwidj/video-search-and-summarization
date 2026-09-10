@@ -60,6 +60,19 @@ def llm_base_url() -> str:
     return _clean(os.getenv("INCIDENT_LLM_BASE_URL"))
 
 
+def embedding_base_url() -> str:
+    """OpenAI-compatible embeddings base URL, used by ``matching.py``."""
+    return _clean(os.getenv("INCIDENT_EMBEDDING_BASE_URL"))
+
+
+# Minimum cosine similarity for an accepted entity/instrument/asset match against
+# ground truth (matching.py). A pairing the assignment solver produces below
+# this score is discarded as "no match" (missed detection or false positive)
+# rather than accepted - not spec-sourced, a conservative default pending
+# calibration against the real embedding model.
+MIN_MATCH_SIMILARITY = 0.75
+
+
 def video_base_url() -> str:
     """Public/presigned URL prefix that ``st.video`` plays back from."""
     return _clean(os.getenv("INCIDENT_VIDEO_BASE_URL"))

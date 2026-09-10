@@ -57,7 +57,7 @@ def test_search_fails_soft_on_connection_error(monkeypatch):
 
 
 def test_draft_report_via_llm_parses_completion(monkeypatch):
-    payload = to_completion_payload(canned_incident_report("a worker is on the ladder top rung"))
+    payload = to_completion_payload(canned_incident_report("two vehicles collide at the junction"))
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/chat/completions")
@@ -69,7 +69,7 @@ def test_draft_report_via_llm_parses_completion(monkeypatch):
     )
     assert res.ok is True
     assert isinstance(res.data, IncidentReport)
-    assert res.data.incident_type == "warehouse safety"
+    assert res.data.incident_type == "road accident"
 
 
 def test_draft_report_via_llm_requires_base_url():

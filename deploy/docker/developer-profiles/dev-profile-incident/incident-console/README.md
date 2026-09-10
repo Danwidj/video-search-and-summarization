@@ -57,16 +57,18 @@ R2_BUCKET=anomaly-detection-dataset
 Use the Supabase **session pooler** (port 5432) so DDL and `SELECT ... FOR
 UPDATE` work. Percent-encode reserved characters in the password (`@` → `%40`).
 
-Load the 8 mock incidents once (idempotent, manual, never runs on startup):
+Load the 72 CSV-fixture incidents once (idempotent, manual, never runs on
+startup):
 
 ```bash
 uv run python scripts/seed_supabase.py
 ```
 
-It upserts 8 `videos` rows (natural key: `r2_key`, all under `normal_videos/`),
-one `incident_reports` row per clip linked by a fixed FK, and each incident's
-fabricated entities / instruments / assets. Re-running updates in place — row
-counts do not grow. The dataset lives in `scripts/seed_data.py`.
+It upserts one `videos` row per incident (natural key: the incident id itself
+- 1 video = 1 incident), one shared `model_runs` row (`MR-SEED`), and each
+incident's `incidents` / `entities` / `instruments` / `assets` rows. Re-running
+updates in place — row counts do not grow. The dataset lives in
+`fixtures/data/*.csv`, parsed via `scripts/seed_data.py`.
 
 ### Mock LLM (exercise the AI-trigger path with zero GPU)
 
@@ -118,6 +120,7 @@ source are documented in [`dev-profile-incident/.env`](../.env).
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
+| `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | The platform's embedding endpoint; unset means matching fails soft to no matches |
 | `INCIDENT_VIDEO_BASE_URL` | Optional playback URL prefix; unset uses R2 presigned URLs | The R2 bucket public/presigned URL prefix |
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
 
@@ -132,15 +135,17 @@ uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
 
 | File | Role |
 |---|---|
-| `app.py` | Entry point / navigation |
+| `app.py` | Entry point / navigation home + environment panel |
 | `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
-| `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence |
-| `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos`, `incident_reports`, `incident_entities` / `incident_instruments` / `incident_assets`, `notifications`, `severity_eval_log` |
-| `db_reports.py` | Postgres-backed Incident view model (edits persist) |
+| `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed) |
+| `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos` / `queries` / `model_runs`, model-output `incidents` / `entities` / `instruments` / `assets` (keyed by `model_run_id`), ground-truth `gt_incidents` / `gt_entities` / `gt_instruments` / `gt_assets`, `entity_matches` / `instrument_matches` / `asset_matches`, `review_status`, `notifications`, `severity_eval_log` |
+| `db_reports.py` | Postgres-backed Incident view model (edits persist; reads the most recent model run per incident) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
-| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 8 mock incidents + evidence, and the one-time idempotent importer |
+| `embed_client.py` | Embedding-endpoint HTTP client (fail-soft), used by `matching.py` |
+| `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
+| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 72 CSV-fixture incidents (one shared `model_run_id`) + evidence, and the one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
-| `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` + pure helpers |
+| `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` (road accident / burglary / explosion / fighting / animal) + pure helpers |
 | `config.py` | Env-driven configuration (`.env` then untracked `.env.local`) |
 | `theme.py` / `ui.py` | Shared look-and-feel and page helpers |
 | `mock_llm_server.py` | Local-dev-only OpenAI-compatible stub |
