@@ -137,8 +137,10 @@ uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
 | File | Role |
 |---|---|
 | `app.py` | Entry point / navigation home + environment panel |
+| `pages/1_Catalog.py` | Browse ingested videos with filename / status filters + per-video incident-report count (browse-only, database-backed) |
 | `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
 | `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed) |
+| `pages/4_Severity_Eval.py` | Human-vs-AI severity rating + running exact-agreement rate (database-backed) |
 | `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos` / `queries` / `model_runs`, model-output `incidents` / `entities` / `instruments` / `assets` (keyed by `model_run_id`), ground-truth `gt_incidents` / `gt_entities` / `gt_instruments` / `gt_assets`, `entity_matches` / `instrument_matches` / `asset_matches`, `review_status`, `notifications`, `severity_eval_log` |
 | `db_reports.py` | Postgres-backed Incident view model (edits persist; reads the most recent model run per incident) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |

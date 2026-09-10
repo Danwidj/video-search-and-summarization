@@ -426,6 +426,48 @@ class IncidentDB:
         with self.engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(select(videos).order_by(videos.c.id))]
 
+    def list_videos_with_counts(self, *, filename_like: str | None = None, status: str | None = None) -> list[dict]:
+        """Browse-only catalog rows: one per video, newest-review-status first.
+
+        Read-only helper for the Catalog page. Each row carries the video's
+        derived ``status`` - the review status of its most recent model run
+        (``"unanalyzed"`` when no incident has been recorded against it yet) -
+        and ``report_count``, the number of incident-report rows recorded for
+        the video (``incident_id`` == ``videos.id``, so this counts
+        ``incidents`` rows per video, one per model run).
+
+        ``filename_like`` is a case-insensitive substring match on the
+        filename; ``status`` other than ``None``/``"All"`` keeps only videos
+        whose derived status matches.
+        """
+        with self.engine.connect() as conn:
+            count_rows = conn.execute(
+                select(incidents.c.incident_id, func.count().label("report_count")).group_by(incidents.c.incident_id)
+            ).all()
+        counts = {r._mapping["incident_id"]: int(r._mapping["report_count"]) for r in count_rows}
+        needle = (filename_like or "").strip().lower()
+        result: list[dict] = []
+        for video in self.list_videos():
+            filename = (video.get("filepath") or "").rsplit("/", 1)[-1] or None
+            latest = self.get_latest_incident(video["id"])
+            derived_status = (latest.get("status") or "unreviewed") if latest else "unanalyzed"
+            if needle and needle not in (filename or "").lower():
+                continue
+            if status and status != "All" and derived_status != status:
+                continue
+            result.append(
+                {
+                    "id": video["id"],
+                    "filename": filename,
+                    "filepath": video.get("filepath"),
+                    "status": derived_status,
+                    "report_count": counts.get(video["id"], 0),
+                    "duration": video.get("duration"),
+                    "uploaded_datetime": video.get("uploaded_datetime"),
+                }
+            )
+        return result
+
     def update_video(self, video_id: str, *, filepath: str | None) -> None:
         """Point this video's catalog row at a different R2 object."""
         with self.engine.begin() as conn:

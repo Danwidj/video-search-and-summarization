@@ -19,8 +19,10 @@ import streamlit as st
 
 page = st.navigation(
     [
+        st.Page("pages/1_Catalog.py", title="Video Catalog"),
         st.Page("pages/2_Report_Review.py", title="Incident Reports", default=True),
         st.Page("pages/3_Dashboard.py", title="Analytics Dashboard"),
+        st.Page("pages/4_Severity_Eval.py", title="Severity Eval"),
     ]
 )
 with st.sidebar:
