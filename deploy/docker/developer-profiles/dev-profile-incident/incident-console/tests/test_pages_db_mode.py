@@ -35,16 +35,16 @@ def db_pages(incident_db, monkeypatch):
     return incident_db
 
 
-def test_report_review_lists_the_eight_from_the_db(db_pages):
+def test_report_review_lists_the_72_from_the_db(db_pages):
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
     assert not app.exception
-    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 8
+    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 72
 
 
 def test_report_review_detail_has_db_controls_and_seek(db_pages):
-    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
+    rid = sorted(r["incident_id"] for r in db_pages.list_latest_incidents())[0]
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
-    app.query_params["report"] = str(rid)
+    app.query_params["report"] = rid
     app.run()
     assert not app.exception
     # DB-only controls are present.
@@ -55,15 +55,16 @@ def test_report_review_detail_has_db_controls_and_seek(db_pages):
 
 
 def test_report_review_edit_persists_across_a_rerun(db_pages):
-    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
+    rid = sorted(r["incident_id"] for r in db_pages.list_latest_incidents())[0]
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
-    app.query_params["report"] = str(rid)
+    app.query_params["report"] = rid
     app.run()
     app.toggle[0].set_value(True).run()
     app.text_area[0].set_value("persisted through the database")
     next(b for b in app.button if b.label == "Save changes").click().run()
     assert not app.exception
-    assert db_pages.get_report(rid)["description"] == "persisted through the database"
+    reloaded = db_pages.get_latest_incident(rid)
+    assert reloaded["description"] == "persisted through the database"
 
 
 def test_report_review_missing_record_shows_notice(db_pages):
@@ -75,8 +76,8 @@ def test_report_review_missing_record_shows_notice(db_pages):
 
 
 def test_report_review_inline_edit_cancel_discards_draft(db_pages):
-    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
-    original = db_pages.get_report(rid)["description"]
+    rid = sorted(r["incident_id"] for r in db_pages.list_latest_incidents())[0]
+    original = db_pages.get_latest_incident(rid)["description"]
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
     app.query_params["report"] = str(rid)
     app.run()
@@ -91,7 +92,7 @@ def test_report_review_inline_edit_cancel_discards_draft(db_pages):
     assert app.toggle[0].value is False
     app.toggle[0].set_value(True).run()
     assert app.text_area[0].value == original
-    assert db_pages.get_report(rid)["description"] == original
+    assert db_pages.get_latest_incident(rid)["description"] == original
 
 
 def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
@@ -100,7 +101,7 @@ def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
     reappeared (re-read from the DB every render) but the reviewer attribution
     was dropped by ``DBReports._to_view`` and never rendered, so it looked lost.
     """
-    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
+    rid = sorted(r["incident_id"] for r in db_pages.list_latest_incidents())[0]
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
     app.query_params["report"] = str(rid)
     app.run()
@@ -125,9 +126,13 @@ def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
 
 
 def test_dashboard_renders_charts_from_db_incidents(db_pages):
+    # The default severity filter (1-5) excludes rows with no severity_level at
+    # all (blank in the ground-truth sheet for every transcribed burglary /
+    # road-accident incident) - fewer than the full 72 seeded incidents.
+    scored = sum(1 for r in db_pages.list_latest_incidents() if r["severity_level"] is not None)
     app = AppTest.from_file("../pages/3_Dashboard.py", default_timeout=15).run()
     assert not app.exception
-    assert app.metric[0].value == "8"
+    assert app.metric[0].value == str(scored)
     # Evidence-driven widgets have content (entity donut / threat matrix).
     assert not any("No linked entities" in i.value for i in app.info)
 
@@ -143,8 +148,5 @@ def test_dashboard_records_log_filename_column_is_populated(db_pages):
     ]
     assert filenames
     assert all(name for name in filenames)
-    expected = {
-        video["filename"] or video["r2_key"]
-        for video in (db_pages.get_video(r["video_id"]) for r in db_pages.list_reports())
-    }
+    expected = {(row["video_filepath"] or "").rsplit("/", 1)[-1] for row in db_pages.list_latest_incidents()}
     assert set(filenames) <= expected

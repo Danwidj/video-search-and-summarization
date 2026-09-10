@@ -24,6 +24,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sqlalchemy import event  # noqa: E402
+
 import db as _db  # noqa: E402
 from db import IncidentDB  # noqa: E402
 
@@ -31,6 +33,10 @@ from db import IncidentDB  # noqa: E402
 @pytest.fixture
 def incident_db(tmp_path) -> IncidentDB:
     handle = IncidentDB.from_dsn(f"sqlite:///{tmp_path / 'incidents.db'}")
+    # SQLite ignores foreign keys unless a connection explicitly turns them on;
+    # Postgres enforces them unconditionally. Turn them on here so a bad
+    # composite FK fails the hermetic suite the same way it would in production.
+    event.listen(handle.engine, "connect", lambda conn, _: conn.execute("PRAGMA foreign_keys=ON"))
     handle.init_schema()
     return handle
 

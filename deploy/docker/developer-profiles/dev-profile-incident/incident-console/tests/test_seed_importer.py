@@ -13,64 +13,78 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The one-time Supabase seed importer is idempotent and keeps a stable FK.
+"""The Postgres seed importer populates the new schema from fixtures/data/*.csv.
 
-Runs against the hermetic SQLite fixture - no live Supabase.
+Runs against the hermetic SQLite fixture - no live Postgres. It is idempotent
+and keeps a stable video/incident identity (1 video = 1 incident) across runs.
 """
 
 from __future__ import annotations
 
 from db import IncidentDB
 from incident_report import INCIDENT_TYPES
-from scripts.seed_data import INCIDENTS
+from scripts.seed_data import MODEL_RUN_ID, seed_rows
 from scripts.seed_supabase import seed
 
 
 def _totals(db: IncidentDB) -> dict:
-    reports = db.list_reports()
+    incidents = db.list_latest_incidents()
     return {
         "videos": len(db.list_videos()),
-        "reports": len(reports),
-        "entities": sum(len(db.list_incident_entities(r["id"])) for r in reports),
-        "instruments": sum(len(db.list_incident_instruments(r["id"])) for r in reports),
-        "assets": sum(len(db.list_incident_assets(r["id"])) for r in reports),
+        "model_runs": len(db.list_model_runs()),
+        "incidents": len(incidents),
+        "entities": sum(len(db.list_incident_entities(r["incident_id"], MODEL_RUN_ID)) for r in incidents),
+        "instruments": sum(len(db.list_incident_instruments(r["incident_id"], MODEL_RUN_ID)) for r in incidents),
+        "assets": sum(len(db.list_incident_assets(r["incident_id"], MODEL_RUN_ID)) for r in incidents),
     }
 
 
-def test_seed_loads_eight_incidents_with_evidence(incident_db: IncidentDB):
+def test_seed_loads_the_72_csv_incidents_with_evidence(incident_db: IncidentDB):
     counts = seed(incident_db)
-    assert counts["videos"] == 8
-    assert counts["reports"] == 8
-    assert counts["entities"] == sum(len(i["entities"]) for i in INCIDENTS)
-    assert counts["instruments"] == sum(len(i["instruments"]) for i in INCIDENTS)
-    assert counts["assets"] == sum(len(i["assets"]) for i in INCIDENTS)
+    seed_data = seed_rows()
+    assert counts["videos"] == 72
+    assert counts["model_runs"] == 1
+    assert counts["incidents"] == 72
+    # entities.csv carries one known stray row (RoadAccidents006/E2) with no
+    # incidents.csv row of its own (fixtures/README.md gap #6); it has no
+    # incident to satisfy the entities->incidents FK and is skipped.
+    assert counts["entities"] == len(seed_data["Entity"]) - 1
+    assert counts["instruments"] == len(seed_data["Instrument"])
+    assert counts["assets"] == len(seed_data["Asset"])
     assert _totals(incident_db) == {**counts}
 
 
-def test_seed_is_idempotent(incident_db: IncidentDB):
+def test_seed_is_idempotent_and_keeps_the_video_incident_identity(incident_db: IncidentDB):
     seed(incident_db)
     first = _totals(incident_db)
-    fk_before = {r["incident_type"]: r["video_id"] for r in incident_db.list_reports()}
+    fk_before = {r["incident_id"]: r["video_filepath"] for r in incident_db.list_latest_incidents()}
 
     seed(incident_db)
     assert _totals(incident_db) == first
-    fk_after = {r["incident_type"]: r["video_id"] for r in incident_db.list_reports()}
+    fk_after = {r["incident_id"]: r["video_filepath"] for r in incident_db.list_latest_incidents()}
     # Same incident -> same video row on every run (no recompute, no churn).
     assert fk_before == fk_after
 
 
-def test_seed_rows_are_typed_for_the_footage(incident_db: IncidentDB):
+def test_seed_rows_are_typed_for_the_controlled_taxonomy(incident_db: IncidentDB):
     seed(incident_db)
-    for report in incident_db.list_reports():
-        assert report["incident_type"] in INCIDENT_TYPES
-        assert report["model_version"] == "mock-seed-v1"
-        video = incident_db.get_video(report["video_id"])
-        assert video["r2_key"].startswith("normal_videos/")
-        assert video["status"] == "analyzed"
+    for row in incident_db.list_latest_incidents():
+        assert row["type"] in INCIDENT_TYPES or row["type"] is None
+        assert row["model_run_id"] == MODEL_RUN_ID
+        assert row["video_filepath"].endswith(".mp4")
+        # 1 video = 1 incident: the video id is the incident id itself.
+        assert incident_db.get_video(row["incident_id"])["filepath"] == row["video_filepath"]
 
 
 def test_low_confidence_and_null_confidence_present(incident_db: IncidentDB):
     seed(incident_db)
-    confidences = [r["confidence"] for r in incident_db.list_reports()]
-    assert sum(1 for c in confidences if c is None) >= 2
-    assert sum(1 for c in confidences if c is not None and c < 0.7) >= 2
+    confidences = [r["confidence_score"] for r in incident_db.list_latest_incidents()]
+    assert sum(1 for c in confidences if c is None) >= 10
+    assert sum(1 for c in confidences if c is not None and c < 0.7) >= 5
+
+
+def test_reports_and_queries_stay_empty_reserved_shape(incident_db: IncidentDB):
+    """Out of scope: no report-generation / query-submission workflow to seed."""
+    seed(incident_db)
+    assert incident_db.list_generated_reports() == []
+    assert incident_db.list_queries() == []

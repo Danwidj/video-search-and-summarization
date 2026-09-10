@@ -30,15 +30,14 @@ from collections.abc import Iterable, Sequence
 
 from pydantic import BaseModel, Field
 
-# Taxonomy for the Supabase 8-mock dataset: warehouse-safety / operations /
-# traffic / pedestrian / structural footage the captain uploaded to R2.
+# Controlled incident taxonomy, shared by the report schema, the fixtures/data
+# CSV seed, and the Postgres ``incidents.type`` / ``gt_incidents.type`` columns.
 INCIDENT_TYPES: list[str] = [
-    "warehouse safety",
-    "equipment",
-    "pedestrian",
-    "traffic",
-    "structural",
-    "other",
+    "road accident",
+    "burglary",
+    "explosion",
+    "fighting",
+    "animal",
 ]
 
 REPORT_STATUSES: list[str] = ["unreviewed", "verified"]
@@ -54,7 +53,7 @@ class Person(BaseModel):
 class IncidentReport(BaseModel):
     """Structured incident report produced by the analyze pipeline."""
 
-    incident_type: str = "other"
+    incident_type: str = INCIDENT_TYPES[0]
     severity: int = Field(default=1, ge=1, le=5)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     incident_start: str = "0:00"
@@ -227,7 +226,7 @@ def incident_report_from_dict(data: dict) -> IncidentReport:
         return report
 
     itype = str(data.get("incident_type", "")).strip().lower()
-    report.incident_type = itype if itype in INCIDENT_TYPES else "other"
+    report.incident_type = itype if itype in INCIDENT_TYPES else INCIDENT_TYPES[0]
 
     with contextlib.suppress(KeyError, TypeError, ValueError):
         report.severity = max(1, min(5, int(round(float(data["severity"])))))
@@ -285,34 +284,35 @@ def canned_incident_report(prompt: str = "") -> IncidentReport:
     """Deterministic sample report - used by the mock server and tests."""
     text = (prompt or "").lower()
     report = IncidentReport(
-        incident_type="warehouse safety",
+        incident_type="burglary",
         severity=2,
         confidence=0.78,
         incident_start="0:07",
         incident_end="0:29",
         incident_start_confirmed=True,
         description=(
-            "a warehouse operator lifts a carton from a low pallet with a rounded "
-            "back and no knee bend, close to occupied racking. no other people in frame."
+            "a person forces open a side door and removes a cash box from the counter area. no other people in frame."
         ),
-        persons=[Person(description="operator in a hi-vis vest", actions="manual lift with poor back posture")],
-        location="Warehouse Floor Camera",
+        persons=[
+            Person(description="individual in dark clothing", actions="pried open the door and grabbed the cash box")
+        ],
+        location="Store Counter Camera",
     )
-    if any(k in text for k in ("ladder", "fall", "height", "top rung")):
-        report.incident_type = "warehouse safety"
+    if any(k in text for k in ("crash", "collision", "vehicle", "car", "truck", "driver")):
+        report.incident_type = "road accident"
         report.severity = 4
+        report.confidence = 0.72
+    elif any(k in text for k in ("explosion", "explode", "blast", "bomb")):
+        report.incident_type = "explosion"
+        report.severity = 5
         report.confidence = 0.55
-    elif any(k in text for k in ("forklift", "conveyor", "pallet jack", "equipment")):
-        report.incident_type = "equipment"
+    elif any(k in text for k in ("fight", "assault", "punch", "brawl", "attack")):
+        report.incident_type = "fighting"
         report.severity = 3
-        report.confidence = 0.86
-    elif any(k in text for k in ("pedestrian", "cross", "jaywalk")):
-        report.incident_type = "pedestrian"
-        report.severity = 3
-        report.confidence = 0.66
-    elif any(k in text for k in ("bridge", "crack", "structural", "rebar")):
-        report.incident_type = "structural"
-        report.severity = 4
+        report.confidence = 0.7
+    elif any(k in text for k in ("animal", "dog", "wildlife", "stray")):
+        report.incident_type = "animal"
+        report.severity = 2
         report.confidence = 0.9
     return report
 
