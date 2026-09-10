@@ -15,10 +15,18 @@
 
 """Postgres-backed Incident view model.
 
-Presents :class:`db.IncidentDB` rows in the flat dict shape ``report_detail`` and
-``dashboard_view`` consume, so the Report Review and Dashboard pages render
-straight from the database. Every write round-trips through Supabase, so field
-edits, review-status changes and video re-links survive a page refresh.
+Presents :class:`db.IncidentDB` rows in the same dict shape ``report_detail`` and
+``dashboard_view`` already expect from the offline ``LocalReports`` shim, so the
+Report Review and Dashboard pages work against either source unchanged. Unlike
+``LocalReports`` (session-only edits over the CSV fixture), every write here
+round-trips through Postgres, so field edits, review-status changes and video
+re-links survive a page refresh.
+
+Reads go through ``incidents JOIN model_runs JOIN videos`` (``db.py``'s
+``list_latest_incidents`` / ``get_latest_incident``): a video is identified with
+its incident 1:1 (``incident_id`` == ``videos.id``), and when more than one
+model run exists for an incident the most recent run's row is shown - this
+adapter does not yet expose a run picker (no new UI screens, per the task).
 """
 
 from __future__ import annotations
@@ -27,6 +35,16 @@ from incident_report import timestamp_to_seconds
 from r2_videos import configured, playback_url
 
 REVIEW_STATUSES = ["unreviewed", "under review", "verified"]
+
+_FIELD_TO_COLUMN = {
+    "incident_type": "type",
+    "incident_start": "start_timestamp",
+    "incident_end": "end_timestamp",
+    "duration": "duration",
+    "description": "description",
+    "severity": "severity_level",
+    "confidence": "confidence_score",
+}
 
 
 def _hhmmss(value) -> str | None:
@@ -39,57 +57,41 @@ def _hhmmss(value) -> str | None:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def _basename(filepath) -> str | None:
+    if not filepath:
+        return None
+    return filepath.rsplit("/", 1)[-1]
+
+
 class DBReports:
     """Read/write incidents through :class:`db.IncidentDB`. Edits persist."""
 
+    supports_db = True
+
     def __init__(self, db, _state=None):
         self._db = db
-        self._videos: dict[int, dict] = {}
 
     # -- helpers ------------------------------------------------------- #
-    @staticmethod
-    def _coerce_id(report_id) -> int | None:
-        try:
-            return int(report_id)
-        except (TypeError, ValueError):
-            return None
-
-    def _video_row(self, video_id) -> dict:
-        if not video_id:
-            return {}
-        if video_id not in self._videos:
-            self._videos[video_id] = self._db.get_video(int(video_id)) or {}
-        return self._videos[video_id]
-
     def _to_view(self, row: dict) -> dict:
         if not row:
             return {}
-        video = self._video_row(row.get("video_id"))
-        duration = row.get("duration_sec")
-        if duration is None:
-            start = timestamp_to_seconds(row.get("incident_start"))
-            end = timestamp_to_seconds(row.get("incident_end"))
-            duration = end - start if end >= start else None
+        filepath = row.get("video_filepath")
         return {
-            "id": row["id"],
-            "filename": video.get("filename") or video.get("r2_key"),
-            "incident_type": row.get("incident_type"),
-            "incident_start": row.get("incident_start"),
-            "incident_end": row.get("incident_end"),
-            "incident_start_confirmed": row.get("incident_start_confirmed"),
-            "duration": duration,
+            "id": row["incident_id"],
+            "filename": _basename(filepath),
+            "incident_type": row.get("type"),
+            "incident_start": row.get("start_timestamp"),
+            "incident_end": row.get("end_timestamp"),
+            "duration": row.get("duration"),
             "description": row.get("description"),
-            "severity": row.get("severity"),
-            "confidence": row.get("confidence"),
-            "source": video.get("r2_key"),
-            "status": row.get("status"),
+            "severity": row.get("severity_level"),
+            "confidence": row.get("confidence_score"),
+            "source": filepath,
+            "status": row.get("status") or "unreviewed",
+            "model_run_id": row.get("model_run_id"),
             "model_version": row.get("model_version"),
-            "video_id": row.get("video_id"),
-            "r2_key": video.get("r2_key"),
-            "location": row.get("location"),
-            # Review/edit attribution: written by ``IncidentDB.set_report_review_status``
-            # and ``update_report`` but previously dropped here, so a saved
-            # "Reviewed by" name never rendered after navigating away and back.
+            "video_id": row.get("incident_id"),
+            "r2_key": filepath,
             "verified_by": row.get("verified_by"),
             "verified_at": row.get("verified_at"),
             "edited_by": row.get("edited_by"),
@@ -98,22 +100,22 @@ class DBReports:
 
     # -- reads ------------------------------------------------------- #
     def list_reports(self, *, incident_type="All", status="All", keyword=None):
-        rows = self._db.list_reports(incident_type=incident_type, status=status, keyword=keyword)
-        return [self._to_view(r) for r in rows]
+        rows = self._db.list_latest_incidents(type_=incident_type, keyword=keyword)
+        views = [self._to_view(r) for r in rows]
+        if status and status != "All":
+            views = [v for v in views if v["status"] == status]
+        return views
 
     def get_report(self, report_id):
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        if report_id is None:
             return {}
-        return self._to_view(self._db.get_report(rid))
+        return self._to_view(self._db.get_latest_incident(str(report_id)))
 
     def get_video(self, report_id):
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        if report_id is None:
             return {}
-        report = self._db.get_report(rid)
-        video = self._video_row(report.get("video_id")) if report else {}
-        key = video.get("r2_key")
+        row = self._db.get_latest_incident(str(report_id))
+        key = row.get("video_filepath") if row else None
         if not key:
             return {}
         try:
@@ -121,60 +123,64 @@ class DBReports:
         except Exception:
             url = key
         return {
-            "ID": f"R2:{video['id']}",
+            "ID": f"R2:{row['incident_id']}",
             "Filepath": url,
             "R2_Key": key,
-            "filename": video.get("filename") or key,
-            "Duration": video.get("duration_sec"),
+            "filename": _basename(key) or key,
+            "Duration": row.get("video_duration"),
         }
 
     def list_evidence(self, report_id):
-        """`{entities, instruments, assets}` rows for the report, DB order."""
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        """`{entities, instruments, assets}` rows for the incident's latest run."""
+        if report_id is None:
             return {"entities": [], "instruments": [], "assets": []}
+        row = self._db.get_latest_incident(str(report_id))
+        if not row:
+            return {"entities": [], "instruments": [], "assets": []}
+        incident_id, model_run_id = row["incident_id"], row["model_run_id"]
         return {
-            "entities": self._db.list_incident_entities(rid),
-            "instruments": self._db.list_incident_instruments(rid),
-            "assets": self._db.list_incident_assets(rid),
+            "entities": self._db.list_incident_entities(incident_id, model_run_id),
+            "instruments": self._db.list_incident_instruments(incident_id, model_run_id),
+            "assets": self._db.list_incident_assets(incident_id, model_run_id),
         }
 
     # -- writes (persisted) --------------------------------------- #
     def update_report(self, report_id, *, fields, edited_by=None):
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        row = self._db.get_latest_incident(str(report_id)) if report_id is not None else {}
+        if not row:
             raise ValueError("Unknown report id")
         payload = dict(fields)
         for key in ("incident_start", "incident_end"):
             if key in payload:
                 payload[key] = _hhmmss(payload[key])
-        self._db.update_report(rid, fields=payload, edited_by=(edited_by or "reviewer"))
+        translated = {_FIELD_TO_COLUMN[k]: v for k, v in payload.items() if k in _FIELD_TO_COLUMN}
+        self._db.update_incident(row["incident_id"], row["model_run_id"], fields=translated)
+        self._db.touch_review_status(row["incident_id"], row["model_run_id"], edited_by=edited_by or "reviewer")
 
     def set_review_status(self, report_id, *, status, reviewed_by):
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        row = self._db.get_latest_incident(str(report_id)) if report_id is not None else {}
+        if not row:
             raise ValueError("Unknown report id")
         from config import severity_notify_threshold
 
-        return self._db.set_report_review_status(
-            rid, status=status, reviewed_by=reviewed_by, notify_threshold=severity_notify_threshold()
+        return self._db.set_review_status(
+            row["incident_id"],
+            row["model_run_id"],
+            status=status,
+            reviewed_by=reviewed_by,
+            notify_threshold=severity_notify_threshold(),
         )
 
     def link_video(self, report_id, r2_key, *, filename=None, edited_by=None):
-        """Point the incident at a different bucket object; persist the FK."""
-        rid = self._coerce_id(report_id)
-        if rid is None:
+        """Point this incident's video row at a different bucket object.
+
+        1 video = 1 incident, so re-linking updates the existing ``videos`` row
+        (keyed by the incident id) rather than swapping a foreign key.
+        """
+        del filename  # videos carries no separate filename column; derived from filepath.
+        row = self._db.get_latest_incident(str(report_id)) if report_id is not None else {}
+        if not row:
             raise ValueError("Unknown report id")
-        if not r2_key:
-            self._db.link_report_video(rid, None, edited_by=edited_by)
-            self._videos.clear()
-            return
-        existing = self._db.get_video_by_r2_key(r2_key)
-        if existing:
-            video_id = existing["id"]
-        else:
-            video_id = self._db.insert_video(
-                filename=filename or r2_key.rsplit("/", 1)[-1], r2_key=r2_key, status="analyzed"
-            )
-        self._db.link_report_video(rid, video_id, edited_by=edited_by)
-        self._videos.clear()
+        self._db.update_video(row["incident_id"], filepath=r2_key or None)
+        if edited_by:
+            self._db.touch_review_status(row["incident_id"], row["model_run_id"], edited_by=edited_by)

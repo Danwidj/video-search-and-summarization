@@ -39,8 +39,8 @@ def _evidence_rows(db_handle, reports):
     instruments: list[dict] = []
     assets: list[dict] = []
     for report in reports:
-        rid = report["id"]
-        for row in db_handle.list_incident_entities(rid):
+        rid, model_run_id = report["id"], report.get("model_run_id")
+        for row in db_handle.list_incident_entities(rid, model_run_id):
             entities.append(
                 {
                     "Incident_ID": rid,
@@ -49,7 +49,7 @@ def _evidence_rows(db_handle, reports):
                     "Description": row.get("description"),
                 }
             )
-        for row in db_handle.list_incident_instruments(rid):
+        for row in db_handle.list_incident_instruments(rid, model_run_id):
             instruments.append(
                 {
                     "Incident_ID": rid,
@@ -60,7 +60,7 @@ def _evidence_rows(db_handle, reports):
                     "Threat_Level": row.get("threat_level"),
                 }
             )
-        for row in db_handle.list_incident_assets(rid):
+        for row in db_handle.list_incident_assets(rid, model_run_id):
             assets.append(
                 {
                     "Incident_ID": rid,
