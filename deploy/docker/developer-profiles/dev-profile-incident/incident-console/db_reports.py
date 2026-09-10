@@ -15,12 +15,10 @@
 
 """Postgres-backed Incident view model.
 
-Presents :class:`db.IncidentDB` rows in the same dict shape ``report_detail`` and
-``dashboard_view`` already expect from the offline ``LocalReports`` shim, so the
-Report Review and Dashboard pages work against either source unchanged. Unlike
-``LocalReports`` (session-only edits over the CSV fixture), every write here
-round-trips through Supabase, so field edits, review-status changes and video
-re-links survive a page refresh.
+Presents :class:`db.IncidentDB` rows in the flat dict shape ``report_detail`` and
+``dashboard_view`` consume, so the Report Review and Dashboard pages render
+straight from the database. Every write round-trips through Supabase, so field
+edits, review-status changes and video re-links survive a page refresh.
 """
 
 from __future__ import annotations
@@ -43,8 +41,6 @@ def _hhmmss(value) -> str | None:
 
 class DBReports:
     """Read/write incidents through :class:`db.IncidentDB`. Edits persist."""
-
-    supports_db = True
 
     def __init__(self, db, _state=None):
         self._db = db

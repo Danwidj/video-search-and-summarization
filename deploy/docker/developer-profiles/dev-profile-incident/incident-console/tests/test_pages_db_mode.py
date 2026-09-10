@@ -66,6 +66,34 @@ def test_report_review_edit_persists_across_a_rerun(db_pages):
     assert db_pages.get_report(rid)["description"] == "persisted through the database"
 
 
+def test_report_review_missing_record_shows_notice(db_pages):
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
+    app.query_params["report"] = "999999"
+    app.run()
+    assert not app.exception
+    assert any("was not found" in i.value for i in app.info)
+
+
+def test_report_review_inline_edit_cancel_discards_draft(db_pages):
+    rid = sorted(r["id"] for r in db_pages.list_reports())[0]
+    original = db_pages.get_report(rid)["description"]
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
+    app.query_params["report"] = str(rid)
+    app.run()
+    app.toggle[0].set_value(True).run()
+    assert not app.exception
+    assert len(app.text_area) == 1
+    # The read-only description is replaced, not repeated beside an edit form.
+    assert not any(t.value == original for t in app.text)
+    app.text_area[0].set_value("Unsaved reviewer draft")
+    next(b for b in app.button if b.label == "Cancel").click().run()
+    assert not app.exception
+    assert app.toggle[0].value is False
+    app.toggle[0].set_value(True).run()
+    assert app.text_area[0].value == original
+    assert db_pages.get_report(rid)["description"] == original
+
+
 def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
     """Regression: after saving a review status + "Reviewed by" name, leaving the
     detail view and re-opening it must still show both. Previously the status

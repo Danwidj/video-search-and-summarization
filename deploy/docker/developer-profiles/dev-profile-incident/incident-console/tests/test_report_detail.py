@@ -13,11 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Detail-view tests use existing canned test content, never UI seed data."""
+"""Detail-view helpers use canned test content, never live data."""
 
-from streamlit.testing.v1 import AppTest
-
-from fixtures.dashboard_seed import load_seed
 from incident_report import canned_incident_report
 from report_detail import confidence_label, normalized, seconds
 
@@ -34,45 +31,3 @@ def test_missing_values_and_strict_times():
     fields = normalized(canned_incident_report().model_dump())
     assert fields["Duration"] == 22
     assert normalized({"Start_Timestamp": 9, "End_Timestamp": 2})["Duration"] is None
-
-
-def test_detail_navigation_and_inline_edit():
-    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=10).run()
-    assert not app.exception
-    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 72
-    next(b for b in app.button if b.label == "View and Verify Details").click().run()
-    assert not app.exception
-    assert app.query_params["report"] == ["Burglary001"]
-    app.toggle[0].set_value(True).run()
-    next(b for b in app.button if b.label == "Cancel").click().run()
-    assert not app.exception
-    assert app.toggle[0].value is False
-    next(b for b in app.button if b.label == "← Back to Incident Reports").click().run()
-    assert not app.exception
-    assert "report" not in app.query_params
-
-
-def test_missing_record():
-    app = AppTest.from_file("../pages/2_Report_Review.py")
-    app.query_params["report"] = "missing"
-    app.run()
-    assert not app.exception
-    assert any("was not found" in i.value for i in app.info)
-
-
-def test_inline_edit_cancel_discards_draft():
-    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=10)
-    app.query_params["report"] = "Burglary001"
-    app.run()
-    original = load_seed()["Incident"][0]["Description"]
-    app.toggle[0].set_value(True).run()
-    assert not app.exception
-    assert len(app.text_area) == 1
-    # The read-only description is replaced, not repeated beside an edit form.
-    assert not any(t.value == original for t in app.text)
-    app.text_area[0].set_value("Unsaved reviewer draft")
-    next(b for b in app.button if b.label == "Cancel").click().run()
-    assert not app.exception
-    assert app.toggle[0].value is False
-    app.toggle[0].set_value(True).run()
-    assert app.text_area[0].value == original
