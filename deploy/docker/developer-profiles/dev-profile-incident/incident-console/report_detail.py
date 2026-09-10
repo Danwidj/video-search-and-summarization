@@ -342,14 +342,12 @@ def edit_form(handle, record, fields):
 def render_detail(handle, record, video):
     fields = normalized(record)
     left, right = st.columns([1.1, 1], gap="large")
-    db_backed = getattr(handle, "supports_db", False)
     with left, st.container(border=True):
         if callable(video):
             video = video()
         video_panel(record, video, fields)
-        if db_backed:
-            st.divider()
-            source_video_picker(handle, record)
+        st.divider()
+        source_video_picker(handle, record)
     with right, st.container(border=True):
         st.subheader(fields["Type"] or "Incident type not supplied")
         st.caption(f"Incident {fields['ID']} · {fields['Filename'] or 'Filename not supplied'}")
@@ -396,15 +394,9 @@ def render_detail(handle, record, video):
             with confidence_col:
                 field("Confidence Score", confidence_label(fields["Confidence_Score"]))
             field("Source", fields["Source"])
-        if db_backed:
-            st.divider()
-            review_status_control(handle, record)
-            st.divider()
-            evidence_section(handle, record)
         st.divider()
-        if db_backed:
-            st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")
-        else:
-            st.caption(
-                "Changes save directly to fixtures/data/incidents.csv and are visible on the Dashboard after refresh."
-            )
+        review_status_control(handle, record)
+        st.divider()
+        evidence_section(handle, record)
+        st.divider()
+        st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")

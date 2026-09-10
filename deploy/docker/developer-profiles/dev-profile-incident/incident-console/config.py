@@ -38,7 +38,6 @@ load_dotenv(Path(__file__).with_name(".env.local"), override=True)
 # Proposed defaults from the incident plan - NOT sourced from any team spec.
 # TODO: confirm against team spec.
 DEFAULT_SEVERITY_NOTIFY_THRESHOLD = 4
-DEFAULT_SEVERITY_EVAL_DISAGREE_THRESHOLD = 1
 NOTIFICATION_GROUP_WINDOW_SECONDS = 300  # TODO: confirm against team spec.
 
 
@@ -75,13 +74,6 @@ def _int_env(name: str, default: int) -> int:
 
 def severity_notify_threshold() -> int:
     return _int_env("INCIDENT_SEVERITY_NOTIFY_THRESHOLD", DEFAULT_SEVERITY_NOTIFY_THRESHOLD)
-
-
-def severity_eval_disagree_threshold() -> int:
-    return _int_env(
-        "INCIDENT_SEVERITY_EVAL_DISAGREE_THRESHOLD",
-        DEFAULT_SEVERITY_EVAL_DISAGREE_THRESHOLD,
-    )
 
 
 def http_timeout_seconds() -> float:
