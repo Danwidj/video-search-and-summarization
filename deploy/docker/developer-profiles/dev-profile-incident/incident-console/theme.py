@@ -15,9 +15,9 @@ SURFACE = "#FFFFFF"
 BACKGROUND = "#F4F6F8"
 SEVERITY_COLORS = {1: "#2E7D5B", 2: "#4AAE7D", 3: "#D39A19", 4: "#E4742B", 5: "#C93C47"}
 SEVERITY_LABELS = {1: "Very Low", 2: "Low", 3: "Moderate", 4: "High", 5: "Critical"}
-# Keys cover both the offline CSV fixture taxonomy (animal / burglary / …) and the
-# Supabase 8-mock taxonomy (warehouse safety / equipment / …). Unknown types fall
-# back to the "" entry.
+# Keys cover both the original capstone ground-truth taxonomy (animal / burglary
+# / …) and the Supabase 8-mock taxonomy (warehouse safety / equipment / …).
+# Unknown types fall back to the "" entry.
 TYPE_COLORS = {
     "animal": "#4AAE7D",
     "road accident": "#D39A19",
