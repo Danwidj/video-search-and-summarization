@@ -434,6 +434,16 @@ class VideoReportGenConfig(FunctionBaseConfig, name="video_report_gen"):
         default=300,
         description="Maximum duration of a video in seconds for chunking.",
     )
+    max_images_per_vlm_call: int | None = Field(
+        default=None,
+        description=(
+            "Optional hard cap on images/frames sent in a single VLM prompt, for "
+            "serving stacks that enforce a per-prompt image count limit (e.g. "
+            "vLLM VLLMValidationError). When set, chunk size is reduced (down to "
+            "chunk_duration_seconds) so that duration * video_understanding's max_fps "
+            "does not exceed this cap. Unset (None) preserves today's behavior."
+        ),
+    )
 
     video_url_tool: FunctionRef | None = Field(
         default=None,
@@ -1314,10 +1324,12 @@ async def video_report_gen(config: VideoReportGenConfig, builder: Builder) -> As
     )
 
     vlm_model_name = ""
+    vu_max_fps: int | None = None
     try:
-        vu_config = await builder.get_function_config(config.video_understanding_tool)
+        vu_config = builder.get_function_config(config.video_understanding_tool)
         base_vlm = await builder.get_llm(vu_config.vlm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
         vlm_model_name = getattr(base_vlm, "model_name", "") or getattr(base_vlm, "model", "")
+        vu_max_fps = getattr(vu_config, "max_fps", None)
         logger.info("Report generation VLM model for audio suffix guard: %r", vlm_model_name)
     except Exception as e:
         logger.warning(
@@ -2197,7 +2209,16 @@ Enter your choice or press Submit to keep current value:"""
             end_dt = iso8601_to_datetime(end_timestamp)
             duration_seconds = (end_dt - start_dt).total_seconds()
 
-            if duration_seconds > config.max_duration_for_chunking:
+            effective_chunk_seconds = config.chunk_duration_seconds
+            if config.max_images_per_vlm_call and vu_max_fps:
+                image_cap_seconds = config.max_images_per_vlm_call / vu_max_fps
+                effective_chunk_seconds = min(effective_chunk_seconds, max(1, int(image_cap_seconds)))
+                logger.info(
+                    f"max_images_per_vlm_call={config.max_images_per_vlm_call} at max_fps={vu_max_fps} "
+                    f"caps effective chunk size at {effective_chunk_seconds}s (configured: {config.chunk_duration_seconds}s)"
+                )
+
+            if duration_seconds > config.max_duration_for_chunking and not config.max_images_per_vlm_call:
                 # Video too long for chunking - process as single chunk
                 logger.warning(
                     f"Video duration ({duration_seconds:.1f}s) exceeds chunking threshold ({config.max_duration_for_chunking}s). "
@@ -2208,9 +2229,9 @@ Enter your choice or press Submit to keep current value:"""
                 # Divide video into chunks
                 chunks = _divide_video_into_chunks(
                     duration_seconds,
-                    config.chunk_duration_seconds,
+                    effective_chunk_seconds,
                 )
-                logger.info(f"Divided video into {len(chunks)} chunks of {config.chunk_duration_seconds}s each")
+                logger.info(f"Divided video into {len(chunks)} chunks of {effective_chunk_seconds}s each")
 
             # Step 3: Run VLM analysis tasks in parallel (one per chunk)
             logger.info(f"Running {len(chunks)} VLM analysis tasks with {tool_name}")
