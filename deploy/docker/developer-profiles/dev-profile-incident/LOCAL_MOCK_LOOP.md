@@ -39,7 +39,8 @@ cd services/ui
 npm install
 cd packages/common && npm run build && cd ../..
 cd packages/nemo-agent-toolkit-ui && npm run build && cd ../..
-# apps/nv-metropolis-bp-vss-ui/.env.local: the six NEXT_PUBLIC_* vars above
+# apps/nv-metropolis-bp-vss-ui/.env.local: the NEXT_PUBLIC_* vars from
+# mock-backend/base_profile_mock/README.md above
 cd apps/nv-metropolis-bp-vss-ui
 npm run dev   # http://localhost:3000
 ```
