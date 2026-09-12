@@ -436,6 +436,7 @@ class VideoReportGenConfig(FunctionBaseConfig, name="video_report_gen"):
     )
     max_images_per_vlm_call: int | None = Field(
         default=None,
+        gt=0,
         description=(
             "Optional hard cap on images/frames sent in a single VLM prompt, for "
             "serving stacks that enforce a per-prompt image count limit (e.g. "
@@ -1325,6 +1326,7 @@ async def video_report_gen(config: VideoReportGenConfig, builder: Builder) -> As
 
     vlm_model_name = ""
     vu_max_fps: int | None = None
+    vu_config = None
     try:
         vu_config = builder.get_function_config(config.video_understanding_tool)
         vu_max_fps = getattr(vu_config, "max_fps", None)
@@ -1335,15 +1337,21 @@ async def video_report_gen(config: VideoReportGenConfig, builder: Builder) -> As
             e,
         )
 
-    try:
-        base_vlm = await builder.get_llm(vu_config.vlm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
-        vlm_model_name = getattr(base_vlm, "model_name", "") or getattr(base_vlm, "model", "")
-        logger.info("Report generation VLM model for audio suffix guard: %r", vlm_model_name)
-    except Exception as e:
+    if vu_config is not None:
+        try:
+            base_vlm = await builder.get_llm(vu_config.vlm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
+            vlm_model_name = getattr(base_vlm, "model_name", "") or getattr(base_vlm, "model", "")
+            logger.info("Report generation VLM model for audio suffix guard: %r", vlm_model_name)
+        except Exception as e:
+            logger.warning(
+                "Could not resolve video_understanding VLM model name; "
+                "AUDIO_REPORT_PROMPT_SUFFIX will not be applied when enable_audio=True: %s",
+                e,
+            )
+    else:
         logger.warning(
-            "Could not resolve video_understanding VLM model name; "
-            "AUDIO_REPORT_PROMPT_SUFFIX will not be applied when enable_audio=True: %s",
-            e,
+            "Skipping VLM model name resolution for audio-suffix guard because "
+            "video_understanding config could not be resolved."
         )
 
     # Load LVS tool if configured (optional)
@@ -2218,9 +2226,25 @@ Enter your choice or press Submit to keep current value:"""
             duration_seconds = (end_dt - start_dt).total_seconds()
 
             effective_chunk_seconds = config.chunk_duration_seconds
-            if config.max_images_per_vlm_call and vu_max_fps:
-                image_cap_seconds = config.max_images_per_vlm_call / vu_max_fps
+            if config.max_images_per_vlm_call:
+                if not vu_max_fps:
+                    raise ValueError(
+                        f"max_images_per_vlm_call={config.max_images_per_vlm_call} is configured but "
+                        "video_understanding's max_fps could not be resolved, so the per-prompt image "
+                        "cap cannot be safely enforced; refusing to proceed uncapped."
+                    )
+                # This chunk-size estimate (duration * max_fps) is nominal: frame_select derives its
+                # own step from the video's real fps and floors it to whole frame indices, which can
+                # select slightly more frames than this estimate. Budget to 85% of the cap (min 1
+                # frame) to leave headroom for that rounding rather than target the cap exactly.
+                safe_image_budget = max(1, int(config.max_images_per_vlm_call * 0.85))
+                image_cap_seconds = safe_image_budget / vu_max_fps
                 effective_chunk_seconds = min(effective_chunk_seconds, max(1, int(image_cap_seconds)))
+                if effective_chunk_seconds * vu_max_fps > config.max_images_per_vlm_call:
+                    raise ValueError(
+                        f"max_images_per_vlm_call={config.max_images_per_vlm_call} is too small for "
+                        f"max_fps={vu_max_fps}: even a 1-second chunk would exceed the cap."
+                    )
                 logger.info(
                     f"max_images_per_vlm_call={config.max_images_per_vlm_call} at max_fps={vu_max_fps} "
                     f"caps effective chunk size at {effective_chunk_seconds}s (configured: {config.chunk_duration_seconds}s)"

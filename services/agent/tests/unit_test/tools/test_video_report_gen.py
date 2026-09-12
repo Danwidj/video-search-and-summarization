@@ -505,8 +505,9 @@ class TestMaxImagesPerVlmCallChunking:
 
     @pytest.mark.asyncio
     async def test_chunk_size_capped_by_max_images_per_vlm_call(self):
-        """cap=12 images at max_fps=2 must shrink the default 60s chunk down to 6s,
-        matching the live-verified 81.6s-clip -> 14 chunks-of-6s behavior."""
+        """cap=12 images at max_fps=2 must shrink the default 60s chunk down to 5s:
+        an 85% safety-margin budget (10 of 12 images) leaves headroom for
+        frame_select's real-fps rounding to not exceed the advertised cap."""
         config, builder, tool, start, end = self._build_mocks(
             max_images_per_vlm_call=12, max_fps=2, duration_seconds=81.6
         )
@@ -515,8 +516,8 @@ class TestMaxImagesPerVlmCallChunking:
 
         assert output.http_url is not None
         widths = self._chunk_widths(tool)
-        assert len(widths) == 14  # ceil(81.6 / 6)
-        assert all(width <= 6.0 + 1e-6 for width in widths)
+        assert len(widths) == 17  # ceil(81.6 / 5)
+        assert all(width <= 5.0 + 1e-6 for width in widths)
 
     @pytest.mark.asyncio
     async def test_long_video_fallback_still_respects_image_cap(self):
@@ -531,4 +532,46 @@ class TestMaxImagesPerVlmCallChunking:
 
         widths = self._chunk_widths(tool)
         assert len(widths) > 1
-        assert all(width <= 6.0 + 1e-6 for width in widths)
+        assert all(width <= 5.0 + 1e-6 for width in widths)
+
+    @pytest.mark.parametrize("bad_value", [0, -1])
+    def test_max_images_per_vlm_call_rejects_non_positive(self, bad_value):
+        """0 or negative values must be rejected rather than silently treated as
+        unset (0) or clamped to a 1-second chunk (negative)."""
+        with pytest.raises(ValidationError):
+            VideoReportGenConfig(
+                object_store="test_object_store",
+                video_understanding_tool="video_understanding",
+                max_images_per_vlm_call=bad_value,
+            )
+
+    @pytest.mark.asyncio
+    async def test_fails_closed_when_max_fps_unresolvable(self):
+        """If max_images_per_vlm_call is set but video_understanding's max_fps
+        can't be resolved, the cap can't be safely enforced - fail closed
+        instead of silently dispatching uncapped chunks."""
+        config, builder, _tool, start, end = self._build_mocks(
+            max_images_per_vlm_call=12, max_fps=2, duration_seconds=81.6
+        )
+        # Simulate get_function_config succeeding but returning something without
+        # a usable max_fps (e.g. an LVS tool config that doesn't define one).
+        builder.get_function_config = Mock(return_value=Mock(max_fps=None, vlm_name="vlm_llm"))
+
+        with pytest.raises(ValueError, match="max_fps could not be resolved"):
+            await self._run(config, builder, start, end)
+
+    @pytest.mark.asyncio
+    async def test_audio_suffix_guard_survives_vu_config_lookup_failure(self):
+        """If get_function_config raises, vlm_model_name resolution for the
+        audio-suffix guard must be skipped cleanly, not crash with an
+        UnboundLocalError masked as a VLM-model-lookup failure."""
+        config, builder, tool, start, end = self._build_mocks(
+            max_images_per_vlm_call=None, max_fps=2, duration_seconds=10.0
+        )
+        builder.get_function_config = Mock(side_effect=RuntimeError("config store unavailable"))
+
+        output = await self._run(config, builder, start, end)
+
+        assert output.http_url is not None
+        builder.get_llm.assert_not_called()
+        assert tool.ainvoke.call_count >= 1
