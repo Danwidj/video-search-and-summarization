@@ -27,6 +27,20 @@ if command -v direnv >/dev/null 2>&1; then
   eval "$(direnv hook bash)"
 fi
 
+# fzf's own Ctrl-R (fuzzy history) / Ctrl-T (fuzzy file-find) bindings —
+# `fzf --bash` is the current fzf's own way to emit them (0.48+), but
+# kwanz-ws's apt package is jammy's fzf 0.29.0, which predates that flag and
+# instead ships the packaged key-bindings.bash. Try the modern path first so
+# this keeps working if the box is ever upgraded past jammy.
+if command -v fzf >/dev/null 2>&1; then
+  if fzf --bash >/dev/null 2>&1; then
+    eval "$(fzf --bash)"
+  elif [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+    # shellcheck disable=SC1091
+    source /usr/share/doc/fzf/examples/key-bindings.bash
+  fi
+fi
+
 _vss_dotfiles_dir="$(dirname "${BASH_SOURCE[0]}")"
 if [ -f "$_vss_dotfiles_dir/aliases.sh" ]; then
   # shellcheck source=aliases.sh

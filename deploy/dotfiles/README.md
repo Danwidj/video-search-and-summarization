@@ -14,10 +14,16 @@ box, not a personal daily-driver machine.
   it for jammy) and drops a config tuned for this box: username+hostname
   always visible (six accounts, one machine), directory, git branch/status,
   command duration, no GPU/docker custom module (see below).
-- Drops a small `~/.tmux.conf` (mouse mode, bigger scrollback) — tmux
-  itself is already the stock apt package here.
+- Installs `git-delta` (as `delta`) the same curl-binary way (apt doesn't
+  package it for jammy either — only 24.04+), straight into `~/.local/bin`
+  with no `sudo`, and wires it into **your own** `git config --global`
+  (`core.pager`, `interactive.diffFilter`, navigate/line-numbers) — an
+  opt-in per-account config, not a box-wide git setting.
+- Aliases `vim` to the system-wide `/opt/nvim` (already on `PATH`, no apt
+  package needed), `htop` to `btop`, and `cat` to a paging-free `bat`; wires
+  fzf's own Ctrl-R/Ctrl-T fuzzy history/file-find key bindings.
 - Adds `~/.local/bin` and `/opt/nvim/bin` to `PATH`, and wires the
-  starship/direnv shell hooks.
+  starship/direnv/fzf shell hooks.
 - Adds a `deploy/docker`-lifecycle alias/function set (see below).
 - Appends **one** marker-guarded include block to `~/.bashrc` that sources
   the managed `shellrc.sh` — everything else lives in files this script
@@ -51,6 +57,9 @@ Then start a new shell (or `source ~/.bashrc`).
   the whole group works from their own accounts, so auto-exporting a
   shared credential into every login shell the moment someone runs this
   bootstrap is the wrong default. Call `ngc-env-on` yourself when you need it.
+- **`git-delta`** — installed and wired into `git config --global` per
+  account, not box-wide: each teammate who runs the bootstrap gets nicer
+  diffs in their own git config, and nobody who hasn't opted in is affected.
 - **`mdx-*` deploy-lifecycle aliases/functions** — wrap the project's own
   canonical deploy tooling (`deploy/docker/scripts/dev-profile.sh` and
   `cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker

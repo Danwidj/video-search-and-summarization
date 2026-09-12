@@ -37,10 +37,45 @@ else
   curl -sS https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
 fi
 
+# apt doesn't package git-delta for jammy either (only noble/24.04+) — same
+# no-sudo, per-account GitHub-binary-release pattern as starship above:
+# extract straight into ~/.local/bin rather than a system-wide dpkg -i, since
+# this is opt-in per account, not infra installed once for the whole box.
+DELTA_VERSION="0.18.2"
+mkdir -p "$HOME/.local/bin"
+if [ -x "$HOME/.local/bin/delta" ]; then
+  echo "[bootstrap] delta already installed."
+else
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64) delta_target="x86_64-unknown-linux-gnu" ;;
+    aarch64) delta_target="aarch64-unknown-linux-gnu" ;;
+    *)
+      echo "[bootstrap] Unsupported arch '$arch' for delta — skipping (install manually if needed)." >&2
+      delta_target=""
+      ;;
+  esac
+  if [ -n "$delta_target" ]; then
+    echo "[bootstrap] Installing git-delta $DELTA_VERSION..."
+    delta_tmp="$(mktemp -d)"
+    curl -sSL "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-${delta_target}.tar.gz" \
+      | tar -xz -C "$delta_tmp"
+    cp "$delta_tmp/delta-${DELTA_VERSION}-${delta_target}/delta" "$HOME/.local/bin/delta"
+    rm -rf "$delta_tmp"
+  fi
+fi
+
+if [ -x "$HOME/.local/bin/delta" ]; then
+  echo "[bootstrap] Configuring git to use delta (per-account, via git config --global)..."
+  git config --global core.pager delta
+  git config --global interactive.diffFilter "delta --color-only"
+  git config --global delta.navigate true
+  git config --global delta.line-numbers true
+fi
+
 echo "[bootstrap] Installing managed config files..."
 mkdir -p "$HOME/.config" "$DOTFILES_DIR"
 cp "$SCRIPT_DIR/starship.toml" "$HOME/.config/starship.toml"
-cp "$SCRIPT_DIR/tmux.conf" "$HOME/.tmux.conf"
 cp "$SCRIPT_DIR/shellrc.sh" "$DOTFILES_DIR/shellrc.sh"
 cp "$SCRIPT_DIR/aliases.sh" "$DOTFILES_DIR/aliases.sh"
 

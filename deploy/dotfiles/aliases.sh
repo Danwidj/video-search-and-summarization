@@ -12,6 +12,26 @@ if command -v batcat >/dev/null 2>&1; then
   alias bat=batcat
 fi
 
+# /opt/nvim is the system-wide nvim release already on PATH via shellrc.sh
+# (see AGENTS.md / README — apt's nvim on jammy is older than this box's).
+if command -v nvim >/dev/null 2>&1; then
+  alias vim=nvim
+fi
+
+# Drop-in syntax-highlighted replacement for `cat`. `--paging=never` avoids
+# surprising anyone with a pager on a plain `cat foo`; bat/batcat already
+# auto-detects non-terminal (piped/scripted) output and falls back to plain
+# behavior there regardless.
+if command -v bat >/dev/null 2>&1 || command -v batcat >/dev/null 2>&1; then
+  alias cat="bat --style=plain --paging=never"
+fi
+
+# btop is the one actually installed by this bootstrap and is strictly
+# better than htop.
+if command -v btop >/dev/null 2>&1; then
+  alias htop=btop
+fi
+
 # --- NGC credentials: opt-in, not auto-sourced -----------------------------
 # /srv/rise-up/.ngc_env is a shared NVIDIA/NGC credential file for the whole
 # smu-rise-up group's single checkout — auto-sourcing it into every login
