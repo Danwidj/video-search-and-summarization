@@ -98,6 +98,7 @@ functions:
     vst_internal_url: ${VST_INTERNAL_URL}
     vst_external_url: ${VST_EXTERNAL_URL}
     enable_audio: ${ENABLE_AUDIO:-false}
+    max_images_per_vlm_call: ${VLM_MAX_IMAGES_PER_CALL:-}
     # yamllint disable rule:line-length
     vlm_prompt: |
       Describe in detail what is happening in this video,
