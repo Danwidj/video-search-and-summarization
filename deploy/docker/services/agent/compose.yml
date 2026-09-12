@@ -111,6 +111,10 @@ services:
       # Audio Configuration
       ENABLE_AUDIO: ${ENABLE_AUDIO:-false}
 
+      # Per-prompt image-count cap for VLM calls (e.g. remote hosted models with
+      # a fixed limit) - see video_report_gen.py's max_images_per_vlm_call.
+      VLM_MAX_IMAGES_PER_CALL: ${VLM_MAX_IMAGES_PER_CALL:-}
+
       # Proprietary multimedia codecs (H.264/H.265) are NOT bundled in the image for
       # licensing reasons. Defaults to true: opencv-python-headless is installed from
       # PyPI at container startup (on your machine) so video decoding works out of the
