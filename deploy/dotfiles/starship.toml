@@ -1,53 +1,316 @@
 # Managed by deploy/dotfiles/bootstrap.sh — re-running the bootstrap
 # overwrites this file, so make edits upstream in the repo, not here.
 #
-# Purposeful, minimal config for kwanz-ws (shared 6-account Ubuntu VM):
-# username+hostname always visible (whose shell is this?), directory,
-# git branch/status (this repo is the whole reason to be on this box),
-# cmd_duration (docker builds / NIM pulls / dev-profile.sh runs take
-# minutes), plain character. Deliberately no GPU/docker custom module —
-# see aliases.sh's `gpu` alias and mdx-* wrappers for on-demand versions
-# of that info instead of paying a per-prompt nvidia-smi/docker-context cost.
+# Stock `starship preset nerd-font-symbols` output (unmodified) — see
+# https://starship.rs/presets/nerd-font. Regenerate with:
+#   starship preset nerd-font-symbols -o deploy/dotfiles/starship.toml --force
+# then re-add this comment block.
 
-format = """
-$username\
-$hostname\
-$directory\
-$git_branch\
-$git_status\
-$cmd_duration\
-$character"""
+"$schema" = 'https://starship.rs/config-schema.json'
 
-[username]
-style_user = "bold yellow"
-style_root = "bold red"
-format = "[$user]($style)"
-show_always = true
+[aws]
+symbol = " "
 
-[hostname]
-ssh_only = false
-format = "[@$hostname]($style) "
-style = "bold yellow"
-disabled = false
+[azure]
+symbol = " "
+
+[battery]
+full_symbol = "󰁹 "
+charging_symbol = "󰂄 "
+discharging_symbol = "󰂃 "
+unknown_symbol = "󰂑 "
+empty_symbol = "󰂎 "
+
+[buf]
+symbol = " "
+
+[bun]
+symbol = " "
+
+[c]
+symbol = " "
+
+[cpp]
+symbol = " "
+
+[cmake]
+symbol = " "
+
+[cobol]
+symbol = " "
+
+[conda]
+symbol = " "
+
+[container]
+symbol = " "
+
+[crystal]
+symbol = " "
+
+[dart]
+symbol = " "
+
+[deno]
+symbol = " "
+
+[direnv]
+symbol = " "
 
 [directory]
-style = "bold blue"
-truncation_length = 3
-truncate_to_repo = true
+read_only = " 󰌾"
+
+[docker_context]
+symbol = " "
+
+[dotnet]
+symbol = " "
+
+[elixir]
+symbol = " "
+
+[elm]
+symbol = " "
+
+[erlang]
+symbol = " "
+
+[fennel]
+symbol = " "
+
+[fortran]
+symbol = " "
+
+[fossil_branch]
+symbol = " "
+
+[gcloud]
+symbol = "󱇶 "
+
+[gleam]
+symbol = " "
 
 [git_branch]
-format = "[$symbol$branch]($style) "
-style = "bold purple"
+symbol = " "
 
-[git_status]
-format = "([$all_status$ahead_behind]($style)) "
-style = "bold red"
+[git_commit]
+tag_symbol = '  '
 
-[cmd_duration]
-min_time = 2000
-format = "took [$duration]($style) "
-style = "yellow"
+[golang]
+symbol = " "
 
-[character]
-success_symbol = "[❯](bold green)"
-error_symbol = "[❯](bold red)"
+[gradle]
+symbol = " "
+
+[guix_shell]
+symbol = " "
+
+[haskell]
+symbol = " "
+
+[haxe]
+symbol = " "
+
+[helm]
+symbol = " "
+
+[hg_branch]
+symbol = " "
+
+[hostname]
+ssh_symbol = " "
+
+[java]
+symbol = " "
+
+[julia]
+symbol = " "
+
+[kotlin]
+symbol = " "
+
+[kubernetes]
+symbol = "󱃾 "
+
+[lua]
+symbol = " "
+
+[maven]
+symbol = " "
+
+[memory_usage]
+symbol = "󰍛 "
+
+[meson]
+symbol = "󰔷 "
+
+[mojo]
+symbol = "󰈸 "
+
+[nats]
+symbol = " "
+
+[netns]
+symbol = "󰛳 "
+
+[nim]
+symbol = " "
+
+[nix_shell]
+symbol = " "
+
+[nodejs]
+symbol = " "
+
+[ocaml]
+symbol = " "
+
+[odin]
+symbol = "󰟢 "
+
+[opa]
+symbol = " "
+
+[openstack]
+symbol = " "
+
+[os.symbols]
+AIX = " "
+AlmaLinux = " "
+Alpaquita = " "
+Alpine = " "
+ALTLinux = " "
+Amazon = " "
+Android = " "
+AOSC = " "
+Arch = " "
+Artix = " "
+Bluefin = " "
+CachyOS = " "
+CentOS = " "
+Debian = " "
+DragonFly = " "
+Elementary = " "
+Emscripten = " "
+EndeavourOS = " "
+Fedora = " "
+FreeBSD = " "
+Garuda = " "
+Gentoo = " "
+HardenedBSD = "󰞌 "
+Illumos = " "
+InstantOS = " "
+Ios = "󰀷 "
+Kali = " "
+Linux = " "
+Mabox = " "
+Macos = " "
+Manjaro = " "
+Mariner = " "
+MidnightBSD = " "
+Mint = " "
+NetBSD = " "
+NixOS = " "
+Nobara = " "
+OpenBSD = " "
+OpenCloudOS = " "
+openEuler = " "
+openSUSE = " "
+OracleLinux = "󰺡 "
+PikaOS = " "
+Pop = " "
+Raspbian = " "
+Redhat = "󱄛 "
+RedHatEnterprise = "󱄛 "
+Redox = "󰀘 "
+RockyLinux = " "
+Solus = " "
+SUSE = " "
+Ubuntu = " "
+Ultramarine = " "
+Unknown = " "
+Uos = " "
+Void = " "
+Windows = "󰍲 "
+Zorin = " "
+
+[package]
+symbol = "󰏗 "
+
+[perl]
+symbol = " "
+
+[php]
+symbol = " "
+
+[pijul_channel]
+symbol = " "
+
+[pixi]
+symbol = "󰏗 "
+
+[pulumi]
+symbol = " "
+
+[purescript]
+symbol = " "
+
+[python]
+symbol = " "
+
+[raku]
+symbol = "󱖊 "
+
+[red]
+symbol = "󱍼 "
+
+[rlang]
+symbol = "󰟔 "
+
+[ruby]
+symbol = " "
+
+[rust]
+symbol = "󱘗 "
+
+[scala]
+symbol = " "
+
+[shlvl]
+symbol = "󰹍 "
+
+[singularity]
+symbol = " "
+
+[solidity]
+symbol = " "
+
+[spack]
+symbol = " "
+
+[status]
+symbol = " "
+
+[sudo]
+symbol = " "
+
+[swift]
+symbol = " "
+
+[terraform]
+symbol = " "
+
+[vlang]
+symbol = " "
+
+[typst]
+symbol = " "
+
+[vagrant]
+symbol = " "
+
+[xmake]
+symbol = " "
+
+[zig]
+symbol = " "
