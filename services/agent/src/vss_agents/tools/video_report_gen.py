@@ -1327,9 +1327,17 @@ async def video_report_gen(config: VideoReportGenConfig, builder: Builder) -> As
     vu_max_fps: int | None = None
     try:
         vu_config = builder.get_function_config(config.video_understanding_tool)
+        vu_max_fps = getattr(vu_config, "max_fps", None)
+    except Exception as e:
+        logger.warning(
+            "Could not resolve video_understanding config; "
+            "max_images_per_vlm_call chunk-size cap will not be applied: %s",
+            e,
+        )
+
+    try:
         base_vlm = await builder.get_llm(vu_config.vlm_name, wrapper_type=LLMFrameworkEnum.LANGCHAIN)
         vlm_model_name = getattr(base_vlm, "model_name", "") or getattr(base_vlm, "model", "")
-        vu_max_fps = getattr(vu_config, "max_fps", None)
         logger.info("Report generation VLM model for audio suffix guard: %r", vlm_model_name)
     except Exception as e:
         logger.warning(
