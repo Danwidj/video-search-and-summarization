@@ -1,0 +1,53 @@
+# Managed by deploy/dotfiles/bootstrap.sh — re-running the bootstrap
+# overwrites this file, so make edits upstream in the repo, not here.
+#
+# Purposeful, minimal config for kwanz-ws (shared 6-account Ubuntu VM):
+# username+hostname always visible (whose shell is this?), directory,
+# git branch/status (this repo is the whole reason to be on this box),
+# cmd_duration (docker builds / NIM pulls / dev-profile.sh runs take
+# minutes), plain character. Deliberately no GPU/docker custom module —
+# see aliases.sh's `gpu` alias and mdx-* wrappers for on-demand versions
+# of that info instead of paying a per-prompt nvidia-smi/docker-context cost.
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$cmd_duration\
+$character"""
+
+[username]
+style_user = "bold yellow"
+style_root = "bold red"
+format = "[$user]($style)"
+show_always = true
+
+[hostname]
+ssh_only = false
+format = "[@$hostname]($style) "
+style = "bold yellow"
+disabled = false
+
+[directory]
+style = "bold blue"
+truncation_length = 3
+truncate_to_repo = true
+
+[git_branch]
+format = "[$symbol$branch]($style) "
+style = "bold purple"
+
+[git_status]
+format = "([$all_status$ahead_behind]($style)) "
+style = "bold red"
+
+[cmd_duration]
+min_time = 2000
+format = "took [$duration]($style) "
+style = "yellow"
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"

@@ -23,6 +23,15 @@ shape and have not been reconciled with it. Identity rule: 1 video = 1 incident 
 the Postgres importer (`scripts/seed_supabase.py`), which seeds all 72 under one shared `model_run_id`. The
 console is database-backed only; there is no offline CSV-preview UI mode.
 
+## Shell dotfiles/QoL bootstrap for kwanz-ws
+
+[`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
+`kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, tmux config, and `mdx-*` deploy-lifecycle
+aliases/functions). It is not mandatory team-wide provisioning and does not touch other accounts.
+The `mdx-*` wrappers call the project's own canonical deploy scripts (`dev-profile.sh`,
+`cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker compose` invocations —
+see `deploy/dotfiles/aliases.sh`'s own comments for which script (or doc) grounds each one.
+
 ## UI development without GPU/NIM containers
 
 [`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. This is unrelated to the sibling `deploy/docker/developer-profiles/dev-profile-incident/mock-backend/mock_data/` module (a different, not-yet-built Postgres schema mock for the incident-console app above).
