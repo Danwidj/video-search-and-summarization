@@ -102,3 +102,4 @@ else
 fi
 
 echo "[bootstrap] Done. Start a new shell (or 'source ~/.bashrc') to pick up the changes."
+source ~/.bashrc
