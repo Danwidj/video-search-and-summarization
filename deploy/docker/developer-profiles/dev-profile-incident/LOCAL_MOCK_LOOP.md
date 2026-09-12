@@ -1,10 +1,12 @@
 # Local mock loop (Phase 1, brute-force, native-only)
 
 Empirically verified 2026-09-12 on this machine: both mock/frontend pairs run
-natively with `uv`, zero GPU / zero NIM containers / no Docker / no SSH.
-No code changes were needed — both mocks worked as documented once started
-with the wiring below. Real Supabase/R2 secrets are NOT required: the
-incident-console loop uses a local SQLite file as a placeholder DSN.
+natively with `uv` (Python side) and `npm` (UI side), zero GPU / zero NIM
+containers / no Docker / no SSH. No source changes were needed — both mocks
+and the real UI worked as documented once started with the wiring below
+(the UI side needs a one-time `npm install` + workspace-package build, see
+Pair (a)). Real Supabase/R2 secrets are NOT required: the incident-console
+loop uses a local SQLite file as a placeholder DSN.
 
 ## Pair (a): base_profile_mock -> real UI
 
@@ -29,9 +31,41 @@ curl -X POST http://localhost:7777/api/v1/videos \
 ```
 
 Point the real UI at it per `mock-backend/base_profile_mock/README.md`
-(`NEXT_PUBLIC_AGENT_API_URL_BASE=http://localhost:7777/api/v1`, etc.).
-The full `next dev` boot was NOT exercised here (heavy monorepo install);
-the mock side serves every prefix the UI calls, verified above.
+(`NEXT_PUBLIC_AGENT_API_URL_BASE=http://localhost:7777/api/v1`, etc.), then
+boot the real UI:
+
+```sh
+cd services/ui
+npm install
+cd packages/common && npm run build && cd ../..
+cd packages/nemo-agent-toolkit-ui && npm run build && cd ../..
+# apps/nv-metropolis-bp-vss-ui/.env.local: the six NEXT_PUBLIC_* vars above
+cd apps/nv-metropolis-bp-vss-ui
+npm run dev   # http://localhost:3000
+```
+
+The two `npm run build` steps are required before `next dev` will resolve
+`@aiqtoolkit-ui/common` / `@nemo-agent-toolkit/ui` (npm workspace packages
+that ship pre-built `lib/` output, not present until built once locally).
+
+Empirically verified 2026-09-12: `next dev` boots, `GET /` returns 200 with
+the real page (title, Video Management tab present in the rendered HTML).
+Interactive browser click-through could not be captured here (the available
+browser-automation tool errored on every call with "Required at pageId" -
+an environment tool bug, not a UI or mock issue). As a substitute, one
+UI-driven call was replayed byte-for-byte against the running mock using the
+exact wire shapes the UI's own code sends:
+
+- Sidebar chat (`services/agent`-mirroring `websocket.py` handler; message
+  shape from `packages/nemo-agent-toolkit-ui/types/websocket.ts` /
+  `Chat.tsx`): a `user_message` with `content.messages[0].content` of
+  `"list videos"` sent over `ws://localhost:7777/websocket` got back the
+  real streamed `system_response_message` chunks ("No videos h" / "ave been
+  up" / "loaded yet." / complete) - the full HITL-capable transport path,
+  live.
+- Video Management upload init: `POST /api/v1/videos {"filename":...}`
+  returned `{"url":"http://localhost:7777/vst/api/v1/storage/file"}` per
+  `video-management/chunkedUpload.ts`'s contract.
 
 ## Pair (b): mock_llm_server + SQLite -> incident-console (capstone loop)
 
@@ -88,6 +122,8 @@ and fail-soft `get_db() -> None` with DSN unset. `uv run pytest` → 90 passed.
 
 - Real Supabase Postgres + R2 wiring (`.env.local` real values), VM parity /
   deploy, git hooks / `.env` propagation, SSH tunnels, R2/direnv integration.
-- Full Next.js UI boot against `base_profile_mock` (mock side verified only).
+- Real browser click-through of the Next.js UI (blocked by a broken local
+  browser-automation tool, see Pair (a) above); the boot, page render, and
+  wire-protocol calls the UI issues were verified instead.
 - `incident-console/.gitignore` ignores only `.env.local`; keep scratch
   SQLite files under `/tmp` (as above) so they can never be committed.
