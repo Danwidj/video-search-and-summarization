@@ -14,14 +14,18 @@
 # limitations under the License.
 """Unit tests for video_report_gen module."""
 
+from datetime import timedelta
 import tempfile
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import Mock
 from unittest.mock import patch
 
 from pydantic import ValidationError
 import pytest
 
 from vss_agents.tools.video_report_gen import TimestampMatch
+from vss_agents.tools.video_report_gen import VideoReportGenConfig
 from vss_agents.tools.video_report_gen import VideoReportGenInput
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.tools.video_report_gen import _convert_markdown_to_pdf
@@ -29,8 +33,11 @@ from vss_agents.tools.video_report_gen import _divide_video_into_chunks
 from vss_agents.tools.video_report_gen import _inject_video_clips
 from vss_agents.tools.video_report_gen import _normalize_chunk_timestamps
 from vss_agents.tools.video_report_gen import _parse_timestamps
+from vss_agents.tools.video_report_gen import video_report_gen
 from vss_agents.tools.video_understanding import VideoUnderstandingInput
 from vss_agents.tools.video_understanding import VideoUnderstandingOffsetInput
+from vss_agents.utils.time_convert import datetime_to_iso8601
+from vss_agents.utils.time_convert import iso8601_to_datetime
 
 
 class TestTimestampMatch:
@@ -435,3 +442,93 @@ class TestResourcesSectionFormatting:
                 # PDF was generated successfully - the CSS is valid
                 assert os.path.exists(pdf_path), "PDF file should be created"
                 assert os.path.getsize(pdf_path) > 0, "PDF file should not be empty"
+
+
+class TestMaxImagesPerVlmCallChunking:
+    """End-to-end coverage for VideoReportGenConfig.max_images_per_vlm_call.
+
+    Drives the real, registered video_report_gen() tool (mocking only the NAT
+    builder and the VST/VLM boundary calls) so a regression in the chunk-size
+    cap arithmetic, or in the max_duration_for_chunking fallback bypass, shows
+    up as the wrong number/width of dispatched VLM calls rather than as a
+    source-text assertion.
+    """
+
+    def _build_mocks(self, *, max_images_per_vlm_call, max_fps, duration_seconds, max_duration_for_chunking=300):
+        config = VideoReportGenConfig(
+            object_store="test_object_store",
+            video_understanding_tool="video_understanding",
+            max_images_per_vlm_call=max_images_per_vlm_call,
+            max_duration_for_chunking=max_duration_for_chunking,
+        )
+
+        # Real NAT Builder.get_function_config() is synchronous; a Mock (not
+        # AsyncMock) here means the old `await builder.get_function_config(...)`
+        # bug would raise TypeError instead of silently returning a coroutine.
+        vu_config = Mock(max_fps=max_fps, vlm_name="vlm_llm")
+
+        video_understanding_tool = MagicMock()
+        video_understanding_tool.args_schema = None
+        video_understanding_tool.ainvoke = AsyncMock(return_value="## Analysis\n\nNothing notable.")
+
+        object_store = MagicMock()
+        object_store.upsert_object = AsyncMock()
+
+        builder = MagicMock()
+        builder.get_object_store_client = AsyncMock(return_value=object_store)
+        builder.get_tool = AsyncMock(return_value=video_understanding_tool)
+        builder.get_function_config = Mock(return_value=vu_config)
+        builder.get_llm = AsyncMock(return_value=Mock(model_name="test-vlm-model"))
+
+        start = "2025-01-01T00:00:00.000Z"
+        end = datetime_to_iso8601(iso8601_to_datetime(start) + timedelta(seconds=duration_seconds))
+
+        return config, builder, video_understanding_tool, start, end
+
+    async def _run(self, config, builder, start, end):
+        with (
+            patch("vss_agents.tools.video_report_gen.get_stream_id", new_callable=AsyncMock, return_value="stream-1"),
+            patch("vss_agents.tools.video_report_gen.get_timeline", new_callable=AsyncMock, return_value=(start, end)),
+        ):
+            async with video_report_gen(config, builder) as function_info:
+                return await function_info.single_fn(
+                    VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?")
+                )
+
+    @staticmethod
+    def _chunk_widths(tool):
+        widths = []
+        for call in tool.ainvoke.call_args_list:
+            chunk_input = call.kwargs["input"]
+            widths.append(chunk_input["end_timestamp"] - chunk_input["start_timestamp"])
+        return widths
+
+    @pytest.mark.asyncio
+    async def test_chunk_size_capped_by_max_images_per_vlm_call(self):
+        """cap=12 images at max_fps=2 must shrink the default 60s chunk down to 6s,
+        matching the live-verified 81.6s-clip -> 14 chunks-of-6s behavior."""
+        config, builder, tool, start, end = self._build_mocks(
+            max_images_per_vlm_call=12, max_fps=2, duration_seconds=81.6
+        )
+
+        output = await self._run(config, builder, start, end)
+
+        assert output.http_url is not None
+        widths = self._chunk_widths(tool)
+        assert len(widths) == 14  # ceil(81.6 / 6)
+        assert all(width <= 6.0 + 1e-6 for width in widths)
+
+    @pytest.mark.asyncio
+    async def test_long_video_fallback_still_respects_image_cap(self):
+        """Regression: a video longer than max_duration_for_chunking (300s) used to
+        bypass chunking entirely and get sent as one giant single chunk, blowing the
+        per-prompt image cap. It must still be divided into capped-width chunks."""
+        config, builder, tool, start, end = self._build_mocks(
+            max_images_per_vlm_call=12, max_fps=2, duration_seconds=320.0
+        )
+
+        await self._run(config, builder, start, end)
+
+        widths = self._chunk_widths(tool)
+        assert len(widths) > 1
+        assert all(width <= 6.0 + 1e-6 for width in widths)
