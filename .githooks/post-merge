@@ -1,0 +1,17 @@
+#!/bin/bash
+# post-merge: run the shared working-tree setup (.env propagation +
+# incident-console uv venv) after every merge and pull. Merge/pull change
+# the working tree but do NOT fire post-checkout, so without this hook a
+# freshly merged worktree would miss new untracked .env files and a stale
+# incident-console venv. See setup-worktree.sh for details.
+#
+# The git-lfs post-merge invocation below is the stock `git lfs install`
+# shim, kept so LFS content still resolves when hooks run from .githooks/.
+
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$HOOK_DIR/setup-worktree.sh"
+
+command -v git-lfs >/dev/null 2>&1 || { echo >&2 "post-merge: git-lfs not found, skipping lfs post-merge"; exit 0; }
+git lfs post-merge "$@"

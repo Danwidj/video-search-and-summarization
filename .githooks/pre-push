@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stock `git lfs install` shim, kept so LFS push handling still runs when
+# hooks execute from .githooks/ instead of .git/hooks/. Warns (instead of
+# failing the push) on machines without git-lfs.
+command -v git-lfs >/dev/null 2>&1 || { echo >&2 "pre-push: git-lfs not found, skipping lfs pre-push"; exit 0; }
+git lfs pre-push "$@"

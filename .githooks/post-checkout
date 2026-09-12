@@ -1,0 +1,22 @@
+#!/bin/bash
+# post-checkout: run the shared working-tree setup (.env propagation +
+# incident-console uv venv) on every checkout, branch switch and
+# `git worktree add` (which performs a checkout internally). See
+# setup-worktree.sh for the full behavior description.
+#
+# One-time setup per clone (this lives in .githooks/, not .git/hooks/, so it
+# is tracked and shareable - but git only runs hooks from the configured
+# hooks path, so each contributor must point git at this directory once):
+#   .githooks/activate.sh   # runs: git config core.hooksPath .githooks
+#
+# The git-lfs post-checkout invocation below is preserved from the original
+# hook. It warns (instead of failing the checkout) on machines without
+# git-lfs so the env/venv setup still runs there.
+
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$HOOK_DIR/setup-worktree.sh"
+
+command -v git-lfs >/dev/null 2>&1 || { echo >&2 "post-checkout: git-lfs not found, skipping lfs post-checkout"; exit 0; }
+git lfs post-checkout "$@"
