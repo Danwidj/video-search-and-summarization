@@ -9,7 +9,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_DIR="$HOME/.vss-dotfiles"
-APT_PACKAGES=(fzf ripgrep bat btop direnv)
+# curl is a hard prerequisite (starship and delta below are both installed by
+# curl-fetching their release archives), so it's in this list even though it
+# isn't otherwise part of the QoL tool set — without it the script would
+# silently die partway through, after installing packages but before writing
+# any managed files.
+APT_PACKAGES=(curl fzf ripgrep bat btop direnv)
 
 echo "[bootstrap] Installing apt packages (skipping any already present)..."
 missing=()

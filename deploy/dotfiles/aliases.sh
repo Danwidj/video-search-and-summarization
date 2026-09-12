@@ -40,9 +40,18 @@ fi
 ngc-env-on() {
   local ngc_env="${VSS_NGC_ENV:-/srv/rise-up/.ngc_env}"
   if [ -f "$ngc_env" ]; then
+    # Plain `source` only sets shell variables in *this* shell — it does not
+    # export them, so dev-profile.sh/NGC tooling run as a child process would
+    # still see no credential. `set -a`/`set +a` is this repo's own
+    # documented way to source it (docs/incident-plan/incident-plan-overview.md);
+    # save/restore any prior allexport state rather than assuming it was off.
+    local _had_allexport=0
+    case "$-" in *a*) _had_allexport=1 ;; esac
+    set -a
     # shellcheck disable=SC1090
     source "$ngc_env"
-    echo "ngc-env-on: sourced $ngc_env"
+    [ "$_had_allexport" -eq 1 ] || set +a
+    echo "ngc-env-on: sourced $ngc_env (exported)"
   else
     echo "ngc-env-on: $ngc_env not found (set VSS_NGC_ENV to override)" >&2
     return 1
@@ -58,8 +67,18 @@ ngc-env-on() {
 VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
 
 # Status check. Direct `docker compose -p mdx ...` — stable, generic Compose
-# surface, not project deploy-script surface, so no wrapper needed.
-alias mdx-ps='docker compose -p mdx ps'
+# surface, not project deploy-script surface, so no wrapper needed. Functions
+# (not aliases) so they can `cd` into deploy/docker in a subshell first:
+# `compose.yml` (with its `include:` of services/developer-profiles/
+# industry-profiles) only resolves via Compose's default discovery from that
+# directory — dev-profile.sh's own state_up `cd`s there for the same reason
+# before invoking `docker compose` (deploy/docker/scripts/dev-profile.sh) —
+# so running these from any other cwd (e.g. straight after login, from
+# $HOME) would otherwise fail with "no configuration file provided". The
+# subshell keeps the `cd` from changing the caller's actual shell directory.
+mdx-ps() {
+  ( cd "$VSS_REPO_ROOT/deploy/docker" && docker compose -p mdx ps )
+}
 
 # Stop the stack WITHOUT wiping the model-weight cache. Deliberately never
 # `-v`: dev-profile.sh's own `down` runs `docker compose -p mdx down -v
@@ -68,9 +87,13 @@ alias mdx-ps='docker compose -p mdx ps'
 # tell you to avoid — see docs/incident-plan/incident-plan-overview.md
 # ("Never run `dev-profile.sh down`") and
 # skills/vss-deploy-profile/references/teardown.md's cache-preserving
-# teardown. Direct compose alias, not a dev-profile.sh wrapper, precisely
+# teardown, whose exact `docker compose -p mdx down --remove-orphans` this
+# mirrors. Direct compose function, not a dev-profile.sh wrapper, precisely
 # because the safe behavior here means NOT calling dev-profile.sh's `down`.
-alias mdx-down='docker compose -p mdx down --remove-orphans'
+# Same subshell-`cd` reasoning as mdx-ps above.
+mdx-down() {
+  ( cd "$VSS_REPO_ROOT/deploy/docker" && docker compose -p mdx down --remove-orphans )
+}
 
 # Cross-profile deploy health check. Every profile runs the agent and must
 # answer on :8000/health (skills/vss-deploy-profile/references/readiness.md
@@ -98,12 +121,28 @@ alias mdx-disk='docker system df -v'
 # both call out `docker compose up -d --build vss-agent` for a quick agent
 # rebuild and `docker compose up -d --force-recreate <vios-service>` for
 # VIOS (no in-container dev-server mode for either).
+#
+# Unlike mdx-ps/mdx-down, this actually recreates containers, so it needs
+# the currently-up profile's real config (image tags, device IDs, ...) —
+# not just the project label. `dev-profile.sh up` writes exactly one
+# developer-profiles/dev-profile-*/generated.env at a time (state_down
+# deletes all of them first), so whichever one exists is the active
+# profile; same `cd`-into-deploy/docker reasoning as mdx-ps for resolving
+# compose.yml's `include:`.
 mdx-rebuild-svc() {
   if [ -z "$1" ]; then
     echo "usage: mdx-rebuild-svc <service> [more services...]" >&2
     return 1
   fi
-  docker compose -p mdx up -d --build --force-recreate "$@"
+  local compose_dir="$VSS_REPO_ROOT/deploy/docker"
+  local generated_env
+  generated_env="$(command ls "$compose_dir"/developer-profiles/dev-profile-*/generated.env 2>/dev/null | head -1)"
+  if [ -z "$generated_env" ]; then
+    echo "mdx-rebuild-svc: no active profile found (no generated.env under" >&2
+    echo "  $compose_dir/developer-profiles/) — is a profile currently up via dev-profile.sh?" >&2
+    return 1
+  fi
+  ( cd "$compose_dir" && docker compose --env-file "$generated_env" -p mdx up -d --build --force-recreate "$@" )
 }
 
 # Full profile rebuild/redeploy — thin wrapper around the project's own
@@ -131,8 +170,17 @@ mdx-rebuild() {
   fi
   echo "mdx-rebuild: dev-profile.sh up tears down the stack WITH -v (wipes the" >&2
   echo "model-weight cache) before rebuilding — see this function's comment in" >&2
-  echo "aliases.sh. Ctrl-C now to abort." >&2
-  sleep 3
+  echo "aliases.sh." >&2
+  # Explicit prompt, not a "Ctrl-C to abort" countdown: a Ctrl-C during a
+  # plain `sleep` doesn't reliably abort the rest of a shell function (the
+  # sleep's own interrupted exit status was never even checked here), so a
+  # would-be abort could silently fall through into the destructive `up`.
+  local _confirm
+  read -r -p "Proceed and wipe the model-weight cache? [y/N] " _confirm
+  case "$_confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "mdx-rebuild: aborted." >&2; return 1 ;;
+  esac
   "$VSS_REPO_ROOT/deploy/docker/scripts/dev-profile.sh" up "$@"
 }
 
@@ -145,10 +193,13 @@ mdx-rebuild() {
 # cleanup any other way).
 mdx-clean-datalog() {
   local profile="$1"
-  if [ -z "$profile" ]; then
-    echo "usage: mdx-clean-datalog <base|search|lvs|alerts>" >&2
-    return 1
-  fi
+  case "$profile" in
+    base|search|lvs|alerts) ;;
+    *)
+      echo "usage: mdx-clean-datalog <base|search|lvs|alerts>" >&2
+      return 1
+      ;;
+  esac
   local profile_dir="$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-${profile}"
   local env_file="$profile_dir/generated.env"
   [ -f "$env_file" ] || env_file="$profile_dir/.env"
