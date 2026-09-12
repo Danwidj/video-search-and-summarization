@@ -1,8 +1,9 @@
 # Incident Reports and Dashboard
 
-Run .venv/bin/streamlit run app.py. The app registers exactly two pages:
-Incident Reports and Analytics Dashboard. Details are an internal view of
-Incident Reports, selected by the report query parameter.
+Run .venv/bin/streamlit run app.py. This note covers two of the app's pages:
+Incident Reports and Analytics Dashboard (see the incident-console README for
+the full page list). Details are an internal view of Incident Reports, selected
+by the report query parameter.
 
 Both pages are database-backed. With no `INCIDENT_DB_DSN` configured they render
 the visible "database not configured" state and stop; there is no offline mode.
