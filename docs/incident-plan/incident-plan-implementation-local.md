@@ -103,6 +103,15 @@ docker compose --env-file generated.env.local -f resolved.yml up -d vss-agent in
 # profile, see the Overview doc §2 MVP1/MVP2 Summary), Elasticsearch/Logstash/Kibana, Kafka, SDRC (routing controller)
 docker compose --env-file generated.env.local -f resolved.yml up -d
 ```
+**Where the real values go (G8):** after the `cp`, edit the real values into the
+ignored `generated.env.local` copy itself (or export them in the deploy shell, which
+compose interpolation also reads) — `INCIDENT_DB_DSN`, the four `R2_*` keys, plus
+`NGC_CLI_API_KEY` and the hand-maintained machine values (`HOST_IP`, `EXTERNAL_IP`,
+`VSS_*`). The tracked `.env` stays placeholders; never create
+`incident-console/.env.local` on the VM — nothing on the deploy path reads it, and
+`COPY . .` would bake it into the image. **G9:** `dev-profile.sh` accepts no `incident`
+profile, so this `generated.env.local` is hand-made and bypasses the script's machine
+resolution of `HOST_IP`/`VSS_*`/`NGC_*` — the operator must ensure those by hand.
 **Never `dev-profile.sh down`** — see §1's operational gotchas. Bringing the stack back up after a clean `docker compose down` should skip the NIM download/build step and only re-hit the cold-start window (§1).
 
 **New incident-console app locally — no Docker, no GPU.** `incident-console/` is its own `uv`-managed Python package (`pyproject.toml` + `uv.lock`, same convention as `services/agent`), not a container, for local dev — Docker bind-mount hot reload has more overhead than just running the process natively:
