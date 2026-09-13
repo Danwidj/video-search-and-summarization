@@ -66,6 +66,17 @@ class AgentClient:
             resp = httpx.post(url, json=json, timeout=self.timeout, **kwargs)
         except httpx.HTTPError as exc:
             return Result(ok=False, error=f"{type(exc).__name__}: {exc}")
+        return self._to_result(url, resp)
+
+    def _get(self, url: str, **kwargs: Any) -> Result:
+        try:
+            resp = httpx.get(url, timeout=self.timeout, **kwargs)
+        except httpx.HTTPError as exc:
+            return Result(ok=False, error=f"{type(exc).__name__}: {exc}")
+        return self._to_result(url, resp)
+
+    @staticmethod
+    def _to_result(url: str, resp: httpx.Response) -> Result:
         if resp.status_code in (404, 405, 501):
             return Result(
                 ok=False,
@@ -95,7 +106,13 @@ class AgentClient:
     def upload_video(self, *, filename: str, content: bytes) -> Result:
         """Run the three-step upload contract. Fails soft at every step.
 
-        On success ``data`` is ``{"sensor_id": str, "complete": <complete resp>}``.
+        On success ``data`` is ``{"sensor_id": str, "filepath": str | None,
+        "complete": <complete resp>}``. ``filepath`` comes from the chunked
+        PUT's ``filePath`` field (part of the real nvstreamer protocol - see
+        ``services/ui/packages/common/lib-src/utils/chunkedUpload.ts``'s
+        ``filePath?: string``); neither this contract's step 1 nor step 3
+        response carries a playable URL, so when the chunk response omits it
+        we fall back to asking VST directly for one.
         """
         step1 = self.request_upload_url(filename)
         if not step1.ok:
@@ -104,9 +121,16 @@ class AgentClient:
         if not upload_url:
             return Result(ok=False, error=f"agent did not return an upload url: {step1.data!r}")
         try:
+            # Field name and the separate `filename` field mirror the real
+            # nvstreamer protocol (services/ui/.../chunkedUpload.ts's
+            # `formData.append('mediaFile', chunk, fileName)` +
+            # `formData.append('filename', fileName)`); this is a single-shot
+            # upload (no `nvstreamer-*` chunk headers), which both the real
+            # VST endpoint and the mock accept as a one-chunk upload.
             put = httpx.post(
                 upload_url,
-                files={"file": (filename, content, "video/mp4")},
+                files={"mediaFile": (filename, content, "video/mp4")},
+                data={"filename": filename},
                 timeout=max(self.timeout, 120.0),
             )
             put.raise_for_status()
@@ -118,13 +142,31 @@ class AgentClient:
         sensor_id = body.get("sensorId") or body.get("sensor_id")
         if not sensor_id:
             return Result(ok=False, error=f"nvstreamer did not return a sensorId: {body!r}")
+        filepath = body.get("filePath") or body.get("filepath")
+        if not filepath:
+            filepath = self._video_url(sensor_id)
         step3 = self.complete_upload(sensor_id)
         return Result(
             ok=step3.ok,
-            data={"sensor_id": sensor_id, "complete": step3.data},
+            data={"sensor_id": sensor_id, "filepath": filepath, "complete": step3.data},
             error=step3.error,
             status_code=step3.status_code,
         )
+
+    def _video_url(self, sensor_id: str) -> str | None:
+        """Best-effort fallback: ask VST for a playback URL for this sensor.
+
+        Assumes VST is reachable under the same host as ``base_url`` at
+        ``/vst/api`` - true of the local mock (single process) and, per
+        ``video_ingest.py``'s haproxy-ingress comment, of the real deployment
+        when the console and browser share the same ingress. Not guaranteed
+        in general, so failures here are swallowed (``None``) rather than
+        failing the whole upload.
+        """
+        result = self._get(f"{self.base_url}/vst/api/v1/storage/file/{sensor_id}/url")
+        if result.ok and isinstance(result.data, dict):
+            return result.data.get("videoUrl")
+        return None
 
     # -- AI triggers (endpoints are follow-up work) --------------- #
     def analyze_incident(self, video_id: int, *, reasoning: bool = False) -> Result:

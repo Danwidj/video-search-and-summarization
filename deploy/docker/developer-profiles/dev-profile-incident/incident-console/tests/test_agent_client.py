@@ -29,7 +29,7 @@ def _client_with_transport(handler, **kw) -> AgentClient:
     def fake_post(url, *, json=None, timeout=None, **kwargs):  # noqa: ARG001
         with httpx.Client(transport=transport) as c:
             if "files" in kwargs:
-                return c.post(url, files=kwargs["files"])
+                return c.post(url, files=kwargs["files"], data=kwargs.get("data"))
             return c.post(url, json=json)
 
     return fake_post
@@ -97,3 +97,97 @@ def test_not_implemented_codes(monkeypatch, code):
     )
     res = AgentClient(base_url="http://agent", llm_base_url="").search("q")
     assert res.not_implemented is True
+
+
+@pytest.mark.parametrize("code", [404, 405, 501])
+def test_analyze_incident_not_implemented_renders_as_calm_message(monkeypatch, code):
+    """Mirrors the message the Catalog page shows for a fail-soft response."""
+    monkeypatch.setattr(
+        agent_client.httpx,
+        "post",
+        _client_with_transport(lambda r: httpx.Response(code)),
+    )
+    res = AgentClient(base_url="http://agent", llm_base_url="").analyze_incident("v-abc123")
+    assert res.ok is False
+    assert res.not_implemented is True
+    # A real error (ok=False, not_implemented=False) is the only case that
+    # should ever read as a bug in the UI; this must not be that case.
+    assert res.status_code == code
+
+
+def test_upload_video_sends_mediaFile_field_and_filename_per_nvstreamer_protocol(monkeypatch):
+    """Regression test for a real bug: the chunk POST used to send the file
+    under form field ``file`` with no ``filename`` field, which the real VST
+    protocol (and its mock, mirroring ``form.get('mediaFile')`` /
+    ``form.get('filename')``) doesn't recognize - uploads silently landed
+    with an empty body and a fallback filename instead of the real one.
+    """
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            content_type = request.headers.get("content-type", "")
+            assert content_type.startswith("multipart/form-data")
+            body = request.content.decode("latin-1")
+            seen["has_media_file_field"] = 'name="mediaFile"' in body
+            seen["has_filename_field"] = 'name="filename"' in body and "clip.mp4" in body
+            return httpx.Response(200, json={"sensorId": "sensor-abc", "filePath": "http://vst/clip.mp4"})
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok", "sensor_id": "sensor-abc", "filename": "clip.mp4"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(handler))
+    res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+
+    assert res.ok is True
+    assert seen["has_media_file_field"] is True
+    assert seen["has_filename_field"] is True
+
+
+def test_upload_video_success_extracts_sensor_id_and_filepath(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            return httpx.Response(200, json={"filePath": "http://vst/videos/clip.mp4", "sensorId": "sensor-abc"})
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok", "sensor_id": "sensor-abc", "filename": "clip.mp4"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(handler))
+    res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+
+    assert res.ok is True
+    assert res.data["sensor_id"] == "sensor-abc"
+    assert res.data["filepath"] == "http://vst/videos/clip.mp4"
+
+
+def test_upload_video_falls_back_to_vst_url_when_chunk_response_lacks_filepath(monkeypatch):
+    def post_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            return httpx.Response(200, json={"sensorId": "sensor-abc"})  # no filePath
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok", "sensor_id": "sensor-abc", "filename": "clip.mp4"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    def get_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/vst/api/v1/storage/file/sensor-abc/url"
+        return httpx.Response(200, json={"videoUrl": "http://vst/videos/clip.mp4"})
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(post_handler))
+
+    transport = httpx.MockTransport(get_handler)
+
+    def fake_get(url, *, timeout=None, **kwargs):  # noqa: ARG001
+        with httpx.Client(transport=transport) as c:
+            return c.get(url)
+
+    monkeypatch.setattr(agent_client.httpx, "get", fake_get)
+
+    res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+    assert res.ok is True
+    assert res.data["filepath"] == "http://vst/videos/clip.mp4"
