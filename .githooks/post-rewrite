@@ -1,0 +1,11 @@
+#!/bin/bash
+# post-rewrite: run the shared working-tree setup (.env propagation +
+# incident-console uv venv) after rebase and amend. Like merge, rewrite
+# changes the working tree without firing post-checkout, so it gets the
+# same coverage. (git-lfs ships no post-rewrite hook, so there is nothing
+# to preserve here.)
+
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$HOOK_DIR/setup-worktree.sh"
