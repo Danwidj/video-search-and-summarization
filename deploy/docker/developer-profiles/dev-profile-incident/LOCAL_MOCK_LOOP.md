@@ -122,7 +122,10 @@ and fail-soft `get_db() -> None` with DSN unset. `uv run pytest` → 90 passed.
 ## Known gaps for later phases (do NOT fix here)
 
 - Real Supabase Postgres + R2 wiring (`.env.local` real values), VM parity /
-  deploy, git hooks / `.env` propagation, SSH tunnels, R2 integration.
+  deploy, git hooks / `.env` propagation, R2 integration. SSH-tunnel access to
+  the real VM backend is done since: `mdx-tunnel-incident` in
+  `deploy/dotfiles/aliases.sh`, wired as `incident-console/.env.local` values
+  per `incident-console/README.md` ("Real backend on kwanz-ws via SSH tunnel").
 - Real browser click-through of the Next.js UI (blocked by a broken local
   browser-automation tool, see Pair (a) above); the boot, page render, and
   wire-protocol calls the UI issues were verified instead.

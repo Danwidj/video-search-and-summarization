@@ -97,6 +97,51 @@ The two agent AI-trigger endpoints —
 exist server-side yet (follow-up task). The client is written against the
 plan's contract and returns a "not implemented yet" notice when they 404.
 
+### Real backend on kwanz-ws via SSH tunnel (Phase 4)
+
+The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
+runs on kwanz-ws. An SSH tunnel connects the two — same pattern as the
+base-profile VSS UI tunnel. The mock LLM above stays laptop-only for the
+zero-GPU loop; use this path when you want the real backend instead.
+
+Terminal 1 (tunnel):
+
+```bash
+# laptop side; forwards localhost:8000/:30081/:30082 to the VM
+mdx-tunnel-incident  # from deploy/dotfiles/aliases.sh (re-run its bootstrap to pick it up)
+```
+
+Terminal 2 (console, same directory as the local loop):
+
+```bash
+# incident-console/.env.local  (untracked; real values live only here)
+INCIDENT_AGENT_BASE_URL=http://localhost:8000
+INCIDENT_LLM_BASE_URL=http://localhost:30081/v1
+```
+
+```bash
+uv run streamlit run app.py  # http://localhost:8501, talking to the VM backend
+```
+
+`INCIDENT_AGENT_BASE_URL` needs no change from the committed placeholder —
+the tunnel forwards the backend's real port 8000 onto the same laptop port.
+`INCIDENT_LLM_BASE_URL` switches from the mock (`:8900/v1`) to the tunneled
+LLM NIM (`:30081/v1`). DB/R2 values stay as documented above (Supabase DSN +
+R2 keys in `.env.local`); the tunnel carries only the agent/LLM/VLM traffic.
+
+Prove the tunnel before starting the console:
+
+```bash
+mdx-tunnel-incident-check
+# agent ok (localhost:8000 -> 10.131.1.5:8000)
+# nim :30081 -> 10.131.1.5:30081: HTTP 200
+# nim :30082 -> 10.131.1.5:30082: HTTP 200
+```
+
+(The NIM lines only need to answer at HTTP level — any status code proves
+the forward works.) Never deploy this console to the VM: the VM runs only
+the backend stack.
+
 ### Tests
 
 ```bash
@@ -130,8 +175,8 @@ passed to `docker compose --env-file`, interpolated into the container via
 |---|---|---|
 | `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works, but only for the local-dev loop in [`LOCAL_MOCK_LOOP.md`](../LOCAL_MOCK_LOOP.md) — production stays Supabase Postgres via the session pooler |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
-| `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`) |
-| `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
+| `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
+| `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
 | `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | The platform's embedding endpoint; unset means matching fails soft to no matches |
 | `INCIDENT_VIDEO_BASE_URL` | Optional playback URL prefix; unset uses R2 presigned URLs | The R2 bucket public/presigned URL prefix |
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
