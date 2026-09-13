@@ -79,6 +79,8 @@ dependencies = [
   # of precision in the version specifier. For example, use `~=1.2` instead of `~=1.2.3` and `~=0.1.3` instead of
   # `~=0.1.3.5`.
   # Keep sorted!!!
+  # asyncpg for the incident-console Postgres helper (utils/incident_db.py)
+  "asyncpg~=0.31",
   # s3 for s3 object store
   "docker>=7.1.0",
   "duckdb>=1.5.0.dev44",
