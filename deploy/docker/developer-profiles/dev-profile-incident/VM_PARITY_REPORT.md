@@ -119,9 +119,151 @@ the deploy shell; values never printed.
    host intervention (driver reinstall/reboot of a shared box, 24 users);
    blocks: NIM start, real chat/VLM answers, all 13 VST endpoint shapes,
    healthy-path video complete/RTSP behavior.
+   **RESOLVED 2026-09-13 (see §7):** captain rebooted kwanz-ws; both
+   A6000s healthy, full stack up, all held checks re-run.
 2. **Merge index** still `UU` on `video_report_gen.py` (working file now
    == origin/main) — captain's call to resolve.
+   **RESOLVED 2026-09-13:** VM tree now clean at `8c20470`, no conflict
+   markers; nothing to resolve.
 3. **Postgres TBD** (§5 Postgres hang) — confirm from a re-run once
    reachability is established.
+   **UPDATED 2026-09-13 (see §7):** retested; fails at the Postgres
+   handshake layer on the VM only (laptop works). Needs network owner.
 4. Out of scope, noted only: git hooks, SSH tunnel aliases, R2/direnv
    integration (separate phases).
+
+## 7. Phase-2b retest after captain reboot (2026-09-13 ~01:29-01:45 UTC)
+
+Preconditions cleared: `nvidia-smi` reports both RTX A6000s healthy
+(driver 595.91.07, ~39/37 GiB used by the two NIMs, 0% util at check
+time). Full stack up and healthy: `vss-agent`, `vss-vios-ingress`,
+`vss-vios-streamprocessing`, `vss-vios-sensor`, both NIMs
+(`nemotron-nano-9b-v2` :30081, `cosmos3-reasoner` :30082),
+`vss-incident-console`, `vss-vios-postgres`, `vss-haproxy-ingress`,
+phoenix, redis. VM tree clean at `8c20470`. All probes below went
+through HAProxy `http://localhost:7777` over SSH. One 11 MB probe video
+was uploaded, completed, verified, and deleted — VST left empty
+(`timelines` → `null`, `sensor/streams` → `[]`).
+
+### 7a. Chat / stream now live (P6 narrowed)
+
+- `POST /chat` returns a real LLM answer (`"OK"`) in the OpenAI
+envelope plus `model:"unknown-model"`, `usage`, `service_tier` —
+minor extra-fields gap only, as recorded in §4.
+- `POST /chat/stream` runs the real workflow and terminates with
+`data: [DONE]` after `data:` chunks — the §4 "no `[DONE]` observed"
+was purely LLM-down behavior. Remaining P6 delta is narrower: the
+live stream interleaves `intermediate_data: {markdown workflow-trace}`
+lines the mock never emits.
+- `POST /api/v1/videos/{sid}/complete` with **no body** → 422
+`{"detail":[{"type":"missing","loc":["body"]…}]}`. The mock
+declares the body required too (`body: VideoUploadCompleteInput`, no
+default), so this is **parity**, not a gap.
+
+### 7b. Healthy-path video ingest verified end to end
+
+Mirrored the real UI client (`chunkedUpload.ts`: multipart POST with
+`mediaFile`/`filename`/`metadata` fields plus `nvstreamer-*` headers,
+single chunk) against the 11 MB sample clip as `parity-probe.mp4`:
+
+- Upload → 200
+`{bytes, chunkCount, chunkIdentifier, created_at, filePath,
+filename:"parity-probe" (extension stripped), id, sensorId, streamId}`.
+Mock returns `{id, filename (extension kept), bytes, streamId,
+sensorId, filePath, timestamp, created_at}` — **gap**: mock lacks
+`chunkCount`/`chunkIdentifier`, keeps the extension, and adds
+`timestamp`.
+- `POST /api/v1/videos/{sid}/complete` `{"filename":…}` → 200
+`{message:"Video parity-probe.mp4 successfully uploaded to VST",
+sensor_id, filename, chunks_processed:0}` — **parity** on keys with the
+mock `VideoIngestResponse` (mock fills `chunks_processed` from its own
+tracking; live returns 0).
+- `GET /vst/api/v1/storage/timelines` → 200
+`{sid:[{startTime:"2025-01-01T00:00:00.000Z",
+endTime:"2025-01-01T00:01:21.567Z"}]}` — populated shape matches the
+mock's `{sid:[{startTime,endTime}]}`. **Parity when non-empty.**
+- `DELETE /api/v1/videos/{sid}` (existing) → 200 `{status:"partial",
+message:"…partially deleted - some steps failed…", video_id}`.
+Refines P2: the mock uses `"success"` for existing / `"partial"`
+for missing (2-way), while live uses `"partial"` for existing-with-
+failures and `"failure"` for missing (3-way: success/partial/failure).
+Same keys, different status vocabulary.
+- `videoUrl` from the file-url endpoint points at
+`http://10.131.1.5:30888/…` (VST internal host:port, not HAProxy) —
+playback from outside the VM needs the tunnel aliases phase (noted,
+out of scope).
+- Robustness note (code reading + live `null`): the agent's
+`get_timeline` does `timelines_data.get(stream_id, [])` on
+`GET /storage/timelines`, but empty VST returns `null`, so on a fresh
+box the lookup raises `AttributeError` (not `VSTError`) before the
+"No timeline" path. Flagged, not fixed (parity task, no code change).
+
+### 7c. VST per-endpoint shapes, live (was: all 502)
+
+| Live endpoint | Live shape (200 unless noted) | Mock shape | Verdict |
+|---|---|---|---|
+| `GET /sensor/version` | `{"type":"vst","version":"2.1.0-26.05.4"}` | same keys, `"1.0.0-mock"` | **PARITY** (version differs, expected) |
+| `GET /sensor/streams`, `GET /replay/streams` | `[]` | `[]` empty-state | **PARITY** |
+| `GET /storage/timelines` (empty) | `null` | `{}` | **GAP P7** — null vs empty object |
+| `GET /storage/size` | `{total:{remainingStorageDays, sizeInMegabytes, totalAvailableStorageSize, totalDiskCapacity}}` | `{totalBytes, totalSize[, timelines]}` | **GAP P8** — wholly different keys |
+| `GET /storage/{id}/timelines` | bare array `[{startTime,endTime}]` | `{id:[…]}` object wrapper | **GAP P9** — mock over-wraps |
+| `GET /storage/file/{id}/url` (no params) | 400 `{error_code:"InvalidParameterError", error_message:"Start and end time are required"}` | 200 `{videoUrl}` unconditional | **GAP P10** — real requires `startTime`/`endTime` (+`container`) |
+| `GET /storage/file/{id}/url` (with time params) | 200 `{videoUrl, absolutePath, expiryISO, expiryMinutes, fullFile, startTime, startTimeEpochMs, streamId, type:"replay"}` | `{videoUrl}` only | **PARITY** on `videoUrl`, extra real fields (minor) |
+| `GET /live/stream/{id}/picture` (unknown stream) | 400 `{error_code:"InvalidParameterError",…"Stream Not Found"}` | 200 placeholder JPEG always | healthy-path unverified without a live source; error envelope differs |
+| `GET /replay/stream/{id}/picture?startTime=<UTC>` | 200 real 1920×1080 JPEG (verified bytes) | 200 placeholder JPEG | **PARITY** (content-type + JPEG bytes) |
+| `POST /vst/api/v1/sensor/add` `{sensorUrl,name}` | 200 `{sensorId: uuid}` | 200 `{sensorId: derived}` | **PARITY** on keys |
+| `GET /sensor/streams` (populated) | `{id:[{isMain, metadata:{bitrate,codec,framerate,govlength,resolution}, name, storageLocation:"Local", streamId, type:"Rtsp", url:"", vodUrl:""}]}` | `{id:[{name, url, isMain, vodUrl, type, storageLocation, metadata:{filename, createdAt}}]}` | **GAP P11** — same outer shape, different field sets (live has codec metadata + empty url/vodUrl for RTSP) |
+| `DELETE /vst/api/v1/sensor/{id}` | 200 `true` | 204 empty | **GAP P12** — status + body |
+| `PUT /storage/file/{f}[/{ts}]` legacy variants | not probed (POST-multipart path verified instead) | canned 200s | still unverified |
+
+Sensor add→streams→delete cycle leaves VST clean (verified `[]`).
+
+### 7d. Agent RTSP routes with VST up
+
+- `POST /api/v1/rtsp-streams/add` with `{"url":…}` (wrong key) → 422
+missing `sensorUrl`; mock requires `sensorUrl` too — **parity**.
+- With correct `{"sensorUrl":"rtsp://127.0.0.1:8554/…","name":…}`
+(unreachable camera) → 500 text `Internal Server Error`; agent log
+shows a VST-validation retry storm (`RTSP URL is not valid`, empty
+value) before giving up. Mock returns 200 JSON success
+unconditionally — **GAP P13**: error envelope (500 text vs JSON) and
+unconditional success; a true healthy add needs a live RTSP source,
+still unverified. (The empty value in the validator message is
+suspicious — possibly the validator reading VST's empty `url` field
+back — noted as an observation, not diagnosed.)
+- `DELETE /api/v1/rtsp-streams/delete/{name}` → 200
+`{status:"partial", message:"…partially deleted…", name}` — keys
+match the mock's `DeleteStreamResponse`; `"partial"` for a
+never-registered name matches mock semantics.
+- `WS /websocket`: handshake 101 as in §4; full HITL round-trip still
+unverified (no ws client module on the VM; LLM now alive so a future
+scripted client could close this).
+
+### 7e. Incident-console pages + DB layer verdict
+
+- Console pages re-verified after reboot: `/`, `/1_Catalog`,
+`/2_Report_Review`, `/3_Dashboard`, `/4_Severity_Eval`,
+`/_stcore/health` all 200. (R2 catalog/playback from §5 not re-probed;
+reboot does not affect it.)
+- `sqlalchemy` is **not** importable with system `python` in
+`vss-incident-console`; the app runs under `uv run` (`/app/.venv`).
+DB probes must use `docker exec … uv run --no-sync python`.
+- Per firstmate steer the DSN value was never read (env-name listing
+and opaque-env use only); the laptop already proved DSN + Supabase
+side healthy. VM network-path diagnosis, by layer:
+  - DNS: OK (`getent hosts` resolves the Supabase pooler host to 3 ELB
+IPs from kwanz-ws).
+  - TCP: OK (`nc -zv <pooler-host> 5432` succeeds).
+  - ICMP: fully blocked both sizes (no MTU conclusion possible).
+  - Postgres handshake: **FAILS** — `psycopg2` via the console's own
+venv times out at both 10 s and 30 s `connect_timeout` on all 3 IPs,
+while TCP SYN succeeds. So the stall is above L4: the Postgres
+startup/SSL handshake never completes from the VM.
+  - Verdict: not DNS, not a TCP block, not a wrong value — VM-egress
+or middlebox behavior toward the pooler (e.g. DPI/MSS interference
+with non-HTTP TLS). Needs the network owner / captain: check egress
+policy for kwanz-ws → Supabase pooler host:5432 at L7, or try from
+another host in the same net. Postgres writes/reads remain
+**UNVERIFIED** live; seed stays unrunnable until this clears.
+No password, key, or DSN string appears anywhere in this report or
+the repo.
