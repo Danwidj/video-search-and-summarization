@@ -88,6 +88,16 @@ docker compose --env-file generated.env.remote -f resolved.yml up -d
 ```
 No `<nemotron-3-nano container>` in the MVP1 up-list — remote mode has no local NIM container to start.
 
+**Where the real values go (G8):** after the `cp`, edit the real values into the
+ignored `generated.env.remote` copy itself (or export them in the deploy shell) —
+`INCIDENT_DB_DSN`, the four `R2_*` keys, `NGC_CLI_API_KEY` / `NVIDIA_API_KEY` /
+`OPENAI_API_KEY`, the LLM/VLM endpoint URLs, plus the hand-maintained machine values
+(`HOST_IP`, `EXTERNAL_IP`, `VSS_*`). The tracked `.env` stays placeholders; never
+create `incident-console/.env.local` on the VM — nothing on the deploy path reads it,
+and `COPY . .` would bake it into the image. **G9:** `dev-profile.sh` accepts no
+`incident` profile, so this `generated.env.remote` is hand-made and bypasses the
+script's machine resolution — the operator must ensure `HOST_IP`/`VSS_*`/`NGC_*` by hand.
+
 **Maintain a dedicated `generated.env.remote` file, always invoked explicitly with `--env-file`.** `dev-profile.sh up` writes to a shared CLI `.env` template rather than a clean, isolated per-deploy file — if this deployment is ever switched to/from local mode on the same profile, values (routing type, base URLs) can go stale unless every relevant var is explicitly re-passed each time. Using a dedicated, explicitly-named env file sidesteps this — everything needed for remote mode lives in one self-contained file, nothing carried over implicitly.
 
 **Never run `dev-profile.sh down`.** It runs `docker compose down -v` and then deletes the entire data directory. Use plain `docker compose down` (no `-v`) instead. (Less catastrophic under remote mode specifically, since there's no local model-weight cache to lose — but other cached/working state is still deleted, so the rule holds regardless of LLM/VLM mode.)

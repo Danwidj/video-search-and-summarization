@@ -1,0 +1,16 @@
+# incident-console build context guard (Phase 5 env plan, G5).
+# Dockerfile does COPY . . with this directory as the build context, so
+# anything not excluded here would be baked into the VM image - including a
+# stray .env.local carrying the live Supabase DSN / R2 keys (which
+# config.py loads with override=True, so it would also silently win inside
+# the container). Never ship real values; the VM deploy injects them via
+# compose `environment:` interpolation from generated.env.* instead.
+.env.local
+.env
+*.env_file
+generated.env*
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
