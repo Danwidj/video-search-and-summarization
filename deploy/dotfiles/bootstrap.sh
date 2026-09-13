@@ -35,6 +35,7 @@ fi
 # ~/.local/bin once .bashrc has been sourced, so a naive `command -v
 # starship` here would false-negative against an install that's already
 # in place and try to reinstall it every run.
+mkdir -p "$HOME/.local/bin"
 if bash -ic 'command -v starship' >/dev/null 2>&1; then
   echo "[bootstrap] starship already installed."
 else
