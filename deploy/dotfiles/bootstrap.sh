@@ -14,7 +14,7 @@ DOTFILES_DIR="$HOME/.vss-dotfiles"
 # isn't otherwise part of the QoL tool set — without it the script would
 # silently die partway through, after installing packages but before writing
 # any managed files.
-APT_PACKAGES=(curl fzf ripgrep bat btop direnv)
+APT_PACKAGES=(curl fzf ripgrep bat btop)
 
 echo "[bootstrap] Installing apt packages (skipping any already present)..."
 missing=()
