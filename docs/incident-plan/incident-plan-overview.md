@@ -59,7 +59,7 @@ export OPENAI_API_KEY="$NVIDIA_API_KEY"
 | Mock backend + local loop (`mock-backend/base_profile_mock`, `LOCAL_MOCK_LOOP.md`) | Present; verified loop documented |
 | Stock base-local deploy (one model per GPU, `hw-OTHER.env` sizing) | Verified working |
 | Stock base-remote chat + VLM describe (`openai`-type, model above) | Verified working 2026-09-13 on corrected `--host-ip`: video upload to VST plus `video_understanding` through the remote VLM returned a correct description. Full `report_agent` path still needs a UI websocket (HITL), so it remains unverified headless. |
-| Stock `search` profile (local and remote) | Not run live; device layout deferred, do not rely on it |
+| Stock `search` profile (local and remote) | Verified working 2026-09-13 both modes; deploy commands in the mode docs §3 |
 | `dev-profile-incident` `config.yml`, `incident_report_gen` tool, `/analyze` + `/search` API routes | Planned (shared doc §§4-6); not yet built |
 | `openai_vlm` missing-`base_url` patch (`base_url: ${VLM_BASE_URL}/v1` in `config.yml` + `config_rag.yml`) | Required; re-apply after any upstream sync |
 | Remote free-tier 16-concurrent-request ceiling; hosted-model 12-images-per-prompt cap | Open constraints; remote report path loops/hangs past them |
