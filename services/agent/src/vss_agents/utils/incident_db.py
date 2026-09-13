@@ -46,6 +46,7 @@ default is ``min_size=1, max_size=2`` (see :data:`DEFAULT_MIN_POOL_SIZE` /
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import logging
 import os
@@ -195,6 +196,7 @@ class IncidentDB:
                     model_name = EXCLUDED.model_name,
                     model_version = EXCLUDED.model_version,
                     prompt_version = EXCLUDED.prompt_version,
+                    run_datetime = EXCLUDED.run_datetime,
                     notes = EXCLUDED.notes
                 """,
                 model_run_id,
@@ -536,6 +538,7 @@ class IncidentDB:
 # Module-level lazy singleton, mirroring db.py's own get_db()/reset_cache().
 # --------------------------------------------------------------------------- #
 _db: IncidentDB | None = None
+_db_lock = asyncio.Lock()
 
 
 async def get_db() -> IncidentDB | None:
@@ -550,11 +553,14 @@ async def get_db() -> IncidentDB | None:
         return _db
     if not is_configured():
         return None
-    try:
-        _db = await IncidentDB.connect()
-    except (asyncpg.PostgresError, OSError, ValueError) as exc:
-        logger.warning("Incident DB unavailable: %s", exc)
-        return None
+    async with _db_lock:
+        if _db is not None:
+            return _db
+        try:
+            _db = await IncidentDB.connect()
+        except (asyncpg.PostgresError, OSError, ValueError) as exc:
+            logger.warning("Incident DB unavailable: %s", exc)
+            return None
     return _db
 
 
