@@ -197,7 +197,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | File | Role |
 |---|---|
 | `app.py` | Entry point / navigation home + environment panel |
-| `pages/1_Catalog.py` | Browse ingested videos with filename / status filters + per-video incident-report count (browse-only, database-backed) |
+| `pages/1_Catalog.py` | Browse ingested videos with filename / status filters + per-video incident-report count; upload new videos (dialog, `agent_client.upload_video()`) and trigger `analyze_incident()`, with status polling while a video is unanalyzed (database-backed) |
 | `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
 | `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed) |
 | `pages/4_Severity_Eval.py` | Human-vs-AI severity rating + running exact-agreement rate (database-backed) |
@@ -208,6 +208,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 72 CSV-fixture incidents (one shared `model_run_id`) + evidence, and the one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
+| `catalog_actions.py` | Pure (no `streamlit`) upload/analyze/status-polling helpers behind `pages/1_Catalog.py`, incl. the `videos.id`-fitting `derive_video_id()` |
 | `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` (road accident / burglary / explosion / fighting / animal) + pure helpers |
 | `config.py` | Env-driven configuration (`.env` then untracked `.env.local`) |
 | `theme.py` / `ui.py` | Shared look-and-feel and page helpers |
