@@ -41,3 +41,13 @@ machines without `git-lfs` they warn instead of failing the git command.
 ## Out of scope (separate tracked phases)
 
 direnv / `.ngc_env` integration and R2 config are not handled here.
+
+## G10 constraint (Phase 5 env plan)
+
+The `.env` propagation above copies real-value files (including
+`incident-console/.env.local`) into every new/checked-out worktree. That is
+accepted on a personal laptop, where all worktrees belong to one operator. On the
+shared VM it would spray one account's live Supabase/R2 credentials across
+per-account worktrees, so propagation there must stay laptop-only: on the shared
+box prefer per-account shell exports over a shared-checkout `.env.local`, and do
+not extend this script to propagate real-value env files across worktrees.

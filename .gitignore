@@ -18,8 +18,14 @@ deploy/docker/rag-secret.override.yml
 
 # incident-console's own .env holds a real Postgres password (unlike the
 # committed dev-profile-*/.env template files, which only ever carry
-# placeholder values) - never commit it.
+# placeholder values) - never commit it. Same for .env.local, the live local
+# carrier config.py loads with override=True (it is also covered by
+# incident-console/.gitignore; this explicit root line is defence in depth).
+# Note: **/.env below only covers *untracked* files - already-tracked
+# templates such as dev-profile-incident/.env stay tracked and must remain
+# placeholder-only by convention, not by ignore rule.
 deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env
+deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env.local
 
 *.log
 *checkpoint.*

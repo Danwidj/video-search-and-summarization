@@ -35,6 +35,11 @@ services:
       - INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL:-http://localhost:8000}
       # OpenAI-compatible chat-completions base URL (real NIM/agent on the VM).
       - INCIDENT_LLM_BASE_URL=${INCIDENT_LLM_BASE_URL:-}
+      # OpenAI-compatible embeddings base URL for matching.py (unset ->
+      # matching fails soft to no matches).
+      - INCIDENT_EMBEDDING_BASE_URL=${INCIDENT_EMBEDDING_BASE_URL:-}
+      # HTTP client timeout in seconds (config.py default 15.0 when unset).
+      - INCIDENT_HTTP_TIMEOUT_SECONDS=${INCIDENT_HTTP_TIMEOUT_SECONDS:-}
       # Public/presigned URL prefix that st.video plays back from (R2).
       - INCIDENT_VIDEO_BASE_URL=${INCIDENT_VIDEO_BASE_URL:-}
       # Read-only Cloudflare R2 credentials used to sign video playback URLs.
