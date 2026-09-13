@@ -23,10 +23,6 @@ if command -v starship >/dev/null 2>&1; then
   eval "$(starship init bash)"
 fi
 
-if command -v direnv >/dev/null 2>&1; then
-  eval "$(direnv hook bash)"
-fi
-
 # fzf's own Ctrl-R (fuzzy history) / Ctrl-T (fuzzy file-find) bindings —
 # `fzf --bash` is the current fzf's own way to emit them (0.48+), but
 # kwanz-ws's apt package is jammy's fzf 0.29.0, which predates that flag and

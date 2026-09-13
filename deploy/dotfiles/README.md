@@ -8,7 +8,7 @@ box, not a personal daily-driver machine.
 ## What it does
 
 - Installs `fzf`, `ripgrep`, `bat` (aliased as `bat`, apt ships the binary
-  as `batcat`), `btop`, and `direnv` via `apt` (skips anything already
+  as `batcat`) and `btop` via `apt` (skips anything already
   installed).
 - Installs `starship` via its official curl installer (apt doesn't package
   it for jammy) and drops a config tuned for this box: username+hostname
@@ -23,7 +23,7 @@ box, not a personal daily-driver machine.
   package needed), `htop` to `btop`, and `cat` to a paging-free `bat`; wires
   fzf's own Ctrl-R/Ctrl-T fuzzy history/file-find key bindings.
 - Adds `~/.local/bin` and `/opt/nvim/bin` to `PATH`, and wires the
-  starship/direnv/fzf shell hooks.
+  starship/fzf shell hooks.
 - Adds a `deploy/docker`-lifecycle alias/function set (see below).
 - Appends **one** marker-guarded include block to `~/.bashrc` that sources
   the managed `shellrc.sh` — everything else lives in files this script
