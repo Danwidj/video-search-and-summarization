@@ -128,14 +128,10 @@ Confirms §1's auth-gotcha finding directly: `OPENAI_API_KEY` reads that variabl
 
 **Why this isn't the recommended primary path:** confirms §1's structural-ceiling finding exactly — this config loops on longer videos for the reason described there.
 
-### Search — remote (derived from VSS docs, not yet tested)
+### Search — remote (verified working 2026-09-13)
 
-`dev-profile-search/generated.env` (search-only settings — no CLI flag exists for these; LLM/VLM mode and model are set via the command below instead, same as Base — remote):
-```
-RT_CV_DEVICE_ID=0          # dedicated GPU, full perception throughput, no co-resident VLM
-RT_EMBED_DEVICE_ID=1       # dedicated GPU, up to ~30 streams
-NUM_STREAMS=16
-```
+Prerequisite: `ngc` CLI on `PATH` — the deploy script hard-fails downloading the RT-DETR model without it.
+
 ```bash
 export LLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
 export VLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
@@ -143,9 +139,9 @@ export OPENAI_API_KEY="$NVIDIA_API_KEY"
 
 ./deploy/docker/scripts/dev-profile.sh up --profile search --hardware-profile OTHER \
   --host-ip 10.131.1.5 --external-ip localhost \
-  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
-  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type openai \
+  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type openai
 ```
-No `--llm-device-id`/`--vlm-device-id` needed under `--use-remote-llm`/`--use-remote-vlm` — remote mode has no local container to pin.
+`--llm-model-type openai` / `--vlm-model-type openai` are required (`nim`-type is non-functional — same upstream bug as Base). No `--llm-device-id`/`--vlm-device-id` under the remote flags. The `RT_CV_DEVICE_ID=0` / `RT_EMBED_DEVICE_ID=1` defaults stand — with LLM/VLM remote, perception gets a dedicated GPU each.
 
-**RT-CV and RT-Embed can never go remote** — perception and embedding are always local GPU inference in VSS, regardless of LLM/VLM placement. Upside: full perception throughput, since nothing shares GPU 0 anymore once LLM/VLM go remote. Same 16-concurrent-request ceiling on the LLM/VLM side as Base — remote above.
+**RT-CV and RT-Embed can never go remote** — perception and embedding are always local GPU inference, regardless of LLM/VLM placement. Verified healthy: `vss-agent` with `search_agent` registered, RT-CV, RT-Embed, Elasticsearch; the remote model answers correctly (a first attempt hit the free-tier rate ceiling with a 503; retry passed). Same 16-concurrent-request ceiling as Base — remote above.

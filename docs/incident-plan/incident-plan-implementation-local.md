@@ -165,28 +165,50 @@ NIM_DELETE_LAST_FRAMES=1
 
 `--host-ip 10.131.1.5` (real VM IP, for container-to-container calls) / `--external-ip localhost` (for the browser via SSH tunnel) — resolves §1's flagged `--host-ip`/`--external-ip` gap with this VM's actual confirmed values.
 
-### Search — local (derived from VSS docs, not yet run live — verify with `docker logs vss-rtvi-cv` before trusting for a demo)
+### Search — local (verified working 2026-09-13)
 
-`dev-profile-search/generated.env` (search-only settings — `RT_CV_DEVICE_ID`/`RT_EMBED_DEVICE_ID`/`NUM_STREAMS` have no CLI flag, so they're set here):
-```
-RT_CV_DEVICE_ID=0
-RT_EMBED_DEVICE_ID=1
-NUM_STREAMS=8            # 48GB-class card — not H100's default of 16
-```
+Prerequisite: `ngc` CLI on `PATH` (e.g. `/srv/rise-up/bin/ngc`) — the deploy script hard-fails downloading the RT-DETR model without it.
+
 ```bash
 ./deploy/docker/scripts/dev-profile.sh up --profile search --hardware-profile OTHER \
   --host-ip 10.131.1.5 --external-ip localhost \
   --llm nvidia/nvidia-nemotron-nano-9b-v2 --llm-device-id 1 \
-  --llm-env-file /srv/rise-up/vss-llm-override.env \
-  --vlm nvidia/cosmos3-reasoner --vlm-device-id 0 \
-  --vlm-env-file /srv/rise-up/vss-vlm-override.env
+  --llm-env-file /srv/rise-up/vss-search-llm-override.env \
+  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1 \
+  --vlm-env-file /srv/rise-up/vss-search-vlm-override.env
 ```
-Same shape as Base — local above, and the same `--llm`/`--vlm`/`--llm-device-id`/`--vlm-device-id`/`--llm-env-file`/`--vlm-env-file` flags — these apply to any profile, not just base. Device IDs are flipped (LLM→1, VLM→0) to match search's documented layout. Search has up to 4 GPU consumers (RT-CV, RT-Embed, LLM, VLM) on only 2 GPUs, so co-location is required — this is VSS's own documented default split, not one invented for this plan.
 
-**The override files need re-tuning for search** — base's dedicated values (`NIM_KVCACHE_PERCENT=0.8` for both) assume a GPU with nothing else on it; search shares each GPU with RT-Embed/RT-CV, so the budget shrinks:
-- GPU 0 VLM sizing: `NIM_KVCACHE_PERCENT ≈ 0.45` (for an 18–21GB-class VLM)
-- GPU 1 LLM sizing: `NIM_KVCACHE_PERCENT=0.65` (RT-Embed gets a flat ~10GB budget, LLM gets the rest)
+`--vlm-device-id 0` is rejected (device 0 is reserved for this profile), so the VLM moves to GPU 0 after deploy: append `SHARED_LLM_VLM_DEVICE_ID=0` to `dev-profile-search/generated.env` and recreate the VLM service. `RT_EMBED_DEVICE_ID` has no CLI flag — set it to `0` in the same file and recreate `rtvi-embed`, leaving GPU 1 for the LLM alone. From `deploy/docker/`:
 
-**These two values are derived, not verified** — unlike Base's dedicated `0.8` values above (confirmed working), these are calculated, not yet run live. Flag clearly if this ever gets written up formally.
+```bash
+docker compose --env-file developer-profiles/dev-profile-search/generated.env up -d --force-recreate rtvi-embed cosmos3-reasoner-shared-gpu
+```
 
-Directly informs, but doesn't resolve, §1's open question of whether `dev-profile-incident`'s own local topology should reuse this exact split.
+Final layout: GPU 0 holds RT-CV + RT-Embed + VLM; GPU 1 holds the LLM alone.
+
+`/srv/rise-up/vss-search-llm-override.env`:
+```
+NIM_KVCACHE_PERCENT=0.55
+NIM_GPU_MEM_FRACTION=0.55
+NIM_MAX_NUM_SEQS=4
+NIM_MAX_MODEL_LEN=128000
+NIM_LOW_MEMORY_MODE=1
+```
+
+`/srv/rise-up/vss-search-vlm-override.env`:
+```
+NIM_KVCACHE_PERCENT=0.55
+NIM_GPU_MEMORY_UTILIZATION=0.55
+NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.55"
+NIM_MAX_MODEL_LEN=16384
+NIM_MAX_NUM_SEQS=4
+MAX_JOBS=4
+NIM_DISABLE_MM_PREPROCESSOR_CACHE=1
+NIM_DELETE_LAST_FRAMES=1
+```
+
+Base's dedicated `0.8` values do not fit here — the VLM (16 GB weights) cannot initialise alongside the LLM on one 48 GB card, so the LLM drops to `0.55` and the VLM takes GPU 0. Verified healthy: both NIMs, `vss-agent`, RT-CV pipeline ready; LLM answers on `10.131.1.5:30081`, VLM on `10.131.1.5:30082` (OpenAI-compat `/v1/chat/completions`).
+
+Between deploys, tear down with plain `docker compose -p mdx down` (keeps volumes/data); never `down -v` or `dev-profile.sh down`.
+
+Answers §1's open topology question for stock search: LLM-alone on GPU 1, everything else on GPU 0.
