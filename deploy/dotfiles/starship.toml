@@ -54,9 +54,6 @@ symbol = " "
 [deno]
 symbol = " "
 
-[direnv]
-symbol = " "
-
 [directory]
 read_only = " 󰌾"
 

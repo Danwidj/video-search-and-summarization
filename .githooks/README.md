@@ -40,7 +40,7 @@ machines without `git-lfs` they warn instead of failing the git command.
 
 ## Out of scope (separate tracked phases)
 
-direnv / `.ngc_env` integration and R2 config are not handled here.
+`.ngc_env` integration and R2 config are not handled here.
 
 ## G10 constraint (Phase 5 env plan)
 

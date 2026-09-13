@@ -122,7 +122,7 @@ and fail-soft `get_db() -> None` with DSN unset. `uv run pytest` → 90 passed.
 ## Known gaps for later phases (do NOT fix here)
 
 - Real Supabase Postgres + R2 wiring (`.env.local` real values), VM parity /
-  deploy, git hooks / `.env` propagation, SSH tunnels, R2/direnv integration.
+  deploy, git hooks / `.env` propagation, SSH tunnels, R2 integration.
 - Real browser click-through of the Next.js UI (blocked by a broken local
   browser-automation tool, see Pair (a) above); the boot, page render, and
   wire-protocol calls the UI issues were verified instead.
