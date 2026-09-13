@@ -1,6 +1,6 @@
 # VSS Customization Plan — Incident Search & Reporting Capstone (Implementation — Local LLM/VLM Deployment)
 
-*This is the AI/implementer-facing half of the plan — exact file paths, config keys, and technical findings, written for whoever is actually building this. Decisions, rationale, and the what-ships-when narrative live in the companion document, `incident-plan-overview.md` ("the Overview doc"). Cross-references below point to it by name.*
+*This is the AI/implementer-facing half of the plan - exact file paths, config keys, and technical findings, written for whoever is actually building this. The human-facing current-state summary is the companion document, `incident-plan-overview.md` ("the Overview doc"). Cross-references below point to it by name.*
 
 *This file is scoped to local LLM/VLM deployment specifically — LLM and VLM run as local NIM containers on this VM's own GPUs, not against a hosted endpoint. A separate file, `incident-plan-implementation-remote.md`, covers the remote-hosted alternative; the two are not meant to be read together, pick whichever matches how you're actually deploying. Everything that doesn't depend on deployment mode — Postgres, R2, the frontend app, the AI-trigger API, feature implementation, engineering evaluation, and the resulting directory tree — lives in the shared companion doc, `incident-plan-implementation-shared.md`; read this file's §1–§2 first, that one second.*
 
@@ -36,11 +36,13 @@ No rate limiting — every request is local, no dependency on a hosted endpoint'
 
 **Downstream conflict this creates at MVP2, also unresolved:** with only 2 GPUs total, and LLM + VLM + RT-CV + RT-Embed all wanting GPU access, a strict one-model-per-GPU rule for LLM/VLM leaves no obviously-safe placement for RT-CV/RT-Embed without *something* sharing a card. Don't assume the pairing below (RT-CV alone on GPU 0, LLM+VLM+RT-Embed sharing GPU 1) is safe just because it mirrors the stock profile — the stock profile's own default already appears to be the one that caused crashes per the field report above. **This needs real testing/decision before MVP2 is built, not an assumed-safe pairing by analogy.**
 
-**`hw-OTHER.env` sizing is required for local deployment** (this resolves what looked like a stale directory-tree entry in an earlier draft of this plan — it's not stale, it's required specifically because this is the local-deployment path). The A6000 isn't one of NVIDIA's explicitly-tested classes (H100/L40S/RTX PRO 6000 Blackwell/DGX Spark) — the shipped `hw-OTHER.env` tuning files ship completely empty, no memory-safety defaults at all. Fix: borrow the nearest tested-equivalent card's (L40S — same 48GB VRAM class) **dedicated-mode** (not shared-mode) values via `--llm-env-file`/`--vlm-env-file`:
-- **LLM:** `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEM_FRACTION=0.8`, `NIM_MAX_MODEL_LEN=128000`, `NIM_MAX_NUM_SEQS=4`, plus a `NIM_LOW_MEMORY_MODE`-type flag. **Flag — incomplete:** the exact value for this last flag wasn't captured in the source field notes; confirm it before relying on this list as complete.
-- **VLM:** `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEMORY_UTILIZATION=0.8`, `NIM_MAX_MODEL_LEN=32768`, `NIM_MAX_NUM_SEQS=4`, plus additional values not fully captured ("plus a couple" per the source field notes). **Flag — incomplete:** treat this list as a starting point, not the full set, until confirmed against the actual NIM container's accepted env vars.
+**`hw-OTHER.env` sizing is required for local deployment, and it is done (2026-09-13).** The A6000 isn't one of NVIDIA's explicitly-tested classes (H100/L40S/RTX PRO 6000 Blackwell/DGX Spark) - the shipped `hw-OTHER.env` tuning files ship empty. Both files in this repo are now populated with L40S-class (48 GB) dedicated-mode values, and the base-local deploy is verified working from `hw-OTHER.env` alone with no `--llm-env-file`/`--vlm-env-file` flags:
+- **LLM** (`deploy/docker/services/nim/nvidia-nemotron-nano-9b-v2/hw-OTHER.env`): `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEM_FRACTION=0.8`, `NIM_MAX_NUM_SEQS=4`, `NIM_MAX_MODEL_LEN=128000`, `NIM_LOW_MEMORY_MODE=1`.
+- **VLM** (`deploy/docker/services/nim/cosmos3-reasoner/hw-OTHER.env`): `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEMORY_UTILIZATION=0.8`, `NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.8"`, `NIM_MAX_MODEL_LEN=32768`, `NIM_MAX_NUM_SEQS=4`.
 
-Note also: the sizing values above are described as "dedicated-mode" values in the source field notes — if the GPU-placement flag above resolves toward `local_shared` (shared-mode) rather than dedicated `local`, double-check whether these same values are still appropriate, since the field notes explicitly distinguish dedicated-mode from shared-mode tuning.
+The `--llm-env-file`/`--vlm-env-file` override files in §3 below (`/srv/rise-up/vss-llm-override.env`, `/srv/rise-up/vss-vlm-override.env`) carry the same values through the older manual path - superseded by the populated `hw-OTHER.env` files, kept only as a fallback if per-deploy overrides are ever needed again.
+
+Note: the sizing values above are dedicated-mode values - if GPU placement ever moves to `local_shared`, re-check whether they still apply, since the field notes distinguish dedicated-mode from shared-mode tuning.
 
 **GPU device topology.** `dev-profile-search/.env:43-48` currently holds this 2-GPU split — **but check this is `dev-profile-search`'s committed upstream default before relying on it**: `git diff` on this VM shows `.env` has an uncommitted local edit changing `VLM_DEVICE_ID` from the committed default `'2'` to `'1'` (and `LLM_NAME`/`LLM_NAME_SLUG` from `nvidia-nemotron-nano-9b-v2` to `nemotron-3-nano`). The values below reflect this VM's current working copy, not necessarily what a fresh clone of `dev-profile-search` would ship with:
 ```
@@ -96,22 +98,14 @@ These came from a teammate's field notes and aren't otherwise documented anywher
 ```bash
 cp deploy/docker/developer-profiles/dev-profile-incident/.env deploy/docker/developer-profiles/dev-profile-incident/generated.env.local
 docker compose --env-file generated.env.local config > resolved.yml
-# MVP1: bring up only the base-equivalent containers by name (vss-agent-ui excluded — Streamlit is the default UI, see the Overview doc's Context)
+# MVP1: bring up only the base-equivalent containers by name (vss-agent-ui excluded — Streamlit is the default UI, see the Overview doc §1)
 docker compose --env-file generated.env.local -f resolved.yml up -d vss-agent incident-console <vios-containers> <nemotron-3-nano container> <vlm container> redis phoenix
 # MVP2: bring up everything else already tagged bp_developer_search_2d — RT-CV (vss-rtvi-cv), the search embedding/indexing
 # pipeline (vss-behavior-analytics, vss-video-analytics-api — NOT generic analytics, this IS the search pipeline in this
-# profile, see the Overview doc §2 MVP1/MVP2 Summary), Elasticsearch/Logstash/Kibana, Kafka, SDRC (routing controller)
+# profile, see the Overview doc §6), Elasticsearch/Logstash/Kibana, Kafka, SDRC (routing controller)
 docker compose --env-file generated.env.local -f resolved.yml up -d
 ```
-**Where the real values go (G8):** after the `cp`, edit the real values into the
-ignored `generated.env.local` copy itself (or export them in the deploy shell, which
-compose interpolation also reads) — `INCIDENT_DB_DSN`, the four `R2_*` keys, plus
-`NGC_CLI_API_KEY` and the hand-maintained machine values (`HOST_IP`, `EXTERNAL_IP`,
-`VSS_*`). The tracked `.env` stays placeholders; never create
-`incident-console/.env.local` on the VM — nothing on the deploy path reads it, and
-`COPY . .` would bake it into the image. **G9:** `dev-profile.sh` accepts no `incident`
-profile, so this `generated.env.local` is hand-made and bypasses the script's machine
-resolution of `HOST_IP`/`VSS_*`/`NGC_*` — the operator must ensure those by hand.
+**Env-file convention (same in both modes, values differ):** after the `cp`, edit real values into the ignored `generated.env.local` copy itself (or export them in the deploy shell, which compose interpolation also reads). The tracked `.env` stays placeholders. `dev-profile.sh` accepts no `incident` profile, so this file is hand-made and bypasses the script's machine resolution of `HOST_IP`/`VSS_*`/`NGC_*` — the operator ensures those by hand. Never create `incident-console/.env.local` on the VM — nothing on the deploy path reads it, and `COPY . .` would bake it into the image. Always invoke explicitly with `--env-file generated.env.local` (a dedicated per-mode file sidesteps the stale-value problem when switching modes - see §1's gotchas). Local values: `INCIDENT_DB_DSN`, the four `R2_*` keys, `NGC_CLI_API_KEY`, `HOST_IP`, `EXTERNAL_IP`, `VSS_*`.
 **Never `dev-profile.sh down`** — see §1's operational gotchas. Bringing the stack back up after a clean `docker compose down` should skip the NIM download/build step and only re-hit the cold-start window (§1).
 
 **New incident-console app locally — no Docker, no GPU.** `incident-console/` is its own `uv`-managed Python package (`pyproject.toml` + `uv.lock`, same convention as `services/agent`), not a container, for local dev — Docker bind-mount hot reload has more overhead than just running the process natively:
@@ -140,13 +134,13 @@ Reachable over the Tailscale hostname when pointing at the real VM-hosted `vss-a
 
 ## 3. Reference: NVIDIA Stock Profile Configs (base/search — not `dev-profile-incident`)
 
-Verified/derived configs for running NVIDIA's own `base`/`search` profiles directly under local LLM/VLM mode. Copy-paste commands live in the Overview doc, §1.3. **This is reference material only — not part of the `dev-profile-incident` build**, kept here because it's directly relevant prior art for §1's open topology question.
+Verified/derived configs for running NVIDIA's own `base`/`search` profiles directly under local LLM/VLM mode. Copy-paste commands live in the Overview doc, §4. **This is reference material only — not part of the `dev-profile-incident` build**, kept here because it's directly relevant prior art for §1's open topology question.
 
 ### Base — local (verified working)
 
 One model per GPU (`--llm-device-id 0`, `--vlm-device-id 1`) — confirmed this is what fixed a crash loop. This validates §1's flag: sharing one GPU between LLM+VLM (as this plan's `local_shared` topology originally assumed) is the untested/risky configuration, not the safe default.
 
-`--hardware-profile OTHER` is required since the A6000 isn't one of NVIDIA's tuned classes. Override file contents (resolves §1's two previously-incomplete sizing gaps):
+`--hardware-profile OTHER` is required since the A6000 isn't one of NVIDIA's tuned classes. Manual override-file path (superseded - same values now live in `hw-OTHER.env` per §1; use only if per-deploy overrides are needed):
 
 `vss-llm-override.env`:
 ```
