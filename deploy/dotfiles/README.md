@@ -71,3 +71,12 @@ Then start a new shell (or `source ~/.bashrc`).
   where there's no canonical script to wrap (status, logs, disk usage —
   stable, generic Compose surface, not project-specific tooling likely to
   drift).
+- **`mdx-tunnel-incident` / `mdx-tunnel-incident-check`** (in `aliases.sh`) —
+  the one exception to "this file runs on the VM": these two run on your
+  **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
+  the laptop-local incident-console reaches the real kwanz-ws backend
+  (agent :8000, LLM :30081, VLM :30082) instead of the mock. Phase 4 design:
+  the console never deploys to the VM; the VM runs only the backend stack.
+  No `bootstrap.sh` / `shellrc.sh` change was needed for them: the bootstrap
+  already copies `aliases.sh` verbatim and `shellrc.sh` already sources it,
+  so the tunnel functions ship through that same channel on next re-run.

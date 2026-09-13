@@ -31,6 +31,9 @@ aliases/functions). It is not mandatory team-wide provisioning and does not touc
 The `mdx-*` wrappers call the project's own canonical deploy scripts (`dev-profile.sh`,
 `cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker compose` invocations —
 see `deploy/dotfiles/aliases.sh`'s own comments for which script (or doc) grounds each one.
+Exception: `mdx-tunnel-incident` / `mdx-tunnel-incident-check` in the same file are
+laptop-side only (SSH tunnel from laptop to the VM backend for the locally-run
+incident-console); never run them on kwanz-ws itself.
 
 ## UI development without GPU/NIM containers
 
