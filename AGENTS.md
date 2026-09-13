@@ -22,6 +22,17 @@ this schema; the planning docs under `docs/incident-plan/` were reconciled with 
 the Postgres importer (`scripts/seed_supabase.py`), which seeds all 72 under one shared `model_run_id`. The
 console is database-backed only; there is no offline CSV-preview UI mode.
 
+`services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async `asyncpg`
+CRUD helper (pool sized `min_size=1, max_size=2`, since Hyperdrive already pools) against the same schema,
+mirroring `db.py`'s tables/columns for the subset an agent-side caller plausibly writes
+(videos/model_runs/incidents/entities/instruments/assets/reports/review_status/notifications; the `gt_*` and
+`*_matches` tables stay console/eval-only). Config is `INCIDENT_DB_DSN`; unset means the feature is unavailable,
+no fallback. Verified live against the real Hyperdrive-fronted Supabase Postgres: DSN/SSL connects with
+`sslmode=require` (asyncpg reads it straight off the DSN's query string) and pooled queries work end to end under
+`min_size=1, max_size=2` - see §1's "Verify live" bullet in
+`docs/incident-plan/incident-plan-implementation-shared.md` for the full note, including the caveat that this
+was a one-off smoke test, not a production concurrent-load test.
+
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
 [`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
