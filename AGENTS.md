@@ -33,6 +33,19 @@ no fallback. Verified live against the real Hyperdrive-fronted Supabase Postgres
 `docs/incident-plan/incident-plan-implementation-shared.md` for the full note, including the caveat that this
 was a one-off smoke test, not a production concurrent-load test.
 
+## incident-console agent upload contract
+
+`agent_client.py`'s `upload_video()` implements vss-agent's 3-step upload (`POST /api/v1/videos` →
+chunked POST to nvstreamer → `POST /api/v1/videos/{sensor_id}/complete`). The chunk POST must use
+form field `mediaFile` plus a separate `filename` field (`services/ui/.../chunkedUpload.ts`'s
+`formData.append('mediaFile', chunk, fileName)` / `formData.append('filename', fileName)`) — an
+earlier version sent field `file` with no `filename`, which both the real VST endpoint and
+`mock-backend/base_profile_mock` silently ignore (empty body, fallback filename). Neither backend's
+`/complete` response carries a playable URL — `upload_video()` reads the chunk response's `filePath`
+field instead, since `sensor_id` alone is not durable enough to serve as `videos.id` (`String(20)`,
+but the agent's own sensor-id validation allows up to 128 chars): see `catalog_actions.derive_video_id()`
+for the id it derives instead, and `pages/1_Catalog.py` for the upload/analyze/status-poll UI built on it.
+
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
 [`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
