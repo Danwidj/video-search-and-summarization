@@ -22,6 +22,8 @@ throughout, per this module's own convention of pooling directly through
 
 from __future__ import annotations
 
+import asyncio
+import datetime as _dt
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -217,6 +219,27 @@ async def test_delete_video_issues_delete_sql():
 
 
 @pytest.mark.asyncio
+async def test_insert_model_run_reregistration_updates_run_datetime():
+    """Re-registering the same model_run_id must overwrite run_datetime, not keep the first value."""
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    first_run_datetime = _dt.datetime(2026, 1, 1, tzinfo=_dt.UTC)
+    second_run_datetime = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
+
+    await db.insert_model_run("run-1", model_name="m", run_datetime=first_run_datetime)
+    await db.insert_model_run("run-1", model_name="m", run_datetime=second_run_datetime)
+
+    assert conn.execute.await_count == 2
+    first_sql, second_sql = (call.args[0] for call in conn.execute.await_args_list)
+    assert "run_datetime = EXCLUDED.run_datetime" in first_sql
+    assert "run_datetime = EXCLUDED.run_datetime" in second_sql
+    first_params, second_params = (call.args[1:] for call in conn.execute.await_args_list)
+    assert first_params[4] == first_run_datetime
+    assert second_params[4] == second_run_datetime
+    assert second_params[4] != first_params[4]
+
+
+@pytest.mark.asyncio
 async def test_insert_incident_runs_inside_one_transaction_and_resets_review_status():
     conn = _make_mock_conn()
     db = IncidentDB(_make_mock_pool(conn))
@@ -375,4 +398,20 @@ async def test_get_db_returns_and_caches_instance(monkeypatch):
         second = await incident_db.get_db()
     assert first is second
     assert isinstance(first, IncidentDB)
+    create_pool.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_db_concurrent_callers_do_not_race_to_double_connect(monkeypatch):
+    """Two coroutines racing on the lazy singleton must share one pool, not leak a second."""
+    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://host/db")
+
+    async def _slow_create_pool(**_kwargs):
+        await asyncio.sleep(0.05)
+        return _make_mock_pool(_make_mock_conn())
+
+    create_pool = AsyncMock(side_effect=_slow_create_pool)
+    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
+        first, second = await asyncio.gather(incident_db.get_db(), incident_db.get_db())
+    assert first is second
     create_pool.assert_awaited_once()
