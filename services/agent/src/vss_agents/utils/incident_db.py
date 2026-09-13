@@ -554,8 +554,11 @@ async def get_db() -> IncidentDB | None:
     if not is_configured():
         return None
     async with _db_lock:
+        # mypy can't see that another coroutine may have set `_db` while this one
+        # awaited the lock, so it treats the re-check as always-None from the
+        # first guard above; it is reachable at runtime under real concurrency.
         if _db is not None:
-            return _db
+            return _db  # type: ignore[unreachable]
         try:
             _db = await IncidentDB.connect()
         except (asyncpg.PostgresError, OSError, ValueError) as exc:
