@@ -1,3 +1,5 @@
+> **Fork note (Daniel's team, NVIDIA NVAITC-sponsored capstone).** This is a fork of the upstream NVIDIA blueprint for an incident search and reporting capstone: a `dev-profile-incident` developer profile (Streamlit `incident-console`, Postgres schema in `db.py`, mock backends for zero-GPU UI dev) plus planning docs under `docs/incident-plan/` (start at `incident-plan-overview.md`). For generic VSS setup, prerequisites, and architecture, use the upstream repo: https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization. Fork point: upstream commit `b5cf39f32f287663f6a6b7060b8f085cca219137`, 59 commits ahead as of 2026-09-13 (re-check with `git log --oneline b5cf39f32..HEAD | wc -l`).
+
 <h2>NVIDIA AI Blueprint: Video Search and Summarization (VSS)</h2>
 
 **Build GPU-accelerated video AI agents that search, analyze, summarize, and reason over live or recorded video using natural language.**
