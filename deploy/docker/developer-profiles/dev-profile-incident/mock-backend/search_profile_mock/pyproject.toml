@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/search_profile_mock"]
+
+[project]
+name = "search_profile_mock"
+version = "0.1.0"
+description = "Lightweight mock of vss-agent + VIOS/VST + search analytics for local UI development against bp_developer_search, with zero GPU/NIM containers."
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "fastapi>=0.121.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.11,<3",
+    "pydantic-settings~=2.13",
+    "python-multipart>=0.0.27",
+]
+license = "Apache-2.0"
+authors = [{ name = "NVIDIA Corporation" }]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "C4", "UP", "ARG", "SIM", "TC", "Q", "RUF"]
+# B008 ignored: FastAPI's Depends(...)-as-default-value is the idiomatic DI pattern, not a bug.
+# TC001/TC003 ignored: this is a small app, not worth type-checking-only import blocks.
+ignore = ["E501", "W505", "SIM108", "B008", "TC001", "TC003"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+force-wrap-aliases = true
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+order-by-type = true
+force-single-line = true
+default-section = "third-party"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-v"]
