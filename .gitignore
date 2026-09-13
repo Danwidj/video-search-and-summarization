@@ -33,5 +33,3 @@ deploy/docker/developer-profiles/dev-profile-search/sdrc/2d/configs/docker_clust
 deploy/docker/services/infra/sdrc/.wdm-env/
 deploy/docker/services/infra/sdrc/log/
 *.log.[0-9]*
-
-**/.env
