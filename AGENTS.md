@@ -18,9 +18,11 @@ Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AG
 schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module
 docstring for the full table list and the `review_status` design note). `db.py` is the authoritative source for
 this schema; the planning docs under `docs/incident-plan/` were reconciled with it in PR #24 (the shared implementation doc's §1 table sketch predates the built schema and is kept only as a rough map - do not design from it). Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
-`videos.id`, no separate `video_id` column). `fixtures/data/*.csv` (72 sample incidents) is the seed source for
-the Postgres importer (`scripts/seed_supabase.py`), which seeds all 72 under one shared `model_run_id`. The
-console is database-backed only; there is no offline CSV-preview UI mode.
+`videos.id`, no separate `video_id` column). `fixtures/data/*.csv` (72 rows on disk, 36 real + 36 synthetic
+`SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
+(`scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
+36 real incidents under one shared `model_run_id`. The console is database-backed only; there is no offline
+CSV-preview UI mode.
 
 `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async `asyncpg`
 CRUD helper (pool sized `min_size=1, max_size=2`, since Hyperdrive already pools) against the same schema,

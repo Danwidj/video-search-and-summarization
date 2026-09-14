@@ -35,10 +35,10 @@ def db_pages(incident_db, monkeypatch):
     return incident_db
 
 
-def test_report_review_lists_the_72_from_the_db(db_pages):
+def test_report_review_lists_the_36_from_the_db(db_pages):
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
     assert not app.exception
-    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 72
+    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 36
 
 
 def test_report_review_detail_has_db_controls_and_seek(db_pages):
@@ -128,7 +128,7 @@ def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
 def test_dashboard_renders_charts_from_db_incidents(db_pages):
     # The default severity filter (1-5) excludes rows with no severity_level at
     # all (blank in the ground-truth sheet for every transcribed burglary /
-    # road-accident incident) - fewer than the full 72 seeded incidents.
+    # road-accident incident) - fewer than the full 36 seeded incidents.
     scored = sum(1 for r in db_pages.list_latest_incidents() if r["severity_level"] is not None)
     app = AppTest.from_file("../pages/3_Dashboard.py", default_timeout=15).run()
     assert not app.exception

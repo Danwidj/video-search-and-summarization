@@ -15,14 +15,18 @@
 
 """CSV-backed seed data source for the Postgres importer.
 
-Parses fixtures/data/*.csv (72 sample incidents: 36 transcribed from the
-capstone group's ground-truth sheets, 36 generated to fill gaps) directly with
-the stdlib csv module. This is the only consumer of the CSV fixture - the
-offline CSV-preview UI mode (fixtures/dashboard_seed.py, local_reports.py,
-pages/1_Catalog.py, pages/4_Severity_Eval.py) has been removed; the console is
-database-backed only. All 72 incidents are seeded under one shared
-model_run_id (MR-SEED), representing one hypothetical model pass over the
-fixture videos, not 72 separate runs.
+Parses fixtures/data/*.csv (72 sample incident rows on disk: 36 transcribed
+from the capstone group's ground-truth sheets, 36 synthetic `SYN-`-prefixed
+placeholder rows added to round out category coverage) directly with the
+stdlib csv module. The `SYN-`-prefixed rows have no matching video file in the
+R2 bucket at all and can never play back, so ``seed_rows()`` drops them before
+they reach the importer - only the 36 real, video-backed incidents (and their
+joined entities/instruments/assets) are ever seeded. This is the only
+consumer of the CSV fixture - the offline CSV-preview UI mode
+(fixtures/dashboard_seed.py, local_reports.py, pages/1_Catalog.py,
+pages/4_Severity_Eval.py) has been removed; the console is database-backed
+only. All seeded incidents share one model_run_id (MR-SEED), representing one
+hypothetical model pass over the fixture videos, not many separate runs.
 
 Known ground-truth gap (carried through as-is, not invented): entities.csv
 carries one stray row, RoadAccidents006/E2, with no matching incidents.csv row
@@ -61,6 +65,7 @@ MODEL_RUN_ID = "MR-SEED"
 MODEL_NAME = "csv-fixture-seed"
 MODEL_VERSION = None
 PROMPT_VERSION = "v1"
+SYNTHETIC_INCIDENT_PREFIX = "SYN-"
 
 # R2 bucket layout, verified live against `anomaly-detection-dataset` (listed
 # via boto3 `list_objects_v2` on the `anomaly/` prefix): category folder names
@@ -130,6 +135,8 @@ def seed_rows() -> dict:
     incidents = []
     for source in _rows("incidents.csv"):
         incident_id = source["Incident_ID"]
+        if incident_id.startswith(SYNTHETIC_INCIDENT_PREFIX):
+            continue
         filename = source["Filename"]
         start = _int(source["Start_Timestamp_sec"])
         end = _int(source["End_Timestamp_sec"])

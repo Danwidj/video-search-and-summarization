@@ -62,8 +62,8 @@ R2_BUCKET=anomaly-detection-dataset
 Use the Supabase **session pooler** (port 5432) so DDL and `SELECT ... FOR
 UPDATE` work. Percent-encode reserved characters in the password (`@` → `%40`).
 
-Load the 72 CSV-fixture incidents once (idempotent, manual, never runs on
-startup):
+Load the 36 real (video-backed) CSV-fixture incidents once (idempotent, manual,
+never runs on startup):
 
 ```bash
 uv run python scripts/seed_supabase.py
@@ -224,7 +224,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
 | `embed_client.py` | Embedding-endpoint HTTP client (fail-soft), used by `matching.py` |
 | `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
-| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 72 CSV-fixture incidents (one shared `model_run_id`) + evidence, and the one-time idempotent importer |
+| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
 | `catalog_actions.py` | Pure (no `streamlit`) upload/analyze/status-polling helpers behind `pages/1_Catalog.py`, incl. the `videos.id`-fitting `derive_video_id()` |
