@@ -109,12 +109,12 @@ def test_filepaths_are_real_r2_object_keys_not_the_old_placeholder(incident_db: 
         assert incident["Filepath"].endswith(incident["Filename"])
 
     # Spot-check the verified category -> folder mapping (see PR description
-    # for the full live-bucket cross-check across all 72 rows).
+    # for the full live-bucket cross-check across all 36 real rows). Fighting
+    # has no real (non-SYN-) incidents at all, so it's not spot-checked here.
     by_id = {i["Incident_ID"]: i["Filepath"] for i in seed_data["Incident"]}
     assert by_id["Animal001"] == "anomaly/animal_attacks/Animal001_x264.mp4"
     assert by_id["Burglary001"] == "anomaly/burglary/Burglary001_x264.mp4"
     assert by_id["Explosion001"] == "anomaly/explosion/Explosion001_x264.mp4"
     assert by_id["RoadAccidents001"] == "anomaly/road_accidents/RoadAccidents001_x264.mp4"
-    assert by_id["SYN-Fighting001"] == "anomaly/fighting/SYN-Fighting001_x264.mp4"
     # The 3 rows with a blank Type still resolve via the filename prefix.
     assert by_id["Burglary005"] == "anomaly/burglary/Burglary005_x264.mp4"
