@@ -58,7 +58,7 @@ PROMPT_VERSION = None
 # sane total length; `start`/`end` sit safely inside it.
 INCIDENTS = [
     {
-        "incident_id": "MOCK-WarehouseSafety01",
+        "incident_id": "MOCK-WhSafety01",
         "filename": "warehouse_safety_0001.mp4",
         "type": "warehouse safety",
         "start": "00:00:03",
@@ -84,7 +84,7 @@ INCIDENTS = [
         "assets": [{"asset_id": "A1", "name": "pallet load", "description": "wrapped pallet raised on the forks"}],
     },
     {
-        "incident_id": "MOCK-WarehouseSafety02",
+        "incident_id": "MOCK-WhSafety02",
         "filename": "warehouse_safety_0002.mp4",
         "type": "warehouse safety",
         "start": "00:00:05",
@@ -223,7 +223,7 @@ INCIDENTS = [
         "assets": [],
     },
     {
-        "incident_id": "MOCK-BridgeInspection01",
+        "incident_id": "MOCK-BridgeInsp01",
         "filename": "sample-drone-bridge.mp4",
         "type": "structural",
         "start": "00:00:08",

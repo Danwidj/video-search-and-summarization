@@ -41,6 +41,14 @@ def _totals(db: IncidentDB) -> dict:
     }
 
 
+def test_incident_ids_fit_the_videos_id_column():
+    """videos.id is String(20) in Postgres; SQLite doesn't enforce this, so a
+    too-long id passes the hermetic suite but fails live (as MOCK-WarehouseSafety01
+    - 22 chars - originally did against Supabase)."""
+    for incident in INCIDENTS:
+        assert len(incident["incident_id"]) <= 20, incident["incident_id"]
+
+
 def test_seed_loads_the_8_mock_incidents_with_evidence(incident_db: IncidentDB):
     counts = seed(incident_db)
     assert counts["videos"] == 8
