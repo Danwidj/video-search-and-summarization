@@ -62,8 +62,8 @@ R2_BUCKET=anomaly-detection-dataset
 Use the Supabase **session pooler** (port 5432) so DDL and `SELECT ... FOR
 UPDATE` work. Percent-encode reserved characters in the password (`@` → `%40`).
 
-Load the 72 CSV-fixture incidents once (idempotent, manual, never runs on
-startup):
+Load the 36 real (video-backed) CSV-fixture incidents once (idempotent, manual,
+never runs on startup):
 
 ```bash
 uv run python scripts/seed_supabase.py
@@ -76,9 +76,10 @@ updates in place — row counts do not grow. The dataset lives in
 `fixtures/data/*.csv`, parsed via `scripts/seed_data.py`. Each video's
 `filepath` is the real `anomaly/<category>/<filename>` object key in the
 `anomaly-detection-dataset` R2 bucket (verified live; see `scripts/seed_data.py`
-for the category → folder mapping). 36 of the 72 rows are `SYN-`-prefixed
-fixture rows with no corresponding real R2 object (a pre-existing content gap,
-not a seeding bug) and will not resolve to a playable clip.
+for the category → folder mapping). 36 of the 72 rows on disk are
+`SYN-`-prefixed synthetic placeholder rows with no corresponding real R2
+object; `scripts/seed_data.py` drops them before seeding, so only the 36 real,
+video-backed incidents are ever loaded.
 
 Separately, load the captain's own 8-video custom demo set (idempotent,
 manual, never runs on startup, independent of the seed above):
@@ -224,7 +225,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
 | `embed_client.py` | Embedding-endpoint HTTP client (fail-soft), used by `matching.py` |
 | `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
-| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 72 CSV-fixture incidents (one shared `model_run_id`) + evidence, and the one-time idempotent importer |
+| `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
 | `catalog_actions.py` | Pure (no `streamlit`) upload/analyze/status-polling helpers behind `pages/1_Catalog.py`, incl. the `videos.id`-fitting `derive_video_id()` |
