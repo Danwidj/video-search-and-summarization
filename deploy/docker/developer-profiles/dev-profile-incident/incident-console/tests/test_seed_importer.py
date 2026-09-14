@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from db import IncidentDB
 from incident_report import INCIDENT_TYPES
-from scripts.seed_data import MODEL_RUN_ID, seed_rows
+from scripts.seed_data import MODEL_RUN_ID, SYNTHETIC_INCIDENT_PREFIX, seed_rows
 from scripts.seed_supabase import seed
 
 
@@ -39,19 +39,26 @@ def _totals(db: IncidentDB) -> dict:
     }
 
 
-def test_seed_loads_the_72_csv_incidents_with_evidence(incident_db: IncidentDB):
+def test_seed_loads_the_36_real_csv_incidents_with_evidence(incident_db: IncidentDB):
     counts = seed(incident_db)
     seed_data = seed_rows()
-    assert counts["videos"] == 72
+    assert counts["videos"] == 36
     assert counts["model_runs"] == 1
-    assert counts["incidents"] == 72
-    # entities.csv carries one known stray row (RoadAccidents006/E2) with no
-    # incidents.csv row of its own (fixtures/README.md gap #6); it has no
-    # incident to satisfy the entities->incidents FK and is skipped.
-    assert counts["entities"] == len(seed_data["Entity"]) - 1
-    assert counts["instruments"] == len(seed_data["Instrument"])
-    assert counts["assets"] == len(seed_data["Asset"])
+    assert counts["incidents"] == 36
+    incident_ids = {incident["Incident_ID"] for incident in seed_data["Incident"]}
+    assert not any(incident_id.startswith(SYNTHETIC_INCIDENT_PREFIX) for incident_id in incident_ids)
+    # entities.csv/instruments.csv/assets.csv also carry SYN- rows (and one
+    # known stray, RoadAccidents006/E2, with no incidents.csv row of its own -
+    # fixtures/README.md gap #6); none of those have a surviving incident to
+    # satisfy the FK, so they're skipped. seed_data() itself doesn't filter
+    # the joined lists - only seed()'s incident_ids check does - so count
+    # against the incident ids that actually made it through.
+    assert counts["entities"] == sum(1 for e in seed_data["Entity"] if e["Incident_ID"] in incident_ids)
+    assert counts["instruments"] == sum(1 for i in seed_data["Instrument"] if i["Incident_ID"] in incident_ids)
+    assert counts["assets"] == sum(1 for a in seed_data["Asset"] if a["Incident_ID"] in incident_ids)
     assert _totals(incident_db) == {**counts}
+    seeded_ids = {r["incident_id"] for r in incident_db.list_latest_incidents()}
+    assert not any(incident_id.startswith(SYNTHETIC_INCIDENT_PREFIX) for incident_id in seeded_ids)
 
 
 def test_seed_is_idempotent_and_keeps_the_video_incident_identity(incident_db: IncidentDB):
@@ -76,11 +83,12 @@ def test_seed_rows_are_typed_for_the_controlled_taxonomy(incident_db: IncidentDB
         assert incident_db.get_video(row["incident_id"])["filepath"] == row["video_filepath"]
 
 
-def test_low_confidence_and_null_confidence_present(incident_db: IncidentDB):
+def test_confidence_is_null_for_all_real_ground_truth_incidents(incident_db: IncidentDB):
+    # The real (non-SYN) incidents.csv rows never carry a Confidence_Score;
+    # only the now-excluded SYN- placeholder rows did.
     seed(incident_db)
     confidences = [r["confidence_score"] for r in incident_db.list_latest_incidents()]
-    assert sum(1 for c in confidences if c is None) >= 10
-    assert sum(1 for c in confidences if c is not None and c < 0.7) >= 5
+    assert confidences and all(c is None for c in confidences)
 
 
 def test_reports_and_queries_stay_empty_reserved_shape(incident_db: IncidentDB):
