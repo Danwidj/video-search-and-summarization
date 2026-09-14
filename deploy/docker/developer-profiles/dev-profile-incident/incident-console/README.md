@@ -76,9 +76,10 @@ updates in place — row counts do not grow. The dataset lives in
 `fixtures/data/*.csv`, parsed via `scripts/seed_data.py`. Each video's
 `filepath` is the real `anomaly/<category>/<filename>` object key in the
 `anomaly-detection-dataset` R2 bucket (verified live; see `scripts/seed_data.py`
-for the category → folder mapping). 36 of the 72 rows are `SYN-`-prefixed
-fixture rows with no corresponding real R2 object (a pre-existing content gap,
-not a seeding bug) and will not resolve to a playable clip.
+for the category → folder mapping). 36 of the 72 rows on disk are
+`SYN-`-prefixed synthetic placeholder rows with no corresponding real R2
+object; `scripts/seed_data.py` drops them before seeding, so only the 36 real,
+video-backed incidents are ever loaded.
 
 Separately, load the captain's own 8-video custom demo set (idempotent,
 manual, never runs on startup, independent of the seed above):
