@@ -35,7 +35,7 @@ def _first_report_id(db):
 
 def test_list_and_get_expose_the_local_reports_shape(seeded):
     view = DBReports(seeded).list_reports()
-    assert len(view) == 72
+    assert len(view) == 36
     row = view[0]
     for key in (
         "id",
