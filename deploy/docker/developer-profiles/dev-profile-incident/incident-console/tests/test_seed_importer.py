@@ -88,3 +88,25 @@ def test_reports_and_queries_stay_empty_reserved_shape(incident_db: IncidentDB):
     seed(incident_db)
     assert incident_db.list_generated_reports() == []
     assert incident_db.list_queries() == []
+
+
+def test_filepaths_are_real_r2_object_keys_not_the_old_placeholder(incident_db: IncidentDB):
+    """Every Filepath is the exact anomaly/<category>/<filename> R2 key that
+    filename names - never the media.example.invalid placeholder, and never a
+    different clip substituted in from the same category."""
+    seed_data = seed_rows()
+    for incident in seed_data["Incident"]:
+        assert not incident["Filepath"].startswith("http")
+        assert incident["Filepath"] == f"anomaly/{incident['Filepath'].split('/')[1]}/{incident['Filename']}"
+        assert incident["Filepath"].endswith(incident["Filename"])
+
+    # Spot-check the verified category -> folder mapping (see PR description
+    # for the full live-bucket cross-check across all 72 rows).
+    by_id = {i["Incident_ID"]: i["Filepath"] for i in seed_data["Incident"]}
+    assert by_id["Animal001"] == "anomaly/animal_attacks/Animal001_x264.mp4"
+    assert by_id["Burglary001"] == "anomaly/burglary/Burglary001_x264.mp4"
+    assert by_id["Explosion001"] == "anomaly/explosion/Explosion001_x264.mp4"
+    assert by_id["RoadAccidents001"] == "anomaly/road_accidents/RoadAccidents001_x264.mp4"
+    assert by_id["SYN-Fighting001"] == "anomaly/fighting/SYN-Fighting001_x264.mp4"
+    # The 3 rows with a blank Type still resolve via the filename prefix.
+    assert by_id["Burglary005"] == "anomaly/burglary/Burglary005_x264.mp4"
