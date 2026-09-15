@@ -35,7 +35,7 @@ if handle is None:
 @st.dialog("Upload video")
 def _upload_dialog() -> None:
     uploaded = st.file_uploader("Video file", type=["mp4", "mkv"])
-        if st.button("Upload", type="primary", disabled=uploaded is None):
+    if st.button("Upload", type="primary", disabled=uploaded is None):
         with st.spinner("Uploading to the agent..."):
             result = upload_and_record(AgentClient(), handle, filename=uploaded.name, content=uploaded.getvalue())
         if result.ok:
