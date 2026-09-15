@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """Mock stand-in for HAProxy + vss-agent + VIOS/VST + LLM/VLM NIMs.
 
 Serves every path prefix the real bp_developer_base UI expects

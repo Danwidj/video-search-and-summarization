@@ -1,12 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
-
 from base_profile_mock.app import create_app
 from base_profile_mock.routers import incident_analyze
+from fastapi.testclient import TestClient
 
 
 class FakeWriter:

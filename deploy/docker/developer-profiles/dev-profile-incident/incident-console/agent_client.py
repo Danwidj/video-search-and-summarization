@@ -16,11 +16,12 @@
 """HTTP client for vss-agent's upload + AI-trigger API.
 
 Written against the plan's contract (incident-plan-implementation-shared.md
-S4-S5). Two of the endpoints - ``POST /api/v1/incidents/{id}/analyze`` and
-``POST /api/v1/search`` - do not exist server-side yet (that is a follow-up
-task). Every call fails soft: it returns a ``Result`` with ``ok=False`` and a
+S4-S5). The local ``base_profile_mock`` implements
+``POST /api/v1/incidents/{id}/analyze`` for the zero-GPU loop, while the real
+``vss-agent`` analyze route and ``POST /api/v1/search`` are still follow-up
+work. Every call fails soft: it returns a ``Result`` with ``ok=False`` and a
 human-readable ``error`` rather than raising, so the console stays usable when
-the agent is absent or the route is missing.
+the agent is absent or a route is missing.
 """
 
 from __future__ import annotations
@@ -28,9 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-
 import config
+import httpx
 from incident_report import (
     IncidentReport,
     extract_message_content,
@@ -168,7 +168,7 @@ class AgentClient:
             return result.data.get("videoUrl")
         return None
 
-    # -- AI triggers (endpoints are follow-up work) --------------- #
+    # -- AI triggers (real vss-agent routes are follow-up work) ---- #
     def analyze_incident(self, video_id: int, *, reasoning: bool = False) -> Result:
         """``POST /api/v1/incidents/{id}/analyze`` - fails soft if not implemented."""
         return self._post(

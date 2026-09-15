@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-
 from agent_client import AgentClient
 from catalog_actions import current_status, should_keep_polling, upload_and_record
 from theme import alert

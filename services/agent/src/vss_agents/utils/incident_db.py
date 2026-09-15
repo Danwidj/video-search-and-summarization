@@ -47,14 +47,17 @@ default is ``min_size=1, max_size=2`` (see :data:`DEFAULT_MIN_POOL_SIZE` /
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import datetime as _dt
 import logging
 import os
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 from typing import Any
 
 import asyncpg
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
