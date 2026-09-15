@@ -35,11 +35,10 @@ if handle is None:
 @st.dialog("Upload video")
 def _upload_dialog() -> None:
     uploaded = st.file_uploader("Video file", type=["mp4", "mkv"])
-    if st.button("Upload", type="primary", disabled=uploaded is None):
+        if st.button("Upload", type="primary", disabled=uploaded is None):
         with st.spinner("Uploading to the agent..."):
             result = upload_and_record(AgentClient(), handle, filename=uploaded.name, content=uploaded.getvalue())
         if result.ok:
-            st.session_state["catalog_polling_video_id"] = result.data
             st.success(f"Uploaded. New video id: {result.data}")
             st.rerun()
         elif result.not_implemented:
@@ -88,7 +87,9 @@ else:
                 result = AgentClient().analyze_incident(selected_id, reasoning=reasoning)
             if result.ok:
                 st.session_state["catalog_polling_video_id"] = selected_id
-                st.success("Analysis requested.")
+                st.success("Analysis completed; refreshing the report list.")
+                st.session_state.pop("catalog_polling_video_id", None)
+                st.rerun()
             elif result.not_implemented:
                 alert("Analysis isn't available on this backend yet.", "info", "ℹ️")
             else:

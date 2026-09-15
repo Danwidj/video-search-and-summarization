@@ -13,6 +13,15 @@ LLM/VLM NIMs jointly play in a real deployment, all on one port.
 State is in-memory only and resets on restart. This is a local dev tool, not a
 persistence layer.
 
+When exercising the incident Analyze route, set ``INCIDENT_DB_DSN`` in the
+backend environment to the same Postgres used by the console (the mock does
+not load dotenv files). The route returns ``503`` when it is unset or
+unreachable. Start the backend with ``INCIDENT_DB_DSN=... uv run uvicorn
+base_profile_mock.app:create_app --factory --port 8000``; then upload a video
+through the console and click Analyze. The response is explicitly marked
+``mock: true`` and writes the model run, incident, evidence, review status,
+and report through ``services/agent/src/vss_agents/utils/incident_db.py``.
+
 ## Run it
 
 ```sh
