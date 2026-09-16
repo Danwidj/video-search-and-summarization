@@ -25,8 +25,6 @@ the result via ``incident_db.py`` best-effort (a DB outage must never break
 report generation - see ``_persist_incident`` below).
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncGenerator
 import asyncio
 import hashlib

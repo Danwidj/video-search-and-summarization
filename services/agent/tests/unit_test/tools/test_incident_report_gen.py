@@ -121,7 +121,7 @@ class TestIncidentReportGenOutput:
     def test_default_structured_report_is_a_fresh_incident_report(self):
         output = IncidentReportGenOutput()
         assert isinstance(output.structured_report, IncidentReport)
-        assert output.structured_report.incident_type == "burglary"  # INCIDENT_TYPES[0]
+        assert output.structured_report.incident_type == "road accident"  # INCIDENT_TYPES[0]
 
 
 class TestEndToEnd:
