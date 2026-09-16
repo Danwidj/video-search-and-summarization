@@ -306,3 +306,43 @@ class TestEndToEnd:
 
         assert isinstance(result, IncidentReportGenOutput)
         assert result.structured_report.incident_type == "explosion"
+
+    @pytest.mark.asyncio
+    async def test_list_sensor_id_passes_through_without_extraction_or_persistence(self):
+        """report_agent batches multi-video chat requests as a list in a single call
+        (config.yml's report_agent prompt instructs sensor_id=['video1', 'video2']).
+        That shape must reach video_report_gen unchanged, with no incident-specific
+        structured extraction or DB persistence attempted."""
+        extracted = IncidentReport(incident_type="fighting", severity=4, confidence=0.6)
+        config, builder, video_report_tool = self._build_mocks(extracted=extracted)
+
+        result, mock_db = await self._run(
+            config,
+            builder,
+            db_configured=True,
+            tool_input=IncidentReportGenInput(sensor_id=["cam1.mp4", "cam2.mp4"]),
+        )
+
+        assert isinstance(result, IncidentReportGenOutput)
+        video_report_tool.ainvoke.assert_awaited_once()
+        called_input = video_report_tool.ainvoke.await_args.args[0]
+        assert called_input["sensor_id"] == ["cam1.mp4", "cam2.mp4"]
+        assert result.structured_report.incident_type == "road accident"  # default, no extraction was run
+        mock_db.upsert_video.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_str_sensor_id_still_persists_and_extracts(self):
+        """Single-video calls (the only shape /analyze itself ever sends) keep the
+        existing structured extraction + persistence behavior after widening sensor_id."""
+        extracted = IncidentReport(incident_type="burglary", severity=3, confidence=0.8)
+        config, builder, _ = self._build_mocks(extracted=extracted)
+
+        result, mock_db = await self._run(
+            config,
+            builder,
+            db_configured=True,
+            tool_input=IncidentReportGenInput(sensor_id="cam1.mp4"),
+        )
+
+        assert result.structured_report.incident_type == "burglary"
+        mock_db.upsert_video.assert_awaited_once()

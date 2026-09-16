@@ -232,7 +232,15 @@ async def _persist_incident(
 class IncidentReportGenInput(BaseModel):
     """Input for the incident_report_gen tool."""
 
-    sensor_id: str = Field(..., description="VST sensor ID (filename) of the uploaded video to analyze.")
+    sensor_id: str | list[str] = Field(
+        ...,
+        description=(
+            "VST sensor ID (filename) of the uploaded video to analyze. A list batches multiple videos "
+            "into one report_agent call (matching video_report_gen's contract); that case is passed "
+            "straight through to video_report_gen with no structured incident extraction or persistence, "
+            "since incident semantics (single incident_type/severity/persons) only make sense per-video."
+        ),
+    )
     incident_id: str | None = Field(
         default=None,
         description=(
@@ -272,6 +280,12 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             video_report_input["vlm_reasoning"] = tool_input.vlm_reasoning
 
         report_result: VideoReportGenOutput = await video_report_tool.ainvoke(video_report_input)
+
+        if isinstance(tool_input.sensor_id, list):
+            # Multi-video report_agent requests carry no single incident semantics
+            # (one incident_type/severity/persons doesn't apply across videos) -
+            # pass straight through to video_report_gen, unchanged from dev-profile-base.
+            return IncidentReportGenOutput(**report_result.model_dump())
 
         content = report_result.content or ""
         structured_report = await _extract_structured_report(llm, content, config.extraction_timeout_seconds)
