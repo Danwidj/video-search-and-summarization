@@ -31,10 +31,12 @@ the model run, incident entity, review status, and report through
 ```sh
 cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
 uv sync
-uv run uvicorn base_profile_mock.app:create_app --factory --port 7777 --reload
+uv run uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
-`GET http://localhost:7777/health` should return `{"value": {"isAlive": true}}`.
+`GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`.
+For local runs, keep `MOCK_PUBLIC_BASE_URL=http://127.0.0.1:7777` if you override it; using
+`localhost` can fail on systems where clients try IPv6 while uvicorn is bound to IPv4.
 
 ## Point the real UI at it
 
