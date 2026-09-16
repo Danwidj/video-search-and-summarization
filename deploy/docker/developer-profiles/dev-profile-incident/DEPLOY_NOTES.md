@@ -4,16 +4,16 @@ Everything fixed tonight on kwanz-ws, the current live state, and how anyone on 
 
 ## How to connect (any team member)
 
-Nothing below needs to be repeated per-person — the VM deployment is shared. Each person just needs:
+**Settled architecture: the console (UI) runs on your own laptop; the VM runs only the backend** (vss-agent, LLM/VLM NIMs, VIOS). An SSH tunnel connects the two. This supersedes an earlier setup where the console ran as a shared container on the VM (see "Known issues" below) — follow [`incident-console/README.md`](incident-console/README.md)'s "Real backend on kwanz-ws via SSH tunnel (Phase 4)" section for the full local-console setup. Each person just needs:
 
 1. **SSH access to kwanz-ws under your own account** (you should already have one — `yang`, `faith`, `claris`, `heng` each have their own checkout under `/home/`).
-2. **A tunnel from your own laptop**, forwarding every port the stack needs (agent 8000, NIMs 30081/30082, ingress 7777, console 8501) — one command, the `mdx-tunnel-incident` alias from `deploy/dotfiles/`:
+2. **A tunnel from your own laptop**, forwarding every port the stack needs (agent 8000, NIMs 30081/30082, ingress 7777) — one command, the `mdx-tunnel-incident` alias from `deploy/dotfiles/`:
    ```bash
    mdx-tunnel-incident
    ```
-   It forwards all five ports via `$VSS_VM_IP`/`$VSS_SSH_TARGET` (no hardcoded address — override those vars only if your login or the VM address differs); see its definition in `deploy/dotfiles/aliases.sh` for the underlying `ssh -N -L ...` forwards.
+   It forwards all needed ports via `$VSS_VM_IP`/`$VSS_SSH_TARGET` (no hardcoded address — override those vars only if your login or the VM address differs); see its definition in `deploy/dotfiles/aliases.sh` for the underlying `ssh -N -L ...` forwards.
    Leave this running in its own terminal (it's supposed to sit there silently — that's correct, not stuck).
-3. Open the console in your browser at **`http://localhost:8501`** — it runs as a container on the VM itself, so everyone is looking at the same live instance, not separate copies.
+3. Run the console locally per `incident-console/README.md`'s Phase 4 instructions (`uv run streamlit run app.py` from `incident-console/`, pointed at the tunneled backend via `.env.local`) — each person runs their own console instance against the shared backend, not a single shared UI.
 
 Quick health check from a second terminal, once the tunnel is up:
 ```bash
@@ -33,7 +33,7 @@ sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-inc
 | Container | Role | Status |
 |---|---|---|
 | `vss-agent` | AI agent — upload API, report generation | Up, healthy |
-| `vss-incident-console` | the Streamlit UI | Up |
+| `vss-incident-console` | the Streamlit UI | Up, but **superseded** — the console now runs on each person's own laptop instead (see "How to connect" above); this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward |
 | `vss-vios-streamprocessing` | video decode/encode core | Up, healthy |
 | `vss-vios-nvstreamer` | upload ingestion | Up |
 | `vss-vios-ingress` | nginx gateway for VST/storage API | Up, healthy |
