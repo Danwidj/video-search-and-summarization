@@ -137,6 +137,9 @@ class AgentClient:
         except httpx.HTTPError as exc:
             return Result(ok=False, error=f"chunked upload to nvstreamer failed: {exc}")
         try:
+            # Parse unconditionally: the real VST/nginx stack sends a
+            # JSON-shaped body with `Content-Type: text/plain`, so gating
+            # on the header would silently drop a real sensorId.
             body = put.json()
         except ValueError:
             body = {}
