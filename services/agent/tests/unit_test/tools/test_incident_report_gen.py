@@ -29,10 +29,12 @@ from unittest.mock import patch
 import pytest
 
 from vss_agents.data_models.incident_report import IncidentReport
+from vss_agents.data_models.incident_report import Person
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
 from vss_agents.tools.incident_report_gen import _derive_incident_bounds
+from vss_agents.tools.incident_report_gen import _derive_video_id
 from vss_agents.tools.incident_report_gen import _seconds_to_mmss
 from vss_agents.tools.incident_report_gen import incident_report_gen
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
@@ -80,6 +82,19 @@ class TestDeriveIncidentBounds:
         assert start == "0:05"
         assert end == "0:50"
         assert confirmed is True
+
+
+class TestDeriveVideoId:
+    def test_fits_string_20_column_regardless_of_input_length(self):
+        long_sensor_id = "a" * 128
+        derived = _derive_video_id(long_sensor_id)
+        assert len(derived) <= 20
+
+    def test_deterministic_for_repeated_calls(self):
+        assert _derive_video_id("cam1.mp4") == _derive_video_id("cam1.mp4")
+
+    def test_differs_for_different_input(self):
+        assert _derive_video_id("cam1.mp4") != _derive_video_id("cam2.mp4")
 
 
 class TestIncidentReportGenConfig:
@@ -141,7 +156,7 @@ class TestEndToEnd:
 
         return config, builder, video_report_tool
 
-    async def _run(self, config, builder, *, db_configured: bool):
+    async def _run(self, config, builder, *, db_configured: bool, tool_input: IncidentReportGenInput | None = None):
         with (
             patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=db_configured),
             patch("vss_agents.tools.incident_report_gen.incident_db.get_db", new_callable=AsyncMock) as mock_get_db,
@@ -149,7 +164,7 @@ class TestEndToEnd:
             mock_db = AsyncMock()
             mock_get_db.return_value = mock_db if db_configured else None
             async with incident_report_gen(config, builder) as function_info:
-                result = await function_info.single_fn(IncidentReportGenInput(sensor_id="cam1.mp4"))
+                result = await function_info.single_fn(tool_input or IncidentReportGenInput(sensor_id="cam1.mp4"))
             return result, mock_db
 
     @pytest.mark.asyncio
@@ -189,6 +204,78 @@ class TestEndToEnd:
         _, kwargs = mock_db.insert_incident.await_args
         assert kwargs["fields"]["type"] == "fighting"
         assert kwargs["fields"]["severity_level"] == 4
+
+    @pytest.mark.asyncio
+    async def test_persists_under_explicit_incident_id_not_raw_sensor_id(self):
+        """The console passes its own videos.id/incidents.incident_id explicitly - persistence must
+        key off that, not the (possibly overlong) raw sensor_id, and the raw sensor_id must still land
+        in videos.source so it can be resolved back for a later /analyze call."""
+        extracted = IncidentReport(incident_type="fighting", severity=4, confidence=0.6)
+        config, builder, _ = self._build_mocks(extracted=extracted)
+        long_sensor_id = "camera-uploads/" + "warehouse-dock-b" * 5 + ".mp4"
+        console_incident_id = "v" + "0" * 19
+
+        _, mock_db = await self._run(
+            config,
+            builder,
+            db_configured=True,
+            tool_input=IncidentReportGenInput(sensor_id=long_sensor_id, incident_id=console_incident_id),
+        )
+
+        video_args, video_kwargs = mock_db.upsert_video.await_args
+        assert video_args[0] == console_incident_id
+        assert video_kwargs["source"] == long_sensor_id
+        incident_args, _ = mock_db.insert_incident.await_args
+        assert incident_args[0] == console_incident_id
+
+    @pytest.mark.asyncio
+    async def test_derives_incident_id_from_sensor_id_when_omitted(self):
+        """A chat-driven caller with no console record omits incident_id; persistence must still key off
+        a stable, column-fitting id derived from sensor_id (matching the console's own derivation) rather
+        than the raw sensor_id, which may exceed the 20-char id column."""
+        extracted = IncidentReport(incident_type="fighting", severity=4, confidence=0.6)
+        config, builder, _ = self._build_mocks(extracted=extracted)
+        long_sensor_id = "a" * 128
+
+        _, mock_db = await self._run(
+            config,
+            builder,
+            db_configured=True,
+            tool_input=IncidentReportGenInput(sensor_id=long_sensor_id),
+        )
+
+        video_args, _ = mock_db.upsert_video.await_args
+        derived_id = video_args[0]
+        assert derived_id == _derive_video_id(long_sensor_id)
+        assert len(derived_id) <= 20
+
+    @pytest.mark.asyncio
+    async def test_persisted_entity_ids_fit_column_for_overlong_incident_id(self):
+        """entities.entity_id is String(20); it must fit even though it's derived from an incident_id
+        that is itself already at the 20-char column limit, ruling out any raw concatenation scheme."""
+        extracted = IncidentReport(
+            incident_type="fighting",
+            severity=4,
+            confidence=0.6,
+            persons=[Person(description="A person", actions="ran")] * 3,
+        )
+        config, builder, _ = self._build_mocks(extracted=extracted)
+        console_incident_id = "v" + "9" * 19
+
+        _, mock_db = await self._run(
+            config,
+            builder,
+            db_configured=True,
+            tool_input=IncidentReportGenInput(sensor_id="cam1.mp4", incident_id=console_incident_id),
+        )
+
+        assert mock_db.add_incident_entity.await_count == 3
+        entity_ids = {call.kwargs["entity_id"] for call in mock_db.add_incident_entity.await_args_list}
+        assert len(entity_ids) == 3  # each person gets a distinct id
+        for entity_id in entity_ids:
+            assert len(entity_id) <= 20
+        for call in mock_db.add_incident_entity.await_args_list:
+            assert call.args[0] == console_incident_id
 
     @pytest.mark.asyncio
     async def test_skips_persistence_when_db_not_configured(self):

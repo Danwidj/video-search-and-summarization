@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 import asyncio
+import hashlib
 import logging
 import re
 
@@ -83,6 +84,20 @@ def _seconds_to_mmss(seconds: float) -> str:
     if h:
         return f"{h:d}:{m:02d}:{s:02d}"
     return f"{m:d}:{s:02d}"
+
+
+def _derive_video_id(sensor_id: str) -> str:
+    """Map ``sensor_id`` to a stable id that fits ``videos.id`` (``String(20)``).
+
+    Mirrors the incident-console's own
+    ``catalog_actions.derive_video_id()`` exactly (same hash, same prefix,
+    same truncation) so a video uploaded through the console and later
+    analyzed via a caller that never passes an explicit ``incident_id``
+    (e.g. a chat-driven ``report_agent`` invocation) still resolves to the
+    same row on repeated calls. Cannot import that module directly - the
+    console and the agent are separate deployable apps.
+    """
+    return "v" + hashlib.sha256(sensor_id.encode("utf-8")).hexdigest()[:19]
 
 
 def _derive_incident_bounds(content: str | None) -> tuple[str, str, bool]:
@@ -156,8 +171,18 @@ async def _extract_structured_report(
         return IncidentReport()
 
 
+def _derive_entity_id(incident_id: str, idx: int) -> str:
+    """Deterministic ``entities.entity_id`` (``String(20)``) for the ``idx``-th person.
+
+    ``incident_id`` (up to 20 chars) plus a raw ``-person-N`` suffix can
+    exceed the column, so hash the pair instead of concatenating.
+    """
+    return "e" + hashlib.sha256(f"{incident_id}:{idx}".encode("utf-8")).hexdigest()[:19]
+
+
 async def _persist_incident(
     *,
+    incident_id: str,
     sensor_id: str,
     report: IncidentReport,
     incident_start: str,
@@ -173,10 +198,10 @@ async def _persist_incident(
         db = await incident_db.get_db()
         if db is None:
             return
-        await db.upsert_video(sensor_id, filepath=filepath, source="vss_agent")
+        await db.upsert_video(incident_id, filepath=filepath, source=sensor_id)
         await db.insert_model_run(model_run_id, model_name=model_name)
         await db.insert_incident(
-            sensor_id,
+            incident_id,
             model_run_id,
             fields={
                 "type": report.incident_type,
@@ -190,22 +215,32 @@ async def _persist_incident(
         for idx, person in enumerate(report.persons):
             try:
                 await db.add_incident_entity(
-                    sensor_id,
+                    incident_id,
                     model_run_id,
-                    entity_id=f"{sensor_id}-person-{idx}",
+                    entity_id=_derive_entity_id(incident_id, idx),
                     type="person",
                     description=f"{person.description} {person.actions}".strip(),
                 )
             except Exception as e:  # noqa: BLE001 - one bad entity write must not drop the rest
-                logger.warning("incident_report_gen: failed to persist entity %d for %s: %s", idx, sensor_id, e)
+                logger.warning("incident_report_gen: failed to persist entity %d for %s: %s", idx, incident_id, e)
     except Exception as e:  # noqa: BLE001 - fail-soft by design, see module docstring
-        logger.warning("incident_report_gen: failed to persist incident for %s: %s", sensor_id, e)
+        logger.warning("incident_report_gen: failed to persist incident for %s: %s", incident_id, e)
 
 
 class IncidentReportGenInput(BaseModel):
     """Input for the incident_report_gen tool."""
 
     sensor_id: str = Field(..., description="VST sensor ID (filename) of the uploaded video to analyze.")
+    incident_id: str | None = Field(
+        default=None,
+        description=(
+            "incident-console videos.id/incidents.incident_id (String(20)) to persist under. Passed "
+            "explicitly by the console's /analyze route, which already knows the row's derived id. When "
+            "omitted (e.g. a chat-driven report_agent call with no console record), one is derived from "
+            "sensor_id the same way the console derives it, so repeated calls for the same video resolve "
+            "to the same row."
+        ),
+    )
     user_query: str = Field(
         default="Generate a detailed incident report of the video.",
         description="The analysis request passed through to video_report_gen.",
@@ -244,7 +279,9 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         structured_report.incident_end = incident_end
         structured_report.incident_start_confirmed = confirmed
 
+        incident_id = tool_input.incident_id or _derive_video_id(tool_input.sensor_id)
         await _persist_incident(
+            incident_id=incident_id,
             sensor_id=tool_input.sensor_id,
             report=structured_report,
             incident_start=incident_start,
