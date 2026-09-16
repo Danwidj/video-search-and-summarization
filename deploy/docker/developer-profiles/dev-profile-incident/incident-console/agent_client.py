@@ -143,7 +143,10 @@ class AgentClient:
         if not sensor_id:
             return Result(ok=False, error=f"nvstreamer did not return a sensorId: {body!r}")
         filepath = body.get("filePath") or body.get("filepath")
-        if not filepath:
+        # The mock returns an internal filesystem path in filePath. Resolve
+        # those through VST so the console receives a browser-playable URL;
+        # real absolute URLs and object keys remain untouched.
+        if not filepath or (isinstance(filepath, str) and filepath.startswith("/")):
             filepath = self._video_url(sensor_id)
         step3 = self.complete_upload(sensor_id)
         return Result(

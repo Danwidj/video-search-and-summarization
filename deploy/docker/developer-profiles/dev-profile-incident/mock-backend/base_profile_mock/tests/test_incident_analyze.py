@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from base_profile_mock.app import create_app
 from base_profile_mock.routers import incident_analyze
+from base_profile_mock.state import get_state
 from fastapi.testclient import TestClient
 
 
@@ -63,3 +64,22 @@ def test_analyze_rejects_missing_video(monkeypatch):
     monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
     response = TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json={})
     assert response.status_code == 404
+
+
+def test_uploaded_bytes_are_playable_from_vst_url():
+    state = get_state()
+    state.uploads.clear()
+    state.streams.clear()
+    client = TestClient(create_app())
+    response = client.post(
+        "/vst/api/v1/storage/file",
+        files={"mediaFile": ("clip.mp4", b"video-bytes", "video/mp4")},
+        data={"filename": "clip.mp4"},
+    )
+    assert response.status_code == 200
+    sensor_id = response.json()["sensorId"]
+    playback = client.get(f"/vst/api/v1/storage/file/{sensor_id}/url")
+    assert playback.status_code == 200
+    video = client.get(playback.json()["videoUrl"])
+    assert video.status_code == 200
+    assert video.content == b"video-bytes"

@@ -191,3 +191,32 @@ def test_upload_video_falls_back_to_vst_url_when_chunk_response_lacks_filepath(m
     res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
     assert res.ok is True
     assert res.data["filepath"] == "http://vst/videos/clip.mp4"
+
+
+def test_upload_video_resolves_internal_filepath_through_vst(monkeypatch):
+    """The local mock's internal file path must not be persisted as a dead URL."""
+    def post_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            return httpx.Response(200, json={"sensorId": "sensor-abc", "filePath": "/data/videos/clip.mp4"})
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    def get_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/vst/api/v1/storage/file/sensor-abc/url"
+        return httpx.Response(200, json={"videoUrl": "http://vst/videos/clip.mp4"})
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(post_handler))
+    transport = httpx.MockTransport(get_handler)
+
+    def fake_get(url, *, timeout=None, **kwargs):  # noqa: ARG001
+        with httpx.Client(transport=transport) as c:
+            return c.get(url)
+
+    monkeypatch.setattr(agent_client.httpx, "get", fake_get)
+    result = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+
+    assert result.ok is True
+    assert result.data["filepath"] == "http://vst/videos/clip.mp4"
