@@ -46,6 +46,25 @@ def test_analyze_incident_fails_soft_on_404(monkeypatch):
     assert "not implemented" in res.error
 
 
+def test_analyze_incident_uses_timeout_floor_for_synchronous_r2_upload(monkeypatch):
+    """The default 15s timeout is too short for R2 upload + VLM inference."""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "done"})
+
+    inner = _client_with_transport(handler)
+
+    def spy(url, *, json=None, timeout=None, **kwargs):
+        seen["timeout"] = timeout
+        return inner(url, json=json, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(agent_client.httpx, "post", spy)
+    res = AgentClient(base_url="http://agent", llm_base_url="").analyze_incident(7)
+    assert res.ok is True
+    assert seen["timeout"] == 120.0
+
+
 def test_search_fails_soft_on_connection_error(monkeypatch):
     def boom(*args, **kwargs):  # noqa: ARG001
         raise httpx.ConnectError("no route to host")
@@ -195,6 +214,7 @@ def test_upload_video_falls_back_to_vst_url_when_chunk_response_lacks_filepath(m
 
 def test_upload_video_resolves_internal_filepath_through_vst(monkeypatch):
     """The local mock's internal file path must not be persisted as a dead URL."""
+
     def post_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/videos":
             return httpx.Response(200, json={"url": "http://vst/upload"})

@@ -29,8 +29,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import config
 import httpx
+
+import config
 from incident_report import (
     IncidentReport,
     extract_message_content,
@@ -62,8 +63,9 @@ class AgentClient:
 
     # -- helpers ------------------------------------------------------- #
     def _post(self, url: str, *, json: dict | None = None, **kwargs: Any) -> Result:
+        kwargs.setdefault("timeout", self.timeout)
         try:
-            resp = httpx.post(url, json=json, timeout=self.timeout, **kwargs)
+            resp = httpx.post(url, json=json, **kwargs)
         except httpx.HTTPError as exc:
             return Result(ok=False, error=f"{type(exc).__name__}: {exc}")
         return self._to_result(url, resp)
@@ -174,9 +176,12 @@ class AgentClient:
     # -- AI triggers (real vss-agent routes are follow-up work) ---- #
     def analyze_incident(self, video_id: int, *, reasoning: bool = False) -> Result:
         """``POST /api/v1/incidents/{id}/analyze`` - fails soft if not implemented."""
+        # Same floor as upload_video's chunked PUT: the default 15s timeout is
+        # too short for a synchronous R2 upload + real VLM inference.
         return self._post(
             f"{self.base_url}/api/v1/incidents/{video_id}/analyze",
             json={"reasoning": reasoning},
+            timeout=max(self.timeout, 120.0),
         )
 
     def search(self, query: str, *, top_k: int = 10) -> Result:
