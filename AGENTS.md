@@ -48,6 +48,23 @@ field instead, since `sensor_id` alone is not durable enough to serve as `videos
 but the agent's own sensor-id validation allows up to 128 chars): see `catalog_actions.derive_video_id()`
 for the id it derives instead, and `pages/1_Catalog.py` for the upload/analyze/status-poll UI built on it.
 
+## incident-console `/analyze` endpoint (server-side)
+
+`POST /api/v1/incidents/{incident_id}/analyze` (the incident-console's AI trigger, called by
+`agent_client.py::analyze_incident`) is implemented in `services/agent/src/vss_agents/api/incident_analyze.py`,
+which resolves and invokes the `incident_report_gen` tool
+(`services/agent/src/vss_agents/tools/incident_report_gen.py`). That tool wraps `video_report_gen`, extracts a
+structured `IncidentReport` (`services/agent/src/vss_agents/data_models/incident_report.py` - mirror this
+field-for-field with the console's own copy in `incident-console/incident_report.py`, since the console parses
+this tool's output directly) via `llm.with_structured_output`, derives `incident_start`/`incident_end` from the
+report's `[Xs-Ys]` timestamp chunks (never trusts the LLM for those two fields), and persists the result through
+`incident_db.py` best-effort (never breaks generation on a DB outage). `incident_id` in the route is the same VST
+sensor id used everywhere else in the agent's video APIs, per the schema's 1-video-=-1-incident identity rule.
+Only `dev-profile-incident`'s vss-agent config
+(`deploy/docker/developer-profiles/dev-profile-incident/vss-agent/configs/config.yml`) wires this tool up and
+sets `video_report_gen.hitl_enabled: false` (the one-click `/analyze` POST has no round-trip for HITL prompt
+confirmation) - other profiles' configs are unaffected.
+
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
 [`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
