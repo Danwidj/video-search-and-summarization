@@ -134,9 +134,10 @@ class AgentClient:
                 timeout=max(self.timeout, 120.0),
             )
             put.raise_for_status()
-            body = put.json() if put.headers.get("content-type", "").startswith("application/json") else {}
         except httpx.HTTPError as exc:
             return Result(ok=False, error=f"chunked upload to nvstreamer failed: {exc}")
+        try:
+            body = put.json()
         except ValueError:
             body = {}
         sensor_id = body.get("sensorId") or body.get("sensor_id")

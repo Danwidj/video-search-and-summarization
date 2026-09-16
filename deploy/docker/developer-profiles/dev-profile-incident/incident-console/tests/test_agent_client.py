@@ -164,6 +164,51 @@ def test_upload_video_success_extracts_sensor_id_and_filepath(monkeypatch):
     assert res.data["filepath"] == "http://vst/videos/clip.mp4"
 
 
+def test_upload_video_parses_json_body_sent_with_text_plain_content_type(monkeypatch):
+    """Regression test for a real bug: the VST/nginx stack fronting the real
+    chunked-upload endpoint responds with a JSON-shaped body but a
+    ``Content-Type: text/plain`` header, not ``application/json``. Gating the
+    parse on that header made the client silently discard the real body and
+    fall back to ``{}``, so ``sensorId`` was always reported missing even
+    though it was present.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            return httpx.Response(
+                200,
+                content=b'{"sensorId": "sensor-abc", "filePath": "http://vst/videos/clip.mp4"}',
+                headers={"content-type": "text/plain"},
+            )
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok", "sensor_id": "sensor-abc", "filename": "clip.mp4"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(handler))
+    res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+
+    assert res.ok is True
+    assert res.data["sensor_id"] == "sensor-abc"
+    assert res.data["filepath"] == "http://vst/videos/clip.mp4"
+
+
+def test_upload_video_falls_back_to_empty_body_on_unparseable_response(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            return httpx.Response(200, content=b"not json at all", headers={"content-type": "text/plain"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(handler))
+    res = AgentClient(base_url="http://agent", llm_base_url="").upload_video(filename="clip.mp4", content=b"bytes")
+
+    assert res.ok is False
+    assert "did not return a sensorId" in res.error
+
+
 def test_upload_video_falls_back_to_vst_url_when_chunk_response_lacks_filepath(monkeypatch):
     def post_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/videos":
