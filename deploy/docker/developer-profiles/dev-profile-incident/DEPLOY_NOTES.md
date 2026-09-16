@@ -7,15 +7,11 @@ Everything fixed tonight on kwanz-ws, the current live state, and how anyone on 
 Nothing below needs to be repeated per-person — the VM deployment is shared. Each person just needs:
 
 1. **SSH access to kwanz-ws under your own account** (you should already have one — `yang`, `faith`, `claris`, `heng` each have their own checkout under `/home/`).
-2. **A tunnel from your own laptop**, forwarding the ports the console/agent/AI stack use:
+2. **A tunnel from your own laptop**, forwarding every port the stack needs (agent 8000, NIMs 30081/30082, ingress 7777, console 8501) — one command, the `mdx-tunnel-incident` alias from `deploy/dotfiles/`:
    ```bash
-   ssh -N -L 8000:10.131.1.5:8000 \
-       -L 30081:10.131.1.5:30081 \
-       -L 30082:10.131.1.5:30082 \
-       -L 7777:10.131.1.5:7777 \
-       -L 8501:10.131.1.5:8501 \
-       <your-username>@kwanz-ws
+   mdx-tunnel-incident
    ```
+   It forwards all five ports via `$VSS_VM_IP`/`$VSS_SSH_TARGET` (no hardcoded address — override those vars only if your login or the VM address differs); see its definition in `deploy/dotfiles/aliases.sh` for the underlying `ssh -N -L ...` forwards.
    Leave this running in its own terminal (it's supposed to sit there silently — that's correct, not stuck).
 3. Open the console in your browser at **`http://localhost:8501`** — it runs as a container on the VM itself, so everyone is looking at the same live instance, not separate copies.
 
@@ -74,6 +70,7 @@ sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-inc
 ## PRs opened tonight
 
 - **PR #33** — `feat(agent): wire up incident-console /analyze endpoint for real report generation` — https://github.com/Danwidj/video-search-and-summarization/pull/33
+- **PR #34** — youfarny's parallel "mock incident analyze R2 flow" PR — https://github.com/Danwidj/video-search-and-summarization/pull/34
 - **PR #35** — fix for the upload flow's content-type parsing bug (backend returns JSON as `text/plain`, client silently discarded it) — https://github.com/Danwidj/video-search-and-summarization/pull/35
 
-Both were still finishing their automated CI wait as of this writing — this repo has no CI checks actually configured, so that step just takes a long time to conclude there's nothing to wait for (confirmed normal behavior against prior merged PRs in this repo).
+This repo has no CI configured (there is no `.github/workflows/` directory), so no automated checks gate these PRs — review and merge when ready.
