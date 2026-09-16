@@ -101,31 +101,34 @@ mdx-down() {
 alias mdx-health='curl -sf --max-time 15 http://localhost:8000/health && echo "agent ok"'
 
 # --- kwanz-ws backend tunnel (LAPTOP SIDE ONLY) ------------------------------
-# Phase 4 design: incident-console runs on the captain's laptop, the real
-# backend runs on kwanz-ws; an SSH tunnel connects the two (same pattern as
-# the base-profile VSS UI tunnel in docs/incident-plan/incident-plan-overview.md:
+# The incident-console Streamlit UI runs as a container on kwanz-ws (see
+# dev-profile-incident/DEPLOY_NOTES.md); an SSH tunnel connects your laptop
+# browser to the VM's already-deployed stack (same pattern as the
+# base-profile VSS UI tunnel in docs/incident-plan/incident-plan-overview.md:
 # `ssh -N -L 7777:10.131.1.5:7777 daniel@kwanz-ws`). Unlike every other mdx-*
 # wrapper in this file, these run on YOUR LAPTOP, not on the VM: they forward
-# laptop-local ports to the VM's already-deployed stack, so the laptop console
-# reaches the real backend instead of the mock. Do not run them on kwanz-ws
-# itself (forwarding the VM to itself is at best a no-op).
+# laptop-local ports to the VM's stack, so the laptop browser reaches the
+# same live instance everyone shares. Do not run them on kwanz-ws itself
+# (forwarding the VM to itself is at best a no-op).
 #
 # Forwarded ports mirror the backend's real ports one-to-one
 # (dev-profile-base/.env: VSS_AGENT_PORT=8000, LLM_PORT=30081,
-# VLM_PORT=30082), so the incident-console placeholders keep working unchanged
-# through the tunnel: INCIDENT_AGENT_BASE_URL=http://localhost:8000
-# (dev-profile-incident/.env) already points at the tunneled agent, and the
-# tunneled LLM is http://localhost:30081/v1 (set in the untracked
-# incident-console/.env.local, replacing the mock default
-# http://localhost:8900/v1 - see incident-console/README.md). Override
-# VSS_SSH_TARGET / VSS_VM_IP only when your login or the VM address differs
-# from the defaults below.
+# VLM_PORT=30082; dev-profile-incident/.env: HAPROXY_PORT=7777;
+# INCIDENT_CONSOLE_PORT, Streamlit default 8501), so the usual laptop-side
+# URLs keep working unchanged through the tunnel:
+# http://localhost:8000/health for the agent health check (see
+# dev-profile-incident/.env INCIDENT_AGENT_BASE_URL), the tunneled LLM at
+# http://localhost:30081/v1 (set in the untracked incident-console/.env.local,
+# replacing the mock default http://localhost:8900/v1 - see
+# incident-console/README.md), and the console itself at
+# http://localhost:8501. Override VSS_SSH_TARGET / VSS_VM_IP only when your
+# login or the VM address differs from the defaults below.
 VSS_SSH_TARGET="${VSS_SSH_TARGET:-daniel@kwanz-ws}"
 VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
 
 # Open the tunnel in the foreground (Ctrl-C closes it). Run this first, then
-# start the laptop console in another terminal. Add `-f` to background it,
-# and prove the forwards with mdx-tunnel-incident-check.
+# open the VM-hosted console at http://localhost:8501. Add `-f` to background
+# it, and prove the forwards with mdx-tunnel-incident-check.
 mdx-tunnel-incident() {
   if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then
     echo "mdx-tunnel-incident: run this from your laptop, not on kwanz-ws (it forwards laptop ports to the VM)." >&2
@@ -135,6 +138,8 @@ mdx-tunnel-incident() {
     -L 8000:"$VSS_VM_IP":8000 \
     -L 30081:"$VSS_VM_IP":30081 \
     -L 30082:"$VSS_VM_IP":30082 \
+    -L 7777:"$VSS_VM_IP":7777 \
+    -L 8501:"$VSS_VM_IP":8501 \
     "$VSS_SSH_TARGET"
 }
 
@@ -149,6 +154,8 @@ mdx-tunnel-incident-check() {
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://localhost:${port}/v1/models" || echo 000)"
     echo "nim :${port} -> ${VSS_VM_IP}:${port}: HTTP ${code}"
   done
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8501/ || echo 000)"
+  echo "console :8501 -> ${VSS_VM_IP}:8501: HTTP ${code}"
 }
 
 # Tail logs for one container (default: vss-agent, the one service every
