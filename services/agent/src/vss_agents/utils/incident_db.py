@@ -192,6 +192,11 @@ class IncidentDB:
             row = await conn.fetchrow("SELECT * FROM videos WHERE id = $1" + suffix, video_id)
         return _row_to_dict(row)
 
+    async def update_video(self, video_id: str, *, filepath: str | None) -> None:
+        """Point an existing video row at its durable R2 object key."""
+        async with self._acquire() as conn:
+            await conn.execute("UPDATE videos SET filepath = $2 WHERE id = $1", video_id, filepath)
+
     async def list_videos(self) -> list[dict[str, Any]]:
         async with self._acquire() as conn:
             rows = await conn.fetch("SELECT * FROM videos ORDER BY id")

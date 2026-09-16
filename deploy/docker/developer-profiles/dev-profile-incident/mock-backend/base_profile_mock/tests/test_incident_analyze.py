@@ -5,10 +5,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
 from base_profile_mock.app import create_app
 from base_profile_mock.routers import incident_analyze
 from base_profile_mock.state import get_state
-from fastapi.testclient import TestClient
 
 
 class FakeWriter:
@@ -16,11 +17,14 @@ class FakeWriter:
         self.calls = []
 
     async def get_video(self, video_id):
-        return {"id": video_id}
+        return {"id": video_id, "source": "sensor-1"}
 
     @asynccontextmanager
     async def transaction(self):
         yield self
+
+    async def update_video(self, *args, **kwargs):
+        self.calls.append(("video", args, kwargs))
 
     async def insert_model_run(self, *args, **kwargs):
         self.calls.append(("run", args, kwargs))
@@ -37,19 +41,30 @@ class FakeWriter:
 
 def test_analyze_persists_mock_report_and_evidence(monkeypatch):
     fake = FakeWriter()
-    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=lambda: fake))
 
     # get_db is async in production; make the fake match it.
     async def get_db():
         return fake
 
     monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    monkeypatch.setattr(
+        incident_analyze,
+        "_upload_video_to_r2",
+        lambda **_kwargs: "anomaly/fighting/clip.mp4",
+    )
+    state = get_state()
+    state.uploads.clear()
+    state.streams.clear()
+    state.streams["sensor-1"] = SimpleNamespace(filename="clip.mp4", content=b"video-bytes")
     response = TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json={})
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed" and body["mock"] is True
-    assert [call[0] for call in fake.calls] == ["run", "incident", "entity", "report"]
-    assert "MOCK" in fake.calls[1][2]["fields"]["description"]
+    assert body["video_filepath"] == "anomaly/fighting/clip.mp4"
+    assert body["incident_type"] in {"road accident", "fighting", "animal", "burglary", "explosion"}
+    assert [call[0] for call in fake.calls] == ["video", "run", "incident", "entity", "report"]
+    assert fake.calls[0][2] == {"filepath": "anomaly/fighting/clip.mp4"}
+    assert "MOCK" in fake.calls[2][2]["fields"]["description"]
 
 
 def test_analyze_rejects_missing_video(monkeypatch):
@@ -64,6 +79,39 @@ def test_analyze_rejects_missing_video(monkeypatch):
     monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
     response = TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json={})
     assert response.status_code == 404
+
+
+def test_analyze_rejects_missing_uploaded_bytes(monkeypatch):
+    class MissingBytes:
+        async def get_video(self, _id):
+            return {"id": "video-1", "source": "sensor-missing"}
+
+    async def get_db():
+        return MissingBytes()
+
+    state = get_state()
+    state.uploads.clear()
+    state.streams.clear()
+    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    response = TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json={})
+    assert response.status_code == 409
+
+
+def test_analyze_reuses_existing_r2_object_key(monkeypatch):
+    fake = FakeWriter()
+
+    async def get_db():
+        return fake
+
+    async def get_video(_video_id):
+        return {"id": "video-1", "filepath": "anomaly/burglary/clip.mp4", "source": None}
+
+    fake.get_video = get_video
+    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    response = TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json={})
+    assert response.status_code == 200
+    assert response.json()["video_filepath"] == "anomaly/burglary/clip.mp4"
+    assert fake.calls[0] == ("video", ("video-1",), {"filepath": "anomaly/burglary/clip.mp4"})
 
 
 def test_uploaded_bytes_are_playable_from_vst_url():

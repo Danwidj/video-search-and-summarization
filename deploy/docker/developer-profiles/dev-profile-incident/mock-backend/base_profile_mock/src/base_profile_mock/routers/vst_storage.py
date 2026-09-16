@@ -15,7 +15,6 @@ import uuid
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
-from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 
