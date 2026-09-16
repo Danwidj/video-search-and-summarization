@@ -9,7 +9,9 @@
 #      Leave it running; Ctrl-C closes it.
 #   2. UI window: runs the console locally per incident-console/README.md
 #      ("Real backend on kwanz-ws via SSH tunnel", Phase 4):
-#      cd incident-console && uv sync && uv run streamlit run app.py,
+#      cd incident-console && uv sync && uv run streamlit run app.py
+#      --server.port 8502 (:8502, so it never clashes with the tunnel's
+#      :8501 forward for the VM-hosted console),
 #      talking to the VM backend through the tunnel. DB/R2/URLs come from
 #      your untracked incident-console/.env.local (see that README).
 #
@@ -24,9 +26,9 @@
 # Notes:
 # - The tunnel also forwards :8501 for the VM-hosted console
 #   (DEPLOY_NOTES.md flow: open http://localhost:8501 in a browser).
-#   That clashes with a locally-run Streamlit, which also defaults to
-#   :8501 - if Streamlit complains the port is taken, answer its prompt
-#   or re-run with --server.port.
+#   The locally-run Streamlit therefore uses :8502 (--server.port 8502)
+#   so the two consoles never fight over :8501. Open the local one at
+#   http://localhost:8502 and the VM-hosted one at http://localhost:8501.
 # - Both windows set `wait after command` so a fast failure (ssh down,
 #   missing DSN) stays visible instead of flashing closed.
 # - Only syntax-checked here (bash -n, osacompile); window-spawning was
@@ -61,7 +63,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 TUNNEL_CMD="source '$ALIASES' && mdx-tunnel-incident"
-UI_CMD="cd '$CONSOLE_DIR' && uv sync && uv run streamlit run app.py"
+UI_CMD="cd '$CONSOLE_DIR' && uv sync && uv run streamlit run app.py --server.port 8502"
 
 osascript <<EOF
 tell application "Ghostty"
@@ -82,8 +84,8 @@ end tell
 EOF
 
 cat <<EOF
-Launched two Ghostty windows: tunnel (mdx-tunnel-incident) + local console.
-Next: run mdx-tunnel-incident-check once the tunnel is up, then use the
-local Streamlit URL printed in the UI window - or open the VM-hosted
+Launched two Ghostty windows: tunnel (mdx-tunnel-incident) + local console (:8502).
+Next: run mdx-tunnel-incident-check once the tunnel is up, then open the
+local Streamlit at http://localhost:8502 - or open the VM-hosted
 console directly at http://localhost:8501 through the tunnel.
 EOF

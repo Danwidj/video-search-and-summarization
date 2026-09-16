@@ -83,8 +83,10 @@ Then start a new shell (or `source ~/.bashrc`).
   so the tunnel functions ship through that same channel on next re-run.
 - **`launch-incident-local.sh`** — laptop-side macOS/Ghostty launcher for the
   local-dev loop: opens one Ghostty window running `mdx-tunnel-incident`
-  and a second running the console locally (`uv run streamlit run app.py`
-  per `incident-console/README.md` Phase 4). Run with
+  and a second running the console locally (`uv run streamlit run app.py
+  --server.port 8502` per `incident-console/README.md` Phase 4, on :8502 so it
+  never clashes with the tunnel's :8501 forward for the VM-hosted console).
+  Run with
   `bash deploy/dotfiles/launch-incident-local.sh` from your checkout; needs
   Ghostty >= 1.3.0 (AppleScript) and `uv` on PATH. See its header comment
-  for the `:8501` caveat (tunnel forward vs. local Streamlit default port).
+  for the `:8501` vs `:8502` port split.
