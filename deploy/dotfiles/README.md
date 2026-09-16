@@ -75,8 +75,16 @@ Then start a new shell (or `source ~/.bashrc`).
   the one exception to "this file runs on the VM": these two run on your
   **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
   the laptop-local incident-console reaches the real kwanz-ws backend
-  (agent :8000, LLM :30081, VLM :30082) instead of the mock. Phase 4 design:
+  (agent :8000, LLM :30081, VLM :30082, ingress :7777, console :8501) instead of
+  the mock. Phase 4 design:
   the console never deploys to the VM; the VM runs only the backend stack.
   No `bootstrap.sh` / `shellrc.sh` change was needed for them: the bootstrap
   already copies `aliases.sh` verbatim and `shellrc.sh` already sources it,
   so the tunnel functions ship through that same channel on next re-run.
+- **`launch-incident-local.sh`** — laptop-side macOS/Ghostty launcher for the
+  local-dev loop: opens one Ghostty window running `mdx-tunnel-incident`
+  and a second running the console locally (`uv run streamlit run app.py`
+  per `incident-console/README.md` Phase 4). Run with
+  `bash deploy/dotfiles/launch-incident-local.sh` from your checkout; needs
+  Ghostty >= 1.3.0 (AppleScript) and `uv` on PATH. See its header comment
+  for the `:8501` caveat (tunnel forward vs. local Streamlit default port).
