@@ -40,9 +40,13 @@ No rate limiting — every request is local, no dependency on a hosted endpoint'
 - **LLM** (`deploy/docker/services/nim/nvidia-nemotron-nano-9b-v2/hw-OTHER.env`): `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEM_FRACTION=0.8`, `NIM_MAX_NUM_SEQS=4`, `NIM_MAX_MODEL_LEN=128000`, `NIM_LOW_MEMORY_MODE=1`.
 - **VLM** (`deploy/docker/services/nim/cosmos3-reasoner/hw-OTHER.env`): `NIM_KVCACHE_PERCENT=0.8`, `NIM_GPU_MEMORY_UTILIZATION=0.8`, `NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.8"`, `NIM_MAX_MODEL_LEN=32768`, `NIM_MAX_NUM_SEQS=4`.
 
-The `--llm-env-file`/`--vlm-env-file` override files in §3 below (`/srv/rise-up/vss-llm-override.env`, `/srv/rise-up/vss-vlm-override.env`) carry the same values through the older manual path - superseded by the populated `hw-OTHER.env` files, kept only as a fallback if per-deploy overrides are ever needed again.
+**`hw-OTHER-shared.env` sizing is likewise folded in (not just the dedicated files).** The shared-topology files now carry the verified search `0.55` values (§3), so search-local and incident-local shared-GPU deploys also need no `--llm-env-file`/`--vlm-env-file` flags:
+- **LLM** (`deploy/docker/services/nim/nvidia-nemotron-nano-9b-v2/hw-OTHER-shared.env`): `NIM_KVCACHE_PERCENT=0.55`, `NIM_GPU_MEM_FRACTION=0.55`, `NIM_MAX_NUM_SEQS=4`, `NIM_MAX_MODEL_LEN=128000`, `NIM_LOW_MEMORY_MODE=1`.
+- **VLM** (`deploy/docker/services/nim/cosmos3-reasoner/hw-OTHER-shared.env`): `NIM_KVCACHE_PERCENT=0.55`, `NIM_GPU_MEMORY_UTILIZATION=0.55`, `NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.55"`, `NIM_MAX_MODEL_LEN=16384`, `NIM_MAX_NUM_SEQS=4`, `MAX_JOBS=4`, `NIM_DISABLE_MM_PREPROCESSOR_CACHE=1`, `NIM_DELETE_LAST_FRAMES=1` (plus the pre-existing `NIM_MODEL_PROFILE` BF16 pin, unchanged).
 
-Note: the sizing values above are dedicated-mode values - if GPU placement ever moves to `local_shared`, re-check whether they still apply, since the field notes distinguish dedicated-mode from shared-mode tuning.
+The old `--llm-env-file`/`--vlm-env-file` override files on the VM (`/srv/rise-up/vss-llm-override.env`, `/srv/rise-up/vss-vlm-override.env`, `/srv/rise-up/vss-search-llm-override.env`, `/srv/rise-up/vss-search-vlm-override.env`) are superseded by the populated stock files and no tracked deploy command passes them anymore - **manual follow-up: delete those four files on the VM**. The `--llm-env-file`/`--vlm-env-file` CLI flags themselves remain in `dev-profile.sh` as an inert generic mechanism (unset → empty `fallback-override.env`), not as anything this VM's deploys use.
+
+Note: dedicated-mode (`hw-OTHER.env`, `0.8`) and shared-mode (`hw-OTHER-shared.env`, `0.55`) tuning intentionally differ - the field notes distinguish the two topologies, so do not homogenise them.
 
 **GPU device topology.** `dev-profile-search/.env:43-48` currently holds this 2-GPU split — **but check this is `dev-profile-search`'s committed upstream default before relying on it**: `git diff` on this VM shows `.env` has an uncommitted local edit changing `VLM_DEVICE_ID` from the committed default `'2'` to `'1'` (and `LLM_NAME`/`LLM_NAME_SLUG` from `nvidia-nemotron-nano-9b-v2` to `nemotron-3-nano`). The values below reflect this VM's current working copy, not necessarily what a fresh clone of `dev-profile-search` would ship with:
 ```
@@ -140,28 +144,7 @@ Verified/derived configs for running NVIDIA's own `base`/`search` profiles direc
 
 One model per GPU (`--llm-device-id 0`, `--vlm-device-id 1`) — confirmed this is what fixed a crash loop. This validates §1's flag: sharing one GPU between LLM+VLM (as this plan's `local_shared` topology originally assumed) is the untested/risky configuration, not the safe default.
 
-`--hardware-profile OTHER` is required since the A6000 isn't one of NVIDIA's tuned classes. Manual override-file path (superseded - same values now live in `hw-OTHER.env` per §1; use only if per-deploy overrides are needed):
-
-`vss-llm-override.env`:
-```
-NIM_KVCACHE_PERCENT=0.8
-NIM_GPU_MEM_FRACTION=0.8
-NIM_MAX_NUM_SEQS=4
-NIM_MAX_MODEL_LEN=128000
-NIM_LOW_MEMORY_MODE=1
-```
-
-`vss-vlm-override.env`:
-```
-NIM_KVCACHE_PERCENT=0.8
-NIM_GPU_MEMORY_UTILIZATION=0.8
-NIM_PASSTHROUGH_ARGS="--gpu-memory-utilization 0.8"
-NIM_MAX_MODEL_LEN=32768
-NIM_MAX_NUM_SEQS=4
-MAX_JOBS=4
-NIM_DISABLE_MM_PREPROCESSOR_CACHE=1
-NIM_DELETE_LAST_FRAMES=1
-```
+`--hardware-profile OTHER` is required since the A6000 isn't one of NVIDIA's tuned classes. Tuning comes from the stock `hw-OTHER.env` files (§1) - no override files, no `--llm-env-file`/`--vlm-env-file` flags (the manual override-file path that used to be documented here carried the same `0.8` values and is now deleted; its VM files are covered by §1's manual-cleanup note).
 
 `--host-ip 10.131.1.5` (real VM IP, for container-to-container calls) / `--external-ip localhost` (for the browser via SSH tunnel) — resolves §1's flagged `--host-ip`/`--external-ip` gap with this VM's actual confirmed values.
 
@@ -173,9 +156,7 @@ Prerequisite: `ngc` CLI on `PATH` (e.g. `/srv/rise-up/bin/ngc`) — the deploy s
 ./deploy/docker/scripts/dev-profile.sh up --profile search --hardware-profile OTHER \
   --host-ip 10.131.1.5 --external-ip localhost \
   --llm nvidia/nvidia-nemotron-nano-9b-v2 --llm-device-id 1 \
-  --llm-env-file /srv/rise-up/vss-search-llm-override.env \
-  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1 \
-  --vlm-env-file /srv/rise-up/vss-search-vlm-override.env
+  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1
 ```
 
 `--vlm-device-id 0` is rejected (device 0 is reserved for this profile), so the VLM moves to GPU 0 after deploy: append `SHARED_LLM_VLM_DEVICE_ID=0` to `dev-profile-search/generated.env` and recreate the VLM service. `RT_EMBED_DEVICE_ID` has no CLI flag — set it to `0` in the same file and recreate `rtvi-embed`, leaving GPU 1 for the LLM alone. From `deploy/docker/`:
@@ -186,7 +167,9 @@ docker compose --env-file developer-profiles/dev-profile-search/generated.env up
 
 Final layout: GPU 0 holds RT-CV + RT-Embed + VLM; GPU 1 holds the LLM alone.
 
-`/srv/rise-up/vss-search-llm-override.env`:
+Tuning comes from the stock `hw-OTHER-shared.env` files (§1) - no override files, no `--llm-env-file`/`--vlm-env-file` flags. The values below are what now lives in those stock files (shown so an operator can `grep` to verify; the stock files are authoritative, not this listing):
+
+`nvidia-nemotron-nano-9b-v2/hw-OTHER-shared.env` (was `/srv/rise-up/vss-search-llm-override.env`):
 ```
 NIM_KVCACHE_PERCENT=0.55
 NIM_GPU_MEM_FRACTION=0.55
@@ -195,7 +178,7 @@ NIM_MAX_MODEL_LEN=128000
 NIM_LOW_MEMORY_MODE=1
 ```
 
-`/srv/rise-up/vss-search-vlm-override.env`:
+`cosmos3-reasoner/hw-OTHER-shared.env` (was `/srv/rise-up/vss-search-vlm-override.env`):
 ```
 NIM_KVCACHE_PERCENT=0.55
 NIM_GPU_MEMORY_UTILIZATION=0.55
