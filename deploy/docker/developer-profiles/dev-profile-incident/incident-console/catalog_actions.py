@@ -57,7 +57,10 @@ def upload_and_record(agent: AgentClient, db: IncidentDB, *, filename: str, cont
     if not sensor_id:
         return Result(ok=False, error=f"upload succeeded but no sensor_id was returned: {result.data!r}")
     video_id = derive_video_id(sensor_id)
-    db.upsert_video(video_id, filepath=data.get("filepath"), source=sensor_id)
+    # The current schema treats videos.filepath as the durable R2 object key.
+    # Upload is too early to know the incident category, so analyze writes the
+    # categorized key after it uploads the bytes to R2.
+    db.upsert_video(video_id, filepath=None, source=sensor_id)
     return Result(ok=True, data=video_id, status_code=result.status_code)
 
 

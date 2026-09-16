@@ -402,6 +402,37 @@ async def test_get_db_returns_and_caches_instance(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_video_issues_update_sql():
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    await db.update_video("vid-1", filepath="r2/key.mp4")
+    conn.execute.assert_awaited_once_with("UPDATE videos SET filepath = $2 WHERE id = $1", "vid-1", "r2/key.mp4")
+
+
+@pytest.mark.asyncio
+async def test_transaction_binds_writer_to_single_connection():
+    conn = _make_mock_conn()
+    conn.fetchrow = AsyncMock(return_value={"id": "vid-1", "filepath": "r2/key.mp4"})
+    db = IncidentDB(_make_mock_pool(conn))
+    async with db.transaction() as tx:
+        await tx.update_video("vid-1", filepath="r2/key.mp4")
+        row = await tx.get_video("vid-1", for_update=True)
+    conn.transaction.assert_called_once()
+    conn.execute.assert_awaited_once_with("UPDATE videos SET filepath = $2 WHERE id = $1", "vid-1", "r2/key.mp4")
+    assert row == {"id": "vid-1", "filepath": "r2/key.mp4"}
+    sql = conn.fetchrow.await_args.args[0]
+    assert sql.endswith("FOR UPDATE")
+
+
+@pytest.mark.asyncio
+async def test_get_video_for_update_requires_transaction():
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    with pytest.raises(ValueError, match="for_update requires a transaction"):
+        await db.get_video("vid-1", for_update=True)
+
+
+@pytest.mark.asyncio
 async def test_get_db_concurrent_callers_do_not_race_to_double_connect(monkeypatch):
     """Two coroutines racing on the lazy singleton must share one pool, not leak a second."""
     monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://host/db")

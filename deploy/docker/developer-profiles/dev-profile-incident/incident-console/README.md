@@ -111,10 +111,11 @@ export INCIDENT_LLM_BASE_URL=http://localhost:8900/v1
 exercises the same route → parse → Postgres-write path the real agent will use
 for the deferred report-generation flow (`agent_client.py`).
 
-The two agent AI-trigger endpoints —
-`POST /api/v1/incidents/{id}/analyze` and `POST /api/v1/search` — do **not**
-exist server-side yet (follow-up task). The client is written against the
-plan's contract and returns a "not implemented yet" notice when they 404.
+The local `base_profile_mock` implements
+`POST /api/v1/incidents/{id}/analyze` as an explicitly mock, Postgres-backed
+report generator. The real `vss-agent` analyze route and
+`POST /api/v1/search` are still follow-up work, so the client keeps returning a
+"not implemented yet" notice when a configured backend 404s those endpoints.
 
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
