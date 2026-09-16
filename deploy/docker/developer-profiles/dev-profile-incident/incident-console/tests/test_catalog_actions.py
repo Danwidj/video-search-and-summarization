@@ -53,7 +53,9 @@ def test_upload_and_record_creates_a_video_row_on_success(incident_db: IncidentD
     assert result.ok is True
     video_id = result.data
     row = incident_db.get_video(video_id)
-    assert row["filepath"] == "http://vst/clip.mp4"
+    # videos.filepath stores the categorized R2 object key, which is only known
+    # after analyze chooses the incident type and uploads the bytes to R2.
+    assert row["filepath"] is None
     assert row["source"] == "sensor-abc123"
 
 

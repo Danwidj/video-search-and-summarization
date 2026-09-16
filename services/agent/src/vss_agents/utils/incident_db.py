@@ -47,12 +47,17 @@ default is ``min_size=1, max_size=2`` (see :data:`DEFAULT_MIN_POOL_SIZE` /
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import datetime as _dt
 import logging
 import os
+from typing import TYPE_CHECKING
 from typing import Any
 
 import asyncpg
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +80,10 @@ def is_configured() -> bool:
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.UTC)
+    # The console schema uses PostgreSQL ``timestamp without time zone``.
+    # asyncpg rejects aware values for that type, so store UTC as a naive value
+    # (matching SQLAlchemy's ``db.py`` default).
+    return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
 
 
 def _row_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
@@ -85,8 +93,28 @@ def _row_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
 class IncidentDB:
     """Thin async CRUD wrapper around one ``asyncpg`` connection pool."""
 
-    def __init__(self, pool: asyncpg.Pool):
+    def __init__(self, pool: asyncpg.Pool, *, connection: asyncpg.Connection | None = None):
         self.pool = pool
+        self._connection = connection
+
+    @asynccontextmanager
+    async def _acquire(self) -> AsyncIterator[asyncpg.Connection]:
+        if self._connection is not None:
+            yield self._connection
+        else:
+            async with self.pool.acquire() as conn:
+                yield conn
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[IncidentDB]:
+        """Yield a writer bound to one transaction; use it only inside this context.
+
+        All CRUD calls on the yielded writer share the connection. Existing
+        method-level transactions become savepoints, so a later failure rolls
+        back the entire operation (including its incident/review status).
+        """
+        async with self._acquire() as conn, conn.transaction():
+            yield IncidentDB(self.pool, connection=conn)
 
     # -- lifecycle --------------------------------------------------------#
     @classmethod
@@ -122,7 +150,7 @@ class IncidentDB:
 
     async def healthcheck(self) -> tuple[bool, str]:
         try:
-            async with self.pool.acquire() as conn:
+            async with self._acquire() as conn:
                 await conn.fetchval("SELECT 1")
             return True, "ok"
         except (asyncpg.PostgresError, OSError) as exc:
@@ -138,7 +166,7 @@ class IncidentDB:
         source: str | None = None,
     ) -> str:
         """Insert or update the ``videos`` row for this id (the natural key)."""
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO videos (id, filepath, duration, source, uploaded_datetime)
@@ -156,18 +184,26 @@ class IncidentDB:
             )
         return video_id
 
-    async def get_video(self, video_id: str) -> dict[str, Any] | None:
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM videos WHERE id = $1", video_id)
+    async def get_video(self, video_id: str, *, for_update: bool = False) -> dict[str, Any] | None:
+        if for_update and self._connection is None:
+            raise ValueError("for_update requires a transaction-bound writer")
+        async with self._acquire() as conn:
+            suffix = " FOR UPDATE" if for_update else ""
+            row = await conn.fetchrow("SELECT * FROM videos WHERE id = $1" + suffix, video_id)
         return _row_to_dict(row)
 
+    async def update_video(self, video_id: str, *, filepath: str | None) -> None:
+        """Point an existing video row at its durable R2 object key."""
+        async with self._acquire() as conn:
+            await conn.execute("UPDATE videos SET filepath = $2 WHERE id = $1", video_id, filepath)
+
     async def list_videos(self) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             rows = await conn.fetch("SELECT * FROM videos ORDER BY id")
         return [dict(r) for r in rows]
 
     async def delete_video(self, video_id: str) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute("DELETE FROM videos WHERE id = $1", video_id)
 
     # -- model_runs -----------------------------------------------------#
@@ -187,7 +223,7 @@ class IncidentDB:
         cascades on delete, so re-registering an existing run id must not delete
         the incidents already recorded under it.
         """
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO model_runs (id, model_name, model_version, prompt_version, run_datetime, notes)
@@ -209,7 +245,7 @@ class IncidentDB:
         return model_run_id
 
     async def get_model_run(self, model_run_id: str) -> dict[str, Any] | None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM model_runs WHERE id = $1", model_run_id)
         return _row_to_dict(row)
 
@@ -234,7 +270,7 @@ class IncidentDB:
         one transaction.
         """
         payload = {k: (fields or {}).get(k) for k in self._INCIDENT_FIELDS}
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._acquire() as conn, conn.transaction():
             await conn.execute(
                 "DELETE FROM incidents WHERE incident_id = $1 AND model_run_id = $2", incident_id, model_run_id
             )
@@ -266,14 +302,14 @@ class IncidentDB:
         return incident_id, model_run_id
 
     async def get_incident(self, incident_id: str, model_run_id: str) -> dict[str, Any] | None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM incidents WHERE incident_id = $1 AND model_run_id = $2", incident_id, model_run_id
             )
         return _row_to_dict(row)
 
     async def list_incidents(self, *, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             if model_run_id is not None:
                 rows = await conn.fetch(
                     "SELECT * FROM incidents WHERE model_run_id = $1 ORDER BY incident_id", model_run_id
@@ -287,7 +323,7 @@ class IncidentDB:
         if not allowed:
             return
         set_clause = ", ".join(f"{col} = ${i + 3}" for i, col in enumerate(allowed))
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 f"UPDATE incidents SET {set_clause} WHERE incident_id = $1 AND model_run_id = $2",
                 incident_id,
@@ -296,7 +332,7 @@ class IncidentDB:
             )
 
     async def delete_incident(self, incident_id: str, model_run_id: str) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 "DELETE FROM incidents WHERE incident_id = $1 AND model_run_id = $2", incident_id, model_run_id
             )
@@ -312,7 +348,7 @@ class IncidentDB:
         description: str | None = None,
         image: str | None = None,
     ) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO entities (incident_id, entity_id, model_run_id, type, description, image)
@@ -338,7 +374,7 @@ class IncidentDB:
         threat_level: int | None = None,
         image: str | None = None,
     ) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO instruments (
@@ -365,7 +401,7 @@ class IncidentDB:
         description: str | None = None,
         image: str | None = None,
     ) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO assets (incident_id, asset_id, model_run_id, name, description, image)
@@ -380,7 +416,7 @@ class IncidentDB:
             )
 
     async def list_incident_entities(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             if model_run_id is not None:
                 rows = await conn.fetch(
                     "SELECT * FROM entities WHERE incident_id = $1 AND model_run_id = $2 ORDER BY entity_id",
@@ -394,7 +430,7 @@ class IncidentDB:
     async def list_incident_instruments(
         self, incident_id: str, model_run_id: str | None = None
     ) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             if model_run_id is not None:
                 rows = await conn.fetch(
                     "SELECT * FROM instruments WHERE incident_id = $1 AND model_run_id = $2 ORDER BY instrument_id",
@@ -408,7 +444,7 @@ class IncidentDB:
         return [dict(r) for r in rows]
 
     async def list_incident_assets(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             if model_run_id is not None:
                 rows = await conn.fetch(
                     "SELECT * FROM assets WHERE incident_id = $1 AND model_run_id = $2 ORDER BY asset_id",
@@ -421,7 +457,7 @@ class IncidentDB:
 
     # -- review_status ------------------------------------------------------#
     async def get_review_status(self, incident_id: str, model_run_id: str) -> dict[str, Any] | None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM review_status WHERE incident_id = $1 AND model_run_id = $2", incident_id, model_run_id
             )
@@ -438,7 +474,7 @@ class IncidentDB:
             raise ValueError("Invalid review status")
         if not reviewed_by.strip():
             raise ValueError("Reviewer name is required")
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._acquire() as conn, conn.transaction():
             incident_row = await conn.fetchrow(
                 "SELECT severity_level FROM incidents WHERE incident_id = $1 AND model_run_id = $2",
                 incident_id,
@@ -488,7 +524,7 @@ class IncidentDB:
 
     # -- notifications --------------------------------------------------#
     async def list_notifications(self, *, only_unacknowledged: bool = False) -> list[dict[str, Any]]:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             if only_unacknowledged:
                 rows = await conn.fetch(
                     "SELECT * FROM notifications WHERE acknowledged = FALSE ORDER BY created_at DESC"
@@ -498,7 +534,7 @@ class IncidentDB:
         return [dict(r) for r in rows]
 
     async def acknowledge_notification(self, notification_id: int) -> None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             await conn.execute("UPDATE notifications SET acknowledged = TRUE WHERE id = $1", notification_id)
 
     # -- generated report documents (reports table) ----------------------#
@@ -512,7 +548,7 @@ class IncidentDB:
         filepath: str | None = None,
         generated_datetime: _dt.datetime | None = None,
     ) -> str:
-        async with self.pool.acquire() as conn, conn.transaction():
+        async with self._acquire() as conn, conn.transaction():
             await conn.execute("DELETE FROM reports WHERE id = $1", report_id)
             await conn.execute(
                 """
@@ -529,7 +565,7 @@ class IncidentDB:
         return report_id
 
     async def get_generated_report(self, report_id: str) -> dict[str, Any] | None:
-        async with self.pool.acquire() as conn:
+        async with self._acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM reports WHERE id = $1", report_id)
         return _row_to_dict(row)
 
