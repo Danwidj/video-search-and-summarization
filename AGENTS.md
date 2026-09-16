@@ -58,9 +58,13 @@ structured `IncidentReport` (`services/agent/src/vss_agents/data_models/incident
 field-for-field with the console's own copy in `incident-console/incident_report.py`, since the console parses
 this tool's output directly) via `llm.with_structured_output`, derives `incident_start`/`incident_end` from the
 report's `[Xs-Ys]` timestamp chunks (never trusts the LLM for those two fields), and persists the result through
-`incident_db.py` best-effort (never breaks generation on a DB outage). `incident_id` in the route is the same VST
-sensor id used everywhere else in the agent's video APIs, per the schema's 1-video-=-1-incident identity rule.
-Only `dev-profile-incident`'s vss-agent config
+`incident_db.py` best-effort (never breaks generation on a DB outage), keyed by `incident_id` (not `sensor_id`,
+since `videos.id`/`incidents.incident_id` is `String(20)` while sensor ids/filenames run up to 128 chars).
+`incident_id` in the route is the console's `videos.id`, which the route resolves back to the real VST sensor id
+via `incident_analyze.py::_resolve_sensor_id` (looks up `videos.source`, falling back to `incident_id` itself if
+unconfigured/not found) before invoking the tool with both ids; `incident_report_gen.py::_derive_video_id`
+provides the same fallback derivation for callers (e.g. chat-driven `report_agent`) that never pass an explicit
+`incident_id`. Only `dev-profile-incident`'s vss-agent config
 (`deploy/docker/developer-profiles/dev-profile-incident/vss-agent/configs/config.yml`) wires this tool up and
 sets `video_report_gen.hitl_enabled: false` (the one-click `/analyze` POST has no round-trip for HITL prompt
 confirmation) - other profiles' configs are unaffected.

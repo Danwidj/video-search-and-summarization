@@ -25,21 +25,25 @@ the result via ``incident_db.py`` best-effort (a DB outage must never break
 report generation - see ``_persist_incident`` below).
 """
 
-from collections.abc import AsyncGenerator
 import asyncio
+from collections.abc import AsyncGenerator
 import hashlib
 import logging
 import re
 
-from langchain_core.exceptions import LangChainException, OutputParserException
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.exceptions import LangChainException
+from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
 from nat.builder.builder import Builder
 from nat.builder.framework_enum import LLMFrameworkEnum
 from nat.builder.function_info import FunctionInfo
 from nat.cli.register_workflow import register_function
-from nat.data_models.component_ref import FunctionRef, LLMRef
+from nat.data_models.component_ref import FunctionRef
+from nat.data_models.component_ref import LLMRef
 from nat.data_models.function import FunctionBaseConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
@@ -148,7 +152,7 @@ class IncidentReportGenOutput(VideoReportGenOutput):
 
 
 async def _extract_structured_report(
-    llm,  # noqa: ANN001 - langchain BaseChatModel, kept loose to match sibling tools
+    llm,
     content: str,
     timeout_seconds: float,
 ) -> IncidentReport:
@@ -175,7 +179,7 @@ def _derive_entity_id(incident_id: str, idx: int) -> str:
     ``incident_id`` (up to 20 chars) plus a raw ``-person-N`` suffix can
     exceed the column, so hash the pair instead of concatenating.
     """
-    return "e" + hashlib.sha256(f"{incident_id}:{idx}".encode("utf-8")).hexdigest()[:19]
+    return "e" + hashlib.sha256(f"{incident_id}:{idx}".encode()).hexdigest()[:19]
 
 
 async def _persist_incident(
@@ -219,9 +223,9 @@ async def _persist_incident(
                     type="person",
                     description=f"{person.description} {person.actions}".strip(),
                 )
-            except Exception as e:  # noqa: BLE001 - one bad entity write must not drop the rest
+            except Exception as e:
                 logger.warning("incident_report_gen: failed to persist entity %d for %s: %s", idx, incident_id, e)
-    except Exception as e:  # noqa: BLE001 - fail-soft by design, see module docstring
+    except Exception as e:
         logger.warning("incident_report_gen: failed to persist incident for %s: %s", incident_id, e)
 
 

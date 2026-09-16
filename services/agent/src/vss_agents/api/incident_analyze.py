@@ -34,10 +34,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter
+from fastapi import FastAPI
+from fastapi import HTTPException
 from nat.builder.framework_enum import LLMFrameworkEnum
 from nat.builder.workflow_builder import WorkflowBuilder
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.utils import incident_db
@@ -65,7 +68,7 @@ async def _resolve_sensor_id(incident_id: str) -> str:
         if not video or not video.get("source"):
             return incident_id
         return video["source"]
-    except Exception as exc:  # noqa: BLE001 - fail-soft, see docstring
+    except Exception as exc:
         logger.warning("incident_analyze: failed to resolve sensor_id for %s: %s", incident_id, exc)
         return incident_id
 
