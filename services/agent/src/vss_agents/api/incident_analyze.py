@@ -32,18 +32,21 @@ passes both ids through so persistence still keys off ``incident_id``.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi import FastAPI
 from fastapi import HTTPException
 from nat.builder.framework_enum import LLMFrameworkEnum
-from nat.builder.workflow_builder import WorkflowBuilder
 from pydantic import BaseModel
 from pydantic import Field
 
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.utils import incident_db
+
+if TYPE_CHECKING:
+    from nat.builder.workflow_builder import WorkflowBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +85,7 @@ class AnalyzeIncidentRequest(BaseModel):
     )
 
 
-def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:
+def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
     """Build the ``POST /api/v1/incidents/{incident_id}/analyze`` router.
 
     ``builder`` is captured once at router-build time and used to resolve the
