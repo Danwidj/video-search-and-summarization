@@ -25,6 +25,7 @@ from nat.builder.workflow_builder import WorkflowBuilder
 from nat.data_models.config import Config
 from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontEndPluginWorker
 
+from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
 from vss_agents.api.rtsp_ingest import register_rtsp_ingest_routes
 from vss_agents.api.video_delete import register_video_delete_routes
@@ -67,9 +68,9 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         logger.info("Registered custom /health endpoint (replaced NAT default)")
 
         # Register custom streaming routes per capability flags in streaming_ingest
-        self._register_streaming_routes(app)
+        self._register_streaming_routes(app, builder)
 
-    def _register_streaming_routes(self, app: FastAPI) -> None:
+    def _register_streaming_routes(self, app: FastAPI, builder: WorkflowBuilder) -> None:
         """Register the custom video / RTSP / delete routes.
 
         Every route is registered unconditionally on every profile — each
@@ -87,6 +88,10 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
           once the fixture migrates to the new three-step flow.
         - ``POST /api/v1/rtsp-streams/add`` and ``DELETE /.../delete/{name}``.
         - ``DELETE /api/v1/videos/{video_id}``.
+        - ``POST /api/v1/incidents/{incident_id}/analyze`` — the
+          incident-console AI trigger. Resolves the ``incident_report_gen``
+          tool per request rather than self-skipping, so profiles that don't
+          configure that tool get a 501 instead of a silent no-op.
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -119,3 +124,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_rtsp_ingest_routes(app, self.config)
         register_rtsp_delete_routes(app, self.config)
         register_video_delete_routes(app, self.config)
+        register_incident_analyze_routes(app, self.config, builder)

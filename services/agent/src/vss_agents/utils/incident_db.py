@@ -82,7 +82,7 @@ def is_configured() -> bool:
 def _utcnow() -> _dt.datetime:
     # The console schema uses PostgreSQL ``timestamp without time zone``.
     # asyncpg rejects aware values for that type, so store UTC as a naive value
-    # (matching SQLAlchemy's ``db.py`` default).
+    # (matching what Postgres stores for a ``timestamp without time zone`` column).
     return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
 
 
@@ -413,6 +413,19 @@ class IncidentDB:
                 name,
                 description,
                 image,
+            )
+
+    async def delete_incident_entities(self, incident_id: str, model_run_id: str) -> None:
+        """Delete this incident+run's person entities so a re-analysis starts clean.
+
+        Mirrors :meth:`insert_incident`'s delete-then-insert semantics: entity
+        ids are deterministic per (incident, person index), so re-inserting
+        without deleting first would hit primary-key violations and keep stale
+        person rows (the insert loop swallows per-entity failures by design).
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM entities WHERE incident_id = $1 AND model_run_id = $2", incident_id, model_run_id
             )
 
     async def list_incident_entities(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
