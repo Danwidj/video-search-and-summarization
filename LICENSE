@@ -10,8 +10,7 @@ This project also contains Elasticsearch, Kibana and Redis configuration files, 
    - GNU Affero General Public License v3 (AGPLv3)
 
 All contributions to this repository are accepted under the Apache-2.0 license.
-See CONTRIBUTING.md for the contribution terms and the Developer Certificate of
-Origin (DCO) sign-off requirement.
+See CONTRIBUTING.md for the contribution terms.
 
 ##########################################################################################
 
