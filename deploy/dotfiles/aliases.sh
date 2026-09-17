@@ -107,6 +107,16 @@ alias mdx-health='curl -sf --max-time 15 http://localhost:8000/health && echo "a
 # to the VM; the VM runs only the backend stack. Unlike every other mdx-*
 # wrapper in this file, these run on YOUR LAPTOP, not on the VM: they forward
 # laptop-local ports to the VM's backend. Do not run them on kwanz-ws itself
+# An SSH tunnel connects your laptop to the VM's already-deployed backend
+# stack (vss-agent, LLM/VLM NIMs, VIOS) — see dev-profile-incident/README.md's
+# "Current deployment on kwanz-ws" section for the full picture, including
+# why the incident-console Streamlit UI itself now runs on your own laptop
+# rather than on kwanz-ws. Same tunnel pattern as the
+# base-profile VSS UI tunnel in docs/incident-plan/incident-plan-overview.md:
+# `ssh -N -L 7777:10.131.1.5:7777 daniel@kwanz-ws`. Unlike every other mdx-*
+# wrapper in this file, these run on YOUR LAPTOP, not on the VM: they forward
+# laptop-local ports to the VM's stack, so the laptop reaches the same shared
+# backend everyone else does. Do not run them on kwanz-ws itself
 # (forwarding the VM to itself is at best a no-op).
 #
 # Forwarded ports mirror the backend's real ports one-to-one
