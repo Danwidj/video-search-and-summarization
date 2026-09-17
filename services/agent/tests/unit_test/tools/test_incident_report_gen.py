@@ -35,6 +35,7 @@ from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
 from vss_agents.tools.incident_report_gen import _derive_incident_bounds
 from vss_agents.tools.incident_report_gen import _derive_video_id
+from vss_agents.tools.incident_report_gen import _extract_structured_report
 from vss_agents.tools.incident_report_gen import _seconds_to_mmss
 from vss_agents.tools.incident_report_gen import incident_report_gen
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
@@ -122,6 +123,66 @@ class TestIncidentReportGenOutput:
         output = IncidentReportGenOutput()
         assert isinstance(output.structured_report, IncidentReport)
         assert output.structured_report.incident_type == "road accident"  # INCIDENT_TYPES[0]
+
+
+class TestExtractStructuredReportFailSoft:
+    """``_extract_structured_report`` must degrade to a default IncidentReport
+    on any extraction failure - timeout, parser/LangChain error, or pydantic
+    ValidationError - never raise. The ValidationError arm is the one that a
+    hosted extraction LLM returning markdown instead of parseable JSON hits
+    (see the analyzer-path 500 the ValidationError catch fixed)."""
+
+    def _structured_llm(self, *, ainvoke_side_effect):
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(side_effect=ainvoke_side_effect)
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        return llm
+
+    @pytest.mark.asyncio
+    async def test_validation_error_degrades_to_default_report(self):
+        from pydantic import BaseModel
+        from pydantic import ValidationError
+
+        class _BadModel(BaseModel):
+            x: int
+
+        try:
+            _BadModel()
+            pytest.fail("expected ValidationError from incomplete model")
+        except ValidationError as exc:
+            validation_error = exc
+        llm = self._structured_llm(ainvoke_side_effect=validation_error)
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert isinstance(result, IncidentReport)
+        assert result.incident_type == "road accident"  # fresh default
+
+    @pytest.mark.asyncio
+    async def test_markdown_string_result_validation_error_degrades(self):
+        """The exact real-world failure: with_structured_output on a hosted model
+        returns raw markdown text, and model_validate(str) raises. Must fall back,
+        not raise."""
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(return_value="**Incident Report**\n\n* not json")
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert isinstance(result, IncidentReport)
+        assert result.incident_type == "road accident"
+
+    @pytest.mark.asyncio
+    async def test_timeout_degrades_to_default_report(self):
+        llm = self._structured_llm(ainvoke_side_effect=TimeoutError)
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert isinstance(result, IncidentReport)
+
+    @pytest.mark.asyncio
+    async def test_parser_exception_degrades_to_default_report(self):
+        from langchain_core.exceptions import OutputParserException
+
+        llm = self._structured_llm(ainvoke_side_effect=OutputParserException("unparseable"))
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert isinstance(result, IncidentReport)
 
 
 class TestEndToEnd:
