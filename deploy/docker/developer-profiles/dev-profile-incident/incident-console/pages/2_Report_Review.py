@@ -20,7 +20,6 @@ import json
 from urllib.parse import quote
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from db_reports import DBReports
 from report_detail import (
@@ -40,7 +39,7 @@ def render_card_preview(url: str | None, start: int | None) -> None:
         return
     source = json.dumps(url)
     offset = int(start or 0)
-    components.html(
+    st.iframe(
         f"""
         <style>html,body{{margin:0;background:#eef2f5;overflow:hidden}}video{{display:block;width:100%;aspect-ratio:16/9;height:auto;object-fit:cover;border-radius:8px;background:#eef2f5}}</style>
         <video id="preview" muted playsinline preload="metadata"></video>
@@ -57,7 +56,6 @@ def render_card_preview(url: str | None, start: int | None) -> None:
         </script>
         """,
         height=185,
-        scrolling=False,
     )
 
 
