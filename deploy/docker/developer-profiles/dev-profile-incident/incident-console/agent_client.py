@@ -16,12 +16,11 @@
 """HTTP client for vss-agent's upload + AI-trigger API.
 
 Written against the plan's contract (incident-plan-implementation-shared.md
-S4-S5). The local ``base_profile_mock`` implements
-``POST /api/v1/incidents/{id}/analyze`` for the zero-GPU loop, while the real
-``vss-agent`` analyze route and ``POST /api/v1/search`` are still follow-up
-work. Every call fails soft: it returns a ``Result`` with ``ok=False`` and a
+S4-S5). Two of the endpoints - ``POST /api/v1/incidents/{id}/analyze`` and
+``POST /api/v1/search`` - do not exist server-side yet (that is a follow-up
+task). Every call fails soft: it returns a ``Result`` with ``ok=False`` and a
 human-readable ``error`` rather than raising, so the console stays usable when
-the agent is absent or a route is missing.
+the agent is absent or the route is missing.
 """
 
 from __future__ import annotations
@@ -63,9 +62,8 @@ class AgentClient:
 
     # -- helpers ------------------------------------------------------- #
     def _post(self, url: str, *, json: dict | None = None, **kwargs: Any) -> Result:
-        kwargs.setdefault("timeout", self.timeout)
         try:
-            resp = httpx.post(url, json=json, **kwargs)
+            resp = httpx.post(url, json=json, timeout=self.timeout, **kwargs)
         except httpx.HTTPError as exc:
             return Result(ok=False, error=f"{type(exc).__name__}: {exc}")
         return self._to_result(url, resp)
@@ -149,10 +147,7 @@ class AgentClient:
         if not sensor_id:
             return Result(ok=False, error=f"nvstreamer did not return a sensorId: {body!r}")
         filepath = body.get("filePath") or body.get("filepath")
-        # The mock returns an internal filesystem path in filePath. Resolve
-        # those through VST so the console receives a browser-playable URL;
-        # real absolute URLs and object keys remain untouched.
-        if not filepath or (isinstance(filepath, str) and filepath.startswith("/")):
+        if not filepath:
             filepath = self._video_url(sensor_id)
         step3 = self.complete_upload(sensor_id)
         return Result(
@@ -177,15 +172,12 @@ class AgentClient:
             return result.data.get("videoUrl")
         return None
 
-    # -- AI triggers (real vss-agent routes are follow-up work) ---- #
+    # -- AI triggers (endpoints are follow-up work) --------------- #
     def analyze_incident(self, video_id: int, *, reasoning: bool = False) -> Result:
         """``POST /api/v1/incidents/{id}/analyze`` - fails soft if not implemented."""
-        # Same floor as upload_video's chunked PUT: the default 15s timeout is
-        # too short for a synchronous R2 upload + real VLM inference.
         return self._post(
             f"{self.base_url}/api/v1/incidents/{video_id}/analyze",
             json={"reasoning": reasoning},
-            timeout=max(self.timeout, 120.0),
         )
 
     def search(self, query: str, *, top_k: int = 10) -> Result:
