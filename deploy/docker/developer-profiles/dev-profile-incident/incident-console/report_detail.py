@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import html
 import math
 import re
@@ -10,6 +11,7 @@ import streamlit as st
 
 from incident_report import INCIDENT_TYPES, seconds_to_timestamp
 from theme import SEVERITY_COLORS, SEVERITY_LABELS, missing_value
+from tz import DISPLAY_TZ_LABEL, to_display_tz
 from ui import video_playback_url
 
 FIELD_MAP = {
@@ -122,15 +124,21 @@ def video_panel(record, video, fields):
 
 
 def _attribution_when(value) -> str:
-    """Best-effort ``YYYY-MM-DD HH:MM UTC`` for a datetime or ISO-ish string."""
+    """Best-effort ``YYYY-MM-DD HH:MM SGT`` for a datetime or ISO-ish string.
+
+    Values are stored in UTC (see ``db._utcnow()``); converted here for
+    display only.
+    """
     if value is None or value == "":
         return ""
-    text = str(value)
     if hasattr(value, "strftime"):
-        text = value.strftime("%Y-%m-%d %H:%M")
+        text = to_display_tz(value).strftime("%Y-%m-%d %H:%M")
     else:
-        text = text.replace("T", " ")[:16]
-    return f" · {text} UTC"
+        try:
+            text = to_display_tz(_dt.datetime.fromisoformat(str(value))).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            text = str(value).replace("T", " ")[:16]
+    return f" · {text} {DISPLAY_TZ_LABEL}"
 
 
 def review_attribution_caption(record) -> None:
