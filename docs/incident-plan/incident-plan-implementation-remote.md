@@ -101,7 +101,7 @@ Reachable over the Tailscale hostname when pointing at the real VM-hosted `vss-a
 2. `cd services/ui && npm install && npx turbo dev --filter=./apps/nv-metropolis-bp-vss-ui`
 3. Point `NEXT_PUBLIC_*` vars at `http://<tailscale-host>:<HAPROXY_PORT>/...`
 
-**Agent code locally:** `services/agent` is a normal uv-managed Python package — run locally against the VM's exposed remote-LLM config/VIOS/Postgres, or `docker compose up -d --build vss-agent` on the VM for a fast single-container rebuild.
+**Agent code locally:** `services/agent` is a normal uv-managed Python package — run locally against the VM's exposed remote-LLM config/VIOS/Postgres, or `docker compose up -d --build vss-agent` on the VM for a fast single-container rebuild (the `vss-agent` compose service's `build:` block builds from `services/agent/docker/Dockerfile`; plain `up -d` without `--build` reuses whatever image is already local).
 
 **VIOS:** no dev-server mode — rebuild image + `docker compose up -d --force-recreate <vios-service>` on the VM.
 
