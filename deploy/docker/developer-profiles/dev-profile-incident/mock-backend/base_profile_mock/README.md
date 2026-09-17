@@ -5,6 +5,22 @@ A lightweight mock of the `bp_developer_base` backend - `vss-agent` API + VIOS/V
 (`services/ui/apps/nv-metropolis-bp-vss-ui`) against it with **zero GPU, zero NIM
 containers, and no VM deployment**.
 
+## ⚠️ CRITICAL WARNING: Do not point this mock at the shared/team Supabase database
+
+**Never set `INCIDENT_DB_DSN` to the shared/team Supabase Postgres project when
+running the console against this mock backend.** The mock fabricates fake video
+and report data (with `sensor-<hash>` IDs and `mock://` report paths) and writes
+it straight into the real shared catalog via `incident_db.py`. These phantom rows
+are indistinguishable from real data until someone traces the `sensor-<hash>` ID
+shape. This has already happened multiple times, polluting the shared catalog
+with 12+ fake incidents that had no real video bytes behind them.
+
+**Safe alternatives:**
+- Leave `INCIDENT_DB_DSN` **empty/unset** (offline mode) — the console shows a
+  "database not configured" state but runs without writing anywhere.
+- Use a **personal/throwaway database** (local SQLite, a personal Supabase
+  project, or a dedicated dev schema) that no one else shares.
+
 Since only `vss-agent` itself ever calls the LLM/VLM (the UI never does), this mock
 replaces vss-agent's own logic with canned/templated text generation. There is no
 separate inference mock - one process plays the role that HAProxy + vss-agent + VIOS +

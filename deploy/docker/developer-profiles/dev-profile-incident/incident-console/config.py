@@ -50,7 +50,15 @@ def _clean(value: str | None) -> str:
 
 
 def incident_db_dsn() -> str:
-    """SQLAlchemy sync URL for the incident Postgres. Empty string when unset."""
+    """SQLAlchemy sync URL for the incident Postgres. Empty string when unset.
+
+    ⚠️ WARNING: Do not set this to the shared/team Supabase DSN when
+    INCIDENT_AGENT_BASE_URL points at base_profile_mock (or any mock backend).
+    The mock writes fabricated sensor-<hash> videos and mock:// reports directly
+    into the shared catalog, polluting it with phantom rows indistinguishable from
+    real data. Use an empty/unset value (offline mode) or a personal/throwaway
+    database instead. See mock-backend/base_profile_mock/README.md.
+    """
     return _clean(os.getenv("INCIDENT_DB_DSN"))
 
 

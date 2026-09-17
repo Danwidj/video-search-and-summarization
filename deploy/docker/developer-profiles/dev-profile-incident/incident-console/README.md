@@ -32,6 +32,25 @@ data (see the next section). Other dependencies still degrade gracefully:
 - **No `INCIDENT_VIDEO_BASE_URL` and no R2 keys** → playback shows the stored key
   and the incident window instead of a player.
 
+## ⚠️ CRITICAL WARNING: Do not use the shared/team Supabase DSN with the mock backend
+
+**Never set `INCIDENT_DB_DSN` to the shared/team Supabase Postgres project when
+`INCIDENT_AGENT_BASE_URL` points at `base_profile_mock` (or any mock backend).**
+The mock fabricates fake video and report data (with `sensor-<hash>` IDs and
+`mock://` report paths) and writes it straight into the real shared catalog.
+These phantom rows are indistinguishable from real data until someone traces the
+`sensor-<hash>` ID shape. This has already happened multiple times, polluting the
+shared catalog with 12+ fake incidents that had no real video bytes behind them.
+
+**Safe alternatives:**
+- Leave `INCIDENT_DB_DSN` **empty/unset** (offline mode) — the console shows a
+  "database not configured" state but runs without writing anywhere.
+- Use a **personal/throwaway database** (local SQLite, a personal Supabase
+  project, or a dedicated dev schema) that no one else shares.
+
+See [`mock-backend/base_profile_mock/README.md`](../mock-backend/base_profile_mock/README.md)
+for the mock backend's own documentation of this hazard.
+
 ## Supabase Postgres + the 8-mock seed
 
 With `INCIDENT_DB_DSN` set, the pages read and write incidents through `db.py`
@@ -119,6 +138,16 @@ but isn't reachable on the deployed VM yet — see `DEPLOY_NOTES.md`'s Known
 Issue #1 (no `build:` wiring for vss-agent's container). `POST /api/v1/search`
 is still unbuilt (MVP2), so the client keeps returning a "not implemented yet"
 notice for that one.
+
+## ⚠️ WARNING: Do not combine `base_profile_mock` with the shared Supabase DSN
+
+If you point `INCIDENT_AGENT_BASE_URL` at `base_profile_mock` (port 7777) while
+`INCIDENT_DB_DSN` is set to the shared/team Supabase Postgres, **the mock will
+write fabricated `sensor-<hash>` videos and `mock://` reports directly into the
+shared catalog**. This has already polluted the team database with 12+ phantom
+rows. Use an empty/unset `INCIDENT_DB_DSN` (offline mode) or a personal/throwaway
+database instead. Full details in
+[`mock-backend/base_profile_mock/README.md`](../mock-backend/base_profile_mock/README.md).
 
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
