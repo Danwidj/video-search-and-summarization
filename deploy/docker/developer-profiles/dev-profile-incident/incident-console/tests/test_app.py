@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Entrypoint registers four pages; all degrade cleanly with no database."""
+"""Entrypoint registers two pages; both degrade cleanly with no database."""
 
 from unittest.mock import patch
 
@@ -27,20 +27,16 @@ def test_page_entrypoint_registers_all_pages():
         app = AppTest.from_file("../app.py", default_timeout=10).run()
         assert not app.exception
         assert [page.title for page in navigation.call_args.args[0]] == [
-            "Video Catalog",
             "Incident Reports",
             "Analytics Dashboard",
-            "Severity Eval",
         ]
 
 
 @pytest.mark.parametrize(
     "page",
     [
-        "../pages/1_Catalog.py",
         "../pages/2_Report_Review.py",
         "../pages/3_Dashboard.py",
-        "../pages/4_Severity_Eval.py",
     ],
 )
 def test_page_shows_db_not_configured_state_without_dsn(page):

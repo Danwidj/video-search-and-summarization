@@ -171,15 +171,12 @@ template in a few places:
 
 ### Known issues - not yet fixed, tracked as follow-up work
 
-1. **`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
-   `deploy/docker/services/agent/compose.yml`'s `vss-agent` service now carries
-   a `build:` context (`services/agent/docker/Dockerfile`, context `services/`)
-   alongside its `image:` tag, so `docker compose up -d --build vss-agent`
-   rebuilds the container from this repo's own code (e.g. the `/analyze` route)
-   instead of NVIDIA's locked prebuilt image. A plain `up -d` — no `--build` —
-   still reuses whatever image already exists locally. What's currently running
-   on the VM is still the prebuilt image; run one `--build` deploy there before
-   relying on any agent-side code change.
+1. **`/analyze` won't go live even after an agent PR merges.** `vss-agent`
+   deploys from NVIDIA's locked prebuilt image
+   (`nvcr.io/nvidia/vss-core/vss-agent`) — there's no `build:` wiring anywhere
+   to actually build the container from this repo's own code. Someone needs
+   to add a `build:` context pointed at `services/agent/docker/Dockerfile`
+   before agent-side code changes can ever run on the VM.
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.

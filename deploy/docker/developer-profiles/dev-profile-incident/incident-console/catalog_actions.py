@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Pure orchestration helpers for the Catalog page's upload/analyze/poll actions.
+"""Pure orchestration helpers for incident video upload and analysis.
 
 Kept import-light (no ``streamlit``) so tests can drive them directly against
 the hermetic SQLite fixture without going through ``AppTest``, which cannot
@@ -62,6 +62,30 @@ def upload_and_record(agent: AgentClient, db: IncidentDB, *, filename: str, cont
     # categorized key after it uploads the bytes to R2.
     db.upsert_video(video_id, filepath=None, source=sensor_id)
     return Result(ok=True, data=video_id, status_code=result.status_code)
+
+
+def upload_and_analyze(
+    agent: AgentClient, db: IncidentDB, *, filename: str, content: bytes, reasoning: bool = False
+) -> Result:
+    """Upload, create the video row, then immediately generate its report.
+
+    ``upload_and_record`` deliberately writes the initial Supabase row with no
+    filepath. The mock analyze endpoint then categorizes the upload, copies its
+    bytes to R2, updates that filepath, and creates the incident/report rows.
+    """
+    uploaded = upload_and_record(agent, db, filename=filename, content=content)
+    if not uploaded.ok:
+        return uploaded
+
+    video_id = uploaded.data
+    analyzed = agent.analyze_incident(video_id, reasoning=reasoning)
+    return Result(
+        ok=analyzed.ok,
+        data=video_id,
+        error=analyzed.error,
+        status_code=analyzed.status_code,
+        not_implemented=analyzed.not_implemented,
+    )
 
 
 def current_status(db: IncidentDB, video_id: str) -> str:

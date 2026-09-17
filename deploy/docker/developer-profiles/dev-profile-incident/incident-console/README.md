@@ -35,8 +35,8 @@ data (see the next section). Other dependencies still degrade gracefully:
 ## Supabase Postgres + the 8-mock seed
 
 With `INCIDENT_DB_DSN` set, the pages read and write incidents through `db.py`
-(`IncidentDB`), so field edits, review-status changes, video re-links and
-severity ratings persist across a refresh. `init_schema()` creates every table
+(`IncidentDB`), so field edits, review-status changes and video re-links
+persist across a refresh. `init_schema()` creates every table
 on first use (`checkfirst=True`; no additive column backfill — the schema is
 created fresh, not migrated).
 
@@ -224,10 +224,8 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | File | Role |
 |---|---|
 | `app.py` | Entry point / navigation home + environment panel |
-| `pages/1_Catalog.py` | Browse ingested videos with filename / status filters + per-video incident-report count; upload new videos (dialog, `agent_client.upload_video()`) and trigger `analyze_incident()`, with status polling while a video is unanalyzed (database-backed) |
-| `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
+| `pages/2_Report_Review.py` | Upload + automatic mock analysis, report library, report edit/review status, and jump-to-timestamp (database-backed) |
 | `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed) |
-| `pages/4_Severity_Eval.py` | Human-vs-AI severity rating + running exact-agreement rate (database-backed) |
 | `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos` / `queries` / `model_runs`, model-output `incidents` / `entities` / `instruments` / `assets` (keyed by `model_run_id`), ground-truth `gt_incidents` / `gt_entities` / `gt_instruments` / `gt_assets`, `entity_matches` / `instrument_matches` / `asset_matches`, `review_status`, `notifications`, `severity_eval_log` |
 | `db_reports.py` | Postgres-backed Incident view model (edits persist; reads the most recent model run per incident) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
@@ -236,7 +234,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
-| `catalog_actions.py` | Pure (no `streamlit`) upload/analyze/status-polling helpers behind `pages/1_Catalog.py`, incl. the `videos.id`-fitting `derive_video_id()` |
+| `catalog_actions.py` | Pure (no `streamlit`) upload/automatic-analysis orchestration, including the `videos.id`-fitting `derive_video_id()` |
 | `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` (road accident / burglary / explosion / fighting / animal) + pure helpers |
 | `config.py` | Env-driven configuration (`.env` then untracked `.env.local`) |
 | `theme.py` / `ui.py` | Shared look-and-feel and page helpers |

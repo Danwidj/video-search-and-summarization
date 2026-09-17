@@ -62,17 +62,6 @@ services:
   vss-agent:
     # Version pinned via VSS_AGENT_VERSION (see the profile .env files).
     image: nvcr.io/nvidia/vss-core/vss-agent:${VSS_AGENT_VERSION}
-    # Build from source (docker compose up --build) so this repo's own agent code,
-    # e.g. /api/v1/incidents/{id}/analyze, reaches the running container instead of
-    # the stale prebuilt NVIDIA image. Context/dockerfile mirror the manual rebuild:
-    #   docker build -f services/agent/docker/Dockerfile \
-    #     -t nvcr.io/nvidia/vss-core/vss-agent:<VSS_AGENT_VERSION> services/
-    # Paths are relative to this compose file (deploy/docker/services/agent/).
-    # No pull_policy is set: a plain `up -d` reuses whatever image exists locally
-    # (prebuilt pull or from-source build); only `--build` forces a source rebuild.
-    build:
-      context: ../../../../services
-      dockerfile: agent/docker/Dockerfile
     container_name: vss-agent
     network_mode: host
     profiles:

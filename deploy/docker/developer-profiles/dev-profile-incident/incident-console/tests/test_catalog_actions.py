@@ -21,16 +21,22 @@ hermetic SQLite fixture directly - no AppTest, since dialogs and timed
 from __future__ import annotations
 
 from agent_client import Result
-from catalog_actions import current_status, derive_video_id, should_keep_polling, upload_and_record
+from catalog_actions import current_status, derive_video_id, should_keep_polling, upload_and_analyze, upload_and_record
 from db import IncidentDB
 
 
 class _FakeAgent:
-    def __init__(self, result: Result) -> None:
+    def __init__(self, result: Result, analyze_result: Result | None = None) -> None:
         self._result = result
+        self._analyze_result = analyze_result
+        self.analyze_calls: list[tuple[str, bool]] = []
 
     def upload_video(self, *, filename: str, content: bytes) -> Result:  # noqa: ARG002
         return self._result
+
+    def analyze_incident(self, video_id: str, *, reasoning: bool = False) -> Result:
+        self.analyze_calls.append((video_id, reasoning))
+        return self._analyze_result or self._result
 
 
 def test_derive_video_id_fits_the_videos_id_column():
@@ -73,6 +79,31 @@ def test_upload_and_record_creates_no_row_when_not_implemented(incident_db: Inci
 
     assert result.ok is False
     assert result.not_implemented is True
+    assert incident_db.list_videos() == []
+
+
+def test_upload_and_analyze_runs_analysis_immediately(incident_db: IncidentDB):
+    agent = _FakeAgent(
+        Result(ok=True, data={"sensor_id": "sensor-abc123"}),
+        Result(ok=True, status_code=200),
+    )
+
+    result = upload_and_analyze(agent, incident_db, filename="clip.mp4", content=b"bytes")
+
+    video_id = derive_video_id("sensor-abc123")
+    assert result.ok is True
+    assert result.data == video_id
+    assert agent.analyze_calls == [(video_id, False)]
+    assert incident_db.get_video(video_id)["filepath"] is None
+
+
+def test_upload_and_analyze_does_not_analyze_a_failed_upload(incident_db: IncidentDB):
+    agent = _FakeAgent(Result(ok=False, error="upload failed"))
+
+    result = upload_and_analyze(agent, incident_db, filename="clip.mp4", content=b"bytes")
+
+    assert result.ok is False
+    assert agent.analyze_calls == []
     assert incident_db.list_videos() == []
 
 

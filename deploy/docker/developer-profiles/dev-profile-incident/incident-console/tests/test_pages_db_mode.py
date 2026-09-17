@@ -41,6 +41,13 @@ def test_report_review_lists_the_36_from_the_db(db_pages):
     assert len([b for b in app.button if b.label == "View and Verify Details"]) == 36
 
 
+def test_report_review_contains_the_single_step_upload_entrypoint(db_pages):
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    assert not app.exception
+    assert any(button.label == "Upload video" for button in app.button)
+    assert not any(button.label == "Analyze incident" for button in app.button)
+
+
 def test_report_review_detail_has_db_controls_and_seek(db_pages):
     rid = sorted(r["incident_id"] for r in db_pages.list_latest_incidents())[0]
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)

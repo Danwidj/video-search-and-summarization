@@ -28,9 +28,10 @@ class VideoUploadUrlResponse(BaseModel):
 
 
 @router.post("/videos")
-def create_video_upload_url(body: VideoUploadUrlInput) -> VideoUploadUrlResponse:
-    if re.search(r"\s", body.filename):
-        raise HTTPException(400, "Filename cannot contain whitespace. Please rename the file and try again.")
+def create_video_upload_url(_body: VideoUploadUrlInput) -> VideoUploadUrlResponse:
+    # Browsers preserve the user's filename, including ordinary spaces. The
+    # multipart ingestion and later R2 categorization already sanitize the
+    # durable object name, so rejecting the initial URL request is needless.
     base = settings.public_base_url.rstrip("/")
     return VideoUploadUrlResponse(url=f"{base}/vst/api/v1/storage/file")
 

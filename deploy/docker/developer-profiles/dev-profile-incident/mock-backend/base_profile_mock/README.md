@@ -14,13 +14,12 @@ Most mock state is in-memory only and resets on restart. The incident Analyze
 route is the exception: when `INCIDENT_DB_DSN` is set, it writes to the shared
 incident-console Postgres database.
 
-When exercising the incident Analyze route, set `INCIDENT_DB_DSN` in the
-backend environment to the same Postgres used by the console. Also export the
-Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
-`R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET`. The mock does not load
-dotenv files. The route returns `503` when those settings are unset or
-unreachable. Start the backend from a shell with those values exported, then
-upload a video through the console and click Analyze. The response is
+When exercising the incident Analyze route, the backend automatically loads
+the sibling incident-console's `.env.local` and `.env`, so it uses the same
+Postgres and Cloudflare R2 settings as the console. Explicit shell variables
+take precedence. The route returns `503` when those settings are unset or
+unreachable. Restart the backend after changing either dotenv file, then
+upload a video through the console. The response is
 explicitly marked `mock: true`, uploads the video bytes to R2 under the mock
 incident category, stores that R2 object key in `videos.filepath`, and writes
 the model run, incident entity, review status, and report through

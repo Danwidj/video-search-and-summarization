@@ -165,6 +165,30 @@ def test_upload_video_sends_mediaFile_field_and_filename_per_nvstreamer_protocol
     assert seen["has_filename_field"] is True
 
 
+def test_upload_video_normalizes_filename_whitespace(monkeypatch):
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/videos":
+            seen["request"] = request.content.decode()
+            return httpx.Response(200, json={"url": "http://vst/upload"})
+        if request.url.path == "/upload":
+            seen["multipart"] = request.content.decode("latin-1")
+            return httpx.Response(200, json={"sensorId": "sensor-abc", "filePath": "object-key"})
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"message": "ok", "sensor_id": "sensor-abc", "filename": "clip.mp4"})
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    monkeypatch.setattr(agent_client.httpx, "post", _client_with_transport(handler))
+    result = AgentClient(base_url="http://agent", llm_base_url="").upload_video(
+        filename="front door clip.mp4", content=b"bytes"
+    )
+
+    assert result.ok is True
+    assert "front_door_clip.mp4" in seen["request"]
+    assert "front_door_clip.mp4" in seen["multipart"]
+
+
 def test_upload_video_success_extracts_sensor_id_and_filepath(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/videos":

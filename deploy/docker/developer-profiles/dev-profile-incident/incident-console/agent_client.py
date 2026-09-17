@@ -26,6 +26,7 @@ the agent is absent or a route is missing.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,6 +48,12 @@ class Result:
     status_code: int | None = None
     # True when the failure is "endpoint not implemented yet" (expected today).
     not_implemented: bool = field(default=False)
+
+
+def safe_upload_filename(filename: str) -> str:
+    """Return one whitespace-free filename for every upload protocol step."""
+    normalized = re.sub(r"\s+", "_", filename.strip())
+    return normalized or "upload.mp4"
 
 
 class AgentClient:
@@ -99,7 +106,10 @@ class AgentClient:
     # -- upload (contract exists today) ----------------------------- #
     def request_upload_url(self, filename: str) -> Result:
         """Step 1: ``POST /api/v1/videos {filename}`` -> ``{url}``."""
-        return self._post(f"{self.base_url}/api/v1/videos", json={"filename": filename})
+        return self._post(
+            f"{self.base_url}/api/v1/videos",
+            json={"filename": safe_upload_filename(filename)},
+        )
 
     def complete_upload(self, sensor_id: str) -> Result:
         """Step 3: ``POST /api/v1/videos/{sensor_id}/complete``."""
@@ -116,6 +126,9 @@ class AgentClient:
         response carries a playable URL, so when the chunk response omits it
         we fall back to asking VST directly for one.
         """
+        # Keep the request, multipart file, and separate filename field in
+        # sync. Both the real agent and older mocks reject whitespace here.
+        filename = safe_upload_filename(filename)
         step1 = self.request_upload_url(filename)
         if not step1.ok:
             return step1

@@ -8,8 +8,14 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from base_profile_mock.app import create_app
+from base_profile_mock.routers import agent_video
 from base_profile_mock.routers import incident_analyze
 from base_profile_mock.state import get_state
+
+
+def test_upload_url_accepts_filename_whitespace():
+    response = agent_video.create_video_upload_url(agent_video.VideoUploadUrlInput(filename="front door clip.mp4"))
+    assert response.url.endswith("/vst/api/v1/storage/file")
 
 
 class FakeWriter:

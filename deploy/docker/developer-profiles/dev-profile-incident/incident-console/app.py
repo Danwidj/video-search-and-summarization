@@ -13,16 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""RISE UP: four top-level pages; details live within Incident Reports."""
+"""RISE UP: report review and analytics; details live within Incident Reports."""
 
 import streamlit as st
 
 page = st.navigation(
     [
-        st.Page("pages/1_Catalog.py", title="Video Catalog"),
         st.Page("pages/2_Report_Review.py", title="Incident Reports", default=True),
         st.Page("pages/3_Dashboard.py", title="Analytics Dashboard"),
-        st.Page("pages/4_Severity_Eval.py", title="Severity Eval"),
     ]
 )
 with st.sidebar:

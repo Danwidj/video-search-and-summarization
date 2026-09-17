@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Incident library and detail view over the incident database."""
+"""Upload, automatically analyze, and review incidents in one page."""
 
 import html
 import json
@@ -22,6 +22,8 @@ from urllib.parse import quote
 import streamlit as st
 import streamlit.components.v1 as components
 
+from agent_client import AgentClient
+from catalog_actions import upload_and_analyze
 from db_reports import DBReports
 from report_detail import (
     confidence_label,
@@ -29,7 +31,7 @@ from report_detail import (
     render_detail,
     time_label,
 )
-from theme import TYPE_COLORS, apply_base_style, page_header, severity_badge
+from theme import TYPE_COLORS, alert, apply_base_style, page_header, severity_badge
 from ui import get_db_or_notice, video_playback_url
 
 
@@ -61,6 +63,32 @@ def render_card_preview(url: str | None, start: int | None) -> None:
     )
 
 
+@st.dialog("Upload video")
+def _upload_dialog() -> None:
+    uploaded = st.file_uploader("Video file", type=["mp4", "mkv"])
+    if st.button("Upload and analyze", type="primary", disabled=uploaded is None):
+        with st.spinner("Uploading and generating the incident report..."):
+            result = upload_and_analyze(
+                AgentClient(),
+                _db_handle,
+                filename=uploaded.name,
+                content=uploaded.getvalue(),
+            )
+        if result.ok:
+            st.session_state["upload_notice"] = (
+                f"Upload and mock analysis completed. Incident {result.data} is now in the report library."
+            )
+            st.rerun()
+        elif result.not_implemented:
+            alert(
+                "The upload was recorded, but analysis is not available on this backend.",
+                "info",
+                "ℹ️",
+            )
+        else:
+            alert(f"Upload/analyze failed: {result.error}", "error", "!")
+
+
 st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
 apply_base_style()
 page_header(
@@ -75,6 +103,8 @@ _db_handle = get_db_or_notice()
 if _db_handle is None:
     st.stop()
 handle = DBReports(_db_handle, st.session_state)
+if notice := st.session_state.pop("upload_notice", None):
+    st.success(notice)
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
 if close_id := st.session_state.pop("detail_close_edit", None):
@@ -97,6 +127,8 @@ if selected is not None:
 
 else:
     st.title("Incident Reports")
+    if st.button("Upload video", type="primary"):
+        _upload_dialog()
     # Restore filters after leaving the detail view (Streamlit cleans hidden widgets).
     saved = st.session_state.get("library_filters", {})
     for key, value in saved.items():
