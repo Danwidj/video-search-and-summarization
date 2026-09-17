@@ -22,7 +22,40 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import agent_client
+import r2_videos
 from scripts.seed_supabase import seed
+
+
+def _mock_upload_transport(analyze_code: int):
+    """Create a mock transport that handles the 3-step upload flow + analyze endpoint."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v1/videos":
+            # Step 1: request_upload_url
+            return httpx.Response(200, json={"url": "http://mock/upload"})
+        if path == "/upload":
+            # Step 2: chunked upload to nvstreamer
+            return httpx.Response(200, json={"sensorId": "sensor-test123", "filePath": "/tmp/test.mp4"})
+        if path.endswith("/complete"):
+            # Step 3: complete_upload
+            return httpx.Response(200, json={})
+        if path.startswith("/api/v1/incidents/") and path.endswith("/analyze"):
+            # analyze_incident endpoint for any video ID
+            return httpx.Response(analyze_code, text="not implemented" if analyze_code in (404, 405, 501) else "boom")
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    return httpx.MockTransport(handler)
+
+
+def _fake_post_with_transport(transport: httpx.MockTransport):
+    def fake_post(url, *, json=None, timeout=None, files=None, data=None, **kwargs):  # noqa: ARG001
+        with httpx.Client(transport=transport) as c:
+            if files is not None:
+                return c.post(url, files=files, data=data, timeout=timeout)
+            return c.post(url, json=json, timeout=timeout)
+
+    return fake_post
 
 
 @pytest.fixture
@@ -36,7 +69,10 @@ def db_pages(incident_db, monkeypatch):
 
 @pytest.mark.parametrize("code", [404, 405, 501])
 def test_analyze_incident_button_renders_calm_message_when_not_implemented(db_pages, monkeypatch, code):
-    monkeypatch.setattr(agent_client.httpx, "post", lambda *a, **k: httpx.Response(code))  # noqa: ARG005
+    transport = _mock_upload_transport(code)
+    monkeypatch.setattr(agent_client.httpx, "post", _fake_post_with_transport(transport))  # noqa: ARG005
+    # Mock R2 download to return dummy video bytes
+    monkeypatch.setattr(r2_videos, "download_video_bytes", lambda key: b"fake video content")
 
     app = AppTest.from_file("../pages/1_Catalog.py", default_timeout=15).run()
     assert not app.exception
@@ -49,11 +85,10 @@ def test_analyze_incident_button_renders_calm_message_when_not_implemented(db_pa
 
 
 def test_analyze_incident_button_renders_a_real_error_distinctly(db_pages, monkeypatch):
-    monkeypatch.setattr(
-        agent_client.httpx,
-        "post",
-        lambda *a, **k: httpx.Response(500, text="boom"),  # noqa: ARG005
-    )
+    transport = _mock_upload_transport(500)
+    monkeypatch.setattr(agent_client.httpx, "post", _fake_post_with_transport(transport))  # noqa: ARG005
+    # Mock R2 download to return dummy video bytes
+    monkeypatch.setattr(r2_videos, "download_video_bytes", lambda key: b"fake video content")
 
     app = AppTest.from_file("../pages/1_Catalog.py", default_timeout=15).run()
     analyze_button = next(b for b in app.button if b.label == "Analyze incident")

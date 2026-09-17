@@ -26,6 +26,7 @@ import hashlib
 
 from agent_client import AgentClient, Result
 from db import IncidentDB
+from r2_videos import download_video_bytes
 
 UNANALYZED_STATUS = "unanalyzed"
 
@@ -74,3 +75,66 @@ def current_status(db: IncidentDB, video_id: str) -> str:
 def should_keep_polling(status: str) -> bool:
     """Poll while a video has no incident recorded against it yet."""
     return status == UNANALYZED_STATUS
+
+
+def ensure_video_registered(agent: AgentClient, db: IncidentDB, video_id: str) -> Result:
+    """Ensure a video is registered with VST (has a sensor_id in ``videos.source``).
+
+    If the video already has a source, returns it immediately.
+    If the video has a filepath (R2 object key) but no source, downloads the video
+    from R2 and runs the 3-step upload flow against VST, then persists the
+    returned sensor_id to ``videos.source``. This is a one-time self-heal per row.
+
+    Returns a Result with the sensor_id on success, or an error if:
+    - The video row doesn't exist
+    - The video has no filepath (SYN- rows with no recoverable bytes)
+    - R2 download fails
+    - VST upload fails
+    """
+    video = db.get_video(video_id)
+    if not video:
+        return Result(ok=False, error=f"Video {video_id!r} not found in catalog")
+
+    existing_source = video.get("source")
+    if existing_source:
+        return Result(ok=True, data=existing_source)
+
+    filepath = video.get("filepath")
+    if not filepath:
+        return Result(
+            ok=False,
+            error=(
+                f"Video {video_id!r} has no VST registration and no recoverable video file in R2. "
+                "This appears to be a synthetic placeholder (SYN-) row that cannot be analyzed."
+            ),
+        )
+
+    # Download video bytes from R2
+    content = download_video_bytes(filepath)
+    if content is None:
+        return Result(
+            ok=False,
+            error=f"Failed to download video from R2 for {video_id!r} (key: {filepath!r}). "
+            "Check R2 configuration and that the object exists.",
+        )
+
+    # Upload to VST via the agent's 3-step upload flow
+    filename = filepath.rsplit("/", 1)[-1]
+    upload_result = agent.upload_video(filename=filename, content=content)
+    if not upload_result.ok:
+        return Result(
+            ok=False,
+            error=f"Self-heal upload to VST failed for {video_id!r}: {upload_result.error}",
+        )
+
+    data = upload_result.data if isinstance(upload_result.data, dict) else {}
+    sensor_id = data.get("sensor_id")
+    if not sensor_id:
+        return Result(ok=False, error=f"Self-heal upload succeeded but no sensor_id returned: {upload_result.data!r}")
+
+    # Persist the sensor_id to videos.source so this is a one-time self-heal
+    # Preserve existing duration from the video row
+    duration = video.get("duration")
+    db.upsert_video(video_id, filepath=filepath, duration=duration, source=sensor_id)
+
+    return Result(ok=True, data=sensor_id, status_code=upload_result.status_code)
