@@ -14,7 +14,7 @@
 # limitations under the License.
 """Unit tests for the route dispatcher in CustomFastApiFrontEndWorker.
 
-The dispatcher registers six sets of routes on every profile, with no
+The dispatcher registers seven sets of routes on every profile, with no
 per-profile capability flags:
 
   * ``register_video_upload``               — POST /api/v1/videos
@@ -23,6 +23,7 @@ per-profile capability flags:
   * ``register_rtsp_ingest_routes``         — POST /api/v1/rtsp-streams/add
   * ``register_rtsp_delete_routes``         — DELETE /api/v1/rtsp-streams/delete/{name}
   * ``register_video_delete_routes``        — DELETE /api/v1/videos/{video_id}
+  * ``register_incident_analyze_routes``    — POST /api/v1/incidents/{incident_id}/analyze
 """
 
 from unittest.mock import MagicMock
@@ -56,9 +57,9 @@ def _make_worker(streaming_ingest):
 def patched_register_fns():
     """Patch every register fn the dispatcher delegates to.
 
-    Returns a 6-tuple in the order:
+    Returns a 7-tuple in the order:
         (video_upload, video_upload_complete, video_search_ingest,
-         rtsp_ingest, rtsp_delete, video_delete)
+         rtsp_ingest, rtsp_delete, video_delete, incident_analyze)
     """
     with (
         patch("vss_agents.api.custom_fastapi_worker.register_video_upload") as video_upload,
@@ -67,6 +68,7 @@ def patched_register_fns():
         patch("vss_agents.api.custom_fastapi_worker.register_rtsp_ingest_routes") as rtsp_ingest,
         patch("vss_agents.api.custom_fastapi_worker.register_rtsp_delete_routes") as rtsp_delete,
         patch("vss_agents.api.custom_fastapi_worker.register_video_delete_routes") as video_delete,
+        patch("vss_agents.api.custom_fastapi_worker.register_incident_analyze_routes") as incident_analyze,
     ):
         yield (
             video_upload,
@@ -75,6 +77,7 @@ def patched_register_fns():
             rtsp_ingest,
             rtsp_delete,
             video_delete,
+            incident_analyze,
         )
 
 
@@ -82,7 +85,7 @@ class TestRegisterStreamingRoutesDispatcher:
     """``CustomFastApiFrontEndWorker._register_streaming_routes``."""
 
     def test_universal_routes_register_unconditionally(self, patched_register_fns):
-        """All six register fns fire on every profile, with no per-profile
+        """All seven register fns fire on every profile, with no per-profile
         flag. Each handler self-skips downstream calls when its backing
         service isn't configured."""
         (
@@ -92,10 +95,11 @@ class TestRegisterStreamingRoutesDispatcher:
             rtsp_ingest,
             rtsp_delete,
             video_delete,
+            incident_analyze,
         ) = patched_register_fns
         worker = _make_worker(MagicMock())  # any non-None streaming_ingest
 
-        worker._register_streaming_routes(MagicMock())
+        worker._register_streaming_routes(MagicMock(), MagicMock())
 
         video_upload.assert_called_once()
         video_upload_complete.assert_called_once()
@@ -103,6 +107,7 @@ class TestRegisterStreamingRoutesDispatcher:
         rtsp_ingest.assert_called_once()
         rtsp_delete.assert_called_once()
         video_delete.assert_called_once()
+        incident_analyze.assert_called_once()
 
     def test_missing_streaming_ingest_raises(self, patched_register_fns):
         """Every profile must declare streaming_ingest so a misconfigured
@@ -114,11 +119,12 @@ class TestRegisterStreamingRoutesDispatcher:
             rtsp_ingest,
             rtsp_delete,
             video_delete,
+            incident_analyze,
         ) = patched_register_fns
         worker = _make_worker(_MISSING)
 
         with pytest.raises(ValueError, match="streaming_ingest"):
-            worker._register_streaming_routes(MagicMock())
+            worker._register_streaming_routes(MagicMock(), MagicMock())
 
         video_upload.assert_not_called()
         video_upload_complete.assert_not_called()
@@ -126,6 +132,7 @@ class TestRegisterStreamingRoutesDispatcher:
         rtsp_ingest.assert_not_called()
         rtsp_delete.assert_not_called()
         video_delete.assert_not_called()
+        incident_analyze.assert_not_called()
 
     def test_legacy_stream_mode_in_yaml_raises(self, patched_register_fns):
         """A profile YAML that still carries the legacy ``stream_mode`` knob
@@ -137,12 +144,13 @@ class TestRegisterStreamingRoutesDispatcher:
             rtsp_ingest,
             rtsp_delete,
             video_delete,
+            incident_analyze,
         ) = patched_register_fns
         cfg = StreamingIngestConfig(stream_mode="search")
         worker = _make_worker(cfg)
 
         with pytest.raises(ValueError, match="stream_mode is no longer supported"):
-            worker._register_streaming_routes(MagicMock())
+            worker._register_streaming_routes(MagicMock(), MagicMock())
 
         video_upload.assert_not_called()
         video_upload_complete.assert_not_called()
@@ -150,3 +158,4 @@ class TestRegisterStreamingRoutesDispatcher:
         rtsp_ingest.assert_not_called()
         rtsp_delete.assert_not_called()
         video_delete.assert_not_called()
+        incident_analyze.assert_not_called()

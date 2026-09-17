@@ -446,3 +446,42 @@ async def test_get_db_concurrent_callers_do_not_race_to_double_connect(monkeypat
         first, second = await asyncio.gather(incident_db.get_db(), incident_db.get_db())
     assert first is second
     create_pool.assert_awaited_once()
+
+
+def test_utcnow_returns_naive_utc():
+    """The console schema uses ``timestamp without time zone`` and asyncpg
+    rejects tz-aware values for that type, so generated timestamps must be naive."""
+    now = incident_db._utcnow()
+    assert now.tzinfo is None
+    assert abs(_dt.datetime.now(_dt.UTC).replace(tzinfo=None) - now) < _dt.timedelta(minutes=1)
+
+
+@pytest.mark.asyncio
+async def test_upsert_video_defaults_to_naive_uploaded_datetime():
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    await db.upsert_video("vid-1")
+    _, *params = conn.execute.await_args.args
+    assert params[4] is not None
+    assert params[4].tzinfo is None
+
+
+@pytest.mark.asyncio
+async def test_insert_model_run_defaults_to_naive_run_datetime():
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    await db.insert_model_run("run-1", model_name="m")
+    _, *params = conn.execute.await_args.args
+    assert params[4] is not None
+    assert params[4].tzinfo is None
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_entities_issues_scoped_delete():
+    """Re-analysis deletes only this incident+run's entities before re-inserting."""
+    conn = _make_mock_conn()
+    db = IncidentDB(_make_mock_pool(conn))
+    await db.delete_incident_entities("vid-1", "run-1")
+    conn.execute.assert_awaited_once_with(
+        "DELETE FROM entities WHERE incident_id = $1 AND model_run_id = $2", "vid-1", "run-1"
+    )
