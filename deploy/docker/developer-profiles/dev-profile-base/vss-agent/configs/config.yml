@@ -160,6 +160,11 @@ functions:
     # No Video Analytics MCP tools configured = Video(uploaded) Report mode
     video_report_tool: video_report_gen
 
+  incident_report_gen:
+    _type: incident_report_gen
+    llm_name: ${LLM_MODEL_TYPE:-nim}_llm
+    video_report_tool: video_report_gen
+
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
   nim_llm:

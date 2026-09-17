@@ -1926,7 +1926,10 @@ Enter your choice or press Submit to keep current value:"""
             object_store: Object store for saving files
 
         Returns:
-            dict with report metadata (http_url, pdf_url, file_size, pdf_file_size, video_url)
+            dict with report metadata (http_url, pdf_url, file_size, pdf_file_size, video_url, content).
+            ``content`` is the full merged markdown: the incident ``/analyze`` path feeds it to the
+            structured-extraction LLM and derives incident bounds from it, so it must be populated
+            (not just saved to the object store) for single-video reports.
         """
         # Create report header
         report_header = _create_report_header(sensor_id, user_query, hitl_prompts=hitl_prompts)
@@ -1986,6 +1989,7 @@ Enter your choice or press Submit to keep current value:"""
             "file_size": file_size,
             "pdf_file_size": pdf_file_size,
             "video_url": video_url,
+            "content": markdown_content,
         }
 
     async def _stream_report_gen_single(report_input: VideoReportGenInput) -> VideoReportGenOutput:
@@ -2445,7 +2449,9 @@ Enter your choice or press Submit to keep current value:"""
             summary=summary,
             file_size=report_metadata["file_size"],
             pdf_file_size=report_metadata["pdf_file_size"],
-            content=None,  # Not needed
+            # Populated (not just saved to the object store): the incident /analyze path feeds this
+            # markdown to the structured-extraction LLM and derives incident bounds from it.
+            content=report_metadata["content"],
             video_url=report_metadata["video_url"],
             hitl_prompts=hitl_prompts,
             lvs_fallback_warning=lvs_fallback_warning or None,
