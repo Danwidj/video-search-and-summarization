@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from agent_client import AgentClient
-from catalog_actions import current_status, should_keep_polling, upload_and_record
+from catalog_actions import current_status, ensure_video_registered, should_keep_polling, upload_and_record
 from theme import alert
 from ui import bootstrap, get_db_or_notice
 
@@ -83,17 +83,28 @@ else:
     with col_go:
         st.write("")
         if st.button("Analyze incident", type="primary"):
-            with st.spinner("Requesting analysis..."):
-                result = AgentClient().analyze_incident(selected_id, reasoning=reasoning)
-            if result.ok:
-                st.session_state["catalog_polling_video_id"] = selected_id
-                st.success("Analysis completed; refreshing the report list.")
-                st.session_state.pop("catalog_polling_video_id", None)
-                st.rerun()
-            elif result.not_implemented:
-                alert("Analysis isn't available on this backend yet.", "info", "ℹ️")
+            agent = AgentClient()
+            # First, ensure the video is registered with VST (self-heal if needed)
+            with st.spinner("Checking VST registration..."):
+                reg_result = ensure_video_registered(agent, handle, selected_id)
+            if not reg_result.ok:
+                alert(f"Cannot analyze: {reg_result.error}", "error", "!")
             else:
-                alert(f"Analyze failed: {result.error}", "error", "!")
+                # Video is registered (either already was, or self-heal succeeded)
+                sensor_id = reg_result.data
+                if sensor_id != selected_id:
+                    st.info(f"Self-heal complete: registered with VST as `{sensor_id}`")
+                with st.spinner("Requesting analysis..."):
+                    result = agent.analyze_incident(selected_id, reasoning=reasoning)
+                if result.ok:
+                    st.session_state["catalog_polling_video_id"] = selected_id
+                    st.success("Analysis completed; refreshing the report list.")
+                    st.session_state.pop("catalog_polling_video_id", None)
+                    st.rerun()
+                elif result.not_implemented:
+                    alert("Analysis isn't available on this backend yet.", "info", "ℹ️")
+                else:
+                    alert(f"Analyze failed: {result.error}", "error", "!")
 
 # -- status polling: re-reads the DB on an interval while a video is unanalyzed -- #
 polling_id = st.session_state.get("catalog_polling_video_id")
