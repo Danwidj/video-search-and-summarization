@@ -10,18 +10,38 @@ replaces vss-agent's own logic with canned/templated text generation. There is n
 separate inference mock - one process plays the role that HAProxy + vss-agent + VIOS +
 LLM/VLM NIMs jointly play in a real deployment, all on one port.
 
-State is in-memory only and resets on restart. This is a local dev tool, not a
-persistence layer.
+Most mock state is in-memory only and resets on restart. Completed uploads are
+also copied to R2 immediately; the returned `filePath` is the durable object
+key. The incident Analyze route writes report records to the shared
+incident-console Postgres database.
+
+When exercising the incident flow, set `INCIDENT_DB_DSN` in the backend
+environment to the same Postgres used by the console. Also load the
+Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file. R2 upload
+returns `503` when those settings are unset or unreachable. The Catalog page
+automatically triggers Analyze after the initial video row is committed. The
+response is explicitly marked `mock: true`, and Analyze writes
+the model run, incident entity, review status, and report through
+`services/agent/src/vss_agents/utils/incident_db.py`.
 
 ## Run it
 
 ```sh
 cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
 uv sync
-uv run uvicorn base_profile_mock.app:create_app --factory --port 7777 --reload
+uv run --env-file ../../incident-console/.env \
+  uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
-`GET http://localhost:7777/health` should return `{"value": {"isAlive": true}}`.
+For the complete local loop, from `dev-profile-incident/` run
+`./local-start.sh`. It loads `incident-console/.env` for the backend, starts
+the mock backend, and launches the Streamlit console; no secret exports are
+needed.
+
+`GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`.
+For local runs, keep `MOCK_PUBLIC_BASE_URL=http://127.0.0.1:7777` if you override it; using
+`localhost` can fail on systems where clients try IPv6 while uvicorn is bound to IPv4.
 
 ## Point the real UI at it
 
@@ -62,6 +82,9 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
 - `POST /api/v1/videos`, `POST /api/v1/videos/{sensor_id}/complete`,
   `DELETE /api/v1/videos/{id}` - video upload/delete, mirroring
   `services/agent/src/vss_agents/api/video_ingest.py` / `video_delete.py`.
+- `POST /api/v1/incidents/{id}/analyze` - deterministic mock incident report
+  generation, persisted through the shared incident DB writer; invoked
+  automatically by the Catalog upload flow.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,

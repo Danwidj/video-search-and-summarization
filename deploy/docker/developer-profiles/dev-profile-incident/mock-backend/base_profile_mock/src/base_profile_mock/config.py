@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MOCK_")
 
     port: int = 7777
-    public_base_url: str = "http://localhost:7777"
+    public_base_url: str = "http://127.0.0.1:7777"
 
 
 settings = Settings()

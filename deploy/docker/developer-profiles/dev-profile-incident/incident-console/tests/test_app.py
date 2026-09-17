@@ -26,22 +26,12 @@ def test_page_entrypoint_registers_all_pages():
     with patch("streamlit.navigation", wraps=st.navigation) as navigation:
         app = AppTest.from_file("../app.py", default_timeout=10).run()
         assert not app.exception
-        assert [page.title for page in navigation.call_args.args[0]] == [
-            "Video Catalog",
-            "Incident Reports",
-            "Analytics Dashboard",
-            "Severity Eval",
-        ]
+        assert [page.title for page in navigation.call_args.args[0]] == ["Incident Reports", "Analytics Dashboard"]
 
 
 @pytest.mark.parametrize(
     "page",
-    [
-        "../pages/1_Catalog.py",
-        "../pages/2_Report_Review.py",
-        "../pages/3_Dashboard.py",
-        "../pages/4_Severity_Eval.py",
-    ],
+    ["../pages/2_Report_Review.py", "../pages/3_Dashboard.py"],
 )
 def test_page_shows_db_not_configured_state_without_dsn(page):
     # The autouse no_live_infra fixture scrubs INCIDENT_DB_DSN, so the console

@@ -23,8 +23,7 @@ R2 bucket at all and can never play back, so ``seed_rows()`` drops them before
 they reach the importer - only the 36 real, video-backed incidents (and their
 joined entities/instruments/assets) are ever seeded. This is the only
 consumer of the CSV fixture - the offline CSV-preview UI mode
-(fixtures/dashboard_seed.py, local_reports.py, pages/1_Catalog.py,
-pages/4_Severity_Eval.py) has been removed; the console is database-backed
+(fixtures/dashboard_seed.py, local_reports.py) has been removed; the console is database-backed
 only. All seeded incidents share one model_run_id (MR-SEED), representing one
 hypothetical model pass over the fixture videos, not many separate runs.
 
