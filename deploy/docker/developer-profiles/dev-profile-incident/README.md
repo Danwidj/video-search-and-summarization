@@ -34,12 +34,11 @@ topology, schema and API design - start at
 
 ## Deploy
 
-This profile is deployed and torn down with the project's canonical scripts
-(`dev-profile.sh`, `cleanup_all_datalog.sh`) - see the Overview doc's
-copy-paste commands and the `mdx-*` shell aliases in
-[`deploy/dotfiles/`](../../../dotfiles/README.md). Do not improvise raw
-`docker`/`docker compose` invocations; the wrappers encode profile-specific
-lifecycle steps.
+Unlike the stock base/lvs/search/alerts profiles, this profile is **not**
+deployed through the project's `dev-profile.sh` wrapper - it does not support
+`dev-profile-incident`. This profile is deployed and torn down with direct
+`docker compose` commands instead; see "Current deployment on kwanz-ws" ->
+"What's actually running" below for the exact command.
 
 ## Current deployment on kwanz-ws
 
