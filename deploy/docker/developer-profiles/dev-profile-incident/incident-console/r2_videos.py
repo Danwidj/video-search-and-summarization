@@ -130,6 +130,20 @@ def filter_keys(keys, *, prefix=None, query=None):
     return result
 
 
+def download_video_bytes(key: str) -> bytes | None:
+    """Download video bytes from R2 for the given object key.
+
+    Returns None if R2 is not configured or the object doesn't exist.
+    """
+    if not configured():
+        return None
+    try:
+        resp = client().get_object(Bucket=os.environ["R2_BUCKET"], Key=key)
+        return resp["Body"].read()
+    except Exception:
+        return None
+
+
 def demo_video(report):
     """Render a category-matched demo source picker and return a playable video."""
     if not configured():
