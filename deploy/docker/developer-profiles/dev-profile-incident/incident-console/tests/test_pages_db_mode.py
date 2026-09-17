@@ -67,6 +67,32 @@ def test_report_review_edit_persists_across_a_rerun(db_pages):
     assert reloaded["description"] == "persisted through the database"
 
 
+def test_report_review_card_preview_does_not_use_deprecated_components_html(db_pages, monkeypatch):
+    """Regression: the incident-card video preview used to call the deprecated
+    ``st.components.v1.html`` once per card, spamming the log on every list
+    render. It must render through ``st.iframe`` instead, with no deprecation
+    warning logged.
+
+    ``streamlit.deprecation_util``'s logger has ``propagate=False``, so
+    pytest's ``caplog`` (which listens on the root logger) can't see its
+    records; a handler must be attached to it directly.
+    """
+    import logging
+
+    monkeypatch.setattr("ui.video_playback_url", lambda video_row: "https://example.com/clip.mp4")
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    deprecation_logger = logging.getLogger("streamlit.deprecation_util")
+    deprecation_logger.addHandler(handler)
+    try:
+        app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    finally:
+        deprecation_logger.removeHandler(handler)
+    assert not app.exception
+    assert not any("components.v1.html" in r.getMessage() for r in records)
+
+
 def test_report_review_missing_record_shows_notice(db_pages):
     app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15)
     app.query_params["report"] = "999999"
