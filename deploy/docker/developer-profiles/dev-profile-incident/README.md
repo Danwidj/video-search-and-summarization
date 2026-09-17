@@ -35,11 +35,37 @@ topology, schema and API design - start at
 ## Deploy
 
 This profile is deployed and torn down with the project's canonical scripts
-(`dev-profile.sh`, `cleanup_all_datalog.sh`) - see the Overview doc's
-copy-paste commands and the `mdx-*` shell aliases in
-[`deploy/dotfiles/`](../../../dotfiles/README.md). Do not improvise raw
-`docker`/`docker compose` invocations; the wrappers encode profile-specific
-lifecycle steps.
+(`dev-profile.sh`, `cleanup_all_datalog.sh`) where they apply — note that
+`dev-profile.sh` has **no `incident` profile** (only
+`base|search|lvs|alerts`), so this profile's own backend deploy is the
+direct compose invocation in the "What's actually running" section below
+(see `docs/incident-plan/incident-plan-implementation-remote.md` §2). Do not
+improvise raw `docker`/`docker compose` invocations.
+
+### Lifecycle scripts (in this directory)
+
+The old `mdx-*` shell aliases / `ngc-env-on` / `gpu` from
+[`deploy/dotfiles/`](../../../dotfiles/README.md) moved here as standalone,
+executable scripts — same behavior, ready to run individually:
+
+| Script | Was | Runs on | What it does |
+|---|---|---|---|
+| `start.sh` | — (new) | **laptop** | One-command daily entry point: checks the VM backend deploy state over SSH, deploys fresh if nothing is running, **stops on a partial deploy**, opens the tunnel in the background, then runs the local console |
+| `tunnel.sh` | `mdx-tunnel-incident` | **laptop** | Open the SSH tunnel to the kwanz-ws backend in the foreground (Ctrl-C closes it) |
+| `tunnel-check.sh` | `mdx-tunnel-incident-check` | **laptop** | Prove the tunnel from the laptop end (agent health + NIM ports) |
+| `status.sh` | `mdx-ps` | VM | `docker compose -p mdx ps` |
+| `down.sh` | `mdx-down` | VM | Stop the stack **without `-v`** (preserves the ~35 GB model-weight cache — never run `dev-profile.sh down`) |
+| `health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |
+| `logs.sh` | `mdx-logs` | VM | Tail one container's logs (default `vss-agent`) |
+| `disk.sh` | `mdx-disk` | VM | `docker system df -v` |
+| `rebuild-svc.sh` | `mdx-rebuild-svc` | VM | Fast single-service rebuild (`docker compose up -d --build --force-recreate <service>`) |
+| `rebuild.sh` | `mdx-rebuild` | VM | Full stock-profile rebuild via `dev-profile.sh up` (interactive confirmation; wipes the model-weight cache) |
+| `clean-datalog.sh` | `mdx-clean-datalog` | VM | Data-dir cleanup between deploys (requires passwordless sudo) |
+| `ngc-env.sh` | `ngc-env-on` | VM | `source ./ngc-env.sh` to export the shared NGC credentials |
+| `gpu.sh` | `gpu` | VM | One-shot `nvidia-smi` status |
+
+Each script preserves the original alias/function's grounding comment and
+safety behavior — check a script's header before using it.
 
 ## Current deployment on kwanz-ws
 
@@ -51,18 +77,47 @@ status table below).
 
 ### Connecting
 
+#### One command (recommended)
+
+From your own laptop, in this directory:
+
+```bash
+cd deploy/docker/developer-profiles/dev-profile-incident
+./start.sh
+```
+
+`start.sh` checks the VM's deploy state over SSH (`docker compose -p mdx ps`):
+
+- **Nothing running** → deploys the backend fresh over SSH (the profile's own
+  deploy path: `docker compose -f compose.yml --env-file
+  developer-profiles/dev-profile-incident/generated.env.remote up -d`), then
+  opens the tunnel, then starts the console.
+- **Everything expected up** → skips the deploy, straight to tunnel + console.
+- **Partial deploy** → stops and prints exactly what's up vs. what's
+  missing/expected (with a nonzero exit), telling you to clear the partial
+  state manually before re-running. It deliberately never auto-reconciles or
+  force-redeploys over a partial state.
+
+It then backgrounds the SSH tunnel (and closes it when the console exits) and
+starts the local Streamlit console. Run it from the laptop only — it refuses
+to run on `kwanz-ws` itself.
+
+#### Manual flow (same pieces, individually)
+
 1. SSH access to kwanz-ws under your own account (you should already have
    one - `yang`, `faith`, `claris`, `heng` each have their own checkout under
    `/home/`).
-2. From your own laptop, run the `mdx-tunnel-incident` alias (from
-   [`deploy/dotfiles/`](../../../dotfiles/README.md)) to forward the backend
-   ports (agent 8000, NIMs 30081/30082, ingress 7777):
+2. From your own laptop, run `./tunnel.sh` (replaces the old
+   `mdx-tunnel-incident` alias) to forward the backend ports (agent 8000,
+   NIMs 30081/30082, ingress 7777):
    ```bash
-   mdx-tunnel-incident
+   ./tunnel.sh
    ```
    Leave it running in its own terminal - it's supposed to sit there silently
    (that's correct, not stuck). Quick health check from a second terminal:
    ```bash
+   ./tunnel-check.sh
+   # or, plain curl:
    curl http://localhost:8000/health
    # should return: {"value":{"isAlive":true}}
    ```
