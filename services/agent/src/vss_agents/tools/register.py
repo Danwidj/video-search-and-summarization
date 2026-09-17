@@ -17,6 +17,7 @@ from . import chart_generator
 from . import embed_search
 from . import fov_counts_with_chart
 from . import geolocation
+from . import incident_report_gen
 from . import incidents
 from . import lvs_config_media
 from . import lvs_stream_understanding
@@ -40,6 +41,7 @@ __all__ = [
     "embed_search",
     "fov_counts_with_chart",
     "geolocation",
+    "incident_report_gen",
     "incidents",
     "lvs_config_media",
     "lvs_stream_understanding",
