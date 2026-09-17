@@ -51,6 +51,7 @@ from nat.data_models.component_ref import LLMRef
 from nat.data_models.function import FunctionBaseConfig
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import ValidationError
 
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
@@ -179,7 +180,11 @@ async def _extract_structured_report(
     except TimeoutError:
         logger.warning("incident_report_gen: extraction LLM call timed out after %ss", timeout_seconds)
         return IncidentReport()
-    except (OutputParserException, LangChainException) as e:
+    except (
+        OutputParserException,
+        LangChainException,
+        ValidationError,
+    ) as e:
         logger.warning("incident_report_gen: extraction LLM call failed: %s", e)
         return IncidentReport()
 
