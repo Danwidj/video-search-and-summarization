@@ -29,10 +29,8 @@ topology, schema and API design - start at
   schema.
 - [`mock-backend/`](mock-backend/README.md) - zero-GPU mock backends for local
   UI development: `base_profile_mock/` (mocks the whole `bp_developer_base`
-  backend so the real UI runs unmodified) plus a Postgres-schema mock area for
-  the console.
-- [`LOCAL_MOCK_LOOP.md`](LOCAL_MOCK_LOOP.md) - empirically verified
-  native-only mock/frontend wiring (uv + npm, no Docker, no GPU, no SSH).
+  backend...); a not-yet-built `mock_data/` module is planned for a
+  Postgres-schema mock of the console — see `mock-backend/README.md`.
 
 ## Deploy
 
