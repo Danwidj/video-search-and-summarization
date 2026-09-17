@@ -132,8 +132,8 @@ profiles, sending sample payloads, verifying responses), see
 ## Contributing
 
 Contributions are welcome. Please see the repository root
-[`CONTRIBUTING.md`](../../CONTRIBUTING.md) for the contribution process, the
-required SPDX license headers, and the DCO sign-off requirement.
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) for the contribution process and the
+required SPDX license headers.
 
 ## License
 

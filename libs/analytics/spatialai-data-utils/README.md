@@ -249,7 +249,7 @@ the `eval` extra when it is absent.
 
 ## Contributing
 
-Contributions are accepted under Apache-2.0 with a DCO sign-off. See
+Contributions are accepted under Apache-2.0. See
 [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) for full details, including
 file-level license-header conventions for new files and for changes to
 third-party-derived files.
