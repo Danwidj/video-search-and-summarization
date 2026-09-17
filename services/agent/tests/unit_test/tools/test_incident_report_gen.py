@@ -419,6 +419,36 @@ class TestEndToEnd:
         mock_db.upsert_video.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_none_content_does_not_crash_extraction_or_bounds(self):
+        """The video tool may return content=None (e.g. report written to the
+        object store but not inlined). The incident flow must still complete -
+        empty bounds, extraction over an empty string - never raise."""
+        config, builder, _ = self._build_mocks(extracted=IncidentReport(incident_type="burglary"))
+
+        video_report_tool = MagicMock()
+        video_report_tool.ainvoke = AsyncMock(
+            return_value=VideoReportGenOutput(
+                http_url="http://localhost:8000/static/vss_report_cam1_20250101_000000.md",
+                video_url="http://localhost:8000/vst/clip.mp4",
+                summary="A burglary occurred.",
+                content=None,
+                file_size=123,
+            )
+        )
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(return_value=IncidentReport(incident_type="burglary"))
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        builder.get_tool = AsyncMock(return_value=video_report_tool)
+        builder.get_llm = AsyncMock(return_value=llm)
+
+        result, _ = await self._run(config, builder, db_configured=False)
+
+        assert isinstance(result, IncidentReportGenOutput)
+        assert result.structured_report.incident_start == "0:00"
+        assert result.structured_report.incident_start_confirmed is False
+
+    @pytest.mark.asyncio
     async def test_str_sensor_id_still_persists_and_extracts(self):
         """Single-video calls (the only shape /analyze itself ever sends) keep the
         existing structured extraction + persistence behavior after widening sensor_id."""
