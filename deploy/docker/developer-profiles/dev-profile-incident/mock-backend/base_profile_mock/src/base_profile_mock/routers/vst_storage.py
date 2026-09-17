@@ -15,8 +15,8 @@ import uuid
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
+from fastapi import UploadFile
 from fastapi.responses import JSONResponse
-from fastapi.responses import Response
 
 from base_profile_mock.state import AppState
 from base_profile_mock.state import Stream
@@ -69,7 +69,6 @@ async def _process_chunk(
                 name=upload.filename,
                 filename=upload.filename,
                 bytes_total=upload.bytes_received,
-                content=body_bytes,
             )
 
         return {
@@ -93,9 +92,7 @@ async def upload_file_multipart(
     media_file = form.get("mediaFile")
     filename_hint = form.get("filename")
     body_bytes = b""
-    # Starlette may return its base UploadFile class even though the route
-    # imports FastAPI's compatibility subclass, so use the upload protocol.
-    if media_file is not None and hasattr(media_file, "read"):
+    if isinstance(media_file, UploadFile):
         body_bytes = await media_file.read()
         filename_hint = filename_hint or media_file.filename
 
@@ -143,16 +140,6 @@ async def get_stream_timelines(stream_id: str, state: AppState = Depends(get_sta
     if stream is None:
         return {stream_id: []}
     return {stream_id: [{"startTime": stream.created_at, "endTime": stream.created_at + 1}]}
-
-
-@router.get("/storage/file/{filename}")
-async def get_uploaded_file(filename: str, state: AppState = Depends(get_state)) -> Response:
-    """Serve the bytes captured by the mock upload for browser playback."""
-    async with state.lock:
-        stream = next((item for item in state.streams.values() if item.filename == filename), None)
-    if stream is None:
-        return Response(status_code=404, content=b"video not found")
-    return Response(content=stream.content, media_type="video/mp4", headers={"Accept-Ranges": "bytes"})
 
 
 @router.get("/storage/file/{sensor_id}/url")

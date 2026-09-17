@@ -39,6 +39,7 @@ def _upload_dialog() -> None:
         with st.spinner("Uploading to the agent..."):
             result = upload_and_record(AgentClient(), handle, filename=uploaded.name, content=uploaded.getvalue())
         if result.ok:
+            st.session_state["catalog_polling_video_id"] = result.data
             st.success(f"Uploaded. New video id: {result.data}")
             st.rerun()
         elif result.not_implemented:

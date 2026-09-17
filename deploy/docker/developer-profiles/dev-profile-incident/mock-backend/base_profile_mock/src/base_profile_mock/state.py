@@ -34,7 +34,6 @@ class Stream:
     name: str
     filename: str
     bytes_total: int
-    content: bytes = b""
     created_at: float = field(default_factory=time.time)
     stream_type: str = "file"  # "file" (uploaded video) or "rtsp"
 
