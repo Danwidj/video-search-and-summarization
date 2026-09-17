@@ -22,9 +22,10 @@ import html
 import json
 from urllib.parse import quote
 
-
 import streamlit as st
 
+from agent_client import AgentClient
+from catalog_actions import upload_and_record
 from db_reports import DBReports
 from report_detail import (
     confidence_label,
@@ -32,7 +33,7 @@ from report_detail import (
     render_detail,
     time_label,
 )
-from theme import TYPE_COLORS, apply_base_style, page_header, severity_badge
+from theme import TYPE_COLORS, alert, apply_base_style, page_header, severity_badge
 from ui import get_db_or_notice, video_playback_url
 
 
@@ -77,6 +78,30 @@ _db_handle = get_db_or_notice()
 if _db_handle is None:
     st.stop()
 handle = DBReports(_db_handle, st.session_state)
+
+
+@st.dialog("Upload video")
+def _upload_dialog() -> None:
+    uploaded = st.file_uploader("Video file", type=["mp4", "mkv"])
+    if st.button("Upload and generate report", type="primary", disabled=uploaded is None):
+        with st.spinner("Uploading video to R2..."):
+            result = upload_and_record(AgentClient(), _db_handle, filename=uploaded.name, content=uploaded.getvalue())
+        if not result.ok:
+            if result.not_implemented:
+                alert("Upload isn't available on this backend yet.", "info", "ℹ️")
+            else:
+                alert(f"Upload failed: {result.error}", "error", "!")
+            return
+        video_id = result.data
+        with st.spinner("Generating incident report..."):
+            analysis = AgentClient().analyze_incident(video_id)
+        if analysis.ok:
+            st.success("Video uploaded and report generated.")
+        else:
+            st.warning(f"Video uploaded, but report generation failed: {analysis.error}")
+        st.rerun()
+
+
 if notice := st.session_state.pop("detail_notice", None):
     st.success(notice)
 if close_id := st.session_state.pop("detail_close_edit", None):
@@ -98,7 +123,13 @@ if selected is not None:
     render_detail(handle, report, video)
 
 else:
-    st.title("Incident Reports")
+    title_col, upload_col = st.columns([4, 1])
+    with title_col:
+        st.title("Incident Reports")
+    with upload_col:
+        st.write("")
+        if st.button("Upload video", type="primary", width="stretch"):
+            _upload_dialog()
     # Restore filters after leaving the detail view (Streamlit cleans hidden widgets).
     saved = st.session_state.get("library_filters", {})
     for key, value in saved.items():

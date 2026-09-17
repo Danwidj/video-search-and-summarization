@@ -8,15 +8,20 @@ services/ui/packages/common/lib-src/utils/chunkedUpload.ts.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
+import hashlib
+import os
+from pathlib import PurePosixPath
 from typing import Any
 import uuid
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import HTTPException
 from fastapi import Request
-from fastapi import UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 
 from base_profile_mock.state import AppState
 from base_profile_mock.state import Stream
@@ -24,6 +29,39 @@ from base_profile_mock.state import UploadInProgress
 from base_profile_mock.state import get_state
 
 router = APIRouter(prefix="/vst/api/v1")
+
+_CATEGORIES = (
+    ("road_accidents", "road accident"),
+    ("fighting", "fighting"),
+    ("animal_attacks", "animal"),
+    ("burglary", "burglary"),
+    ("explosion", "explosion"),
+)
+
+
+def _r2_upload(stream: Stream, sensor_id: str) -> str:
+    """Upload a completed mock stream and return its durable R2 object key."""
+    import boto3
+    from botocore.config import Config
+
+    required = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET")
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise RuntimeError(f"R2 storage is not configured; missing {', '.join(missing)}")
+    incident_id = "v" + hashlib.sha256(sensor_id.encode("utf-8")).hexdigest()[:19]
+    folder, _ = _CATEGORIES[hashlib.sha256(incident_id.encode("utf-8")).digest()[0] % len(_CATEGORIES)]
+    filename = PurePosixPath(stream.filename or f"{incident_id}.mp4").name
+    key = f"anomaly/{folder}/{filename}"
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+        aws_access_key_id=os.environ["R2_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["R2_SECRET_KEY"],
+        region_name="auto",
+        config=Config(signature_version="s3v4", connect_timeout=10, read_timeout=30, retries={"max_attempts": 2}),
+    )
+    client.put_object(Bucket=os.environ["R2_BUCKET"], Key=key, Body=stream.content, ContentType="video/mp4")
+    return key
 
 
 async def _process_chunk(
@@ -64,12 +102,23 @@ async def _process_chunk(
         sensor_id = upload.sensor_id
 
         if is_last:
-            state.streams[sensor_id] = Stream(
+            stream = Stream(
                 stream_id=sensor_id,
                 name=upload.filename,
                 filename=upload.filename,
                 bytes_total=upload.bytes_received,
+                content=body_bytes,
             )
+            state.streams[sensor_id] = stream
+            # R2 is the durable video store. Keep the in-memory copy for the
+            # mock VST endpoints, but return the R2 key to the console so it
+            # can commit filepath before automatic analysis starts.
+            try:
+                file_path = await asyncio.to_thread(_r2_upload, stream, sensor_id)
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=f"R2 upload failed: {exc}") from exc
+        else:
+            file_path = f"/data/videos/{upload.filename}"
 
         return {
             "id": sensor_id,
@@ -77,7 +126,7 @@ async def _process_chunk(
             "bytes": upload.bytes_received,
             "streamId": sensor_id,
             "sensorId": sensor_id,
-            "filePath": f"/data/videos/{upload.filename}",
+            "filePath": file_path,
             "timestamp": now,
             "created_at": now,
         }
@@ -92,7 +141,9 @@ async def upload_file_multipart(
     media_file = form.get("mediaFile")
     filename_hint = form.get("filename")
     body_bytes = b""
-    if isinstance(media_file, UploadFile):
+    # Starlette may return its base UploadFile class even though the route
+    # imports FastAPI's compatibility subclass, so use the upload protocol.
+    if media_file is not None and hasattr(media_file, "read"):
         body_bytes = await media_file.read()
         filename_hint = filename_hint or media_file.filename
 
@@ -140,6 +191,16 @@ async def get_stream_timelines(stream_id: str, state: AppState = Depends(get_sta
     if stream is None:
         return {stream_id: []}
     return {stream_id: [{"startTime": stream.created_at, "endTime": stream.created_at + 1}]}
+
+
+@router.get("/storage/file/{filename}")
+async def get_uploaded_file(filename: str, state: AppState = Depends(get_state)) -> Response:
+    """Serve the bytes captured by the mock upload for browser playback."""
+    async with state.lock:
+        stream = next((item for item in state.streams.values() if item.filename == filename), None)
+    if stream is None:
+        return Response(status_code=404, content=b"video not found")
+    return Response(content=stream.content, media_type="video/mp4", headers={"Accept-Ranges": "bytes"})
 
 
 @router.get("/storage/file/{sensor_id}/url")
