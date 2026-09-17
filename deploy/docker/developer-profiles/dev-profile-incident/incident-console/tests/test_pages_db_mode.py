@@ -24,6 +24,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from scripts.seed_supabase import seed
+from tz import DISPLAY_TZ_LABEL, to_display_tz
 
 
 @pytest.fixture
@@ -149,6 +150,9 @@ def test_review_status_and_reviewer_survive_nav_away_and_back(db_pages):
     captions = " | ".join(c.value for c in app.caption)
     assert "Current: verified" in captions
     assert "dana" in captions
+
+    verified_at = to_display_tz(db_pages.get_latest_incident(rid)["verified_at"])
+    assert f"{verified_at.strftime('%Y-%m-%d %H:%M')} {DISPLAY_TZ_LABEL}" in captions
 
 
 def test_dashboard_renders_charts_from_db_incidents(db_pages):

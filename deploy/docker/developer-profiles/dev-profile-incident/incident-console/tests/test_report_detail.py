@@ -15,8 +15,10 @@
 
 """Detail-view helpers use canned test content, never live data."""
 
+import datetime as _dt
+
 from incident_report import canned_incident_report
-from report_detail import confidence_label, normalized, seconds
+from report_detail import _attribution_when, confidence_label, normalized, seconds
 
 
 def test_missing_values_and_strict_times():
@@ -31,3 +33,23 @@ def test_missing_values_and_strict_times():
     fields = normalized(canned_incident_report().model_dump())
     assert fields["Duration"] == 22
     assert normalized({"Start_Timestamp": 9, "End_Timestamp": 2})["Duration"] is None
+
+
+def test_attribution_when_missing_value():
+    assert _attribution_when(None) == ""
+    assert _attribution_when("") == ""
+
+
+def test_attribution_when_naive_utc_datetime_is_shown_in_sgt():
+    when = _attribution_when(_dt.datetime(2026, 1, 1, 23, 0, 0))
+    assert when == " · 2026-01-02 07:00 SGT"
+
+
+def test_attribution_when_iso_string_fallback_is_shown_in_sgt():
+    when = _attribution_when("2026-01-01T23:00:00")
+    assert when == " · 2026-01-02 07:00 SGT"
+
+
+def test_attribution_when_unparseable_string_falls_back_to_raw_text():
+    when = _attribution_when("not-a-real-timestamp")
+    assert when == " · not-a-real-times SGT"
