@@ -113,9 +113,12 @@ for the deferred report-generation flow (`agent_client.py`).
 
 The local `base_profile_mock` implements
 `POST /api/v1/incidents/{id}/analyze` as an explicitly mock, Postgres-backed
-report generator. The real `vss-agent` analyze route and
-`POST /api/v1/search` are still follow-up work, so the client keeps returning a
-"not implemented yet" notice when a configured backend 404s those endpoints.
+report generator. The real `vss-agent` analyze route now exists
+(`services/agent/src/vss_agents/api/incident_analyze.py`, merged in PR #38)
+but isn't reachable on the deployed VM yet — see `DEPLOY_NOTES.md`'s Known
+Issue #1 (no `build:` wiring for vss-agent's container). `POST /api/v1/search`
+is still unbuilt (MVP2), so the client keeps returning a "not implemented yet"
+notice for that one.
 
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
@@ -193,7 +196,7 @@ passed to `docker compose --env-file`, interpolated into the container via
 
 | Variable | Purpose | Real source |
 |---|---|---|
-| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works, but only for the local-dev loop in [`LOCAL_MOCK_LOOP.md`](../LOCAL_MOCK_LOOP.md) — production stays Supabase Postgres via the session pooler |
+| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works for local iteration — production stays Supabase Postgres via the session pooler |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |

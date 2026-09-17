@@ -7,9 +7,9 @@ Video-driven incident search and reporting built on this VSS blueprint fork. A S
 ## 2. Where things live
 
 - Plan docs: `docs/incident-plan/` (this file; `incident-plan-implementation-local.md` / `-remote.md` for mode-specific setup; `incident-plan-implementation-shared.md` for mode-independent build).
-- Profile: `deploy/docker/developer-profiles/dev-profile-incident/` (`compose.yml`, `incident-console/`, `mock-backend/`, `LOCAL_MOCK_LOOP.md`).
+- Profile: `deploy/docker/developer-profiles/dev-profile-incident/` (`compose.yml`, `incident-console/`, `mock-backend/`).
 - Console schema, authoritative: `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` (module docstring + `incident-console/README.md`).
-- GPU-less UI loop: `mock-backend/base_profile_mock/README.md` and `LOCAL_MOCK_LOOP.md`.
+- GPU-less UI loop: `mock-backend/base_profile_mock/README.md`.
 - `origin` is the team fork; `upstream` is NVIDIA's repo.
 
 ## 3. Environments and access
@@ -48,7 +48,7 @@ export OPENAI_API_KEY="$NVIDIA_API_KEY"
 
 - `--llm-model-type`/`--vlm-model-type` are `openai`, not `nim`. `nim`-type is non-functional (upstream `nvidia-nat` bug: `nim_langchain` leaks `verify_ssl` into the request body; issue #1894 / PR #1862, unmerged as of 2026-09-06).
 - `dev-profile-incident` deploys via `docker compose --env-file generated.env.<local|remote>` (see the mode doc §2). Never run `dev-profile.sh down` (deletes the data dir incl. ~35 GB cached weights); use plain `docker compose down`.
-- Local UI iteration needs no GPU/VM: `cd deploy/docker/developer-profiles/dev-profile-incident/incident-console && uv sync && uv run streamlit run app.py` (see `LOCAL_MOCK_LOOP.md`).
+- Local UI iteration needs no GPU/VM: `cd deploy/docker/developer-profiles/dev-profile-incident/incident-console && uv sync && uv run streamlit run app.py` (see `incident-console/README.md`'s local dev loop).
 
 ## 5. Current status (as of 2026-09-13)
 
@@ -56,11 +56,12 @@ export OPENAI_API_KEY="$NVIDIA_API_KEY"
 |---|---|
 | `incident-console` app (catalog, report review, dashboard, human-eval; Postgres-backed, no offline mode) | Present; seed via `incident-console/scripts/seed_supabase.py` over `fixtures/data/*.csv` |
 | Console schema (`db.py`: videos/queries/model_runs/incidents + evidence, ground-truth, match, review tables) | Present; authoritative for schema questions |
-| Mock backend + local loop (`mock-backend/base_profile_mock`, `LOCAL_MOCK_LOOP.md`) | Present; verified loop documented |
+| Mock backend + local loop (`mock-backend/base_profile_mock`) | Present; verified loop documented |
 | Stock base-local deploy (one model per GPU, `hw-OTHER.env` sizing) | Verified working |
 | Stock base-remote chat + VLM describe (`openai`-type, model above) | Verified working 2026-09-13 on corrected `--host-ip`: video upload to VST plus `video_understanding` through the remote VLM returned a correct description. Full `report_agent` path still needs a UI websocket (HITL), so it remains unverified headless. |
 | Stock `search` profile (local and remote) | Verified working 2026-09-13 both modes; deploy commands in the mode docs §3 |
-| `dev-profile-incident` `config.yml`, `incident_report_gen` tool, `/analyze` + `/search` API routes | Planned (shared doc §§4-6); not yet built |
+| `incident_report_gen` tool + `/analyze` API route | Built (PR #38, merged 2026-09-17); not yet reachable on the deployed VM (see DEPLOY_NOTES.md Known Issue #1) |
+| `dev-profile-incident` `config.yml`, `/search` API route | Planned (shared doc §§4-6); not yet built |
 | `openai_vlm` missing-`base_url` patch (`base_url: ${VLM_BASE_URL}/v1` in `config.yml` + `config_rag.yml`) | Required; re-apply after any upstream sync |
 | Remote free-tier 16-concurrent-request ceiling; hosted-model 12-images-per-prompt cap | Open constraints; remote report path loops/hangs past them |
 
