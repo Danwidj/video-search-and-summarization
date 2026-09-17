@@ -34,7 +34,7 @@
 # - Only syntax-checked here (bash -n, osacompile); window-spawning was
 #   NOT tested end-to-end from this non-interactive checkout.
 #
-# Usage: bash deploy/dotfiles/launch-incident-local.sh
+# Usage: bash deploy/docker/developer-profiles/dev-profile-incident/launch-incident-local.sh
 #        (run from anywhere; the repo root is derived from this script's
 #        own location, so the UI always runs from your local checkout)
 
@@ -42,7 +42,9 @@ set -euo pipefail
 
 # Repo root = the checkout containing this script, so the UI always runs
 # from your local tree even when invoked via a symlink or from an odd cwd.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# This script lives 4 levels below repo root (deploy/docker/developer-profiles/
+# dev-profile-incident/), hence ../../../../.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 ALIASES="$REPO_ROOT/deploy/dotfiles/aliases.sh"
 CONSOLE_DIR="$REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/incident-console"
 

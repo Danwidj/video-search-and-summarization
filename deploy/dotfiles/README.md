@@ -81,12 +81,15 @@ Then start a new shell (or `source ~/.bashrc`).
   No `bootstrap.sh` / `shellrc.sh` change was needed for them: the bootstrap
   already copies `aliases.sh` verbatim and `shellrc.sh` already sources it,
   so the tunnel functions ship through that same channel on next re-run.
-- **`launch-incident-local.sh`** — laptop-side macOS/Ghostty launcher for the
-  local-dev loop: opens one Ghostty window running `mdx-tunnel-incident`
-  and a second running the console locally (`uv run streamlit run app.py
-  --server.port 8502` per `incident-console/README.md` Phase 4, on :8502 so it
-  never clashes with the tunnel's :8501 forward for the VM-hosted console).
-  Run with
-  `bash deploy/dotfiles/launch-incident-local.sh` from your checkout; needs
-  Ghostty >= 1.3.0 (AppleScript) and `uv` on PATH. See its header comment
-  for the `:8501` vs `:8502` port split.
+- **`launch-incident-local.sh`** (lives in
+  [`deploy/docker/developer-profiles/dev-profile-incident/`](../docker/developer-profiles/dev-profile-incident/launch-incident-local.sh),
+  not here — it's specific to that profile's local-dev workflow, but still
+  sources this directory's `aliases.sh` for `mdx-tunnel-incident`) —
+  laptop-side macOS/Ghostty launcher for the local-dev loop: opens one
+  Ghostty window running `mdx-tunnel-incident` and a second running the
+  console locally (`uv run streamlit run app.py --server.port 8502` per
+  `incident-console/README.md` Phase 4, on :8502 so it never clashes with
+  the tunnel's :8501 forward for the VM-hosted console). Run with
+  `bash deploy/docker/developer-profiles/dev-profile-incident/launch-incident-local.sh`
+  from your checkout; needs Ghostty >= 1.3.0 (AppleScript) and `uv` on PATH.
+  See its header comment for the `:8501` vs `:8502` port split.
