@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# vlm-gateway - Thin proxy for NVIDIA-hosted OpenAI-compatible LLM/VLM inference.
+# VM-deploy only: local development runs the app natively (uv run uvicorn app:app --port 8600),
+# never through this compose file. See README.md for the local dev loop.
+
+services:
+
+  vlm-gateway:
+    build:
+      context: ${VSS_APPS_DIR}/developer-profiles/dev-profile-incident/vlm-gateway
+      dockerfile: Dockerfile
+    container_name: vss-vlm-gateway
+    profiles: ["bp_developer_search_2d"]
+    network_mode: "host"
+    environment:
+      # NVIDIA-hosted OpenAI-compatible endpoint base URL.
+      # Default points to the team's switchyard endpoint.
+      - VLM_GATEWAY_BASE_URL=${VLM_GATEWAY_BASE_URL:-https://switchyard-13doh4lsz.brevlab.com/v1}
+      # API key for the upstream endpoint. MUST be set in generated.env.remote for VM deploy.
+      # Empty here - the real value is injected at deploy time.
+      - VLM_GATEWAY_API_KEY=${VLM_GATEWAY_API_KEY:-}
+      # Host port the gateway listens on (compose maps it via host networking).
+      - VLM_GATEWAY_PORT=${VLM_GATEWAY_PORT:-8600}
+    restart: unless-stopped
