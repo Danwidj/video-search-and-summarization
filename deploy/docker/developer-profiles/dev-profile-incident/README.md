@@ -86,6 +86,14 @@ cd deploy/docker/developer-profiles/dev-profile-incident
 ./start.sh
 ```
 
+SSH access to kwanz-ws is per-person (see the manual flow below), so
+`start.sh` no longer hardcodes a VM username: it prompts for one, pre-filled
+with your local `$USER` as the default (just hit Enter if that matches your
+VM account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
+non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
+to override the login entirely, same as before. `tunnel.sh` resolves its VM
+login the same way.
+
 `start.sh` checks the VM's deploy state over SSH (`docker compose -p mdx ps`):
 
 - **Nothing running** → deploys the backend fresh over SSH (the profile's own
@@ -97,6 +105,26 @@ cd deploy/docker/developer-profiles/dev-profile-incident
   missing/expected (with a nonzero exit), telling you to clear the partial
   state manually before re-running. It deliberately never auto-reconciles or
   force-redeploys over a partial state.
+
+##### Troubleshooting the VM SSH username
+
+- **No prompt appears at all** — a `VSS_SSH_TARGET` env var is already set in
+  your shell (it takes priority over the prompt). `unset VSS_SSH_TARGET` to
+  be prompted again.
+- **The pre-filled default is your local machine username, not necessarily
+  your VM account** — kwanz-ws access is per-person and Tailscale-gated;
+  don't just accept the default if you know it's wrong for you.
+- **To check if a username is valid before running the whole script:**
+  `ssh <username>@kwanz-ws echo ok`. A
+  `tailscale: tailnet policy does not permit you to SSH as user "..."` error
+  means that username isn't authorized for your device — try a different one
+  or ask whoever manages VM access.
+- **SSH works but `start.sh` still fails with a Docker permission error** — a
+  `permission denied ... Docker daemon socket` error means that VM account
+  needs Docker group access: on the VM, run `sudo usermod -aG docker
+  <username>` once (needs sudo there), then fully log out and reconnect
+  (exit the SSH session and ssh back in) — group membership doesn't apply to
+  an already-open session.
 
 It then backgrounds the SSH tunnel (and closes it when the console exits) and
 starts the local Streamlit console. Run it from the laptop only — it refuses
