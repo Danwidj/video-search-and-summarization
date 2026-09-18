@@ -86,6 +86,14 @@ cd deploy/docker/developer-profiles/dev-profile-incident
 ./start.sh
 ```
 
+SSH access to kwanz-ws is per-person (see the manual flow below), so
+`start.sh` no longer hardcodes a VM username: it prompts for one, pre-filled
+with your local `$USER` as the default (just hit Enter if that matches your
+VM account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
+non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
+to override the login entirely, same as before. `tunnel.sh` resolves its VM
+login the same way.
+
 `start.sh` checks the VM's deploy state over SSH (`docker compose -p mdx ps`):
 
 - **Nothing running** → deploys the backend fresh over SSH (the profile's own
