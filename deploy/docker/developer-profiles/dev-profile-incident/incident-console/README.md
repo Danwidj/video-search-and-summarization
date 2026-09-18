@@ -46,7 +46,15 @@ Cloudflare R2 keys in `incident-console/.env.local` (untracked, loaded by
 `config.py` with `override=True`), which `incident-console/.gitignore` keeps out of
 git. For the VM deploy, edit the real values into the ignored `generated.env.local` /
 `generated.env.remote` copy instead (see the local/remote implementation docs,
-§2) - never into `.env.local` on the build host:
+§2) - never into `.env.local` on the build host.
+
+A tracked, copyable template listing every required key exists at
+`incident-console/.env.example` — copy it to `.env.local` and fill in real
+values:
+
+```bash
+cp .env.example .env.local
+```
 
 ```dotenv
 # incident-console/.env.local  (untracked)
