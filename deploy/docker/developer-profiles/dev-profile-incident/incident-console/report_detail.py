@@ -344,7 +344,7 @@ def _eval_match_details(kind, result):
 
 
 def gt_evaluation_section(handle, record):
-    """Tier 1 ground-truth evaluation: run on demand, cached per incident in session state.
+    """Tier 1 ground-truth evaluation: run on demand, cached per incident+model run in session state.
 
     Renders nothing when no ``gt_incidents`` row exists for this incident - an
     unevaluated incident looks exactly as it does today.

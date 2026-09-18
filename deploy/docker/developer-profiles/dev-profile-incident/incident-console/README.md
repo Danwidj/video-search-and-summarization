@@ -142,8 +142,9 @@ reuses `matching.py` unchanged for entities/instruments/assets and derives
 TP/FP/FN/Precision/Recall/F1 from the accepted matches. `run_evaluation(db,
 incident_id, model_run_id)` is the one orchestration entry point; the
 "Ground-truth evaluation" section on the report-detail page
-(`report_detail.py`) just calls it and renders the result — it appears only
-for incidents that already have a `gt_incidents` row.
+(`report_detail.py`) calls it via `DBReports.run_gt_evaluation()` and renders
+the result — it appears only for incidents that already have a `gt_incidents`
+row.
 
 Seed a 5-incident demo set (real CSV-fixture ground truth + a deterministically
 perturbed model run under its own `MR-EVAL-DEMO` model run, covering a

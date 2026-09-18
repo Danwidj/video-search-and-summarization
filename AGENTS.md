@@ -83,8 +83,8 @@ laptop to the VM backend for the locally-run incident-console); never run them o
 tolerance comparisons for timestamps/duration, and TP/FP/FN/P/R/F1 derived from `matching.py`'s existing
 embedding+Hungarian output - `matching.py` itself is untouched). `run_evaluation(db, incident_id,
 model_run_id)` is the one orchestration entry point; `report_detail.py`'s "Ground-truth evaluation" section
-(shown only when a `gt_incidents` row exists for that incident) just calls it and renders the result - no
-new page. `mock_llm_server.py` provides the `/v1/embeddings` and judge-branched `/v1/chat/completions`
+(shown only when a `gt_incidents` row exists for that incident) calls it via `DBReports.run_gt_evaluation()`
+and renders the result - no new page. `mock_llm_server.py` provides the `/v1/embeddings` and judge-branched `/v1/chat/completions`
 routes this needs with zero live infra; `scripts/seed_gt_demo.py` seeds a 5-incident demo set (real
 CSV-fixture ground truth + a perturbed model run under `MR-EVAL-DEMO`) covering every required scenario.
 See `incident-console/README.md`'s "Tier 1 GT evaluation" section for the exact local run commands.
