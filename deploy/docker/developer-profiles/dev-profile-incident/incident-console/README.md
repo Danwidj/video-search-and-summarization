@@ -120,6 +120,30 @@ Issue #1 (no `build:` wiring for vss-agent's container). `POST /api/v1/search`
 is still unbuilt (MVP2), so the client keeps returning a "not implemented yet"
 notice for that one.
 
+### Local, zero-GPU dev loop (SQLite + mock LLM)
+
+No real Supabase/R2 secrets are required for this loop: a local SQLite file
+works as a placeholder `INCIDENT_DB_DSN` for iteration (production stays
+Supabase Postgres via the session pooler, see the env-var table below).
+
+Terminal 2:
+
+```bash
+cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
+uv sync
+uv run uvicorn mock_llm_server:app --port 8900
+# health: curl http://localhost:8900/health -> {"status":"ok"}
+```
+
+Terminal 3 (same directory):
+
+```bash
+export INCIDENT_DB_DSN="sqlite:////tmp/incident-local.db"
+export INCIDENT_LLM_BASE_URL="http://localhost:8900/v1"
+uv run python scripts/seed_supabase.py   # idempotent seed
+uv run streamlit run app.py              # http://localhost:8501
+```
+
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
 The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
@@ -200,7 +224,7 @@ passed to `docker compose --env-file`, interpolated into the container via
 
 | Variable | Purpose | Real source |
 |---|---|---|
-| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works for local iteration — production stays Supabase Postgres via the session pooler |
+| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. See "Local, zero-GPU dev loop (SQLite + mock LLM)" above for the local SQLite alternative |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
