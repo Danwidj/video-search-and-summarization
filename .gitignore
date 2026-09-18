@@ -21,6 +21,7 @@ deploy/docker/rag-secret.override.yml
 # placeholder template). Use the same blanket .env* convention as the rest
 # of the repo (services/ui/.gitignore, services/ui/apps/nv-metropolis-bp-vss-ui/.gitignore).
 deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env*
+!deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env
 
 *.log
 *checkpoint.*
