@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Local, zero-GPU incident-console loop. Secrets stay in the ignored
-# incident-console/.env file and are loaded by uv; nothing is exported here.
+# incident-console/.env.local file and are loaded by uv; nothing is exported here.
 PROFILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$PROFILE_DIR/../../../.." && pwd)"
-ENV_FILE="$PROFILE_DIR/incident-console/.env"
+ENV_FILE="$PROFILE_DIR/incident-console/.env.local"
 BACKEND_DIR="$PROFILE_DIR/mock-backend/base_profile_mock"
 
 if [[ ! -f "$ENV_FILE" ]]; then

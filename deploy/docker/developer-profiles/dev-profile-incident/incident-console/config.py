@@ -27,16 +27,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# The committed dev-profile-incident/.env holds documented placeholders and is
-# found via find_dotenv() upward search from the process CWD (so it resolves
-# from incident-console/ but NOT from the repo root - CWD-dependent). Real
-# values live in incident-console/.env.local (local dev; loaded here with
-# override so it wins over the placeholders; incident-console/.env is likewise
-# code-live via the first load_dotenv() call, with .env.local winning when both
-# exist) or, on the VM deploy, in the generated.env.local/.remote copy passed
-# to docker compose --env-file (containers see compose interpolation only).
-# Missing files are ignored, so the app still runs with neither.
-load_dotenv()
+# Load the committed profile-level placeholder .env explicitly (not via
+# find_dotenv()), then the untracked .env.local with override so real secrets
+# win. This avoids the accidental code-live pickup of incident-console/.env
+# that the previous bare load_dotenv() + find_dotenv() caused.
+load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).with_name(".env.local"), override=True)
 
 # Proposed defaults from the incident plan - NOT sourced from any team spec.

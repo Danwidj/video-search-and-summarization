@@ -42,11 +42,9 @@ created fresh, not migrated).
 
 **Secrets never go in a tracked file.** `dev-profile-incident/.env` is committed
 and stays placeholders. For local dev, put the real Supabase DSN and
-Cloudflare R2 keys in `incident-console/.env.local` (either `.env` or
-`.env.local` there is code-live; `.env.local` wins if both exist), which
-`incident-console/.gitignore` keeps out of
-git and `config.py` loads with `override=True` on top of `.env`. For the VM
-deploy, edit the real values into the ignored `generated.env.local` /
+Cloudflare R2 keys in `incident-console/.env.local` (untracked, loaded by
+`config.py` with `override=True`), which `incident-console/.gitignore` keeps out of
+git. For the VM deploy, edit the real values into the ignored `generated.env.local` /
 `generated.env.remote` copy instead (see the local/remote implementation docs,
 §2) - never into `.env.local` on the build host:
 
@@ -188,15 +186,13 @@ uv run ruff format --check .
 ## Environment variables
 
 All are read by `config.py`, which loads the committed `../.env` placeholders
-via `find_dotenv()` upward search from the process CWD (resolves from
-`incident-console/`, not from the repo root), then `./.env.local` (untracked
-real secrets) with override. `incident-console/.env` is likewise code-live via
-the first `load_dotenv()` call; `.env.local` wins when both exist. Real values
-and their source are documented in [`dev-profile-incident/.env`](../.env).
-On the VM deploy nothing reads `.env` files inside the container - the real
-values live in the ignored `generated.env.local` / `generated.env.remote` copy
-passed to `docker compose --env-file`, interpolated into the container via
-`compose.yml` `environment:` (see §2 of the local/remote implementation docs).
+explicitly (not via `find_dotenv()`), then `./.env.local` (untracked
+real secrets) with override. The old `incident-console/.env` is no longer
+code-live. Real values and their source are documented below. On the VM deploy
+nothing reads `.env` files inside the container - the real values live in the
+ignored `generated.env.local` / `generated.env.remote` copy passed to
+`docker compose --env-file`, interpolated into the container via `compose.yml`
+`environment:` (see §2 of the local/remote implementation docs).
 
 | Variable | Purpose | Real source |
 |---|---|---|
