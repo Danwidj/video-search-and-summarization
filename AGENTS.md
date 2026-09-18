@@ -76,6 +76,19 @@ laptop to the VM backend for the locally-run incident-console); never run them o
 
 [`.githooks/`](.githooks/README.md) propagates untracked `.env` files from the main worktree into new/checked-out worktrees (copy-if-missing, never overwrites, `generated.env` excluded) and keeps the incident-console `uv` venv in sync (`uv sync`, skipped when `.venv` is newer than `pyproject.toml`/`uv.lock`). Fires on checkout/switch/worktree-add (post-checkout), merge/pull (post-merge) and rebase/amend (post-rewrite). Activation is per-clone local config, so every fresh clone (laptop, VM) must run `.githooks/activate.sh` once. Out of scope there: `.ngc_env` and R2 config (separate phases).
 
+## incident-console Tier 1 GT evaluation
+
+`eval_gt.py` scores one model run's `incidents`/`entities`/`instruments`/`assets` against the parallel
+`gt_*` tables (type/severity exact match, an LLM-judge score for description via `INCIDENT_LLM_BASE_URL`,
+tolerance comparisons for timestamps/duration, and TP/FP/FN/P/R/F1 derived from `matching.py`'s existing
+embedding+Hungarian output - `matching.py` itself is untouched). `run_evaluation(db, incident_id,
+model_run_id)` is the one orchestration entry point; `report_detail.py`'s "Ground-truth evaluation" section
+(shown only when a `gt_incidents` row exists for that incident) just calls it and renders the result - no
+new page. `mock_llm_server.py` provides the `/v1/embeddings` and judge-branched `/v1/chat/completions`
+routes this needs with zero live infra; `scripts/seed_gt_demo.py` seeds a 5-incident demo set (real
+CSV-fixture ground truth + a perturbed model run under `MR-EVAL-DEMO`) covering every required scenario.
+See `incident-console/README.md`'s "Tier 1 GT evaluation" section for the exact local run commands.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
