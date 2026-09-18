@@ -46,8 +46,8 @@ SQLAlchemy connection. The two config surfaces are independently maintained.
 
 This module uses ``supabase-py``'s async client (``acreate_client``) rather than
 ``asyncpg``. The PostgREST layer does not support client-held transactions or
-``SELECT ... FOR UPDATE`` row locking; see the plan doc's §2.2 for the
-capability matrix. The one cross-table operation that needs atomicity
+``SELECT ... FOR UPDATE`` row locking; see AGENTS.md's "incident-console
+Postgres schema" entry for why. The one cross-table operation that needs atomicity
 (``insert_incident``) calls a Postgres RPC function via ``/rpc/insert_incident``.
 :meth:`IncidentDB.set_review_status` performs its read-then-write steps as
 separate sequential PostgREST calls rather than in one transaction, for the

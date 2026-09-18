@@ -27,11 +27,10 @@ Identity rule: 1 video = 1 incident (`incidents.incident_id` == `videos.id`; no 
 
 `verified_by`/`edited_by`/`rater` are freeform text (who typed their name in), not foreign keys to a user table - per the Overview doc's standing facts (§6). Skip a migration framework (Alembic etc.) - capstone-scale schema, `CREATE TABLE IF NOT EXISTS` run once on startup (`MetaData.create_all(checkfirst=True)` in `get_db()`) is enough.
 
-DB access from the console is sync SQLAlchemy Core through `db.py`'s `IncidentDB` (matches Streamlit's per-script-rerun model); connection string is `INCIDENT_DB_DSN`, unset means a visible "database not configured" state, no offline mode. `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side async CRUD helper for these tables, built directly on `asyncpg` (not SQLAlchemy-async) - see AGENTS.md's "incident-console Postgres schema" entry for what it covers.
+DB access from the console is sync SQLAlchemy Core through `db.py`'s `IncidentDB` (matches Streamlit's per-script-rerun model); connection string is `INCIDENT_DB_DSN`, unset means a visible "database not configured" state, no offline mode. `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart, but built on `supabase-py`'s async PostgREST client rather than direct Postgres - see AGENTS.md's "incident-console Postgres schema" entry for why (the deployment VM DPI-blocks raw Postgres wire protocol) and what it covers.
 Modify: `dev-profile-incident/.env` (add `INCIDENT_DB_DSN=postgresql://...`).
 Note: the stack already runs its own internal Postgres (`centralizedb`, VIOS's metadata store) - do not repurpose it, its schema is VIOS-owned.
-**Verify live:** confirmed. A one-shot local smoke test using the new `utils/incident_db.py` helper connected through Hyperdrive to the real Supabase-backed Postgres with `sslmode=require` (parsed straight out of the DSN's own query string - `asyncpg` honors it natively, no extra handling needed), then ran three acquire → `SELECT 1` → release cycles plus a `healthcheck()` call through an `asyncpg` pool sized `min_size=1, max_size=2` - all succeeded. This confirms DSN/SSL connectivity and that pooled queries work end to end under those specific settings; it is a one-off local test, not a load test, so it does **not** establish that `min_size=1, max_size=2` (or any other pair) is safe under real concurrent production load - that sizing question is still open and would need separate testing under representative concurrency before relying on it in production.
-**Confirmed:** verified all four `DuckDBIncidentsManager` claims directly against `incidents.py` - read-only bulk S3-JSON cache, no single-record write API, not wired into any profile's `config.yml`, per-process singleton. Also confirmed, before this change: `services/agent/pyproject.toml` had zero Postgres client dependencies (no `asyncpg`/`psycopg`/`sqlalchemy`), and no existing tool or API route in `services/agent` did async DB I/O or held a connection pool - `incident_db.py` was written defensively (explicit pool sizing, explicit error handling) as a result, since it had no in-repo async-Postgres precedent to model itself on.
+**Confirmed:** verified all four `DuckDBIncidentsManager` claims directly against `incidents.py` - read-only bulk S3-JSON cache, no single-record write API, not wired into any profile's `config.yml`, per-process singleton.
 
 ---
 
@@ -235,7 +234,7 @@ vss/
 │                                                                flagged incomplete, confirm before relying on it
 │
 └── services/agent/
-    ├── pyproject.toml                                   [MOD] +asyncpg dependency (§1)
+    ├── pyproject.toml                                   [MOD] +supabase-py dependency (§1)
     │
     └── src/vss_agents/
         ├── tools/
@@ -260,9 +259,10 @@ vss/
         │                                                           persons identification)
         │
         └── utils/
-            └── incident_db.py                              [NEW] async Postgres/Hyperdrive CRUD helper
-                                                                    (first async-DB pattern in this
-                                                                     package — no in-repo precedent, §1)
+            └── incident_db.py                              [NEW] async Supabase PostgREST CRUD helper
+                                                                    (supabase-py, not direct Postgres —
+                                                                     see AGENTS.md's "incident-console
+                                                                     Postgres schema" entry, §1)
 ```
 
 Not shown: external, non-repo resources (the Postgres server behind Hyperdrive, the R2 bucket) since they're cloud infrastructure, not files in this tree.
