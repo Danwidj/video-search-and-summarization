@@ -269,7 +269,7 @@ class IncidentDB:
                 "p_severity_level": payload["severity_level"],
                 "p_confidence_score": payload["confidence_score"],
             },
-        )
+        ).execute()
         return incident_id, model_run_id
 
     async def get_incident(self, incident_id: str, model_run_id: str) -> dict[str, Any] | None:
