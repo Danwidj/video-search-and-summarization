@@ -8,7 +8,7 @@ import re
 
 import streamlit as st
 
-from eval_gt import run_evaluation
+from eval_gt import _KIND_ID_FIELD as _EVAL_KIND_ID_FIELD
 from incident_report import INCIDENT_TYPES, seconds_to_timestamp
 from theme import SEVERITY_COLORS, SEVERITY_LABELS, missing_value
 from ui import video_playback_url
@@ -267,7 +267,6 @@ def evidence_section(handle, record):
             _screenshot(row.get("image"))
 
 
-_EVAL_KIND_ID_FIELD = {"entities": "entity_id", "instruments": "instrument_id", "assets": "asset_id"}
 _EVAL_FIELD_LABELS = {
     "type": "Type",
     "severity_level": "Severity",
@@ -350,14 +349,14 @@ def gt_evaluation_section(handle, record):
     Renders nothing when no ``gt_incidents`` row exists for this incident - an
     unevaluated incident looks exactly as it does today.
     """
-    gt_incident = handle._db.get_gt_incident(record["id"])
+    gt_incident = handle.get_gt_incident(record["id"])
     if not gt_incident:
         return
     st.divider()
     st.markdown("##### Ground-truth evaluation")
-    state_key = f"gt_eval_result_{record['id']}"
+    state_key = f"gt_eval_result_{record['id']}_{record['model_run_id']}"
     if st.button("Run GT Evaluation", key=f"run_gt_eval_{record['id']}"):
-        st.session_state[state_key] = run_evaluation(handle._db, record["id"], record["model_run_id"])
+        st.session_state[state_key] = handle.run_gt_evaluation(record["id"], record["model_run_id"])
     result = st.session_state.get(state_key)
     if result is None:
         return
