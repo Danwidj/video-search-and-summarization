@@ -25,3 +25,4 @@
 
 include:
   - path: ./incident-console/compose.yml
+  - path: ./vlm-gateway/compose.yml

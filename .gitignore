@@ -23,6 +23,12 @@ deploy/docker/rag-secret.override.yml
 deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env*
 !deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env
 
+# Environment files for vlm-gateway (the real-secret carrier is
+# vlm-gateway/.env.local; dev-profile-incident/.env is a tracked
+# placeholder template).
+deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env*
+!deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env
+
 *.log
 *checkpoint.*
 .orchestrator-artifacts/*
