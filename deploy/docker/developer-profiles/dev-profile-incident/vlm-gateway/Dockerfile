@@ -13,16 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Developer profile: incident search & reporting capstone.
-#
-# See docs/incident-plan/ for the full plan. This profile reuses NVIDIA's
-# bp_developer_search compose tag (BP_PROFILE in .env is left unchanged) so the
-# resulting compose-profile set is a superset of everything the base + search
-# pipelines need. The only profile-exclusive service is the incident-console
-# Streamlit app, defined under ./incident-console/ rather than the shared
-# deploy/docker/services/ tree. Unlike dev-profile-search we do not pull in a
-# kibana-init-container block - this profile does not use Kibana.
+# VM deploy only. Local development runs `uv run uvicorn app:app --port 8600` directly
+# (see README.md); this image is never used for the local dev loop.
 
-include:
-  - path: ./incident-console/compose.yml
-  - path: ./vlm-gateway/compose.yml
+FROM python:3.12-slim AS build
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+COPY . .
+CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8600"]
