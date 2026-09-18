@@ -49,11 +49,11 @@ git. For the VM deploy, edit the real values into the ignored `generated.env.loc
 §2) - never into `.env.local` on the build host.
 
 A tracked, copyable template listing every required key exists at
-`incident-console/.env.example` — copy it to `.env.local` and fill in real
+`incident-console/.env` — copy it to `.env.local` and fill in real
 values:
 
 ```bash
-cp .env.example .env.local
+cp .env .env.local
 ```
 
 ```dotenv
