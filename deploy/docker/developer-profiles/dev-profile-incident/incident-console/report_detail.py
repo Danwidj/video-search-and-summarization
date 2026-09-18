@@ -8,6 +8,7 @@ import re
 
 import streamlit as st
 
+from eval_gt import run_evaluation
 from incident_report import INCIDENT_TYPES, seconds_to_timestamp
 from theme import SEVERITY_COLORS, SEVERITY_LABELS, missing_value
 from ui import video_playback_url
@@ -266,6 +267,114 @@ def evidence_section(handle, record):
             _screenshot(row.get("image"))
 
 
+_EVAL_KIND_ID_FIELD = {"entities": "entity_id", "instruments": "instrument_id", "assets": "asset_id"}
+_EVAL_FIELD_LABELS = {
+    "type": "Type",
+    "severity_level": "Severity",
+    "description": "Description",
+    "start_timestamp": "Start",
+    "end_timestamp": "End",
+    "duration": "Duration",
+}
+_EVAL_TIME_FIELDS = {"start_timestamp", "end_timestamp", "duration"}
+
+
+def _eval_display_value(field_name, value):
+    if value is None or value == "":
+        return None
+    if field_name in _EVAL_TIME_FIELDS:
+        return time_label(value)
+    return str(value)
+
+
+def _eval_field_row(field_name, entry):
+    label = _EVAL_FIELD_LABELS[field_name]
+    cols = st.columns([1, 2, 2, 1])
+    cols[0].markdown(f"**{label}**")
+    with cols[1]:
+        st.caption("Expected")
+        expected = _eval_display_value(field_name, entry.get("expected"))
+        st.markdown(html.escape(expected) if expected else missing_value(), unsafe_allow_html=True)
+    with cols[2]:
+        st.caption("Predicted")
+        predicted = _eval_display_value(field_name, entry.get("predicted"))
+        st.markdown(html.escape(predicted) if predicted else missing_value(), unsafe_allow_html=True)
+    with cols[3]:
+        if field_name == "description":
+            score = entry.get("score")
+            st.caption("Score")
+            pill(f"{score:.2f}" if score is not None else "n/a", "#12b900" if entry.get("pass") else "#d92d20")
+        else:
+            st.caption("Result")
+            pill("Pass" if entry.get("pass") else "Fail", "#12b900" if entry.get("pass") else "#d92d20")
+
+
+def _eval_match_metrics(label, counts):
+    st.markdown(f"**{label}**")
+    cols = st.columns(6)
+    cols[0].metric("TP", counts["tp"])
+    cols[1].metric("FP", counts["fp"])
+    cols[2].metric("FN", counts["fn"])
+    cols[3].metric("Precision", f"{counts['precision']:.2f}")
+    cols[4].metric("Recall", f"{counts['recall']:.2f}")
+    cols[5].metric("F1", f"{counts['f1']:.2f}")
+
+
+def _eval_match_details(kind, result):
+    id_field = _EVAL_KIND_ID_FIELD[kind]
+    gt_id_field = f"gt_{id_field}"
+    matches = result.matches.get(kind, [])
+    unmatched = result.unmatched.get(kind, {"model": [], "gt": []})
+    with st.expander(f"Match details — {kind.capitalize()}"):
+        if matches:
+            st.caption("Matched (model ↔ ground truth)")
+            for m in matches:
+                st.markdown(f"- **{m[id_field]}** ↔ **{m[gt_id_field]}** · similarity {m['similarity_score']:.2f}")
+        if unmatched["model"]:
+            st.caption("Unmatched model output (false positives)")
+            for row in unmatched["model"]:
+                label = row.get("type") or row.get("name") or ""
+                st.markdown(f"- **{row.get(id_field) or '?'}** · {label} — {row.get('description') or ''}")
+        if unmatched["gt"]:
+            st.caption("Unmatched ground truth (false negatives)")
+            for row in unmatched["gt"]:
+                label = row.get("type") or row.get("name") or ""
+                st.markdown(f"- **{row.get(id_field) or '?'}** · {label} — {row.get('description') or ''}")
+        if not matches and not unmatched["model"] and not unmatched["gt"]:
+            st.caption("No entries.")
+
+
+def gt_evaluation_section(handle, record):
+    """Tier 1 ground-truth evaluation: run on demand, cached per incident in session state.
+
+    Renders nothing when no ``gt_incidents`` row exists for this incident - an
+    unevaluated incident looks exactly as it does today.
+    """
+    gt_incident = handle._db.get_gt_incident(record["id"])
+    if not gt_incident:
+        return
+    st.divider()
+    st.markdown("##### Ground-truth evaluation")
+    state_key = f"gt_eval_result_{record['id']}"
+    if st.button("Run GT Evaluation", key=f"run_gt_eval_{record['id']}"):
+        st.session_state[state_key] = run_evaluation(handle._db, record["id"], record["model_run_id"])
+    result = st.session_state.get(state_key)
+    if result is None:
+        return
+
+    st.caption("Incident fields")
+    for field_name in ("type", "severity_level", "description", "start_timestamp", "end_timestamp", "duration"):
+        _eval_field_row(field_name, result.fields[field_name])
+    if result.description_error:
+        st.caption(f"Description judge unavailable: {result.description_error}")
+
+    st.caption("Evidence matching (embedding + Hungarian assignment)")
+    for kind, label in (("entities", "Entities"), ("instruments", "Instruments"), ("assets", "Assets")):
+        _eval_match_metrics(label, result.counts[kind])
+    for kind in ("entities", "instruments", "assets"):
+        _eval_match_details(kind, result)
+
+
 def edit_form(handle, record, fields):
     st.markdown(
         '<div class="editing-banner">Editing mode · changes are not saved until you select Save changes.</div>',
@@ -398,5 +507,6 @@ def render_detail(handle, record, video):
         review_status_control(handle, record)
         st.divider()
         evidence_section(handle, record)
+        gt_evaluation_section(handle, record)
         st.divider()
         st.caption("Changes persist to Supabase Postgres and are visible on the Dashboard after refresh.")
