@@ -144,6 +144,16 @@ class DBReports:
             "assets": self._db.list_incident_assets(incident_id, model_run_id),
         }
 
+    def get_gt_incident(self, report_id):
+        if report_id is None:
+            return {}
+        return self._db.get_gt_incident(str(report_id))
+
+    def run_gt_evaluation(self, report_id, model_run_id):
+        from eval_gt import run_evaluation
+
+        return run_evaluation(self._db, str(report_id), model_run_id)
+
     # -- writes (persisted) --------------------------------------- #
     def update_report(self, report_id, *, fields, edited_by=None):
         row = self._db.get_latest_incident(str(report_id)) if report_id is not None else {}
