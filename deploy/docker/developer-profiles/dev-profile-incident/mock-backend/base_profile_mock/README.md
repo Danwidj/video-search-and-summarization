@@ -15,8 +15,12 @@ also copied to R2 immediately; the returned `filePath` is the durable object
 key. The incident Analyze route writes report records to the shared
 incident-console Postgres database.
 
-When exercising the incident flow, set `INCIDENT_DB_DSN` in the backend
-environment to the same Postgres used by the console. Also load the
+When exercising the incident flow, set `INCIDENT_SUPABASE_URL` and
+`INCIDENT_SUPABASE_SERVICE_ROLE_KEY` in the backend environment to the same
+Supabase project used by the console (the console itself keeps using its own
+`INCIDENT_DB_DSN` — the two config surfaces are independently maintained, see
+`services/agent/src/vss_agents/utils/incident_db.py`'s module docstring).
+Also load the
 Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
 `R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file. R2 upload
 returns `503` when those settings are unset or unreachable. The Catalog page
