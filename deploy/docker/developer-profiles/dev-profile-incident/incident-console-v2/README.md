@@ -1,0 +1,99 @@
+# Incident Console v2
+
+Next.js App Router frontend for video-first incident analysis. This application is intentionally independent of the
+Streamlit incident console and uses the existing services only through their HTTP contracts.
+
+## Local development
+
+The frontend depends on two local services: the mock backend handles video upload and agent chat, while the VLM
+gateway holds the upstream inference credential and handles video analysis. Run all three processes in separate
+terminals.
+
+### 1. Start the mock backend
+
+From the repository root:
+
+```bash
+cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
+uv sync
+uv run --env-file ../../incident-console/.env \
+  uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
+```
+
+Verify it at `http://127.0.0.1:7777/health`. The v2 frontend should have
+`INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777` in its local server configuration.
+
+### 2. Start the VLM gateway
+
+From the repository root:
+
+```bash
+cd deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
+uv sync
+uv run --env-file .env uvicorn app:app --host 127.0.0.1 --port 8600 --reload
+```
+
+Verify it at `http://127.0.0.1:8600/health`. The v2 frontend should have
+`VLM_GATEWAY_URL=http://127.0.0.1:8600` in its local server configuration. The gateway process—not the frontend—owns
+`VLM_GATEWAY_API_KEY` and `VLM_GATEWAY_BASE_URL`.
+
+### 3. Start incident-console-v2
+
+From the repository root:
+
+```bash
+cd deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
+npm install
+npm run dev
+```
+
+Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should report the agent, gateway, PostgREST,
+and R2 services as ready before testing the upload-to-report workflow.
+
+## Server-only configuration
+
+The application recognizes these variable names at runtime:
+
+- `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`.
+- `VLM_MODEL` — optional hosted model ID; defaults to `nvidia/cosmos-3-nano-reasoner`.
+- `INCIDENT_AGENT_BASE_URL` — mock or real vss-agent base URL used for the three-step video upload.
+- `INCIDENT_SUPABASE_URL` / `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` — PostgREST access.
+- `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` — private video storage.
+
+Do not expose any of these through a `NEXT_PUBLIC_` variable. `GET /api/health` returns only configuration and
+reachability booleans; it never returns URLs or credentials.
+
+## Phase 2 workflow
+
+Selecting a video immediately starts the three-step nvstreamer upload, signs the resulting R2 object for temporary
+model access, submits it to Cosmos through the gateway, validates the structured result, persists it through PostgREST,
+and renders a timestamp-linked incident report. Start with short clips while inference remains synchronous.
+
+## Phase 3 report workspace
+
+Completed analyses navigate to a durable route shaped like
+`/reports/<video-id>?run=<model-run-id>`. Reloading or sharing that route reads the stored model-run notes from
+PostgREST and creates a fresh one-hour R2 playback URL; it does not depend on browser local storage. Newly generated
+reports retain raw and normalized model output for diagnostics alongside model, prompt, run, and generation metadata.
+The report provides timestamp seeking, explicit empty states, a copy-link action, and print-specific presentation.
+
+## Phase 4 report library and review
+
+`/reports` lists persisted v2 reports with signed R2 previews. It supports full-text evidence search; incident type,
+severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
+date sorting. Review transitions are persisted to `review_status`, and verifying severity 4–5 reports creates a
+notification. Re-analysis creates a new model run and preserves prior results. Deleting only a report keeps its R2
+video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
+database cascade.
+
+## Phase 5 review and operations workspace
+
+The global header keeps Analyze, Reports, Dashboard, notifications, and service health consistent throughout the
+application. The report library remembers filters, scroll position, and its originating card when a report is opened.
+`/dashboard` summarizes report volume, review progress, confidence, severity, and incident types with drill-down
+links. `/notifications` polls and acknowledges high-severity verification alerts.
+
+Each report provides human-attributed structured corrections, non-streaming report-grounded follow-up chat through
+the agent `/chat` contract, model-run history and side-by-side comparison, and a ground-truth/severity evaluation
+form. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
+provenance.
