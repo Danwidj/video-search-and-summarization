@@ -9,12 +9,13 @@
 # mdx-rebuild-svc, mdx-rebuild, mdx-clean-datalog, gpu) moved to standalone,
 # executable scripts directly under:
 #
-#   deploy/docker/developer-profiles/dev-profile-incident/
+#   deploy/docker/developer-profiles/dev-profile-incident/scripts/
 #
 # (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `tunnel-check.sh`,
 # `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`, `clean-datalog.sh`,
-# `ngc-env.sh`, `gpu.sh`) plus `start.sh` there as the one-command daily
-# entry point. Run those scripts instead of shell aliases.
+# `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`) plus `start.sh` at the top
+# level of `dev-profile-incident/` as the one-command daily entry point. Run
+# those scripts instead of shell aliases.
 
 # apt installs bat's binary as `batcat` on Debian/Ubuntu (name collision
 # with an unrelated package already called `bat`).

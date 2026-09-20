@@ -86,11 +86,12 @@ cp "$SCRIPT_DIR/shellrc.sh" "$DOTFILES_DIR/shellrc.sh"
 # The managed aliases.sh is now QoL-only (bat/vim/cat/htop): the VSS
 # deploy-lifecycle commands (old mdx-*, ngc-env-on, gpu) moved to standalone
 # executable scripts under
-# deploy/docker/developer-profiles/dev-profile-incident/ (status.sh, down.sh,
-# health.sh, logs.sh, disk.sh, rebuild-svc.sh, rebuild.sh, clean-datalog.sh,
-# ngc-env.sh, gpu.sh, tunnel.sh, tunnel-check.sh) plus start.sh there as the
-# one-command daily entry point. Copying the repo's aliases.sh verbatim keeps
-# this regeneration from ever re-adding those removed commands — make any
+# deploy/docker/developer-profiles/dev-profile-incident/scripts/ (status.sh,
+# down.sh, health.sh, logs.sh, disk.sh, rebuild-svc.sh, rebuild.sh,
+# clean-datalog.sh, ngc-env.sh, gpu.sh, tunnel.sh, tunnel-check.sh,
+# resolve-ssh-target.sh) plus start.sh at the top level of dev-profile-incident/
+# as the one-command daily entry point. Copying the repo's aliases.sh verbatim
+# keeps this regeneration from ever re-adding those removed commands — make any
 # future alias changes upstream in $SCRIPT_DIR/aliases.sh, not in the
 # installed copy.
 cp "$SCRIPT_DIR/aliases.sh" "$DOTFILES_DIR/aliases.sh"
