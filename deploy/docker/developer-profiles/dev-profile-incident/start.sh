@@ -15,8 +15,10 @@
 #          (the incident profile's own deploy path: direct
 #          `docker compose -f compose.yml --env-file
 #          developer-profiles/dev-profile-incident/generated.env.remote
-#          up -d` — dev-profile.sh has NO incident profile, see
-#          docs/incident-plan/incident-plan-implementation-remote.md §2),
+#          up -d --build` — dev-profile.sh has NO incident profile, see
+#          docs/incident-plan/incident-plan-implementation-remote.md §2;
+#          `--build` ensures the `vss-agent` image reflects current `main`,
+#          but fresh deploys take longer vs. reusing a cached image),
 #          then open the tunnel, then start the console.
 #        - EVERYTHING expected up    -> skip the deploy, straight to
 #          tunnel + console.
@@ -147,14 +149,14 @@ if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
   exit 1
 fi
 if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d
-else
-  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d
-fi
+    sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build
+  else
+    docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build
+  fi
 EOF
 )
   echo "--- deploying over SSH (this can take a while: image pulls, model/config setup) ---"
-  echo "--- command: cd $VSS_REPO_ROOT/deploy/docker && docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d ---"
+  echo "--- command: cd $VSS_REPO_ROOT/deploy/docker && docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build ---"
   ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
   deploy_rc=$?
   if [ "$deploy_rc" -ne 0 ]; then
