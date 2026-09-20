@@ -42,28 +42,6 @@ direct compose invocation in the "What's actually running" section below
 (see `docs/incident-plan/incident-plan-implementation-remote.md` §2). Do not
 improvise raw `docker`/`docker compose` invocations.
 
-### Lifecycle scripts (in `scripts/`)
-
-The old `mdx-*` shell aliases / `ngc-env-on` / `gpu` from
-[`deploy/dotfiles/`](../../../dotfiles/README.md) moved here as standalone,
-executable scripts — same behavior, ready to run individually:
-
-| Script | Was | Runs on | What it does |
-|---|---|---|---|
-| `start.sh` | — (new) | **laptop** | One-command daily entry point: checks the VM backend deploy state over SSH, deploys fresh if nothing is running, **stops on a partial deploy**, opens the tunnel in the background, then runs the local console |
-| `scripts/tunnel.sh` | `mdx-tunnel-incident` | **laptop** | Open the SSH tunnel to the kwanz-ws backend in the foreground (Ctrl-C closes it) |
-| `scripts/tunnel-check.sh` | `mdx-tunnel-incident-check` | **laptop** | Prove the tunnel from the laptop end (agent health + NIM ports) |
-| `scripts/status.sh` | `mdx-ps` | VM | `docker compose -p mdx ps` |
-| `scripts/down.sh` | `mdx-down` | VM | Stop the stack **without `-v`** (preserves the ~35 GB model-weight cache — never run `dev-profile.sh down`) |
-| `scripts/health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |
-| `scripts/logs.sh` | `mdx-logs` | VM | Tail one container's logs (default `vss-agent`) |
-| `scripts/disk.sh` | `mdx-disk` | VM | `docker system df -v` |
-| `scripts/rebuild-svc.sh` | `mdx-rebuild-svc` | VM | Fast single-service rebuild (`docker compose up -d --build --force-recreate <service>`) |
-| `scripts/rebuild.sh` | `mdx-rebuild` | VM | Full stock-profile rebuild via `dev-profile.sh up` (interactive confirmation; wipes the model-weight cache) |
-| `scripts/clean-datalog.sh` | `mdx-clean-datalog` | VM | Data-dir cleanup between deploys (requires passwordless sudo) |
-| `scripts/ngc-env.sh` | `ngc-env-on` | VM | `source ./ngc-env.sh` to export the shared NGC credentials |
-| `scripts/gpu.sh` | `gpu` | VM | One-shot `nvidia-smi` status |
-
 Each script preserves the original alias/function's grounding comment and
 safety behavior — check a script's header before using it.
 
@@ -98,7 +76,7 @@ login the same way.
 
 - **Nothing running** → deploys the backend fresh over SSH (the profile's own
   deploy path: `docker compose -f compose.yml --env-file
-  developer-profiles/dev-profile-incident/generated.env.remote up -d`), then
+developer-profiles/dev-profile-incident/generated.env.remote up -d`), then
   opens the tunnel, then starts the console.
 - **Everything expected up** → skips the deploy, straight to tunnel + console.
 - **Partial deploy** → stops and prints exactly what's up vs. what's
@@ -122,7 +100,7 @@ login the same way.
 - **SSH works but `start.sh` still fails with a Docker permission error** — a
   `permission denied ... Docker daemon socket` error means that VM account
   needs Docker group access: on the VM, run `sudo usermod -aG docker
-  <username>` once (needs sudo there), then fully log out and reconnect
+<username>` once (needs sudo there), then fully log out and reconnect
   (exit the SSH session and ssh back in) — group membership doesn't apply to
   an already-open session.
 
@@ -157,25 +135,27 @@ to run on `kwanz-ws` itself.
 ### What's actually running
 
 All of these are up under `/srv/rise-up/vss/deploy/docker`, started via:
+
 ```bash
 cd /srv/rise-up/vss/deploy/docker
 sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <service>
 ```
+
 (the root `compose.yml` in `deploy/docker` is the one to use - **not** the one
 inside `dev-profile-incident/`, which only defines the console app by itself)
 
-| Container | Role | Status |
-|---|---|---|
-| `vss-agent` | AI agent — upload API, report generation | Up, healthy |
-| `vss-incident-console` | the Streamlit UI | Up, but **superseded** — the console now runs on each person's own laptop instead (see "Connecting" above); this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward |
-| `vss-vios-streamprocessing` | video decode/encode core | Up, healthy |
-| `vss-vios-nvstreamer` | upload ingestion | Up |
-| `vss-vios-ingress` | nginx gateway for VST/storage API | Up, healthy |
-| `vss-haproxy-ingress` | public-facing ingress on port 7777 | Up |
-| `vss-vios-postgres` | VIOS's internal Postgres | Up, healthy |
-| `redis` | cache | Up |
-| `phoenix` | telemetry | Up |
-| `vss-rtvi-embed` | embedding service | Up, healthy (search/MVP2-related, not required for MVP1 but running) |
+| Container                   | Role                                     | Status                                                                                                                                                                                                                  |
+| --------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vss-agent`                 | AI agent — upload API, report generation | Up, healthy                                                                                                                                                                                                             |
+| `vss-incident-console`      | the Streamlit UI                         | Up, but **superseded** — the console now runs on each person's own laptop instead (see "Connecting" above); this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward |
+| `vss-vios-streamprocessing` | video decode/encode core                 | Up, healthy                                                                                                                                                                                                             |
+| `vss-vios-nvstreamer`       | upload ingestion                         | Up                                                                                                                                                                                                                      |
+| `vss-vios-ingress`          | nginx gateway for VST/storage API        | Up, healthy                                                                                                                                                                                                             |
+| `vss-haproxy-ingress`       | public-facing ingress on port 7777       | Up                                                                                                                                                                                                                      |
+| `vss-vios-postgres`         | VIOS's internal Postgres                 | Up, healthy                                                                                                                                                                                                             |
+| `redis`                     | cache                                    | Up                                                                                                                                                                                                                      |
+| `phoenix`                   | telemetry                                | Up                                                                                                                                                                                                                      |
+| `vss-rtvi-embed`            | embedding service                        | Up, healthy (search/MVP2-related, not required for MVP1 but running)                                                                                                                                                    |
 
 **Not running / broken** (see "Known issues" below): `nvidia-cosmos3-reasoner`
 (VLM — crash-looping), `nvidia-nemotron-nano-9b-v2` (LLM — never started),
@@ -187,15 +167,15 @@ inside `dev-profile-incident/`, which only defines the console app by itself)
 The untracked live env file on the VM diverges from the tracked `.env`
 template in a few places:
 
-| Setting | Template value | Live value | Why |
-|---|---|---|---|
-| `VSS_APPS_DIR` | `/path/to/deploy/docker` (placeholder) | `/srv/rise-up/vss/deploy/docker` | Never filled in — broke every `include:` in the compose files |
-| `VSS_DATA_DIR` | `/path/to/vss-apps-data` (placeholder) | `/srv/rise-up/vss-apps-data` | Same — needed for persistent volume mounts |
-| `HOST_IP` | `<HOST_IP>` (placeholder) | `10.131.1.5` | The VM's own internal address |
-| `EXTERNAL_IP` | derived from `HOST_IP` (wrong) | `localhost` | Must differ from `HOST_IP` — this is what gets embedded in URLs handed back to your browser/tunnel |
-| `VSS_AGENT_CONFIG_FILE` | pointed at `dev-profile-search`'s config (zero report-gen capability) | `dev-profile-base`'s config | Search's config never had `report_agent`/`video_report_gen` wired in at all |
-| `REPORT_REFERENCE_BASE_DIR` | unset (crashed startup) | `/tmp` | Agent's `eval` config schema required a valid string, even though eval isn't actually used here |
-| `STREAM_PROCESSOR_HTTP_PORT` | unset → defaulted to `30001` | `10000` | nginx is hardcoded to proxy to `localhost:10000`, but the service's own default is `30001` — a pre-existing inconsistency in the repo's own shared `vst.env` |
+| Setting                      | Template value                                                        | Live value                       | Why                                                                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VSS_APPS_DIR`               | `/path/to/deploy/docker` (placeholder)                                | `/srv/rise-up/vss/deploy/docker` | Never filled in — broke every `include:` in the compose files                                                                                                |
+| `VSS_DATA_DIR`               | `/path/to/vss-apps-data` (placeholder)                                | `/srv/rise-up/vss-apps-data`     | Same — needed for persistent volume mounts                                                                                                                   |
+| `HOST_IP`                    | `<HOST_IP>` (placeholder)                                             | `10.131.1.5`                     | The VM's own internal address                                                                                                                                |
+| `EXTERNAL_IP`                | derived from `HOST_IP` (wrong)                                        | `localhost`                      | Must differ from `HOST_IP` — this is what gets embedded in URLs handed back to your browser/tunnel                                                           |
+| `VSS_AGENT_CONFIG_FILE`      | pointed at `dev-profile-search`'s config (zero report-gen capability) | `dev-profile-base`'s config      | Search's config never had `report_agent`/`video_report_gen` wired in at all                                                                                  |
+| `REPORT_REFERENCE_BASE_DIR`  | unset (crashed startup)                                               | `/tmp`                           | Agent's `eval` config schema required a valid string, even though eval isn't actually used here                                                              |
+| `STREAM_PROCESSOR_HTTP_PORT` | unset → defaulted to `30001`                                          | `10000`                          | nginx is hardcoded to proxy to `localhost:10000`, but the service's own default is `30001` — a pre-existing inconsistency in the repo's own shared `vst.env` |
 
 ### Known issues - not yet fixed, tracked as follow-up work
 
@@ -211,7 +191,7 @@ template in a few places:
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.
-   *(Coordinate with whoever last touched this config before changing it.)*
+   _(Coordinate with whoever last touched this config before changing it.)_
 3. **`sensor-ms` container was never started.** Not blocking anything tested
    so far, but will break sensor management features if/when someone builds
    on them. Fix: `docker compose ... up -d sensor-ms`.
