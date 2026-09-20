@@ -59,9 +59,9 @@ other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` a
 (`mdx-ps`, `mdx-down`, `mdx-health`, `mdx-tunnel-incident`, `mdx-tunnel-incident-check`, `mdx-logs`,
 `mdx-disk`, `mdx-rebuild-svc`, `mdx-rebuild`, `mdx-clean-datalog`, `ngc-env-on`, `gpu`) moved to
 standalone executable scripts under
-`deploy/docker/developer-profiles/dev-profile-incident/` (`status.sh`, `down.sh`, `health.sh`,
+`deploy/docker/developer-profiles/dev-profile-incident/scripts/` (`status.sh`, `down.sh`, `health.sh`,
 `tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
-`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`). `start.sh` there is the laptop-side one-command daily
+`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` there is the laptop-side one-command daily
 entry point: checks the VM deploy state over SSH, deploys the backend fresh if nothing is running
 (direct compose with `generated.env.remote` — `dev-profile.sh` has no `incident` profile), stops on
 a partial deploy, backgrounds the tunnel, then runs the local console. The VM-side scripts wrap the

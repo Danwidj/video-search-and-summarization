@@ -28,7 +28,7 @@
 # confirmation prompt), standalone script. Runs on the VM.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 
 if [ -z "$1" ]; then
   echo "usage: rebuild.sh --profile <base|search|lvs|alerts> [dev-profile.sh options...]" >&2

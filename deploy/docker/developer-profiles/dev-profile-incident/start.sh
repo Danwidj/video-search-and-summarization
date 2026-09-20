@@ -64,8 +64,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=resolve-ssh-target.sh
-source "${SCRIPT_DIR}/resolve-ssh-target.sh"
+# shellcheck source=scripts/resolve-ssh-target.sh
+source "${SCRIPT_DIR}/scripts/resolve-ssh-target.sh"
 VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
 VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
 INCIDENT_EXPECTED_CONTAINERS="${INCIDENT_EXPECTED_CONTAINERS:-vss-agent vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix}"
