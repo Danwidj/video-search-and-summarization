@@ -71,6 +71,10 @@ def embedding_base_url() -> str:
 # calibration against the real embedding model.
 MIN_MATCH_SIMILARITY = 0.75
 
+# Tolerance (seconds) for GT-vs-model timestamp/duration comparisons in
+# eval_gt.py. Plan default pending team confirmation. TODO: confirm.
+EVAL_TIMESTAMP_TOLERANCE_SECONDS = 5
+
 
 def video_base_url() -> str:
     """Public/presigned URL prefix that ``st.video`` plays back from."""

@@ -115,7 +115,17 @@ export INCIDENT_LLM_BASE_URL=http://localhost:8900/v1
 `IncidentReport`-shaped JSON blob (`incident_type`, `severity` 1–5,
 `confidence`, `incident_start`/`incident_end`, `description`, `persons[]`). It
 exercises the same route → parse → Postgres-write path the real agent will use
-for the deferred report-generation flow (`agent_client.py`).
+for the deferred report-generation flow (`agent_client.py`). The same route
+also branches on a judge-shaped request (`model="incident-judge"`, or the
+`INCIDENT_JUDGE_REQUEST` marker in the system prompt) and returns a
+deterministic text-similarity score instead — see "Tier 1 GT evaluation"
+below.
+
+`POST /v1/embeddings` returns a deterministic hashed bag-of-words vector (64
+dims) per input text — real cosine separation (reworded-but-similar text
+scores high, unrelated text scores low) with no ML dependency beyond what
+`matching.py` already imports. Set `INCIDENT_EMBEDDING_BASE_URL` to the same
+`http://localhost:8900/v1` to exercise `matching.py` locally.
 
 The local `base_profile_mock` implements
 `POST /api/v1/incidents/{id}/analyze` as an explicitly mock, Postgres-backed
@@ -125,6 +135,33 @@ but isn't reachable on the deployed VM yet — see `DEPLOY_NOTES.md`'s Known
 Issue #1 (no `build:` wiring for vss-agent's container). `POST /api/v1/search`
 is still unbuilt (MVP2), so the client keeps returning a "not implemented yet"
 notice for that one.
+
+### Tier 1 GT evaluation (mock backend, no live VSS)
+
+`eval_gt.py` scores one model run's `incidents`/`entities`/`instruments`/
+`assets` against the parallel `gt_*` ground-truth tables: normalized exact
+match for `type`, exact match for `severity_level`, an LLM-as-a-judge
+0.0–1.0 semantic score for `description` (via `INCIDENT_LLM_BASE_URL`, the
+same mock/real chat-completions endpoint above), and tolerance comparisons
+(`config.EVAL_TIMESTAMP_TOLERANCE_SECONDS`) for the timestamps/duration. It
+reuses `matching.py` unchanged for entities/instruments/assets and derives
+TP/FP/FN/Precision/Recall/F1 from the accepted matches. `run_evaluation(db,
+incident_id, model_run_id)` is the one orchestration entry point; the
+"Ground-truth evaluation" section on the report-detail page
+(`report_detail.py`) calls it via `DBReports.run_gt_evaluation()` and renders
+the result — it appears only for incidents that already have a `gt_incidents`
+row.
+
+Seed a 5-incident demo set (real CSV-fixture ground truth + a deterministically
+perturbed model run under its own `MR-EVAL-DEMO` model run, covering a
+reworded-but-equivalent description, an in-tolerance and an out-of-tolerance
+timestamp, a semantically-similar entity match, an extra model entity (false
+positive), and a missing model asset (false negative) — one-time, manual,
+never on startup, same contract as `seed_mock8.py`):
+
+```bash
+uv run python scripts/seed_gt_demo.py
+```
 
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
@@ -205,7 +242,7 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
-| `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | The platform's embedding endpoint; unset means matching fails soft to no matches |
+| `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | `mock_llm_server.py`'s `/v1/embeddings` locally (`http://localhost:8900/v1`); the platform's real embedding endpoint otherwise; unset means matching fails soft to no matches |
 | `INCIDENT_VIDEO_BASE_URL` | Optional playback URL prefix; unset uses R2 presigned URLs | The R2 bucket public/presigned URL prefix |
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
 | `INCIDENT_HTTP_TIMEOUT_SECONDS` | HTTP client timeout in seconds (code default `15.0`) | Set only if the default is wrong; VM value goes in the `generated.env.*` copy |
@@ -232,8 +269,10 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
 | `embed_client.py` | Embedding-endpoint HTTP client (fail-soft), used by `matching.py` |
 | `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
+| `eval_gt.py` | Tier 1 GT evaluation: incident field scoring (type/severity/description-judge/timestamps/duration), TP/FP/FN/P/R/F1 from `matching.py`'s output, and the `run_evaluation()` orchestration entry point |
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
+| `scripts/seed_gt_demo.py` | 5-incident Tier 1 GT-evaluation demo set: real CSV-fixture ground truth + a deterministically perturbed model run (`MR-EVAL-DEMO`), independent one-time idempotent importer |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
 | `catalog_actions.py` | Pure (no `streamlit`) upload/record helper used by the Incident Reports upload flow, incl. the `videos.id`-fitting `derive_video_id()` |
 | `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` (road accident / burglary / explosion / fighting / animal) + pure helpers |
