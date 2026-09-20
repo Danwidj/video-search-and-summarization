@@ -131,11 +131,8 @@ notice for that one.
 The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
 runs on kwanz-ws. An SSH tunnel connects the two — same pattern as the
 base-profile VSS UI tunnel. The mock LLM above stays laptop-only for the
-zero-GPU loop; use this path when you want the real backend instead. (Or skip
-the manual terminals entirely: from `dev-profile-incident/`, `./start.sh`
-checks the VM deploy state over SSH, deploys the backend if nothing is
-running, opens the tunnel in the background, and starts this console — see
-that profile's README.)
+zero-GPU loop; use this path when you want the real backend instead. (Or run
+`../start.sh` to automate this — see that profile's README.)
 
 Terminal 1 (tunnel):
 

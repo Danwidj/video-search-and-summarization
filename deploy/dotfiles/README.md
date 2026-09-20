@@ -67,32 +67,7 @@ Then start a new shell (or `source ~/.bashrc`).
 - **`git-delta`** — installed and wired into `git config --global` per
   account, not box-wide: each teammate who runs the bootstrap gets nicer
   diffs in their own git config, and nobody who hasn't opted in is affected.
-- **`dev-profile-incident/*.sh` deploy-lifecycle scripts** — the old `mdx-*`
-  alias/function set (plus `gpu` and `ngc-env-on`) moved out of `aliases.sh`
-  into standalone executable scripts directly under
-  `deploy/docker/developer-profiles/dev-profile-incident/`:
-  `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`,
-  `rebuild.sh`, `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
-  `tunnel-check.sh`, and **`start.sh`** as the one-command daily entry point.
-  They wrap the project's own canonical deploy tooling
-  (`deploy/docker/scripts/dev-profile.sh` and `cleanup_all_datalog.sh`)
-  rather than hardcoding raw `docker`/`docker compose` invocations,
-  specifically because **the deployment command will change over time**: when
-  `dev-profile.sh`'s interface changes, only the wrapper needs updating, not
-  everyone's muscle memory. Plain `docker compose -p mdx ...` is used only
-  where there's no canonical script to wrap (status, logs, disk usage —
-  stable, generic Compose surface, not project-specific tooling likely to
-  drift). Each script preserves its own grounding comment (cache-loss
-  warnings, the `rebuild.sh` destructive-action confirmation prompt,
-  subshell-`cd` reasoning, etc.) — see each file's header.
-- **`tunnel.sh` / `tunnel-check.sh` / `start.sh`** (in
-  `deploy/docker/developer-profiles/dev-profile-incident/`) — the one
-  exception to "these scripts run on the VM": the first two run on your
-  **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
-  the laptop-local incident-console reaches the real kwanz-ws backend
-  (agent :8000, LLM :30081, VLM :30082) instead of the mock; `start.sh` is
-  the one-command flow that checks the VM deploy state over SSH (deploying
-  the backend fresh if nothing is running, stopping on a partial deploy),
-  opens the tunnel in the background, and launches the local console — see
-  `dev-profile-incident/README.md`'s "Connecting" section for the full
-  walkthrough and `start.sh`'s own header.
+- **VSS deploy-lifecycle scripts** — the old `mdx-*` aliases/functions (plus
+  `gpu` and `ngc-env-on`) moved to standalone executable scripts under
+  `deploy/docker/developer-profiles/dev-profile-incident/`. See that
+  profile's README for the script table, workflow, and current deploy state.

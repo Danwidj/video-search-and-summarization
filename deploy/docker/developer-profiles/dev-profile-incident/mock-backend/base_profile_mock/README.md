@@ -39,9 +39,9 @@ uv run --env-file ../../incident-console/.env \
 ```
 
 For the complete local loop, from `dev-profile-incident/` run
-`./local-start.sh`. It loads `incident-console/.env` for the backend, starts
-the mock backend, and launches the Streamlit console; no secret exports are
-needed.
+`./local-start.sh`. It loads `incident-console/.env.local` for the backend,
+starts the mock backend, and launches the Streamlit console; no secret exports
+are needed.
 
 `GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`.
 For local runs, keep `MOCK_PUBLIC_BASE_URL=http://127.0.0.1:7777` if you override it; using
