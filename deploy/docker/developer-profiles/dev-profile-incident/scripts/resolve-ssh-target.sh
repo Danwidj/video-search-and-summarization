@@ -23,11 +23,12 @@
 VSS_SSH_HOST="${VSS_SSH_HOST:-kwanz-ws}"
 
 if [ -z "${VSS_SSH_TARGET:-}" ]; then
-  default_vm_user="${USER:-$(whoami)}"
+  ssh_config_user="$(ssh -G "${VSS_SSH_HOST}" 2>/dev/null | awk '/^user / {print $2}' || true)"
+  default_vm_user="${VSS_SSH_USER:-${ssh_config_user:-${USER:-$(whoami)}}}"
   if [ -n "${VSS_SSH_USER:-}" ]; then
     vm_user="$VSS_SSH_USER"
   elif [ -t 0 ]; then
-    read -r -p "VM SSH username for ${VSS_SSH_HOST} [${default_vm_user}]: " vm_user
+    read -t 5 -r -p "VM SSH username for ${VSS_SSH_HOST} [${default_vm_user}]: " vm_user || vm_user="${default_vm_user}"
     vm_user="${vm_user:-$default_vm_user}"
   else
     vm_user="$default_vm_user"
