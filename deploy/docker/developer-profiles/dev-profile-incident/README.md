@@ -199,7 +199,7 @@ template in a few places:
 
 ### Known issues - not yet fixed, tracked as follow-up work
 
-1. **`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
+1. ~~**`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
    `deploy/docker/services/agent/compose.yml`'s `vss-agent` service now carries
    a `build:` context (`services/agent/docker/Dockerfile`, context `services/`)
    alongside its `image:` tag, so `docker compose up -d --build vss-agent`
@@ -207,7 +207,7 @@ template in a few places:
    instead of NVIDIA's locked prebuilt image. A plain `up -d` — no `--build` —
    still reuses whatever image already exists locally. What's currently running
    on the VM is still the prebuilt image; run one `--build` deploy there before
-   relying on any agent-side code change.
+   relying on any agent-side code change.~~ **FIXED** — `start.sh` now passes `--build` on fresh deploys (see PR adding `--build` to the deploy command).
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.
