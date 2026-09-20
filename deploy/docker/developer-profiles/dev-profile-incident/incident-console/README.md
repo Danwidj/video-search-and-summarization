@@ -63,6 +63,8 @@ R2_ACCOUNT_ID=...
 R2_ACCESS_KEY=...
 R2_SECRET_KEY=...
 R2_BUCKET=anomaly-detection-dataset
+INCIDENT_SUPABASE_URL=https://<project-ref>.supabase.co
+INCIDENT_SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
 Use the Supabase **session pooler** (port 5432) so DDL and `SELECT ... FOR
@@ -240,6 +242,8 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 |---|---|---|
 | `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works for local iteration — production stays Supabase Postgres via the session pooler |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
+| `INCIDENT_SUPABASE_URL` | Supabase project URL (`https://<project_ref>.supabase.co`) | Supabase Project Settings -> API. Used by `vss_agents.utils.incident_db` when running the local mock backend (`local-start.sh`) or direct agent tests |
+| `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` secret JWT | Supabase Project Settings -> API. Server-side only; put key in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
 | `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | `mock_llm_server.py`'s `/v1/embeddings` locally (`http://localhost:8900/v1`); the platform's real embedding endpoint otherwise; unset means matching fails soft to no matches |

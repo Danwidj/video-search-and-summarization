@@ -53,6 +53,135 @@ laptop, not on the VM** - an SSH tunnel connects the two. This supersedes an
 earlier setup where the console ran as a shared container on the VM (see the
 status table below).
 
+## Laptop Setup: Secrets & Environment Files
+
+The `incident-console` UI runs on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh`).
+
+**Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, real credentials live in untracked `.env.local` files that are ignored by git:
+
+### Required & Optional Secret Files on Laptop
+
+| Target File (Untracked) | Tracked Template to Copy | Required? | Used By |
+|---|---|---|---|
+| `deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env.local` | [`incident-console/.env`](incident-console/.env) | **Required** | `incident-console` (Streamlit UI), `local-start.sh` (mock backend) |
+| `deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env.local` | [`vlm-gateway/.env`](vlm-gateway/.env) | Optional | `vlm-gateway` (if running the hosted LLM/VLM inference proxy locally) |
+
+> [!TIP]
+> **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook will automatically propagate untracked `.env` and `.env.local` files from the main worktree into newly created worktrees (copy-if-missing, never overwriting).
+
+---
+
+### Step-by-Step Setup for `incident-console/.env.local`
+
+1. **Copy the tracked template:**
+   ```bash
+   cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
+   cp .env .env.local
+   ```
+
+2. **Fill in the real values in `incident-console/.env.local`:**
+
+   ```dotenv
+   # =============================================================================
+   # 1. DATABASE CONNECTION (Supabase Postgres via Session Pooler)
+   # =============================================================================
+   # Direct PostgreSQL connection string (SQLAlchemy sync URL) used by db.py.
+   # Format: postgresql+psycopg2://<USER>:<PASSWORD>@<HOST>:5432/<DATABASE>?sslmode=require
+   #
+   # CRITICAL FORMAT NOTES:
+   #  - Port: MUST use 5432 (session pooler mode) rather than 6543 (transaction pooler)
+   #    so DDL, schema initialization, and session locks work properly.
+   #  - URL Encoding: Percent-encode special characters in the password (e.g. "@" -> "%40",
+   #    ":" -> "%3A", "#" -> "%23").
+   #  - Purpose: Backs all incident review, edits, verification, notifications, and dashboard metrics.
+   INCIDENT_DB_DSN=postgresql+psycopg2://postgres.[PROJECT-REF]:[PASSWORD]@[POOLER-HOST]:5432/postgres?sslmode=require
+
+   # =============================================================================
+   # 2. OBJECT STORAGE (Cloudflare R2 for Videos and Evidence)
+   # =============================================================================
+   # Cloudflare R2 credentials from the Cloudflare Dashboard (R2 -> Manage R2 API Tokens).
+   # S3-compatible credentials with read/list permissions.
+   #
+   # Purpose: Used by r2_videos.py to generate presigned URLs for video playback in
+   # Streamlit (st.video) and evidence images/screenshots for entities, instruments, and assets.
+   R2_ACCOUNT_ID=<cloudflare-account-id-hex>
+   R2_ACCESS_KEY=<s3-compatible-access-key-id>
+   R2_SECRET_KEY=<s3-compatible-secret-access-key>
+   R2_BUCKET=anomaly-detection-dataset
+
+   # =============================================================================
+   # 3. SUPABASE POSTGREST API (Agent & Mock-Backend Persistence)
+   # =============================================================================
+   # Supabase project URL and service role key (from Supabase Project Settings -> API).
+   #
+   # Purpose: Used by services/agent/src/vss_agents/utils/incident_db.py when testing
+   # the agent or running the local mock backend (local-start.sh) for report generation persistence.
+   # (Agent uses HTTPS PostgREST instead of port 5432 wire protocol due to VM network constraints).
+   INCIDENT_SUPABASE_URL=https://[PROJECT-REF].supabase.co
+   INCIDENT_SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-jwt>
+
+   # =============================================================================
+   # 4. BACKEND SERVICE & INFERENCE ENDPOINTS
+   # =============================================================================
+   # Base URL of vss-agent API (upload + AI analyze routes).
+   # Under the SSH tunnel (scripts/tunnel.sh or start.sh), port 8000 forwards to the VM backend.
+   INCIDENT_AGENT_BASE_URL=http://localhost:8000
+
+   # OpenAI-compatible chat-completions endpoint for drafting & LLM judge:
+   #  - Local mock server: http://localhost:8900/v1 (run mock_llm_server.py)
+   #  - Real tunneled backend: http://localhost:30081/v1 (tunneled NIM on kwanz-ws)
+   INCIDENT_LLM_BASE_URL=http://localhost:8900/v1
+
+   # Embeddings endpoint for entity/instrument similarity matching (matching.py):
+   # Unset defaults to no matching / mock server at http://localhost:8900/v1
+   INCIDENT_EMBEDDING_BASE_URL=
+
+   # Optional public video playback prefix; leave blank to use R2 presigned URLs.
+   INCIDENT_VIDEO_BASE_URL=
+   ```
+
+3. **Verify configuration:**
+   - Run unit tests to verify the local environment parses cleanly:
+     ```bash
+     uv run pytest
+     ```
+   - (Optional) Seed the database fixtures if starting fresh:
+     ```bash
+     uv run python scripts/seed_supabase.py  # 36 real video-backed incidents
+     uv run python scripts/seed_mock8.py     # 8-video custom demo set
+     ```
+
+---
+
+### Step-by-Step Setup for `vlm-gateway/.env.local` (Optional)
+
+If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM inference locally:
+
+1. **Copy the template:**
+   ```bash
+   cd deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
+   cp .env .env.local
+   ```
+
+2. **Configure `.env.local`:**
+   ```dotenv
+   # Upstream NVIDIA-hosted inference endpoint (switchyard)
+   VLM_GATEWAY_BASE_URL=https://switchyard-13doh4lsz.brevlab.com/v1
+
+   # Upstream API key provided by the NVIDIA team
+   VLM_GATEWAY_API_KEY=<upstream-api-key>
+
+   # Local gateway listening port (default: 8600)
+   VLM_GATEWAY_PORT=8600
+   ```
+
+3. **Run the gateway:**
+   ```bash
+   uv run uvicorn app:app --port 8600
+   ```
+
+---
+
 ### Connecting
 
 #### One command (recommended)
