@@ -28,7 +28,7 @@ box, not a personal daily-driver machine.
   `htop=btop`) via the managed `aliases.sh`. The VSS deploy-lifecycle
   commands that used to live in `aliases.sh` (old `mdx-*`, `ngc-env-on`,
   `gpu`) moved to standalone executable scripts under
-  `deploy/docker/developer-profiles/dev-profile-incident/` — see below — so
+  `deploy/docker/developer-profiles/dev-profile-incident/scripts/` — see below — so
   this bootstrap no longer generates any VSS-specific aliases.
 - Appends **one** marker-guarded include block to `~/.bashrc` that sources
   the managed `shellrc.sh` — everything else lives in files this script
@@ -57,7 +57,7 @@ Then start a new shell (or `source ~/.bashrc`).
 ## Notable pieces
 
 - **`ngc-env.sh`** (in
-  `deploy/docker/developer-profiles/dev-profile-incident/`) — replaces the
+  `deploy/docker/developer-profiles/dev-profile-incident/scripts/`) — replaces the
   old `ngc-env-on` alias. `source` it (`. ./ngc-env.sh`) to export the shared
   `/srv/rise-up/.ngc_env` NGC/NVIDIA credential on demand. Deliberately
   **not** auto-sourced on login: `/srv/rise-up/vss` is one shared checkout
@@ -67,13 +67,13 @@ Then start a new shell (or `source ~/.bashrc`).
 - **`git-delta`** — installed and wired into `git config --global` per
   account, not box-wide: each teammate who runs the bootstrap gets nicer
   diffs in their own git config, and nobody who hasn't opted in is affected.
-- **`dev-profile-incident/*.sh` deploy-lifecycle scripts** — the old `mdx-*`
+- **`dev-profile-incident/scripts/*.sh` deploy-lifecycle scripts** — the old `mdx-*`
   alias/function set (plus `gpu` and `ngc-env-on`) moved out of `aliases.sh`
-  into standalone executable scripts directly under
-  `deploy/docker/developer-profiles/dev-profile-incident/`:
+  into standalone executable scripts under
+  `deploy/docker/developer-profiles/dev-profile-incident/scripts/`:
   `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`,
   `rebuild.sh`, `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
-  `tunnel-check.sh`, and **`start.sh`** as the one-command daily entry point.
+  `tunnel-check.sh`, `resolve-ssh-target.sh`, and **`start.sh`** as the one-command daily entry point (which stays at the top level of `dev-profile-incident/` alongside `local-start.sh`).
   They wrap the project's own canonical deploy tooling
   (`deploy/docker/scripts/dev-profile.sh` and `cleanup_all_datalog.sh`)
   rather than hardcoding raw `docker`/`docker compose` invocations,
@@ -86,7 +86,7 @@ Then start a new shell (or `source ~/.bashrc`).
   warnings, the `rebuild.sh` destructive-action confirmation prompt,
   subshell-`cd` reasoning, etc.) — see each file's header.
 - **`tunnel.sh` / `tunnel-check.sh` / `start.sh`** (in
-  `deploy/docker/developer-profiles/dev-profile-incident/`) — the one
+  `deploy/docker/developer-profiles/dev-profile-incident/scripts/` and top-level `dev-profile-incident/`) — the one
   exception to "these scripts run on the VM": the first two run on your
   **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
   the laptop-local incident-console reaches the real kwanz-ws backend

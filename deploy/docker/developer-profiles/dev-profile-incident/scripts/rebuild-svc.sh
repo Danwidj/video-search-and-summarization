@@ -26,7 +26,7 @@
 # Usage: ./rebuild-svc.sh <service> [more services...]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 
 if [ -z "$1" ]; then
   echo "usage: rebuild-svc.sh <service> [more services...]" >&2
