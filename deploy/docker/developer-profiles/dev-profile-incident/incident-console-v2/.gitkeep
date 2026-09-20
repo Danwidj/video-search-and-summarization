@@ -36,7 +36,7 @@ if response latency actually needs it.
 - Access pattern: PostgREST over HTTPS (as `services/agent/src/vss_agents/utils/
   incident_db.py` already does), not raw Postgres — `kwanz-ws` blocks port 5432.
 - `incident-console/r2_videos.py` — R2/Cloudflare video storage access.
-- `docs/incident-plan/incident-plan-overview.md` — MVP1/MVP2 scope and the
+- `../README.md` — MVP1/MVP2 scope and the
   verification checklist.
 
 ## Open items before/while building

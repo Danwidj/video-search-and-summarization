@@ -6,54 +6,131 @@ SPDX-License-Identifier: Apache-2.0
 # dev-profile-incident
 
 Developer profile for the incident search and reporting capstone (Daniel's
-team, NVIDIA NVAITC-sponsored). It reuses NVIDIA's `bp_developer_search`
-compose tag, so the deployed stack is a superset of everything the base +
-search pipelines need, plus one profile-exclusive service: the
-`incident-console` Streamlit app.
+team, NVIDIA NVAITC-sponsored). A video-driven incident search and reporting
+system built on this VSS blueprint fork. A Streamlit console (`incident-console`)
+sits on Postgres (reports) + Cloudflare R2 (video), triggers report generation
+and search through `vss-agent`, and runs inside this profile.
 
-For the full plan - what ships when (MVP1/MVP2), deploy commands, GPU
-topology, schema and API design - start at
-[`docs/incident-plan/incident-plan-overview.md`](../../../../docs/incident-plan/incident-plan-overview.md).
+It reuses NVIDIA's `bp_developer_search` compose tag, so the deployed stack is a
+superset of everything the base + search pipelines need, plus one
+profile-exclusive service: the `incident-console` Streamlit app.
 
-## Layout
+For technical reference docs (GPU topology, local vs. remote LLM/VLM deployment,
+detailed Postgres schema specs, and eval methodology), see the companion files in
+[`incident-plan/`](incident-plan/):
+- [`incident-plan-implementation-local.md`](incident-plan/incident-plan-implementation-local.md) — Local NIM container deployment mode, GPU topology, profile setup.
+- [`incident-plan-implementation-remote.md`](incident-plan/incident-plan-implementation-remote.md) — Remote NGC-hosted LLM/VLM deployment mode.
+- [`incident-plan-implementation-shared.md`](incident-plan/incident-plan-implementation-shared.md) — Mode-independent technical specs: Postgres schema, Cloudflare R2, UI/API specs, eval methodology.
 
-- [`compose.yml`](compose.yml) - profile entrypoint. Includes
-  `./incident-console/compose.yml`; `BP_PROFILE` in `.env` is left unchanged
-  (rides on the `search` compose tag, unlike the stock profiles that go
-  through the `dev-profile` helper). No Kibana init block - this profile does
-  not use Kibana.
-- [`incident-console/`](incident-console/README.md) - the Streamlit console:
-  Postgres-backed incident review UI. Database-backed only, no offline mode
-  (`INCIDENT_DB_DSN` must be set). See its README for the local dev loop and
-  [`db.py`](incident-console/db.py) (module docstring) for the authoritative
-  schema.
-- [`mock-backend/`](mock-backend/README.md) - zero-GPU mock backends for local
-  UI development: `base_profile_mock/` (mocks the whole `bp_developer_base`
-  backend...); a not-yet-built `mock_data/` module is planned for a
-  Postgres-schema mock of the console — see `mock-backend/README.md`.
+---
 
-## Deploy
+## 1. Scope & Architecture Decisions
+
+### Scope breakdown
+
+- **MVP1 (no natural-language search):**
+  - Video catalog, upload, metadata editing, retention.
+  - Report generation with structured fields (description, persons, classification, severity, confidence, start/end timestamps).
+  - One-click pipeline trigger, status transitions, high-severity notifications.
+  - Console UI except the search box; human-eval flow + report-quality scoring.
+
+- **MVP2 (adds):**
+  - Natural-language search (RT-CV + RT-Embed + Elasticsearch stack; `search_agent`/`embed_search` wired into `config.yml`).
+  - Retrieval precision/recall/F1 evaluation.
+
+### Standing facts & design decisions
+
+- **Profile tag:** Reuses the `bp_developer_search` compose tag; `BP_PROFILE` in `.env` is left unchanged.
+- **Agent configuration:** `config.yml` starts from base's `report_agent`/`video_report_gen` and appends search functions at MVP2.
+- **Pipeline orchestration:** Extends `vss-agent` tool-calling (`POST /api/v1/incidents/{id}/analyze`).
+- **Storage architecture:** Cloudflare R2 is the canonical, permanent video store; Postgres (Supabase) is the canonical report store; local VIOS disk acts as a working cache.
+- **User model:** `edited_by`, `verified_by`, and `rater` are freeform text fields (who typed their name), not foreign keys to a user table — no accounts required.
+- **Authoritative schema:** [`incident-console/db.py`](incident-console/db.py) (module docstring + [`incident-console/README.md`](incident-console/README.md)) defines the 12-table-plus-matches schema supporting multiple model runs over the same video plus a parallel human ground-truth set. The console is database-backed only; there is no offline CSV-preview UI mode.
+- **Agent database access:** `services/agent/src/vss_agents/utils/incident_db.py` communicates via HTTPS PostgREST (`supabase-py`), not raw Postgres wire protocol on port 5432 (which is blocked by the VM's network environment).
+- **Git remotes:** `origin` is the team fork; `upstream` is NVIDIA's repository.
+
+---
+
+## 2. Layout
+
+- [`compose.yml`](compose.yml) — Profile entrypoint. Includes `./incident-console/compose.yml`. No Kibana init block (this profile does not use Kibana).
+- [`incident-console/`](incident-console/README.md) — The Streamlit console: Postgres-backed incident review UI (`INCIDENT_DB_DSN` required). See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
+- [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference); a `mock_data/` module is planned for a Postgres-schema mock of the console.
+- [`incident-plan/`](incident-plan/) — Technical reference docs (`incident-plan-implementation-local.md`, `-remote.md`, `-shared.md`).
+- [`scripts/`](scripts/) — Standalone deployment and operational scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `native-services.sh`, etc.).
+- [`start.sh`](start.sh) & [`local-start.sh`](local-start.sh) — Laptop-side entrypoint scripts.
+
+---
+
+## 3. Environments and Access
+
+- **Hardware (`kwanz-ws` VM):** 2× RTX A6000 (48 GB each), AMD Threadripper PRO 5975WX, 251 GiB RAM, 1.8 TB NVMe.
+- **Tailscale:** `kwanz-ws.tailf3aa43.ts.net`.
+- **VM checkout:** `/srv/rise-up/vss`.
+- **NGC credentials on VM:** `/srv/rise-up/.ngc_env` (`set -a; source /srv/rise-up/.ngc_env; set +a` or `source scripts/ngc-env.sh`).
+- **Direct UI tunnel (base profile):** `ssh -N -L 7777:10.131.1.5:7777 <user>@kwanz-ws`, browse `http://localhost:7777`.
+- **Deploy flags used on this host:** `--host-ip 10.131.1.5 --external-ip localhost --hardware-profile OTHER`.
+
+---
+
+## 4. Deploy & Operation
+
+### Deployment principles
 
 This profile is deployed and torn down with the project's canonical scripts
-(`dev-profile.sh`, `cleanup_all_datalog.sh`) where they apply — note that
-`dev-profile.sh` has **no `incident` profile** (only
-`base|search|lvs|alerts`), so this profile's own backend deploy is the
-direct compose invocation in the "What's actually running" section below
-(see `docs/incident-plan/incident-plan-implementation-remote.md` §2). Do not
-improvise raw `docker`/`docker compose` invocations.
+(`dev-profile.sh`, `cleanup_all_datalog.sh`) where they apply. Note that
+**`dev-profile.sh` has no `incident` profile** (only `base|search|lvs|alerts`).
 
-Each script preserves the original alias/function's grounding comment and
-safety behavior — check a script's header before using it.
+For `dev-profile-incident`:
+- The backend deploys via direct docker compose invocation (`docker compose --env-file generated.env.<local|remote> up -d`) plus native services (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws) and [Native vs. Docker service split](#5-native-vs-docker-service-split)).
+- **Never run `dev-profile.sh down`** on `kwanz-ws` — that script tears down the stack with `-v` and wipes the data directory, destroying ~35 GB of cached model weights. Use `./scripts/down.sh` or plain `docker compose down`.
+- Local UI iteration needs no GPU/VM:
+  ```bash
+  cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
+  uv sync
+  uv run streamlit run app.py
+  ```
+  (See [`incident-console/README.md`](incident-console/README.md) for the full local dev loop).
 
-## Current deployment on kwanz-ws
+Each script under [`scripts/`](scripts/) preserves the original alias/function's
+grounding comment and safety behavior — check a script's header before using it.
 
-The profile's backend (`vss-agent`, LLM/VLM NIMs, VIOS) runs on the shared
-`kwanz-ws` VM. **The `incident-console` UI runs on each team member's own
-laptop, not on the VM** - an SSH tunnel connects the two. This supersedes an
-earlier setup where the console ran as a shared container on the VM (see the
-status table below).
+### Reference: Running NVIDIA stock profiles
 
-## Native vs. Docker service split
+For testing baseline NVIDIA blueprint behavior directly on `kwanz-ws`:
+
+#### Stock `base`, local LLM/VLM
+Verified working; tuning lives in each model's `deploy/docker/services/nim/<model>/hw-OTHER.env`, no override flags needed:
+
+```bash
+cd /srv/rise-up/vss
+set -a; source /srv/rise-up/.ngc_env; set +a
+./deploy/docker/scripts/dev-profile.sh up --profile base --hardware-profile OTHER \
+  --host-ip 10.131.1.5 --external-ip localhost \
+  --llm nvidia/nvidia-nemotron-nano-9b-v2 --llm-device-id 0 \
+  --vlm nvidia/cosmos3-reasoner --vlm-device-id 1
+```
+
+#### Stock `base`, remote LLM/VLM
+Verified working; uses `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` for both roles:
+
+```bash
+cd /srv/rise-up/vss
+set -a; source /srv/rise-up/.ngc_env; set +a
+export LLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
+export VLM_ENDPOINT_URL='https://integrate.api.nvidia.com'
+export OPENAI_API_KEY="$NVIDIA_API_KEY"
+./deploy/docker/scripts/dev-profile.sh up --profile base --hardware-profile OTHER \
+  --host-ip 10.131.1.5 --external-ip localhost \
+  --use-remote-llm --llm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --llm-model-type openai \
+  --use-remote-vlm --vlm nvidia/nemotron-3-nano-omni-30b-a3b-reasoning --vlm-model-type openai
+```
+
+- `--llm-model-type`/`--vlm-model-type` must be `openai`, not `nim`. `nim`-type is non-functional (upstream `nvidia-nat` bug: `nim_langchain` leaks `verify_ssl` into the request body; issue #1894 / PR #1862).
+
+---
+
+## 5. Native vs. Docker Service Split
 
 Fast-iterating application services run as native processes directly on
 `kwanz-ws`, not in Docker, so a code change is a ~2s process restart instead
@@ -101,7 +178,9 @@ VM after confirming the native services are up and healthy:
 ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/scripts/prune-native-images.sh"
 ```
 
-## Laptop Setup: Secrets & Environment Files
+---
+
+## 6. Laptop Setup: Secrets & Environment Files
 
 The `incident-console` UI runs on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh`).
 
@@ -230,9 +309,15 @@ If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM infere
 
 ---
 
-### Connecting
+## 7. Connecting to the Shared Backend
 
-#### One command (recommended)
+The profile's backend (`vss-agent`, LLM/VLM NIMs, VIOS) runs on the shared
+`kwanz-ws` VM. **The `incident-console` UI runs on each team member's own
+laptop, not on the VM** — an SSH tunnel connects the two. This supersedes an
+earlier setup where the console ran as a shared container on the VM (see
+[Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)).
+
+### One command (recommended)
 
 From your own laptop, in this directory:
 
@@ -251,13 +336,10 @@ login the same way.
 
 `start.sh` checks the VM's deploy state over SSH — Docker containers
 (`docker compose -p mdx ps`) **and** native services
-(`scripts/native-services.sh status`, see "Native vs. Docker service split"
-below):
+(`scripts/native-services.sh status`, see [Native vs. Docker service split](#5-native-vs-docker-service-split)):
 
 - **Nothing running** → deploys the backend fresh over SSH: Docker appliance
-  containers only (`docker compose -f compose.yml --env-file
-developer-profiles/dev-profile-incident/generated.env.remote up -d
-<docker-services>`, no `vss-agent` in that list), then starts the native
+  containers only (`docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <docker-services>`, no `vss-agent` in that list), then starts the native
   services (`native-services.sh start`), then opens the tunnel, then starts
   the console.
 - **Everything expected up** → skips the deploy, straight to tunnel + console.
@@ -269,7 +351,7 @@ developer-profiles/dev-profile-incident/generated.env.remote up -d
 Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
 `behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker).
 
-##### Troubleshooting the VM SSH username
+#### Troubleshooting the VM SSH username
 
 - **No prompt appears at all** — a `VSS_SSH_TARGET` env var is already set in
   your shell (it takes priority over the prompt). `unset VSS_SSH_TARGET` to
@@ -284,8 +366,7 @@ Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
   or ask whoever manages VM access.
 - **SSH works but `start.sh` still fails with a Docker permission error** — a
   `permission denied ... Docker daemon socket` error means that VM account
-  needs Docker group access: on the VM, run `sudo usermod -aG docker
-<username>` once (needs sudo there), then fully log out and reconnect
+  needs Docker group access: on the VM, run `sudo usermod -aG docker <username>` once (needs sudo there), then fully log out and reconnect
   (exit the SSH session and ssh back in) — group membership doesn't apply to
   an already-open session.
 
@@ -293,10 +374,10 @@ It then backgrounds the SSH tunnel (and closes it when the console exits) and
 starts the local Streamlit console. Run it from the laptop only — it refuses
 to run on `kwanz-ws` itself.
 
-#### Manual flow (same pieces, individually)
+### Manual flow (same pieces, individually)
 
 1. SSH access to kwanz-ws under your own account (you should already have
-   one - `yang`, `faith`, `claris`, `heng` each have their own checkout under
+   one — `yang`, `faith`, `claris`, `heng` each have their own checkout under
    `/home/`).
 2. From your own laptop, run `./scripts/tunnel.sh` (replaces the old
    `mdx-tunnel-incident` alias) to forward the backend ports (agent 8000,
@@ -304,7 +385,7 @@ to run on `kwanz-ws` itself.
    ```bash
    ./scripts/tunnel.sh
    ```
-   Leave it running in its own terminal - it's supposed to sit there silently
+   Leave it running in its own terminal — it's supposed to sit there silently
    (that's correct, not stuck). Quick health check from a second terminal:
    ```bash
    ./scripts/tunnel-check.sh
@@ -317,44 +398,60 @@ to run on `kwanz-ws` itself.
    on kwanz-ws via SSH tunnel (Phase 4)" section. Each person runs their own
    console instance against the shared backend, not a single shared UI.
 
-### What's actually running
+---
 
-Docker appliance containers are up under `/srv/rise-up/vss/deploy/docker`,
-started via:
+## 8. Current Status (as of 2026-09-21)
+
+### 8.1 Feature / verification status
+
+| Item | State |
+|---|---|
+| `incident-console` app (catalog, report review, dashboard, human-eval; Postgres-backed, no offline mode) | Present; seed via `incident-console/scripts/seed_supabase.py` over `fixtures/data/*.csv` |
+| Console schema (`db.py`: videos/queries/model_runs/incidents + evidence, ground-truth, match, review tables) | Present; authoritative for schema questions |
+| Mock backend + local loop (`mock-backend/base_profile_mock`) | Present; verified loop documented |
+| Stock base-local deploy (one model per GPU, `hw-OTHER.env` sizing) | Verified working |
+| Stock base-remote chat + VLM describe (`openai`-type, model above) | Verified working 2026-09-13 on corrected `--host-ip`: video upload to VST plus `video_understanding` through the remote VLM returned a correct description. Full `report_agent` path still needs a UI websocket (HITL), so it remains unverified headless. |
+| Stock `search` profile (local and remote) | Verified working 2026-09-13 both modes; deploy commands in the mode docs §3 |
+| `incident_report_gen` tool + `/analyze` API route | Built (PR #38, merged 2026-09-17); fresh deploy builds from source via `start.sh`'s `--build` (PR #63), and `vss-agent` runs natively on kwanz-ws (PR #70). Confirm the VM's active `vss-agent` process was restarted or redeployed since PR #63/#70 |
+| Supabase / PostgREST integration | Migration validated against live project (PR #53); agent-side client ported from asyncpg to `supabase-py` PostgREST (PR #54, #57); `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` wired to agent (PR #62) for port-5432-safe access on kwanz-ws |
+| Tier 1 ground-truth evaluation | Built (PR #56, merged 2026-09-20); scores model runs against parallel `gt_*` tables via `eval_gt.py` / report detail UI |
+| `dev-profile-incident` `config.yml`, `/search` API route | Planned (shared doc §§4-6); not yet built |
+| `openai_vlm` missing-`base_url` patch (`base_url: ${VLM_BASE_URL}/v1` in `config.yml` + `config_rag.yml`) | Required; re-apply after any upstream sync |
+| Remote free-tier 16-concurrent-request ceiling; hosted-model 12-images-per-prompt cap | Open constraints; remote report path loops/hangs past them |
+
+### 8.2 Live deployment on kwanz-ws
+
+The profile's backend (`vss-agent`, LLM/VLM NIMs, VIOS) runs on the shared `kwanz-ws` VM. **The `incident-console` UI runs on each team member's own laptop, not on the VM** — an SSH tunnel connects the two. This supersedes an earlier setup where the console ran as a shared container on the VM.
+
+Docker appliance containers are up under `/srv/rise-up/vss/deploy/docker`, started via:
 
 ```bash
 cd /srv/rise-up/vss/deploy/docker
 sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <service>
 ```
 
-(the root `compose.yml` in `deploy/docker` is the one to use - **not** the one
-inside `dev-profile-incident/`, which only defines the console app by itself)
+(the root `compose.yml` in `deploy/docker` is the one to use — **not** the one inside `dev-profile-incident/`, which only defines the console app by itself)
 
-`vss-agent` itself is **not** one of these containers — it runs natively via
-`scripts/native-services.sh` (see "Native vs. Docker service split" above).
+`vss-agent` itself is **not** one of these containers — it runs natively via `scripts/native-services.sh` (see [Native vs. Docker service split](#5-native-vs-docker-service-split)).
 
 | Service / Container         | Role                                      | Status                                                                                                                                                                                                                    |
-| ---------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ---------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `vss-agent` (native)         | AI agent — upload API, report generation | Up, healthy (`native-services.sh status`, not `docker compose ps`)                                                                                                                                                       |
-| `vss-incident-console`      | the Streamlit UI                         | Up, but **superseded** — the console now runs on each person's own laptop instead (see "Connecting" above); this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward |
-| `vss-vios-streamprocessing` | video decode/encode core                 | Up, healthy                                                                                                                                                                                                             |
-| `vss-vios-nvstreamer`       | upload ingestion                         | Up                                                                                                                                                                                                                      |
-| `vss-vios-ingress`          | nginx gateway for VST/storage API        | Up, healthy                                                                                                                                                                                                             |
-| `vss-haproxy-ingress`       | public-facing ingress on port 7777       | Up                                                                                                                                                                                                                      |
-| `vss-vios-postgres`         | VIOS's internal Postgres                 | Up, healthy                                                                                                                                                                                                             |
-| `redis`                     | cache                                    | Up                                                                                                                                                                                                                      |
-| `phoenix`                   | telemetry                                | Up                                                                                                                                                                                                                      |
+| `vss-incident-console`      | the Streamlit UI                         | Up, but **superseded** — the console now runs on each person's own laptop instead; this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward                            |
+| `vss-vios-streamprocessing` | video decode/encode core                 | Up, healthy                                                                                                                                                                                                               |
+| `vss-vios-nvstreamer`       | upload ingestion                         | Up                                                                                                                                                                                                                        |
+| `vss-vios-ingress`          | nginx gateway for VST/storage API        | Up, healthy                                                                                                                                                                                                               |
+| `vss-haproxy-ingress`       | public-facing ingress on port 7777       | Up                                                                                                                                                                                                                        |
+| `vss-vios-postgres`         | VIOS's internal Postgres                 | Up, healthy                                                                                                                                                                                                               |
+| `redis`                     | cache                                    | Up                                                                                                                                                                                                                        |
+| `phoenix`                   | telemetry                                | Up                                                                                                                                                                                                                        |
 | `vss-rtvi-embed`            | embedding service                        | Up, healthy (search/MVP2-related, not required for MVP1 but running)                                                                                                                                                    |
 
-**Not running / broken** (see "Known issues" below): `nvidia-cosmos3-reasoner`
-(VLM — crash-looping), `nvidia-nemotron-nano-9b-v2` (LLM — never started),
-`vss-vios-sensor` (sensor-ms — never started), `vss-broker-health-check`
-(expected to fail, MVP2/Kafka-only).
+**Not running / broken** (see "Known issues" below): `nvidia-cosmos3-reasoner` (VLM — crash-looping), `nvidia-nemotron-nano-9b-v2` (LLM — never started), `vss-vios-sensor` (sensor-ms — never started), `vss-broker-health-check` (expected to fail, MVP2/Kafka-only).
 
-### Live config notes (`generated.env.remote`)
+#### Live config notes (`generated.env.remote`)
 
-The untracked live env file on the VM diverges from the tracked `.env`
-template in a few places:
+The untracked live env file on the VM diverges from the tracked `.env` template in a few places:
 
 | Setting                      | Template value                                                        | Live value                       | Why                                                                                                                                                          |
 | ---------------------------- | --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -366,7 +463,7 @@ template in a few places:
 | `REPORT_REFERENCE_BASE_DIR`  | unset (crashed startup)                                               | `/tmp`                           | Agent's `eval` config schema required a valid string, even though eval isn't actually used here                                                              |
 | `STREAM_PROCESSOR_HTTP_PORT` | unset → defaulted to `30001`                                          | `10000`                          | nginx is hardcoded to proxy to `localhost:10000`, but the service's own default is `30001` — a pre-existing inconsistency in the repo's own shared `vst.env` |
 
-### Known issues - not yet fixed, tracked as follow-up work
+### 8.3 Known issues
 
 1. ~~**`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
    `deploy/docker/services/agent/compose.yml`'s `vss-agent` service now carries
@@ -376,7 +473,7 @@ template in a few places:
    instead of NVIDIA's locked prebuilt image. A plain `up -d` — no `--build` —
    still reuses whatever image already exists locally. What's currently running
    on the VM is still the prebuilt image; run one `--build` deploy there before
-   relying on any agent-side code change.~~ **FIXED** — `start.sh` now passes `--build` on fresh deploys (see PR adding `--build` to the deploy command).
+   relying on any agent-side code change.~~ **FIXED** — `start.sh` now passes `--build` on fresh deploys (PR #63), and `vss-agent` now runs natively on kwanz-ws from source (PR #70). Confirm the VM process/container was restarted after PR #63/#70.
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.
@@ -391,3 +488,15 @@ template in a few places:
 5. **`INCIDENT_LLM_BASE_URL` points at a local mock server** that isn't
    running on the VM — currently harmless (nothing calls it yet), but will
    break the moment someone wires up the "direct LLM draft" fallback feature.
+
+---
+
+## 9. Verification Checklist
+
+- **Upload a clip:** Appears in the catalog with correct status/count; lands in R2 and is retrievable.
+- **Generate a report:** Every structured field populates; ambiguous input degrades (empty persons, unconfirmed start time).
+- **Edit metadata, regenerate:** The new report reflects the edit.
+- **Full-pipeline trigger:** Status moves through its lifecycle incl. an induced failure surfacing in the UI.
+- **Verify a report:** Status flips; severity >= 4 raises a notification (default threshold, unconfirmed).
+- **Search/filter, timestamp-jump, dashboard charts:** Reflect real rows; clearing filters returns the full set.
+- **Human-eval sample:** Agreement rate matches a hand-computed value.

@@ -2,13 +2,13 @@
 
 ## Incident Search & Reporting Capstone (Daniel's team)
 
-A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. Planning docs live in [`docs/incident-plan/`](docs/incident-plan/):
+A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
 
-- [`incident-plan-overview.md`](docs/incident-plan/incident-plan-overview.md) — human-facing: decisions, rationale, what ships when (MVP1/MVP2), copy-paste deploy commands. Start here.
-- [`incident-plan-implementation-local.md`](docs/incident-plan/incident-plan-implementation-local.md) / [`incident-plan-implementation-remote.md`](docs/incident-plan/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
-- [`incident-plan-implementation-shared.md`](docs/incident-plan/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
+- [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — human-facing profile guide: decisions, rationale, what ships when (MVP1/MVP2), dev/deploy workflows, and status. Start here.
+- [`incident-plan/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-local.md) / [`incident-plan/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
+- [`incident-plan/incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
 
-When working on this project, read the Overview doc first, then whichever Implementation doc(s) match the task.
+When working on this project, read the profile README first, then whichever Implementation doc(s) match the task.
 
 Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
 
@@ -17,7 +17,7 @@ Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AG
 `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a 12-table-plus-matches
 schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module
 docstring for the full table list and the `review_status` design note). `db.py` is the authoritative source for
-this schema; the planning docs under `docs/incident-plan/` were reconciled with it in PR #24 (the shared implementation doc's §1 table sketch predates the built schema and is kept only as a rough map - do not design from it). Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
+this schema; the planning docs under `deploy/docker/developer-profiles/dev-profile-incident/incident-plan/` were reconciled with it in PR #24 (the shared implementation doc's §1 table sketch predates the built schema and is kept only as a rough map - do not design from it). Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
 `videos.id`, no separate `video_id` column). Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
 (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
 (`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
@@ -34,8 +34,8 @@ unavailable, no fallback. This split exists because the deployment VM (`kwanz-ws
 protocol on port 5432, so only the HTTPS-based PostgREST route works for the agent from there - a direct-Postgres
 driver on the agent side breaks Analyze on `kwanz-ws`. PostgREST has no client-held transactions or
 `SELECT ... FOR UPDATE`; the one operation needing atomicity (`insert_incident`'s delete-then-insert plus
-`review_status` reset) calls the `insert_incident` Postgres RPC function (`supabase/migrations/`) via
-`/rpc/insert_incident` instead.
+`review_status` reset) calls the `insert_incident` Postgres RPC function (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via
+`/rpc/insert_incident` instead (see [`deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) for how to apply it via `supabase db push`).
 
 ## incident-console agent upload contract
 

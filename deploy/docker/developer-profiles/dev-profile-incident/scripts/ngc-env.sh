@@ -15,7 +15,7 @@
 # does not export them, so dev-profile.sh/NGC tooling run as a child process
 # would still see no credential. `set -a`/`set +a` here is this repo's own
 # documented way to source it, from
-# docs/incident-plan/incident-plan-overview.md; save/restore any prior
+# ../README.md; save/restore any prior
 # allexport state rather than assuming it was off.)
 
 ngc_env="${VSS_NGC_ENV:-/srv/rise-up/.ngc_env}"
