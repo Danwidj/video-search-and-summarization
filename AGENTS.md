@@ -73,6 +73,13 @@ hardcoding raw `docker`/`docker compose` invocations — see each script's heade
 grounded in. `scripts/tunnel.sh`, `scripts/tunnel-check.sh`, and top-level `start.sh` are laptop-side only
 (SSH tunnel from laptop to the VM backend for the locally-run incident-console); never run them on kwanz-ws itself.
 
+`vss-agent` and the analytics modules (`video-analytics-api`, `behavior-analytics`) run as native
+processes on `kwanz-ws` rather than Docker containers, managed by `scripts/native-services.sh`
+(`start`/`stop`/`restart`/`status`/`logs`, PID files and logs under `/srv/rise-up/vss/.run/`); VIOS/VST
+media engines and backing infra (Postgres, Redis, Phoenix, HAProxy) stay in Docker.
+`scripts/prune-native-images.sh` removes the Docker images those native services no longer need. See
+`dev-profile-incident/README.md`'s "Native vs. Docker service split" section for the full picture.
+
 ## UI development without GPU/NIM containers
 
 [`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. This is unrelated to the sibling `deploy/docker/developer-profiles/dev-profile-incident/mock-backend/mock_data/` module (a different, not-yet-built Postgres schema mock for the incident-console app above).
