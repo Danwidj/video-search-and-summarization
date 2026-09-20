@@ -1,9 +1,9 @@
-# Managed by deploy/dotfiles/bootstrap.sh — re-running the bootstrap
+# Managed by deploy/docker/developer-profiles/dev-profile-incident/dotfiles/bootstrap.sh — re-running the bootstrap
 # overwrites this file, so make edits upstream in the repo, not here.
 #
 # Stock `starship preset nerd-font-symbols` output (unmodified) — see
 # https://starship.rs/presets/nerd-font. Regenerate with:
-#   starship preset nerd-font-symbols -o deploy/dotfiles/starship.toml --force
+#   starship preset nerd-font-symbols -o deploy/docker/developer-profiles/dev-profile-incident/dotfiles/starship.toml --force
 # then re-add this comment block.
 
 "$schema" = 'https://starship.rs/config-schema.json'

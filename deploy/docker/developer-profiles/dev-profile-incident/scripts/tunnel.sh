@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # kwanz-ws backend tunnel — LAPTOP SIDE ONLY (replaces the old
-# `mdx-tunnel-incident` shell alias from deploy/dotfiles/aliases.sh — same
+# `mdx-tunnel-incident` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same
 # behavior, standalone script).
 #
 # The laptop-local incident-console reaches the real kwanz-ws backend (agent
 # :8000, LLM :30081, VLM :30082) through this SSH tunnel instead of the mock
-# (see deploy/dotfiles/README.md). Phase 4 design: the console never deploys
+# (see deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md). Phase 4 design: the console never deploys
 # to the VM; the VM runs only the backend stack. Unlike every other script
 # in this directory, this one runs on YOUR LAPTOP, not on the VM: it
 # forwards laptop-local ports to the VM's backend. Do not run it on

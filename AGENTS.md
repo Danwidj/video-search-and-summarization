@@ -52,7 +52,7 @@ for the id it derives instead, and `pages/1_Catalog.py` for the upload/analyze/s
 
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
-[`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
+[`deploy/docker/developer-profiles/dev-profile-incident/dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
 `kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, tmux config, and generic QoL aliases only — `bat`,
 `vim=nvim`, `cat=bat`, `htop=btop`). It is not mandatory team-wide provisioning and does not touch
 other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` aliases/functions

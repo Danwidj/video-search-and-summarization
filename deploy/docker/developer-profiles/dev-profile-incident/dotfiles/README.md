@@ -1,4 +1,4 @@
-# deploy/dotfiles
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles
 
 Personal, opt-in shell QoL setup for `kwanz-ws`, the shared multi-user
 Ubuntu VM this project is deployed on. A single idempotent bash script —
@@ -49,7 +49,7 @@ The VM already has this repo checked out at `/srv/rise-up/vss`
 step:
 
 ```bash
-bash /srv/rise-up/vss/deploy/dotfiles/bootstrap.sh
+bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/dotfiles/bootstrap.sh
 ```
 
 Then start a new shell (or `source ~/.bashrc`).
