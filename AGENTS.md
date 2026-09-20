@@ -2,13 +2,13 @@
 
 ## Incident Search & Reporting Capstone (Daniel's team)
 
-A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. Planning docs live in [`deploy/docker/developer-profiles/dev-profile-incident/incident-plan/`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/):
+A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
 
-- [`incident-plan-overview.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-overview.md) — human-facing: decisions, rationale, what ships when (MVP1/MVP2), copy-paste deploy commands. Start here.
-- [`incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-local.md) / [`incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
-- [`incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
+- [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — human-facing profile guide: decisions, rationale, what ships when (MVP1/MVP2), dev/deploy workflows, and status. Start here.
+- [`incident-plan/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-local.md) / [`incident-plan/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
+- [`incident-plan/incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
 
-When working on this project, read the Overview doc first, then whichever Implementation doc(s) match the task.
+When working on this project, read the profile README first, then whichever Implementation doc(s) match the task.
 
 Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
 

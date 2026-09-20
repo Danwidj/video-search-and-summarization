@@ -13,7 +13,7 @@
 # kwanz-ws itself (forwarding the VM to itself is at best a no-op).
 #
 # Same tunnel pattern as the base-profile VSS UI tunnel in
-# ../incident-plan/incident-plan-overview.md:
+# ../README.md:
 # `ssh -N -L 7777:10.131.1.5:7777 daniel@kwanz-ws`.
 #
 # Forwarded ports mirror the backend's real ports one-to-one

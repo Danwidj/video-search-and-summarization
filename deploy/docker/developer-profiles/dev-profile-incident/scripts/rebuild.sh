@@ -10,7 +10,7 @@
 # `docker compose up --detach --force-recreate --build` internally, so this
 # IS the project's rebuild/reinstall-image command — see
 # deploy/docker/scripts/dev-profile.sh (state_up/state_down) and the
-# worked examples in ../incident-plan/incident-plan-overview.md.
+# worked examples in ../README.md.
 #
 # NOTE: dev-profile.sh has NO `incident` profile — this rebuilds the stock
 # profiles (base/search/lvs/alerts). The incident profile never goes through
