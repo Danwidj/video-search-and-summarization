@@ -53,6 +53,54 @@ laptop, not on the VM** - an SSH tunnel connects the two. This supersedes an
 earlier setup where the console ran as a shared container on the VM (see the
 status table below).
 
+## Native vs. Docker service split
+
+Fast-iterating application services run as native processes directly on
+`kwanz-ws`, not in Docker, so a code change is a ~2s process restart instead
+of a container rebuild. Media/appliance infra stays in Docker.
+
+| Runs natively (kwanz-ws)                          | Runs in Docker                                                                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `vss-agent` (`nat serve`, port 8000)                 | `vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-haproxy-ingress`, `vss-vios-postgres`, `redis`, `phoenix`     |
+| `video-analytics-api` (`node index.js`, port 8081, optional — `ENABLE_ANALYTICS=true`) | `elasticsearch`, `kafka` (also gated by `ENABLE_ANALYTICS=true`)                                                     |
+| `behavior-analytics` (`python3 apps/...`, port 8080, optional — `ENABLE_ANALYTICS=true`) |                                                                                                                        |
+
+[`scripts/native-services.sh`](scripts/native-services.sh) is the VM-side
+control script for the native half (`start`/`stop`/`restart`/`status`/`logs`,
+each takes a space-separated service list, `all`, or `analytics` as
+shorthand). It backgrounds each process with `nohup`, tracks it with a PID
+file under `/srv/rise-up/vss/.run/<service>.pid`, redirects its stdout/stderr
+to `/srv/rise-up/vss/.run/<service>.log`, and waits on a healthcheck loop
+before reporting a service up (`vss-agent`'s `/health` endpoint; the
+analytics services fall back to a port/log-line check). `start.sh`,
+`scripts/status.sh`, `scripts/down.sh`, `scripts/logs.sh`, and
+`scripts/rebuild-svc.sh` all delegate to it for the native half of their
+respective jobs — see each script's header. Run it directly on the VM for
+finer-grained control than `start.sh`'s all-or-nothing deploy, e.g.:
+
+```bash
+ssh kwanz-ws
+cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/scripts
+./native-services.sh status
+./native-services.sh restart vss-agent   # ~2s, no Docker rebuild
+./native-services.sh logs vss-agent      # tails .run/vss-agent.log
+```
+
+### Pruning the now-unused Docker images
+
+Once a service has been switched to native execution, its old Docker image
+is dead weight on the VM's disk. `scripts/prune-native-images.sh` removes
+the `vss-agent`, `vss-behavior-analytics`, and `vss-video-analytics-api`
+images (plus any stopped containers still referencing them and dangling
+leftovers) and prints disk usage before/after. It refuses to silently strand
+you without an agent: if `services/agent/.venv/bin/nat` isn't present it
+warns and asks for interactive confirmation before proceeding. Run it on the
+VM after confirming the native services are up and healthy:
+
+```bash
+ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/scripts/prune-native-images.sh"
+```
+
 ## Laptop Setup: Secrets & Environment Files
 
 The `incident-console` UI runs on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh`).
@@ -201,17 +249,25 @@ non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
 to override the login entirely, same as before. `scripts/tunnel.sh` resolves its VM
 login the same way.
 
-`start.sh` checks the VM's deploy state over SSH (`docker compose -p mdx ps`):
+`start.sh` checks the VM's deploy state over SSH — Docker containers
+(`docker compose -p mdx ps`) **and** native services
+(`scripts/native-services.sh status`, see "Native vs. Docker service split"
+below):
 
-- **Nothing running** → deploys the backend fresh over SSH (the profile's own
-  deploy path: `docker compose -f compose.yml --env-file
-developer-profiles/dev-profile-incident/generated.env.remote up -d`), then
-  opens the tunnel, then starts the console.
+- **Nothing running** → deploys the backend fresh over SSH: Docker appliance
+  containers only (`docker compose -f compose.yml --env-file
+developer-profiles/dev-profile-incident/generated.env.remote up -d
+<docker-services>`, no `vss-agent` in that list), then starts the native
+  services (`native-services.sh start`), then opens the tunnel, then starts
+  the console.
 - **Everything expected up** → skips the deploy, straight to tunnel + console.
 - **Partial deploy** → stops and prints exactly what's up vs. what's
-  missing/expected (with a nonzero exit), telling you to clear the partial
-  state manually before re-running. It deliberately never auto-reconciles or
-  force-redeploys over a partial state.
+  missing/expected for both Docker and native services (with a nonzero exit),
+  telling you to clear the partial state manually before re-running. It
+  deliberately never auto-reconciles or force-redeploys over a partial state.
+
+Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
+`behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker).
 
 ##### Troubleshooting the VM SSH username
 
@@ -263,7 +319,8 @@ to run on `kwanz-ws` itself.
 
 ### What's actually running
 
-All of these are up under `/srv/rise-up/vss/deploy/docker`, started via:
+Docker appliance containers are up under `/srv/rise-up/vss/deploy/docker`,
+started via:
 
 ```bash
 cd /srv/rise-up/vss/deploy/docker
@@ -273,9 +330,12 @@ sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-inc
 (the root `compose.yml` in `deploy/docker` is the one to use - **not** the one
 inside `dev-profile-incident/`, which only defines the console app by itself)
 
-| Container                   | Role                                     | Status                                                                                                                                                                                                                  |
-| --------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vss-agent`                 | AI agent — upload API, report generation | Up, healthy                                                                                                                                                                                                             |
+`vss-agent` itself is **not** one of these containers — it runs natively via
+`scripts/native-services.sh` (see "Native vs. Docker service split" above).
+
+| Service / Container         | Role                                      | Status                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vss-agent` (native)         | AI agent — upload API, report generation | Up, healthy (`native-services.sh status`, not `docker compose ps`)                                                                                                                                                       |
 | `vss-incident-console`      | the Streamlit UI                         | Up, but **superseded** — the console now runs on each person's own laptop instead (see "Connecting" above); this VM container is a leftover from the earlier shared-VM-console setup, not the path to use going forward |
 | `vss-vios-streamprocessing` | video decode/encode core                 | Up, healthy                                                                                                                                                                                                             |
 | `vss-vios-nvstreamer`       | upload ingestion                         | Up                                                                                                                                                                                                                      |
