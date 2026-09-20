@@ -52,16 +52,23 @@ for the id it derives instead, and `pages/1_Catalog.py` for the upload/analyze/s
 
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
-[`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash
-bootstrap for the shared `kwanz-ws` VM (starship, fzf/ripgrep/bat/btop,
-generic QoL aliases — `bat`, `vim=nvim`, `cat=bat`, `htop=btop`). It is not
-mandatory team-wide provisioning and does not touch other accounts. The VSS
-deploy-lifecycle scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`,
-`tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
-`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `start.sh`, `local-start.sh`,
-`resolve-ssh-target.sh`) live in
-`deploy/docker/developer-profiles/dev-profile-incident/` — see that profile's
-README for the script table, workflow, and current deploy state.
+[`deploy/dotfiles/`](deploy/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
+`kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, tmux config, and generic QoL aliases only — `bat`,
+`vim=nvim`, `cat=bat`, `htop=btop`). It is not mandatory team-wide provisioning and does not touch
+other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` aliases/functions
+(`mdx-ps`, `mdx-down`, `mdx-health`, `mdx-tunnel-incident`, `mdx-tunnel-incident-check`, `mdx-logs`,
+`mdx-disk`, `mdx-rebuild-svc`, `mdx-rebuild`, `mdx-clean-datalog`, `ngc-env-on`, `gpu`) moved to
+standalone executable scripts under
+`deploy/docker/developer-profiles/dev-profile-incident/scripts/` (`status.sh`, `down.sh`, `health.sh`,
+`tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
+`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` there is the laptop-side one-command daily
+entry point: checks the VM deploy state over SSH, deploys the backend fresh if nothing is running
+(direct compose with `generated.env.remote` — `dev-profile.sh` has no `incident` profile), stops on
+a partial deploy, backgrounds the tunnel, then runs the local console. The VM-side scripts wrap the
+project's own canonical deploy scripts (`dev-profile.sh`, `cleanup_all_datalog.sh`) rather than
+hardcoding raw `docker`/`docker compose` invocations — see each script's header for the doc it is
+grounded in. `tunnel.sh` / `tunnel-check.sh` / `start.sh` are laptop-side only (SSH tunnel from
+laptop to the VM backend for the locally-run incident-console); never run them on kwanz-ws itself.
 
 ## UI development without GPU/NIM containers
 

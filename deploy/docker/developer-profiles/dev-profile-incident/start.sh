@@ -15,8 +15,10 @@
 #          (the incident profile's own deploy path: direct
 #          `docker compose -f compose.yml --env-file
 #          developer-profiles/dev-profile-incident/generated.env.remote
-#          up -d` — dev-profile.sh has NO incident profile, see
-#          docs/incident-plan/incident-plan-implementation-remote.md §2),
+#          up -d --build` — dev-profile.sh has NO incident profile, see
+#          docs/incident-plan/incident-plan-implementation-remote.md §2;
+#          `--build` ensures the `vss-agent` image reflects current `main`,
+#          but fresh deploys take longer vs. reusing a cached image),
 #          then open the tunnel, then start the console.
 #        - EVERYTHING expected up    -> skip the deploy, straight to
 #          tunnel + console.
@@ -62,8 +64,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=resolve-ssh-target.sh
-source "${SCRIPT_DIR}/resolve-ssh-target.sh"
+# shellcheck source=scripts/resolve-ssh-target.sh
+source "${SCRIPT_DIR}/scripts/resolve-ssh-target.sh"
 VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
 VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
 INCIDENT_EXPECTED_CONTAINERS="${INCIDENT_EXPECTED_CONTAINERS:-vss-agent vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix}"
@@ -147,14 +149,14 @@ if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
   exit 1
 fi
 if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d
-else
-  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d
-fi
+    sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build
+  else
+    docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build
+  fi
 EOF
 )
   echo "--- deploying over SSH (this can take a while: image pulls, model/config setup) ---"
-  echo "--- command: cd $VSS_REPO_ROOT/deploy/docker && docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d ---"
+  echo "--- command: cd $VSS_REPO_ROOT/deploy/docker && docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --build ---"
   ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
   deploy_rc=$?
   if [ "$deploy_rc" -ne 0 ]; then

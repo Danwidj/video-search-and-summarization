@@ -135,10 +135,10 @@ zero-GPU loop; use this path when you want the real backend instead. (Or run
 `../start.sh` to automate this — see that profile's README.)
 
 Terminal 1 (tunnel):
-
+ 
 ```bash
 # laptop side; forwards localhost:8000/:30081/:30082 to the VM
-../tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
+../scripts/tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
 ```
 
 Terminal 2 (console, same directory as the local loop):
@@ -160,9 +160,9 @@ LLM NIM (`:30081/v1`). DB/R2 values stay as documented above (Supabase DSN +
 R2 keys in `.env.local`); the tunnel carries only the agent/LLM/VLM traffic.
 
 Prove the tunnel before starting the console:
-
+ 
 ```bash
-../tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
+../scripts/tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
 # agent ok (localhost:8000 -> 10.131.1.5:8000)
 # nim :30081 -> 10.131.1.5:30081: HTTP 200
 # nim :30082 -> 10.131.1.5:30082: HTTP 200

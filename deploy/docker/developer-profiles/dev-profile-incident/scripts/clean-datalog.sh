@@ -15,7 +15,7 @@
 # Usage: ./clean-datalog.sh <base|search|lvs|alerts>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 
 profile="$1"
 case "$profile" in

@@ -42,7 +42,7 @@ direct compose invocation in the "What's actually running" section below
 (see `docs/incident-plan/incident-plan-implementation-remote.md` §2). Do not
 improvise raw `docker`/`docker compose` invocations.
 
-### Lifecycle scripts (in this directory)
+### Lifecycle scripts (in `scripts/`)
 
 The old `mdx-*` shell aliases / `ngc-env-on` / `gpu` from
 [`deploy/dotfiles/`](../../../dotfiles/README.md) moved here as standalone,
@@ -51,20 +51,18 @@ executable scripts — same behavior, ready to run individually:
 | Script | Was | Runs on | What it does |
 |---|---|---|---|
 | `start.sh` | — (new) | **laptop** | One-command daily entry point: checks the VM backend deploy state over SSH, deploys fresh if nothing is running, **stops on a partial deploy**, opens the tunnel in the background, then runs the local console |
-| `tunnel.sh` | `mdx-tunnel-incident` | **laptop** | Open the SSH tunnel to the kwanz-ws backend in the foreground (Ctrl-C closes it) |
-| `tunnel-check.sh` | `mdx-tunnel-incident-check` | **laptop** | Prove the tunnel from the laptop end (agent health + NIM ports) |
-| `status.sh` | `mdx-ps` | VM | `docker compose -p mdx ps` |
-| `down.sh` | `mdx-down` | VM | Stop the stack **without `-v`** (preserves the ~35 GB model-weight cache — never run `dev-profile.sh down`) |
-| `health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |
-| `logs.sh` | `mdx-logs` | VM | Tail one container's logs (default `vss-agent`) |
-| `disk.sh` | `mdx-disk` | VM | `docker system df -v` |
-| `rebuild-svc.sh` | `mdx-rebuild-svc` | VM | Fast single-service rebuild (`docker compose up -d --build --force-recreate <service>`) |
-| `rebuild.sh` | `mdx-rebuild` | VM | Full stock-profile rebuild via `dev-profile.sh up` (interactive confirmation; wipes the model-weight cache) |
-| `clean-datalog.sh` | `mdx-clean-datalog` | VM | Data-dir cleanup between deploys (requires passwordless sudo) |
-| `ngc-env.sh` | `ngc-env-on` | VM | `source ./ngc-env.sh` to export the shared NGC credentials |
-| `gpu.sh` | `gpu` | VM | One-shot `nvidia-smi` status |
-| `local-start.sh` | — (new) | **laptop** | Zero-GPU local dev loop: starts the mock backend (`base_profile_mock`) and the Streamlit console using `incident-console/.env.local` — no VM, no tunnel |
-| `resolve-ssh-target.sh` | — (new) | **laptop** | Shared helper sourced by `start.sh` and `tunnel.sh`; resolves the VM SSH login (`VSS_SSH_TARGET`) with interactive prompt / env overrides / silent fallback — not run directly |
+| `scripts/tunnel.sh` | `mdx-tunnel-incident` | **laptop** | Open the SSH tunnel to the kwanz-ws backend in the foreground (Ctrl-C closes it) |
+| `scripts/tunnel-check.sh` | `mdx-tunnel-incident-check` | **laptop** | Prove the tunnel from the laptop end (agent health + NIM ports) |
+| `scripts/status.sh` | `mdx-ps` | VM | `docker compose -p mdx ps` |
+| `scripts/down.sh` | `mdx-down` | VM | Stop the stack **without `-v`** (preserves the ~35 GB model-weight cache — never run `dev-profile.sh down`) |
+| `scripts/health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |
+| `scripts/logs.sh` | `mdx-logs` | VM | Tail one container's logs (default `vss-agent`) |
+| `scripts/disk.sh` | `mdx-disk` | VM | `docker system df -v` |
+| `scripts/rebuild-svc.sh` | `mdx-rebuild-svc` | VM | Fast single-service rebuild (`docker compose up -d --build --force-recreate <service>`) |
+| `scripts/rebuild.sh` | `mdx-rebuild` | VM | Full stock-profile rebuild via `dev-profile.sh up` (interactive confirmation; wipes the model-weight cache) |
+| `scripts/clean-datalog.sh` | `mdx-clean-datalog` | VM | Data-dir cleanup between deploys (requires passwordless sudo) |
+| `scripts/ngc-env.sh` | `ngc-env-on` | VM | `source ./ngc-env.sh` to export the shared NGC credentials |
+| `scripts/gpu.sh` | `gpu` | VM | One-shot `nvidia-smi` status |
 
 Each script preserves the original alias/function's grounding comment and
 safety behavior — check a script's header before using it.
@@ -93,7 +91,7 @@ SSH access to kwanz-ws is per-person (see the manual flow below), so
 with your local `$USER` as the default (just hit Enter if that matches your
 VM account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
 non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
-to override the login entirely, same as before. `tunnel.sh` resolves its VM
+to override the login entirely, same as before. `scripts/tunnel.sh` resolves its VM
 login the same way.
 
 `start.sh` checks the VM's deploy state over SSH (`docker compose -p mdx ps`):
@@ -137,16 +135,16 @@ to run on `kwanz-ws` itself.
 1. SSH access to kwanz-ws under your own account (you should already have
    one - `yang`, `faith`, `claris`, `heng` each have their own checkout under
    `/home/`).
-2. From your own laptop, run `./tunnel.sh` (replaces the old
+2. From your own laptop, run `./scripts/tunnel.sh` (replaces the old
    `mdx-tunnel-incident` alias) to forward the backend ports (agent 8000,
    NIMs 30081/30082, ingress 7777):
    ```bash
-   ./tunnel.sh
+   ./scripts/tunnel.sh
    ```
    Leave it running in its own terminal - it's supposed to sit there silently
    (that's correct, not stuck). Quick health check from a second terminal:
    ```bash
-   ./tunnel-check.sh
+   ./scripts/tunnel-check.sh
    # or, plain curl:
    curl http://localhost:8000/health
    # should return: {"value":{"isAlive":true}}
@@ -201,7 +199,7 @@ template in a few places:
 
 ### Known issues - not yet fixed, tracked as follow-up work
 
-1. **`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
+1. ~~**`vss-agent` now builds from source, but the VM hasn't redeployed yet.**
    `deploy/docker/services/agent/compose.yml`'s `vss-agent` service now carries
    a `build:` context (`services/agent/docker/Dockerfile`, context `services/`)
    alongside its `image:` tag, so `docker compose up -d --build vss-agent`
@@ -209,7 +207,7 @@ template in a few places:
    instead of NVIDIA's locked prebuilt image. A plain `up -d` — no `--build` —
    still reuses whatever image already exists locally. What's currently running
    on the VM is still the prebuilt image; run one `--build` deploy there before
-   relying on any agent-side code change.
+   relying on any agent-side code change.~~ **FIXED** — `start.sh` now passes `--build` on fresh deploys (see PR adding `--build` to the deploy command).
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.
