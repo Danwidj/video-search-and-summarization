@@ -1,0 +1,49 @@
+# TODO : For faith
+
+# incident-console-v2 — build plan
+
+Framework: Next.js (App Router), standalone from v1's Streamlit `incident-console`.
+
+## 1. Structural reference, not a fork
+
+Use `services/ui`'s Turborepo shape (`apps/`/`packages/` split, tsconfig/tailwind/eslint
+conventions) as the pattern to follow — it's the only Next.js precedent in this codebase.
+Don't drag in the vendored blueprint app itself (`nv-metropolis-bp-vss-ui`) wholesale.
+
+## 2. Components worth copying in directly
+
+- `services/ui/packages/nv-metropolis-bp-vss-ui/dashboard` — clean, only depends on the
+  public `@nvidia/foundations-react-core` (Apache-2.0, resolves off npm fine).
+- `services/ui/packages/nv-metropolis-bp-vss-ui/video-management`, `alerts` — same, once
+  their one `@nemo-agent-toolkit/ui` import is dropped (see next point).
+- `services/ui/packages/common/lib-src/utils/chunkedUpload.ts` — copy this one file
+  directly (self-contained, no toolkit dependency) instead of installing the toolkit
+  for it. Already speaks the exact `mediaFile`+`filename`+`nvstreamer-*` protocol v1's
+  `agent_client.py` upload contract uses.
+
+## 3. Chat: build custom, skip the NeMo Agent Toolkit UI package
+
+One `fetch` POST to the agent's `/chat` endpoint (OpenAI-chat-completions shape:
+`{messages, model, stream:false, temperature}` in, `choices[0].message.content` out),
+state held in a plain `useState` array. No `next-auth`, `idb`, `i18next`, streaming, or
+proxy layer — those solve problems v2 doesn't have yet. Upgrade to token streaming later
+if response latency actually needs it.
+
+## 4. Backend contract to carry over from v1 (knowledge, not UI code)
+
+- `incident-console/db.py` — authoritative Postgres schema (videos/queries/model_runs/
+  incidents + evidence/ground-truth/match/review tables).
+- Access pattern: PostgREST over HTTPS (as `services/agent/src/vss_agents/utils/
+  incident_db.py` already does), not raw Postgres — `kwanz-ws` blocks port 5432.
+- `incident-console/r2_videos.py` — R2/Cloudflare video storage access.
+- `docs/incident-plan/incident-plan-overview.md` — MVP1/MVP2 scope and the
+  verification checklist.
+
+## Open items before/while building
+
+- Confirm whether `vss-agent` currently has `/chat` live (vs. only `/generate`) for
+  this deployment.
+- Decide Postgres access for v2: talk to Supabase/PostgREST directly from Next.js API
+  routes, or keep a thin backend layer.
+- v1 has heavy lag (Streamlit rerun-on-every-interaction model); v2's plain fetch/React
+  approach avoids that class of problem by construction, not by design decision.

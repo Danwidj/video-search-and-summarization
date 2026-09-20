@@ -42,13 +42,19 @@ created fresh, not migrated).
 
 **Secrets never go in a tracked file.** `dev-profile-incident/.env` is committed
 and stays placeholders. For local dev, put the real Supabase DSN and
-Cloudflare R2 keys in `incident-console/.env.local` (either `.env` or
-`.env.local` there is code-live; `.env.local` wins if both exist), which
-`incident-console/.gitignore` keeps out of
-git and `config.py` loads with `override=True` on top of `.env`. For the VM
-deploy, edit the real values into the ignored `generated.env.local` /
+Cloudflare R2 keys in `incident-console/.env.local` (untracked, loaded by
+`config.py` with `override=True`), which `incident-console/.gitignore` keeps out of
+git. For the VM deploy, edit the real values into the ignored `generated.env.local` /
 `generated.env.remote` copy instead (see the local/remote implementation docs,
-§2) - never into `.env.local` on the build host:
+§2) - never into `.env.local` on the build host.
+
+A tracked, copyable template listing every required key exists at
+`incident-console/.env` — copy it to `.env.local` and fill in real
+values:
+
+```bash
+cp .env .env.local
+```
 
 ```dotenv
 # incident-console/.env.local  (untracked)
@@ -162,17 +168,14 @@ uv run python scripts/seed_gt_demo.py
 The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
 runs on kwanz-ws. An SSH tunnel connects the two — same pattern as the
 base-profile VSS UI tunnel. The mock LLM above stays laptop-only for the
-zero-GPU loop; use this path when you want the real backend instead. (Or skip
-the manual terminals entirely: from `dev-profile-incident/`, `./start.sh`
-checks the VM deploy state over SSH, deploys the backend if nothing is
-running, opens the tunnel in the background, and starts this console — see
-that profile's README.)
+zero-GPU loop; use this path when you want the real backend instead. (Or run
+`../start.sh` to automate this — see that profile's README.)
 
 Terminal 1 (tunnel):
-
+ 
 ```bash
 # laptop side; forwards localhost:8000/:30081/:30082 to the VM
-../tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
+../scripts/tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
 ```
 
 Terminal 2 (console, same directory as the local loop):
@@ -194,9 +197,9 @@ LLM NIM (`:30081/v1`). DB/R2 values stay as documented above (Supabase DSN +
 R2 keys in `.env.local`); the tunnel carries only the agent/LLM/VLM traffic.
 
 Prove the tunnel before starting the console:
-
+ 
 ```bash
-../tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
+../scripts/tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
 # agent ok (localhost:8000 -> 10.131.1.5:8000)
 # nim :30081 -> 10.131.1.5:30081: HTTP 200
 # nim :30082 -> 10.131.1.5:30082: HTTP 200
@@ -225,15 +228,13 @@ uv run ruff format --check .
 ## Environment variables
 
 All are read by `config.py`, which loads the committed `../.env` placeholders
-via `find_dotenv()` upward search from the process CWD (resolves from
-`incident-console/`, not from the repo root), then `./.env.local` (untracked
-real secrets) with override. `incident-console/.env` is likewise code-live via
-the first `load_dotenv()` call; `.env.local` wins when both exist. Real values
-and their source are documented in [`dev-profile-incident/.env`](../.env).
-On the VM deploy nothing reads `.env` files inside the container - the real
-values live in the ignored `generated.env.local` / `generated.env.remote` copy
-passed to `docker compose --env-file`, interpolated into the container via
-`compose.yml` `environment:` (see §2 of the local/remote implementation docs).
+explicitly (not via `find_dotenv()`), then `./.env.local` (untracked
+real secrets) with override. The old `incident-console/.env` is no longer
+code-live. Real values and their source are documented below. On the VM deploy
+nothing reads `.env` files inside the container - the real values live in the
+ignored `generated.env.local` / `generated.env.remote` copy passed to
+`docker compose --env-file`, interpolated into the container via `compose.yml`
+`environment:` (see §2 of the local/remote implementation docs).
 
 | Variable | Purpose | Real source |
 |---|---|---|

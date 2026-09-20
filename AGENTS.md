@@ -24,16 +24,18 @@ this schema; the planning docs under `docs/incident-plan/` were reconciled with 
 36 real incidents under one shared `model_run_id`. The console is database-backed only; there is no offline
 CSV-preview UI mode.
 
-`services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async `asyncpg`
-CRUD helper (pool sized `min_size=1, max_size=2`, since Hyperdrive already pools) against the same schema,
-mirroring `db.py`'s tables/columns for the subset an agent-side caller plausibly writes
+`services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase
+PostgREST CRUD helper (`supabase-py`'s `AsyncClient`/`acreate_client`, not `asyncpg`/direct-Postgres) against
+the same schema, mirroring `db.py`'s tables/columns for the subset an agent-side caller plausibly writes
 (videos/model_runs/incidents/entities/instruments/assets/reports/review_status/notifications; the `gt_*` and
-`*_matches` tables stay console/eval-only). Config is `INCIDENT_DB_DSN`; unset means the feature is unavailable,
-no fallback. Verified live against the real Hyperdrive-fronted Supabase Postgres: DSN/SSL connects with
-`sslmode=require` (asyncpg reads it straight off the DSN's query string) and pooled queries work end to end under
-`min_size=1, max_size=2` - see §1's "Verify live" bullet in
-`docs/incident-plan/incident-plan-implementation-shared.md` for the full note, including the caveat that this
-was a one-off smoke test, not a production concurrent-load test.
+`*_matches` tables stay console/eval-only). Config is `INCIDENT_SUPABASE_URL` / `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`
+(deliberately NOT `INCIDENT_DB_DSN`, which stays owned by the console's own `db.py`); unset means the feature is
+unavailable, no fallback. This split exists because the deployment VM (`kwanz-ws`) DPI-blocks raw Postgres wire
+protocol on port 5432, so only the HTTPS-based PostgREST route works for the agent from there - a direct-Postgres
+driver on the agent side breaks Analyze on `kwanz-ws`. PostgREST has no client-held transactions or
+`SELECT ... FOR UPDATE`; the one operation needing atomicity (`insert_incident`'s delete-then-insert plus
+`review_status` reset) calls the `insert_incident` Postgres RPC function (`supabase/migrations/`) via
+`/rpc/insert_incident` instead.
 
 ## incident-console agent upload contract
 
@@ -57,9 +59,9 @@ other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` a
 (`mdx-ps`, `mdx-down`, `mdx-health`, `mdx-tunnel-incident`, `mdx-tunnel-incident-check`, `mdx-logs`,
 `mdx-disk`, `mdx-rebuild-svc`, `mdx-rebuild`, `mdx-clean-datalog`, `ngc-env-on`, `gpu`) moved to
 standalone executable scripts under
-`deploy/docker/developer-profiles/dev-profile-incident/` (`status.sh`, `down.sh`, `health.sh`,
+`deploy/docker/developer-profiles/dev-profile-incident/scripts/` (`status.sh`, `down.sh`, `health.sh`,
 `tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
-`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`). `start.sh` there is the laptop-side one-command daily
+`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` there is the laptop-side one-command daily
 entry point: checks the VM deploy state over SSH, deploys the backend fresh if nothing is running
 (direct compose with `generated.env.remote` — `dev-profile.sh` has no `incident` profile), stops on
 a partial deploy, backgrounds the tunnel, then runs the local console. The VM-side scripts wrap the

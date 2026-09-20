@@ -31,8 +31,14 @@
 # the console locally against the tunneled backend. The `start.sh` wrapper
 # backgrounds a tunnel with the same forwards automatically and cleans it up
 # when the console exits.
+#
+# VM username resolution (VSS_SSH_TARGET / VSS_SSH_USER / VSS_SSH_HOST) is
+# the same as start.sh — see resolve-ssh-target.sh for the full order.
 
-VSS_SSH_TARGET="${VSS_SSH_TARGET:-daniel@kwanz-ws}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=resolve-ssh-target.sh
+source "${SCRIPT_DIR}/resolve-ssh-target.sh"
 VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
 
 if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then

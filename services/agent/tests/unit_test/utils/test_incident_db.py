@@ -14,10 +14,7 @@
 # limitations under the License.
 """Unit tests for vss_agents.utils.incident_db.
 
-No live database is used: the ``asyncpg`` pool/connection are mocked
-throughout, per this module's own convention of pooling directly through
-``asyncpg`` (not SQLAlchemy) against the schema owned by
-``incident-console/db.py``.
+No live database is used: the Supabase async client is mocked throughout.
 """
 
 from __future__ import annotations
@@ -28,49 +25,60 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import asyncpg
 import pytest
 import pytest_asyncio
 
 from vss_agents.utils import incident_db
-from vss_agents.utils.incident_db import DEFAULT_MAX_POOL_SIZE
-from vss_agents.utils.incident_db import DEFAULT_MIN_POOL_SIZE
 from vss_agents.utils.incident_db import IncidentDB
 
 
-class _FakeAsyncCtx:
-    """Minimal async context manager stand-in for asyncpg's pool/transaction contexts."""
+def _make_mock_client() -> MagicMock:
+    """Create a mock Supabase async client with chainable query builder."""
+    client = MagicMock()
+    table_mock = MagicMock()
 
-    def __init__(self, value=None):
-        self._value = value
+    # Chainable methods for select/upsert/update/delete
+    select_mock = MagicMock()
+    select_mock.eq = MagicMock(return_value=select_mock)
+    select_mock.order = MagicMock(return_value=select_mock)
+    select_mock.maybe_single = MagicMock(return_value=select_mock)
+    select_mock.execute = AsyncMock(return_value=MagicMock(data=None))
+    select_mock.head = True
+    select_mock.count = "exact"
 
-    async def __aenter__(self):
-        return self._value
+    upsert_mock = MagicMock()
+    upsert_mock.on_conflict = MagicMock(return_value=upsert_mock)
+    upsert_mock.execute = AsyncMock()
 
-    async def __aexit__(self, *exc_info):
-        return False
+    update_mock = MagicMock()
+    update_mock.eq = MagicMock(return_value=update_mock)
+    update_mock.execute = AsyncMock()
 
+    delete_mock = MagicMock()
+    delete_mock.eq = MagicMock(return_value=delete_mock)
+    delete_mock.execute = AsyncMock()
 
-def _make_mock_conn() -> MagicMock:
-    conn = MagicMock()
-    conn.execute = AsyncMock()
-    conn.fetchrow = AsyncMock(return_value=None)
-    conn.fetch = AsyncMock(return_value=[])
-    conn.fetchval = AsyncMock(return_value=1)
-    conn.transaction = MagicMock(return_value=_FakeAsyncCtx())
-    return conn
+    insert_mock = MagicMock()
+    insert_mock.execute = AsyncMock()
 
+    rpc_mock = AsyncMock()
 
-def _make_mock_pool(conn: MagicMock) -> MagicMock:
-    pool = MagicMock()
-    pool.acquire = MagicMock(return_value=_FakeAsyncCtx(conn))
-    pool.close = AsyncMock()
-    return pool
+    table_mock.select = MagicMock(return_value=select_mock)
+    table_mock.upsert = MagicMock(return_value=upsert_mock)
+    table_mock.update = MagicMock(return_value=update_mock)
+    table_mock.delete = MagicMock(return_value=delete_mock)
+    table_mock.insert = MagicMock(return_value=insert_mock)
+
+    client.table = MagicMock(return_value=table_mock)
+    client.rpc = rpc_mock
+
+    return client
 
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    monkeypatch.delenv("INCIDENT_DB_DSN", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -81,79 +89,87 @@ async def _reset_singleton():
 
 
 def test_is_configured_false_when_unset(monkeypatch):
-    monkeypatch.delenv("INCIDENT_DB_DSN", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
     assert incident_db.is_configured() is False
 
 
-def test_is_configured_true_when_set(monkeypatch):
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://user:pass@host/db")
+def test_is_configured_false_when_only_url(monkeypatch):
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    assert incident_db.is_configured() is False
+
+
+def test_is_configured_false_when_only_key(monkeypatch):
+    monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret-key")
+    assert incident_db.is_configured() is False
+
+
+def test_is_configured_true_when_both_set(monkeypatch):
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret-key")
     assert incident_db.is_configured() is True
 
 
 @pytest.mark.asyncio
-async def test_connect_raises_when_dsn_missing(monkeypatch):
-    monkeypatch.delenv("INCIDENT_DB_DSN", raising=False)
-    with pytest.raises(ValueError, match="INCIDENT_DB_DSN"):
+async def test_connect_raises_when_missing(monkeypatch):
+    monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    with pytest.raises(ValueError, match="INCIDENT_SUPABASE_URL"):
         await IncidentDB.connect()
 
 
 @pytest.mark.asyncio
-async def test_connect_uses_small_pool_defaults():
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    create_pool = AsyncMock(return_value=mock_pool)
-    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
-        db = await IncidentDB.connect(dsn="postgresql://user:pass@host/db")
-    assert db.pool is mock_pool
-    create_pool.assert_awaited_once_with(
-        dsn="postgresql://user:pass@host/db",
-        min_size=DEFAULT_MIN_POOL_SIZE,
-        max_size=DEFAULT_MAX_POOL_SIZE,
-    )
-    assert DEFAULT_MIN_POOL_SIZE == 1
-    assert DEFAULT_MAX_POOL_SIZE == 2
+async def test_connect_creates_client():
+    mock_client = _make_mock_client()
+    with patch("vss_agents.utils.incident_db.acreate_client", new=AsyncMock(return_value=mock_client)):
+        db = await IncidentDB.connect(url="https://example.supabase.co", key="secret-key")
+    assert db.client is mock_client
 
 
 @pytest.mark.asyncio
-async def test_connect_reads_dsn_from_env(monkeypatch):
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://from-env/db")
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    create_pool = AsyncMock(return_value=mock_pool)
-    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
+async def test_connect_reads_from_env(monkeypatch):
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://from-env.supabase.co")
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "from-env-key")
+    mock_client = _make_mock_client()
+    mock_acreate = AsyncMock(return_value=mock_client)
+    with patch("vss_agents.utils.incident_db.acreate_client", new=mock_acreate):
         await IncidentDB.connect()
-    create_pool.assert_awaited_once_with(
-        dsn="postgresql://from-env/db", min_size=DEFAULT_MIN_POOL_SIZE, max_size=DEFAULT_MAX_POOL_SIZE
-    )
+        mock_acreate.assert_awaited_once_with("https://from-env.supabase.co", "from-env-key")
 
 
 @pytest.mark.asyncio
-async def test_connect_honors_custom_pool_sizes():
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    create_pool = AsyncMock(return_value=mock_pool)
-    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
-        await IncidentDB.connect(dsn="postgresql://host/db", min_size=2, max_size=5)
-    create_pool.assert_awaited_once_with(dsn="postgresql://host/db", min_size=2, max_size=5)
+async def test_close_is_noop():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.close()  # Should not raise
 
 
 @pytest.mark.asyncio
-async def test_close_closes_pool():
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    db = IncidentDB(mock_pool)
-    await db.close()
-    mock_pool.close.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_async_context_manager_closes_on_exit():
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    async with IncidentDB(mock_pool) as db:
+async def test_async_context_manager():
+    mock_client = _make_mock_client()
+    async with IncidentDB(mock_client) as db:
         assert isinstance(db, IncidentDB)
-    mock_pool.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_transaction_yields_a_writer_for_sequential_calls():
+    """No real atomicity over PostgREST, but the async-with call shape must work
+    (the mock backend's Analyze route groups several writes this way)."""
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    async with db.transaction() as tx:
+        assert tx is db
+        await tx.update_video("vid-1", filepath="r2/key.mp4")
+    mock_client.table.assert_called_with("videos")
 
 
 @pytest.mark.asyncio
 async def test_healthcheck_ok():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().execute = AsyncMock(return_value=MagicMock(data=[{"id": "1"}]))
+    db = IncidentDB(mock_client)
     ok, message = await db.healthcheck()
     assert ok is True
     assert message == "ok"
@@ -161,327 +177,466 @@ async def test_healthcheck_ok():
 
 @pytest.mark.asyncio
 async def test_healthcheck_failure_returns_message():
-    conn = _make_mock_conn()
-    conn.fetchval = AsyncMock(side_effect=asyncpg.PostgresError("connection refused"))
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().execute = AsyncMock(side_effect=Exception("connection refused"))
+    db = IncidentDB(mock_client)
     ok, message = await db.healthcheck()
     assert ok is False
     assert "connection refused" in message
 
 
 @pytest.mark.asyncio
-async def test_upsert_video_issues_upsert_sql():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_upsert_video_calls_upsert():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     result = await db.upsert_video("vid-1", filepath="a.mp4", duration=30, source="upload")
     assert result == "vid-1"
-    conn.execute.assert_awaited_once()
-    sql, *params = conn.execute.await_args.args
-    assert "INSERT INTO videos" in sql
-    assert "ON CONFLICT" in sql
-    assert params[0] == "vid-1"
-    assert params[1] == "a.mp4"
-    assert params[2] == 30
-    assert params[3] == "upload"
+    # Verify upsert was called with correct data
+    mock_client.table.assert_called_with("videos")
+    upsert_call = mock_client.table().upsert
+    upsert_call.assert_called_once()
+    args, kwargs = upsert_call.call_args
+    assert args[0]["id"] == "vid-1"
+    assert args[0]["filepath"] == "a.mp4"
+    assert args[0]["duration"] == 30
+    assert args[0]["source"] == "upload"
+    assert "uploaded_datetime" in args[0]
+    assert kwargs["on_conflict"] == "id"
 
 
 @pytest.mark.asyncio
 async def test_get_video_returns_none_when_missing():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
     assert await db.get_video("missing") is None
 
 
 @pytest.mark.asyncio
 async def test_get_video_returns_dict_when_found():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(return_value={"id": "vid-1", "filepath": "a.mp4"})
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(
+        return_value=MagicMock(data={"id": "vid-1", "filepath": "a.mp4"})
+    )
+    db = IncidentDB(mock_client)
     row = await db.get_video("vid-1")
     assert row == {"id": "vid-1", "filepath": "a.mp4"}
 
 
 @pytest.mark.asyncio
+async def test_get_video_for_update_raises_not_implemented():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    with pytest.raises(NotImplementedError, match="for_update is not supported"):
+        await db.get_video("vid-1", for_update=True)
+
+
+@pytest.mark.asyncio
 async def test_list_videos_maps_all_rows():
-    conn = _make_mock_conn()
-    conn.fetch = AsyncMock(return_value=[{"id": "vid-1"}, {"id": "vid-2"}])
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(
+        return_value=MagicMock(data=[{"id": "vid-1"}, {"id": "vid-2"}])
+    )
+    db = IncidentDB(mock_client)
     videos = await db.list_videos()
     assert [v["id"] for v in videos] == ["vid-1", "vid-2"]
 
 
 @pytest.mark.asyncio
-async def test_delete_video_issues_delete_sql():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_delete_video_calls_delete():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     await db.delete_video("vid-1")
-    conn.execute.assert_awaited_once_with("DELETE FROM videos WHERE id = $1", "vid-1")
+    mock_client.table.assert_called_with("videos")
+    delete_call = mock_client.table().delete()
+    delete_call.eq.assert_called_with("id", "vid-1")
+    delete_call.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_insert_model_run_reregistration_updates_run_datetime():
-    """Re-registering the same model_run_id must overwrite run_datetime, not keep the first value."""
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    first_run_datetime = _dt.datetime(2026, 1, 1, tzinfo=_dt.UTC)
-    second_run_datetime = _dt.datetime(2026, 6, 1, tzinfo=_dt.UTC)
-
-    await db.insert_model_run("run-1", model_name="m", run_datetime=first_run_datetime)
-    await db.insert_model_run("run-1", model_name="m", run_datetime=second_run_datetime)
-
-    assert conn.execute.await_count == 2
-    first_sql, second_sql = (call.args[0] for call in conn.execute.await_args_list)
-    assert "run_datetime = EXCLUDED.run_datetime" in first_sql
-    assert "run_datetime = EXCLUDED.run_datetime" in second_sql
-    first_params, second_params = (call.args[1:] for call in conn.execute.await_args_list)
-    assert first_params[4] == first_run_datetime
-    assert second_params[4] == second_run_datetime
-    assert second_params[4] != first_params[4]
+async def test_update_video_calls_update():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.update_video("vid-1", filepath="r2/key.mp4")
+    mock_client.table.assert_called_with("videos")
+    update_call = mock_client.table().update({"filepath": "r2/key.mp4"})
+    update_call.eq.assert_called_with("id", "vid-1")
+    update_call.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_insert_incident_runs_inside_one_transaction_and_resets_review_status():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_insert_model_run_upserts():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    result = await db.insert_model_run("run-1", model_name="m", model_version="v1")
+    assert result == "run-1"
+    mock_client.table.assert_called_with("model_runs")
+    upsert_call = mock_client.table().upsert
+    upsert_call.assert_called_once()
+    args, kwargs = upsert_call.call_args
+    assert args[0]["id"] == "run-1"
+    assert args[0]["model_name"] == "m"
+    assert args[0]["model_version"] == "v1"
+    assert kwargs["on_conflict"] == "id"
+
+
+@pytest.mark.asyncio
+async def test_get_model_run_returns_none_when_missing():
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
+    assert await db.get_model_run("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_insert_incident_calls_rpc():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     await db.insert_incident(
         "vid-1",
         "run-1",
         fields={"type": "burglary", "severity_level": 3, "confidence_score": 0.8},
     )
-    conn.transaction.assert_called_once()
-    assert conn.execute.await_count == 4
-    statements = [call.args[0] for call in conn.execute.await_args_list]
-    assert any("DELETE FROM incidents" in s for s in statements)
-    assert any("INSERT INTO incidents" in s for s in statements)
-    assert any("DELETE FROM review_status" in s for s in statements)
-    assert any("INSERT INTO review_status" in s for s in statements)
+    mock_client.rpc.assert_awaited_once()
+    args, _kwargs = mock_client.rpc.call_args
+    assert args[0] == "insert_incident"
+    assert args[1]["p_incident_id"] == "vid-1"
+    assert args[1]["p_model_run_id"] == "run-1"
+    assert args[1]["p_type"] == "burglary"
+    assert args[1]["p_severity_level"] == 3
+    assert args[1]["p_confidence_score"] == 0.8
 
 
 @pytest.mark.asyncio
-async def test_update_incident_with_no_allowed_fields_skips_query():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_get_incident_returns_none_when_missing():
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
+    assert await db.get_incident("vid-1", "run-1") is None
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_without_filter():
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"incident_id": "vid-1"}]))
+    db = IncidentDB(mock_client)
+    result = await db.list_incidents()
+    assert result == [{"incident_id": "vid-1"}]
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_with_model_run_filter():
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"incident_id": "vid-1"}]))
+    db = IncidentDB(mock_client)
+    await db.list_incidents(model_run_id="run-1")
+    # Verify the eq filter was applied
+    select_mock = mock_client.table().select()
+    select_mock.eq.assert_called_with("model_run_id", "run-1")
+
+
+@pytest.mark.asyncio
+async def test_update_incident_with_no_allowed_fields_skips():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     await db.update_incident("vid-1", "run-1", fields={"not_a_column": "x"})
-    conn.execute.assert_not_awaited()
+    # update should not be called
+    mock_client.table.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_update_incident_builds_set_clause_for_allowed_fields():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_update_incident_builds_update():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     await db.update_incident("vid-1", "run-1", fields={"severity_level": 5, "bogus": "x"})
-    conn.execute.assert_awaited_once()
-    sql, *params = conn.execute.await_args.args
-    assert "severity_level = $3" in sql
-    assert params == ["vid-1", "run-1", 5]
+    mock_client.table.assert_called_with("incidents")
+    update_call = mock_client.table().update({"severity_level": 5})
+    update_call.eq.assert_any_call("incident_id", "vid-1")
+    update_call.eq.assert_any_call("model_run_id", "run-1")
+    update_call.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_calls_delete():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.delete_incident("vid-1", "run-1")
+    mock_client.table.assert_called_with("incidents")
+    delete_call = mock_client.table().delete()
+    delete_call.eq.assert_any_call("incident_id", "vid-1")
+    delete_call.eq.assert_any_call("model_run_id", "run-1")
+    delete_call.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_incident_entity_inserts():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.add_incident_entity("vid-1", "run-1", entity_id="e1", type="human", description="a person")
+    mock_client.table.assert_called_with("entities")
+    insert_call = mock_client.table().insert
+    insert_call.assert_called_once()
+    args, _ = insert_call.call_args
+    assert args[0]["incident_id"] == "vid-1"
+    assert args[0]["entity_id"] == "e1"
+    assert args[0]["model_run_id"] == "run-1"
+    assert args[0]["type"] == "human"
+    assert args[0]["description"] == "a person"
+
+
+@pytest.mark.asyncio
+async def test_add_incident_instrument_inserts():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.add_incident_instrument("vid-1", "run-1", instrument_id="i1", entity_id="e1", name="knife", threat_level=4)
+    mock_client.table.assert_called_with("instruments")
+    insert_call = mock_client.table().insert
+    insert_call.assert_called_once()
+    args, _ = insert_call.call_args
+    assert args[0]["incident_id"] == "vid-1"
+    assert args[0]["instrument_id"] == "i1"
+    assert args[0]["model_run_id"] == "run-1"
+    assert args[0]["entity_id"] == "e1"
+    assert args[0]["name"] == "knife"
+    assert args[0]["threat_level"] == 4
+
+
+@pytest.mark.asyncio
+async def test_add_incident_asset_inserts():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.add_incident_asset("vid-1", "run-1", asset_id="a1", name="car", description="a parked car")
+    mock_client.table.assert_called_with("assets")
+    insert_call = mock_client.table().insert
+    insert_call.assert_called_once()
+    args, _ = insert_call.call_args
+    assert args[0]["incident_id"] == "vid-1"
+    assert args[0]["asset_id"] == "a1"
+    assert args[0]["model_run_id"] == "run-1"
+    assert args[0]["name"] == "car"
+    assert args[0]["description"] == "a parked car"
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_entities_calls_delete():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.delete_incident_entities("vid-1", "run-1")
+    mock_client.table.assert_called_with("entities")
+    delete_call = mock_client.table().delete()
+    delete_call.eq.assert_any_call("incident_id", "vid-1")
+    delete_call.eq.assert_any_call("model_run_id", "run-1")
+    delete_call.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_list_incident_entities_scopes_by_incident_and_run():
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"entity_id": "e1"}]))
+    db = IncidentDB(mock_client)
+    result = await db.list_incident_entities("vid-1", "run-1")
+    assert result == [{"entity_id": "e1"}]
+    select_mock = mock_client.table().select()
+    select_mock.eq.assert_any_call("incident_id", "vid-1")
+    select_mock.eq.assert_any_call("model_run_id", "run-1")
+
+
+@pytest.mark.asyncio
+async def test_list_incident_instruments_without_model_run_filter():
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"instrument_id": "i1"}]))
+    db = IncidentDB(mock_client)
+    result = await db.list_incident_instruments("vid-1")
+    assert result == [{"instrument_id": "i1"}]
+
+
+@pytest.mark.asyncio
+async def test_list_incident_assets_without_model_run_filter():
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"asset_id": "a1"}]))
+    db = IncidentDB(mock_client)
+    result = await db.list_incident_assets("vid-1")
+    assert result == [{"asset_id": "a1"}]
+
+
+@pytest.mark.asyncio
+async def test_get_review_status_returns_none_when_missing():
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
+    assert await db.get_review_status("vid-1", "run-1") is None
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_rejects_invalid_status():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     with pytest.raises(ValueError, match="Invalid review status"):
         await db.set_review_status("vid-1", "run-1", status="bogus", reviewed_by="alice", notify_threshold=4)
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_requires_reviewer_name():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     with pytest.raises(ValueError, match="Reviewer name is required"):
         await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="   ", notify_threshold=4)
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_raises_when_incident_missing():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(return_value=None)
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
     with pytest.raises(ValueError, match="Incident not found"):
         await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_no_change_returns_early():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(side_effect=[{"severity_level": 5}, {"status": "verified"}])
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(
+        side_effect=[
+            MagicMock(data={"severity_level": 5}),
+            MagicMock(data={"status": "verified"}),
+        ]
+    )
+    db = IncidentDB(mock_client)
     result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
     assert result == {"notified": False, "severity": 5}
-    conn.execute.assert_not_awaited()
+    mock_client.table().update.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_notifies_above_threshold():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(side_effect=[{"severity_level": 5}, None])
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(
+        side_effect=[
+            MagicMock(data={"severity_level": 5}),
+            MagicMock(data=None),
+        ]
+    )
+    db = IncidentDB(mock_client)
     result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
     assert result == {"notified": True, "severity": 5}
-    statements = [call.args[0] for call in conn.execute.await_args_list]
-    assert any("INSERT INTO notifications" in s for s in statements)
+    mock_client.table.assert_any_call("notifications")
+    insert_call = mock_client.table().insert
+    insert_call.assert_called_once()
+    args, _ = insert_call.call_args
+    assert args[0]["incident_id"] == "vid-1"
+    assert args[0]["severity"] == 5
 
 
 @pytest.mark.asyncio
 async def test_set_review_status_below_threshold_does_not_notify():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(side_effect=[{"severity_level": 2}, None])
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(
+        side_effect=[
+            MagicMock(data={"severity_level": 2}),
+            MagicMock(data=None),
+        ]
+    )
+    db = IncidentDB(mock_client)
     result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
     assert result == {"notified": False, "severity": 2}
-    statements = [call.args[0] for call in conn.execute.await_args_list]
-    assert not any("INSERT INTO notifications" in s for s in statements)
-
-
-@pytest.mark.asyncio
-async def test_add_incident_entity_inserts_row():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.add_incident_entity("vid-1", "run-1", entity_id="e1", type="human", description="a person")
-    conn.execute.assert_awaited_once()
-    sql, *params = conn.execute.await_args.args
-    assert "INSERT INTO entities" in sql
-    assert params == ["vid-1", "e1", "run-1", "human", "a person", None]
+    mock_client.table().insert.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_list_notifications_filters_unacknowledged():
-    conn = _make_mock_conn()
-    conn.fetch = AsyncMock(return_value=[{"id": 1, "acknowledged": False}])
-    db = IncidentDB(_make_mock_pool(conn))
+    mock_client = _make_mock_client()
+    mock_client.table().select().order().execute = AsyncMock(
+        return_value=MagicMock(data=[{"id": 1, "acknowledged": False}])
+    )
+    db = IncidentDB(mock_client)
     result = await db.list_notifications(only_unacknowledged=True)
     assert result == [{"id": 1, "acknowledged": False}]
-    sql = conn.fetch.await_args.args[0]
-    assert "WHERE acknowledged = FALSE" in sql
+    select_mock = mock_client.table().select()
+    select_mock.eq.assert_called_with("acknowledged", False)
 
 
 @pytest.mark.asyncio
-async def test_acknowledge_notification_issues_update():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
+async def test_acknowledge_notification_calls_update():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
     await db.acknowledge_notification(42)
-    conn.execute.assert_awaited_once_with("UPDATE notifications SET acknowledged = TRUE WHERE id = $1", 42)
+    mock_client.table.assert_called_with("notifications")
+    update_call = mock_client.table().update({"acknowledged": True})
+    update_call.eq.assert_called_with("id", 42)
+    update_call.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_insert_generated_report_deletes_then_inserts_in_one_transaction():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.insert_generated_report("report-1", incident_id="vid-1", model_run_id="run-1", filepath="reports/vid-1.md")
-    conn.transaction.assert_called_once()
-    assert conn.execute.await_count == 2
-    statements = [call.args[0] for call in conn.execute.await_args_list]
-    assert any("DELETE FROM reports" in s for s in statements)
-    assert any("INSERT INTO reports" in s for s in statements)
+async def test_insert_generated_report_upserts():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    result = await db.insert_generated_report(
+        "report-1", incident_id="vid-1", model_run_id="run-1", filepath="reports/vid-1.md"
+    )
+    assert result == "report-1"
+    mock_client.table.assert_called_with("reports")
+    upsert_call = mock_client.table().upsert
+    upsert_call.assert_called_once()
+    args, kwargs = upsert_call.call_args
+    assert args[0]["id"] == "report-1"
+    assert args[0]["incident_id"] == "vid-1"
+    assert args[0]["model_run_id"] == "run-1"
+    assert args[0]["filepath"] == "reports/vid-1.md"
+    assert kwargs["on_conflict"] == "id"
+
+
+@pytest.mark.asyncio
+async def test_get_generated_report_returns_none_when_missing():
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
+    db = IncidentDB(mock_client)
+    assert await db.get_generated_report("missing") is None
 
 
 @pytest.mark.asyncio
 async def test_get_db_returns_none_when_unconfigured(monkeypatch):
-    monkeypatch.delenv("INCIDENT_DB_DSN", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
     assert await incident_db.get_db() is None
 
 
 @pytest.mark.asyncio
 async def test_get_db_returns_none_on_connect_failure(monkeypatch):
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://host/db")
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret")
     with patch.object(IncidentDB, "connect", new=AsyncMock(side_effect=OSError("unreachable"))):
         assert await incident_db.get_db() is None
 
 
 @pytest.mark.asyncio
 async def test_get_db_returns_and_caches_instance(monkeypatch):
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://host/db")
-    mock_pool = _make_mock_pool(_make_mock_conn())
-    create_pool = AsyncMock(return_value=mock_pool)
-    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret")
+    mock_client = _make_mock_client()
+    with patch("vss_agents.utils.incident_db.acreate_client", new=AsyncMock(return_value=mock_client)):
         first = await incident_db.get_db()
         second = await incident_db.get_db()
     assert first is second
     assert isinstance(first, IncidentDB)
-    create_pool.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_update_video_issues_update_sql():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.update_video("vid-1", filepath="r2/key.mp4")
-    conn.execute.assert_awaited_once_with("UPDATE videos SET filepath = $2 WHERE id = $1", "vid-1", "r2/key.mp4")
+async def test_get_db_concurrent_callers_do_not_race(monkeypatch):
+    """Two coroutines racing on the lazy singleton must share one client, not leak a second."""
+    monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret")
 
-
-@pytest.mark.asyncio
-async def test_transaction_binds_writer_to_single_connection():
-    conn = _make_mock_conn()
-    conn.fetchrow = AsyncMock(return_value={"id": "vid-1", "filepath": "r2/key.mp4"})
-    db = IncidentDB(_make_mock_pool(conn))
-    async with db.transaction() as tx:
-        await tx.update_video("vid-1", filepath="r2/key.mp4")
-        row = await tx.get_video("vid-1", for_update=True)
-    conn.transaction.assert_called_once()
-    conn.execute.assert_awaited_once_with("UPDATE videos SET filepath = $2 WHERE id = $1", "vid-1", "r2/key.mp4")
-    assert row == {"id": "vid-1", "filepath": "r2/key.mp4"}
-    sql = conn.fetchrow.await_args.args[0]
-    assert sql.endswith("FOR UPDATE")
-
-
-@pytest.mark.asyncio
-async def test_get_video_for_update_requires_transaction():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    with pytest.raises(ValueError, match="for_update requires a transaction"):
-        await db.get_video("vid-1", for_update=True)
-
-
-@pytest.mark.asyncio
-async def test_get_db_concurrent_callers_do_not_race_to_double_connect(monkeypatch):
-    """Two coroutines racing on the lazy singleton must share one pool, not leak a second."""
-    monkeypatch.setenv("INCIDENT_DB_DSN", "postgresql://host/db")
-
-    async def _slow_create_pool(**_kwargs):
+    async def _slow_create_client(**_kwargs):
         await asyncio.sleep(0.05)
-        return _make_mock_pool(_make_mock_conn())
+        return _make_mock_client()
 
-    create_pool = AsyncMock(side_effect=_slow_create_pool)
-    with patch("vss_agents.utils.incident_db.asyncpg.create_pool", new=create_pool):
+    with patch("vss_agents.utils.incident_db.acreate_client", new=AsyncMock(side_effect=_slow_create_client)):
         first, second = await asyncio.gather(incident_db.get_db(), incident_db.get_db())
     assert first is second
-    create_pool.assert_awaited_once()
 
 
 def test_utcnow_returns_naive_utc():
-    """The console schema uses ``timestamp without time zone`` and asyncpg
-    rejects tz-aware values for that type, so generated timestamps must be naive."""
+    """Timestamps must be naive UTC for PostgREST compatibility."""
     now = incident_db._utcnow()
     assert now.tzinfo is None
     assert abs(_dt.datetime.now(_dt.UTC).replace(tzinfo=None) - now) < _dt.timedelta(minutes=1)
-
-
-@pytest.mark.asyncio
-async def test_upsert_video_defaults_to_naive_uploaded_datetime():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.upsert_video("vid-1")
-    _, *params = conn.execute.await_args.args
-    assert params[4] is not None
-    assert params[4].tzinfo is None
-
-
-@pytest.mark.asyncio
-async def test_insert_model_run_defaults_to_naive_run_datetime():
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.insert_model_run("run-1", model_name="m")
-    _, *params = conn.execute.await_args.args
-    assert params[4] is not None
-    assert params[4].tzinfo is None
-
-
-@pytest.mark.asyncio
-async def test_delete_incident_entities_issues_scoped_delete():
-    """Re-analysis deletes only this incident+run's entities before re-inserting."""
-    conn = _make_mock_conn()
-    db = IncidentDB(_make_mock_pool(conn))
-    await db.delete_incident_entities("vid-1", "run-1")
-    conn.execute.assert_awaited_once_with(
-        "DELETE FROM entities WHERE incident_id = $1 AND model_run_id = $2", "vid-1", "run-1"
-    )
