@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+
+export interface ServiceConfiguration {
+  agentUrl?: string;
+  gatewayUrl?: string;
+  vlmModel: string;
+  supabaseUrl?: string;
+  supabaseServiceRoleKey?: string;
+  r2AccountId?: string;
+  r2AccessKey?: string;
+  r2SecretKey?: string;
+  r2Bucket?: string;
+}
+
+function optionalEnvironmentValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value || undefined;
+}
+
+export function getServiceConfiguration(): ServiceConfiguration {
+  return {
+    agentUrl: optionalEnvironmentValue('INCIDENT_AGENT_BASE_URL'),
+    gatewayUrl: optionalEnvironmentValue('VLM_GATEWAY_URL'),
+    vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/cosmos-3-nano-reasoner',
+    supabaseUrl: optionalEnvironmentValue('INCIDENT_SUPABASE_URL'),
+    supabaseServiceRoleKey: optionalEnvironmentValue('INCIDENT_SUPABASE_SERVICE_ROLE_KEY'),
+    r2AccountId: optionalEnvironmentValue('R2_ACCOUNT_ID'),
+    r2AccessKey: optionalEnvironmentValue('R2_ACCESS_KEY'),
+    r2SecretKey: optionalEnvironmentValue('R2_SECRET_KEY'),
+    r2Bucket: optionalEnvironmentValue('R2_BUCKET'),
+  };
+}
+
+export function isSupabaseConfigured(config: ServiceConfiguration): boolean {
+  return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey);
+}
+
+export function isR2Configured(config: ServiceConfiguration): boolean {
+  return Boolean(config.r2AccountId && config.r2AccessKey && config.r2SecretKey && config.r2Bucket);
+}

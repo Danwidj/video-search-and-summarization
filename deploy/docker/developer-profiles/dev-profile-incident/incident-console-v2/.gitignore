@@ -1,0 +1,14 @@
+# Dependencies and Next.js build output
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Local runtime configuration and generated runtime environment
+.env*
+generated.env*
+
+# Test and package-manager artifacts
+coverage/
+*.log
+.DS_Store
