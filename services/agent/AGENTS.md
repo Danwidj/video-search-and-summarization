@@ -11,10 +11,10 @@ Pydantic v2, OpenCV, xhtml2pdf. Package manager: `uv`. Linter/formatter: Ruff. T
 ## Commands
 
 ```bash
-# Setup
+# Setup (from services/agent/)
 uv venv --python 3.13 && uv sync --group dev && source .venv/bin/activate
 sudo apt-get install libcairo2-dev pkg-config python3-dev   # PDF generation deps
-pre-commit install
+pre-commit install   # runs from repo root; hooks defined in ../.pre-commit-config.yaml
 
 # Test
 uv run pytest tests/unit_test/ -v                           # all tests
@@ -22,7 +22,7 @@ uv run pytest tests/unit_test/tools/vst/test_video_clip.py -v   # single file
 
 # Lint & type-check (run all three after every change)
 uv run ruff check src/                                      # lint
-uv run ruff check src/vss_agents/tools/vst/video_clip.py        # lint single file
+uv run ruff check src/vss_agents/tools/vst/video_clip.py    # lint single file
 uv run ruff format --check src/                             # format check
 uv run mypy src/vss_agents/                                 # type check
 
@@ -34,20 +34,29 @@ nat serve --config_file ../../deploy/docker/developer-profiles/dev-profile-base/
 ## Project Structure
 
 ```
-src/vss_agents/
-├── agents/            # Orchestration agents (top_agent, report_agent, multi_report_agent)
-│   └── postprocessing/  # Response validation (URL validator, etc.)
-├── api/               # FastAPI endpoints, custom workers, RTSP/video ingest routes
-├── data_models/       # Pydantic models shared across modules
-├── embed/             # Embedding and vector-search utilities
-├── evaluators/        # LLM-judge evaluators (trajectory, QA, report quality)
-├── tools/             # NAT tools: video_understanding, report_gen, geolocation, …
-│   ├── vst/           # Video Storage Toolkit tools (clip, snapshot, video_list)
-│   └── code_executor/ # Sandboxed code execution (Docker backend)
-├── utils/             # Shared helpers
-└── video_analytics/   # Video Analytics MCP server and ES client
-tests/unit_test/       # Mirrors src/ tree — every module has a matching test dir
-stubs/                 # Mypy stubs for NAT framework (nat.data_models)
+src/
+├── lib/                 # NAT-independent libraries (knowledge adapters: ES, FRAG, LlamaIndex, LangChain)
+│   └── knowledge/
+├── vss_agents/
+│   ├── agents/          # Orchestration agents (top_agent, report_agent, multi_report_agent, search_agent, critic_agent)
+│   │   └── postprocessing/  # Response validation (URL validator, LLM rule validator, etc.)
+│   ├── api/             # FastAPI endpoints, custom workers, RTSP/video ingest routes
+│   ├── data_models/     # Pydantic models shared across modules
+│   ├── embed/           # Embedding and vector-search utilities (cosmos_embed, rtvi_cv_embed)
+│   ├── evaluators/      # LLM-judge evaluators
+│   │   ├── report_evaluator/       # Report quality (field_evaluators: base, common, llm_judge)
+│   │   ├── customized_qa_evaluator/
+│   │   └── customized_trajectory_evaluator/
+│   ├── orchestrator/    # Deployment orchestration (Docker Compose, prereqs, storage, network)
+│   ├── tools/           # NAT tools: video_understanding, report_gen, geolocation, search, LVS, VST, …
+│   │   ├── vst/               # Video Storage Toolkit tools (clip, snapshot, video_list, timeline, sensor_list, duration)
+│   │   └── code_executor/     # Sandboxed code execution (Docker backend)
+│   ├── utils/           # Shared helpers (incident_db, retry, parsers, ES client, …)
+│   └── video_analytics/ # Video Analytics MCP server and ES client
+tests/unit_test/         # Mirrors src/ tree — every module has a matching test dir
+├── knowledge_retrieval/ # Tests for lib/knowledge adapters
+└── orchestrator/        # Tests for src/vss_agents/orchestrator
+stubs/                   # Mypy stubs for NAT framework (nat.data_models)
 ```
 
 ## Code Style
@@ -98,6 +107,8 @@ async def get(id, s, e):
   (e.g. `dev-profile-base`, `dev-profile-search`, `dev-profile-lvs`, `dev-profile-alerts`).
 - **Stubs**: `stubs/` has Mypy stubs for NAT. When subclassing a NAT base config,
   verify `uv run mypy src/vss_agents/` passes — extend the stub if needed.
+- **Knowledge layer**: `src/lib/knowledge/` provides backend-agnostic adapters (ES, FRAG, LlamaIndex, LangChain);
+  `register_knowledge_layers.py` registers them as NAT components.
 
 ## Testing
 
@@ -108,7 +119,7 @@ async def get(id, s, e):
 ## Git Workflow
 
 - Create a feature branch from `main`. Keep commits focused.
-- Pre-commit hooks run `ruff`, `gitleaks` (secret scanning), and format checks automatically.
+- Pre-commit hooks run `ruff`, `trufflehog` (secret scanning), format checks, and SPDX copyright headers automatically.
 - Run `uv run pytest tests/unit_test/ -v` before pushing.
 
 ## Boundaries
