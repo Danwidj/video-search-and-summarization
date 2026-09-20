@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Status check for the `mdx` compose project (replaces the old `mdx-ps`
-# shell alias from deploy/dotfiles/aliases.sh — same behavior, standalone
+# shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior, standalone
 # script).
 #
 # Direct `docker compose -p mdx ...` — stable, generic Compose surface, not

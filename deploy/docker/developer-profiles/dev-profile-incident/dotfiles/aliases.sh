@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Managed by deploy/dotfiles/bootstrap.sh — re-running the bootstrap
+# Managed by deploy/docker/developer-profiles/dev-profile-incident/dotfiles/bootstrap.sh — re-running the bootstrap
 # overwrites this file, so make edits upstream in the repo, not here.
 #
 # Sourced by shellrc.sh. This file now carries ONLY the generic shell QoL

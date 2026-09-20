@@ -1,7 +1,7 @@
 # Lifecycle scripts (in `scripts/`)
 
 The old `mdx-*` shell aliases / `ngc-env-on` / `gpu` from
-[`deploy/dotfiles/`](../../../dotfiles/README.md) moved here as standalone,
+[`deploy/docker/developer-profiles/dev-profile-incident/dotfiles/`](../dotfiles/README.md) moved here as standalone,
 executable scripts — same behavior, ready to run individually:
 
 | Script                     | Was                         | Runs on    | What it does                                                                                                                                                                                                    |

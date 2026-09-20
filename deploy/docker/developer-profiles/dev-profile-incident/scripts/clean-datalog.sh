@@ -9,7 +9,7 @@
 # cleanup any other way).
 #
 # Replaces the old `mdx-clean-datalog` shell function from
-# deploy/dotfiles/aliases.sh — same behavior, standalone script.
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior, standalone script.
 # Runs on the VM.
 #
 # Usage: ./clean-datalog.sh <base|search|lvs|alerts>

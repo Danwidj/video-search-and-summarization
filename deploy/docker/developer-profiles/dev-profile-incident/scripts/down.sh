@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Stop the `mdx` compose stack WITHOUT wiping the model-weight cache
-# (replaces the old `mdx-down` shell alias from deploy/dotfiles/aliases.sh —
+# (replaces the old `mdx-down` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh —
 # same behavior, standalone script).
 #
 # Deliberately never `-v`: dev-profile.sh's own `down` runs
