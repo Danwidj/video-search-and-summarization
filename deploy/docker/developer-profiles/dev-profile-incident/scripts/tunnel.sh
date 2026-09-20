@@ -13,7 +13,7 @@
 # <vm-host> itself (forwarding the VM to itself is at best a no-op).
 #
 # Same tunnel pattern as the base-profile VSS UI tunnel in
-# docs/incident-plan/incident-plan-overview.md:
+# ../README.md:
 # `ssh -N -L 7777:<vm-ip>:7777 daniel@<vm-host>`.
 #
 # Forwarded ports mirror the backend's real ports one-to-one

@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Streamlit console for the VSS incident search & reporting capstone. Front-end
 migrated from the sibling `rise-up` project onto this blueprint fork. See
-[`docs/incident-plan/`](../../../../../docs/incident-plan/) for the full plan;
+[`incident-plan/`](../incident-plan/) for the full plan;
 this app implements the frontend half of
 `incident-plan-implementation-shared.md` §3 and §5.
 

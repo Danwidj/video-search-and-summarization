@@ -15,7 +15,7 @@
 
 # Developer profile: incident search & reporting capstone.
 #
-# See docs/incident-plan/ for the full plan. This profile reuses NVIDIA's
+# See incident-plan/ for the full plan. This profile reuses NVIDIA's
 # bp_developer_search compose tag (BP_PROFILE in .env is left unchanged) so the
 # resulting compose-profile set is a superset of everything the base + search
 # pipelines need. The only profile-exclusive service is the incident-console

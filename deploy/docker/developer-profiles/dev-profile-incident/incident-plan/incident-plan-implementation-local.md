@@ -1,6 +1,6 @@
 # VSS Customization Plan — Incident Search & Reporting Capstone (Implementation — Local LLM/VLM Deployment)
 
-*This is the AI/implementer-facing half of the plan - exact file paths, config keys, and technical findings, written for whoever is actually building this. The human-facing current-state summary is the companion document, `incident-plan-overview.md` ("the Overview doc"). Cross-references below point to it by name.*
+*This is the AI/implementer-facing half of the plan - exact file paths, config keys, and technical findings, written for whoever is actually building this. The human-facing guide is the profile README, `../README.md` ("the profile README" / "the Overview doc"). Cross-references below point to it by name.*
 
 *This file is scoped to local LLM/VLM deployment specifically — LLM and VLM run as local NIM containers on this VM's own GPUs, not against a hosted endpoint. A separate file, `incident-plan-implementation-remote.md`, covers the remote-hosted alternative; the two are not meant to be read together, pick whichever matches how you're actually deploying. Everything that doesn't depend on deployment mode — Postgres, R2, the frontend app, the AI-trigger API, feature implementation, engineering evaluation, and the resulting directory tree — lives in the shared companion doc, `incident-plan-implementation-shared.md`; read this file's §1–§2 first, that one second.*
 
