@@ -24,7 +24,7 @@
 # script today; this wrapper does not invent one, it just says so loudly.
 #
 # Replaces the old `mdx-rebuild` shell function from
-# deploy/dotfiles/aliases.sh — same behavior (incl. the explicit
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior (incl. the explicit
 # confirmation prompt), standalone script. Runs on the VM.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

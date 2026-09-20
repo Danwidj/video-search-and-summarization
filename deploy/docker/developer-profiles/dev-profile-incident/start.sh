@@ -38,7 +38,7 @@
 #      you're done.
 #
 # Overrides (defaults below are the shared-VM values from the old
-# deploy/dotfiles/aliases.sh):
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh):
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is with no prompt. If unset, the VM
 #                            username is resolved by resolve-ssh-target.sh:

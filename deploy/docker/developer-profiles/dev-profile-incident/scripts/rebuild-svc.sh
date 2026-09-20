@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Fast single-service rebuild (no full stack teardown/redeploy). Replaces the
-# old `mdx-rebuild-svc` shell function from deploy/dotfiles/aliases.sh — same
+# old `mdx-rebuild-svc` shell function from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same
 # behavior, standalone script.
 #
 # Direct compose invocation — documented pattern, not a dev-profile.sh flag:

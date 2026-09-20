@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Disk/volume usage (replaces the old `mdx-disk` shell alias from
-# deploy/dotfiles/aliases.sh — same behavior, standalone script).
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior, standalone script).
 #
 # Plain `docker system df` — worth having given the model-weight cache is
 # exactly what down.sh / rebuild.sh are designed to avoid silently deleting;

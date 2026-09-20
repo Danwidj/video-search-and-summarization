@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # One-shot GPU status, on demand (replaces the old `gpu` shell alias from
-# deploy/dotfiles/aliases.sh — same behavior, standalone script).
+# deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same behavior, standalone script).
 #
 # Deliberately not a starship module: Starship has no built-in nvidia
 # module, and the only way to add one is a [custom.gpu] shell-out on *every*
