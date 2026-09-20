@@ -215,11 +215,10 @@ template in a few places:
 3. **`sensor-ms` container was never started.** Not blocking anything tested
    so far, but will break sensor management features if/when someone builds
    on them. Fix: `docker compose ... up -d sensor-ms`.
-4. **The fix to `VSS_AGENT_CONFIG_FILE` only lives in the live untracked
-   file**, not the tracked `.env` template in the repo
-   (`dev-profile-incident/.env:246`) — anyone who regenerates their env from
-   that template will silently reintroduce the original bug. Needs a real
-   code fix.
+4. **Resolved (PR #59):** `VSS_AGENT_CONFIG_FILE` now points to the
+   `dev-profile-base` config in the tracked `.env` template
+   (`dev-profile-incident/.env:270`). The earlier bug (pointing at
+   `dev-profile-search`) is fixed in the repo.
 5. **`INCIDENT_LLM_BASE_URL` points at a local mock server** that isn't
    running on the VM — currently harmless (nothing calls it yet), but will
    break the moment someone wires up the "direct LLM draft" fallback feature.
