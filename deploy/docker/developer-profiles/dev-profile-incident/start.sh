@@ -180,11 +180,29 @@ if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
   echo "  (see incident-plan/incident-plan-implementation-remote.md §2)" >&2
   exit 1
 fi
-echo "--- starting Docker appliance containers (${INCIDENT_DOCKER_SERVICES}) ---"
+
+map_docker_service() {
+  case "\$1" in
+    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
+    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
+    vss-vios-ingress)          echo "vst-ingress" ;;
+    vss-vios-postgres)         echo "centralizedb" ;;
+    *)                         echo "\$1" ;;
+  esac
+}
+
+COMPOSE_SERVICES=""
+for svc in ${INCIDENT_DOCKER_SERVICES}; do
+  mapped="\$(map_docker_service "\$svc")"
+  COMPOSE_SERVICES="\${COMPOSE_SERVICES} \${mapped}"
+done
+COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
+
+echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
 if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d ${INCIDENT_DOCKER_SERVICES}
+  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
 else
-  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d ${INCIDENT_DOCKER_SERVICES}
+  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
 fi
 EOF
 )
