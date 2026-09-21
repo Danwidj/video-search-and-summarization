@@ -60,9 +60,15 @@ The gateway will be available at `http://localhost:8600/v1/chat/completions`.
 
 ### Environment Setup
 
+Local developer secrets across all services in this profile are consolidated into
+the shared root file at `dev-profile-incident/.env.local`. In this directory,
+`.env.local` is a symlink pointing to `../.env.local`:
+
 ```bash
-cp .env .env.local
-# Edit .env.local - VLM_GATEWAY_API_KEY must be set (captain provides)
+# If .env.local symlink is missing:
+ln -s ../.env.local .env.local
+
+# Ensure VLM_GATEWAY_API_KEY is set in dev-profile-incident/.env.local (captain provides)
 ```
 
 ## Example Usage

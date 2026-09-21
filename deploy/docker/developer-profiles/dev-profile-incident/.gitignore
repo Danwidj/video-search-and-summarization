@@ -1,0 +1,4 @@
+# Local development secrets for the incident profile services.
+# Shared across incident-console, incident-console-v2, vlm-gateway, and mock-backend.
+.env.local
+.env.*.local

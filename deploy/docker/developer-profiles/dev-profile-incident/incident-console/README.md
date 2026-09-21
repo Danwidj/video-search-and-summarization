@@ -42,18 +42,22 @@ created fresh, not migrated).
 
 **Secrets never go in a tracked file.** `dev-profile-incident/.env` is committed
 and stays placeholders. For local dev, put the real Supabase DSN and
-Cloudflare R2 keys in `incident-console/.env.local` (untracked, loaded by
-`config.py` with `override=True`), which `incident-console/.gitignore` keeps out of
-git. For the VM deploy, edit the real values into the ignored `generated.env.local` /
-`generated.env.remote` copy instead (see the local/remote implementation docs,
-§2) - never into `.env.local` on the build host.
+Cloudflare R2 keys in `dev-profile-incident/.env.local` (untracked, loaded by
+`config.py` via the `incident-console/.env.local` symlink with `override=True`),
+which `.gitignore` keeps out of git. For the VM deploy, edit the real values
+into the ignored `generated.env.local` / `generated.env.remote` copy instead
+(see the local/remote implementation docs, §2) - never into `.env.local` on
+the build host.
 
-A tracked, copyable template listing every required key exists at
-`incident-console/.env` — copy it to `.env.local` and fill in real
-values:
+Local developer secrets for all services in this profile are consolidated into
+the shared root file at `dev-profile-incident/.env.local`. In this directory,
+`.env.local` is a symlink pointing to `../.env.local`. Create or edit
+`deploy/docker/developer-profiles/dev-profile-incident/.env.local` and fill in
+real values:
 
 ```bash
-cp .env .env.local
+# If .env.local symlink is missing:
+ln -s ../.env.local .env.local
 ```
 
 ```dotenv
