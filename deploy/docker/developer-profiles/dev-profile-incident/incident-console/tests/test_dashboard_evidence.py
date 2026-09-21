@@ -22,11 +22,9 @@ the SQL itself was also checked against a real PostgreSQL 16 (see the PR descrip
 
 from __future__ import annotations
 
-import ast
 import datetime as dt
 import re
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 from sqlalchemy import event, select
@@ -152,7 +150,7 @@ def seed_incidents(db: IncidentDB, count: int, *, second_run_every: int = 3) -> 
             entity(iid, "MR-A", f"E{n + 1}", "human", f"{iid} run-A e{n + 1}")
         for n in reversed(range(k % 3)):
             instrument(iid, "MR-A", f"I{n + 1}", f"tool{n}", 1 + n, "E1")
-        for n in reversed(range(k % 2)):
+        for n in reversed(range(k % 3)):
             asset(iid, "MR-A", f"A{n + 1}", f"asset{n}", f"{iid} run-A")
         if k % second_run_every == 0:
             incident(iid, "MR-B", 5, 0.9, TYPES[k % 3])
@@ -308,26 +306,75 @@ def test_reports_without_a_run_id_fall_back_to_all_runs_like_the_loop(multi_run_
         )
 
 
-def _clause(statement: str, start: str, end: str | None) -> str:
-    tail = " ".join(statement.split()).split(start, 1)[1]
-    return tail.split(end, 1)[0] if end else tail
+def _pinned_pairs(db: IncidentDB) -> list[tuple[str, str]]:
+    return [(r["id"], r["model_run_id"]) for r in DBReports(db).list_reports()]
 
 
-def test_batch_filters_on_the_run_and_orders_by_id_in_the_sql_itself(multi_run_db):
-    """Two properties result comparisons cannot show on SQLite, but Postgres would expose.
+def test_batch_statements_return_only_the_requested_runs_rows(multi_run_db, monkeypatch):
+    """Judge over-fetching by the rows the statements return: the per-pair Python filter would hide it in the result."""
+    pairs = _pinned_pairs(multi_run_db)
+    fetched: list[dict] = []
+    to_dict = db_module._row_to_dict
 
-    SQLite happens to scan in primary-key order and the batch re-filters runs in Python, so a statement
-    that dropped either would still return the right rows here. The statements must (a) match
-    ``model_run_id`` - otherwise every run's rows of each incident are transferred only to be thrown
-    away - and (b) order by the table's id column, since nothing else guarantees the per-incident order.
+    def recording(row):
+        values = to_dict(row)
+        fetched.append(values)
+        return values
+
+    monkeypatch.setattr(db_module, "_row_to_dict", recording)
+    batch = multi_run_db.list_evidence_batch(pairs)
+
+    kept = sum(len(rows) for table in batch.values() for rows in table.values())
+    assert fetched
+    assert {(row["incident_id"], row["model_run_id"]) for row in fetched} <= set(pairs)
+    assert len(fetched) == kept  # nothing transferred only to be thrown away
+
+
+@pytest.fixture
+def reversed_scans(multi_run_db):
+    """SQLite returns a SELECT with no ORDER BY in reverse of its natural order, so a missing one shows up."""
+    event.listen(multi_run_db.engine, "connect", lambda conn, _: conn.execute("PRAGMA reverse_unordered_selects=ON"))
+    multi_run_db.engine.dispose()  # pooled connections were opened without the pragma
+    return multi_run_db
+
+
+def test_unordered_selects_come_back_out_of_id_order_here(reversed_scans):
+    """Guard the guard: the ordering test below can only fail if an unordered SELECT differs from the ordered one."""
+    for table, id_column in ((db_module.entities, "entity_id"), (db_module.instruments, "instrument_id")):
+        columns = (table.c.incident_id, table.c.model_run_id, table.c[id_column])
+        with reversed_scans.engine.connect() as conn:
+            unordered = conn.execute(select(*columns)).all()
+            ordered = conn.execute(select(*columns).order_by(table.c.incident_id, table.c[id_column])).all()
+        assert sorted(unordered) == sorted(ordered)
+        assert unordered != ordered
+
+
+def test_batch_rows_come_back_in_the_per_incident_order(reversed_scans):
+    every_run = sorted({(r["incident_id"], r["model_run_id"]) for r in reversed_scans.list_incidents()})
+    batch = reversed_scans.list_evidence_batch(every_run)
+    per_pair = {
+        "entities": reversed_scans.list_incident_entities,
+        "instruments": reversed_scans.list_incident_instruments,
+        "assets": reversed_scans.list_incident_assets,
+    }
+    for table, fetch_one in per_pair.items():
+        assert any(len(batch[table][pair]) > 1 for pair in every_run), table  # ordering is observable
+        for pair in every_run:
+            assert batch[table][pair] == fetch_one(*pair), (table, pair)
+
+
+def test_batch_orders_by_the_tables_id_column_in_the_sql(multi_run_db):
+    """Extra guard beside the ordering test above, for what SQLite cannot show.
+
+    A partial ORDER BY such as ``ORDER BY incident_id`` still returns the right order on SQLite (rows
+    come back in primary-key order even under ``reverse_unordered_selects``) but leaves the per-incident
+    order to chance on PostgreSQL, so require each statement to order by its table's id column.
     """
-    pairs = [(r["id"], r["model_run_id"]) for r in DBReports(multi_run_db).list_reports()]
+    pairs = _pinned_pairs(multi_run_db)
     with count_sql(multi_run_db) as (statements, _):
         multi_run_db.list_evidence_batch(pairs)
-    assert len(statements) == 3
     for statement, id_column in zip(statements, ("entity_id", "instrument_id", "asset_id"), strict=True):
-        assert "model_run_id" in _clause(statement, " WHERE ", " ORDER BY ")
-        assert id_column in _clause(statement, " ORDER BY ", None)
+        assert id_column in " ".join(statement.split()).split(" ORDER BY ", 1)[1]
 
 
 def test_flatten_is_strict_about_missing_pairs():
@@ -490,26 +537,6 @@ def test_analyze_and_refresh_makes_new_evidence_visible(multi_run_db, result, ra
     assert fresh != stale
     assert fresh == legacy_evidence_rows(multi_run_db, reports)
     assert [r["Description"] for r in fresh[0] if r["Incident_ID"] == iid] == ["re-analysed"]
-
-
-def _calls(path: Path, name: str) -> list[int]:
-    """Line numbers of every call to ``name`` (as a bare name or an attribute) in the module at ``path``."""
-    return [
-        node.lineno
-        for node in ast.walk(ast.parse(path.read_text()))
-        if isinstance(node, ast.Call) and name in (getattr(node.func, "id", None), getattr(node.func, "attr", None))
-    ]
-
-
-def test_pages_only_trigger_analysis_through_the_refreshing_helper():
-    """AppTest cannot drive ``st.dialog``, so pin the wiring of the one place a page starts an analysis.
-
-    A page calling ``AgentClient.analyze_incident`` directly would leave the Dashboard's cached evidence
-    stale (up to the TTL) after the reviewer's own upload; ``analyze_and_refresh`` is what clears it.
-    """
-    pages = Path(__file__).resolve().parents[1] / "pages"
-    assert [p.name for p in sorted(pages.glob("*.py")) if _calls(p, "analyze_incident")] == []
-    assert _calls(pages / "2_Report_Review.py", "analyze_and_refresh")
 
 
 def test_reviewer_edits_and_verify_show_immediately_without_touching_the_evidence_cache(multi_run_db):

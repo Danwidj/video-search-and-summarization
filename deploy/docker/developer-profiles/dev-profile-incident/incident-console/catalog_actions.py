@@ -15,9 +15,11 @@
 
 """Pure orchestration helpers for the Catalog page's upload/analyze/poll actions.
 
-Kept import-light (no ``streamlit``) so tests can drive them directly against
-the hermetic SQLite fixture without going through ``AppTest``, which cannot
-drive ``st.dialog`` content or timed ``st.fragment`` reruns.
+Makes no ``st.*`` calls, so tests can drive them directly against the
+hermetic SQLite fixture without going through ``AppTest``, which cannot
+drive ``st.dialog`` content or timed ``st.fragment`` reruns. It is not
+import-light: ``dashboard_data`` and ``r2_videos`` import ``streamlit`` at
+module level.
 """
 
 from __future__ import annotations
