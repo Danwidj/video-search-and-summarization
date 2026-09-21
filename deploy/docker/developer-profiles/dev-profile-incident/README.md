@@ -7,13 +7,15 @@ SPDX-License-Identifier: Apache-2.0
 
 Developer profile for the incident search and reporting capstone (Daniel's
 team, NVIDIA NVAITC-sponsored). A video-driven incident search and reporting
-system built on this VSS blueprint fork. A Streamlit console (`incident-console`)
-sits on Postgres (reports) + Cloudflare R2 (video), triggers report generation
-and search through `vss-agent`, and runs inside this profile.
+system built on this VSS blueprint fork. Two console frontends exist:
+
+- **`incident-console` (v1)** — Streamlit app, Postgres-backed incident review UI. Runs on each team member's laptop, connecting to the shared backend on `kwanz-ws` via SSH tunnel (or to a local mock backend).
+- **`incident-console-v2`** — Next.js App Router frontend for video upload, VLM analysis, incident reporting, review, and evaluation. Uses existing HTTP contracts (mock/real `vss-agent`, VLM gateway, Supabase/PostgREST, Cloudflare R2) without copying the v1 interface. Runs on each team member's laptop on port 3200.
 
 It reuses NVIDIA's `bp_developer_search` compose tag, so the deployed stack is a
-superset of everything the base + search pipelines need, plus one
-profile-exclusive service: the `incident-console` Streamlit app.
+superset of everything the base + search pipelines need. The profile-exclusive
+services are the two console apps (the v1 Streamlit container on the VM is a
+leftover from an earlier shared-UI setup and is no longer the intended path).
 
 For technical reference docs (GPU topology, local vs. remote LLM/VLM deployment,
 detailed Postgres schema specs, and eval methodology), see the companion files in
@@ -54,11 +56,12 @@ detailed Postgres schema specs, and eval methodology), see the companion files i
 ## 2. Layout
 
 - [`compose.yml`](compose.yml) — Profile entrypoint. Includes `./incident-console/compose.yml`. No Kibana init block (this profile does not use Kibana).
-- [`incident-console/`](incident-console/README.md) — The Streamlit console: Postgres-backed incident review UI (`INCIDENT_DB_DSN` required). See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
+- [`incident-console/`](incident-console/README.md) — The Streamlit console (v1): Postgres-backed incident review UI (`INCIDENT_DB_DSN` required). See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
+- [`incident-console-v2/`](incident-console-v2/README.md) — Next.js App Router frontend (v2): video upload, VLM analysis, incident reporting, review, dashboard, and ground-truth evaluation. Server-only config via `VLM_GATEWAY_URL`, `VLM_MODEL`, `INCIDENT_AGENT_BASE_URL`, `INCIDENT_SUPABASE_URL`/`INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `R2_*`. See its README for the local dev loop (mock backend on 7777, VLM gateway on 8600, Next.js on 3200).
 - [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference); a `mock_data/` module is planned for a Postgres-schema mock of the console.
 - [`incident-plan/`](incident-plan/) — Technical reference docs (`incident-plan-implementation-local.md`, `-remote.md`, `-shared.md`).
 - [`scripts/`](scripts/) — Standalone deployment and operational scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `native-services.sh`, etc.).
-- [`start.sh`](start.sh) & [`local-start.sh`](local-start.sh) — Laptop-side entrypoint scripts.
+- [`start.sh`](start.sh) & [`local-start.sh`](local-start.sh) — Laptop-side entrypoint scripts (for v1 Streamlit console).
 
 ---
 
@@ -182,7 +185,7 @@ ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile
 
 ## 6. Laptop Setup: Secrets & Environment Files
 
-The `incident-console` UI runs on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh`).
+Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh` for v1; `incident-console-v2/README.md` for v2).
 
 **Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, real credentials live in untracked `.env.local` files that are ignored by git:
 
@@ -190,15 +193,16 @@ The `incident-console` UI runs on each teammate's laptop, connecting either to t
 
 | Target File (Untracked) | Tracked Template to Copy | Required? | Used By |
 |---|---|---|---|
-| `deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env.local` | [`incident-console/.env`](incident-console/.env) | **Required** | `incident-console` (Streamlit UI), `local-start.sh` (mock backend) |
-| `deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env.local` | [`vlm-gateway/.env`](vlm-gateway/.env) | Optional | `vlm-gateway` (if running the hosted LLM/VLM inference proxy locally) |
+| `deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env.local` | [`incident-console/.env`](incident-console/.env) | **Required** | `incident-console` (Streamlit UI v1), `local-start.sh` (mock backend) |
+| `deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/.env.local` | (none — create from `incident-console-v2/README.md` §Server-only configuration) | **Required** | `incident-console-v2` (Next.js UI v2) |
+| `deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env.local` | [`vlm-gateway/.env`](vlm-gateway/.env) | Optional | `vlm-gateway` (if running the hosted LLM/VLM inference proxy locally; used by both v1 eval and v2 analysis) |
 
 > [!TIP]
 > **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook will automatically propagate untracked `.env` and `.env.local` files from the main worktree into newly created worktrees (copy-if-missing, never overwriting).
 
 ---
 
-### Step-by-Step Setup for `incident-console/.env.local`
+### Step-by-Step Setup for `incident-console/.env.local` (v1 Streamlit)
 
 1. **Copy the tracked template:**
    ```bash
@@ -280,6 +284,42 @@ The `incident-console` UI runs on each teammate's laptop, connecting either to t
 
 ---
 
+### Step-by-Step Setup for `incident-console-v2/.env.local` (v2 Next.js)
+
+1. **Create the file from the server-only configuration documented in [`incident-console-v2/README.md`](incident-console-v2/README.md#server-only-configuration):**
+   ```bash
+   cd deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
+   cat > .env.local <<'EOF'
+   # VLM Gateway (holds upstream inference credential; NOT exposed to browser)
+   VLM_GATEWAY_URL=http://127.0.0.1:8600
+   VLM_MODEL=nvidia/cosmos-3-nano-reasoner
+
+   # vss-agent (mock or real) for three-step video upload + follow-up chat
+   INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777
+
+   # Supabase PostgREST (report metadata persistence)
+   INCIDENT_SUPABASE_URL=https://[PROJECT-REF].supabase.co
+   INCIDENT_SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-jwt>
+
+   # Cloudflare R2 (private video storage; signed URLs generated server-side)
+   R2_ACCOUNT_ID=<cloudflare-account-id-hex>
+   R2_ACCESS_KEY=<s3-compatible-access-key-id>
+   R2_SECRET_KEY=<s3-compatible-secret-access-key>
+   R2_BUCKET=anomaly-detection-dataset
+   EOF
+   ```
+
+   > **Do not** prefix any of these with `NEXT_PUBLIC_` — they must remain server-only. `GET /api/health` returns only configuration and reachability booleans; it never returns URLs or credentials.
+
+2. **Verify configuration:**
+   - Start the three required local services (see [`incident-console-v2/README.md`](incident-console-v2/README.md#local-development)):
+     1. Mock backend on port 7777
+     2. VLM gateway on port 8600
+     3. `npm run dev` (Next.js on port 3200)
+   - Check `GET http://localhost:3200/api/health` — all four services (agent, gateway, PostgREST, R2) should report `reachable: true` / `configured: true` before testing the upload-to-report workflow.
+
+---
+
 ### Step-by-Step Setup for `vlm-gateway/.env.local` (Optional)
 
 If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM inference locally:
@@ -312,10 +352,13 @@ If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM infere
 ## 7. Connecting to the Shared Backend
 
 The profile's backend (`vss-agent`, LLM/VLM NIMs, VIOS) runs on the shared
-`kwanz-ws` VM. **The `incident-console` UI runs on each team member's own
-laptop, not on the VM** — an SSH tunnel connects the two. This supersedes an
-earlier setup where the console ran as a shared container on the VM (see
-[Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)).
+`kwanz-ws` VM. **Both console UIs run on each team member's own laptop, not
+on the VM** — an SSH tunnel connects the laptop to the VM backend. This
+supersedes an earlier setup where the v1 console ran as a shared container on
+the VM (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)).
+
+- **`incident-console` (v1):** Uses `./start.sh` (one-command: checks VM deploy state, deploys if needed, opens tunnel, starts Streamlit) or manual `./scripts/tunnel.sh` + Streamlit per its README.
+- **`incident-console-v2` (v2):** Uses the same SSH tunnel (`./scripts/tunnel.sh` forwards agent 8000, NIMs 30081/30082, ingress 7777). Configure `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (tunneled) and `VLM_GATEWAY_URL=http://localhost:8600` (if running gateway locally) or the tunneled VLM NIM endpoint. The v2 frontend does not have a dedicated `start.sh` entrypoint; run the tunnel manually, then `npm run dev` in `incident-console-v2/`. The mock-backend workflow (no VM) is documented in `incident-console-v2/README.md`.
 
 ### One command (recommended)
 
@@ -406,18 +449,21 @@ to run on `kwanz-ws` itself.
 
 | Item | State |
 |---|---|
-| `incident-console` app (catalog, report review, dashboard, human-eval; Postgres-backed, no offline mode) | Present; seed via `incident-console/scripts/seed_supabase.py` over `fixtures/data/*.csv` |
-| Console schema (`db.py`: videos/queries/model_runs/incidents + evidence, ground-truth, match, review tables) | Present; authoritative for schema questions |
-| Mock backend + local loop (`mock-backend/base_profile_mock`) | Present; verified loop documented |
+| `incident-console` app (v1 Streamlit: catalog, report review, dashboard, human-eval; Postgres-backed, no offline mode) | Present; seed via `incident-console/scripts/seed_supabase.py` over `fixtures/data/*.csv` |
+| `incident-console-v2` app (v2 Next.js: video upload, VLM analysis, incident reporting, review, dashboard, alerts, model-run history, ground-truth/severity evaluation) | Present (PR #72, merged 2026-09-21); local mock-backend loop documented and smoke-tested (`/`, `/reports`, `/dashboard`, `/notifications`, `/api/reports`, `/api/notifications`, `/api/health`); typecheck/build/test pass; VM-tunnel integration not yet verified end-to-end |
+| Console schema (`db.py`: videos/queries/model_runs/incidents + evidence, ground-truth, match, review tables) | Present; authoritative for schema questions (shared by v1 and v2 via PostgREST) |
+| Mock backend + local loop (`mock-backend/base_profile_mock`) | Present; verified loop documented (used by both v1 and v2) |
 | Stock base-local deploy (one model per GPU, `hw-OTHER.env` sizing) | Verified working |
 | Stock base-remote chat + VLM describe (`openai`-type, model above) | Verified working 2026-09-13 on corrected `--host-ip`: video upload to VST plus `video_understanding` through the remote VLM returned a correct description. Full `report_agent` path still needs a UI websocket (HITL), so it remains unverified headless. |
 | Stock `search` profile (local and remote) | Verified working 2026-09-13 both modes; deploy commands in the mode docs §3 |
 | `incident_report_gen` tool + `/analyze` API route | Built (PR #38, merged 2026-09-17); fresh deploy builds from source via `start.sh`'s `--build` (PR #63), and `vss-agent` runs natively on kwanz-ws (PR #70). Confirm the VM's active `vss-agent` process was restarted or redeployed since PR #63/#70 |
 | Supabase / PostgREST integration | Migration validated against live project (PR #53); agent-side client ported from asyncpg to `supabase-py` PostgREST (PR #54, #57); `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` wired to agent (PR #62) for port-5432-safe access on kwanz-ws |
-| Tier 1 ground-truth evaluation | Built (PR #56, merged 2026-09-20); scores model runs against parallel `gt_*` tables via `eval_gt.py` / report detail UI |
+| Tier 1 ground-truth evaluation | Built (PR #56, merged 2026-09-20); scores model runs against parallel `gt_*` tables via `eval_gt.py` / report detail UI (v1); v2 has its own evaluation form wired to the same tables |
 | `dev-profile-incident` `config.yml`, `/search` API route | Planned (shared doc §§4-6); not yet built |
 | `openai_vlm` missing-`base_url` patch (`base_url: ${VLM_BASE_URL}/v1` in `config.yml` + `config_rag.yml`) | Required; re-apply after any upstream sync |
 | Remote free-tier 16-concurrent-request ceiling; hosted-model 12-images-per-prompt cap | Open constraints; remote report path loops/hangs past them |
+
+> **v1 vs. v2 relationship:** Both consoles are currently present. v2 (Next.js) was added in PR #72 as a standalone replacement candidate — it uses the same backend contracts (vss-agent, VLM gateway, Supabase/PostgREST, R2) but does not share code with v1 (Streamlit). The v1 Streamlit container on `kwanz-ws` is a leftover from an earlier shared-UI setup and is no longer the intended path (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)). Whether v2 fully supersedes v1 or both are maintained long-term is an open product decision; as of this writing, v1 remains the console with the established human-eval flow and Tier 1 GT evaluation UI, while v2 adds a modern App Router workspace with report-grounded chat, run comparison, and print-friendly reports. The team should clarify the intended roadmap.
 
 ### 8.2 Live deployment on kwanz-ws
 
