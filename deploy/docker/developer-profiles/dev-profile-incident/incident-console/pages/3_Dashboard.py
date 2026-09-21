@@ -17,6 +17,7 @@
 
 import streamlit as st
 
+from dashboard_data import evidence_rows
 from dashboard_view import from_reports, render
 from db_reports import DBReports
 from theme import apply_base_style, page_header
@@ -33,48 +34,9 @@ handle = get_db_or_notice()
 notifications_panel(handle)
 
 
-def _evidence_rows(db_handle, reports):
-    """Flatten DB entities / instruments / assets into dashboard_view's row shape."""
-    entities: list[dict] = []
-    instruments: list[dict] = []
-    assets: list[dict] = []
-    for report in reports:
-        rid, model_run_id = report["id"], report.get("model_run_id")
-        for row in db_handle.list_incident_entities(rid, model_run_id):
-            entities.append(
-                {
-                    "Incident_ID": rid,
-                    "ID": row.get("entity_id"),
-                    "Type": row.get("type"),
-                    "Description": row.get("description"),
-                }
-            )
-        for row in db_handle.list_incident_instruments(rid, model_run_id):
-            instruments.append(
-                {
-                    "Incident_ID": rid,
-                    "ID": row.get("instrument_id"),
-                    "Entity_ID": row.get("entity_id"),
-                    "Name": row.get("name"),
-                    "Description": row.get("description"),
-                    "Threat_Level": row.get("threat_level"),
-                }
-            )
-        for row in db_handle.list_incident_assets(rid, model_run_id):
-            assets.append(
-                {
-                    "Incident_ID": rid,
-                    "ID": row.get("asset_id"),
-                    "Name": row.get("name"),
-                    "Description": row.get("description"),
-                }
-            )
-    return entities, instruments, assets
-
-
 if handle is None:
     st.stop()
 reports = DBReports(handle).list_reports()
-entities, instruments, _assets = _evidence_rows(handle, reports)
+entities, instruments, _assets = evidence_rows(handle, reports)
 st.caption(f"Live scope: {len(reports)} incident(s) from the database, with linked entity / instrument evidence.")
 render(from_reports(reports), entities, instruments, reports)

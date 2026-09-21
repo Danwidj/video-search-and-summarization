@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 
 from agent_client import AgentClient, Result
+from dashboard_data import clear_evidence_cache
 from db import IncidentDB
 from r2_videos import download_video_bytes
 
@@ -60,6 +61,20 @@ def upload_and_record(agent: AgentClient, db: IncidentDB, *, filename: str, cont
     video_id = derive_video_id(sensor_id)
     db.upsert_video(video_id, filepath=data.get("filepath"), source=sensor_id)
     return Result(ok=True, data=video_id, status_code=result.status_code)
+
+
+def analyze_and_refresh(agent: AgentClient, video_id: str) -> Result:
+    """Ask the agent to analyze ``video_id``, then drop the dashboard's cached evidence.
+
+    The agent rewrites the incident's model-output rows (``incidents`` /
+    ``entities`` / ``instruments`` / ``assets``) in its own process, so the
+    console's cached dashboard evidence cannot notice. Clear it whether or not the
+    call reported success: a failed run may still have written some rows.
+    """
+    try:
+        return agent.analyze_incident(video_id)
+    finally:
+        clear_evidence_cache()
 
 
 def current_status(db: IncidentDB, video_id: str) -> str:
