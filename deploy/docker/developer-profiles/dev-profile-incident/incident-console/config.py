@@ -49,6 +49,29 @@ def incident_db_dsn() -> str:
     return _clean(os.getenv("INCIDENT_DB_DSN"))
 
 
+# How long a successful database round trip lets ``ui.get_db_or_notice`` skip its
+# health probe (0 = probe on every page run). Any failed connection clears it early.
+DEFAULT_DB_HEALTHCHECK_TTL_SECONDS = 15.0
+
+# Pooled connections older than this are replaced at checkout (no round trip). The
+# hosted pooler's idle limit is undocumented, so keep connections young; see
+# README "Database connection".
+DEFAULT_DB_POOL_RECYCLE_SECONDS = 600
+
+
+def db_healthcheck_ttl_seconds() -> float:
+    """``INCIDENT_DB_HEALTHCHECK_TTL_SECONDS``: seconds a good health check stays valid (0 disables)."""
+    try:
+        return max(0.0, float(_clean(os.getenv("INCIDENT_DB_HEALTHCHECK_TTL_SECONDS"))))
+    except (TypeError, ValueError):
+        return DEFAULT_DB_HEALTHCHECK_TTL_SECONDS
+
+
+def db_pool_recycle_seconds() -> int:
+    """``INCIDENT_DB_POOL_RECYCLE_SECONDS``: max age of a pooled connection (-1 never recycles)."""
+    return _int_env("INCIDENT_DB_POOL_RECYCLE_SECONDS", DEFAULT_DB_POOL_RECYCLE_SECONDS)
+
+
 def agent_base_url() -> str:
     """Base URL of vss-agent's upload + AI-trigger API."""
     return _clean(os.getenv("INCIDENT_AGENT_BASE_URL")) or "http://localhost:8000"

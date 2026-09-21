@@ -67,8 +67,10 @@ INCIDENT_SUPABASE_URL=https://<project-ref>.supabase.co
 INCIDENT_SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
-Use the Supabase **session pooler** (port 5432) so DDL and `SELECT ... FOR
-UPDATE` work. Percent-encode reserved characters in the password (`@` → `%40`).
+Use the Supabase **session pooler** (port 5432), or the direct connection if your
+network has IPv6 - not the transaction pooler (port 6543); "Database connection"
+below has the reasons and the documentation behind them. Percent-encode reserved
+characters in the password (`@` → `%40`).
 
 Load the 36 real (video-backed) CSV-fixture incidents once (idempotent, manual,
 never runs on startup):
@@ -101,6 +103,112 @@ uploads plus their own `incidents` / `entities` / `instruments` / `assets`
 rows, all under a dedicated `model_runs` row (`MOCK8`) so this set can never
 collide with or be overwritten by the `MR-SEED` reseed above. See
 `scripts/seed_mock8.py` for the incident content and its clip.
+
+### Database connection: mode, speed and dropped connections
+
+The console reaches Postgres through the DSN (`INCIDENT_DB_DSN`, SQLAlchemy + psycopg2); there is no REST
+layer in between, so "use the DSN" is already how it works. Page speed is decided by two things: how many
+**network round trips** each query costs (every one pays the full RTT to the pooler) and which endpoint the
+DSN points at. [`db_connection.py`](db_connection.py) is the authoritative description of what the code does;
+this section has the measurements and the documentation behind the choices.
+
+**Round trips, before → after.** Measured by `scripts/measure_db_roundtrips.py` on real PostgreSQL 16.2 behind a
+proxy that counts wire round trips and injects latency. It is a model of the network (no TLS, no pooler, no real
+Supabase project): the round-trip *counts* are protocol-level and carry over, the milliseconds are the injected
+RTT times those counts, and the "dropped connection" rows leave out the failed first attempt (the proxy closes
+instantly; on a real link add about one RTT to notice it).
+
+| scenario (real PostgreSQL 16.2, local; latency injected) | wire round trips | ms at 30 ms RTT | ms at 80 ms RTT |
+|---|---|---|---|
+| page run: get_db_or_notice() [health cache cold] | 4 → 1 | 123 → 31 | 323 → 81 |
+| page run: get_db_or_notice() [health cache warm] | 4 → 0 | 123 → 0 | 323 → 0 |
+| query: get_video (1 PK lookup) | 4 → 1 | 124 → 32 | 324 → 82 |
+| query: list_latest_incidents (join, 36 rows) | 4 → 1 | 127 → 34 | 327 → 84 |
+| query: list_notifications | 4 → 1 | 125 → 32 | 324 → 82 |
+| page-like: 1 page run + 10 x get_video | 44 → 10 | 1,360 → 316 | 3,564 → 816 |
+| write: update_video (1 UPDATE) [transactional pool warm] | 4 → 3 | 125 → 96 | 334 → 245 |
+| write: the process's first write [transactional pool cold] | 4 → 13 | 126 → 414 | 326 → 1,058 |
+| dropped pooled connection: page run + get_video | 8 → 3 | 250 → 97 | 652 → 248 |
+| dropped pooled connection: write (update_video) | 4 → 4 | 129 → 131 | 330 → 330 |
+| cold start: fresh process, 1 page run + 1 query | 38 → 11 | 1,188 → 352 | 3,088 → 898 |
+
+- **Reads: 4 → 1.** Every query used to pay `pool_pre_ping`'s `SELECT 1`, psycopg2's implicit `BEGIN`, the
+  statement and the pool's `ROLLBACK`; only one in four carried data. Reads now run on `IncidentDB.read_engine`,
+  a separate engine whose connections are AUTOCOMMIT (psycopg2 sends no `BEGIN`; the pool's `ROLLBACK` is a
+  no-op), and nothing is sent to validate a pooled connection.
+- **Never a global AUTOCOMMIT.** AUTOCOMMIT is not atomic, so it exists only on that read engine, which refuses
+  write statements (`WriteOnReadEngine`). Writes use `IncidentDB.engine`, the ordinary transactional engine
+  (`engine.begin()`, native transactions). The read engine needs its *own* pool: switching AUTOCOMMIT on per
+  checkout (`execution_options`), or on a shared pool, costs **2** round trips per read, not 1, because SQLAlchemy
+  resets the isolation level on every return to the pool and psycopg2 then sends
+  `SET default_transaction_isolation TO DEFAULT` (seen on the wire, steady state over repeated reads).
+- **The price.** The transactional engine is a second engine, set up on its first connection, so a process's
+  *first write* costs about 10 more round trips (13 above), once; every later write costs 3 instead of 4. Both
+  pools are small (read 2 + 3 overflow, write 1 + 2) because in Supavisor's session mode each client connection
+  holds a pooler slot.
+- **Health probe.** `ui.get_db_or_notice()` no longer queries on every rerun. Any statement the database answered
+  within `INCIDENT_DB_HEALTHCHECK_TTL_SECONDS` (default 15; `0` probes every run) counts as proof, so a page run
+  right after start-up or another page run sends nothing; otherwise the probe is one round trip. A connection
+  error cancels the shortcut at once, so at most one page run inside the window can hit the outage itself; the
+  next shows the "unreachable" notice.
+- **Start-up.** The schema check is one catalog query instead of one per table (38 → 11 round trips for a fresh
+  process's first page).
+- **Dropped connections.** A pooled connection killed by the pooler or the network used to be caught by the
+  pre-ping. Now the first call to find it dead is **replayed once** on a fresh connection, transparently, whether
+  it reads, writes or does both. It is never replayed once a COMMIT was attempted (the outcome is unknown), and an
+  error that is not a lost connection is never replayed. This is SQLAlchemy's documented pattern: "The canonical
+  approach to dealing with mid-operation disconnects is to retry the entire operation from the start of the
+  transaction", and it calls AUTOCOMMIT reads the case for "a limited form of transparent reconnect"
+  ([FAQ](https://docs.sqlalchemy.org/en/20/faq/connections.html#how-do-i-retry-a-statement-execution-automatically)).
+- **Observing it.** The two engines are separate pools with separate event streams: anything that counts
+  statements or checkouts must listen on both (`for engine in handle.engines: event.listen(engine, ...)`), and a
+  new read belongs on `self.read_engine.connect()` (one round trip), not `self.engine.connect()` (three).
+
+**Which DSN.** Verbatim quotes from the official documentation:
+
+| endpoint | what the documentation says | here |
+|---|---|---|
+| Direct, `db.<ref>.supabase.co:5432` | "Use it for persistent backends, such as virtual machines (VMs) and long-running containers." It is IPv6-only unless the project has the IPv4 add-on ([connecting](https://supabase.com/docs/guides/database/connecting-to-postgres)). On the SQLAlchemy page: "For stationary servers, such as VMs and long-running containers, it is recommended to use your direct connection string" ([using SQLAlchemy](https://supabase.com/docs/guides/troubleshooting/using-sqlalchemy-with-supabase-FUqebT)) | The documented first choice for a long-lived process, if your host has IPv6 (`curl -6 https://ifconfig.co/ip`). Compare it with `scripts/db_timing.py`. |
+| Session pooler, `aws-N-<region>.pooler.supabase.com:5432` | "Use it as an alternative to a direct connection when you connect from an IPv4-only network." (connecting page) | **The current DSN; keep it** unless direct works from your network. |
+| Transaction pooler, `...:6543` | "Use it for serverless and edge functions, which open many short-lived connections." "Transaction mode does not support prepared statements." "Session-level state is lost between transactions. This covers set and reset, session-level advisory locks, listen and notify, and temporary tables." (connecting page). "When using transaction mode, you should use the NullPool setting" (SQLAlchemy page) | Do not use it: it is meant for serverless, and this app keeps a pool (psycopg2 sends the merged query text, so prepared statements would not bite, but NullPool would mean a new TLS handshake and login for every query). |
+| Cloudflare Hyperdrive | "It will provide a secure connection string that is only accessible from your Worker" ([Hyperdrive get started](https://developers.cloudflare.com/hyperdrive/get-started/)); its local-development mode bypasses the pooling ([docs](https://developers.cloudflare.com/hyperdrive/configuration/local-development/)) | **Not applicable** to a Streamlit process. Text saying the database is "via Cloudflare Hyperdrive" (`.env` header comments, plan docs, older versions of `db.py` and `compose.yml`) is stale. |
+
+Two older claims are not supported by the documentation: that Hyperdrive pools this app's connections (above),
+and that 5432 is needed "so DDL and `SELECT ... FOR UPDATE` work". Neither Supabase's nor PgBouncer's documentation
+says DDL or `FOR UPDATE` fail in transaction mode; what they document is the loss of session state (`SET`, session
+advisory locks, `LISTEN`/`NOTIFY`, temporary tables) and of prepared statements. For a persistent backend
+Supabase says "an application-side pooler is enough on its own"
+([pooling and limits](https://supabase.com/docs/guides/database/connecting-to-postgres/pooling-and-limits)),
+which is what SQLAlchemy's pool is here. No pooler-versus-direct latency figure is published, and the region
+matters more than the mode ("Choose the location closest to your users for the best performance",
+[regions](https://supabase.com/docs/guides/platform/regions)): measure your own before deciding.
+
+**Connection settings.** Defaults live in `db_connection.py`; any libpq one can be overridden in the DSN
+(`?keepalives_idle=60`). They are judgment calls informed by the documentation, not vendor-prescribed values:
+
+| setting | default | why |
+|---|---|---|
+| `connect_timeout` | 10 s | libpq: "Zero, negative, or not specified means wait indefinitely" ([libpq](https://www.postgresql.org/docs/current/libpq-connect.html)). A black-holed host would freeze the page instead of showing the "unreachable" notice. |
+| `keepalives_idle` / `_interval` / `_count` | 30 s / 10 s / 3 | Linux's default idle time is 7200 s ([tcp(7)](https://man7.org/linux/man-pages/man7/tcp.7.html)); Supabase notes "the connection pooler or NAT may drop inactive connections" ([troubleshooting](https://supabase.com/docs/guides/troubleshooting/troubleshooting-connect_timeout-or-hanging-queries-in-vercel-serverless-functions-775f92)). A dead peer is noticed after 30 + 3 x 10 s of silence. |
+| `tcp_user_timeout` | 30 s | Keepalives only run on an idle socket; this bounds data that is sent but never acknowledged. Otherwise TCP retransmits 15 times, "approximately between 13 to 30 minutes" (tcp(7)). Needs libpq 12+; the psycopg2 wheel bundles libpq 17. |
+| `pool_recycle`, `INCIDENT_DB_POOL_RECYCLE_SECONDS` | 600 s | Supavisor has a `client_idle_timeout` setting ("the maximum duration of an idle client connection", [tenants](https://github.com/supabase/supavisor/blob/main/docs/configuration/tenants.md)) but the hosted value is **not documented**, so keep connections young. `scripts/db_timing.py --idle 60,300,600` measures whether an idle connection survives on your project. |
+| `INCIDENT_DB_HEALTHCHECK_TTL_SECONDS` | 15 | See "Health probe". |
+
+**TLS.** `sslmode=require` is Supabase's floor, but it "encrypts the connection but doesn't verify the server, so
+it doesn't stop a man-in-the-middle attack"; Supabase and libpq both recommend `verify-full` with the CA
+certificate from the dashboard (`sslrootcert=...`). A *new* connection also pays for TLS and login. libpq's
+documentation does not count those round trips; Cloudflare counts "the TCP handshake (1x), TLS negotiation (3x),
+and database authentication (3x)" for its own path (a vendor figure, not measured here), which is why the pools
+keep connections alive rather than reconnecting. `sslnegotiation=direct` (libpq 17+, needs `sslmode=require` or
+higher) "requires one fewer round trip", but whether Supavisor accepts it is not documented, so it is not enabled.
+Without TLS or SCRAM the harness measures 1 round trip for a new connection, plus roughly 7-9 more, once per
+engine, for SQLAlchemy's first-use setup.
+
+**Measure on your own network.** `uv run python scripts/db_timing.py` compares the current settings with the
+previous ones over your real DSN: read-only, prints no secrets (never the DSN, host, user, password, database name
+or an IP address) and writes nothing; add `--idle 60,300` to test whether idle connections survive. To reproduce the
+table above locally: `uv run --with pgserver python scripts/measure_db_roundtrips.py` (a disposable Postgres from
+a wheel; no credentials).
 
 ### Mock LLM (exercise the AI-trigger path with zero GPU)
 
@@ -251,6 +359,8 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
 | `INCIDENT_HTTP_TIMEOUT_SECONDS` | HTTP client timeout in seconds (code default `15.0`) | Set only if the default is wrong; VM value goes in the `generated.env.*` copy |
 | `INCIDENT_CONSOLE_PORT` | Host port for the Streamlit server in the VM deploy (default `8501`) | Set in the `generated.env.*` copy only if non-default |
+| `INCIDENT_DB_HEALTHCHECK_TTL_SECONDS` | Seconds a good database answer lets a page run skip its health probe (default `15`; `0` probes every run) | Set only if the default is wrong; see "Database connection" |
+| `INCIDENT_DB_POOL_RECYCLE_SECONDS` | Max age of a pooled connection before it is replaced (default `600`; `-1` never) | Tune from `scripts/db_timing.py --idle ...`; see "Database connection" |
 
 ## VM deploy
 
