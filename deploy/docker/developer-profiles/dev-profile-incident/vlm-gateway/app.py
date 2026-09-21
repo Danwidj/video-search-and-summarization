@@ -34,8 +34,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from fastapi.responses import Response
 
 app = FastAPI(title="VLM Gateway", version="0.1.0")
 
@@ -75,7 +74,7 @@ async def chat_completions(request: Request) -> Response:
     try:
         body: dict[str, Any] = await request.json()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {exc}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {exc}") from exc
 
     upstream_url = f"{base_url}/chat/completions"
     headers = {
@@ -94,12 +93,28 @@ async def chat_completions(request: Request) -> Response:
             raise HTTPException(
                 status_code=502,
                 detail=f"Upstream request failed: {type(exc).__name__}: {exc}",
-            )
+            ) from exc
 
-    # Return upstream response verbatim (status code, headers, body)
+    # httpx transparently decodes compressed response bodies. Forwarding the
+    # upstream content-length/content-encoding after that transformation makes
+    # strict clients (including Node's fetch/undici) reject an otherwise valid
+    # response with UND_ERR_RES_CONTENT_LENGTH_MISMATCH. Hop-by-hop headers are
+    # likewise owned by this connection, not the upstream connection.
+    excluded_headers = {
+        "connection",
+        "content-encoding",
+        "content-length",
+        "transfer-encoding",
+    }
+    response_headers = {
+        key: value for key, value in upstream_resp.headers.items() if key.lower() not in excluded_headers
+    }
+
+    # Preserve application headers and status; Starlette calculates the
+    # transport headers for the actual bytes returned below.
     return Response(
         content=upstream_resp.content,
         status_code=upstream_resp.status_code,
-        headers=dict(upstream_resp.headers),
+        headers=response_headers,
         media_type=upstream_resp.headers.get("content-type", "application/json"),
     )

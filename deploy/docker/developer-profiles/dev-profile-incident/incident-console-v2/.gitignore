@@ -1,0 +1,29 @@
+# Dependencies and Next.js build output
+node_modules/
+.next/
+out/
+.swc/
+.turbo/
+.vercel/
+*.tsbuildinfo
+
+# Local runtime configuration and generated runtime environment
+.env*
+generated.env*
+*.pem
+
+# Test and package-manager artifacts
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+
+# Local editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
