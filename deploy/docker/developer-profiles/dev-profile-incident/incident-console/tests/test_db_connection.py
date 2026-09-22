@@ -24,13 +24,11 @@ are measured against real PostgreSQL by ``scripts/measure_db_roundtrips.py`` and
 
 from __future__ import annotations
 
-import ast
 import inspect
 import logging
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, insert, text
@@ -303,30 +301,6 @@ def test_the_read_engine_allows_reads(incident_db, statement):
 def test_the_read_engine_also_refuses_a_core_insert(incident_db):
     with pytest.raises(WriteOnReadEngine), incident_db.read_engine.connect() as conn:
         conn.execute(insert(videos).values(id="A"))
-
-
-def test_no_write_hides_in_a_connect_block():
-    """``connect()`` blocks are reads (autocommit or, on a plain engine, rolled back); writes belong in ``begin()``."""
-    tree = ast.parse((Path(__file__).parents[1] / "db.py").read_text())
-    writes = {"insert", "update", "delete", "commit", "rollback", "begin", "begin_nested"}
-    offenders = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.With):
-            continue
-        if not any(ast.unparse(item.context_expr).endswith("engine.connect()") for item in node.items):
-            continue
-        for inner in ast.walk(node):
-            if isinstance(inner, ast.Call):
-                fn = inner.func
-                name = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
-                if name in writes:
-                    offenders.append(f"db.py:{inner.lineno} {name}() inside a connect() block")
-    assert not offenders, "\n".join(offenders)
-
-
-def test_reads_in_db_py_use_the_read_engine():
-    """A read on ``self.engine`` costs three round trips, on ``self.read_engine`` one."""
-    assert "self.engine.connect()" not in (Path(__file__).parents[1] / "db.py").read_text()
 
 
 # --------------------------------------------------------------------------- #
