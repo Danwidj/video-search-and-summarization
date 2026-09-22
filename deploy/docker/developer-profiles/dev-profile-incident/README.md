@@ -214,14 +214,15 @@ Both console frontends run on each teammate's laptop, connecting either to the s
 
    ```dotenv
    # =============================================================================
-   # 1. DATABASE CONNECTION (Supabase Postgres via Session Pooler)
+   # 1. DATABASE CONNECTION (Supabase Postgres)
    # =============================================================================
    # Direct PostgreSQL connection string (SQLAlchemy sync URL) used by db.py.
    # Format: postgresql+psycopg2://<USER>:<PASSWORD>@<HOST>:5432/<DATABASE>?sslmode=require
    #
    # CRITICAL FORMAT NOTES:
-   #  - Port: MUST use 5432 (session pooler mode) rather than 6543 (transaction pooler)
-   #    so DDL, schema initialization, and session locks work properly.
+   #  - Port/endpoint: use the session pooler (5432), or the direct connection if your
+   #    network has IPv6 - not the transaction pooler (6543). See incident-console/README.md
+   #    "Database connection" for the documented reasons and measurements.
    #  - URL Encoding: Percent-encode special characters in the password (e.g. "@" -> "%40",
    #    ":" -> "%3A", "#" -> "%23").
    #  - Purpose: Backs all incident review, edits, verification, notifications, and dashboard metrics.
