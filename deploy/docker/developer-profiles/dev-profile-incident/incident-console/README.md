@@ -32,6 +32,15 @@ data (see the next section). Other dependencies still degrade gracefully:
 - **No `INCIDENT_VIDEO_BASE_URL` and no R2 keys** → playback shows the stored key
   and the incident window instead of a player.
 
+The incident library (`pages/2_Report_Review.py`) is deliberately lazy about video:
+each card shows a poster and fetches its clip only when you press **Load preview**
+(one clip per click, remembered for the rest of the session). Streamlit mounts
+whatever a run renders - a collapsed `st.expander` or an unselected `st.tabs` tab
+still loads its media (checked in Chrome on Streamlit 1.63) - so a `<video>` per card
+opened about four media requests per incident on every load and refresh. Keep any new
+per-card media behind the same kind of opt-in (a `st.fragment` gated by
+`st.session_state`).
+
 ## Supabase Postgres + the 8-mock seed
 
 With `INCIDENT_DB_DSN` set, the pages read and write incidents through `db.py`
