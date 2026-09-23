@@ -52,6 +52,17 @@ for the id it derives instead, and `pages/2_Report_Review.py` (which consolidate
 report generation via `catalog_actions.upload_and_record()` and `analyze_incident()`; the separate `1_Catalog.py`
 page was removed) for the UI built on it.
 
+## incident-console Report Review lazy previews
+
+`pages/2_Report_Review.py`'s incident library fetches a video preview only when the reviewer clicks
+"Load preview" on that card (state in `st.session_state`, rendering scoped to an `st.fragment` so the
+click reruns only that card). This exists because Streamlit mounts and executes whatever a run
+renders even inside a collapsed `st.expander` or an unselected `st.tabs` tab — visually hiding content
+does not defer fetching it, which must be confirmed with a real browser's network panel, not assumed.
+Apply the same `st.fragment` + `st.session_state` opt-in pattern to any future per-row expensive
+content on this page; see `card_preview()`'s docstring and the "lazy about video" note in
+`incident-console/README.md` for detail.
+
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
 [`deploy/docker/developer-profiles/dev-profile-incident/dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
