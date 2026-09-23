@@ -27,6 +27,7 @@ import streamlit as st
 from agent_client import AgentClient
 from catalog_actions import upload_and_record
 from db_reports import DBReports
+from r2_videos import configured as r2_configured
 from report_detail import (
     confidence_label,
     normalized,
@@ -42,7 +43,9 @@ def render_card_preview(url: str | None, start: int | None) -> None:
     if not url:
         st.markdown('<div class="card-preview"><div class="card-preview-poster">🎥</div></div>', unsafe_allow_html=True)
         return
-    source = json.dumps(url)
+    # The URL comes from the database / bucket listing and lands inside a <script>; escape "<" so an
+    # object key containing "</script>" cannot close the tag and inject markup into this same-origin iframe.
+    source = json.dumps(url).replace("<", "\\u003c")
     offset = int(start or 0)
     st.iframe(
         f"""
@@ -62,6 +65,47 @@ def render_card_preview(url: str | None, start: int | None) -> None:
         """,
         height=185,
     )
+
+
+def _clip_playable(key: str | None) -> bool:
+    """Network-free check that a linked clip can be played at all (R2 signing or a media base URL)."""
+    return bool(key) and (r2_configured() or video_playback_url({"r2_key": key}) is not None)
+
+
+def _request_preview(report_id: str) -> None:
+    st.session_state[f"preview_loaded_{report_id}"] = True
+
+
+@st.fragment
+def card_preview(handle: DBReports, report_id: str, start: int | None) -> None:
+    """One library card's preview area; the clip is fetched only once the reviewer asks for it.
+
+    Mounting a ``<video>`` per card made every library render open ~4 media requests per incident (most
+    of them cancelled mid-flight) and cost one ``get_video`` database round trip per card just to build
+    the URL. A preview is now a per-incident opt-in remembered in ``st.session_state``. This is a
+    fragment, so the click reruns only this card: no list query, no other card, no other preview. The
+    button's callback flips the flag before the fragment redraws, so a card shows either the poster with
+    its button or the player, never both.
+    """
+    if not st.session_state.get(f"preview_loaded_{report_id}"):
+        render_card_preview(None, start)
+        st.button(
+            "Load preview",
+            key=f"load_preview_{report_id}",
+            icon=":material/play_circle:",
+            type="tertiary",
+            width="stretch",
+            on_click=_request_preview,
+            args=(report_id,),
+        )
+        return
+    video = handle.get_video(report_id)
+    url = video_playback_url({"r2_key": video.get("Filepath")}) if video and video.get("Filepath") else None
+    if url:
+        render_card_preview(url, start)
+    else:
+        render_card_preview(None, start)
+        st.caption("Preview unavailable: no playable link for this clip.")
 
 
 st.set_page_config(page_title="Incident Reports - RISE UP", layout="wide")
@@ -137,13 +181,19 @@ else:
             st.session_state[key] = value
     f1, f2 = st.columns([2, 1])
     kw = f1.text_input("Search incidents", placeholder="Description, type, filename…", key="review_keyword")
+    all_reports = handle.list_reports()
     type_q = f2.selectbox(
         "Type",
-        ["All", *sorted({r["incident_type"] for r in handle.list_reports() if r["incident_type"]})],
+        ["All", *sorted({r["incident_type"] for r in all_reports if r["incident_type"]})],
         key="review_type",
     )
     st.session_state["library_filters"] = {key: st.session_state[key] for key in ("review_keyword", "review_type")}
-    reports = handle.list_reports(incident_type=type_q, keyword=kw.strip())
+    # With no filter active the unfiltered listing above already is the answer; skip the second query.
+    reports = (
+        all_reports
+        if type_q == "All" and not kw.strip()
+        else handle.list_reports(incident_type=type_q, keyword=kw.strip())
+    )
     active = []
     if kw.strip():
         active.append(f"query “{kw.strip()}”")
@@ -171,12 +221,8 @@ else:
                 description = report["description"] or "No description supplied for this incident."
                 safe_description = html.escape(description[:145] + ("…" if len(description) > 145 else ""))
                 st.markdown(f'<div class="incident-card-description">{safe_description}</div>', unsafe_allow_html=True)
-                video = handle.get_video(report["id"])
-                video_url = (
-                    video_playback_url({"r2_key": video.get("Filepath")}) if video and video.get("Filepath") else None
-                )
-                if video_url:
-                    render_card_preview(video_url, fields["Start_Timestamp"])
+                if _clip_playable(report["r2_key"]):
+                    card_preview(handle, report["id"], fields["Start_Timestamp"])
                 else:
                     render_card_preview(None, fields["Start_Timestamp"])
                 st.markdown(

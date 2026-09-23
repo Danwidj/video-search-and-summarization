@@ -20,6 +20,9 @@ The database is the hermetic SQLite fixture; R2 stays stubbed unconfigured.
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -33,6 +36,34 @@ def db_pages(incident_db, monkeypatch):
     monkeypatch.setattr("db.is_configured", lambda: True)
     monkeypatch.setattr("db.get_db", lambda: incident_db)
     return incident_db
+
+
+@pytest.fixture
+def playable_pages(db_pages, monkeypatch):
+    """``db_pages`` plus a media base URL, so every incident *could* render a clip preview."""
+    monkeypatch.setattr("config.video_base_url", lambda: "https://media.example.com")
+    return db_pages
+
+
+def _first_incident_id(database) -> str:
+    return sorted(r["incident_id"] for r in database.list_latest_incidents())[0]
+
+
+def _load_preview_buttons(app):
+    return [b for b in app.button if b.label == "Load preview"]
+
+
+def _count_calls(monkeypatch, database, method: str) -> list:
+    """Wrap ``database.<method>`` so each call's arguments are appended to the returned list."""
+    calls: list = []
+    real = getattr(database, method)
+
+    def wrapper(*args, **kwargs):
+        calls.append(args or kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(database, method, wrapper)
+    return calls
 
 
 def test_report_review_lists_the_36_from_the_db(db_pages):
@@ -67,11 +98,12 @@ def test_report_review_edit_persists_across_a_rerun(db_pages):
     assert reloaded["description"] == "persisted through the database"
 
 
-def test_report_review_card_preview_does_not_use_deprecated_components_html(db_pages, monkeypatch):
+def test_report_review_card_preview_does_not_use_deprecated_components_html(playable_pages):
     """Regression: the incident-card video preview used to call the deprecated
     ``st.components.v1.html`` once per card, spamming the log on every list
     render. It must render through ``st.iframe`` instead, with no deprecation
-    warning logged.
+    warning logged. Previews are lazy now, so one is requested first to make the
+    ``st.iframe`` path actually run.
 
     ``streamlit.deprecation_util``'s logger has ``propagate=False``, so
     pytest's ``caplog`` (which listens on the root logger) can't see its
@@ -79,7 +111,7 @@ def test_report_review_card_preview_does_not_use_deprecated_components_html(db_p
     """
     import logging
 
-    monkeypatch.setattr("ui.video_playback_url", lambda video_row: "https://example.com/clip.mp4")
+    rid = _first_incident_id(playable_pages)
     records: list[logging.LogRecord] = []
     handler = logging.Handler()
     handler.emit = records.append  # type: ignore[method-assign]
@@ -87,10 +119,149 @@ def test_report_review_card_preview_does_not_use_deprecated_components_html(db_p
     deprecation_logger.addHandler(handler)
     try:
         app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+        app.button(key=f"load_preview_{rid}").click().run()
     finally:
         deprecation_logger.removeHandler(handler)
     assert not app.exception
+    assert len(app.get("iframe")) == 1
     assert not any("components.v1.html" in r.getMessage() for r in records)
+
+
+def test_library_renders_no_previews_until_requested(playable_pages, monkeypatch):
+    """Regression: the library mounted a ``<video>`` iframe per card (36 at once), which opened
+    ~4 media requests per incident (most cancelled) and one ``get_video`` database round trip
+    per card. Nothing must be fetched or looked up until a preview is asked for."""
+    lookups = _count_calls(monkeypatch, playable_pages, "get_latest_incident")
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    assert not app.exception
+    assert app.get("iframe") == []
+    assert len(_load_preview_buttons(app)) == 36
+    assert lookups == []
+
+
+def test_load_preview_renders_only_the_requested_incident(playable_pages, monkeypatch):
+    rid = _first_incident_id(playable_pages)
+    key = playable_pages.get_latest_incident(rid)["video_filepath"]
+    lookups = _count_calls(monkeypatch, playable_pages, "get_latest_incident")
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    app.button(key=f"load_preview_{rid}").click().run()
+    assert not app.exception
+    frames = app.get("iframe")
+    assert len(frames) == 1
+    assert f"https://media.example.com/{key}" in frames[0].proto.srcdoc
+    assert 'preload="metadata"' in frames[0].proto.srcdoc
+    assert lookups == [(rid,)]
+    assert len(_load_preview_buttons(app)) == 35
+
+
+def test_loaded_preview_survives_a_rerun_and_a_filter_change(playable_pages):
+    rows = playable_pages.list_latest_incidents()
+    rid = _first_incident_id(playable_pages)
+    incident_type = next(r["type"] for r in rows if r["incident_id"] == rid)
+    same_type = [r for r in rows if r["type"] == incident_type]
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    app.button(key=f"load_preview_{rid}").click().run()
+    app.run()
+    assert len(app.get("iframe")) == 1
+    app.selectbox(key="review_type").set_value(incident_type).run()
+    assert not app.exception
+    assert len(app.get("iframe")) == 1
+    assert len(_load_preview_buttons(app)) == len(same_type) - 1
+
+
+def test_incident_without_a_linked_clip_offers_no_preview(playable_pages):
+    rid = _first_incident_id(playable_pages)
+    playable_pages.update_video(rid, filepath=None)
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    assert not app.exception
+    assert len(_load_preview_buttons(app)) == 35
+    assert all(b.key != f"load_preview_{rid}" for b in app.button)
+
+
+def test_library_without_a_playback_source_offers_no_preview(db_pages):
+    """No media base URL and no R2 keys: nothing could ever play, so cards stay a plain poster
+    (as before) rather than offering a button that can only fail."""
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    assert not app.exception
+    assert len([b for b in app.button if b.label == "View and Verify Details"]) == 36
+    assert _load_preview_buttons(app) == []
+    assert app.get("iframe") == []
+
+
+def test_load_preview_for_an_unresolvable_clip_says_so(playable_pages, monkeypatch):
+    """If the clip cannot be resolved when the click arrives (row re-linked or removed since the
+    list rendered) the card must explain itself instead of silently doing nothing."""
+    rid = _first_incident_id(playable_pages)
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    monkeypatch.setattr("db_reports.DBReports.get_video", lambda self, report_id: {})
+    app.button(key=f"load_preview_{rid}").click().run()
+    assert not app.exception
+    assert app.get("iframe") == []
+    assert any("Preview unavailable" in c.value for c in app.caption)
+
+
+def test_library_default_load_lists_incidents_once(db_pages, monkeypatch):
+    """With no filter active the type options and the card list come from one query, not two."""
+    incident_type = db_pages.list_latest_incidents()[0]["type"]
+    listings = _count_calls(monkeypatch, db_pages, "list_latest_incidents")
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    assert not app.exception
+    assert len(listings) == 1
+    app.selectbox(key="review_type").set_value(incident_type).run()
+    assert not app.exception
+    # The rerun re-reads the unfiltered options and then the filtered list.
+    assert len(listings) == 1 + 2
+
+
+def test_library_load_makes_no_r2_calls_and_a_preview_signs_only_its_own_clip(db_pages, monkeypatch):
+    """With R2 configured the old library signed a URL for every card on each cold cache (a boto3
+    client per key). Loading the library must not touch R2 at all, and a requested preview signs
+    just its own object."""
+    import r2_videos
+
+    signed: list[str] = []
+
+    class FakeR2:
+        def generate_presigned_url(self, operation, Params, ExpiresIn):  # noqa: N803 - boto3's signature
+            signed.append(Params["Key"])
+            return f"https://r2.example.com/{Params['Bucket']}/{Params['Key']}?X-Amz-Signature=test"
+
+        def get_paginator(self, name):
+            raise AssertionError("the library must not list the bucket")
+
+    monkeypatch.setenv("R2_BUCKET", "clips")
+    monkeypatch.setattr("db_reports.configured", lambda: True)
+    monkeypatch.setattr("r2_videos.configured", lambda: True)
+    monkeypatch.setattr("r2_videos.client", FakeR2)
+    r2_videos.playback_url.clear()
+    try:
+        rid = _first_incident_id(db_pages)
+        key = db_pages.get_latest_incident(rid)["video_filepath"]
+        app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+        assert not app.exception
+        assert signed == []
+        app.button(key=f"load_preview_{rid}").click().run()
+        assert not app.exception
+        assert signed == [key]
+        assert f"https://r2.example.com/clips/{key}?X-Amz-Signature=test" in app.get("iframe")[0].proto.srcdoc
+    finally:
+        r2_videos.playback_url.clear()
+
+
+def test_preview_url_cannot_break_out_of_its_script_tag(playable_pages):
+    """The clip URL is embedded in a same-origin iframe's <script>; an object key containing
+    ``</script>`` must stay data, and the URL must still round-trip intact."""
+    rid = _first_incident_id(playable_pages)
+    hostile = "x</script><script>alert(1)</script>.mp4"
+    playable_pages.update_video(rid, filepath=hostile)
+    app = AppTest.from_file("../pages/2_Report_Review.py", default_timeout=15).run()
+    app.button(key=f"load_preview_{rid}").click().run()
+    assert not app.exception
+    srcdoc = app.get("iframe")[0].proto.srcdoc
+    assert "</script><script>alert" not in srcdoc
+    assert srcdoc.count("</script>") == 1
+    embedded = re.search(r'src=("(?:[^"\\]|\\.)*");', srcdoc)
+    assert embedded and json.loads(embedded.group(1)) == f"https://media.example.com/{hostile}"
 
 
 def test_report_review_missing_record_shows_notice(db_pages):
