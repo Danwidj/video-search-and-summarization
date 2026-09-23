@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import { IncidentReport } from '@/components/incident-report';
 import type { AnalysisReport } from '@/lib/analysis/schema';
+import { isValidR2Key } from '@/lib/r2/key';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';
 
 type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
@@ -53,10 +54,6 @@ async function apiJson<T>(url: string, body: unknown): Promise<T> {
   const payload = (await response.json()) as T & ApiError;
   if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
   return payload;
-}
-
-function isValidR2Key(key: unknown): key is string {
-  return typeof key === 'string' && key.length > 0 && !key.startsWith('/') && !key.includes('..');
 }
 
 /**

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { Readable } from 'node:stream';
+
 import { NextResponse } from 'next/server';
 
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { putR2Video } from '@/lib/r2/config';
+import { MAX_R2_PUT_BYTES, putR2Video } from '@/lib/r2/config';
 
 export const maxDuration = 120;
 
@@ -26,13 +28,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'file, sensorId, and filename are required' }, { status: 400 });
     }
 
+    if (file.size > MAX_R2_PUT_BYTES) {
+      return NextResponse.json({ error: 'Video exceeds the R2 single-upload size limit' }, { status: 413 });
+    }
+
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
 
     const safeName = filename.replace(/[^A-Za-z0-9._-]/g, '') || 'video.mp4';
     const key = `uploads/${encodeURIComponent(sensorId.trim())}/${safeName}`;
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    await putR2Video(config, key, bytes, file.type || 'video/mp4');
+    const body = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]);
+    await putR2Video(config, key, body, file.type || 'video/mp4', file.size);
 
     return NextResponse.json({ filePath: key });
   } catch (error) {
