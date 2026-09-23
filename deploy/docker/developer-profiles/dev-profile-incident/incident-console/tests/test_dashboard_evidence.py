@@ -186,13 +186,15 @@ def count_sql(db: IncidentDB):
     def on_checkout(dbapi_connection, connection_record, connection_proxy):
         checkouts.append(1)
 
-    event.listen(db.engine, "before_cursor_execute", on_execute)
-    event.listen(db.engine, "checkout", on_checkout)
+    for engine in db.engines:
+        event.listen(engine, "before_cursor_execute", on_execute)
+        event.listen(engine, "checkout", on_checkout)
     try:
         yield statements, checkouts
     finally:
-        event.remove(db.engine, "before_cursor_execute", on_execute)
-        event.remove(db.engine, "checkout", on_checkout)
+        for engine in db.engines:
+            event.remove(engine, "before_cursor_execute", on_execute)
+            event.remove(engine, "checkout", on_checkout)
 
 
 @pytest.fixture

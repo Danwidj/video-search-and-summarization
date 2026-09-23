@@ -89,8 +89,9 @@ def instrument(handle: IncidentDB, delay: dict) -> dict:
         counters["checkouts"] += 1
         time.sleep(delay["checkout"])
 
-    event.listen(handle.engine, "before_cursor_execute", on_execute)
-    event.listen(handle.engine, "checkout", on_checkout)
+    for engine in handle.engines:
+        event.listen(engine, "before_cursor_execute", on_execute)
+        event.listen(engine, "checkout", on_checkout)
     return counters
 
 
@@ -154,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
             handle.init_schema()
             seed(handle)
             count, rows = run(handle, args.latency_ms, args.checkout_round_trips, args.repeats, injected=True)
-            handle.engine.dispose()
+            handle.dispose()
         extra = f" + {args.checkout_round_trips} round trips per checkout" if args.checkout_round_trips else ""
         title = f"{count} incidents, SQLite with an injected delay per statement{extra} (a model, not Postgres)"
 
