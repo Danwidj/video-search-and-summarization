@@ -341,6 +341,34 @@ uv run pytest
 Fast and hermetic — SQLite fixture for the data layer, `httpx.MockTransport`
 for the agent client. No live Postgres / agent / GPU.
 
+### Dashboard query cost
+
+The Dashboard fetches every listed incident's entities / instruments / assets
+with `IncidentDB.list_evidence_batch` (`db.py`): three statements on one
+connection, however many incidents there are. It matches `(incident_id,
+model_run_id)` pairs rather than incident ids, so an incident with several model
+runs never mixes runs. `dashboard_data.py` caches that for 30 s
+(`st.cache_data`), so a widget click reruns the script without querying evidence
+again. The cache is cleared by `catalog_actions.analyze_and_refresh` (the agent
+rewrites evidence in its own process) and otherwise expires by TTL: evidence
+written by anything else — the agent on its own, a seed script, another
+reviewer's console — can be up to 30 s stale. The incident list is not cached,
+so edits and review status show on the Dashboard immediately.
+
+Do not fetch per incident inside a page loop: over psycopg2 each
+`engine.connect()` also costs a pre-ping, a `BEGIN` and a `ROLLBACK` round trip,
+so one small query is about four round trips to a remote Postgres.
+`scripts/bench_dashboard_queries.py` prints the SQL statements, connection
+checkouts and wall-clock of the old per-incident loop next to the batched fetch
+(cache miss and hit):
+
+```bash
+# SQLite + a delay injected per statement: a model of a remote Postgres, not a measurement
+uv run python scripts/bench_dashboard_queries.py --latency-ms 0 30 80 --checkout-round-trips 3
+# An existing database, read-only, over its real network (nothing is written or printed)
+uv run python scripts/bench_dashboard_queries.py --dsn "$INCIDENT_DB_DSN"
+```
+
 ### Lint
 
 ```bash
@@ -390,7 +418,8 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 |---|---|
 | `app.py` | Entry point / navigation home + environment panel |
 | `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
-| `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed) |
+| `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed; evidence via `dashboard_data.py`) |
+| `dashboard_data.py` | Dashboard evidence path: batched fetch (`IncidentDB.list_evidence_batch`), 30 s `st.cache_data`, `clear_evidence_cache()`, and the flattening into `dashboard_view`'s row shapes |
 | `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos` / `queries` / `model_runs`, model-output `incidents` / `entities` / `instruments` / `assets` (keyed by `model_run_id`), ground-truth `gt_incidents` / `gt_entities` / `gt_instruments` / `gt_assets`, `entity_matches` / `instrument_matches` / `asset_matches`, `review_status`, `notifications`, `severity_eval_log` |
 | `db_reports.py` | Postgres-backed Incident view model (edits persist; reads the most recent model run per incident) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
@@ -400,8 +429,9 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `scripts/seed_gt_demo.py` | 5-incident Tier 1 GT-evaluation demo set: real CSV-fixture ground truth + a deterministically perturbed model run (`MR-EVAL-DEMO`), independent one-time idempotent importer |
+| `scripts/bench_dashboard_queries.py` | Statements / connection checkouts / wall-clock of the Dashboard evidence fetch, old per-incident loop vs batched (SQLite model with injected latency, or `--dsn` read-only) |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
-| `catalog_actions.py` | Pure (no `streamlit`) upload/record helper used by the Incident Reports upload flow, incl. the `videos.id`-fitting `derive_video_id()` |
+| `catalog_actions.py` | Upload/analyze orchestration (no `st.*` calls) used by the Incident Reports upload flow, incl. the `videos.id`-fitting `derive_video_id()` and `analyze_and_refresh()` (analyze, then clear the Dashboard's cached evidence) |
 | `incident_report.py` | `IncidentReport` schema + `INCIDENT_TYPES` (road accident / burglary / explosion / fighting / animal) + pure helpers |
 | `config.py` | Env-driven configuration (`.env` then untracked `.env.local`) |
 | `theme.py` / `ui.py` | Shared look-and-feel and page helpers |

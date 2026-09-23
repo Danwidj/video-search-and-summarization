@@ -5,9 +5,6 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-
-
-
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
@@ -25,7 +22,7 @@ from urllib.parse import quote
 import streamlit as st
 
 from agent_client import AgentClient
-from catalog_actions import upload_and_record
+from catalog_actions import analyze_and_refresh, upload_and_record
 from db_reports import DBReports
 from r2_videos import configured as r2_configured
 from report_detail import (
@@ -138,7 +135,7 @@ def _upload_dialog() -> None:
             return
         video_id = result.data
         with st.spinner("Generating incident report..."):
-            analysis = AgentClient().analyze_incident(video_id)
+            analysis = analyze_and_refresh(AgentClient(), video_id)
         if analysis.ok:
             st.success("Video uploaded and report generated.")
         else:

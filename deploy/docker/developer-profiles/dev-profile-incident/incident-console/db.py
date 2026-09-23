@@ -53,6 +53,7 @@ Schema overview (multi-model-run + ground-truth evaluation):
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import (
@@ -69,7 +70,9 @@ from sqlalchemy import (
     and_,
     delete,
     func,
+    or_,
     select,
+    tuple_,
     update,
 )
 from sqlalchemy.engine import Engine, make_url
@@ -860,6 +863,61 @@ class IncidentDB:
             stmt = stmt.where(assets.c.model_run_id == model_run_id)
         with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
+
+    _EVIDENCE_TABLES = (
+        ("entities", entities, "entity_id"),
+        ("instruments", instruments, "instrument_id"),
+        ("assets", assets, "asset_id"),
+    )
+
+    def list_evidence_batch(
+        self, pairs: Iterable[tuple[str, str | None]]
+    ) -> dict[str, dict[tuple[str, str | None], list[dict]]]:
+        """Entities / instruments / assets for many ``(incident_id, model_run_id)`` pairs at once.
+
+        For every requested pair this returns what ``list_incident_entities`` /
+        ``list_incident_instruments`` / ``list_incident_assets`` would return for
+        it, in the same per-pair order, but in three statements on one connection
+        however many pairs are asked for (the per-pair form checks out its own
+        connection and runs three statements for every incident). A
+        ``model_run_id`` of ``None`` keeps its per-incident meaning of "no run
+        filter": every run's rows for that incident. The filter matches whole
+        pairs; matching ``incident_id`` alone would mix rows from different model
+        runs of the same incident.
+
+        Returns ``{"entities": {pair: rows}, "instruments": ..., "assets": ...}``
+        with an entry for every requested pair (``[]`` when it has no rows).
+        """
+        wanted = list(dict.fromkeys((incident_id, run) for incident_id, run in pairs))
+        result: dict[str, dict[tuple[str, str | None], list[dict]]] = {
+            name: {pair: [] for pair in wanted} for name, _, _ in self._EVIDENCE_TABLES
+        }
+        if not wanted:
+            return result
+        pinned = [pair for pair in wanted if pair[1] is not None]
+        any_run = [incident_id for incident_id, run in wanted if run is None]
+        with self.read_engine.connect() as conn:
+            for name, table, id_column in self._EVIDENCE_TABLES:
+                clauses = []
+                if pinned:
+                    clauses.append(tuple_(table.c.incident_id, table.c.model_run_id).in_(pinned))
+                if any_run:
+                    clauses.append(table.c.incident_id.in_(any_run))
+                stmt = (
+                    select(table)
+                    .where(or_(*clauses))
+                    .order_by(table.c.incident_id, table.c[id_column], table.c.model_run_id)
+                )
+                by_incident: dict[str, list[dict]] = {}
+                for row in conn.execute(stmt):
+                    values = _row_to_dict(row)
+                    by_incident.setdefault(values["incident_id"], []).append(values)
+                for incident_id, run in wanted:
+                    # Fresh lists and dicts per pair, as the per-incident methods return them.
+                    result[name][(incident_id, run)] = [
+                        dict(r) for r in by_incident.get(incident_id, []) if run is None or r["model_run_id"] == run
+                    ]
+        return result
 
     def clear_incident_evidence(self, incident_id: str, model_run_id: str) -> None:
         """Drop all entity/instrument/asset rows for one incident+run (seed re-import)."""
