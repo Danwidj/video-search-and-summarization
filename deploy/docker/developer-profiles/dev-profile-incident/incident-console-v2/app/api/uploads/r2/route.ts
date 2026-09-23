@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { NextResponse } from 'next/server';
@@ -35,7 +36,9 @@ export async function POST(request: Request) {
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
 
-    const safeName = filename.replace(/[^A-Za-z0-9._-]/g, '') || 'video.mp4';
+    const extMatch = /\.([A-Za-z0-9]{1,10})$/.exec(filename.trim());
+    const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : '.mp4';
+    const safeName = `${randomUUID()}${ext}`;
     const key = `uploads/${encodeURIComponent(sensorId.trim())}/${safeName}`;
     const body = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]);
     await putR2Video(config, key, body, file.type || 'video/mp4', file.size);
