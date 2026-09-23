@@ -123,6 +123,18 @@ of non-database side effects. Anything counting statements or checkouts must lis
 pools). `scripts/measure_db_roundtrips.py` measures round trips on a disposable Postgres; `scripts/db_timing.py` times
 a real DSN without printing secrets. Hyperdrive is Workers-only and does not apply to this Streamlit app.
 
+## incident-console Dashboard evidence path
+
+Never query per incident inside a page loop: over psycopg2 every `engine.connect()` also pays a pre-ping, `BEGIN` and
+`ROLLBACK` round trip, so the old Dashboard loop cost ~440 server round trips per rerun (~14 s at 30 ms RTT on a real
+Postgres). In `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`, `IncidentDB.list_evidence_batch`
+(`db.py`) fetches all evidence in 3 statements on the read-only engine (`self.read_engine`, consistent with every
+other read method - see "incident-console DB connection contract" above) and matches `(incident_id, model_run_id)`
+pairs - batching on `incident_id` alone mixes an incident's model runs. `dashboard_data.py` caches it (`st.cache_data`,
+30 s TTL); anything that rewrites evidence rows must call its `clear_evidence_cache()` (see
+`catalog_actions.analyze_and_refresh`). The incident list stays uncached. See the README's "Dashboard query cost" for
+`scripts/bench_dashboard_queries.py`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

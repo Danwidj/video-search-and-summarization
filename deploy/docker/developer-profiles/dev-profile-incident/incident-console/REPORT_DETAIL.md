@@ -10,7 +10,10 @@ the visible "database not configured" state and stop; there is no offline mode.
 With a DSN set, Incident Reports and Dashboard read and write incidents through
 `db.py` (`IncidentDB`) via the `db_reports.py` view model. Edits to the Incident
 fields round-trip through Supabase Postgres, so they survive refreshes and are
-immediately visible to the Dashboard.
+immediately visible to the Dashboard. The Dashboard reads the incident list
+fresh on every run but caches the linked entity / instrument evidence for up to
+30 seconds (`dashboard_data.py`); running an analysis from the upload dialog
+clears that cache.
 
 R2 footage is listed read-only and mapped once per Incident_ID. Existing
 filename matches win; when an incident filename does not exist in R2, the next
