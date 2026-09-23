@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ServiceConfiguration } from '@/lib/env';
-import { DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface R2Configuration {
@@ -37,6 +37,24 @@ export async function createR2PlaybackUrl(config: ServiceConfiguration, key: str
     new GetObjectCommand({ Bucket: r2.bucket, Key: key, ResponseContentDisposition: 'inline' }),
     { expiresIn: 3600 },
   );
+}
+
+export async function putR2Video(
+  config: ServiceConfiguration,
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const r2 = createR2Configuration(config);
+  if (!r2) throw new Error('R2 is not configured');
+  if (!key || key.startsWith('/') || key.includes('..')) throw new Error('Invalid R2 object key');
+
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: r2.endpoint,
+    credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
+  });
+  await client.send(new PutObjectCommand({ Bucket: r2.bucket, Key: key, Body: body, ContentType: contentType }));
 }
 
 export async function deleteR2Video(config: ServiceConfiguration, key: string): Promise<void> {
