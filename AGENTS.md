@@ -88,13 +88,17 @@ standalone executable scripts under
 `tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
 `clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` (at the top level of
 `dev-profile-incident/`, alongside `local-start.sh`) is the laptop-side one-command daily
-entry point: checks the VM deploy state over SSH, deploys the backend fresh if nothing is running
-(direct compose with `generated.env.remote` — `dev-profile.sh` has no `incident` profile), stops on
-a partial deploy, backgrounds the tunnel, then runs the local console. The VM-side scripts wrap the
-project's own canonical deploy scripts (`dev-profile.sh`, `cleanup_all_datalog.sh`) rather than
-hardcoding raw `docker`/`docker compose` invocations — see each script's header for the doc it is
-grounded in. `scripts/tunnel.sh`, `scripts/tunnel-check.sh`, and top-level `start.sh` are laptop-side only
-(SSH tunnel from laptop to the VM backend for the locally-run incident-console); never run them on kwanz-ws itself.
+entry point for **incident-console-v2** (it no longer launches the Streamlit v1 console — see
+`local-start.sh` or `incident-console/README.md` for that): it prompts for one of 3 backend modes
+(fully local mock; real VM agent + local vlm-gateway; real VM agent with analysis going direct to
+the VM's VLM NIM, experimental) and, for the two VM-backed modes, checks the VM deploy state over
+SSH, deploys the backend fresh if nothing is running (direct compose with `generated.env.remote` —
+`dev-profile.sh` has no `incident` profile), stops on a partial deploy, and backgrounds the tunnel.
+The VM-side scripts wrap the project's own canonical deploy scripts (`dev-profile.sh`,
+`cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker compose` invocations — see
+each script's header for the doc it is grounded in. `scripts/tunnel.sh`, `scripts/tunnel-check.sh`,
+and top-level `start.sh` are laptop-side only (SSH tunnel from laptop to the VM backend for the
+locally-run console); never run them on kwanz-ws itself.
 
 `vss-agent` and the analytics modules (`video-analytics-api`, `behavior-analytics`) run as native
 processes on `kwanz-ws` rather than Docker containers, managed by `scripts/native-services.sh`
