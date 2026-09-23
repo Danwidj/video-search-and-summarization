@@ -9,8 +9,8 @@ Developer profile for the incident search and reporting capstone (Daniel's
 team, NVIDIA NVAITC-sponsored). A video-driven incident search and reporting
 system built on this VSS blueprint fork. Two console frontends exist:
 
-- **`incident-console` (v1)** — Streamlit app, Postgres-backed incident review UI. Runs on each team member's laptop, connecting to the shared backend on `kwanz-ws` via SSH tunnel (or to a local mock backend).
-- **`incident-console-v2`** — Next.js App Router frontend for video upload, VLM analysis, incident reporting, review, and evaluation. Uses existing HTTP contracts (mock/real `vss-agent`, VLM gateway, Supabase/PostgREST, Cloudflare R2) without copying the v1 interface. Runs on each team member's laptop on port 3200.
+- **`incident-console` (v1)** — Streamlit app, Postgres-backed incident review UI. Runs on each team member's laptop, connecting to the shared backend on `kwanz-ws` via SSH tunnel (or to a local mock backend). Kept for reference; `./start.sh` no longer launches it (see below) — run it directly per [`incident-console/README.md`](incident-console/README.md) if you need it.
+- **`incident-console-v2`** — Next.js App Router frontend for video upload, VLM analysis, incident reporting, review, and evaluation. Uses existing HTTP contracts (mock/real `vss-agent`, VLM gateway, Supabase/PostgREST, Cloudflare R2) without copying the v1 interface. Runs on each team member's laptop on port 3200. This is what `./start.sh` launches.
 
 It reuses NVIDIA's `bp_developer_search` compose tag, so the deployed stack is a
 superset of everything the base + search pipelines need. The profile-exclusive
@@ -61,7 +61,7 @@ detailed Postgres schema specs, and eval methodology), see the companion files i
 - [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference); a `mock_data/` module is planned for a Postgres-schema mock of the console.
 - [`incident-plan/`](incident-plan/) — Technical reference docs (`incident-plan-implementation-local.md`, `-remote.md`, `-shared.md`).
 - [`scripts/`](scripts/) — Standalone deployment and operational scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `native-services.sh`, etc.).
-- [`start.sh`](start.sh) & [`local-start.sh`](local-start.sh) — Laptop-side entrypoint scripts (for v1 Streamlit console).
+- [`start.sh`](start.sh) — Laptop-side entrypoint for **v2**: prompts for a backend mode (mock / vm / vlm-direct), wires up the matching local services and/or VM SSH tunnel, then runs `incident-console-v2`. [`local-start.sh`](local-start.sh) is the v1 Streamlit console's local (mock-backend) entrypoint.
 
 ---
 
@@ -185,7 +185,7 @@ ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile
 
 ## 6. Laptop Setup: Secrets & Environment Files
 
-Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh` for v1; `incident-console-v2/README.md` for v2).
+Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` for v2, or `./scripts/tunnel.sh` manually for either) or to a local mock backend (`./local-start.sh` for v1; `./start.sh`'s mock mode, or `incident-console-v2/README.md`, for v2).
 
 **Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, all local credentials are consolidated into a single untracked file at the profile root (`dev-profile-incident/.env.local`), and each sub-service points to it via a relative symlink (`.env.local -> ../.env.local`):
 
@@ -353,8 +353,8 @@ on the VM** — an SSH tunnel connects the laptop to the VM backend. This
 supersedes an earlier setup where the v1 console ran as a shared container on
 the VM (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)).
 
-- **`incident-console` (v1):** Uses `./start.sh` (one-command: checks VM deploy state, deploys if needed, opens tunnel, starts Streamlit) or manual `./scripts/tunnel.sh` + Streamlit per its README.
-- **`incident-console-v2` (v2):** Uses the same SSH tunnel (`./scripts/tunnel.sh` forwards agent 8000, NIMs 30081/30082, ingress 7777). Configure `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (tunneled) and `VLM_GATEWAY_URL=http://localhost:8600` (if running gateway locally) or the tunneled VLM NIM endpoint. The v2 frontend does not have a dedicated `start.sh` entrypoint; run the tunnel manually, then `npm run dev` in `incident-console-v2/`. The mock-backend workflow (no VM) is documented in `incident-console-v2/README.md`.
+- **`incident-console-v2` (v2):** `./start.sh` — one command, interactive backend-mode picker (see below). This is the primary supported path.
+- **`incident-console` (v1):** No longer launched by `start.sh`. Run it directly: manual `./scripts/tunnel.sh` + Streamlit per [`incident-console/README.md`](incident-console/README.md), or `./local-start.sh` for the mock-backend loop.
 
 ### One command (recommended)
 
@@ -365,30 +365,52 @@ cd deploy/docker/developer-profiles/dev-profile-incident
 ./start.sh
 ```
 
-SSH access to kwanz-ws is per-person (see the manual flow below), so
-`start.sh` no longer hardcodes a VM username: it prompts for one, pre-filled
-with your local `$USER` as the default (just hit Enter if that matches your
-VM account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
+`start.sh` launches **incident-console-v2** only. It first prompts for which
+of 3 backend modes to run against (or read `VSS_BACKEND_MODE` non-interactively
+to skip the prompt):
+
+1. **`mock`** (default) — fully local, no VM/SSH at all. Starts
+   `mock-backend/base_profile_mock` on `:7777` and `vlm-gateway` on `:8600`,
+   both locally, and points v2 at them (`INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777`,
+   `VLM_GATEWAY_URL=http://127.0.0.1:8600`).
+2. **`vm`** — real VM agent (SSH deploy-check + tunnel, same as before) plus a
+   locally-run `vlm-gateway` on `:8600`. Points v2 at the tunneled agent
+   (`INCIDENT_AGENT_BASE_URL=http://localhost:8000`) and the local gateway
+   (`VLM_GATEWAY_URL=http://127.0.0.1:8600`).
+3. **`vlm-direct`** — real VM agent, but analysis bypasses the local
+   `vlm-gateway` process entirely and goes straight to the VM's own VLM NIM
+   through the tunnel (`VLM_GATEWAY_URL=http://localhost:30082`).
+   **EXPERIMENTAL** — this path is expected to work per `vlm-gateway/README.md`
+   (the NIM is OpenAI-chat-completions compatible), but has not been verified
+   against v2's exact multimodal request shape (`video_url` content parts);
+   `start.sh` prints a warning when this mode is chosen.
+
+Modes 2 and 3 reuse the same VM deploy-state check + SSH tunnel logic v1's
+`start.sh` always used. SSH access to kwanz-ws is per-person, so `start.sh`
+does not hardcode a VM username: it prompts for one, pre-filled with your
+local `$USER` as the default (just hit Enter if that matches your VM
+account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
 non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
 to override the login entirely, same as before. `scripts/tunnel.sh` resolves its VM
 login the same way.
 
-`start.sh` checks the VM's deploy state over SSH — Docker containers
-(`docker compose -p mdx ps`) **and** native services
+For modes 2/3, `start.sh` checks the VM's deploy state over SSH — Docker
+containers (`docker compose -p mdx ps`) **and** native services
 (`scripts/native-services.sh status`, see [Native vs. Docker service split](#5-native-vs-docker-service-split)):
 
 - **Nothing running** → deploys the backend fresh over SSH: Docker appliance
   containers only (`docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <docker-services>`, no `vss-agent` in that list), then starts the native
   services (`native-services.sh start`), then opens the tunnel, then starts
-  the console.
-- **Everything expected up** → skips the deploy, straight to tunnel + console.
+  v2.
+- **Everything expected up** → skips the deploy, straight to tunnel + v2.
 - **Partial deploy** → stops and prints exactly what's up vs. what's
   missing/expected for both Docker and native services (with a nonzero exit),
   telling you to clear the partial state manually before re-running. It
   deliberately never auto-reconciles or force-redeploys over a partial state.
 
 Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
-`behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker).
+`behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker; modes
+2/3 only).
 
 #### Troubleshooting the VM SSH username
 
@@ -409,9 +431,10 @@ Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
   (exit the SSH session and ssh back in) — group membership doesn't apply to
   an already-open session.
 
-It then backgrounds the SSH tunnel (and closes it when the console exits) and
-starts the local Streamlit console. Run it from the laptop only — it refuses
-to run on `kwanz-ws` itself.
+For modes 2/3 it then backgrounds the SSH tunnel and starts v2; for mode 1
+it backgrounds the local mock-backend and vlm-gateway processes instead. All
+backgrounded processes are torn down when v2 exits (Ctrl-C). Run it from the
+laptop only — it refuses to run on `kwanz-ws` itself.
 
 ### Manual flow (same pieces, individually)
 
