@@ -9,11 +9,11 @@
 # verified on git 2.54.0 - which is harmless here: with nothing to do the
 # script is a silent no-op apart from the venv up-to-date notice.)
 #
-# Part A propagates real (non-generated) .env files from the MAIN worktree
-# into this worktree, copy-if-missing only, never overwriting. Covers the
+# Part A propagates real (non-generated) .env files and symlinks from the MAIN
+# worktree into this worktree, copy-if-missing only, never overwriting. Covers the
 # committed dev-profile-*/.env and industry-profile .env templates plus any
 # untracked secret carriers that appear in the main worktree later
-# (incident-console/.env, incident-console/.env.local, mock-backend .env,
+# (dev-profile-incident/.env.local, service-level .env.local symlinks,
 # UI .env.local). Deliberately excludes generated.env (gitignored,
 # regenerated fresh by dev-profile.sh on every deploy).
 #
@@ -37,13 +37,17 @@ current_dir=$(git rev-parse --show-toplevel)
 if [ "$current_dir" != "$main_worktree" ]; then
     find "$main_worktree" \
         \( -name node_modules -o -name .venv -o -name .git -o -path '*/.git/*' \) -prune -o \
-        \( -name '.env' -o -name '.env.*' -o -name '*.env_file' \) -type f -print |
+        \( -name '.env' -o -name '.env.*' -o -name '*.env_file' \) \( -type f -o -type l \) -print |
     while read -r src; do
         rel="${src#"$main_worktree"/}"
         dest="$current_dir/$rel"
-        if [ ! -f "$dest" ]; then
+        if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then
             mkdir -p "$(dirname "$dest")"
-            cp "$src" "$dest"
+            if [ -L "$src" ]; then
+                ln -s "$(readlink "$src")" "$dest"
+            else
+                cp "$src" "$dest"
+            fi
             echo "setup-worktree: copied $rel"
         fi
     done

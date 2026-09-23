@@ -187,30 +187,28 @@ ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile
 
 Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh` for v1; `incident-console-v2/README.md` for v2).
 
-**Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, real credentials live in untracked `.env.local` files that are ignored by git:
+**Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, all local credentials are consolidated into a single untracked file at the profile root (`dev-profile-incident/.env.local`), and each sub-service points to it via a relative symlink (`.env.local -> ../.env.local`):
 
-### Required & Optional Secret Files on Laptop
+### Secret Files Layout on Laptop
 
-| Target File (Untracked) | Tracked Template to Copy | Required? | Used By |
-|---|---|---|---|
-| `deploy/docker/developer-profiles/dev-profile-incident/incident-console/.env.local` | [`incident-console/.env`](incident-console/.env) | **Required** | `incident-console` (Streamlit UI v1), `local-start.sh` (mock backend) |
-| `deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/.env.local` | (none — create from `incident-console-v2/README.md` §Server-only configuration) | **Required** | `incident-console-v2` (Next.js UI v2) |
-| `deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway/.env.local` | [`vlm-gateway/.env`](vlm-gateway/.env) | Optional | `vlm-gateway` (if running the hosted LLM/VLM inference proxy locally; used by both v1 eval and v2 analysis) |
+| File | Type | Used By |
+|---|---|---|
+| `deploy/docker/developer-profiles/dev-profile-incident/.env.local` | Untracked root secrets file | All local services in this profile |
+| `incident-console/.env.local` | Symlink (`../.env.local`) | `incident-console` (Streamlit UI v1), `local-start.sh` (mock backend) |
+| `incident-console-v2/.env.local` | Symlink (`../.env.local`) | `incident-console-v2` (Next.js UI v2) |
+| `vlm-gateway/.env.local` | Symlink (`../.env.local`) | `vlm-gateway` (hosted LLM/VLM inference proxy) |
 
 > [!TIP]
-> **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook will automatically propagate untracked `.env` and `.env.local` files from the main worktree into newly created worktrees (copy-if-missing, never overwriting).
+> **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook automatically propagates untracked `.env` and `.env.local` files as well as relative symlinks from the main worktree into newly created worktrees (copy-if-missing, never overwriting).
 
 ---
 
-### Step-by-Step Setup for `incident-console/.env.local` (v1 Streamlit)
+### Step-by-Step Setup for `dev-profile-incident/.env.local`
 
-1. **Copy the tracked template:**
-   ```bash
-   cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
-   cp .env .env.local
-   ```
+1. **Populate the shared secrets file:**
+   Create or edit `deploy/docker/developer-profiles/dev-profile-incident/.env.local` with real values (the sub-service symlinks point to this file):
 
-2. **Fill in the real values in `incident-console/.env.local`:**
+2. **Fill in the real values in `dev-profile-incident/.env.local`:**
 
    ```dotenv
    # =============================================================================
@@ -325,13 +323,10 @@ Both console frontends run on each teammate's laptop, connecting either to the s
 
 If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM inference locally:
 
-1. **Copy the template:**
-   ```bash
-   cd deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
-   cp .env .env.local
-   ```
+1. **Verify symlink and configure credentials:**
+   `vlm-gateway/.env.local` is a symlink pointing to `../.env.local`. Ensure `VLM_GATEWAY_API_KEY` is set in the shared `deploy/docker/developer-profiles/dev-profile-incident/.env.local`:
 
-2. **Configure `.env.local`:**
+2. **Configuration in `dev-profile-incident/.env.local`:**
    ```dotenv
    # Upstream NVIDIA-hosted inference endpoint (switchyard)
    VLM_GATEWAY_BASE_URL=https://switchyard-13doh4lsz.brevlab.com/v1
