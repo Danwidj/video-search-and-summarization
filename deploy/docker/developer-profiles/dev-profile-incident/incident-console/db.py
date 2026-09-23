@@ -23,7 +23,10 @@ Schema is created with ``CREATE TABLE IF NOT EXISTS`` semantics
 The connection string comes from ``INCIDENT_DB_DSN``. When it is unset,
 ``get_db()`` returns ``None`` and the app renders a "database not configured"
 state so it stays reviewable without live infra. The pool is kept small because
-Cloudflare Hyperdrive already pools.
+the Supabase pooler (Supavisor) already pools server-side. Round trips, dropped
+connections and the read/write engine split live in ``db_connection.py``:
+**reads use ``self.read_engine.connect()`` (a separate AUTOCOMMIT engine), writes use
+``self.engine.begin()`` (the transactional one).**
 
 Schema overview (multi-model-run + ground-truth evaluation):
 
@@ -64,7 +67,6 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
-    create_engine,
     delete,
     func,
     select,
@@ -73,6 +75,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine, make_url
 
 import config
+from db_connection import ConnectionGuard, build_engines, missing_tables, replay_on_disconnect
 
 
 def _utcnow() -> _dt.datetime:
@@ -360,33 +363,49 @@ def _row_to_dict(row: Any) -> dict:
     return dict(row._mapping) if row is not None else {}
 
 
+# Every public method except these two is replayed once after a dropped connection (see db_connection.py).
+@replay_on_disconnect(skip={"healthcheck", "dispose"})
 class IncidentDB:
-    """Thin CRUD wrapper around one SQLAlchemy engine."""
+    """Thin CRUD wrapper around a transactional engine (writes) and a read-only one (reads)."""
 
-    def __init__(self, engine: Engine):
-        self.engine = engine
+    def __init__(self, engine: Engine, read_engine: Engine | None = None):
+        self.engine = engine  # transactional: engine.begin() for writes
+        self.read_engine = engine if read_engine is None else read_engine  # AUTOCOMMIT, read-only: connect() for reads
+        self._guard = ConnectionGuard(self.engine, self.read_engine)
 
     # -- lifecycle ------------------------------------------------------- #
     @classmethod
     def from_dsn(cls, dsn: str, **engine_kwargs: Any) -> IncidentDB:
-        url = make_url(dsn)
-        kwargs: dict[str, Any] = {"pool_pre_ping": True, "future": True}
-        if url.get_backend_name() != "sqlite":
-            # Hyperdrive already pools; keep the app-side pool small.
-            kwargs.update(pool_size=2, max_overflow=3)
-        kwargs.update(engine_kwargs)
-        return cls(create_engine(url, **kwargs))
+        return cls(*build_engines(make_url(dsn), **engine_kwargs))
+
+    @property
+    def engines(self) -> tuple[Engine, ...]:
+        """Both engines, for anything that observes statements or pool events (they are separate pools)."""
+        return tuple({id(e): e for e in (self.engine, self.read_engine)}.values())
+
+    def dispose(self) -> None:
+        for engine in self.engines:
+            engine.dispose()
 
     def init_schema(self) -> None:
-        metadata.create_all(self.engine, checkfirst=True)
+        missing = missing_tables(self.read_engine, metadata)
+        if missing:
+            metadata.create_all(self.engine, tables=missing, checkfirst=True)
 
-    def healthcheck(self) -> tuple[bool, str]:
+    def healthcheck(self, *, max_age: float = 0.0) -> tuple[bool, str]:
+        """``(ok, detail)``. With ``max_age`` > 0, a statement the database answered that recently counts as proof."""
+        if self._guard.answered_within(max_age):
+            return True, "ok"
         try:
-            with self.engine.connect() as conn:
-                conn.execute(select(1))
+            self._guard.run(self._ping)
             return True, "ok"
         except Exception as exc:  # noqa: BLE001 - surfaced verbatim in the UI
+            self._guard.last_ok = None
             return False, str(exc)
+
+    def _ping(self) -> None:
+        with self.read_engine.connect() as conn:
+            conn.execute(select(1))
 
     # -- videos ---------------------------------------------------------- #
     def upsert_video(
@@ -419,11 +438,11 @@ class IncidentDB:
         return video_id
 
     def get_video(self, video_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(conn.execute(select(videos).where(videos.c.id == video_id)).first())
 
     def list_videos(self) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(select(videos).order_by(videos.c.id))]
 
     def list_videos_with_counts(self, *, filename_like: str | None = None, status: str | None = None) -> list[dict]:
@@ -440,7 +459,7 @@ class IncidentDB:
         filename; ``status`` other than ``None``/``"All"`` keeps only videos
         whose derived status matches.
         """
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             count_rows = conn.execute(
                 select(incidents.c.incident_id, func.count().label("report_count")).group_by(incidents.c.incident_id)
             ).all()
@@ -490,11 +509,11 @@ class IncidentDB:
         return query_id
 
     def get_query(self, query_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(conn.execute(select(queries).where(queries.c.id == query_id)).first())
 
     def list_queries(self) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [
                 _row_to_dict(r) for r in conn.execute(select(queries).order_by(queries.c.submitted_datetime.desc()))
             ]
@@ -534,11 +553,11 @@ class IncidentDB:
         return model_run_id
 
     def get_model_run(self, model_run_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(conn.execute(select(model_runs).where(model_runs.c.id == model_run_id)).first())
 
     def list_model_runs(self) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [
                 _row_to_dict(r) for r in conn.execute(select(model_runs).order_by(model_runs.c.run_datetime.desc()))
             ]
@@ -575,7 +594,7 @@ class IncidentDB:
         return incident_id, model_run_id
 
     def get_incident(self, incident_id: str, model_run_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(
                 conn.execute(
                     select(incidents).where(
@@ -588,7 +607,7 @@ class IncidentDB:
         stmt = select(incidents).order_by(incidents.c.incident_id)
         if model_run_id is not None:
             stmt = stmt.where(incidents.c.model_run_id == model_run_id)
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def update_incident(self, incident_id: str, model_run_id: str, *, fields: dict) -> None:
@@ -663,7 +682,7 @@ class IncidentDB:
                 incidents.c.description.ilike(like) | incidents.c.type.ilike(like) | videos.c.filepath.ilike(like)
             )
         stmt = stmt.order_by(model_runs.c.run_datetime.desc())
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_latest_incidents(self, *, type_: str | None = None, keyword: str | None = None) -> list[dict]:
@@ -683,7 +702,7 @@ class IncidentDB:
 
     # -- review_status ---------------------------------------------------#
     def get_review_status(self, incident_id: str, model_run_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(
                 conn.execute(
                     select(review_status).where(
@@ -825,21 +844,21 @@ class IncidentDB:
         stmt = select(entities).where(entities.c.incident_id == incident_id).order_by(entities.c.entity_id)
         if model_run_id is not None:
             stmt = stmt.where(entities.c.model_run_id == model_run_id)
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_incident_instruments(self, incident_id: str, model_run_id: str | None = None) -> list[dict]:
         stmt = select(instruments).where(instruments.c.incident_id == incident_id).order_by(instruments.c.instrument_id)
         if model_run_id is not None:
             stmt = stmt.where(instruments.c.model_run_id == model_run_id)
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_incident_assets(self, incident_id: str, model_run_id: str | None = None) -> list[dict]:
         stmt = select(assets).where(assets.c.incident_id == incident_id).order_by(assets.c.asset_id)
         if model_run_id is not None:
             stmt = stmt.where(assets.c.model_run_id == model_run_id)
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def clear_incident_evidence(self, incident_id: str, model_run_id: str) -> None:
@@ -870,13 +889,13 @@ class IncidentDB:
         return incident_id
 
     def get_gt_incident(self, incident_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(
                 conn.execute(select(gt_incidents).where(gt_incidents.c.incident_id == incident_id)).first()
             )
 
     def list_gt_incidents(self) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(select(gt_incidents).order_by(gt_incidents.c.incident_id))]
 
     def add_gt_entity(
@@ -936,12 +955,12 @@ class IncidentDB:
             )
 
     def list_gt_entities(self, incident_id: str) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             stmt = select(gt_entities).where(gt_entities.c.incident_id == incident_id).order_by(gt_entities.c.entity_id)
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_gt_instruments(self, incident_id: str) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             stmt = (
                 select(gt_instruments)
                 .where(gt_instruments.c.incident_id == incident_id)
@@ -950,7 +969,7 @@ class IncidentDB:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_gt_assets(self, incident_id: str) -> list[dict]:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             stmt = select(gt_assets).where(gt_assets.c.incident_id == incident_id).order_by(gt_assets.c.asset_id)
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
@@ -1025,21 +1044,21 @@ class IncidentDB:
         stmt = select(entity_matches).where(
             (entity_matches.c.incident_id == incident_id) & (entity_matches.c.model_run_id == model_run_id)
         )
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_instrument_matches(self, incident_id: str, model_run_id: str) -> list[dict]:
         stmt = select(instrument_matches).where(
             (instrument_matches.c.incident_id == incident_id) & (instrument_matches.c.model_run_id == model_run_id)
         )
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def list_asset_matches(self, incident_id: str, model_run_id: str) -> list[dict]:
         stmt = select(asset_matches).where(
             (asset_matches.c.incident_id == incident_id) & (asset_matches.c.model_run_id == model_run_id)
         )
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     # -- generated report documents (reports table) ----------------- #
@@ -1068,14 +1087,14 @@ class IncidentDB:
         return report_id
 
     def get_generated_report(self, report_id: str) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return _row_to_dict(conn.execute(select(reports).where(reports.c.id == report_id)).first())
 
     def list_generated_reports(self, *, incident_id: str | None = None) -> list[dict]:
         stmt = select(reports).order_by(reports.c.generated_datetime.desc())
         if incident_id is not None:
             stmt = stmt.where(reports.c.incident_id == incident_id)
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     # -- notifications --------------------------------------------- #
@@ -1083,7 +1102,7 @@ class IncidentDB:
         stmt = select(notifications).order_by(notifications.c.created_at.desc())
         if only_unacknowledged:
             stmt = stmt.where(notifications.c.acknowledged.is_(False))
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def acknowledge_notification(self, notification_id: int) -> None:
@@ -1109,11 +1128,11 @@ class IncidentDB:
 
     def list_severity_evals(self) -> list[dict]:
         stmt = select(severity_eval_log).order_by(severity_eval_log.c.id.desc())
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     def severity_eval_counts(self) -> dict:
-        with self.engine.connect() as conn:
+        with self.read_engine.connect() as conn:
             total = conn.execute(select(func.count()).select_from(severity_eval_log)).scalar_one()
         return {"total": int(total or 0)}
 
@@ -1142,10 +1161,13 @@ def get_db() -> IncidentDB | None:
         return None
     if _db is not None and _db_dsn == dsn:
         return _db
+    db = None
     try:
         db = IncidentDB.from_dsn(dsn)
         db.init_schema()
     except Exception:  # noqa: BLE001 - callers show a friendly state
+        if db is not None:
+            db.dispose()  # every failed rerun would otherwise leave another pool behind
         return None
     _db, _db_dsn = db, dsn
     return _db
@@ -1155,5 +1177,5 @@ def reset_cache() -> None:
     """Drop the cached engine (used by tests)."""
     global _db, _db_dsn
     if _db is not None:
-        _db.engine.dispose()
+        _db.dispose()
     _db, _db_dsn = None, None

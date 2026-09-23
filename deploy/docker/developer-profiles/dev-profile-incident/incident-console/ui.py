@@ -48,7 +48,9 @@ def get_db_or_notice() -> db.IncidentDB | None:
             "!",
         )
         return None
-    ok, detail = handle.healthcheck()
+    # Skip the probe when the database answered a moment ago: every rerun of every page passes here,
+    # and each probe is a network round trip. A failed connection clears the shortcut immediately.
+    ok, detail = handle.healthcheck(max_age=config.db_healthcheck_ttl_seconds())
     if not ok:
         alert(f"<strong>Database configured but unreachable.</strong> {detail}", "error", "!")
         return None

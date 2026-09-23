@@ -28,7 +28,7 @@ services:
     profiles: ["bp_developer_search_2d"]
     network_mode: "host"
     environment:
-      # Direct-Postgres data layer (via Hyperdrive in deployment). Unset -> the
+      # Direct-Postgres data layer (Supabase session pooler DSN in deployment). Unset -> the
       # app renders a "database not configured" state instead of failing.
       - INCIDENT_DB_DSN=${INCIDENT_DB_DSN:-}
       # vss-agent's profile-agnostic upload + AI-trigger API.

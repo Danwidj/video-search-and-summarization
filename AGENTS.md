@@ -101,6 +101,17 @@ routes this needs with zero live infra; `scripts/seed_gt_demo.py` seeds a 5-inci
 CSV-fixture ground truth + a perturbed model run under `MR-EVAL-DEMO`) covering every required scenario.
 See [`incident-console/README.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-console/README.md)'s "Tier 1 GT evaluation" section for the exact local run commands.
 
+## incident-console DB connection contract
+
+`IncidentDB` (`incident-console/db.py`) has two engines; `incident-console/db_connection.py`'s docstring is the
+authority. Writes use `self.engine.begin()` (transactional). Reads use `self.read_engine.connect()`: a separate
+AUTOCOMMIT engine with its own pool that refuses write statements, one wire round trip per query instead of four.
+Never make AUTOCOMMIT global (not atomic), and do not enable it per checkout (two round trips). Every public
+`IncidentDB` method is replayed once after a dropped connection unless a COMMIT was attempted, so keep methods free
+of non-database side effects. Anything counting statements or checkouts must listen on `handle.engines` (both
+pools). `scripts/measure_db_roundtrips.py` measures round trips on a disposable Postgres; `scripts/db_timing.py` times
+a real DSN without printing secrets. Hyperdrive is Workers-only and does not apply to this Streamlit app.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
