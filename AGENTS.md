@@ -1,5 +1,17 @@
 # Agent Notes
 
+## Project overview & architecture
+
+This repo is a fork of [NVIDIA's VSS Blueprint](https://docs.nvidia.com/vss/latest/index.html) — GPU-accelerated video AI agents (search, summarization, visual Q&A, alert verification) built from vision-language models, RAG, and NVIDIA NIM microservices. See the root [`README.md`](README.md) for the upstream project's overview, agent workflows, and software components, and its "Repository Structure Overview" table for what lives under `services/`, `deploy/`, `tools/`, `libs/`, and `skills/`.
+
+**Compose profile architecture:** [`deploy/docker/README.md`](deploy/docker/README.md) is authoritative. The root `deploy/docker/compose.yml` combines three includes — `services/compose.yml` (shared infra/VIOS/UI/RTVI/NIMs), `developer-profiles/compose.yml` (developer profiles: `base`, `lvs`, `alerts`, `search`, plus this fork's `incident` profile below), and `industry-profiles/compose.yml` (e.g. `warehouse-operations`). Day-to-day developer stacks are brought up via `deploy/docker/scripts/dev-profile.sh up --profile <base|lvs|alerts|search> --hardware-profile <...>`, not hand-edited Compose.
+
+**Deployment topology — two paths, pick per task:**
+- **Full GPU-backed stack** (NIM containers, real inference): VM-only, brought up via `dev-profile.sh` (stock profiles) or direct `docker compose` (this fork's `incident` profile — see below). Requires an `NGC_CLI_API_KEY` and a GPU-equipped host.
+- **Zero-GPU local mock**: [`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so frontend work (`services/ui/apps/nv-metropolis-bp-vss-ui`, `incident-console-v2`) can happen on a laptop with no GPU, no NIM containers, and no VM deployment.
+
+For this fork's own capstone work (team, VM specifics, incident-profile deploy mechanics), see the next section and its `dev-profile-incident/README.md`.
+
 ## Incident Search & Reporting Capstone (Daniel's team)
 
 A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
