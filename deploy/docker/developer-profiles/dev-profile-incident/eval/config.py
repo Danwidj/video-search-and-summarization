@@ -32,11 +32,12 @@ from dotenv import load_dotenv
 # win. This avoids the accidental code-live pickup of incident-console/.env
 # that the previous bare load_dotenv() + find_dotenv() caused.
 #
-# This copy lives one level deeper than the original (incident-console-v2/eval/
-# vs. incident-console/), so the placeholder .env needs one extra parent to
-# reach dev-profile-incident/.env; .env.local still resolves next to this file
-# (incident-console-v2/eval/.env.local, a symlink - see eval/README.md).
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+# This file lives at dev-profile-incident/eval/ (same nesting depth as
+# incident-console/ and incident-console-v2/), so one parent reaches this
+# directory and a second reaches dev-profile-incident/.env; .env.local
+# resolves next to this file (dev-profile-incident/eval/.env.local, a
+# symlink to the shared ../.env.local - see eval/README.md).
+load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).with_name(".env.local"), override=True)
 
 # Proposed defaults from the incident plan - NOT sourced from any team spec.
