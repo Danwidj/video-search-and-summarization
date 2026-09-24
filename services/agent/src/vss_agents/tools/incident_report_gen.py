@@ -190,16 +190,20 @@ async def _extract_structured_report(
     try:
         result = await asyncio.wait_for(structured_llm.ainvoke(messages), timeout=timeout_seconds)
         return IncidentReport.model_validate(result)
-    except TimeoutError:
-        logger.warning("incident_report_gen: extraction LLM call timed out after %ss", timeout_seconds)
-        return IncidentReport()
+    except TimeoutError as exc:
+        logger.error("incident_report_gen: extraction LLM call timed out after %ss", timeout_seconds)
+        raise TimeoutError(f"Incident extraction LLM call timed out after {timeout_seconds}s") from exc
     except (
         OutputParserException,
         LangChainException,
         ValidationError,
+        ValueError,
     ) as e:
-        logger.warning("incident_report_gen: extraction LLM call failed: %s", e)
-        return IncidentReport()
+        logger.error("incident_report_gen: extraction LLM call failed: %s", e)
+        raise ValueError(f"Incident extraction validation failed: {e}") from e
+    except Exception as e:
+        logger.error("incident_report_gen: extraction LLM call encountered unexpected error: %s", e)
+        raise
 
 
 def _derive_entity_id(incident_id: str, idx: int) -> str:
