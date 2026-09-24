@@ -27,7 +27,7 @@ import embed_client
 import eval_gt
 import matching
 from db import IncidentDB
-from eval_gt import Result, compare_incident_fields, prf1, run_evaluation
+from eval_gt import Result, compare_incident_fields, prf1, resolve_holder, run_evaluation, score_matched_pair
 
 # --------------------------------------------------------------------------- #
 # compare_incident_fields
@@ -213,3 +213,192 @@ def test_run_evaluation_description_judge_failure_fails_soft(incident_db: Incide
     assert result.description_score is None
     assert result.description_error == "LLM unreachable"
     assert result.fields["description"]["pass"] is False
+
+
+# --------------------------------------------------------------------------- #
+# resolve_holder - never influences match/no-match, three outcomes only
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_holder_correct_when_resolved_entity_matches_gt_holder():
+    model_instrument = {"instrument_id": "I1", "entity_id": "E1"}
+    gt_instrument = {"instrument_id": "GI1", "entity_id": "GE1"}
+    entity_matches = [{"entity_id": "E1", "gt_entity_id": "GE1", "similarity_score": 0.9}]
+    result = resolve_holder(model_instrument, gt_instrument, entity_matches)
+    assert result == {
+        "expected": "GE1",
+        "predicted": "E1",
+        "resolved_gt_entity_id": "GE1",
+        "status": "correct",
+    }
+
+
+def test_resolve_holder_incorrect_when_resolved_entity_differs():
+    model_instrument = {"instrument_id": "I1", "entity_id": "E2"}
+    gt_instrument = {"instrument_id": "GI1", "entity_id": "GE1"}
+    # E2 matched to GE2, not GE1 - the instrument's real GT holder.
+    entity_matches = [{"entity_id": "E2", "gt_entity_id": "GE2", "similarity_score": 0.9}]
+    result = resolve_holder(model_instrument, gt_instrument, entity_matches)
+    assert result["status"] == "incorrect"
+    assert result["resolved_gt_entity_id"] == "GE2"
+
+
+def test_resolve_holder_unresolved_when_either_side_has_no_holder():
+    entity_matches = [{"entity_id": "E1", "gt_entity_id": "GE1", "similarity_score": 0.9}]
+    assert resolve_holder({"entity_id": None}, {"entity_id": "GE1"}, entity_matches)["status"] == "unresolved"
+    assert resolve_holder({"entity_id": "E1"}, {"entity_id": None}, entity_matches)["status"] == "unresolved"
+
+
+def test_resolve_holder_unresolved_when_holder_entity_itself_unmatched():
+    # E9 (the model instrument's holder) never appears in the accepted entity matches.
+    model_instrument = {"entity_id": "E9"}
+    gt_instrument = {"entity_id": "GE1"}
+    entity_matches = [{"entity_id": "E1", "gt_entity_id": "GE1", "similarity_score": 0.9}]
+    result = resolve_holder(model_instrument, gt_instrument, entity_matches)
+    assert result["status"] == "unresolved"
+    assert "resolved_gt_entity_id" not in result
+
+
+# --------------------------------------------------------------------------- #
+# score_matched_pair - per-kind attribute scoring, additive over matching.py
+# --------------------------------------------------------------------------- #
+
+
+def test_score_matched_pair_instruments_includes_threat_level_and_holder():
+    model_row = {"entity_id": "E1", "name": "crowbar", "description": "metal crowbar", "threat_level": 3}
+    gt_row = {"entity_id": "GE1", "name": "crowbar", "description": "metal crowbar", "threat_level": 3}
+    entity_matches = [{"entity_id": "E1", "gt_entity_id": "GE1", "similarity_score": 1.0}]
+
+    with patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=0.9)):
+        scores = score_matched_pair("instruments", model_row, gt_row, entity_matches=entity_matches)
+
+    assert scores["threat_level"] == {"expected": 3, "predicted": 3, "pass": True}
+    assert scores["holder"]["status"] == "correct"
+    assert scores["name"]["score"] == pytest.approx(0.9)
+    assert scores["description"]["score"] == pytest.approx(0.9)
+
+
+def test_score_matched_pair_instruments_threat_level_mismatch():
+    model_row = {"threat_level": 2}
+    gt_row = {"threat_level": 4}
+    with patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=1.0)):
+        scores = score_matched_pair("instruments", model_row, gt_row, entity_matches=[])
+    assert scores["threat_level"] == {"expected": 4, "predicted": 2, "pass": False}
+
+
+def test_score_matched_pair_entities_scores_type_and_description():
+    model_row = {"type": "human", "description": "a person in a red jacket"}
+    gt_row = {"type": "Human", "description": "an individual wearing a red jacket"}
+    with patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=0.8)):
+        scores = score_matched_pair("entities", model_row, gt_row)
+    assert scores["type"]["pass"] is True  # case-insensitive, like compare_incident_fields' type check
+    assert scores["description"]["score"] == pytest.approx(0.8)
+
+
+# --------------------------------------------------------------------------- #
+# judge_description_similarity retry - parse failures only, same request every
+# attempt, never retries a network/HTTP/missing-base-url failure.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeHttpResponse:
+    def __init__(self, status_code, json_body):
+        self.status_code = status_code
+        self._json_body = json_body
+        self.text = str(json_body)
+
+    def json(self):
+        return self._json_body
+
+
+def _chat_body(content: str) -> dict:
+    return {"choices": [{"message": {"content": content}}]}
+
+
+def test_judge_retries_on_parse_failure_then_succeeds(monkeypatch):
+    monkeypatch.setenv("INCIDENT_LLM_BASE_URL", "http://fake-judge/v1")
+    responses = [
+        _FakeHttpResponse(200, _chat_body("I decline to answer that.")),  # attempt 1: unparseable
+        _FakeHttpResponse(200, _chat_body('{"score": 0.8, "reasoning": "close enough"}')),  # attempt 2: parses
+    ]
+    with patch("httpx.post", side_effect=responses) as mock_post:
+        result = eval_gt.judge_description_similarity("a", "b", max_retries=2)
+    assert result.ok is True
+    assert result.data == pytest.approx(0.8)
+    assert mock_post.call_count == 2
+
+
+def test_judge_gives_up_after_exhausting_retries():
+    responses = [_FakeHttpResponse(200, _chat_body("not a score, sorry")) for _ in range(3)]
+    with (
+        patch("config.llm_base_url", return_value="http://fake-judge/v1"),
+        patch("httpx.post", side_effect=responses) as mock_post,
+    ):
+        result = eval_gt.judge_description_similarity("a", "b", max_retries=2)
+    assert result.ok is False
+    assert "could not extract a score" in result.error
+    assert mock_post.call_count == 3  # 1 initial + 2 retries, no more
+
+
+def test_judge_does_not_retry_http_error():
+    responses = [_FakeHttpResponse(401, {"error": "unauthorized"})]
+    with (
+        patch("config.llm_base_url", return_value="http://fake-judge/v1"),
+        patch("httpx.post", side_effect=responses) as mock_post,
+    ):
+        result = eval_gt.judge_description_similarity("a", "b", max_retries=2)
+    assert result.ok is False
+    assert result.status_code == 401
+    assert mock_post.call_count == 1  # never retried
+
+
+def test_judge_does_not_retry_missing_base_url(monkeypatch):
+    monkeypatch.delenv("INCIDENT_LLM_BASE_URL", raising=False)
+    with patch("httpx.post") as mock_post:
+        result = eval_gt.judge_description_similarity("a", "b", max_retries=2)
+    assert result.ok is False
+    assert "INCIDENT_LLM_BASE_URL is not set" in result.error
+    mock_post.assert_not_called()
+
+
+def test_judge_succeeds_on_first_attempt_makes_exactly_one_call():
+    responses = [_FakeHttpResponse(200, _chat_body('{"score": 0.5, "reasoning": "ok"}'))]
+    with (
+        patch("config.llm_base_url", return_value="http://fake-judge/v1"),
+        patch("httpx.post", side_effect=responses) as mock_post,
+    ):
+        result = eval_gt.judge_description_similarity("a", "b", max_retries=2)
+    assert result.ok is True
+    assert mock_post.call_count == 1
+
+
+def test_run_evaluation_attaches_attribute_scores_to_instrument_matches(incident_db: IncidentDB):
+    incident_id, model_run_id = "Burglary002", "MR-1"
+    incident_db.upsert_video(incident_id, filepath=f"normal_videos/{incident_id}.mp4")
+    incident_db.insert_model_run(model_run_id, model_name="incident-vlm", prompt_version="p1")
+    incident_db.insert_incident(incident_id, model_run_id, fields={"type": "burglary", "severity_level": 3})
+    incident_db.insert_gt_incident(incident_id, fields={"type": "burglary", "severity_level": 3})
+
+    incident_db.add_incident_entity(incident_id, model_run_id, entity_id="E1", type="human", description="a tall man")
+    incident_db.add_gt_entity(incident_id, entity_id="GE1", type="human", description="a tall man")
+
+    incident_db.add_incident_instrument(
+        incident_id, model_run_id, instrument_id="I1", entity_id="E1", name="crowbar",
+        description="metal crowbar", threat_level=3,
+    )
+    incident_db.add_gt_instrument(
+        incident_id, instrument_id="GI1", entity_id="GE1", name="crowbar",
+        description="metal crowbar", threat_level=3,
+    )
+
+    with (
+        patch.object(matching, "embed_texts", side_effect=_fake_embed),
+        patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=0.95)),
+    ):
+        result = run_evaluation(incident_db, incident_id, model_run_id)
+
+    assert len(result.matches["instruments"]) == 1
+    attr = result.matches["instruments"][0]["attribute_scores"]
+    assert attr["threat_level"] == {"expected": 3, "predicted": 3, "pass": True}
+    assert attr["holder"]["status"] == "correct"
+    assert attr["name"]["score"] == pytest.approx(0.95)

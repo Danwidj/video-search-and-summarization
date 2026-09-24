@@ -1,0 +1,43 @@
+{
+  "category": "Assault",
+  "seed": 42,
+  "generated_at": "2026-09-24T04:56:54.582397+00:00",
+  "few_shot_demo_videos": [
+    "Assault007_x264.mp4",
+    "Assault011_x264.mp4",
+    "Assault015_x264.mp4",
+    "Assault030_x264.mp4",
+    "Assault032_x264.mp4"
+  ],
+  "evaluation_videos": [
+    "Assault012_x264.mp4",
+    "Assault013_x264.mp4",
+    "Assault018_x264.mp4",
+    "Assault019_x264.mp4",
+    "Assault020_x264.mp4",
+    "Assault026_x264.mp4",
+    "Assault027_x264.mp4",
+    "Assault034_x264.mp4",
+    "Assault036_x264.mp4",
+    "Assault050_x264.mp4"
+  ],
+  "few_shot_demo_videos_r2_keys": {
+    "Assault007_x264.mp4": "anomaly/assault/Assault007_x264.mp4",
+    "Assault011_x264.mp4": "anomaly/assault/Assault011_x264.mp4",
+    "Assault015_x264.mp4": "anomaly/assault/Assault015_x264.mp4",
+    "Assault030_x264.mp4": "anomaly/assault/Assault030_x264.mp4",
+    "Assault032_x264.mp4": "anomaly/assault/Assault032_x264.mp4"
+  },
+  "evaluation_videos_r2_keys": {
+    "Assault012_x264.mp4": "anomaly/assault/Assault012_x264.mp4",
+    "Assault013_x264.mp4": "anomaly/assault/Assault013_x264.mp4",
+    "Assault018_x264.mp4": "anomaly/assault/Assault018_x264.mp4",
+    "Assault019_x264.mp4": "anomaly/assault/Assault019_x264.mp4",
+    "Assault020_x264.mp4": "anomaly/assault/Assault020_x264.mp4",
+    "Assault026_x264.mp4": "anomaly/assault/Assault026_x264.mp4",
+    "Assault027_x264.mp4": "anomaly/assault/Assault027_x264.mp4",
+    "Assault034_x264.mp4": "anomaly/assault/Assault034_x264.mp4",
+    "Assault036_x264.mp4": "anomaly/assault/Assault036_x264.mp4",
+    "Assault050_x264.mp4": "anomaly/assault/Assault050_x264.mp4"
+  }
+}
