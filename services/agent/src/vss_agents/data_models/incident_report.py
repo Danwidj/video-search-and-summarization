@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
 
 # Controlled incident taxonomy - keep in sync with the console's copy in
 # incident_report.py and with fixtures/data's seed CSV.
@@ -63,6 +64,19 @@ class Instrument(BaseModel):
     name: str = ""
     description: str = ""
     threat_level: int | None = Field(default=None, ge=1, le=5)
+
+    @field_validator("threat_level", mode="before")
+    @classmethod
+    def _coerce_threat_level(cls, value: object) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            level = round(float(value))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if level < 1:
+            return None
+        return min(level, 5)
 
 
 class Asset(BaseModel):

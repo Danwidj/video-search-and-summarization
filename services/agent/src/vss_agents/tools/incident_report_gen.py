@@ -117,6 +117,16 @@ def _derive_video_id(sensor_id: str) -> str:
     return "v" + hashlib.sha256(sensor_id.encode("utf-8")).hexdigest()[:19]
 
 
+def _timestamp_span(content: str | None) -> tuple[float, float] | None:
+    """Return the (min start, max end) seconds across every ``[Xs-Ys]`` marker, or ``None`` if there are none."""
+    if not content:
+        return None
+    matches = list(_TIMESTAMP_PATTERN.finditer(content))
+    if not matches:
+        return None
+    return min(float(m.group(1)) for m in matches), max(float(m.group(2)) for m in matches)
+
+
 def _derive_incident_bounds(content: str | None) -> tuple[str, str, bool]:
     """Derive (incident_start, incident_end, confirmed) from timestamped chunks in ``content``.
 
@@ -124,14 +134,10 @@ def _derive_incident_bounds(content: str | None) -> tuple[str, str, bool]:
     generated report. Falls back to ``("0:00", "0:00", False)`` when no
     timestamps are present.
     """
-    if not content:
+    span = _timestamp_span(content)
+    if span is None:
         return "0:00", "0:00", False
-    matches = list(_TIMESTAMP_PATTERN.finditer(content))
-    if not matches:
-        return "0:00", "0:00", False
-    starts = [float(m.group(1)) for m in matches]
-    ends = [float(m.group(2)) for m in matches]
-    return _seconds_to_mmss(min(starts)), _seconds_to_mmss(max(ends)), True
+    return _seconds_to_mmss(span[0]), _seconds_to_mmss(span[1]), True
 
 
 class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
@@ -324,6 +330,8 @@ class IncidentReportGenInput(BaseModel):
     )
     model_run_id: str | None = Field(
         default=None,
+        min_length=1,
+        max_length=20,
         description="Optional model_runs.id to persist under. When omitted, defaults to config.model_run_id.",
     )
     user_query: str = Field(
@@ -365,16 +373,13 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         content = report_result.content or ""
         structured_report = await _extract_structured_report(llm, content, config.extraction_timeout_seconds)
 
+        span = _timestamp_span(content)
         incident_start, incident_end, confirmed = _derive_incident_bounds(content)
         structured_report.incident_start = incident_start
         structured_report.incident_end = incident_end
         structured_report.incident_start_confirmed = confirmed
-        if structured_report.duration_seconds is None and confirmed and content:
-            matches = list(_TIMESTAMP_PATTERN.finditer(content))
-            if matches:
-                starts = [float(m.group(1)) for m in matches]
-                ends = [float(m.group(2)) for m in matches]
-                structured_report.duration_seconds = max(0, round(max(ends) - min(starts)))
+        if structured_report.duration_seconds is None and span is not None:
+            structured_report.duration_seconds = max(0, round(span[1] - span[0]))
 
         incident_id = tool_input.incident_id or _derive_video_id(tool_input.sensor_id)
         model_run_id = tool_input.model_run_id or config.model_run_id

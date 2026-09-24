@@ -83,7 +83,12 @@ class AnalyzeIncidentRequest(BaseModel):
     prompt_override: str | None = Field(
         default=None, description="Optional override for the analysis prompt sent to video_report_gen."
     )
-    model_run_id: str | None = Field(default=None, description="Optional model_runs.id to persist the analysis under.")
+    model_run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description="Optional model_runs.id to persist the analysis under.",
+    )
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001

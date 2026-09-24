@@ -176,6 +176,31 @@ class TestExtractStructuredReportFailSoft:
         assert result.incident_type == "road accident"
 
     @pytest.mark.asyncio
+    async def test_out_of_range_threat_level_keeps_rest_of_report(self):
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(
+            return_value={
+                "incident_type": "fighting",
+                "severity": 4,
+                "persons": [{"description": "man in red", "actions": "punching"}],
+                "instruments": [
+                    {"name": "fist", "description": "bare hands", "threat_level": 0},
+                    {"name": "knife", "description": "blade", "threat_level": 10},
+                    {"name": "bat", "description": "wooden bat", "threat_level": "unknown"},
+                ],
+                "assets": [{"name": "car", "description": "parked sedan"}],
+            }
+        )
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert result.incident_type == "fighting"
+        assert result.severity == 4
+        assert len(result.persons) == 1
+        assert [i.threat_level for i in result.instruments] == [None, 5, None]
+        assert result.assets[0].name == "car"
+
+    @pytest.mark.asyncio
     async def test_timeout_degrades_to_default_report(self):
         llm = self._structured_llm(ainvoke_side_effect=TimeoutError)
         result = await _extract_structured_report(llm, "report", 60.0)

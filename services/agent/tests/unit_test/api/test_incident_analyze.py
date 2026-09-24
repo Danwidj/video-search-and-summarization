@@ -157,6 +157,19 @@ class TestAnalyzeIncidentRoute:
         assert tool_input["vlm_reasoning"] is True
         assert tool_input["prompt_override"] == "Custom prompt"
 
+    @pytest.mark.parametrize("model_run_id", ["", "x" * 21])
+    def test_model_run_id_outside_column_length_rejected(self, model_run_id):
+        app, tool, _ = self._build_app(resolved_source=None)
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/incidents/v0123456789abcdef01/analyze",
+                json={"model_run_id": model_run_id},
+            )
+
+        assert response.status_code == 422
+        tool.ainvoke.assert_not_awaited()
+
     def test_response_contains_extended_incident_report_fields(self):
         """The /analyze endpoint returns the extended IncidentReport shape."""
         app, tool, _ = self._build_app(resolved_source=None)
