@@ -66,5 +66,5 @@ Active configuration inspected in `/srv/rise-up/vss/deploy/docker/developer-prof
 | `OPENAI_API_KEY` | *(Set)* | Brev Switchyard API Key |
 | `NVIDIA_API_KEY` | *(Set)* | NGC inference API Key |
 | `NGC_CLI_API_KEY` | *(Set)* | NGC container registry authentication key |
-| `INCIDENT_SUPABASE_URL` | `https://rfevukimyftzbxlehwel.supabase.co` | Supabase PostgREST endpoint |
+| `INCIDENT_SUPABASE_URL` | *(Set)* | Supabase PostgREST endpoint |
 | `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | *(Set)* | Supabase Service Role Key |
