@@ -152,6 +152,11 @@ diverging from repository placeholders:
 | `VSS_AGENT_CONFIG_FILE` | (Pointed at search) | `dev-profile-base` config | Shipped search config lacks `report_agent`/`video_report_gen`. |
 | `REPORT_REFERENCE_BASE_DIR`| Unset | `/tmp` | Required by agent evaluation configuration schema to avoid startup crash. |
 | `STREAM_PROCESSOR_HTTP_PORT`| Defaults to `30001` | `10000` | Nginx ingress proxies to `localhost:10000`; streamprocessor must listen on 10000. |
+| `LLM_NAME` | `nvidia/nemotron-3-ultra` | `nvidia/nemotron-3-ultra` | Verified operational for tool calling and JSON schema structured output. |
+| `VLM_NAME` | `nvidia/cosmos-3-super-reasoner` | `nvidia/cosmos-3-super-reasoner` | Verified operational for base64 MP4 video inlining without payload errors. |
+| `LLM_BASE_URL` / `VLM_BASE_URL` | Brev URL | `https://switchyard-13doh4lsz.brevlab.com` | Remote Switchyard endpoint (no trailing `/v1`). |
+| `LLM_MODEL_TYPE` / `VLM_MODEL_TYPE` | `openai` | `openai` | Required for Brev compatibility (`_type: nim` must NOT be used remotely). |
+| `OPENAI_API_KEY` | Placeholder | Live Brev key | Shared API key powering LLM router, VLM video analysis, and eval judge. |
 
 ---
 

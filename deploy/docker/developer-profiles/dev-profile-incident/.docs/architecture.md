@@ -78,7 +78,7 @@ flowchart TB
     VIOSIngress --> StreamProcessing
     VIOSIngress --> NvStreamer
     Agent -->|Fetch Video Bytes| VIOSIngress
-    Agent -->|OpenAI Protocol Inference| NGC
+    Agent -->|OpenAI Protocol Inference| Brev
     Agent -->|HTTPS PostgREST & RPC| Supabase
 ```
 
@@ -89,7 +89,7 @@ flowchart TB
 | `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 14 App Router) | `incident-console-v2/` | Primary user interface: video upload, review workflow, eval form, report display |
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for local mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, and base profile responses |
-| `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis workflow, prompt execution, tool calling, report persistence |
+| `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis workflow, tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
 | `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
 | `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `services/ingress/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
@@ -101,8 +101,8 @@ flowchart TB
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` | Relational store for reports, incidents, evidence, reviews, and ground truth |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
-| `NGC Hosted API` | Cloud | 443 (HTTPS) | Remote NVIDIA NIM Service | Upstream endpoint | Hosted VLM/LLM inference used by `vss-agent` on the VM |
-| `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by `vlm-gateway` for local laptop analysis |
+| `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
+| `NGC Hosted API` | Cloud | 443 (HTTPS) | Remote NVIDIA NIM Service | Upstream endpoint | Historical hosted endpoint; superseded by Brev for `dev-profile-incident` |
 
 ---
 
@@ -150,10 +150,10 @@ ports from `localhost` to `kwanz-ws` (`10.131.1.5`):
 
 ---
 
-## 3. Remote LLM/VLM Deployment Facts (NGC Hosted)
+## 3. Remote LLM/VLM Deployment Facts (Brev Switchyard & Remote Inference)
 
-The VM deployment runs LLM and VLM inference against NVIDIA's hosted NGC endpoints, eliminating the
-need for local NIM inference containers on `kwanz-ws`.
+The VM deployment runs LLM, VLM, and evaluation judge inference against Brev Switchyard (`https://switchyard-13doh4lsz.brevlab.com`),
+eliminating the need for local NIM inference containers on `kwanz-ws` and avoiding NGC hosted endpoint rate-limits.
 
 ### Configuration Variables (`generated.env.remote`)
 
@@ -162,43 +162,49 @@ LLM_MODE=remote
 VLM_MODE=remote
 LLM_MODEL_TYPE=openai
 VLM_MODEL_TYPE=openai
+LLM_NAME=nvidia/nemotron-3-ultra
+VLM_NAME=nvidia/cosmos-3-super-reasoner
 LLM_NAME_SLUG=none
 VLM_NAME_SLUG=none
-LLM_BASE_URL=https://integrate.api.nvidia.com
-VLM_BASE_URL=https://integrate.api.nvidia.com
-LLM_ENDPOINT_URL=https://integrate.api.nvidia.com
-VLM_ENDPOINT_URL=https://integrate.api.nvidia.com
-NVIDIA_API_KEY=<your-ngc-api-key>
-OPENAI_API_KEY=<same-key-as-nvidia-api-key>
+LLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com
+VLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com
+LLM_ENDPOINT_URL=https://switchyard-13doh4lsz.brevlab.com
+VLM_ENDPOINT_URL=https://switchyard-13doh4lsz.brevlab.com
+OPENAI_API_KEY=<brev-switchyard-api-key>
 ```
 
 ### Critical Operational Facts & Gotchas
 
-1. **Authentication Quirk (`OPENAI_API_KEY`):**
-   Upstream LangChain integration components in the agent read `OPENAI_API_KEY` rather than `NVIDIA_API_KEY`
-   for authorization headers, even when hitting NVIDIA's hosted endpoint (`https://integrate.api.nvidia.com`).
-   Setting only `NVIDIA_API_KEY` results in silent HTTP 401 Unauthorized errors. Both variables must be set
-   to the same NGC API key.
-2. **Missing `base_url` in `openai_vlm` Patch:**
-   Upstream blueprint configurations omit `base_url` from the `openai_vlm` block in `config.yml` and
-   `config_rag.yml`. Without adding `base_url: ${VLM_BASE_URL}/v1`, VLM requests silently default to the
-   public OpenAI endpoint (`api.openai.com`), causing authentication failures.
-3. **Live Model Probing:**
-   NVIDIA NGC free-tier models frequently change availability or deprecate without notice (`410 Gone`), and
-   inclusion in catalog listings does not guarantee account entitlement (`404 Function not found for account`).
-   Before deployment, run `scripts/probe_remote_models.sh`. Currently,
-   `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` is confirmed operational for both LLM and VLM roles on the
-   free tier.
-4. **16-Concurrent Request Free-Tier Cap:**
-   NVIDIA's hosted free tier enforces a strict limit of 16 concurrent requests. High-framerate video processing
-   saturating this ceiling causes pipeline calls to loop or hang indefinitely rather than degrading gracefully.
-   Limiting `max_frames` in agent configuration mitigates request bursts.
-5. **GPU Device Allocation under Remote Mode:**
+1. **vss-agent Client Type Requirement (`_type: openai` vs `nim`):**
+   Remote inference endpoints (Brev Switchyard or other OpenAI-compatible gateways) must use `_type: openai`,
+   **never** `_type: nim`. The `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into
+   the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible proxies.
+   Both `config.yml` and `config_rag.yml` configure `eval_llm_judge._type: openai` for this reason.
+2. **Model Selection & Probe Verification (verified 2026-09-25):**
+   - **LLM (`nvidia/nemotron-3-ultra`):** Verified operational for both `top_agent` reasoning and evaluation judge roles.
+     Probed successfully for tool calling (`bind_tools`, 1.89 s) and structured JSON schema output
+     (`with_structured_output`, 0.95 s). *Note:* `nvidia/cosmos-3-nano-reasoner` was probed for the LLM role but rejected
+     because LiteLLM disabled auto tool choice (`auto tool choice is not supported`), returning HTTP 400.
+   - **VLM (`nvidia/cosmos-3-super-reasoner`):** Verified operational for multi-modal video inspection. Supports base64 MP4
+     `video_url` data URIs (`data:video/mp4;base64,...`) across 5 s, 60 s, and 1080p clips (up to 7.85 MB payload, 7.68 s latency)
+     without HTTP 413 entity-too-large errors or `<think>` tag leakage into output. Also supports frame-by-frame JPEG extraction.
+3. **Endpoint URL Format & Authentication:**
+   - Brev URLs must **not** include a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Upstream LangChain client
+     instantiations append `/v1` automatically where required.
+   - `OPENAI_API_KEY` holds the Brev API key and is shared across LLM, VLM, and `eval_llm_judge` (`EVAL_LLM_JUDGE_NAME`
+     and `EVAL_LLM_JUDGE_BASE_URL` default to `LLM_NAME` and `LLM_BASE_URL` respectively).
+4. **GPU Device Allocation under Remote Mode:**
    With LLM/VLM inference offloaded to the cloud, local GPU requirements on `kwanz-ws` drop dramatically:
    - **GPU 0:** Dedicated to video infrastructure (`vss-vios-nvstreamer` and `vss-vios-streamprocessing`).
      In MVP2, `vss-rtvi-cv` and `vss-rtvi-embed` will also default to GPU 0.
    - **GPU 1:** Completely idle and unallocated. Free for other team research or optional isolation of
      `vss-rtvi-embed` if GPU 0 experiences SM contention during heavy ingestion.
+5. **Historical Reference: NVIDIA NGC Hosted Endpoints:**
+   Earlier iterations routed remote inference to NVIDIA's hosted endpoints (`https://integrate.api.nvidia.com`).
+   That configuration suffered from strict 16-concurrent request free-tier caps (which caused pipeline deadlocks
+   under video burst traffic), frequent unannounced model deprecations (`410 Gone`), account entitlement gaps
+   (`404 Function not found`), and an upstream LangChain bug where missing `base_url` in `openai_vlm` defaulted
+   silently to `api.openai.com`. The Brev Switchyard migration resolves these limitations.
 
 ---
 
@@ -272,7 +278,7 @@ sequenceDiagram
     participant VIOS as VIOS / NvStreamer (:7777)
     participant R2 as Cloudflare R2 Bucket
     participant Agent as vss-agent (:8000)
-    participant NGC as NVIDIA NGC Hosted API
+    participant Brev as Brev Switchyard API
     participant DB as Supabase PostgREST & RPC
 
     User->>UI: Select and upload video clip
@@ -294,8 +300,8 @@ sequenceDiagram
     Agent->>VIOS: Fetch video bytes from internal URL (10.131.1.5:10000)
     VIOS-->>Agent: Video stream bytes
     
-    Agent->>NGC: VLM & LLM Inference (nemotron-3-nano-omni)
-    NGC-->>Agent: Structured output
+    Agent->>Brev: VLM & LLM Inference (nemotron-3-ultra / cosmos-3-super)
+    Brev-->>Agent: Structured output
     
     Agent->>Agent: Parse into IncidentReport (Pydantic)
     Agent->>DB: Call /rpc/insert_incident (atomic delete/insert)
