@@ -26,7 +26,10 @@ import pytest
 
 from vss_agents.api.incident_analyze import _resolve_sensor_id
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
+from vss_agents.data_models.incident_report import Asset
 from vss_agents.data_models.incident_report import IncidentReport
+from vss_agents.data_models.incident_report import Instrument
+from vss_agents.data_models.incident_report import TimelineItem
 
 
 class TestResolveSensorId:
@@ -136,3 +139,70 @@ class TestAnalyzeIncidentRoute:
         assert tool_input["sensor_id"] == "chat-driven-sensor.mp4"
         assert "vlm_reasoning" not in tool_input
         assert "prompt_override" not in tool_input
+        assert "model_run_id" not in tool_input
+
+    def test_model_run_id_override_passed_to_tool(self):
+        """AnalyzeIncidentRequest accepts model_run_id and threads it to tool_input."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/incidents/v0123456789abcdef01/analyze",
+                json={"model_run_id": "m_test_run_456", "reasoning": True, "prompt_override": "Custom prompt"},
+            )
+
+        assert response.status_code == 200
+        tool_input = tool.ainvoke.await_args.args[0]
+        assert tool_input["model_run_id"] == "m_test_run_456"
+        assert tool_input["vlm_reasoning"] is True
+        assert tool_input["prompt_override"] == "Custom prompt"
+
+    @pytest.mark.parametrize("model_run_id", ["", "x" * 21])
+    def test_model_run_id_outside_column_length_rejected(self, model_run_id):
+        app, tool, _ = self._build_app(resolved_source=None)
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/incidents/v0123456789abcdef01/analyze",
+                json={"model_run_id": model_run_id},
+            )
+
+        assert response.status_code == 422
+        tool.ainvoke.assert_not_awaited()
+
+    def test_response_contains_extended_incident_report_fields(self):
+        """The /analyze endpoint returns the extended IncidentReport shape."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        mock_result = MagicMock()
+        mock_result.structured_report = IncidentReport(
+            title="Break-in Attempt",
+            incident_type="burglary",
+            severity=3,
+            severity_reason="Forced entry observed",
+            confidence=0.85,
+            duration_seconds=42,
+            instruments=[Instrument(name="crowbar", description="used to pry door", threat_level=3)],
+            assets=[Asset(name="back door", description="damaged frame")],
+            timeline=[TimelineItem(start_seconds=5.0, end_seconds=15.0, description="Person approaches door")],
+            uncertainties=["suspect face obscured"],
+        )
+        tool.ainvoke.return_value = mock_result
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["title"] == "Break-in Attempt"
+        assert data["severity_reason"] == "Forced entry observed"
+        assert data["duration_seconds"] == 42
+        assert len(data["instruments"]) == 1
+        assert data["instruments"][0]["name"] == "crowbar"
+        assert data["instruments"][0]["threat_level"] == 3
+        assert len(data["assets"]) == 1
+        assert data["assets"][0]["name"] == "back door"
+        assert len(data["timeline"]) == 1
+        assert data["timeline"][0]["start_seconds"] == 5.0
+        assert data["timeline"][0]["end_seconds"] == 15.0
+        assert data["uncertainties"] == ["suspect face obscured"]

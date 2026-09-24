@@ -28,12 +28,17 @@ from unittest.mock import patch
 
 import pytest
 
+from vss_agents.data_models.incident_report import Asset
 from vss_agents.data_models.incident_report import IncidentReport
+from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import Person
+from vss_agents.data_models.incident_report import TimelineItem
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
+from vss_agents.tools.incident_report_gen import _derive_asset_id
 from vss_agents.tools.incident_report_gen import _derive_incident_bounds
+from vss_agents.tools.incident_report_gen import _derive_instrument_id
 from vss_agents.tools.incident_report_gen import _derive_video_id
 from vss_agents.tools.incident_report_gen import _extract_structured_report
 from vss_agents.tools.incident_report_gen import _seconds_to_mmss
@@ -169,6 +174,31 @@ class TestExtractStructuredReportFailSoft:
         result = await _extract_structured_report(llm, "report", 60.0)
         assert isinstance(result, IncidentReport)
         assert result.incident_type == "road accident"
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_threat_level_keeps_rest_of_report(self):
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(
+            return_value={
+                "incident_type": "fighting",
+                "severity": 4,
+                "persons": [{"description": "man in red", "actions": "punching"}],
+                "instruments": [
+                    {"name": "fist", "description": "bare hands", "threat_level": 0},
+                    {"name": "knife", "description": "blade", "threat_level": 10},
+                    {"name": "bat", "description": "wooden bat", "threat_level": "unknown"},
+                ],
+                "assets": [{"name": "car", "description": "parked sedan"}],
+            }
+        )
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        result = await _extract_structured_report(llm, "report", 60.0)
+        assert result.incident_type == "fighting"
+        assert result.severity == 4
+        assert len(result.persons) == 1
+        assert [i.threat_level for i in result.instruments] == [None, 5, None]
+        assert result.assets[0].name == "car"
 
     @pytest.mark.asyncio
     async def test_timeout_degrades_to_default_report(self):
@@ -464,3 +494,138 @@ class TestEndToEnd:
 
         assert result.structured_report.incident_type == "burglary"
         mock_db.upsert_video.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_persists_instruments_and_assets(self):
+        """Instruments and assets are persisted with delete-then-insert per model run."""
+        extracted = IncidentReport(
+            title="Vehicle Break-in",
+            incident_type="burglary",
+            severity=3,
+            severity_reason="Forced entry to vehicle",
+            confidence=0.9,
+            duration_seconds=30,
+            instruments=[
+                Instrument(name="crowbar", description="metal tool", threat_level=3),
+                Instrument(name="flashlight", description="tactical light", threat_level=None),
+            ],
+            assets=[
+                Asset(name="delivery van", description="side door lock damaged"),
+            ],
+        )
+        config, builder, _ = self._build_mocks(extracted=extracted)
+
+        _, mock_db = await self._run(config, builder, db_configured=True)
+
+        expected_incident_id = _derive_video_id("cam1.mp4")
+
+        # Instruments: delete called first, then each added
+        mock_db.delete_incident_instruments.assert_awaited_once_with(expected_incident_id, "incident_report_gen")
+        assert mock_db.add_incident_instrument.await_count == 2
+        inst_args = [call.kwargs for call in mock_db.add_incident_instrument.await_args_list]
+        assert inst_args[0]["name"] == "crowbar"
+        assert inst_args[0]["threat_level"] == 3
+        assert inst_args[0]["instrument_id"] == _derive_instrument_id(expected_incident_id, 0)
+        assert inst_args[1]["name"] == "flashlight"
+        assert inst_args[1]["threat_level"] is None
+        assert inst_args[1]["instrument_id"] == _derive_instrument_id(expected_incident_id, 1)
+
+        # Assets: delete called first, then each added
+        mock_db.delete_incident_assets.assert_awaited_once_with(expected_incident_id, "incident_report_gen")
+        assert mock_db.add_incident_asset.await_count == 1
+        asset_args = [call.kwargs for call in mock_db.add_incident_asset.await_args_list]
+        assert asset_args[0]["name"] == "delivery van"
+        assert asset_args[0]["description"] == "side door lock damaged"
+        assert asset_args[0]["asset_id"] == _derive_asset_id(expected_incident_id, 0)
+
+        # Confirm delete came before insert
+        call_names = [call[0] for call in mock_db.mock_calls if call[0]]
+        first_inst_insert = call_names.index("add_incident_instrument")
+        assert call_names.index("delete_incident_instruments") < first_inst_insert
+        first_asset_insert = call_names.index("add_incident_asset")
+        assert call_names.index("delete_incident_assets") < first_asset_insert
+
+        # Confirm duration passed in insert_incident fields
+        _, insert_kwargs = mock_db.insert_incident.await_args
+        assert insert_kwargs["fields"]["duration"] == 30
+
+    @pytest.mark.asyncio
+    async def test_persists_custom_model_run_id_override(self):
+        """When tool_input supplies model_run_id, persistence uses it instead of config.model_run_id."""
+        extracted = IncidentReport(
+            incident_type="burglary",
+            severity=2,
+            confidence=0.7,
+            instruments=[Instrument(name="knife", description="kitchen knife", threat_level=4)],
+            assets=[Asset(name="safe", description="opened")],
+        )
+        config, builder, _ = self._build_mocks(extracted=extracted)
+
+        custom_run_id = "m_run_custom_001"
+        tool_input = IncidentReportGenInput(
+            sensor_id="cam1.mp4",
+            model_run_id=custom_run_id,
+        )
+
+        _, mock_db = await self._run(config, builder, db_configured=True, tool_input=tool_input)
+
+        expected_incident_id = _derive_video_id("cam1.mp4")
+        mock_db.insert_model_run.assert_awaited_once_with(custom_run_id, model_name=config.model_name)
+        mock_db.insert_incident.assert_awaited_once()
+        assert mock_db.insert_incident.await_args.args == (expected_incident_id, custom_run_id)
+        mock_db.delete_incident_entities.assert_awaited_once_with(expected_incident_id, custom_run_id)
+        mock_db.delete_incident_instruments.assert_awaited_once_with(expected_incident_id, custom_run_id)
+        mock_db.delete_incident_assets.assert_awaited_once_with(expected_incident_id, custom_run_id)
+
+
+class TestIncidentReportModels:
+    """Test data model behavior and validation for IncidentReport and sub-models."""
+
+    def test_default_values(self):
+        report = IncidentReport()
+        assert report.title == ""
+        assert report.severity_reason == ""
+        assert report.duration_seconds is None
+        assert report.instruments == []
+        assert report.assets == []
+        assert report.timeline == []
+        assert report.uncertainties == []
+
+    def test_submodels_construction_and_serialization(self):
+        item = TimelineItem(start_seconds=1.5, end_seconds=4.0, description="action")
+        assert item.start_seconds == 1.5
+        assert item.end_seconds == 4.0
+        assert item.description == "action"
+
+        inst = Instrument(name="bat", description="baseball bat", threat_level=2)
+        assert inst.name == "bat"
+        assert inst.threat_level == 2
+
+        asset = Asset(name="window", description="broken glass")
+        assert asset.name == "window"
+        assert asset.description == "broken glass"
+
+        report = IncidentReport(
+            title="Shattered Window",
+            severity_reason="Property damage",
+            instruments=[inst],
+            assets=[asset],
+            timeline=[item],
+            uncertainties=["direction of escape"],
+        )
+        data = report.model_dump()
+        assert data["title"] == "Shattered Window"
+        assert data["severity_reason"] == "Property damage"
+        assert len(data["instruments"]) == 1
+        assert len(data["assets"]) == 1
+        assert len(data["timeline"]) == 1
+        assert data["uncertainties"] == ["direction of escape"]
+
+    def test_id_derivation_lengths(self):
+        long_incident_id = "v" + "x" * 19
+        inst_id = _derive_instrument_id(long_incident_id, 0)
+        asset_id = _derive_asset_id(long_incident_id, 0)
+        assert len(inst_id) <= 20
+        assert inst_id.startswith("i")
+        assert len(asset_id) <= 20
+        assert asset_id.startswith("a")
