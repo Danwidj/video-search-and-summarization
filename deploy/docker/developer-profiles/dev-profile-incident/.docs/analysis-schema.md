@@ -87,7 +87,7 @@ Furthermore, `incident-console-v2/app/api/analysis/route.ts` implements runtime 
 The table below contrasts the reference agent fields, the console v2 fields, the translation logic,
 and every documented discrepancy.
 
-| Reference Field (`services/agent`) | Console v2 Field (`lib/analysis/schema.ts`) | Translation in `route.ts` (`analyzeViaAgent`) | Mismatch & Divergence Notes |
+| Reference Field (`services/agent`) | Console v2 Field (`incident-console-v2/lib/analysis/schema.ts`) | Translation in `incident-console-v2/app/api/analysis/route.ts` (`analyzeViaAgent`) | Mismatch & Divergence Notes |
 |---|---|---|---|
 | `title` (`str`, def `""`) | `title` (`string`, def `'Untitled Incident'`, max 160) | `(agentPayload.title \|\| '').trim() \|\| 'Incident Report'` | **Default mismatch:** Agent defaults to empty string; Console defaults to `'Untitled Incident'` (fallback `'Incident Report'` in translation). Console enforces 160 character limit. |
 | `incident_type` (`str`, def `"road accident"`) | `incidentType` (`string`, def `'other'`, max 32) | `(agentPayload.incident_type \|\| '').trim() \|\| 'other'` | **Naming & Default mismatch:** Snake_case vs camelCase. Agent taxonomy default is `"road accident"` (`INCIDENT_TYPES[0]`); Console default is `'other'` with max 32 chars. |
@@ -124,4 +124,4 @@ per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.p
 | `severity` | `severity_level` | `INTEGER` |
 | `confidence` | `confidence_score` | `REAL` / `FLOAT` |
 
-This mapping is performed in `incident_report_gen.py` before invoking `IncidentDB.insert_incident()`.
+This mapping is performed in `services/agent/src/vss_agents/tools/incident_report_gen.py` before invoking `IncidentDB.insert_incident()`.

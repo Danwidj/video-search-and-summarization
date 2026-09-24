@@ -10,10 +10,12 @@ Human-facing overview for the incident search and reporting profile.
 ## Documentation
 
 - [Action plan & scope](.docs/action-plan.md)
+- [Current status & known issues](.docs/status.md)
 - [System architecture & sequence flows](.docs/architecture.md)
 - [Database schema & R2 storage](.docs/data.md)
 - [Incident analysis schema & field mapping](.docs/analysis-schema.md)
 - [Profile operations & runbook](.docs/incident-profile-operations.md)
+- [Decision log](.docs/decisions.md)
 - [Archive / Retired plans](.docs/archive/)
 - [Streamlit console](incident-console/README.md)
 - [Next.js console](incident-console-v2/README.md)
