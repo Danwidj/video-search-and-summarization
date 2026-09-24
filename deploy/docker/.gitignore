@@ -1,0 +1,7 @@
+# Deploy-time working data and any profile's rendered SDR config,
+# produced/rendered on every deploy - never source, never committed.
+data-dir/
+developer-profiles/*/sdrc/2d/configs/config.yml
+developer-profiles/*/sdrc/2d/configs/docker_cluster_config-streamprocessing.json
+services/infra/sdrc/.wdm-env/
+services/infra/sdrc/log/
