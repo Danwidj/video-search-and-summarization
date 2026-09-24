@@ -296,6 +296,9 @@ Both console frontends run on each teammate's laptop, connecting either to the s
    `incident-console-v2/.env.local`, which would overwrite the whole shared file through the symlink. Keys already
    present for v1 (`INCIDENT_SUPABASE_*`, `R2_*`) are shared. The full set v2 reads:
    ```dotenv
+   # Analysis flow: gateway (default, this local loop) or agent (VM flow, no gateway; see the v2 README)
+   ANALYSIS_MODE=gateway
+
    # VLM Gateway (holds upstream inference credential; NOT exposed to browser)
    VLM_GATEWAY_URL=http://127.0.0.1:8600
    VLM_MODEL=nvidia/cosmos-3-nano-reasoner
