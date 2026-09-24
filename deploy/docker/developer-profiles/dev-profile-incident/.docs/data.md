@@ -8,7 +8,8 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 ## 1. Supabase PostgreSQL Schema
 
 The database schema is defined authoritatively by `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`
-using SQLAlchemy Core (`metadata.create_all(checkfirst=True)`). It supports multi-model runs over
+using SQLAlchemy Core (`metadata.create_all(checkfirst=True)`) and `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`
+(applied via `supabase db push`, see [`../supabase/README.md`](../supabase/README.md)). It supports multi-model runs over
 the same video, a parallel ground-truth evaluation structure, and human review workflows.
 
 ### Entity-Relationship Diagram
@@ -213,7 +214,7 @@ erDiagram
 
 ##### `videos`
 Primary registry of ingested video assets.
-- **Identity Rule:** `videos.id` serves as the natural primary key and is identical to `incidents.incident_id`. There is no separate `video_id`.
+- **Identity Rule:** 1 video = 1 incident (`incidents.incident_id` == `videos.id`, no separate `video_id` column). `videos.id` serves as the natural primary key.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -415,6 +416,40 @@ $$;
 
 This ensures that re-analyzing an incident atomically replaces the previous report for that run ID
 and resets review status to `'unreviewed'` in a single database transaction.
+
+---
+
+### Client Access Models & PostgREST/Direct-Postgres Split
+
+Database access is split across two client implementations according to operational requirements:
+
+1. **Console & Tooling (Direct Postgres):**
+   `incident-console/db.py` uses direct Postgres via SQLAlchemy Core and `psycopg2`. Configuration is `INCIDENT_DB_DSN`.
+   The console is database-backed only; there is no offline CSV-preview UI mode.
+
+2. **Agent Side (Supabase PostgREST):**
+   `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase
+   PostgREST CRUD helper (`supabase-py`'s `AsyncClient`/`acreate_client`, not `asyncpg`/direct-Postgres) against
+   the same schema, mirroring `incident-console/db.py`'s tables and columns for the subset an agent-side caller plausibly writes
+   (`videos`, `model_runs`, `incidents`, `entities`, `instruments`, `assets`, `reports`, `review_status`, `notifications`; the `gt_*` and
+   `*_matches` tables stay console/eval-only).
+   - **Configuration:** `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`
+     (deliberately NOT `INCIDENT_DB_DSN`, which stays owned by the console's own `incident-console/db.py`); unset means the feature is
+     unavailable, no fallback.
+   - **Network Constraint / DPI Blocking Rationale:** This split exists because the deployment VM (`kwanz-ws`) DPI-blocks raw Postgres wire
+     protocol on port 5432, so only the HTTPS-based PostgREST route works for the agent from there — a direct-Postgres
+     driver on the agent side breaks Analyze on `kwanz-ws`.
+   - **Transaction Limits & RPC:** PostgREST has no client-held transactions or `SELECT ... FOR UPDATE`; the one operation needing atomicity
+     (`insert_incident`'s delete-then-insert plus `review_status` reset) calls the `insert_incident` Postgres RPC function
+     (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` instead (see [`../supabase/README.md`](../supabase/README.md)
+     for how to apply it via `supabase db push`).
+
+### Fixture CSV Seed Data Quirk
+
+Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
+(72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
+(`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `incident-console/scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
+36 real incidents under one shared `model_run_id`.
 
 ---
 

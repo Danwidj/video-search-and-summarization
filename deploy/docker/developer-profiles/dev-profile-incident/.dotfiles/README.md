@@ -86,15 +86,3 @@ Then start a new shell (or `source ~/.bashrc`).
   drift), and the native half goes through `native-services.sh`. Each script preserves its own grounding comment (cache-loss
   warnings, the `rebuild.sh` destructive-action confirmation prompt,
   subshell-`cd` reasoning, etc.) — see each file's header.
-- **`tunnel.sh` / `tunnel-check.sh` / `start.sh`** (in
-  `deploy/docker/developer-profiles/dev-profile-incident/.scripts/` and top-level `dev-profile-incident/`) — the one
-  exception to "these scripts run on the VM": the first two run on your
-  **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
-  the laptop-local incident-console reaches the real kwanz-ws backend
-  (agent :8000, LLM :30081, VLM :30082) instead of the mock; `start.sh` is
-  the one-command flow that checks the VM deploy state over SSH (deploying
-  the backend fresh if nothing is running, starting missing services for a
-  partial deploy),
-  opens the tunnel in the background, and launches the local console — see
-  `dev-profile-incident/README.md`'s "Steps to deploy" section for the
-  walkthrough and `start.sh`'s own header.

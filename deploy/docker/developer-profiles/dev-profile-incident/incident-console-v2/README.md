@@ -74,11 +74,22 @@ reachability booleans; it never returns URLs or credentials.
 
 Selecting a video immediately starts the three-step nvstreamer upload. If that upload has no durable R2 key (the
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
-continuing — see [`AGENTS.md`](../../../../../AGENTS.md)'s "incident-console-v2 real-VST R2 upload fallback". It then signs the resulting R2 object
+continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
 for temporary model access, submits it to Cosmos through the gateway, validates the structured result, persists it
 through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent analyzes
 and persists the incident instead of the gateway; see the variable list above). Start with short clips while inference remains
 synchronous.
+
+### Real-VST R2 upload fallback
+
+Real VST/NvStreamer's chunk-upload response never includes a durable R2 object key (`filePath`) — only
+`mock-backend`'s own reimplementation (`../mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py`) fakes that field by doing its own R2 upload. Since
+`incident-console-v2`'s analysis flow (`app/api/analysis/route.ts`) hard-requires that key, `components/analysis-workspace.tsx`
+checks the chunk-upload response for a valid key and, when missing (the real-VST case), uploads the file itself
+through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObject` via `lib/r2/config.ts`'s
+`putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key
+going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
+flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
 
 ## Phase 3 report workspace
 
