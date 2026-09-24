@@ -60,7 +60,7 @@ Next.js loads them from `.env.local` in this directory, which is a symlink to th
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
 
-- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required).
+- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the agent persists the incident and its evidence; v2 only upserts the `videos` row (before the call, so the agent can resolve the sensor id, and again after it to keep `filepath` as the R2 key), the `model_runs` notes and the `reports` row.
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
 - `VLM_MODEL` — optional hosted model ID; defaults to `nvidia/cosmos-3-nano-reasoner`.
 - `INCIDENT_AGENT_BASE_URL` — mock or real vss-agent base URL used for video upload, agent chat, and incident analysis (in `agent` mode).

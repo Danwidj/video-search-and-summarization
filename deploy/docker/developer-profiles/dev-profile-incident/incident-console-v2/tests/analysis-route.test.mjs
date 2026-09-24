@@ -142,7 +142,7 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
 
-test('agent mode: calls agent analyze endpoint, maps snake_case report, does not write to Supabase', async () => {
+test('agent mode: calls agent analyze endpoint, maps snake_case report, writes only report bookkeeping', async () => {
   process.env.ANALYSIS_MODE = 'agent';
   delete process.env.VLM_GATEWAY_URL;
 
@@ -179,7 +179,10 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, does not
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return new Response(JSON.stringify([{ id: 'ok' }]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   };
 
   const response = await POST(
@@ -208,9 +211,44 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, does not
   assert.equal(agentBody.reasoning, true);
   assert.equal(agentBody.prompt_override, 'focus on vehicle movement');
 
-  // No Supabase calls made in agent mode
-  const supabaseCalls = recordedCalls.filter((c) => c.url.includes('supabase.test'));
-  assert.equal(supabaseCalls.length, 0, 'agent mode must not re-persist to Supabase');
+  const agentIndex = recordedCalls.findIndex((c) => c.url.includes('/api/v1/incidents/'));
+  const supabaseWrites = recordedCalls
+    .map((c, index) => ({ ...c, index }))
+    .filter((c) => c.url.includes('supabase.test'))
+    .map((c) => ({
+      index: c.index,
+      table: new URL(c.url).pathname.replace('/rest/v1/', ''),
+      body: JSON.parse(c.options.body),
+    }));
+  const writtenTables = new Set(supabaseWrites.map((w) => w.table));
+  assert.deepEqual([...writtenTables].sort(), ['model_runs', 'reports', 'videos']);
+  for (const table of ['incidents', 'review_status', 'entities', 'instruments', 'assets', 'rpc/insert_incident']) {
+    assert.ok(!writtenTables.has(table), `agent mode must not write ${table}`);
+  }
+
+  const videoWrites = supabaseWrites.filter((w) => w.table === 'videos');
+  assert.ok(videoWrites.some((w) => w.index < agentIndex), 'videos row must be upserted before the agent call');
+  for (const write of videoWrites) {
+    assert.equal(write.body.id, report.videoId);
+    assert.equal(write.body.source, 'sensor-camera-01');
+    assert.equal(write.body.filepath, 'uploads/sensor-camera-01/clip.mp4');
+  }
+  const lastVideoWrite = videoWrites.at(-1);
+  assert.ok(lastVideoWrite.index > agentIndex, 'videos.filepath must be restored after the agent call');
+  assert.equal(lastVideoWrite.body.filepath, 'uploads/sensor-camera-01/clip.mp4');
+
+  const modelRunWrite = supabaseWrites.find((w) => w.table === 'model_runs');
+  assert.ok(modelRunWrite.index > agentIndex);
+  assert.equal(modelRunWrite.body.id, report.modelRunId);
+  const notes = JSON.parse(modelRunWrite.body.notes);
+  assert.deepEqual(notes.incidentConsoleV2.report, report);
+  assert.equal(notes.incidentConsoleV2.rawModelOutput, report.rawModelOutput);
+
+  const reportWrite = supabaseWrites.find((w) => w.table === 'reports');
+  assert.ok(reportWrite.index > modelRunWrite.index);
+  assert.equal(reportWrite.body.id, report.reportId);
+  assert.equal(reportWrite.body.incident_id, report.videoId);
+  assert.equal(reportWrite.body.model_run_id, report.modelRunId);
 
   // Schema & mapping verification
   assert.equal(report.title, 'Vehicle Collision at Intersection');

@@ -74,6 +74,56 @@ interface AgentIncidentReportResponse {
   model?: string;
 }
 
+async function saveVideo(
+  db: PostgrestClient,
+  video: { videoId: string; filepath: string; sensorId: string; uploadedAt: string; duration?: number | null },
+): Promise<void> {
+  const row: Record<string, unknown> = {
+    id: video.videoId,
+    filepath: video.filepath,
+    source: video.sensorId,
+    uploaded_datetime: video.uploadedAt,
+  };
+  if (video.duration !== undefined) row.duration = video.duration;
+  await db.upsert('videos', row, 'id');
+}
+
+async function saveModelRun(db: PostgrestClient, report: AnalysisReport): Promise<void> {
+  await db.upsert(
+    'model_runs',
+    {
+      id: report.modelRunId,
+      model_name: report.model,
+      model_version: null,
+      prompt_version: report.promptVersion ?? null,
+      run_datetime: report.generatedAt,
+      notes: JSON.stringify({
+        incidentConsoleV2: {
+          report,
+          rawModelOutput: report.rawModelOutput,
+          normalizedModelOutput: report.normalizedModelOutput,
+        },
+      }),
+    },
+    'id',
+  );
+}
+
+async function saveReport(db: PostgrestClient, report: AnalysisReport): Promise<void> {
+  await db.upsert(
+    'reports',
+    {
+      id: report.reportId,
+      incident_id: report.videoId,
+      query_id: null,
+      model_run_id: report.modelRunId,
+      filepath: null,
+      generated_datetime: report.generatedAt,
+    },
+    'id',
+  );
+}
+
 async function analyzeViaGateway(
   input: AnalysisRequest & { sensorId: string; filepath: string; filename: string },
   config: ServiceConfiguration,
@@ -145,36 +195,15 @@ async function analyzeViaGateway(
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     operation = 'saving the video to PostgREST';
-    await db.upsert(
-      'videos',
-      {
-        id: videoId,
-        filepath: input.filepath,
-        duration: analysis.durationSeconds,
-        source: input.sensorId,
-        uploaded_datetime: generatedAt,
-      },
-      'id',
-    );
+    await saveVideo(db, {
+      videoId,
+      filepath: input.filepath,
+      sensorId: input.sensorId,
+      uploadedAt: generatedAt,
+      duration: analysis.durationSeconds,
+    });
     operation = 'saving the model run to PostgREST';
-    await db.upsert(
-      'model_runs',
-      {
-        id: modelRunId,
-        model_name: report.model,
-        model_version: null,
-        prompt_version: INCIDENT_PROMPT_VERSION,
-        run_datetime: generatedAt,
-        notes: JSON.stringify({
-          incidentConsoleV2: {
-            report,
-            rawModelOutput: content,
-            normalizedModelOutput,
-          },
-        }),
-      },
-      'id',
-    );
+    await saveModelRun(db, report);
     operation = 'saving the incident through the PostgREST RPC';
     await db.insertIncident({
       p_incident_id: videoId,
@@ -239,18 +268,7 @@ async function analyzeViaGateway(
       );
     }
     operation = 'saving report metadata to PostgREST';
-    await db.upsert(
-      'reports',
-      {
-        id: reportId,
-        incident_id: videoId,
-        query_id: null,
-        model_run_id: modelRunId,
-        filepath: null,
-        generated_datetime: generatedAt,
-      },
-      'id',
-    );
+    await saveReport(db, report);
 
     return report;
   } catch (error) {
@@ -282,6 +300,10 @@ async function analyzeViaAgent(
     if (promptOverride) {
       requestBody.prompt_override = promptOverride;
     }
+
+    const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
+    operation = 'saving the video to PostgREST';
+    await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt });
 
     operation = 'calling the incident agent';
     const endpoint = `${config.agentUrl!.replace(/\/$/, '')}/api/v1/incidents/${videoId}/analyze`;
@@ -389,7 +411,7 @@ async function analyzeViaAgent(
       uncertainties,
     });
 
-    return {
+    const report: AnalysisReport = {
       ...analysis,
       videoId,
       modelRunId,
@@ -401,6 +423,15 @@ async function analyzeViaAgent(
       rawModelOutput: rawOutput,
       normalizedModelOutput: rawOutput,
     };
+
+    operation = 'saving the model run to PostgREST';
+    await saveModelRun(db, report);
+    operation = 'restoring the video R2 key in PostgREST';
+    await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt });
+    operation = 'saving report metadata to PostgREST';
+    await saveReport(db, report);
+
+    return report;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`${operation} failed: ${detail}`);
