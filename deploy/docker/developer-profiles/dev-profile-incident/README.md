@@ -383,6 +383,54 @@ cd deploy/docker/developer-profiles/dev-profile-incident
 
 Both modes background their local processes (mock-backend, vlm-gateway, or SSH tunnel) and tear them down on exit (Ctrl-C). Run from the laptop only — it refuses to run on `kwanz-ws` itself.
 
+#### vm mode: SSH access and deploy behaviour
+
+SSH access to kwanz-ws is per-person (see the manual flow below), so
+`start.sh` no longer hardcodes a VM username: it prompts for one, pre-filled
+with the `User` from your `~/.ssh/config` entry for `kwanz-ws` if there is one,
+else your local `$USER` (just hit Enter if that matches your VM account, or type
+a different one; the prompt accepts the default after 5 s). Set `VSS_SSH_USER` to
+skip the prompt non-interactively (e.g. in a script), `VSS_SSH_TARGET` (full
+`user@host`) to override the login entirely, or `VSS_SSH_HOST` to target a
+host other than `kwanz-ws`. `.scripts/tunnel.sh` resolves its VM
+login the same way.
+
+`start.sh` checks the VM's deploy state over SSH — Docker containers
+(`docker compose -p mdx ps`) **and** native services
+(`.scripts/native-services.sh status`, see [Native vs. Docker service split](#5-native-vs-docker-service-split)):
+
+- **Nothing running** → deploys the backend fresh over SSH: Docker appliance
+  containers only (`docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <docker-services>`, no `vss-agent` in that list), then starts the native
+  services (`native-services.sh start`), then opens the tunnel, then starts
+  v2.
+- **Everything expected up** → skips the deploy, straight to tunnel + v2.
+- **Partial deploy** → stops and prints exactly what's up vs. what's
+  missing/expected for both Docker and native services (with a nonzero exit),
+  telling you to clear the partial state manually before re-running. It
+  deliberately never auto-reconciles or force-redeploys over a partial state.
+
+Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
+`behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker; vm mode only).
+
+#### Troubleshooting the VM SSH username (vm mode)
+
+- **No prompt appears at all** — a `VSS_SSH_TARGET` env var is already set in
+  your shell (it takes priority over the prompt). `unset VSS_SSH_TARGET` to
+  be prompted again.
+- **The pre-filled default is your ssh-config or local machine username, not
+  necessarily your VM account** — kwanz-ws access is per-person and Tailscale-gated;
+  don't just accept the default if you know it's wrong for you.
+- **To check if a username is valid before running the whole script:**
+  `ssh <username>@kwanz-ws echo ok`. A
+  `tailscale: tailnet policy does not permit you to SSH as user "..."` error
+  means that username isn't authorized for your device — try a different one
+  or ask whoever manages VM access.
+- **SSH works but `start.sh` still fails with a Docker permission error** — a
+  `permission denied ... Docker daemon socket` error means that VM account
+  needs Docker group access: on the VM, run `sudo usermod -aG docker <username>` once (needs sudo there), then fully log out and reconnect
+  (exit the SSH session and ssh back in) — group membership doesn't apply to
+  an already-open session.
+
 ### Manual flow (vm mode, same pieces individually)
 
 1. SSH access to kwanz-ws under your own account (you should already have
