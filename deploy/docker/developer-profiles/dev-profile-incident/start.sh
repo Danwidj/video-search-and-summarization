@@ -5,6 +5,18 @@
 #
 #   cd deploy/docker/developer-profiles/dev-profile-incident && ./start.sh
 #
+# Modes (via --mode or VSS_START_MODE, default: vm):
+#   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
+#           tunnel). Exports ANALYSIS_MODE=agent so v2 calls the agent's
+#           /analyze endpoint directly. No local vlm-gateway.
+#   local — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
+#           and vlm-gateway (127.0.0.1:8600) locally. Exports
+#           ANALYSIS_MODE=gateway so v2 calls the local gateway.
+#
+# Both modes launch incident-console-v2 (Next.js, port 3200). The Streamlit
+# v1 console is no longer started by this script — see local-start.sh or
+# incident-console/README.md if you need it.
+#
 # Architecture (Native vs Docker Split):
 #   - DOCKER SERVICES: Foundational appliance containers (VIOS/VST, HAProxy,
 #     Postgres, Redis, Phoenix, and optional Kafka/ElasticSearch).
@@ -12,7 +24,7 @@
 #     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
 #
-# Execution flow:
+# Execution flow (vm mode):
 #   1. Checks the current deploy state over SSH against the VM:
 #        - Docker containers via `docker compose -p mdx ps`
 #        - Native services via `native-services.sh status`
@@ -20,9 +32,9 @@
 #        - NOTHING expected running  -> deploy the backend fresh over SSH:
 #          Starts Docker appliances (`docker compose ... up -d <docker-services>`),
 #          then starts native services via `native-services.sh start`.
-#          Then opens the tunnel and starts the local console.
+#          Then opens the tunnel and starts v2.
 #        - EVERYTHING expected up    -> skip the deploy, straight to
-#          tunnel + console.
+#          tunnel + v2.
 #        - PARTIAL (some up)         -> STOP. Prints what's up vs. what's
 #          missing/expected and exits nonzero. This is a deliberate captain
 #          decision: never auto-reconcile, auto-clean, or force a redeploy
@@ -33,12 +45,14 @@
 #      forwarding the VM to itself is at best a no-op). It is backgrounded
 #      here so the script can continue, and is torn down automatically when
 #      the console exits (Ctrl-C).
-#   4. The console runs the profile's standard local dev loop:
-#      `cd incident-console && uv run streamlit run app.py` (see
-#      incident-console/README.md). It occupies the foreground; Ctrl-C when
+#   4. v2 runs the profile's standard local dev loop:
+#      `cd incident-console-v2 && npm run dev -- --port 3200` (see
+#      incident-console-v2/README.md). It occupies the foreground; Ctrl-C when
 #      you're done.
 #
 # Overrides:
+#   VSS_START_MODE           'vm' or 'local' — skips the interactive prompt
+#                            if set. Default: 'vm'.
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is with no prompt. If unset, the VM
 #                            username is resolved by resolve-ssh-target.sh:
@@ -57,6 +71,34 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse --mode flag
+VSS_START_MODE="${VSS_START_MODE:-vm}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      VSS_START_MODE="${2:-}"
+      shift 2
+      ;;
+    --mode=*)
+      VSS_START_MODE="${1#*=}"
+      shift
+      ;;
+    *)
+      echo "start.sh: unknown argument '$1'" >&2
+      echo "Usage: ./start.sh [--mode local|vm]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "$VSS_START_MODE" in
+  vm|local) ;;
+  *)
+    echo "start.sh: VSS_START_MODE must be 'vm' or 'local' (got '$VSS_START_MODE')." >&2
+    exit 1
+    ;;
+esac
 
 # shellcheck source=.scripts/resolve-ssh-target.sh
 source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
@@ -80,12 +122,25 @@ INCIDENT_NATIVE_SERVICES="${INCIDENT_NATIVE_SERVICES:-$default_native_services}"
 
 # Laptop-side only: refuse to run ON kwanz-ws
 if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then
-  echo "start.sh: run this from your laptop, not on kwanz-ws (it SSHes to the VM, forwards laptop ports to it, and runs the console locally)." >&2
+  echo "start.sh: run this from your laptop, not on kwanz-ws (it SSHes to the VM, forwards laptop ports to it, and runs v2 locally)." >&2
   exit 1
 fi
 
 TUNNEL_PID=""
+MOCK_BACKEND_PID=""
+VLM_GATEWAY_PID=""
+
 cleanup() {
+  if [ -n "$VLM_GATEWAY_PID" ] && kill -0 "$VLM_GATEWAY_PID" 2>/dev/null; then
+    kill "$VLM_GATEWAY_PID" 2>/dev/null || true
+    echo "start.sh: stopped the local vlm-gateway (pid $VLM_GATEWAY_PID)."
+    VLM_GATEWAY_PID=""
+  fi
+  if [ -n "$MOCK_BACKEND_PID" ] && kill -0 "$MOCK_BACKEND_PID" 2>/dev/null; then
+    kill "$MOCK_BACKEND_PID" 2>/dev/null || true
+    echo "start.sh: stopped the local mock backend (pid $MOCK_BACKEND_PID)."
+    MOCK_BACKEND_PID=""
+  fi
   if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
     echo "start.sh: closed the backgrounded SSH tunnel (pid $TUNNEL_PID)."
@@ -94,83 +149,84 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
+if [ "$VSS_START_MODE" = "vm" ]; then
+  echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
 
-# 1. Query Docker containers state
-state_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-  "cd '$VSS_REPO_ROOT/deploy/docker' && docker compose -p mdx ps -a --format '{{.Name}} {{.State}}'" 2>&1)"
-ssh_rc=$?
-if [ "$ssh_rc" -ne 0 ]; then
-  echo "start.sh: could not query Docker deploy state over SSH ($VSS_SSH_TARGET)." >&2
-  echo "${state_output}" >&2
-  echo "  Is the VM reachable (tailscale/network) and is docker compose available?" >&2
-  exit 1
-fi
-
-# 2. Query Native services state
-native_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status --porcelain" 2>&1)"
-native_rc=$?
-if [ "$native_rc" -ne 0 ]; then
-  echo "start.sh: could not query native services state over SSH ($VSS_SSH_TARGET)." >&2
-  echo "${native_output}" >&2
-  exit 1
-fi
-
-echo "--- Docker containers (project: mdx) ---"
-if [ -z "$state_output" ]; then
-  echo "(no containers)"
-else
-  echo "${state_output}"
-fi
-
-echo "--- Native services (managed natively) ---"
-ssh "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status" 2>&1 || true
-
-docker_up=()
-docker_missing=()
-for svc in ${INCIDENT_DOCKER_SERVICES}; do
-  if echo "${state_output}" | grep -Eq "(^|[[:space:]-])${svc}(-[0-9]+)?[[:space:]]+running[[:space:]]*$"; then
-    docker_up+=("${svc}")
-  else
-    docker_missing+=("${svc}")
+  # 1. Query Docker containers state
+  state_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
+    "cd '$VSS_REPO_ROOT/deploy/docker' && docker compose -p mdx ps -a --format '{{.Name}} {{.State}}'" 2>&1)"
+  ssh_rc=$?
+  if [ "$ssh_rc" -ne 0 ]; then
+    echo "start.sh: could not query Docker deploy state over SSH ($VSS_SSH_TARGET)." >&2
+    echo "${state_output}" >&2
+    echo "  Is the VM reachable (tailscale/network) and is docker compose available?" >&2
+    exit 1
   fi
-done
 
-native_up=()
-native_missing=()
-for svc in ${INCIDENT_NATIVE_SERVICES}; do
-  if echo "${native_output}" | grep -Eq "^${svc}:running:"; then
-    native_up+=("${svc}")
-  else
-    native_missing+=("${svc}")
+  # 2. Query Native services state
+  native_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
+    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status --porcelain" 2>&1)"
+  native_rc=$?
+  if [ "$native_rc" -ne 0 ]; then
+    echo "start.sh: could not query native services state over SSH ($VSS_SSH_TARGET)." >&2
+    echo "${native_output}" >&2
+    exit 1
   fi
-done
 
-echo "--- Backend status evaluation ---"
-echo "  Docker services expected: ${INCIDENT_DOCKER_SERVICES}"
-echo "    up:      ${docker_up[*]:-(none)}"
-if [ "${#docker_missing[@]}" -gt 0 ]; then
-  echo "    missing: ${docker_missing[*]}"
-fi
+  echo "--- Docker containers (project: mdx) ---"
+  if [ -z "$state_output" ]; then
+    echo "(no containers)"
+  else
+    echo "${state_output}"
+  fi
 
-echo "  Native services expected: ${INCIDENT_NATIVE_SERVICES}"
-echo "    up:      ${native_up[*]:-(none)}"
-if [ "${#native_missing[@]}" -gt 0 ]; then
-  echo "    missing: ${native_missing[*]}"
-fi
+  echo "--- Native services (managed natively) ---"
+  ssh "$VSS_SSH_TARGET" \
+    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status" 2>&1 || true
 
-total_up_count=$((${#docker_up[@]} + ${#native_up[@]}))
-total_missing_count=$((${#docker_missing[@]} + ${#native_missing[@]}))
+  docker_up=()
+  docker_missing=()
+  for svc in ${INCIDENT_DOCKER_SERVICES}; do
+    if echo "${state_output}" | grep -Eq "(^|[[:space:]-])${svc}(-[0-9]+)?[[:space:]]+running[[:space:]]*$"; then
+      docker_up+=("${svc}")
+    else
+      docker_missing+=("${svc}")
+    fi
+  done
 
-if [ "$total_missing_count" -eq 0 ]; then
-  echo "start.sh: all expected backend services (Docker and native) are already running — skipping backend deploy."
-elif [ "$total_up_count" -eq 0 ]; then
-  echo "start.sh: nothing relevant is running — deploying the backend fresh."
-  echo "=== STEP 2/3 — Deploying backend (Docker appliances + Native services) ==="
+  native_up=()
+  native_missing=()
+  for svc in ${INCIDENT_NATIVE_SERVICES}; do
+    if echo "${native_output}" | grep -Eq "^${svc}:running:"; then
+      native_up+=("${svc}")
+    else
+      native_missing+=("${svc}")
+    fi
+  done
 
-  deploy_script=$(cat <<EOF
+  echo "--- Backend status evaluation ---"
+  echo "  Docker services expected: ${INCIDENT_DOCKER_SERVICES}"
+  echo "    up:      ${docker_up[*]:-(none)}"
+  if [ "${#docker_missing[@]}" -gt 0 ]; then
+    echo "    missing: ${docker_missing[*]}"
+  fi
+
+  echo "  Native services expected: ${INCIDENT_NATIVE_SERVICES}"
+  echo "    up:      ${native_up[*]:-(none)}"
+  if [ "${#native_missing[@]}" -gt 0 ]; then
+    echo "    missing: ${native_missing[*]}"
+  fi
+
+  total_up_count=$((${#docker_up[@]} + ${#native_up[@]}))
+  total_missing_count=$((${#docker_missing[@]} + ${#native_missing[@]}))
+
+  if [ "$total_missing_count" -eq 0 ]; then
+    echo "start.sh: all expected backend services (Docker and native) are already running — skipping backend deploy."
+  elif [ "$total_up_count" -eq 0 ]; then
+    echo "start.sh: nothing relevant is running — deploying the backend fresh."
+    echo "=== STEP 2/3 — Deploying backend (Docker appliances + Native services) ==="
+
+    deploy_script=$(cat <<EOF
 set -e
 cd "$VSS_REPO_ROOT/deploy/docker"
 if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
@@ -206,73 +262,107 @@ else
 fi
 EOF
 )
-  echo "--- deploying Docker appliances over SSH ---"
-  ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
-  deploy_rc=$?
-  if [ "$deploy_rc" -ne 0 ]; then
-    echo "start.sh: Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
+    echo "--- deploying Docker appliances over SSH ---"
+    ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
+    deploy_rc=$?
+    if [ "$deploy_rc" -ne 0 ]; then
+      echo "start.sh: Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
+      exit 1
+    fi
+
+    echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
+    ssh "$VSS_SSH_TARGET" \
+      "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
+    native_start_rc=$?
+    if [ "$native_start_rc" -ne 0 ]; then
+      echo "start.sh: Native service startup over SSH failed (exit $native_start_rc)." >&2
+      exit 1
+    fi
+
+    echo "start.sh: backend deploy completed (Docker appliances + Native services)."
+  else
+    echo "start.sh: PARTIAL deploy detected on ${VSS_SSH_TARGET} — stopping." >&2
+    echo "  Running too much/little state to trust a redeploy; start.sh deliberately" >&2
+    echo "  never auto-reconciles or force-redeploys over a partial state." >&2
+    echo "  Docker up:       ${docker_up[*]:-none}" >&2
+    echo "  Docker missing:  ${docker_missing[*]:-none}" >&2
+    echo "  Native up:       ${native_up[*]:-none}" >&2
+    echo "  Native missing:  ${native_missing[*]:-none}" >&2
+    echo "  Clear the partial state manually (on kwanz-ws: run down.sh to stop Docker and native services), then re-run ./start.sh." >&2
     exit 1
   fi
 
-  echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
-  ssh "$VSS_SSH_TARGET" \
-    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
-  native_start_rc=$?
-  if [ "$native_start_rc" -ne 0 ]; then
-    echo "start.sh: Native service startup over SSH failed (exit $native_start_rc)." >&2
+  echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
+  ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+    -L 8000:"$VSS_VM_IP":8000 \
+    -L 30081:"$VSS_VM_IP":30081 \
+    -L 30082:"$VSS_VM_IP":30082 \
+    -L 7777:"$VSS_VM_IP":7777 \
+    "$VSS_SSH_TARGET" &
+  TUNNEL_PID=$!
+
+  echo "  tunnel pid $TUNNEL_PID; waiting for the tunneled agent health check (localhost:8000/health)..."
+  tunnel_ok=""
+  for _i in $(seq 1 30); do
+    if curl -sf --max-time 5 http://localhost:8000/health | grep -q isAlive; then
+      tunnel_ok=1
+      break
+    fi
+    sleep 2
+  done
+  if [ -z "$tunnel_ok" ]; then
+    echo "start.sh: the tunneled agent never came up on localhost:8000." >&2
+    echo "  Run ./tunnel-check.sh for a per-port breakdown." >&2
+    cleanup
     exit 1
   fi
+  echo "  agent ok (localhost:8000 -> ${VSS_VM_IP}:8000)"
 
-  echo "start.sh: backend deploy completed (Docker appliances + Native services)."
-else
-  echo "start.sh: PARTIAL deploy detected on ${VSS_SSH_TARGET} — stopping." >&2
-  echo "  Running too much/little state to trust a redeploy; start.sh deliberately" >&2
-  echo "  never auto-reconciles or force-redeploys over a partial state." >&2
-  echo "  Docker up:       ${docker_up[*]:-none}" >&2
-  echo "  Docker missing:  ${docker_missing[*]:-none}" >&2
-  echo "  Native up:       ${native_up[*]:-none}" >&2
-  echo "  Native missing:  ${native_missing[*]:-none}" >&2
-  echo "  Clear the partial state manually (on kwanz-ws: run down.sh to stop Docker and native services), then re-run ./start.sh." >&2
-  exit 1
-fi
+  export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
+  export ANALYSIS_MODE="agent"
+elif [ "$VSS_START_MODE" = "local" ]; then
+  echo "=== Starting local mock backend (mock-backend/base_profile_mock, :7777) ==="
+  (
+    cd "${SCRIPT_DIR}/mock-backend/base_profile_mock"
+    uv sync
+    exec uv run --env-file "${SCRIPT_DIR}/incident-console/.env.local" \
+      uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777
+  ) &
+  MOCK_BACKEND_PID=$!
 
-echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
-  -L 8000:"$VSS_VM_IP":8000 \
-  -L 30081:"$VSS_VM_IP":30081 \
-  -L 30082:"$VSS_VM_IP":30082 \
-  -L 7777:"$VSS_VM_IP":7777 \
-  "$VSS_SSH_TARGET" &
-TUNNEL_PID=$!
+  echo "=== Starting local vlm-gateway (:8600) ==="
+  (
+    cd "${SCRIPT_DIR}/vlm-gateway"
+    uv sync
+    exec uv run --env-file "${SCRIPT_DIR}/vlm-gateway/.env.local" \
+      uvicorn app:app --host 127.0.0.1 --port 8600
+  ) &
+  VLM_GATEWAY_PID=$!
 
-echo "  tunnel pid $TUNNEL_PID; waiting for the tunneled agent health check (localhost:8000/health)..."
-tunnel_ok=""
-for _i in $(seq 1 30); do
-  if curl -sf --max-time 5 http://localhost:8000/health | grep -q isAlive; then
-    tunnel_ok=1
-    break
-  fi
+  # Give services a moment to start
   sleep 2
-done
-if [ -z "$tunnel_ok" ]; then
-  echo "start.sh: the tunneled agent never came up on localhost:8000." >&2
-  echo "  Run ./tunnel-check.sh for a per-port breakdown." >&2
-  cleanup
+
+  export INCIDENT_AGENT_BASE_URL="http://127.0.0.1:7777"
+  export VLM_GATEWAY_URL="http://127.0.0.1:8600"
+  export ANALYSIS_MODE="gateway"
+fi
+
+echo "  INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL}"
+if [ -n "${VLM_GATEWAY_URL:-}" ]; then
+  echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
+fi
+echo "  ANALYSIS_MODE=${ANALYSIS_MODE}"
+
+echo "=== FINAL STEP — Starting incident-console-v2 ==="
+if ! command -v npm >/dev/null 2>&1; then
+  echo "start.sh: 'npm' not found on PATH. Install Node.js/npm first, then re-run." >&2
   exit 1
 fi
-echo "  agent ok (localhost:8000 -> ${VSS_VM_IP}:8000)"
+cd "${SCRIPT_DIR}/incident-console-v2"
+npm install
 
-echo "=== FINAL STEP — Starting the local incident-console ==="
-if ! command -v uv >/dev/null 2>&1; then
-  echo "start.sh: 'uv' not found on PATH. Install uv first (see incident-console/README.md's local dev loop), then re-run." >&2
-  cleanup
-  exit 1
-fi
-cd "${SCRIPT_DIR}/incident-console"
-uv sync
-
-echo "  Streamlit running at http://localhost:8501 — Ctrl-C here (or close this terminal) stops the console and closes the tunnel."
-uv run streamlit run app.py
+echo "  v2 running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
+npm run dev -- --port 3200
 console_rc=$?
 cleanup
 exit "$console_rc"
