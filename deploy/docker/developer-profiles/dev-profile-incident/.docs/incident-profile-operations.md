@@ -124,17 +124,19 @@ Forwarded ports:
 
 ### SSH Username Resolution & Troubleshooting
 
-`start.sh` and `.scripts/tunnel.sh` resolve the SSH login target using `.scripts/resolve-ssh-target.sh`:
+`start.sh` (in `vm` mode) and `.scripts/tunnel.sh` resolve the SSH login target using `.scripts/resolve-ssh-target.sh` non-interactively with no prompts:
 1. **Explicit Target:** If `VSS_SSH_TARGET` is set (e.g. `user@kwanz-ws.tailf3aa43.ts.net`), it is used directly.
 2. **Explicit User:** If `VSS_SSH_USER` is set, it overrides the username while using `VSS_SSH_HOST` (default: `kwanz-ws`).
-3. **Prompt with default:** Otherwise, on an interactive terminal they prompt (5 s timeout) for the VM username, pre-filled with the User that ssh -G ${VSS_SSH_HOST:-kwanz-ws} resolves (your ~/.ssh/config User, else your local username); non-interactive runs use that default without prompting.
+3. **SSH Config User:** If neither is set, the scripts inspect `~/.ssh/config` for `Host kwanz-ws` (via `ssh -G "${VSS_SSH_HOST}"`).
+4. **Local Fallback:** Falls back to your local machine `$USER` / `whoami`.
+
+**Mode Isolation & Preflight Check:**
+- **Local Mode (`--mode local`):** Never sources `resolve-ssh-target.sh` and never touches SSH at all.
+- **VM Mode (`--mode vm`):** Runs a fast SSH preflight check (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`) before any tunnel, deploy check, env generation, npm install, or UI start. If the check fails, `start.sh` aborts immediately with non-zero exit status and an actionable error message.
 
 **Troubleshooting Gotchas:**
-- **Prompt Does Not Appear:** A stale `VSS_SSH_TARGET` or `VSS_SSH_USER` is set in your current shell.
-  Run `unset VSS_SSH_TARGET VSS_SSH_USER` to restore the interactive prompt.
-- **Wrong Default User:** Your local laptop username may not match your provisioned account on `kwanz-ws`.
-  Do not blindly accept the default prompt if your VM username differs; set `export VSS_SSH_USER="<your-vm-username>"`
-  in your laptop's `.bashrc` or `.zshrc`.
+- **SSH Preflight Fails:** Ensure Tailscale is active and connected, and verify your `Host kwanz-ws` entry in `~/.ssh/config` is configured with the correct `HostName` and `User`.
+- **Wrong User Account:** Each teammate has a provisioned account on `kwanz-ws`. Configure `User <your-vm-username>` under `Host kwanz-ws` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---
 

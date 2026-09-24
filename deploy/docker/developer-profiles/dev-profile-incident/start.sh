@@ -49,13 +49,13 @@
 #      you're done.
 #
 # Overrides:
-#   VSS_START_MODE           'vm' or 'local' — skips the interactive prompt
-#                            if set. Default: 'vm'.
+#   VSS_START_MODE           'vm' or 'local'. Default: 'vm'. In 'local' mode,
+#                            SSH is never resolved or touched.
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
-#                            used as-is with no prompt. If unset, the VM
-#                            username is resolved by resolve-ssh-target.sh:
-#                            VSS_SSH_USER env var (non-interactive override),
-#                            else ~/.ssh/config User, else $USER/whoami.
+#                            used as-is. If unset, the VM username is
+#                            resolved non-interactively by resolve-ssh-target.sh:
+#                            VSS_SSH_USER env var, else ~/.ssh/config User,
+#                            else $USER/whoami. No prompt is ever shown.
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
 #   VSS_SSH_HOST             VM hostname (default: kwanz-ws)
@@ -98,26 +98,6 @@ case "$VSS_START_MODE" in
     ;;
 esac
 
-# shellcheck source=.scripts/resolve-ssh-target.sh
-source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
-VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
-VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
-ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
-
-# Base Docker infrastructure (appliances)
-default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix kafka"
-if [ "${ENABLE_ANALYTICS}" = "true" ]; then
-  default_docker_services="${default_docker_services} elasticsearch"
-fi
-INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-${INCIDENT_EXPECTED_CONTAINERS:-$default_docker_services}}"
-
-# Native VM services
-default_native_services="vss-agent"
-if [ "${ENABLE_ANALYTICS}" = "true" ]; then
-  default_native_services="${default_native_services} video-analytics-api behavior-analytics"
-fi
-INCIDENT_NATIVE_SERVICES="${INCIDENT_NATIVE_SERVICES:-$default_native_services}"
-
 # Laptop-side only: refuse to run ON kwanz-ws
 if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then
   echo "start.sh: run this from your laptop, not on kwanz-ws (it SSHes to the VM, forwards laptop ports to it, and runs v2 locally)." >&2
@@ -148,6 +128,36 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [ "$VSS_START_MODE" = "vm" ]; then
+  # shellcheck source=.scripts/resolve-ssh-target.sh
+  source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
+  VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
+  VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
+  ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
+
+  # Base Docker infrastructure (appliances)
+  default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix kafka"
+  if [ "${ENABLE_ANALYTICS}" = "true" ]; then
+    default_docker_services="${default_docker_services} elasticsearch"
+  fi
+  INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-${INCIDENT_EXPECTED_CONTAINERS:-$default_docker_services}}"
+
+  # Native VM services
+  default_native_services="vss-agent"
+  if [ "${ENABLE_ANALYTICS}" = "true" ]; then
+    default_native_services="${default_native_services} video-analytics-api behavior-analytics"
+  fi
+  INCIDENT_NATIVE_SERVICES="${INCIDENT_NATIVE_SERVICES:-$default_native_services}"
+
+  # Fast SSH preflight check before any tunnel, deploy check, env generation, npm install, or UI start
+  if ! preflight_err="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true 2>&1)"; then
+    echo "start.sh: SSH connection to '$VSS_SSH_TARGET' failed." >&2
+    if [ -n "$preflight_err" ]; then
+      echo "  SSH error: ${preflight_err}" >&2
+    fi
+    echo "  Fix: Check your 'Host kwanz-ws' entry in ~/.ssh/config and ensure Tailscale/network is connected." >&2
+    exit 1
+  fi
+
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
 
   # 1. Query Docker containers state
