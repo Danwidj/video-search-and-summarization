@@ -1,10 +1,9 @@
 # P1/RP1 evaluation pipeline
 
-This is a **Python** subproject, physically located here inside `incident-console-v2` (a Next.js/TypeScript app)
-at the captain's explicit request to relocate the evaluation pipeline out of the Streamlit `incident-console` app.
-It is not integrated with the Next.js app in any way - it runs as its own separate Python process, with its own
-virtual environment, and shares no code or runtime with the TypeScript app around it. `incident-console-v2`'s own
-tooling (`next build`, `npm test`, etc.) never touches this directory.
+This is a standalone **Python** subproject, living at the `dev-profile-incident` profile root alongside
+`incident-console/`, `incident-console-v2/`, and `vlm-gateway/` - not nested inside any of them. It runs as its own
+separate Python process with its own virtual environment and shares no code or runtime with any other service in
+this profile beyond the copied modules below.
 
 It evaluates structured incident extraction ("P1") across three VLMs on held-out video, and generates ("RP1", never
 scored) a human-readable report per prediction. Full methodology and the three-model benchmark results are in
@@ -16,9 +15,9 @@ The scoring/matching/DB-access code this pipeline depends on (`matching.py`, `ev
 `db_connection.py`, `embed_client.py`, `incident_report.py`, `r2_videos.py`) is copied verbatim from
 `incident-console` - it is the same scoring and data-access code, not a reimplementation, and not wired back to the
 original (no shared imports, no shared `sys.path` entry). The original `incident-console` copy is unaffected by
-this migration and continues to work independently. Two files needed a small, deliberate path-resolution fix for
-the extra directory nesting here (`incident-console-v2/eval/` vs. `incident-console/`) - see the comments in
-`config.py` (`.env` loading) and `scripts/eval_vlm_client.py` (`ENV_LOCAL`).
+this and continues to work independently. Two files carry a small, deliberate path-resolution note for their
+directory depth (one level under `dev-profile-incident/`, the same depth as `incident-console/`) - see the comments
+in `config.py` (`.env` loading) and `scripts/eval_vlm_client.py` (`ENV_LOCAL`).
 
 The Streamlit UI itself (`app.py`, `report_detail.py`, and the other page modules) was **not** copied - this
 project only runs the batch evaluation, never a UI.
@@ -26,11 +25,11 @@ project only runs the batch evaluation, never a UI.
 ## Setup
 
 ```bash
-cd deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/eval
+cd deploy/docker/developer-profiles/dev-profile-incident/eval
 uv sync
 ```
 
-Required environment variables (read from `.env.local`, a symlink to `../../.env.local`, i.e. the same
+Required environment variables (read from `.env.local`, a symlink to `../.env.local`, i.e. the same
 `dev-profile-incident/.env.local` every other service in this profile shares):
 
 | Variable | Purpose |

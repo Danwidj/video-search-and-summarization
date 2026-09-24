@@ -1,5 +1,5 @@
 [project]
-name = "incident-console-v2-eval"
+name = "dev-profile-incident-eval"
 version = "0.1.0"
 description = "P1/RP1 structured-incident-extraction evaluation pipeline (migrated from incident-console)"
 requires-python = "==3.12.*"

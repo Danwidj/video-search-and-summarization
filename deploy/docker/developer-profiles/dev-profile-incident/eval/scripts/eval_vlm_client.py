@@ -36,13 +36,14 @@ from pathlib import Path
 
 import requests
 
-# Resolves to this eval project's own root (incident-console-v2/eval/.env.local,
-# a symlink - see eval/README.md), matching config.py's per-directory .env.local
-# convention. (The original incident-console copy of this file used a fixed
-# parents[3] depth that happened to land on a directory with no .env.local at
-# all - _get_env() silently returned "" there and gateway_credentials() fell
-# back entirely to the process environment. Anchoring on parents[1], this
-# project's own root, is deliberate rather than depth-coincidental.)
+# Resolves to this eval project's own root (dev-profile-incident/eval/.env.local,
+# a symlink to the shared ../.env.local - see eval/README.md), matching
+# config.py's per-directory .env.local convention. (The original incident-console
+# copy of this file used a fixed parents[3] depth that happened to land on a
+# directory with no .env.local at all - _get_env() silently returned "" there
+# and gateway_credentials() fell back entirely to the process environment.
+# Anchoring on parents[1], this project's own root, is deliberate and stays
+# correct regardless of how deeply this file is nested.)
 ENV_LOCAL = Path(__file__).resolve().parents[1] / ".env.local"
 DEFAULT_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com/v1"
 
