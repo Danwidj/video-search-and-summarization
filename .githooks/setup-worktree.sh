@@ -9,10 +9,14 @@
 # verified on git 2.54.0 - which is harmless here: with nothing to do the
 # script is a silent no-op apart from the venv up-to-date notice.)
 #
-# Part 0 (dev-profile-incident root seed): in every worktree including the
-# main one, if deploy/docker/developer-profiles/dev-profile-incident/.env.local
-# does not exist, seed it from the tracked .env template (blank/placeholder
-# values, ready for the developer to fill in). Never overwrites an existing file.
+# Part 0 (dev-profile-incident root .env.local): a new worktree must get the
+# main worktree's real deploy/docker/developer-profiles/dev-profile-incident/.env.local
+# (the developer's secrets). Outside the main worktree, when the main worktree
+# has that file, copy it here if the target is missing or is still a byte-exact
+# copy of the placeholder .env template (what an older version of this hook
+# seeded); never overwrite any other existing .env.local. Only when there is no
+# real file to copy (fresh clone, or the main worktree itself) seed a missing
+# .env.local from the tracked .env template instead.
 #
 # Part A propagates real (non-generated) .env files and symlinks from the MAIN
 # worktree into this worktree, copy-if-missing only, never overwriting. Covers the
@@ -47,10 +51,24 @@ current_dir=$(git rev-parse --show-toplevel)
 INCIDENT_ROOT="deploy/docker/developer-profiles/dev-profile-incident"
 incident_root_dir="$current_dir/$INCIDENT_ROOT"
 
-# --- Part 0: dev-profile-incident root .env.local seed (runs in ALL worktrees).
-if [ -d "$incident_root_dir" ] && [ -f "$incident_root_dir/.env" ] && [ ! -e "$incident_root_dir/.env.local" ]; then
-    cp "$incident_root_dir/.env" "$incident_root_dir/.env.local"
-    echo "setup-worktree: seeded $INCIDENT_ROOT/.env.local from .env template"
+# --- Part 0: dev-profile-incident root .env.local (runs in ALL worktrees).
+if [ -d "$incident_root_dir" ]; then
+    target_env_local="$incident_root_dir/.env.local"
+    template_env="$incident_root_dir/.env"
+    main_env_local="$main_worktree/$INCIDENT_ROOT/.env.local"
+    if [ "$current_dir" != "$main_worktree" ] && [ -f "$main_env_local" ]; then
+        if [ ! -e "$target_env_local" ] && [ ! -L "$target_env_local" ]; then
+            cp "$main_env_local" "$target_env_local"
+            echo "setup-worktree: copied $INCIDENT_ROOT/.env.local from the main worktree"
+        elif [ -f "$target_env_local" ] && [ ! -L "$target_env_local" ] && [ -f "$template_env" ] &&
+            cmp -s "$target_env_local" "$template_env" && ! cmp -s "$target_env_local" "$main_env_local"; then
+            cp "$main_env_local" "$target_env_local"
+            echo "setup-worktree: replaced placeholder $INCIDENT_ROOT/.env.local with the main worktree's copy"
+        fi
+    elif [ -f "$template_env" ] && [ ! -e "$target_env_local" ] && [ ! -L "$target_env_local" ]; then
+        cp "$template_env" "$target_env_local"
+        echo "setup-worktree: seeded $INCIDENT_ROOT/.env.local from .env template"
+    fi
 fi
 
 # --- Part A: .env propagation (no-op inside the main worktree itself,
