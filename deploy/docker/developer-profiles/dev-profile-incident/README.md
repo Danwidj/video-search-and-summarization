@@ -407,10 +407,8 @@ login the same way.
   services (`native-services.sh start`), then opens the tunnel, then starts
   v2.
 - **Everything expected up** → skips the deploy, straight to tunnel + v2.
-- **Partial deploy** → stops and prints exactly what's up vs. what's
-  missing/expected for both Docker and native services (with a nonzero exit),
-  telling you to clear the partial state manually before re-running. It
-  deliberately never auto-reconciles or force-redeploys over a partial state.
+- **Partial deploy** → self-heals: prints what's missing, starts only the
+  missing Docker and native services over SSH, then proceeds to the tunnel.
 
 Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
 `behavior-analytics` natively (plus `elasticsearch`/`kafka` in Docker; vm mode only).
