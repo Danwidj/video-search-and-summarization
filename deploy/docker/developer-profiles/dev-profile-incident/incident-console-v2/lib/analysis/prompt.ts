@@ -6,6 +6,7 @@ export const INCIDENT_ANALYSIS_PROMPT = `Analyze this surveillance video and ret
 Do not use Markdown fences and do not include commentary before or after the JSON.
 Base findings only on visible evidence. Put ambiguity in uncertainties rather than inventing details.
 Timestamps must be offsets from the beginning of the video.
+Numeric fields must be JSON numbers, never quoted strings. For example, use "threatLevel": 3, not "threatLevel": "3". Use null when threat level is unknown.
 
 Use exactly this shape:
 {
