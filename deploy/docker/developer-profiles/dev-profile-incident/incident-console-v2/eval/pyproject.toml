@@ -1,0 +1,47 @@
+[project]
+name = "incident-console-v2-eval"
+version = "0.1.0"
+description = "P1/RP1 structured-incident-extraction evaluation pipeline (migrated from incident-console)"
+requires-python = "==3.12.*"
+dependencies = [
+    # Direct-Postgres data layer (db.py) - kept for parity with the original
+    # incident-console copy; the actual eval run used the PostgREST path
+    # (db_postgrest.py) because direct Postgres was unreachable from this
+    # environment, but db.py/db_connection.py are still imported by
+    # eval_ingest_gt.py/eval_run.py as the first-choice path.
+    "SQLAlchemy>=2.0,<3",
+    "psycopg2-binary>=2.9,<3",
+    # PostgREST / LLM judge / gateway HTTP clients
+    "httpx>=0.28,<1",
+    "requests>=2.31,<3",
+    # Config + schema
+    "python-dotenv>=1.0,<2",
+    "pydantic>=2.10,<3",
+    # eval_embedding_server.py: local OpenAI-compatible /v1/embeddings server
+    "fastapi>=0.116,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "sentence-transformers>=6.0,<7",
+    # r2_videos.py: video resolution/caching from Cloudflare R2
+    "boto3>=1.35,<2",
+    # r2_videos.py imports streamlit directly (its @st.cache_data decorators
+    # and a demo-picker UI helper this eval pipeline never calls) - a real
+    # dependency of the copied file, not something introduced by this project.
+    "streamlit>=1.59,<2",
+    # matching.py: optimal one-to-one assignment for similarity-based evaluation
+    "scipy>=1.14,<2",
+    "numpy>=2.1,<3",
+    # eval_ingest_gt.py / eval_gt_schema.py: ground-truth Excel workbook import
+    "openpyxl>=3.1,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

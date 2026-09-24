@@ -1,0 +1,43 @@
+{
+  "category": "Explosion",
+  "seed": 42,
+  "generated_at": "2026-09-24T04:56:54.582754+00:00",
+  "few_shot_demo_videos": [
+    "Explosion002_x264.mp4",
+    "Explosion003_x264.mp4",
+    "Explosion011_x264.mp4",
+    "Explosion028_x264.mp4",
+    "Explosion029_x264.mp4"
+  ],
+  "evaluation_videos": [
+    "Explosion004_x264.mp4",
+    "Explosion009_x264.mp4",
+    "Explosion014_x264.mp4",
+    "Explosion016_x264.mp4",
+    "Explosion017_x264.mp4",
+    "Explosion019_x264.mp4",
+    "Explosion027_x264.mp4",
+    "Explosion041_x264.mp4",
+    "Explosion047_x264.mp4",
+    "Explosion051_x264.mp4"
+  ],
+  "few_shot_demo_videos_r2_keys": {
+    "Explosion002_x264.mp4": "anomaly/explosion/Explosion002_x264.mp4",
+    "Explosion003_x264.mp4": "anomaly/explosion/Explosion003_x264.mp4",
+    "Explosion011_x264.mp4": "anomaly/explosion/Explosion011_x264.mp4",
+    "Explosion028_x264.mp4": "anomaly/explosion/Explosion028_x264.mp4",
+    "Explosion029_x264.mp4": "anomaly/explosion/Explosion029_x264.mp4"
+  },
+  "evaluation_videos_r2_keys": {
+    "Explosion004_x264.mp4": "anomaly/explosion/Explosion004_x264.mp4",
+    "Explosion009_x264.mp4": "anomaly/explosion/Explosion009_x264.mp4",
+    "Explosion014_x264.mp4": "anomaly/explosion/Explosion014_x264.mp4",
+    "Explosion016_x264.mp4": "anomaly/explosion/Explosion016_x264.mp4",
+    "Explosion017_x264.mp4": "anomaly/explosion/Explosion017_x264.mp4",
+    "Explosion019_x264.mp4": "anomaly/explosion/Explosion019_x264.mp4",
+    "Explosion027_x264.mp4": "anomaly/explosion/Explosion027_x264.mp4",
+    "Explosion041_x264.mp4": "anomaly/explosion/Explosion041_x264.mp4",
+    "Explosion047_x264.mp4": "anomaly/explosion/Explosion047_x264.mp4",
+    "Explosion051_x264.mp4": "anomaly/explosion/Explosion051_x264.mp4"
+  }
+}

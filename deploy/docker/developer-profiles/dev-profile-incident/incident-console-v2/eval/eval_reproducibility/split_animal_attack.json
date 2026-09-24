@@ -1,0 +1,43 @@
+{
+  "category": "Animal Attack",
+  "seed": 42,
+  "generated_at": "2026-09-24T04:56:54.582956+00:00",
+  "few_shot_demo_videos": [
+    "Animal001_x264.mp4",
+    "Animal002_x264.mp4",
+    "Animal005_x264.mp4",
+    "Animal011_x264.mp4",
+    "Animal012_x264.mp4"
+  ],
+  "evaluation_videos": [
+    "Animal003_x264.mp4",
+    "Animal004_x264.mp4",
+    "Animal006_x264.mp4",
+    "Animal007_x264.mp4",
+    "Animal008_x264.mp4",
+    "Animal009_x264.mp4",
+    "Animal010_x264.mp4",
+    "Animal013_x264.mp4",
+    "Animal014_x264.mp4",
+    "Animal015_x264.mp4"
+  ],
+  "few_shot_demo_videos_r2_keys": {
+    "Animal001_x264.mp4": "anomaly/animal_attacks/Animal001_x264.mp4",
+    "Animal002_x264.mp4": "anomaly/animal_attacks/Animal002_x264.mp4",
+    "Animal005_x264.mp4": "anomaly/animal_attacks/Animal005_x264.mp4",
+    "Animal011_x264.mp4": "anomaly/animal_attacks/Animal011_x264.mp4",
+    "Animal012_x264.mp4": "anomaly/animal_attacks/Animal012_x264.mp4"
+  },
+  "evaluation_videos_r2_keys": {
+    "Animal003_x264.mp4": "anomaly/animal_attacks/Animal003_x264.mp4",
+    "Animal004_x264.mp4": "anomaly/animal_attacks/Animal004_x264.mp4",
+    "Animal006_x264.mp4": "anomaly/animal_attacks/Animal006_x264.mp4",
+    "Animal007_x264.mp4": "anomaly/animal_attacks/Animal007_x264.mp4",
+    "Animal008_x264.mp4": "anomaly/animal_attacks/Animal008_x264.mp4",
+    "Animal009_x264.mp4": "anomaly/animal_attacks/Animal009_x264.mp4",
+    "Animal010_x264.mp4": "anomaly/animal_attacks/Animal010_x264.mp4",
+    "Animal013_x264.mp4": "anomaly/animal_attacks/Animal013_x264.mp4",
+    "Animal014_x264.mp4": "anomaly/animal_attacks/Animal014_x264.mp4",
+    "Animal015_x264.mp4": "anomaly/animal_attacks/Animal015_x264.mp4"
+  }
+}
