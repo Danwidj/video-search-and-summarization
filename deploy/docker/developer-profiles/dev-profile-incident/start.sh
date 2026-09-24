@@ -35,11 +35,9 @@
 #          Then opens the tunnel and starts v2.
 #        - EVERYTHING expected up    -> skip the deploy, straight to
 #          tunnel + v2.
-#        - PARTIAL (some up)         -> STOP. Prints what's up vs. what's
-#          missing/expected and exits nonzero. This is a deliberate captain
-#          decision: never auto-reconcile, auto-clean, or force a redeploy
-#          over a partial state. Clear it manually (e.g. run down.sh on
-#          kwanz-ws) and re-run.
+#        - PARTIAL (some up)         -> SELF-HEAL. Prints what's missing,
+#          starts only the missing Docker and native services over SSH,
+#          then proceeds to the tunnel.
 #   3. The tunnel step is laptop-side only (same hostname guard the old
 #      `mdx-tunnel-incident` alias had — refuse if run ON kwanz-ws:
 #      forwarding the VM to itself is at best a no-op). It is backgrounded
@@ -107,9 +105,9 @@ VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
 ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
 # Base Docker infrastructure (appliances)
-default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix"
+default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix kafka"
 if [ "${ENABLE_ANALYTICS}" = "true" ]; then
-  default_docker_services="${default_docker_services} elasticsearch kafka"
+  default_docker_services="${default_docker_services} elasticsearch"
 fi
 INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-${INCIDENT_EXPECTED_CONTAINERS:-$default_docker_services}}"
 
@@ -281,15 +279,62 @@ EOF
 
     echo "start.sh: backend deploy completed (Docker appliances + Native services)."
   else
-    echo "start.sh: PARTIAL deploy detected on ${VSS_SSH_TARGET} — stopping." >&2
-    echo "  Running too much/little state to trust a redeploy; start.sh deliberately" >&2
-    echo "  never auto-reconciles or force-redeploys over a partial state." >&2
-    echo "  Docker up:       ${docker_up[*]:-none}" >&2
-    echo "  Docker missing:  ${docker_missing[*]:-none}" >&2
-    echo "  Native up:       ${native_up[*]:-none}" >&2
-    echo "  Native missing:  ${native_missing[*]:-none}" >&2
-    echo "  Clear the partial state manually (on kwanz-ws: run down.sh to stop Docker and native services), then re-run ./start.sh." >&2
-    exit 1
+    echo "start.sh: partial deploy detected — starting missing services..."
+    if [ "${#docker_missing[@]}" -gt 0 ]; then
+      echo "--- starting missing Docker appliances (${docker_missing[*]}) over SSH ---"
+      deploy_missing_script=$(cat <<EOF
+set -e
+cd "$VSS_REPO_ROOT/deploy/docker"
+if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
+  echo "start.sh: developer-profiles/dev-profile-incident/generated.env.remote not found on the VM." >&2
+  exit 1
+fi
+
+map_docker_service() {
+  case "\$1" in
+    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
+    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
+    vss-vios-ingress)          echo "vst-ingress" ;;
+    vss-vios-postgres)         echo "centralizedb" ;;
+    *)                         echo "\$1" ;;
+  esac
+}
+
+COMPOSE_SERVICES=""
+for svc in ${docker_missing[*]}; do
+  mapped="\$(map_docker_service "\$svc")"
+  COMPOSE_SERVICES="\${COMPOSE_SERVICES} \${mapped}"
+done
+COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
+
+echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
+if sudo -n true 2>/dev/null; then
+  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+else
+  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+fi
+EOF
+)
+      ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_missing_script}"
+      deploy_rc=$?
+      if [ "$deploy_rc" -ne 0 ]; then
+        echo "start.sh: missing Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
+        exit 1
+      fi
+    fi
+
+    if [ "${#native_missing[@]}" -gt 0 ]; then
+      echo "--- starting missing Native services (${native_missing[*]}) over SSH ---"
+      ssh "$VSS_SSH_TARGET" \
+        "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${native_missing[*]}"
+      native_start_rc=$?
+      if [ "$native_start_rc" -ne 0 ]; then
+        echo "start.sh: missing Native service startup over SSH failed (exit $native_start_rc)." >&2
+        exit 1
+      fi
+    fi
+
+    echo "start.sh: missing services started successfully."
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
