@@ -16,9 +16,12 @@ From the repository root:
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
 uv sync
-uv run --env-file ../../incident-console/.env \
+uv run --env-file ../../.env.local \
   uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
+
+`../../.env.local` is the shared `dev-profile-incident/.env.local` secrets file (see the profile README's "Laptop
+Setup"); the backend needs its `R2_*` and `INCIDENT_SUPABASE_*` values.
 
 Verify it at `http://127.0.0.1:7777/health`. The v2 frontend should have
 `INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777` in its local server configuration.
@@ -30,7 +33,7 @@ From the repository root:
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
 uv sync
-uv run --env-file .env uvicorn app:app --host 127.0.0.1 --port 8600 --reload
+uv run --env-file .env.local uvicorn app:app --host 127.0.0.1 --port 8600 --reload
 ```
 
 Verify it at `http://127.0.0.1:8600/health`. The v2 frontend should have
@@ -50,9 +53,13 @@ npm run dev
 Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should report the agent, gateway, PostgREST,
 and R2 services as ready before testing the upload-to-report workflow.
 
+Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `tests/*.test.mjs`).
+
 ## Server-only configuration
 
-The application recognizes these variable names at runtime:
+Next.js loads them from `.env.local` in this directory, which is a symlink to the shared
+`dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
+at runtime:
 
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`.
 - `VLM_MODEL` — optional hosted model ID; defaults to `nvidia/cosmos-3-nano-reasoner`.

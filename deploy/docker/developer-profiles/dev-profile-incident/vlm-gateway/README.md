@@ -20,13 +20,15 @@ Thin proxy service for NVIDIA-hosted OpenAI-compatible LLM/VLM inference.
 ## Purpose
 
 Holds the single real API credential server-side so that browser-facing consumers
-(e.g., the future `incident-console-v2` Next.js app) can call LLM/VLM inference
-without exposing the key client-side. Both `incident-console` (Streamlit) and
-`incident-console-v2` will call this gateway.
+(the `incident-console-v2` Next.js app, via its `VLM_GATEWAY_URL`) can call LLM/VLM
+inference without exposing the key client-side. The v1 Streamlit app does not call
+the gateway; only its P1 evaluation scripts use the same upstream
+`VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY`, directly
+(`../incident-console/scripts/eval_vlm_client.py`).
 
 ## Contract
 
-- **One route**: `POST /v1/chat/completions` (OpenAI chat completions compatible)
+- **One inference route**: `POST /v1/chat/completions` (OpenAI chat completions compatible), plus `GET /health` (`{"status": "ok"}`)
 - **Authentication**: Gateway adds `Authorization: Bearer <VLM_GATEWAY_API_KEY>` header server-side
 - **Upstream**: Configured via `VLM_GATEWAY_BASE_URL` (default: `https://switchyard-13doh4lsz.brevlab.com/v1`)
 - **Model selection**: Caller specifies model in request body's `model` field; gateway is model-agnostic
@@ -53,8 +55,12 @@ without exposing the key client-side. Both `incident-console` (Streamlit) and
 ```bash
 # From this directory
 uv sync
-uv run uvicorn app:app --port 8600
+uv run --env-file .env.local uvicorn app:app --port 8600
 ```
+
+`app.py` reads `VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` from the process environment
+only (it does not load any `.env` file itself), hence `--env-file .env.local`. The port
+comes from uvicorn's `--port`; `VLM_GATEWAY_PORT` is not read by the app.
 
 The gateway will be available at `http://localhost:8600/v1/chat/completions`.
 

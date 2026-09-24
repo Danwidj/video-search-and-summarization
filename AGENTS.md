@@ -17,8 +17,8 @@ For this fork's own capstone work (team, VM specifics, incident-profile deploy m
 A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
 
 - [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — human-facing profile guide: decisions, rationale, what ships when (MVP1/MVP2), dev/deploy workflows, and status. Start here.
-- [`incident-plan/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-local.md) / [`incident-plan/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
-- [`incident-plan/incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-plan/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
+- [`.docs/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-local.md) / [`.docs/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
+- [`.docs/incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
 
 When working on this project, read the profile README first, then whichever Implementation doc(s) match the task.
 
@@ -29,7 +29,7 @@ Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AG
 `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a 12-table-plus-matches
 schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module
 docstring for the full table list and the `review_status` design note). `db.py` is the authoritative source for
-this schema; the planning docs under `deploy/docker/developer-profiles/dev-profile-incident/incident-plan/` were reconciled with it in PR #24 (the shared implementation doc's §1 table sketch predates the built schema and is kept only as a rough map - do not design from it). Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
+this schema; the planning docs under `deploy/docker/developer-profiles/dev-profile-incident/.docs/` were reconciled with it in PR #24 (the shared implementation doc's §1 table sketch predates the built schema and is kept only as a rough map - do not design from it). Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
 `videos.id`, no separate `video_id` column). Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
 (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
 (`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
@@ -88,14 +88,14 @@ content on this page; see `card_preview()`'s docstring and the "lazy about video
 
 ## Shell dotfiles/QoL bootstrap for kwanz-ws
 
-[`deploy/docker/developer-profiles/dev-profile-incident/dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
-`kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, tmux config, and generic QoL aliases only — `bat`,
+[`deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
+`kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, per-account git-delta, and generic QoL aliases only — `bat`,
 `vim=nvim`, `cat=bat`, `htop=btop`). It is not mandatory team-wide provisioning and does not touch
 other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` aliases/functions
 (`mdx-ps`, `mdx-down`, `mdx-health`, `mdx-tunnel-incident`, `mdx-tunnel-incident-check`, `mdx-logs`,
 `mdx-disk`, `mdx-rebuild-svc`, `mdx-rebuild`, `mdx-clean-datalog`, `ngc-env-on`, `gpu`) moved to
 standalone executable scripts under
-`deploy/docker/developer-profiles/dev-profile-incident/scripts/` (`status.sh`, `down.sh`, `health.sh`,
+`deploy/docker/developer-profiles/dev-profile-incident/.scripts/` (`status.sh`, `down.sh`, `health.sh`,
 `tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
 `clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` (at the top level of
 `dev-profile-incident/`, alongside `local-start.sh`) is the laptop-side one-command daily
@@ -104,23 +104,23 @@ entry point: checks the VM deploy state over SSH, deploys the backend fresh if n
 a partial deploy, backgrounds the tunnel, then runs the local console. The VM-side scripts wrap the
 project's own canonical deploy scripts (`dev-profile.sh`, `cleanup_all_datalog.sh`) rather than
 hardcoding raw `docker`/`docker compose` invocations — see each script's header for the doc it is
-grounded in. `scripts/tunnel.sh`, `scripts/tunnel-check.sh`, and top-level `start.sh` are laptop-side only
+grounded in. `.scripts/tunnel.sh`, `.scripts/tunnel-check.sh`, and top-level `start.sh` are laptop-side only
 (SSH tunnel from laptop to the VM backend for the locally-run incident-console); never run them on kwanz-ws itself.
 
 `vss-agent` and the analytics modules (`video-analytics-api`, `behavior-analytics`) run as native
-processes on `kwanz-ws` rather than Docker containers, managed by `scripts/native-services.sh`
+processes on `kwanz-ws` rather than Docker containers, managed by `.scripts/native-services.sh`
 (`start`/`stop`/`restart`/`status`/`logs`, PID files and logs under `/srv/rise-up/vss/.run/`); VIOS/VST
 media engines and backing infra (Postgres, Redis, Phoenix, HAProxy) stay in Docker.
-`scripts/prune-native-images.sh` removes the Docker images those native services no longer need. See
+`.scripts/prune-native-images.sh` removes the Docker images those native services no longer need. See
 `dev-profile-incident/README.md`'s "Native vs. Docker service split" section for the full picture.
 
 ## UI development without GPU/NIM containers
 
-[`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. This is unrelated to the sibling `deploy/docker/developer-profiles/dev-profile-incident/mock-backend/mock_data/` module (a different, not-yet-built Postgres schema mock for the incident-console app above).
+[`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. Its sibling `search_profile_mock/` is the `bp_developer_search` superset (port 7778). A `mock-backend/mock_data/` Postgres-schema mock for the incident-console was once planned but does not exist; do not conflate it with these.
 
 ## Automatic environment setup (git hooks)
 
-[`.githooks/`](.githooks/README.md) propagates untracked `.env` files from the main worktree into new/checked-out worktrees (copy-if-missing, never overwrites, `generated.env` excluded) and keeps the incident-console `uv` venv in sync (`uv sync`, skipped when `.venv` is newer than `pyproject.toml`/`uv.lock`). Fires on checkout/switch/worktree-add (post-checkout), merge/pull (post-merge) and rebase/amend (post-rewrite). Activation is per-clone local config, so every fresh clone (laptop, VM) must run `.githooks/activate.sh` once. Out of scope there: `.ngc_env` and R2 config (separate phases).
+[`.githooks/`](.githooks/README.md) propagates untracked `.env` files from the main worktree into new/checked-out worktrees (copy-if-missing, never overwrites, `generated.env` excluded), copies the main worktree's real `dev-profile-incident/.env.local` into a new worktree (also replacing a leftover placeholder copy; seeds from the tracked `.env` template only when the main worktree has none), self-heals the three `.env.local -> ../.env.local` symlinks (`incident-console`, `incident-console-v2`, `vlm-gateway`), and keeps the incident-console `uv` venv in sync (`uv sync`, skipped when `.venv` is newer than `pyproject.toml`/`uv.lock`). Fires on checkout/switch/worktree-add (post-checkout), merge/pull (post-merge) and rebase/amend (post-rewrite). Activation is per-clone local config, so every fresh clone (laptop, VM) must run `.githooks/activate.sh` once. Out of scope there: `.ngc_env` and R2 config (separate phases).
 
 ## incident-console Tier 1 GT evaluation
 

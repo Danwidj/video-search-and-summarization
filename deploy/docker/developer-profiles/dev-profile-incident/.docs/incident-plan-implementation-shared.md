@@ -11,6 +11,8 @@
 ---
 
 ## 1. Postgres schema (Cloudflare Hyperdrive)
+> **Built reality:** the database is a Supabase Postgres project, reached by the console through Supabase's session pooler (`INCIDENT_DB_DSN`) and by the agent through PostgREST. Cloudflare Hyperdrive is Workers-only and is not in the path; see `incident-console/README.md`'s "Which DSN".
+
 Use a real Postgres instance behind Cloudflare Hyperdrive (a pooler/accelerator - you still need to provision an actual Postgres server, e.g. Neon/Supabase/self-managed, behind it), not the existing `DuckDBIncidentsManager` pattern (`services/agent/src/vss_agents/tools/incidents.py`) - that class is a read-only cache rebuilt from bulk-rescanned S3 JSON files, has no single-record write API, isn't wired into base profile's flow today, and its DuckDB connection is a per-process singleton unsuited to a separate dashboard app reading the same data concurrently.
 
 The schema itself already exists and is authoritative in code: `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` (module docstring) plus `incident-console/README.md`. Do not design from the table sketch below - it predates the built schema and is kept only as a rough map of which areas exist.
@@ -65,7 +67,7 @@ Local VIOS disk (`VST_VIDEO_STORAGE_PATH`) is now just a working cache once R2 h
 
 **Honest gap:** no true push notifications — only `st.toast()` (transient, single-session) plus rerun-triggered polling. Not a Streamlit-specific weakness: a from-scratch React app needs the same polling infrastructure unless you build real websockets, which is disproportionate effort for the underlying requirement ("don't miss a high-severity incident" — a polled badge satisfies that as long as the current spec doesn't demand something stronger; check it).
 
-**Data access — direct Postgres, not a REST CRUD layer.** Since this app and `services/agent` are both Python hitting the same Postgres (via Hyperdrive, §1), Streamlit talks to Postgres **directly** (SQLAlchemy or `psycopg2`, sync — matches Streamlit's per-script-rerun execution model) for every read and plain write: catalog browsing, metadata edits, report edits/verify, notifications, dashboard aggregates, and eval-log writes. This removes most of the REST API originally planned — see §4, now reduced to just the two things that genuinely need `vss-agent`'s LLM/tool-calling.
+**Data access — direct Postgres, not a REST CRUD layer.** Since this app and `services/agent` are both Python hitting the same Postgres (Supabase, §1), Streamlit talks to Postgres **directly** (SQLAlchemy or `psycopg2`, sync — matches Streamlit's per-script-rerun execution model) for every read and plain write: catalog browsing, metadata edits, report edits/verify, notifications, dashboard aggregates, and eval-log writes. This removes most of the REST API originally planned — see §4, now reduced to just the two things that genuinely need `vss-agent`'s LLM/tool-calling.
 
 Deployed as `dev-profile-incident/incident-console/compose.yml` — inside our own profile directory, not the shared `deploy/docker/services/` tree (same reasoning as `dev-profile-search`'s own `kibana-init-container-search`: this is profile-exclusive, not reusable NVIDIA infrastructure). `streamlit run app.py`, fronted by HAProxy alongside the existing NVIDIA UI (container name `vss-agent-ui`, Compose service key `vss-ui` — same service, two names depending on context; stays running unmodified, on-demand only, if the team still wants raw VSS chat/search for demos).
 
@@ -172,6 +174,8 @@ Carried over from the team's original ask for a Python/notebook-based eval harne
 
 ## 7. Resulting Directory Tree
 
+> **This is the original plan, not the built layout.** What exists today differs (e.g. no profile-level `vss-agent/configs/`, no `api/search_query.py` yet, console pages are `pages/2_Report_Review.py` / `pages/3_Dashboard.py`, and the profile also carries `incident-console-v2/`, `vlm-gateway/`, `mock-backend/`, `.scripts/`, `.dotfiles/`, `.docs/`, `start.sh` and `local-start.sh`). For the current layout see the profile README's "Layout" section and `git ls-files`.
+
 Scoped to everything this plan touches — the rest of the repo is untouched. `[NEW]` = file/dir we create; `[MOD]` = existing NVIDIA file with a small, additive edit. All filenames below are confirmed (not placeholders) except the Streamlit `pages/` breakdown, which is illustrative — exact page split is an implementation-time call, not a plan-level decision. Two lines below are deployment-mode-dependent — marked inline; see your Implementation doc's §1 for which applies.
 
 ```
@@ -265,4 +269,4 @@ vss/
                                                                      Postgres schema" entry, §1)
 ```
 
-Not shown: external, non-repo resources (the Postgres server behind Hyperdrive, the R2 bucket) since they're cloud infrastructure, not files in this tree.
+Not shown: external, non-repo resources (the Supabase Postgres project, the R2 bucket) since they're cloud infrastructure, not files in this tree.

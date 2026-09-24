@@ -97,8 +97,9 @@ echo "../../deploy/docker/developer-profiles/dev-profile-base/.env" > .env_file
 ```
 
 **Alternative: point at the shared NGC credential file.** On the VM, the
-NVIDIA/NGC credentials live in `/srv/rise-up/.ngc_env` (created by
-`ngc-env.sh`). You can point `.env_file` at that absolute path instead so the
+NVIDIA/NGC credentials live in `/srv/rise-up/.ngc_env` (the file
+`deploy/docker/developer-profiles/dev-profile-incident/.scripts/ngc-env.sh`
+sources on demand). You can point `.env_file` at that absolute path instead so the
 agent auto-loads `NVIDIA_API_KEY` (and `NGC_CLI_API_KEY`) via `sitecustomize.py`
 without a developer manually running `ngc-env.sh` first:
 
@@ -108,7 +109,7 @@ echo "/srv/rise-up/.ngc_env" > .env_file
 
 > **Note:** `services/agent/.env_file` is a path pointer, not a secret itself,
 > but it should stay untracked since it's a per-developer/per-machine local
-> choice. Add it to your local `.gitignore` (see below).
+> choice. `services/agent/.gitignore` already ignores it.
 
 Then source the same `.env` in your shell and override the placeholders.
 `set -a` auto-exports every variable so child processes inherit them.

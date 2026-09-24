@@ -23,12 +23,15 @@ the env is current.
 
 ## Shared setup (`setup-worktree.sh`)
 
-1. **dev-profile-incident root `.env.local` seed.** In every worktree
-   (including the main worktree), if
-   `deploy/docker/developer-profiles/dev-profile-incident/.env.local` does
-   not exist, copy it from the tracked `.env` template (blank/placeholder
-   values, ready for the developer to fill in). Never overwrites an existing
-   root file.
+1. **dev-profile-incident root `.env.local` (real secrets).** Outside the
+   main worktree, when the main worktree has
+   `deploy/docker/developer-profiles/dev-profile-incident/.env.local`, copy it
+   here if this worktree has none, or if this worktree's file is still a
+   byte-exact copy of the placeholder `.env` template (what an older version of
+   this hook seeded). Any other existing `.env.local` is never overwritten.
+   Only when there is no real file to copy (a fresh clone, or the main worktree
+   itself) is a missing `.env.local` seeded from the tracked `.env` template
+   (blank/placeholder values, ready for the developer to fill in).
 2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
    found in the main worktree (pruning `node_modules`, `.venv`, `.git`)
    into the same relative path here, but only when the destination file
@@ -57,8 +60,9 @@ machines without `git-lfs` they warn instead of failing the git command.
 
 ## G10 constraint (Phase 5 env plan)
 
-The `.env` propagation above copies real-value files (including
-`incident-console/.env.local`) into every new/checked-out worktree. That is
+The `.env` propagation above copies real-value files (including the root
+`deploy/docker/developer-profiles/dev-profile-incident/.env.local`, which the
+subfolder `.env.local` symlinks point at) into every new/checked-out worktree. That is
 accepted on a personal laptop, where all worktrees belong to one operator. On the
 shared VM it would spray one account's live Supabase/R2 credentials across
 per-account worktrees, so propagation there must stay laptop-only: on the shared
