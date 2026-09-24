@@ -83,6 +83,7 @@ class AnalyzeIncidentRequest(BaseModel):
     prompt_override: str | None = Field(
         default=None, description="Optional override for the analysis prompt sent to video_report_gen."
     )
+    model_run_id: str | None = Field(default=None, description="Optional model_runs.id to persist the analysis under.")
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
@@ -125,6 +126,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                 tool_input["vlm_reasoning"] = body.reasoning
             if body.prompt_override:
                 tool_input["prompt_override"] = body.prompt_override
+            if body.model_run_id:
+                tool_input["model_run_id"] = body.model_run_id
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)

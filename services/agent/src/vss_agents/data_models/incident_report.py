@@ -17,13 +17,13 @@
 
 Mirrors ``IncidentReport`` in
 ``deploy/docker/developer-profiles/dev-profile-incident/incident-console/incident_report.py``
-field-for-field, since the console parses this tool's output directly. Field
-names here are the extraction-facing shape (what an LLM fills in via
-``with_structured_output``); ``incident_db.py``'s ``insert_incident`` uses a
-different, DB-column-facing set of names (``type``/``severity_level``/
-``confidence_score``/``start_timestamp``/``end_timestamp``) per
-``db.py``'s module docstring, and the incident_report_gen tool is
-responsible for that translation.
+and aligns with ``incident-console-v2``'s ``incidentAnalysisSchema`` field-for-field,
+since callers parse this tool's output directly. Field names here are the
+extraction-facing shape (what an LLM fills in via ``with_structured_output``);
+``incident_db.py``'s ``insert_incident`` uses a different, DB-column-facing set of
+names (``type``/``severity_level``/``confidence_score``/``start_timestamp``/
+``end_timestamp``/``duration``) per ``db.py``'s module docstring, and the
+incident_report_gen tool is responsible for that translation.
 """
 
 from __future__ import annotations
@@ -49,15 +49,45 @@ class Person(BaseModel):
     actions: str = ""
 
 
+class TimelineItem(BaseModel):
+    """A distinct chronological event within the incident."""
+
+    start_seconds: float = 0.0
+    end_seconds: float | None = None
+    description: str = ""
+
+
+class Instrument(BaseModel):
+    """An object, tool, or weapon observed in the incident."""
+
+    name: str = ""
+    description: str = ""
+    threat_level: int | None = Field(default=None, ge=1, le=5)
+
+
+class Asset(BaseModel):
+    """A property, structure, vehicle, or resource observed in the incident."""
+
+    name: str = ""
+    description: str = ""
+
+
 class IncidentReport(BaseModel):
     """Structured incident report extracted from a generated video report."""
 
+    title: str = ""
     incident_type: str = INCIDENT_TYPES[0]
     severity: int = Field(default=1, ge=1, le=5)
+    severity_reason: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     incident_start: str = "0:00"
     incident_end: str = "0:00"
     incident_start_confirmed: bool = False
+    duration_seconds: int | None = None
     description: str = ""
     persons: list[Person] = Field(default_factory=list)
+    instruments: list[Instrument] = Field(default_factory=list)
+    assets: list[Asset] = Field(default_factory=list)
+    timeline: list[TimelineItem] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
     location: str = ""
