@@ -9,10 +9,12 @@ Human-facing overview for the incident search and reporting profile.
 
 ## Documentation
 
-- [Shared scope and architecture](.docs/incident-plan-implementation-shared.md)
-- [Local LLM/VLM deployment](.docs/incident-plan-implementation-local.md)
-- [Remote LLM/VLM deployment](.docs/incident-plan-implementation-remote.md)
-- [Profile operations and status](.docs/incident-profile-operations.md)
+- [Action plan & scope](.docs/action-plan.md)
+- [System architecture & sequence flows](.docs/architecture.md)
+- [Database schema & R2 storage](.docs/data.md)
+- [Incident analysis schema & field mapping](.docs/analysis-schema.md)
+- [Profile operations & runbook](.docs/incident-profile-operations.md)
+- [Archive / Retired plans](.docs/archive/)
 - [Streamlit console](incident-console/README.md)
 - [Next.js console](incident-console-v2/README.md)
 - [Lifecycle scripts](.scripts/README.md)
