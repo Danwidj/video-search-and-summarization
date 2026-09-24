@@ -115,7 +115,7 @@ and reporting loop; MVP2 adds natural-language semantic video search.
     - Kafka event bus streaming frame detections and embeddings to Elasticsearch.
   - **Elasticsearch Storage:** Ingest and index multi-modal video embeddings and detection metadata.
   - **Multi-Subagent Agent Configuration:**
-    - Wire `search_agent`, `embed_search`, and `attribute_search` alongside `report_agent` in `config.yml`.
+    - Wire `search_agent`, `embed_search`, and `attribute_search` alongside `report_agent` in `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml`.
     - Implement a unified routing prompt allowing `vss-agent` to dispatch natural-language search queries
       or incident report generation based on incoming requests.
   - **Search API & Console Search Interface:**
@@ -164,22 +164,4 @@ The following core principles govern all work in `dev-profile-incident`:
 
 ---
 
-## 4. Current Status: What is Done vs. Outstanding
-
-*Status is strictly verified against the current repository source code.*
-
-| Component / Feature | Current State | Verifiable Source Files |
-|---|---|---|
-| **incident-console-v2 (Next.js)** | **Done** | `incident-console-v2/` (App Router UI, chunked VST upload, R2 direct fallback, report workspace, review flow, notification banner, eval form) |
-| **vlm-gateway Proxy** | **Done** | `vlm-gateway/app.py`, `vlm-gateway/README.md` (FastAPI proxy on port 8600 holding upstream API credentials) |
-| **mock-backend (Zero-GPU)** | **Done** | `mock-backend/base_profile_mock/` (port 7777, mock VST upload, mock stream registration, mock incident analysis) |
-| **Agent /analyze Route & Tool** | **Done** | `services/agent/src/vss_agents/routers/incidents.py`, `services/agent/src/vss_agents/tools/incident_report_gen.py` |
-| **Native VM Services Architecture** | **Done** | `.scripts/native-services.sh`, `.scripts/prune-native-images.sh` (`vss-agent` runs natively on `kwanz-ws` for 2s fast restarts) |
-| **PostgREST Agent Persistence** | **Done** | `services/agent/src/vss_agents/utils/incident_db.py`, `supabase/migrations/20260917141225_insert_incident_function.sql` |
-| **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py` |
-| **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `matching.py`, `incident-console-v2/app/reports/eval/` |
-| **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/status.sh` (supports `--mode local` and `--mode vm` with auto self-heal) |
-| **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
-| **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
-| **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
-| **Retrieval Benchmark Framework** | **Outstanding (MVP2)** | Precision/Recall/F1 benchmark suite for search queries |
+For live implementation status, component readiness, and known issues, see [`status.md`](status.md).

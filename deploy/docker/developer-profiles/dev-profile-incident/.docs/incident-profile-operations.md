@@ -23,21 +23,27 @@ The team shares a remote GPU development workstation (`kwanz-ws`), accessible vi
 
 Fast-iterating application modules run directly as native processes on `kwanz-ws` rather than inside
 Docker containers. This reduces code-change cycles from ~3-minute container rebuilds to ~2-second process restarts.
-Heavy media appliances and backing infrastructure remain containerized.
+Heavy media appliances, proprietary toolchains, and backing infrastructure remain containerized.
 
-| Execution Mode | Service | Port | Description & Role |
+**Policy Rule:** Run a service natively whenever feasible. Containers are reserved for services with proprietary system dependencies or standard off-the-shelf data appliances where native execution yields no development speedup.
+
+All Docker containers run with `network_mode: host`, allowing native processes on `kwanz-ws` to reach containerized appliances directly on `localhost` without complex bridge networking or port-mapping overhead.
+
+| Category | Service | Port | Description & Execution Rationale |
 |---|---|---|---|
-| **Native Process** (`kwanz-ws`) | `vss-agent` | `8000` | Core AI agent running via NAT framework (`nat serve`) |
-| **Native Process** (`kwanz-ws`) | `video-analytics-api` | `8081` | Optional analytics API (`node index.js`, gated by `ENABLE_ANALYTICS=true`) |
-| **Native Process** (`kwanz-ws`) | `behavior-analytics` | `8080` | Optional behavior analytics (`python3 apps/...`, `ENABLE_ANALYTICS=true`) |
-| **Docker Appliance** | `vss-haproxy-ingress` | `7777` | Public gateway reverse proxy |
-| **Docker Appliance** | `vss-vios-streamprocessing` | Internal | Hardware video decode/encode core (GPU 0) |
-| **Docker Appliance** | `vss-vios-nvstreamer` | Internal | Video ingestion and RTSP/WebRTC publisher (GPU 0) |
-| **Docker Appliance** | `vss-vios-ingress` | `10000` | Nginx gateway for internal VIOS storage APIs |
-| **Docker Appliance** | `vss-vios-postgres` | Internal | VIOS internal database |
-| **Docker Appliance** | `redis` | Internal | State cache and message broker |
-| **Docker Appliance** | `phoenix` | `6006` | Tracing, telemetry, and observability |
-| **Docker Appliance** | `elasticsearch`, `kafka` | Internal | Search indexing and streaming event bus (`ENABLE_ANALYTICS=true`) |
+| **Native Process (High Feasibility)** | `vss-agent` | `8000` | Core AI agent running via NAT framework (`nat serve`). Iterated constantly; ~2s native restart vs ~3min container build. |
+| **Native Process (High Feasibility)** | `video-analytics-api` | `8081` | Optional analytics API (`node index.js`, gated by `ENABLE_ANALYTICS=true`). Fast Node.js runtime. |
+| **Native Process (High Feasibility)** | `behavior-analytics` | `8080` | Optional behavior analytics (`python3 apps/...`, `ENABLE_ANALYTICS=true`). Fast Python runtime. |
+| **Docker (Infeasible Natively)** | `vss-vios-streamprocessing` | Internal | Hardware video decode/encode core (GPU 0). Bound to proprietary CUDA, GStreamer, and Triton toolchains. |
+| **Docker (Infeasible Natively)** | `vss-vios-nvstreamer` | Internal | Video ingestion and RTSP/WebRTC publisher (GPU 0). Bound to proprietary GStreamer pipelines. |
+| **Docker (Infeasible Natively)** | `vss-vios-ingress` | `10000` | Nginx gateway for internal VIOS storage APIs. Tightly coupled to VIOS container layout. |
+| **Docker (Infeasible Natively)** | `vss-vios-postgres` | Internal | VIOS internal database. Pre-configured schema and user provisioning within VIOS ecosystem. |
+| **Docker (Infeasible Natively)** | `vss-rtvi-cv` | `8083` | Real-time computer vision perception pipeline. DeepStream / CUDA dependency stack. |
+| **Docker (Infeasible Natively)** | `vss-rtvi-embed` | `8082` | Real-time video embedding generation. DeepStream / CUDA dependency stack. |
+| **Docker (Standard Appliance)** | `redis` | Internal | In-memory cache and pub/sub message broker. Standard off-the-shelf appliance; zero development gain natively. |
+| **Docker (Standard Appliance)** | `phoenix` | `6006` | Tracing, telemetry, and observability UI. Standard standalone monitoring appliance. |
+| **Docker (Standard Appliance)** | `vss-haproxy-ingress` | `7777` | Public gateway reverse proxy routing traffic to agent and VIOS. |
+| **Docker (Standard Appliance)** | `elasticsearch`, `kafka` | Internal | Heavy JVM data infrastructure for search indexing and event bus (`ENABLE_ANALYTICS=true`). Zero development gain natively. |
 
 ### Managing Native Services (`.scripts/native-services.sh`)
 
@@ -116,12 +122,12 @@ Forwarded ports:
 
 ## 4. Safe Deployment Principles
 
-1. **Do NOT Use `dev-profile.sh` Directly for Incident Profile:**
-   `dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`). Deploying
-   `dev-profile-incident` is performed via `start.sh --mode vm` or directly via Docker Compose using the
+1. **Do NOT Use `deploy/docker/scripts/dev-profile.sh` Directly for Incident Profile:**
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`). Deploying
+   `dev-profile-incident` is performed via `./start.sh --mode vm` or directly via Docker Compose using the
    root `deploy/docker/compose.yml` with `--env-file developer-profiles/dev-profile-incident/generated.env.remote`.
 2. **NEVER Run `dev-profile.sh down` on `kwanz-ws`:**
-   `dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
+   `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:
    ```bash
    ./.scripts/down.sh
@@ -138,25 +144,20 @@ Forwarded ports:
 
 ---
 
-## 5. Live VM Configuration Notes (`generated.env.remote`)
+## 5. VM Deployment Configuration Principles (`generated.env.remote`)
 
-The untracked live environment file on `kwanz-ws` (`generated.env.remote`) requires specific overrides
-diverging from repository placeholders:
+The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`) configures container volume mounts, networking, and remote inference routing. Follow these standing principles when configuring the environment:
 
-| Setting | Repository Default | VM Live Value | Operational Rationale |
-|---|---|---|---|
-| `VSS_APPS_DIR` | `/path/to/deploy/docker` | `/srv/rise-up/vss/deploy/docker` | Absolute path required for Docker Compose `include:` directives. |
-| `VSS_DATA_DIR` | `/path/to/vss-apps-data` | `/srv/rise-up/vss-apps-data` | Host directory for persistent container volume mounts. |
-| `HOST_IP` | `<HOST_IP>` | `10.131.1.5` | Workstation's internal IP. Required for inter-container communication. |
-| `EXTERNAL_IP` | Derived from `HOST_IP` | `localhost` | URL host embedded in responses handed back to browser and SSH tunnel. |
-| `VSS_AGENT_CONFIG_FILE` | (Pointed at search) | `dev-profile-base` config | Shipped search config lacks `report_agent`/`video_report_gen`. |
-| `REPORT_REFERENCE_BASE_DIR`| Unset | `/tmp` | Required by agent evaluation configuration schema to avoid startup crash. |
-| `STREAM_PROCESSOR_HTTP_PORT`| Defaults to `30001` | `10000` | Nginx ingress proxies to `localhost:10000`; streamprocessor must listen on 10000. |
-| `LLM_NAME` | `nvidia/nemotron-3-ultra` | `nvidia/nemotron-3-ultra` | Verified operational for tool calling and JSON schema structured output. |
-| `VLM_NAME` | `nvidia/cosmos-3-super-reasoner` | `nvidia/cosmos-3-super-reasoner` | Verified operational for base64 MP4 video inlining without payload errors. |
-| `LLM_BASE_URL` / `VLM_BASE_URL` | Brev URL | `https://switchyard-13doh4lsz.brevlab.com` | Remote Switchyard endpoint (no trailing `/v1`). |
-| `LLM_MODEL_TYPE` / `VLM_MODEL_TYPE` | `openai` | `openai` | Required for Brev compatibility (`_type: nim` must NOT be used remotely). |
-| `OPENAI_API_KEY` | Placeholder | Live Brev key | Shared API key powering LLM router, VLM video analysis, and eval judge. |
+1. **Absolute App and Data Directories:** `VSS_APPS_DIR` must point to the absolute path of `deploy/docker` on the host filesystem so Docker Compose `include:` directives resolve correctly. `VSS_DATA_DIR` must point to the persistent data volume on the host.
+2. **Dual-IP Network Topology:** `HOST_IP` must be set to the workstation's internal network IP (`10.131.1.5`) for inter-container communication, while `EXTERNAL_IP` must be `localhost` so response URLs function over developer SSH port tunnels.
+3. **Base Config for Incident Profile:** `VSS_AGENT_CONFIG_FILE` must reference the `dev-profile-base` agent configuration; the shipped search configuration lacks the required `report_agent` and `video_report_gen` modules.
+4. **Evaluation Directory Guard:** `REPORT_REFERENCE_BASE_DIR` must be defined (e.g. `/tmp`) to satisfy the NAT configuration schema and prevent startup crashes.
+5. **Stream Processor Port Alignment:** `STREAM_PROCESSOR_HTTP_PORT` must match the VIOS ingress reverse proxy port (`10000`).
+6. **Remote Endpoint Format:** Remote Switchyard/Brev endpoints must omit trailing slashes and paths (e.g. `https://switchyard-...brevlab.com`, not ending with `/v1`).
+7. **Client Type Enforcement:** Remote models must use `_type: openai` (`LLM_MODEL_TYPE=openai`, `VLM_MODEL_TYPE=openai`). Never use `_type: nim` against remote endpoints due to remote SSL verification incompatibility.
+
+> [!NOTE]
+> For the current live environment values and deployed model configurations on `kwanz-ws`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#3-live-vm-configuration-snapshot).
 
 ---
 

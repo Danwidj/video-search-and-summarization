@@ -32,13 +32,13 @@ flowchart TB
     end
 
     subgraph VM["kwanz-ws Shared Workstation"]
-        subgraph VMNative["Native Processes (Fast Restart)"]
+        subgraph VMNative["Native Processes (High Feasibility / Fast Restart)"]
             Agent["vss-agent<br/>(NAT Framework, Port 8000)"]
             VideoAnalytics["video-analytics-api<br/>(Optional, Port 8081)"]
             BehaviorAnalytics["behavior-analytics<br/>(Optional, Port 8080)"]
         end
 
-        subgraph VMDocker["Docker Appliances (compose.yml)"]
+        subgraph VMDocker["Docker Appliances (Proprietary Toolchains / JVM / Infra)"]
             HAProxy["vss-haproxy-ingress<br/>(Port 7777)"]
             VIOSIngress["vss-vios-ingress<br/>(Port 10000)"]
             StreamProcessing["vss-vios-streamprocessing<br/>(GPU 0)"]
@@ -48,13 +48,14 @@ flowchart TB
             Phoenix["phoenix<br/>(Telemetry)"]
             Kafka["kafka<br/>(Analytics Bus, Optional)"]
             Elasticsearch["elasticsearch<br/>(Search Index, Optional)"]
+            RTVICV["vss-rtvi-cv<br/>(DeepStream Perception, MVP2)"]
+            RTVIEmbed["vss-rtvi-embed<br/>(Triton Embeddings, MVP2)"]
         end
     end
 
     subgraph External["Cloud & Hosted Services"]
         R2[("Cloudflare R2<br/>(Video & Evidence Store)")]
         Supabase[("Supabase Postgres<br/>(HTTPS PostgREST & RPC)")]
-        NGC["NVIDIA NGC Hosted API<br/>(https://integrate.api.nvidia.com)"]
         Brev["Brev Lab Switchyard API<br/>(https://switchyard-13doh4lsz.brevlab.com)"]
     end
 
@@ -90,19 +91,30 @@ flowchart TB
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for local mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, and base profile responses |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis workflow, tool calling, report persistence; remote inference via Brev |
-| `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
-| `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
-| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `services/ingress/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
-| `vss-vios-streamprocessing`| `kwanz-ws` | Internal | Docker container (GPU 0) | `services/vios/streamprocessing/` | Core video decode, encode, and frame processing engine |
-| `vss-vios-nvstreamer` | `kwanz-ws` | Internal | Docker container (GPU 0) | `services/vios/nvstreamer/` | Video file ingestion and RTSP/WebRTC chunked stream publisher |
-| `vss-vios-ingress` | `kwanz-ws` | 10000 | Docker container | `services/vios/ingress/` | Nginx reverse proxy routing internal storage and streaming API calls |
-| `vss-vios-postgres` | `kwanz-ws` | 5432 (int) | Docker container | `services/vios/postgres/` | VIOS internal database for camera sensors and stream registrations |
+| `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
+| `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
+| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
+| `vss-vios-streamprocessing`| `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Core video decode, encode, and frame processing engine |
+| `vss-vios-nvstreamer` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Video file ingestion and RTSP/WebRTC chunked stream publisher |
+| `vss-vios-ingress` | `kwanz-ws` | 10000 | Docker container | `deploy/docker/services/vios/` | Nginx reverse proxy routing internal storage and streaming API calls |
+| `vss-vios-postgres` | `kwanz-ws` | 5432 (int) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
+| `vss-rtvi-cv` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | DeepStream perception container for real-time video analytics (MVP2) |
+| `vss-rtvi-embed` | `kwanz-ws` | 8017 | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | Triton inference server for real-time video embeddings (MVP2) |
 | `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` | Relational store for reports, incidents, evidence, reviews, and ground truth |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
-| `NGC Hosted API` | Cloud | 443 (HTTPS) | Remote NVIDIA NIM Service | Upstream endpoint | Historical hosted endpoint; superseded by Brev for `dev-profile-incident` |
+
+### Native vs. Docker Service Split Policy
+
+**Policy Rule:** Run a service natively whenever feasible.
+
+Services are split based on feasibility:
+- **Native Processes (High Feasibility):** `vss-agent` (Python/uv), `video-analytics-api` (Node.js), and `behavior-analytics` (Python). Running natively eliminates Docker image rebuilds on code changes (~2s process restart vs multi-minute container build).
+- **Docker Appliances (Infeasible Natively):** Media engines and perception services (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-postgres`, `vss-rtvi-cv`, `vss-rtvi-embed`). These depend on proprietary CUDA, GStreamer, DeepStream, or Triton container toolchains; host installation is infeasible.
+- **Docker Appliances (No Benefit / JVM):** Infrastructure appliances (`redis`, `kafka`, `elasticsearch`, `phoenix`, `vss-haproxy-ingress`). Standard prebuilt containers or heavy JVM runtimes where native execution provides no development benefit.
+- **Networking:** All containers use host networking (`network_mode: host`), allowing native host processes to reach containerized services directly on `localhost`.
 
 ---
 
@@ -173,38 +185,15 @@ VLM_ENDPOINT_URL=https://switchyard-13doh4lsz.brevlab.com
 OPENAI_API_KEY=<brev-switchyard-api-key>
 ```
 
-### Critical Operational Facts & Gotchas
+### Inference Rules & Requirements
 
-1. **vss-agent Client Type Requirement (`_type: openai` vs `nim`):**
-   Remote inference endpoints (Brev Switchyard or other OpenAI-compatible gateways) must use `_type: openai`,
-   **never** `_type: nim`. The `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into
-   the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible proxies.
-   Both `config.yml` and `config_rag.yml` configure `eval_llm_judge._type: openai` for this reason.
-2. **Model Selection & Probe Verification (verified 2026-09-25):**
-   - **LLM (`nvidia/nemotron-3-ultra`):** Verified operational for both `top_agent` reasoning and evaluation judge roles.
-     Probed successfully for tool calling (`bind_tools`, 1.89 s) and structured JSON schema output
-     (`with_structured_output`, 0.95 s). *Note:* `nvidia/cosmos-3-nano-reasoner` was probed for the LLM role but rejected
-     because LiteLLM disabled auto tool choice (`auto tool choice is not supported`), returning HTTP 400.
-   - **VLM (`nvidia/cosmos-3-super-reasoner`):** Verified operational for multi-modal video inspection. Supports base64 MP4
-     `video_url` data URIs (`data:video/mp4;base64,...`) across 5 s, 60 s, and 1080p clips (up to 7.85 MB payload, 7.68 s latency)
-     without HTTP 413 entity-too-large errors or `<think>` tag leakage into output. Also supports frame-by-frame JPEG extraction.
-3. **Endpoint URL Format & Authentication:**
-   - Brev URLs must **not** include a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Upstream LangChain client
-     instantiations append `/v1` automatically where required.
-   - `OPENAI_API_KEY` holds the Brev API key and is shared across LLM, VLM, and `eval_llm_judge` (`EVAL_LLM_JUDGE_NAME`
-     and `EVAL_LLM_JUDGE_BASE_URL` default to `LLM_NAME` and `LLM_BASE_URL` respectively).
-4. **GPU Device Allocation under Remote Mode:**
-   With LLM/VLM inference offloaded to the cloud, local GPU requirements on `kwanz-ws` drop dramatically:
-   - **GPU 0:** Dedicated to video infrastructure (`vss-vios-nvstreamer` and `vss-vios-streamprocessing`).
-     In MVP2, `vss-rtvi-cv` and `vss-rtvi-embed` will also default to GPU 0.
-   - **GPU 1:** Completely idle and unallocated. Free for other team research or optional isolation of
-     `vss-rtvi-embed` if GPU 0 experiences SM contention during heavy ingestion.
-5. **Historical Reference: NVIDIA NGC Hosted Endpoints:**
-   Earlier iterations routed remote inference to NVIDIA's hosted endpoints (`https://integrate.api.nvidia.com`).
-   That configuration suffered from strict 16-concurrent request free-tier caps (which caused pipeline deadlocks
-   under video burst traffic), frequent unannounced model deprecations (`410 Gone`), account entitlement gaps
-   (`404 Function not found`), and an upstream LangChain bug where missing `base_url` in `openai_vlm` defaulted
-   silently to `api.openai.com`. The Brev Switchyard migration resolves these limitations.
+1. **Client Type Rule:** Use `_type: openai` for remote inference models, **never** `_type: nim`. The `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible endpoints.
+2. **Model Selection Rules:**
+   - **LLM (`nvidia/nemotron-3-ultra`):** Must support OpenAI tool calling (`bind_tools`) for `top_agent` and `json_schema` structured output for incident reporting. Also serves as `eval_llm_judge`.
+   - **VLM (`nvidia/cosmos-3-super-reasoner`):** Must support base64 MP4 `video_url` inlining (`data:video/mp4;base64,...`) and frame-by-frame JPEG extraction.
+3. **URL Format Rule:** Set `*_BASE_URL` without a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Agent and LangChain client instantiations append `/v1` automatically.
+4. **Authentication Rule:** Set `OPENAI_API_KEY` to the Brev Switchyard key; it is shared across LLM, VLM, and `eval_llm_judge`.
+5. **GPU Device Allocation Rule:** In remote mode, dedicate GPU 0 to video infrastructure (`vss-vios-nvstreamer`, `vss-vios-streamprocessing`, and in MVP2 `vss-rtvi-cv`/`vss-rtvi-embed`). Keep GPU 1 idle and unallocated.
 
 ---
 
