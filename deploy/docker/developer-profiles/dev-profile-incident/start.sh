@@ -231,7 +231,7 @@ if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
   echo "start.sh: developer-profiles/dev-profile-incident/generated.env.remote not found on the VM." >&2
   echo "  Create it from the tracked .env template and fill in the real values:" >&2
   echo "  cp ${VSS_REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env ${VSS_REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" >&2
-  echo "  (see incident-plan/incident-plan-implementation-remote.md §2)" >&2
+  echo "  (see .docs/incident-profile-operations.md §5)" >&2
   exit 1
 fi
 

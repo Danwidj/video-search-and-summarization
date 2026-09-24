@@ -9,7 +9,7 @@ Streamlit console for the VSS incident search & reporting capstone. Front-end
 migrated from the sibling `rise-up` project onto this blueprint fork. See
 [`.docs/`](../.docs/) for the full plan;
 this app implements the frontend half of
-the shared implementation reference in [`../.docs/incident-plan-implementation-shared.md`](../.docs/incident-plan-implementation-shared.md).
+the shared implementation reference (superseded by [`../.docs/action-plan.md`](../.docs/action-plan.md) and [`../.docs/data.md`](../.docs/data.md); legacy plan preserved under [`../.docs/archive/`](../.docs/archive/)).
 
 This package is **profile-exclusive** — it lives here, not under the shared
 `deploy/docker/services/` tree.

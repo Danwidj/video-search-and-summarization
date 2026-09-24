@@ -234,7 +234,7 @@ llms:
 
   # --- Others ---
   eval_llm_judge:
-    _type: nim
+    _type: openai
     model_name: ${EVAL_LLM_JUDGE_NAME}
     base_url: ${EVAL_LLM_JUDGE_BASE_URL}/v1
     max_tokens: 4096

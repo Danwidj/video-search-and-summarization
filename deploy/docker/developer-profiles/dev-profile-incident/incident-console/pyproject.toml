@@ -34,7 +34,7 @@ dev = [
 [tool.uv]
 # App, not a distributable library - uv installs the dependencies but does not
 # build/install this project itself (so the Docker build needs only
-# pyproject.toml + uv.lock, per incident-plan-implementation-shared.md S3).
+# pyproject.toml + uv.lock, per ../.docs/action-plan.md).
 package = false
 
 [tool.ruff]

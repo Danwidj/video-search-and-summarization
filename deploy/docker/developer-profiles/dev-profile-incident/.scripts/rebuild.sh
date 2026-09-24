@@ -15,7 +15,7 @@
 # NOTE: dev-profile.sh has NO `incident` profile — this rebuilds the stock
 # profiles (base/search/lvs/alerts). The incident profile never goes through
 # dev-profile.sh; its deploy is the direct compose invocation in start.sh
-# (see ../incident-plan/incident-plan-implementation-remote.md §2).
+# (see ../.docs/incident-profile-operations.md §4).
 #
 # WARNING (grounded in dev-profile.sh's own state_down, run internally
 # before every `up`): this tears the existing stack down WITH -v and

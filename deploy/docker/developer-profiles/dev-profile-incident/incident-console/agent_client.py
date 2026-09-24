@@ -15,8 +15,8 @@
 
 """HTTP client for vss-agent's upload + AI-trigger API.
 
-Written against the plan's contract (incident-plan-implementation-shared.md
-S4-S5). Two of the endpoints - ``POST /api/v1/incidents/{id}/analyze`` and
+Written against the plan's contract (see ../.docs/action-plan.md §2 and
+../.docs/architecture.md §4). Two of the endpoints - ``POST /api/v1/incidents/{id}/analyze`` and
 ``POST /api/v1/search`` - do not exist server-side yet (that is a follow-up
 task). Every call fails soft: it returns a ``Result`` with ``ok=False`` and a
 human-readable ``error`` rather than raising, so the console stays usable when

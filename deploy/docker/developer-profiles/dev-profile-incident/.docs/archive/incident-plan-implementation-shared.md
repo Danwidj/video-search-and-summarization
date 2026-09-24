@@ -1,5 +1,8 @@
 # VSS Customization Plan — Incident Search & Reporting Capstone (Implementation — Shared Components)
 
+> [!NOTE]
+> **ARCHIVED:** Superseded by `action-plan.md`, `architecture.md`, `data.md`, and `analysis-schema.md`. Preserved for reference.
+
 *This is the AI/implementer-facing half of the plan - exact file paths, config keys, and technical findings, written for whoever is actually building this. The human-facing guide is the profile README, `../README.md` ("the profile README" / "the Overview doc"). Cross-references below point to it by name.*
 
 *This file covers everything that's identical regardless of where the LLM/VLM run: Postgres, R2, the frontend app, the AI-trigger API, feature implementation, engineering evaluation, and the resulting directory tree. Deployment-mode-specific setup (profile creation, LLM/VLM config, GPU topology, the dev/deploy guide, and the NVIDIA stock-profile reference) lives in whichever of `incident-plan-implementation-local.md` or `incident-plan-implementation-remote.md` matches how you're actually deploying — read that file's §1–§2 first, this file second.*

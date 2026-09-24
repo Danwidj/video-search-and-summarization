@@ -17,7 +17,7 @@
 
 Local-dev only - never deployed to the VM. It lets the real route ->
 tool-calling -> schema-extraction -> Postgres-write path be exercised with zero
-GPU / NIM / Elasticsearch, per incident-plan-implementation-local.md S2.
+GPU / NIM / Elasticsearch, per ../.docs/archive/incident-plan-implementation-local.md §2.
 
 Run it with::
 
