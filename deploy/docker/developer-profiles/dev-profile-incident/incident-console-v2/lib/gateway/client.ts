@@ -25,7 +25,11 @@ function networkErrorDetail(error: unknown): string {
 }
 
 export class GatewayClient {
-  constructor(private readonly baseUrl: string) {}
+  private readonly baseUrl: string;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+  }
 
   async health(signal?: AbortSignal): Promise<boolean> {
     try {

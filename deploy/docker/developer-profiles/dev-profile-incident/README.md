@@ -58,7 +58,7 @@ detailed Postgres schema specs, and eval methodology), see the companion files i
 - [`compose.yml`](compose.yml) — Profile entrypoint. Includes `./incident-console/compose.yml` and `./vlm-gateway/compose.yml`. No Kibana init block (this profile does not use Kibana).
 - [`.env`](.env) — Tracked placeholder template for the profile (compose-level variables, `VLM_GATEWAY_*`). Real values never go here; see [Laptop Setup](#6-laptop-setup-secrets--environment-files).
 - [`incident-console/`](incident-console/README.md) — The Streamlit console (v1): Postgres-backed incident review UI (`INCIDENT_DB_DSN` required), plus the Tier 1 GT evaluation and the P1 multi-model VLM evaluation scripts. See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
-- [`incident-console-v2/`](incident-console-v2/README.md) — Next.js App Router frontend (v2): video upload, VLM analysis, incident reporting, review, dashboard, and ground-truth evaluation. Server-only config via `VLM_GATEWAY_URL`, `VLM_MODEL`, `INCIDENT_AGENT_BASE_URL`, `INCIDENT_SUPABASE_URL`/`INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `R2_*`. See its README for the local dev loop (mock backend on 7777, VLM gateway on 8600, Next.js on 3200).
+- [`incident-console-v2/`](incident-console-v2/README.md) — Next.js App Router frontend (v2): video upload, VLM analysis, incident reporting, review, dashboard, and ground-truth evaluation. Server-only config via `ANALYSIS_MODE`, `VLM_GATEWAY_URL`, `VLM_MODEL`, `INCIDENT_AGENT_BASE_URL`, `INCIDENT_SUPABASE_URL`/`INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `R2_*`. See its README for the local dev loop (mock backend on 7777, VLM gateway on 8600, Next.js on 3200).
 - [`vlm-gateway/`](vlm-gateway/README.md) — Thin FastAPI proxy (port 8600) that holds the upstream NVIDIA-hosted inference key (`VLM_GATEWAY_API_KEY`) server-side; v2 calls it for video analysis.
 - [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference, port 7777; used by both consoles); [`search_profile_mock/`](mock-backend/search_profile_mock/README.md) is its `bp_developer_search` superset (port 7778).
 - [`supabase/`](supabase/README.md) — Supabase CLI migrations dir: the `insert_incident` Postgres RPC function that `services/agent`'s `incident_db.py` calls via `/rpc/insert_incident` (apply with `supabase db push`, see its README).
@@ -296,6 +296,9 @@ Both console frontends run on each teammate's laptop, connecting either to the s
    `incident-console-v2/.env.local`, which would overwrite the whole shared file through the symlink. Keys already
    present for v1 (`INCIDENT_SUPABASE_*`, `R2_*`) are shared. The full set v2 reads:
    ```dotenv
+   # Analysis flow: gateway (default, this local loop) or agent (VM flow, no gateway; see the v2 README)
+   ANALYSIS_MODE=gateway
+
    # VLM Gateway (holds upstream inference credential; NOT exposed to browser)
    VLM_GATEWAY_URL=http://127.0.0.1:8600
    VLM_MODEL=nvidia/cosmos-3-nano-reasoner

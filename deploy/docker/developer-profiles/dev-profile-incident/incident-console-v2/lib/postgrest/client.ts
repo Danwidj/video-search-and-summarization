@@ -2,9 +2,11 @@
 
 export class PostgrestClient {
   private readonly restUrl: string;
+  private readonly serviceRoleKey: string;
 
-  constructor(baseUrl: string, private readonly serviceRoleKey: string) {
+  constructor(baseUrl: string, serviceRoleKey: string) {
     this.restUrl = `${baseUrl.replace(/\/$/, '')}/rest/v1`;
+    this.serviceRoleKey = serviceRoleKey;
   }
 
   private headers(): HeadersInit {
