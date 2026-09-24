@@ -15,21 +15,23 @@
 
 """Structured incident-report schema produced by the ``/analyze`` pipeline.
 
-Mirrors ``IncidentReport`` in
+A superset of ``IncidentReport`` in
 ``deploy/docker/developer-profiles/dev-profile-incident/incident-console/incident_report.py``
-field-for-field, since the console parses this tool's output directly. Field
-names here are the extraction-facing shape (what an LLM fills in via
-``with_structured_output``); ``incident_db.py``'s ``insert_incident`` uses a
-different, DB-column-facing set of names (``type``/``severity_level``/
-``confidence_score``/``start_timestamp``/``end_timestamp``) per
-``db.py``'s module docstring, and the incident_report_gen tool is
-responsible for that translation.
+(which parses only its own subset of these fields) that also covers the content of
+``incident-console-v2``'s ``incidentAnalysisSchema`` (``lib/analysis/schema.ts``, camelCase
+names there), since callers parse this tool's output directly. Field names here are the
+extraction-facing shape (what an LLM fills in via ``with_structured_output``);
+``incident_db.py``'s ``insert_incident`` uses a different, DB-column-facing set of
+names (``type``/``severity_level``/``confidence_score``/``start_timestamp``/
+``end_timestamp``/``duration``) per ``db.py``'s module docstring, and the
+incident_report_gen tool is responsible for that translation.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
 
 # Controlled incident taxonomy - keep in sync with the console's copy in
 # incident_report.py and with fixtures/data's seed CSV.
@@ -49,15 +51,58 @@ class Person(BaseModel):
     actions: str = ""
 
 
+class TimelineItem(BaseModel):
+    """A distinct chronological event within the incident."""
+
+    start_seconds: float = 0.0
+    end_seconds: float | None = None
+    description: str = ""
+
+
+class Instrument(BaseModel):
+    """An object, tool, or weapon observed in the incident."""
+
+    name: str = ""
+    description: str = ""
+    threat_level: int | None = Field(default=None, ge=1, le=5)
+
+    @field_validator("threat_level", mode="before")
+    @classmethod
+    def _coerce_threat_level(cls, value: object) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            level = round(float(value))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if level < 1:
+            return None
+        return min(level, 5)
+
+
+class Asset(BaseModel):
+    """A property, structure, vehicle, or resource observed in the incident."""
+
+    name: str = ""
+    description: str = ""
+
+
 class IncidentReport(BaseModel):
     """Structured incident report extracted from a generated video report."""
 
+    title: str = ""
     incident_type: str = INCIDENT_TYPES[0]
     severity: int = Field(default=1, ge=1, le=5)
+    severity_reason: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     incident_start: str = "0:00"
     incident_end: str = "0:00"
     incident_start_confirmed: bool = False
+    duration_seconds: int | None = None
     description: str = ""
     persons: list[Person] = Field(default_factory=list)
+    instruments: list[Instrument] = Field(default_factory=list)
+    assets: list[Asset] = Field(default_factory=list)
+    timeline: list[TimelineItem] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
     location: str = ""

@@ -69,13 +69,20 @@ analysis report describing what happens in a surveillance video. Extract a struc
 from it.
 
 Rules:
+- title is a short factual title summarizing the incident (max 160 characters).
 - incident_type must be exactly one of: road accident, burglary, explosion, fighting, animal.
   Pick the closest match; if nothing in the report matches any of these, use "burglary" only if there is
   a clear property-crime element, otherwise pick the single best fit from the list - never invent a new type.
 - severity is an integer from 1 (minor) to 5 (critical).
+- severity_reason is a concise explanation of why this severity level was selected based on observable risk or harm.
 - confidence is a float from 0.0 to 1.0 reflecting how confident you are in incident_type given the report.
+- duration_seconds is the duration of the incident in seconds (integer) if observable or stated in the report, else null.
+- description is a 1-3 sentence plain-language executive summary of the incident.
 - persons should list each distinct person mentioned, with a short physical description and their actions.
-- description is a 1-3 sentence summary of the incident.
+- instruments should list objects, tools, weapons, or vehicles actively used in the incident, each with name, description of use, and optional threat_level (1-5, or null if unrated/harmless).
+- assets should list property, structures, vehicles, or items affected or targeted in the incident, each with name and description of observable state/damage.
+- timeline should be an ordered chronological list of observable events, each with start_seconds (float offset from video start), optional end_seconds (float or null), and description.
+- uncertainties should list any ambiguities or aspects that cannot be determined confidently from the report (do not invent unconfirmed details).
 - location is the camera/location name if mentioned in the report, else empty string.
 Do not fill in incident_start / incident_end - they are derived separately from the report's timestamps.
 """
@@ -110,6 +117,16 @@ def _derive_video_id(sensor_id: str) -> str:
     return "v" + hashlib.sha256(sensor_id.encode("utf-8")).hexdigest()[:19]
 
 
+def _timestamp_span(content: str | None) -> tuple[float, float] | None:
+    """Return the (min start, max end) seconds across every ``[Xs-Ys]`` marker, or ``None`` if there are none."""
+    if not content:
+        return None
+    matches = list(_TIMESTAMP_PATTERN.finditer(content))
+    if not matches:
+        return None
+    return min(float(m.group(1)) for m in matches), max(float(m.group(2)) for m in matches)
+
+
 def _derive_incident_bounds(content: str | None) -> tuple[str, str, bool]:
     """Derive (incident_start, incident_end, confirmed) from timestamped chunks in ``content``.
 
@@ -117,14 +134,10 @@ def _derive_incident_bounds(content: str | None) -> tuple[str, str, bool]:
     generated report. Falls back to ``("0:00", "0:00", False)`` when no
     timestamps are present.
     """
-    if not content:
+    span = _timestamp_span(content)
+    if span is None:
         return "0:00", "0:00", False
-    matches = list(_TIMESTAMP_PATTERN.finditer(content))
-    if not matches:
-        return "0:00", "0:00", False
-    starts = [float(m.group(1)) for m in matches]
-    ends = [float(m.group(2)) for m in matches]
-    return _seconds_to_mmss(min(starts)), _seconds_to_mmss(max(ends)), True
+    return _seconds_to_mmss(span[0]), _seconds_to_mmss(span[1]), True
 
 
 class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
@@ -198,6 +211,16 @@ def _derive_entity_id(incident_id: str, idx: int) -> str:
     return "e" + hashlib.sha256(f"{incident_id}:{idx}".encode()).hexdigest()[:19]
 
 
+def _derive_instrument_id(incident_id: str, idx: int) -> str:
+    """Deterministic ``instruments.instrument_id`` (``String(20)``) for the ``idx``-th instrument."""
+    return "i" + hashlib.sha256(f"{incident_id}:{idx}".encode()).hexdigest()[:19]
+
+
+def _derive_asset_id(incident_id: str, idx: int) -> str:
+    """Deterministic ``assets.asset_id`` (``String(20)``) for the ``idx``-th asset."""
+    return "a" + hashlib.sha256(f"{incident_id}:{idx}".encode()).hexdigest()[:19]
+
+
 async def _persist_incident(
     *,
     incident_id: str,
@@ -225,6 +248,7 @@ async def _persist_incident(
                 "type": report.incident_type,
                 "start_timestamp": incident_start,
                 "end_timestamp": incident_end,
+                "duration": report.duration_seconds,
                 "description": report.description,
                 "severity_level": report.severity,
                 "confidence_score": report.confidence,
@@ -246,6 +270,33 @@ async def _persist_incident(
                 )
             except Exception as e:
                 logger.warning("incident_report_gen: failed to persist entity %d for %s: %s", idx, incident_id, e)
+
+        await db.delete_incident_instruments(incident_id, model_run_id)
+        for idx, inst in enumerate(report.instruments):
+            try:
+                await db.add_incident_instrument(
+                    incident_id,
+                    model_run_id,
+                    instrument_id=_derive_instrument_id(incident_id, idx),
+                    name=inst.name,
+                    description=inst.description,
+                    threat_level=inst.threat_level,
+                )
+            except Exception as e:
+                logger.warning("incident_report_gen: failed to persist instrument %d for %s: %s", idx, incident_id, e)
+
+        await db.delete_incident_assets(incident_id, model_run_id)
+        for idx, asset in enumerate(report.assets):
+            try:
+                await db.add_incident_asset(
+                    incident_id,
+                    model_run_id,
+                    asset_id=_derive_asset_id(incident_id, idx),
+                    name=asset.name,
+                    description=asset.description,
+                )
+            except Exception as e:
+                logger.warning("incident_report_gen: failed to persist asset %d for %s: %s", idx, incident_id, e)
     except Exception as e:
         logger.warning("incident_report_gen: failed to persist incident for %s: %s", incident_id, e)
 
@@ -276,6 +327,12 @@ class IncidentReportGenInput(BaseModel):
             "sensor_id the same way the console derives it, so repeated calls for the same video resolve "
             "to the same row."
         ),
+    )
+    model_run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description="Optional model_runs.id to persist under. When omitted, defaults to config.model_run_id.",
     )
     user_query: str = Field(
         default="Generate a detailed incident report of the video.",
@@ -316,12 +373,16 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         content = report_result.content or ""
         structured_report = await _extract_structured_report(llm, content, config.extraction_timeout_seconds)
 
+        span = _timestamp_span(content)
         incident_start, incident_end, confirmed = _derive_incident_bounds(content)
         structured_report.incident_start = incident_start
         structured_report.incident_end = incident_end
         structured_report.incident_start_confirmed = confirmed
+        if structured_report.duration_seconds is None and span is not None:
+            structured_report.duration_seconds = max(0, round(span[1] - span[0]))
 
         incident_id = tool_input.incident_id or _derive_video_id(tool_input.sensor_id)
+        model_run_id = tool_input.model_run_id or config.model_run_id
         await _persist_incident(
             incident_id=incident_id,
             sensor_id=tool_input.sensor_id,
@@ -329,7 +390,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             incident_start=incident_start,
             incident_end=incident_end,
             filepath=report_result.video_url,
-            model_run_id=config.model_run_id,
+            model_run_id=model_run_id,
             model_name=config.model_name,
         )
 
@@ -342,7 +403,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         single_fn=_incident_report_gen,
         description=(
             "Generate an incident analysis report for an uploaded video and extract a structured "
-            "IncidentReport (incident_type, severity, confidence, persons, description, location). "
+            "IncidentReport (incident_type, severity, confidence, persons, description, location, etc.). "
             "Persists the result to the incident DB when configured (best-effort, fails soft)."
         ),
         input_schema=IncidentReportGenInput,

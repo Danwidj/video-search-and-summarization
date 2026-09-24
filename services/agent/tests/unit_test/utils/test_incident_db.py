@@ -61,7 +61,9 @@ def _make_mock_client() -> MagicMock:
     insert_mock = MagicMock()
     insert_mock.execute = AsyncMock()
 
-    rpc_mock = AsyncMock()
+    rpc_builder = MagicMock()
+    rpc_builder.execute = AsyncMock()
+    rpc_mock = MagicMock(return_value=rpc_builder)
 
     table_mock.select = MagicMock(return_value=select_mock)
     table_mock.upsert = MagicMock(return_value=upsert_mock)
@@ -297,7 +299,7 @@ async def test_insert_incident_calls_rpc():
         "run-1",
         fields={"type": "burglary", "severity_level": 3, "confidence_score": 0.8},
     )
-    mock_client.rpc.assert_awaited_once()
+    mock_client.rpc.assert_called_once()
     args, _kwargs = mock_client.rpc.call_args
     assert args[0] == "insert_incident"
     assert args[1]["p_incident_id"] == "vid-1"
@@ -305,6 +307,7 @@ async def test_insert_incident_calls_rpc():
     assert args[1]["p_type"] == "burglary"
     assert args[1]["p_severity_level"] == 3
     assert args[1]["p_confidence_score"] == 0.8
+    mock_client.rpc.return_value.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -423,6 +426,30 @@ async def test_delete_incident_entities_calls_delete():
     db = IncidentDB(mock_client)
     await db.delete_incident_entities("vid-1", "run-1")
     mock_client.table.assert_called_with("entities")
+    delete_call = mock_client.table().delete()
+    delete_call.eq.assert_any_call("incident_id", "vid-1")
+    delete_call.eq.assert_any_call("model_run_id", "run-1")
+    delete_call.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_instruments_calls_delete():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.delete_incident_instruments("vid-1", "run-1")
+    mock_client.table.assert_called_with("instruments")
+    delete_call = mock_client.table().delete()
+    delete_call.eq.assert_any_call("incident_id", "vid-1")
+    delete_call.eq.assert_any_call("model_run_id", "run-1")
+    delete_call.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_assets_calls_delete():
+    mock_client = _make_mock_client()
+    db = IncidentDB(mock_client)
+    await db.delete_incident_assets("vid-1", "run-1")
+    mock_client.table.assert_called_with("assets")
     delete_call = mock_client.table().delete()
     delete_call.eq.assert_any_call("incident_id", "vid-1")
     delete_call.eq.assert_any_call("model_run_id", "run-1")

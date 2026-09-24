@@ -256,7 +256,7 @@ class IncidentDB:
         ``unreviewed`` atomically in a single server-side transaction.
         """
         payload = {k: (fields or {}).get(k) for k in self._INCIDENT_FIELDS}
-        await self.client.rpc(  # type: ignore[misc]
+        await self.client.rpc(
             "insert_incident",
             {
                 "p_incident_id": incident_id,
@@ -392,6 +392,26 @@ class IncidentDB:
             .execute()
         )
 
+    async def delete_incident_instruments(self, incident_id: str, model_run_id: str) -> None:
+        """Delete this incident+run's instruments so a re-analysis starts clean."""
+        await (
+            self.client.table("instruments")
+            .delete()
+            .eq("incident_id", incident_id)
+            .eq("model_run_id", model_run_id)
+            .execute()
+        )
+
+    async def delete_incident_assets(self, incident_id: str, model_run_id: str) -> None:
+        """Delete this incident+run's assets so a re-analysis starts clean."""
+        await (
+            self.client.table("assets")
+            .delete()
+            .eq("incident_id", incident_id)
+            .eq("model_run_id", model_run_id)
+            .execute()
+        )
+
     async def list_incident_entities(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
         query = self.client.table("entities").select("*").eq("incident_id", incident_id).order("entity_id")
         if model_run_id is not None:
@@ -448,7 +468,7 @@ class IncidentDB:
             .maybe_single()
             .execute()
         )
-        incident_row = incident_result.data  # type: ignore[union-attr]
+        incident_row = _row_to_dict(incident_result.data)  # type: ignore[arg-type, union-attr]
         if incident_row is None:
             raise ValueError("Incident not found")
         severity = incident_row["severity_level"]
@@ -460,7 +480,7 @@ class IncidentDB:
             .maybe_single()
             .execute()
         )
-        current = current_result.data  # type: ignore[union-attr]
+        current = _row_to_dict(current_result.data)  # type: ignore[arg-type, union-attr]
         if current is not None and current["status"] == status:
             return {"notified": False, "severity": severity}
         now = _utcnow()
@@ -479,7 +499,12 @@ class IncidentDB:
             .eq("model_run_id", model_run_id)
             .execute()
         )
-        notified = status == "verified" and severity is not None and severity >= notify_threshold
+        notified = (
+            status == "verified"
+            and severity is not None
+            and isinstance(severity, (int, float))
+            and severity >= notify_threshold
+        )
         if notified:
             await (
                 self.client.table("notifications")
