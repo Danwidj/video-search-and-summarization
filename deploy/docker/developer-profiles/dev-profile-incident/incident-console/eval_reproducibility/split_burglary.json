@@ -1,0 +1,49 @@
+{
+  "category": "Burglary",
+  "seed": 42,
+  "generated_at": "2026-09-24T04:56:54.582592+00:00",
+  "few_shot_demo_videos": [
+    "Burglary004_x264.mp4",
+    "Burglary010_x264.mp4",
+    "Burglary031_x264.mp4",
+    "Burglary061_x264.mp4",
+    "Burglary093_x264.mp4"
+  ],
+  "evaluation_videos": [
+    "Burglary005_x264.mp4",
+    "Burglary009_x264.mp4",
+    "Burglary013_x264.mp4",
+    "Burglary020_x264.mp4",
+    "Burglary021_x264.mp4",
+    "Burglary026_x264.mp4",
+    "Burglary036_x264.mp4",
+    "Burglary041_x264.mp4",
+    "Burglary042_x264.mp4",
+    "Burglary052_x264.mp4",
+    "Burglary053_x264.mp4",
+    "Burglary066_x264.mp4",
+    "Burglary071_x264.mp4"
+  ],
+  "few_shot_demo_videos_r2_keys": {
+    "Burglary004_x264.mp4": "anomaly/burglary/Burglary004_x264.mp4",
+    "Burglary010_x264.mp4": "anomaly/burglary/Burglary010_x264.mp4",
+    "Burglary031_x264.mp4": "anomaly/burglary/Burglary031_x264.mp4",
+    "Burglary061_x264.mp4": "anomaly/burglary/Burglary061_x264.mp4",
+    "Burglary093_x264.mp4": "anomaly/burglary/Burglary093_x264.mp4"
+  },
+  "evaluation_videos_r2_keys": {
+    "Burglary005_x264.mp4": "anomaly/burglary/Burglary005_x264.mp4",
+    "Burglary009_x264.mp4": "anomaly/burglary/Burglary009_x264.mp4",
+    "Burglary013_x264.mp4": "anomaly/burglary/Burglary013_x264.mp4",
+    "Burglary020_x264.mp4": "anomaly/burglary/Burglary020_x264.mp4",
+    "Burglary021_x264.mp4": "anomaly/burglary/Burglary021_x264.mp4",
+    "Burglary026_x264.mp4": "anomaly/burglary/Burglary026_x264.mp4",
+    "Burglary036_x264.mp4": "anomaly/burglary/Burglary036_x264.mp4",
+    "Burglary041_x264.mp4": "anomaly/burglary/Burglary041_x264.mp4",
+    "Burglary042_x264.mp4": "anomaly/burglary/Burglary042_x264.mp4",
+    "Burglary052_x264.mp4": "anomaly/burglary/Burglary052_x264.mp4",
+    "Burglary053_x264.mp4": "anomaly/burglary/Burglary053_x264.mp4",
+    "Burglary066_x264.mp4": "anomaly/burglary/Burglary066_x264.mp4",
+    "Burglary071_x264.mp4": "anomaly/burglary/Burglary071_x264.mp4"
+  }
+}

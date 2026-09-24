@@ -2,3 +2,10 @@
 # Shared across incident-console, incident-console-v2, vlm-gateway, and mock-backend.
 .env.local
 **/.env.local
+
+# P1/RP1 multi-model evaluation working data for incident-console: real (not
+# demo) ground-truth Excel, split manifests, cached R2 video downloads, and
+# result JSON/CSV. Never committed - see incident-console/prompts.py and
+# incident-console/scripts/eval_*.py. The small split manifests themselves
+# are tracked separately under incident-console/eval_reproducibility/.
+incident-console/eval_data/

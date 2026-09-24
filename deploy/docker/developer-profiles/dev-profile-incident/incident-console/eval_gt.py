@@ -102,6 +102,88 @@ def compare_incident_fields(gt: dict, model: dict) -> dict:
     }
 
 
+def _exact_match(expected, predicted, *, normalize_str: bool = False) -> dict:
+    """Exact-match expected/predicted/pass for a categorical field (type, threat_level, ...).
+
+    ``normalize_str`` lowercases/strips both sides before comparing, mirroring
+    ``_normalized_type`` above; leave it off for non-string fields like
+    ``threat_level``.
+    """
+    if normalize_str:
+        left, right = _normalized_type(expected), _normalized_type(predicted)
+        passed = bool(left) and left == right
+    else:
+        passed = expected is not None and expected == predicted
+    return {"expected": expected, "predicted": predicted, "pass": passed}
+
+
+def _judged_field_score(expected, predicted, *, timeout: float | None = None) -> dict:
+    """Expected/predicted/score/pass for a free-text field, via the same LLM judge
+    used for the top-level incident description - reused as-is, not reimplemented.
+    """
+    judge = judge_description_similarity(expected or "", predicted or "", timeout=timeout)
+    if judge.ok:
+        return {"expected": expected, "predicted": predicted, "score": judge.data, "pass": judge.data >= 0.5}
+    return {"expected": expected, "predicted": predicted, "score": None, "pass": False, "error": judge.error}
+
+
+def resolve_holder(model_instrument: dict, gt_instrument: dict, entity_matches: list[dict]) -> dict:
+    """Holder correctness for one matched instrument pair - never a hard fail on ambiguity.
+
+    The model instrument's ``entity_id`` is a *model-space* id (e.g. "E1") that
+    only means something once resolved through the already-computed entity
+    match set to its GT-space counterpart; comparing raw ids directly would be
+    wrong, since the same real entity can get a different local id on each
+    side. Three outcomes, never collapsed to a boolean:
+    - ``correct``    - the resolved GT entity matches the GT instrument's holder.
+    - ``incorrect``  - it resolves to a different GT entity.
+    - ``unresolved`` - either side has no holder, or the model instrument's
+      holder entity itself had no accepted entity match to resolve through.
+    """
+    model_holder = model_instrument.get("entity_id")
+    gt_holder = gt_instrument.get("entity_id")
+    if not model_holder or not gt_holder:
+        return {"expected": gt_holder, "predicted": model_holder, "status": "unresolved"}
+    resolved_gt_entity_id = next(
+        (m["gt_entity_id"] for m in entity_matches if m.get("entity_id") == model_holder), None
+    )
+    if resolved_gt_entity_id is None:
+        return {"expected": gt_holder, "predicted": model_holder, "status": "unresolved"}
+    status = "correct" if resolved_gt_entity_id == gt_holder else "incorrect"
+    return {
+        "expected": gt_holder,
+        "predicted": model_holder,
+        "resolved_gt_entity_id": resolved_gt_entity_id,
+        "status": status,
+    }
+
+
+def score_matched_pair(kind: str, model_row: dict, gt_row: dict, *, entity_matches: list[dict] | None = None) -> dict:
+    """Per-attribute scores for one accepted match, keyed by kind.
+
+    Never influences whether the pair counts as matched (TP) - that decision
+    is ``matching.py``'s alone, made before this function is ever called.
+    """
+    if kind == "entities":
+        return {
+            "type": _exact_match(gt_row.get("type"), model_row.get("type"), normalize_str=True),
+            "description": _judged_field_score(gt_row.get("description"), model_row.get("description")),
+        }
+    if kind == "instruments":
+        return {
+            "name": _judged_field_score(gt_row.get("name"), model_row.get("name")),
+            "description": _judged_field_score(gt_row.get("description"), model_row.get("description")),
+            "threat_level": _exact_match(gt_row.get("threat_level"), model_row.get("threat_level")),
+            "holder": resolve_holder(model_row, gt_row, entity_matches or []),
+        }
+    if kind == "assets":
+        return {
+            "name": _judged_field_score(gt_row.get("name"), model_row.get("name")),
+            "description": _judged_field_score(gt_row.get("description"), model_row.get("description")),
+        }
+    raise ValueError(f"unknown kind: {kind!r}")
+
+
 def prf1(tp: int, fp: int, fn: int) -> dict:
     """Precision/Recall/F1, divide-by-zero-safe (0.0 when a denominator is 0)."""
     precision = tp / (tp + fp) if (tp + fp) else 0.0
@@ -162,27 +244,27 @@ def _extract_score(content: str) -> float | None:
     return None
 
 
-def judge_description_similarity(expected: str, predicted: str, *, timeout: float | None = None) -> Result:
-    """LLM-as-a-judge 0.0-1.0 semantic score for two incident descriptions.
-
-    Fails soft (``ok=False``) when ``INCIDENT_LLM_BASE_URL`` is unset, the
-    request fails, or the response cannot be parsed into a score - never
-    raises, matching ``agent_client.py`` / ``embed_client.py``.
-    """
+def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) -> Result:
+    """One judge call, no retry. Same request every time - the prompt, model,
+    and config are identical on every attempt; only a parse failure ever
+    causes a second attempt (see ``judge_description_similarity``)."""
     base_url = config.llm_base_url()
     if not base_url:
         return Result(ok=False, error="INCIDENT_LLM_BASE_URL is not set")
     prompt = f"EXPECTED: {expected or ''}\nPREDICTED: {predicted or ''}"
+    api_key = config.incident_llm_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
         resp = httpx.post(
             f"{base_url}/chat/completions",
             json={
-                "model": "incident-judge",
+                "model": config.incident_judge_model(),
                 "messages": [
                     {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
             },
+            headers=headers,
             timeout=timeout or config.http_timeout_seconds(),
         )
     except httpx.HTTPError as exc:
@@ -197,6 +279,31 @@ def judge_description_similarity(expected: str, predicted: str, *, timeout: floa
     if score is None:
         return Result(ok=False, error=f"could not extract a score from judge response: {body!r}")
     return Result(ok=True, data=score, status_code=resp.status_code)
+
+
+def judge_description_similarity(
+    expected: str, predicted: str, *, timeout: float | None = None, max_retries: int = 2
+) -> Result:
+    """LLM-as-a-judge 0.0-1.0 semantic score for two incident descriptions.
+
+    Fails soft (``ok=False``) when ``INCIDENT_LLM_BASE_URL`` is unset, the
+    request fails, or every attempt's response cannot be parsed into a score -
+    never raises, matching ``agent_client.py`` / ``embed_client.py``.
+
+    Retries only a *parse failure* (the model responded, but not in the
+    requested ``{"score": ...}`` shape - an occasional model hallucination
+    observed in practice, e.g. answering an unrelated task) up to
+    ``max_retries`` additional times with the identical request - same prompt,
+    same model, same config every attempt. A missing base URL or a network/
+    HTTP error is never retried; it is returned immediately, matching prior
+    behavior exactly (``max_retries`` only widens the parse-failure case).
+    """
+    result = _judge_once(expected, predicted, timeout=timeout)
+    attempts = 1
+    while not result.ok and result.error.startswith("could not extract a score") and attempts <= max_retries:
+        result = _judge_once(expected, predicted, timeout=timeout)
+        attempts += 1
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -268,5 +375,15 @@ def run_evaluation(db, incident_id: str, model_run_id: str) -> EvaluationResult:
             "model": _unmatched_rows(model_rows, id_field, matched_model_ids),
             "gt": _unmatched_rows(gt_rows, id_field, matched_gt_ids),
         }
+
+        # Post-match attribute scoring: additive only, never touches TP/FP/FN
+        # above or matching.py's match/no-match decision that produced kind_matches.
+        model_by_id = {row.get(id_field): row for row in model_rows}
+        gt_by_id = {row.get(id_field): row for row in gt_rows}
+        for m in kind_matches:
+            model_row = model_by_id.get(m.get(id_field), {})
+            gt_row = gt_by_id.get(m.get(f"gt_{id_field}"), {})
+            entity_matches = matches.get("entities", []) if kind == "instruments" else None
+            m["attribute_scores"] = score_matched_pair(kind, model_row, gt_row, entity_matches=entity_matches)
 
     return result
