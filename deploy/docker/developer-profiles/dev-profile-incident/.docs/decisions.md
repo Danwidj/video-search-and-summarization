@@ -48,7 +48,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ### 2026-09-24: Retire Streamlit incident-console (v1) in favor of Next.js incident-console-v2
 - **Decision:** Drop the Streamlit-based `incident-console` from `start.sh` and active development on 2026-09-24; `incident-console-v2` becomes the sole UI.
-- **Why:** Reason not recorded - ask captain.
+- **Why:** Dropped due to slow UI loading (captain, 2026-09-25).
 - **Alternatives rejected:** Reason not recorded - ask captain.
 - **Links:** [PR #80](https://github.com/Danwidj/video-search-and-summarization/pull/80); commit [`8fd8267ca`](https://github.com/Danwidj/video-search-and-summarization/commit/8fd8267ca); [`start.sh`](../start.sh).
 
@@ -102,6 +102,6 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ### 2026-09-06: MVP1 / MVP2 scope partitioning
 - **Decision:** Partition project deliverables into MVP1 (ingestion, automated extraction, human review UI, ground-truth evaluation) and MVP2 (real-time perception RT-CV/RT-Embed, Elasticsearch vector storage, multi-subagent routing, natural language search).
-- **Why:** Establishes a verified end-to-end incident analysis baseline before introducing multi-subagent routing and multi-modal vector search. Reason for specific milestone cut: Reason not recorded - ask captain.
+- **Why:** MVP1 is due for the mid-term, MVP2 is due for finals (captain, 2026-09-25).
 - **Alternatives rejected:** Reason not recorded - ask captain.
 - **Links:** [`.docs/action-plan.md`](action-plan.md); [`.docs/archive/incident-plan-implementation-shared.md`](archive/incident-plan-implementation-shared.md).
