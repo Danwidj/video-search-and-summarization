@@ -15,10 +15,11 @@
 
 """Structured incident-report schema produced by the ``/analyze`` pipeline.
 
-Mirrors ``IncidentReport`` in
+A superset of ``IncidentReport`` in
 ``deploy/docker/developer-profiles/dev-profile-incident/incident-console/incident_report.py``
-and aligns with ``incident-console-v2``'s ``incidentAnalysisSchema`` field-for-field,
-since callers parse this tool's output directly. Field names here are the
+(which parses only its own subset of these fields) that also covers the content of
+``incident-console-v2``'s ``incidentAnalysisSchema`` (``lib/analysis/schema.ts``, camelCase
+names there), since callers parse this tool's output directly. Field names here are the
 extraction-facing shape (what an LLM fills in via ``with_structured_output``);
 ``incident_db.py``'s ``insert_incident`` uses a different, DB-column-facing set of
 names (``type``/``severity_level``/``confidence_score``/``start_timestamp``/
