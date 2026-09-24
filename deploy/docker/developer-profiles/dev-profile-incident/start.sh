@@ -16,22 +16,7 @@
 #   1. Checks the current deploy state over SSH against the VM:
 #        - Docker containers via `docker compose -p mdx ps`
 #        - Native services via `native-services.sh status`
-# Architecture (Native vs Docker Split):
-#   - DOCKER SERVICES: Foundational appliance containers (VIOS/VST, HAProxy,
-#     Postgres, Redis, Phoenix, and optional Kafka/ElasticSearch).
-#   - NATIVE SERVICES: Fast-iterating application modules running directly
-#     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
-#     video-analytics-api and behavior-analytics).
-#
-# Execution flow:
-#   1. Checks the current deploy state over SSH against the VM:
-#        - Docker containers via `docker compose -p mdx ps`
-#        - Native services via `native-services.sh status`
 #   2. Branches on that state:
-#        - NOTHING expected running  -> deploy the backend fresh over SSH:
-#          Starts Docker appliances (`docker compose ... up -d <docker-services>`),
-#          then starts native services via `native-services.sh start`.
-#          Then opens the tunnel and starts the local console.
 #        - NOTHING expected running  -> deploy the backend fresh over SSH:
 #          Starts Docker appliances (`docker compose ... up -d <docker-services>`),
 #          then starts native services via `native-services.sh start`.
@@ -54,12 +39,10 @@
 #      you're done.
 #
 # Overrides:
-# Overrides:
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is with no prompt. If unset, the VM
 #                            username is resolved by resolve-ssh-target.sh:
 #                            VSS_SSH_USER env var (non-interactive override),
-#                            else ~/.ssh/config User, else $USER/whoami.
 #                            else ~/.ssh/config User, else $USER/whoami.
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
@@ -70,36 +53,15 @@
 #                            behavior-analytics natively, plus elasticsearch/kafka in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
-#   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
-#                            behavior-analytics natively, plus elasticsearch/kafka in Docker
-#   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
-#   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=scripts/resolve-ssh-target.sh
-source "${SCRIPT_DIR}/scripts/resolve-ssh-target.sh"
+# shellcheck source=.scripts/resolve-ssh-target.sh
+source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
 VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
 VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
-ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
-
-# Base Docker infrastructure (appliances)
-default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix"
-if [ "${ENABLE_ANALYTICS}" = "true" ]; then
-  default_docker_services="${default_docker_services} elasticsearch kafka"
-fi
-INCIDENT_DOCKER_SERVICES="${INCIDENT_DOCKER_SERVICES:-${INCIDENT_EXPECTED_CONTAINERS:-$default_docker_services}}"
-
-# Native VM services
-default_native_services="vss-agent"
-if [ "${ENABLE_ANALYTICS}" = "true" ]; then
-  default_native_services="${default_native_services} video-analytics-api behavior-analytics"
-fi
-INCIDENT_NATIVE_SERVICES="${INCIDENT_NATIVE_SERVICES:-$default_native_services}"
-
-# Laptop-side only: refuse to run ON kwanz-ws
 ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
 # Base Docker infrastructure (appliances)
@@ -133,15 +95,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
-echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
 
-# 1. Query Docker containers state
 # 1. Query Docker containers state
 state_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
   "cd '$VSS_REPO_ROOT/deploy/docker' && docker compose -p mdx ps -a --format '{{.Name}} {{.State}}'" 2>&1)"
 ssh_rc=$?
 if [ "$ssh_rc" -ne 0 ]; then
-  echo "start.sh: could not query Docker deploy state over SSH ($VSS_SSH_TARGET)." >&2
   echo "start.sh: could not query Docker deploy state over SSH ($VSS_SSH_TARGET)." >&2
   echo "${state_output}" >&2
   echo "  Is the VM reachable (tailscale/network) and is docker compose available?" >&2
@@ -150,18 +109,7 @@ fi
 
 # 2. Query Native services state
 native_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' status --porcelain" 2>&1)"
-native_rc=$?
-if [ "$native_rc" -ne 0 ]; then
-  echo "start.sh: could not query native services state over SSH ($VSS_SSH_TARGET)." >&2
-  echo "${native_output}" >&2
-  exit 1
-fi
-
-echo "--- Docker containers (project: mdx) ---"
-# 2. Query Native services state
-native_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' status --porcelain" 2>&1)"
+  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status --porcelain" 2>&1)"
 native_rc=$?
 if [ "$native_rc" -ne 0 ]; then
   echo "start.sh: could not query native services state over SSH ($VSS_SSH_TARGET)." >&2
@@ -178,23 +126,14 @@ fi
 
 echo "--- Native services (managed natively) ---"
 ssh "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' status" 2>&1 || true
-
-docker_up=()
-docker_missing=()
-for svc in ${INCIDENT_DOCKER_SERVICES}; do
-echo "--- Native services (managed natively) ---"
-ssh "$VSS_SSH_TARGET" \
-  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' status" 2>&1 || true
+  "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status" 2>&1 || true
 
 docker_up=()
 docker_missing=()
 for svc in ${INCIDENT_DOCKER_SERVICES}; do
   if echo "${state_output}" | grep -Eq "(^|[[:space:]-])${svc}(-[0-9]+)?[[:space:]]+running[[:space:]]*$"; then
     docker_up+=("${svc}")
-    docker_up+=("${svc}")
   else
-    docker_missing+=("${svc}")
     docker_missing+=("${svc}")
   fi
 done
@@ -220,35 +159,8 @@ echo "  Native services expected: ${INCIDENT_NATIVE_SERVICES}"
 echo "    up:      ${native_up[*]:-(none)}"
 if [ "${#native_missing[@]}" -gt 0 ]; then
   echo "    missing: ${native_missing[*]}"
-native_up=()
-native_missing=()
-for svc in ${INCIDENT_NATIVE_SERVICES}; do
-  if echo "${native_output}" | grep -Eq "^${svc}:running:"; then
-    native_up+=("${svc}")
-  else
-    native_missing+=("${svc}")
-  fi
-done
-
-echo "--- Backend status evaluation ---"
-echo "  Docker services expected: ${INCIDENT_DOCKER_SERVICES}"
-echo "    up:      ${docker_up[*]:-(none)}"
-if [ "${#docker_missing[@]}" -gt 0 ]; then
-  echo "    missing: ${docker_missing[*]}"
 fi
 
-echo "  Native services expected: ${INCIDENT_NATIVE_SERVICES}"
-echo "    up:      ${native_up[*]:-(none)}"
-if [ "${#native_missing[@]}" -gt 0 ]; then
-  echo "    missing: ${native_missing[*]}"
-fi
-
-total_up_count=$((${#docker_up[@]} + ${#native_up[@]}))
-total_missing_count=$((${#docker_missing[@]} + ${#native_missing[@]}))
-
-if [ "$total_missing_count" -eq 0 ]; then
-  echo "start.sh: all expected backend services (Docker and native) are already running — skipping backend deploy."
-elif [ "$total_up_count" -eq 0 ]; then
 total_up_count=$((${#docker_up[@]} + ${#native_up[@]}))
 total_missing_count=$((${#docker_missing[@]} + ${#native_missing[@]}))
 
@@ -256,7 +168,6 @@ if [ "$total_missing_count" -eq 0 ]; then
   echo "start.sh: all expected backend services (Docker and native) are already running — skipping backend deploy."
 elif [ "$total_up_count" -eq 0 ]; then
   echo "start.sh: nothing relevant is running — deploying the backend fresh."
-  echo "=== STEP 2/3 — Deploying backend (Docker appliances + Native services) ==="
   echo "=== STEP 2/3 — Deploying backend (Docker appliances + Native services) ==="
 
   deploy_script=$(cat <<EOF
@@ -296,7 +207,6 @@ fi
 EOF
 )
   echo "--- deploying Docker appliances over SSH ---"
-  echo "--- deploying Docker appliances over SSH ---"
   ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
   deploy_rc=$?
   if [ "$deploy_rc" -ne 0 ]; then
@@ -306,35 +216,18 @@ EOF
 
   echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
   ssh "$VSS_SSH_TARGET" \
-    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
-  native_start_rc=$?
-  if [ "$native_start_rc" -ne 0 ]; then
-    echo "start.sh: Native service startup over SSH failed (exit $native_start_rc)." >&2
-    echo "start.sh: Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
-    exit 1
-  fi
-
-  echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
-  ssh "$VSS_SSH_TARGET" \
-    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
+    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
   native_start_rc=$?
   if [ "$native_start_rc" -ne 0 ]; then
     echo "start.sh: Native service startup over SSH failed (exit $native_start_rc)." >&2
     exit 1
   fi
-
-  echo "start.sh: backend deploy completed (Docker appliances + Native services)."
 
   echo "start.sh: backend deploy completed (Docker appliances + Native services)."
 else
   echo "start.sh: PARTIAL deploy detected on ${VSS_SSH_TARGET} — stopping." >&2
   echo "  Running too much/little state to trust a redeploy; start.sh deliberately" >&2
   echo "  never auto-reconciles or force-redeploys over a partial state." >&2
-  echo "  Docker up:       ${docker_up[*]:-none}" >&2
-  echo "  Docker missing:  ${docker_missing[*]:-none}" >&2
-  echo "  Native up:       ${native_up[*]:-none}" >&2
-  echo "  Native missing:  ${native_missing[*]:-none}" >&2
-  echo "  Clear the partial state manually (on kwanz-ws: run down.sh to stop Docker and native services), then re-run ./start.sh." >&2
   echo "  Docker up:       ${docker_up[*]:-none}" >&2
   echo "  Docker missing:  ${docker_missing[*]:-none}" >&2
   echo "  Native up:       ${native_up[*]:-none}" >&2
