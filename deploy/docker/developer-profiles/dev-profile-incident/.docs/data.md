@@ -468,26 +468,4 @@ anomaly-detection-dataset/
 
 ---
 
-## 3. Documented Schema & Storage Known Issues
-
-The following anomalies are visible in the codebase and represent intentional compromises or known technical debt:
-
-1. **Two Independent Writers:**
-   Both `incident-console-v2` (`app/api/analysis/route.ts`) and the native `vss-agent`
-   (`services/agent/src/vss_agents/tools/incident_report_gen.py` via `incident_db.py`) possess full write
-   logic to Supabase PostgREST tables. In Gateway Mode, the Next.js API route writes all tables directly.
-   In Agent Mode, the agent writes `incidents`, `entities`, `instruments`, and `assets`, while the console
-   writes `model_runs.notes` and `reports`.
-2. **Full Report JSON Serialized into `model_runs.notes`:**
-   Instead of normalizing full VLM output or adding a dedicated `JSONB` column, `incident-console-v2`
-   serializes the entire report dictionary (including raw and normalized VLM responses) as a JSON string
-   stored within the SQL `TEXT` column `model_runs.notes`. Report display and sharing rely on reading and
-   re-parsing this field.
-3. **`videos.filepath` Overwritten by Agent with VST URL:**
-   In `services/agent/src/vss_agents/tools/incident_report_gen.py` (line 392), after completing analysis,
-   the agent calls `await db.upsert_video(incident_id, filepath=report_result.video_url, source=sensor_id)`.
-   Because `video_url` points to the internal VST stream URL (`http://10.131.1.5:10000/...`), this call
-   overwrites the permanent Cloudflare R2 object key stored in `videos.filepath`.
-   *Workaround in place:* `incident-console-v2`'s `analyzeViaAgent` in `app/api/analysis/route.ts` explicitly
-   executes a follow-up call to re-save the original R2 filepath after the agent completes:
-   `await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt })`.
+For known schema issues, dual-writer architecture compromises, and technical debt, see [`status.md`](status.md).
