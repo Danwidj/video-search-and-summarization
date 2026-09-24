@@ -65,9 +65,12 @@ reachability booleans; it never returns URLs or credentials.
 
 ## Phase 2 workflow
 
-Selecting a video immediately starts the three-step nvstreamer upload, signs the resulting R2 object for temporary
-model access, submits it to Cosmos through the gateway, validates the structured result, persists it through PostgREST,
-and renders a timestamp-linked incident report. Start with short clips while inference remains synchronous.
+Selecting a video immediately starts the three-step nvstreamer upload. If that upload has no durable R2 key (the
+real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
+continuing — see [`AGENTS.md`](../../../../../AGENTS.md)'s "incident-console-v2 real-VST R2 upload fallback". It then signs the resulting R2 object
+for temporary model access, submits it to Cosmos through the gateway, validates the structured result, persists it
+through PostgREST, and renders a timestamp-linked incident report. Start with short clips while inference remains
+synchronous.
 
 ## Phase 3 report workspace
 
