@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export interface ServiceConfiguration {
+  analysisMode: 'gateway' | 'agent';
   agentUrl?: string;
   gatewayUrl?: string;
   vlmModel: string;
@@ -18,7 +19,11 @@ function optionalEnvironmentValue(name: string): string | undefined {
 }
 
 export function getServiceConfiguration(): ServiceConfiguration {
+  const rawMode = optionalEnvironmentValue('ANALYSIS_MODE')?.toLowerCase();
+  const analysisMode: 'gateway' | 'agent' = rawMode === 'agent' ? 'agent' : 'gateway';
+
   return {
+    analysisMode,
     agentUrl: optionalEnvironmentValue('INCIDENT_AGENT_BASE_URL'),
     gatewayUrl: optionalEnvironmentValue('VLM_GATEWAY_URL'),
     vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/cosmos-3-nano-reasoner',
