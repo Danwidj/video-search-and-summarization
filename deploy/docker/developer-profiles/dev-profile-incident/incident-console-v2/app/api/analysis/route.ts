@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 
-import { INCIDENT_ANALYSIS_PROMPT, INCIDENT_PROMPT_VERSION } from '@/lib/analysis/prompt';
 import { parseIncidentAnalysis } from '@/lib/analysis/parse';
+import { INCIDENT_ANALYSIS_PROMPT, INCIDENT_PROMPT_VERSION } from '@/lib/analysis/prompt';
 import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
 import { GatewayClient } from '@/lib/gateway/client';
