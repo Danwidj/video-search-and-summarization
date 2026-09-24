@@ -4,6 +4,12 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-25: Trim AGENTS.md to always-needed content
+- **Decision:** Reshuffle and trim the root `AGENTS.md` down to ~50–60 lines containing only context needed across almost every session; move detailed profile-specific sections (v1 Streamlit implementation notes, shared DB PostgREST/DPI details, kwanz-ws dotfiles and scripts, real-VST R2 upload fallback) into their respective component READMEs and `.docs/data.md`, leaving one-line pointers in `AGENTS.md`.
+- **Why:** loaded every session; captain request 2026-09-25.
+- **Alternatives rejected:** none considered.
+- **Links:** [`AGENTS.md`](../../../../../AGENTS.md); [`.docs/data.md`](data.md); [`incident-console/README.md`](../incident-console/README.md); [`incident-console-v2/README.md`](../incident-console-v2/README.md); [`.dotfiles/README.md`](../.dotfiles/README.md).
+
 ### 2026-09-25: Move vss-agent remote LLM and VLM to Brev endpoint (Nemotron 3 Ultra + Cosmos 3 Super Reasoner)
 - **Decision:** Switch `vss-agent` remote LLM and VLM from NGC's hosted free tier (`integrate.api.nvidia.com`) to the Brev Switchyard endpoint (`https://switchyard-13doh4lsz.brevlab.com`) with `LLM_NAME=nvidia/nemotron-3-ultra` and `VLM_NAME=nvidia/cosmos-3-super-reasoner` (captain chose "the most capable models").
 - **Why:** NGC free tier caps at 16 concurrent requests and report generation hangs on it; Brev key provides higher capacity. Config-only switch via LangChain `_type: openai` client (avoids upstream `verify_ssl` HTTP 400 bug in `_type: nim`). Probes on 2026-09-25 passed tool calling (`bind_tools`, 1.89s) and `json_schema` structured output (0.95s) on `nemotron-3-ultra`, and base64 MP4 `video_url` inlining across 5s, 60s, and 60s 1080p (~6MB) clips on `cosmos-3-super-reasoner` without payload rejection or `<think>` tag leakage. Fallback models `nemotron-3-super-120b-a12b` and `nemotron-3-nano-omni` frames also passed.
@@ -26,13 +32,13 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Decision:** Adopt the native `vss-agent` Pydantic model (`IncidentReport` in `services/agent`) with `snake_case` field names as the reference format in `.docs/analysis-schema.md`.
 - **Why:** The agent is the long-term owner of the report; code alignment for the console is deferred.
 - **Alternatives rejected:** Console `camelCase` schema (rejected because agent is the long-term owner of the report).
-- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/analysis-schema.md`](analysis-schema.md); [`services/agent/src/vss_agents/data_models/incident_report.py`](../../../../services/agent/src/vss_agents/data_models/incident_report.py).
+- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/analysis-schema.md`](analysis-schema.md); [`services/agent/src/vss_agents/data_models/incident_report.py`](../../../../../services/agent/src/vss_agents/data_models/incident_report.py).
 
 ### 2026-09-25: Restructure documentation into `.docs/` suite with standing update rule
 - **Decision:** Restructure profile documentation into modular files under `.docs/` (`action-plan.md`, `architecture.md`, `data.md`, `analysis-schema.md`, `incident-profile-operations.md`, `archive/`) and establish a standing docs rule in `AGENTS.md`.
 - **Why:** Monolithic and legacy plan documents drifted out of date; standing rule in `AGENTS.md` treats stale documentation as a defect and requires updating affected docs in the same PR.
 - **Alternatives rejected:** None considered.
-- **Links:** [PR #93](https://github.com/Danwidj/video-search-and-summarization/pull/93); [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`AGENTS.md`](../../../../AGENTS.md).
+- **Links:** [PR #93](https://github.com/Danwidj/video-search-and-summarization/pull/93); [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`AGENTS.md`](../../../../../AGENTS.md).
 
 ### 2026-09-25: Make incident-console-v2 analysis schema tolerant and lenient
 - **Decision:** Update `incident-console-v2`'s `incidentAnalysisSchema` with Zod transforms to provide safe defaults, clamp numeric ranges, map text severity levels, and passthrough unknown fields instead of throwing validation errors.
@@ -92,7 +98,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Decision:** Agent accesses Supabase via PostgREST HTTPS client (`services/agent/src/vss_agents/utils/incident_db.py` via `supabase-py` `AsyncClient`), utilizing the stored procedure `insert_incident` Postgres RPC for atomic upserts and review status resets. Console and local tools retain direct Postgres (`incident-console/db.py`).
 - **Why:** The campus network firewall on `kwanz-ws` silently drops outbound port 5432 regardless of destination, breaking raw Postgres drivers like `asyncpg`. HTTPS port 443 works. PostgREST lacks client-held transactions, so atomic delete-then-insert plus review reset requires the `insert_incident` RPC function.
 - **Alternatives rejected:** Direct-Postgres / `asyncpg` on `kwanz-ws` (fails because campus firewall drops outbound port 5432). No other alternatives were considered.
-- **Links:** [PR #53](https://github.com/Danwidj/video-search-and-summarization/pull/53); [PR #54](https://github.com/Danwidj/video-search-and-summarization/pull/54); [PR #57](https://github.com/Danwidj/video-search-and-summarization/pull/57); [`.docs/data.md`](data.md); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../services/agent/src/vss_agents/utils/incident_db.py).
+- **Links:** [PR #53](https://github.com/Danwidj/video-search-and-summarization/pull/53); [PR #54](https://github.com/Danwidj/video-search-and-summarization/pull/54); [PR #57](https://github.com/Danwidj/video-search-and-summarization/pull/57); [`.docs/data.md`](data.md); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../../services/agent/src/vss_agents/utils/incident_db.py).
 
 ### 2026-09-06: Remote (hosted) LLM/VLM chosen over local GPU NIM deployment
 - **Decision:** Configure `dev-profile-incident` to use remote hosted LLM/VLM inference endpoints (`LLM_MODE=remote`, `VLM_MODE=remote`) rather than local GPU NIM containers on `kwanz-ws`.

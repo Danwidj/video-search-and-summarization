@@ -91,10 +91,19 @@ Then start a new shell (or `source ~/.bashrc`).
   exception to "these scripts run on the VM": the first two run on your
   **laptop**, opening (`ssh -N -L`) and proving the SSH tunnel through which
   the laptop-local incident-console reaches the real kwanz-ws backend
-  (agent :8000, LLM :30081, VLM :30082) instead of the mock; `start.sh` is
-  the one-command flow that checks the VM deploy state over SSH (deploying
-  the backend fresh if nothing is running, starting missing services for a
-  partial deploy),
-  opens the tunnel in the background, and launches the local console — see
-  `dev-profile-incident/README.md`'s "Steps to deploy" section for the
-  walkthrough and `start.sh`'s own header.
+  (agent :8000, LLM :30081, VLM :30082) instead of the mock; never run them on `kwanz-ws` itself.
+  `start.sh` (at the top level of `deploy/docker/developer-profiles/dev-profile-incident/`) is the laptop-side one-command daily
+  entry point for **incident-console-v2** (it no longer launches the Streamlit v1 console — see
+  [`../incident-console/README.md`](../incident-console/README.md) for that): it accepts `--mode local|vm` (or
+  `VSS_START_MODE` env var, default `vm`) to select the backend. `vm` mode keeps the SSH
+  deploy-check/tunnel logic and exports `ANALYSIS_MODE=agent`; `local` mode skips SSH, starts
+  `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file
+  .env.local`, and exports `ANALYSIS_MODE=gateway`. Both modes launch `incident-console-v2` via
+  `npm run dev -- --port 3200`. Cleanup/trap stops the local background processes. See
+  [`../README.md`](../README.md)'s "Steps to deploy" section for the walkthrough and `start.sh`'s own header.
+- **Native vs. Docker service split on `kwanz-ws`** — `vss-agent` and the analytics modules (`video-analytics-api`, `behavior-analytics`)
+  run as native processes on `kwanz-ws` rather than Docker containers, managed by `.scripts/native-services.sh`
+  (`start`/`stop`/`restart`/`status`/`logs`, PID files and logs under `/srv/rise-up/vss/.run/`); VIOS/VST
+  media engines and backing infra (Postgres, Redis, Phoenix, HAProxy) stay in Docker.
+  `.scripts/prune-native-images.sh` removes the Docker images those native services no longer need. See
+  [`../.docs/incident-profile-operations.md`](../.docs/incident-profile-operations.md)'s "Native vs. Docker Service Split" section for the full picture.
