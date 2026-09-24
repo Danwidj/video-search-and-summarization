@@ -49,6 +49,17 @@ driver on the agent side breaks Analyze on `kwanz-ws`. PostgREST has no client-h
 `review_status` reset) calls the `insert_incident` Postgres RPC function (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via
 `/rpc/insert_incident` instead (see [`deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) for how to apply it via `supabase db push`).
 
+## incident-console-v2 real-VST R2 upload fallback
+
+Real VST/NvStreamer's chunk-upload response never includes a durable R2 object key (`filePath`) — only
+`mock-backend`'s own reimplementation (`vst_storage.py`) fakes that field by doing its own R2 upload. Since
+`incident-console-v2`'s analysis flow (`app/api/analysis/route.ts`) hard-requires that key, `components/analysis-workspace.tsx`
+checks the chunk-upload response for a valid key and, when missing (the real-VST case), uploads the file itself
+through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObject` via `lib/r2/config.ts`'s
+`putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key
+going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
+flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
+
 ## incident-console agent upload contract
 
 `agent_client.py`'s `upload_video()` (in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`)

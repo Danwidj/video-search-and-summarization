@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import { IncidentReport } from '@/components/incident-report';
 import type { AnalysisReport } from '@/lib/analysis/schema';
+import { isValidR2Key } from '@/lib/r2/key';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';
 
 type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
@@ -53,6 +54,25 @@ async function apiJson<T>(url: string, body: unknown): Promise<T> {
   const payload = (await response.json()) as T & ApiError;
   if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
   return payload;
+}
+
+/**
+ * Uploads the video directly to R2 via the console's own server-side route.
+ * Needed only when the chunk-upload response has no durable R2 object key —
+ * the real VST/NvStreamer case, since only mock-backend's own reimplementation
+ * fakes that field by doing its own R2 upload.
+ */
+async function uploadToR2(file: File, sensorId: string, filename: string, signal: AbortSignal): Promise<string> {
+  const form = new FormData();
+  form.append('file', file, filename);
+  form.append('sensorId', sensorId);
+  form.append('filename', filename);
+  const response = await fetch('/api/uploads/r2', { method: 'POST', body: form, signal });
+  const payload = (await response.json()) as { filePath?: string } & ApiError;
+  if (!response.ok || !isValidR2Key(payload.filePath)) {
+    throw new Error(payload.error || 'Could not upload the video to R2');
+  }
+  return payload.filePath;
 }
 
 export function AnalysisWorkspace() {
@@ -123,9 +143,16 @@ export function AnalysisWorkspace() {
         onProgress: setUploadProgress,
         abortSignal: controller.signal,
       });
-      if (!uploaded.sensorId || typeof uploaded.filePath !== 'string') {
-        throw new Error('Upload completed without a sensor ID or durable R2 object key');
+      if (!uploaded.sensorId) {
+        throw new Error('Upload completed without a sensor ID');
       }
+
+      // Mock-backend's chunk-upload response already carries a valid R2 key
+      // (it does its own R2 upload); real VST/NvStreamer never returns one,
+      // so fall back to uploading the file to R2 ourselves in that case.
+      const filePath = isValidR2Key(uploaded.filePath)
+        ? uploaded.filePath
+        : await uploadToR2(file, uploaded.sensorId, filename, controller.signal);
 
       setStage('preparing');
       await apiJson('/api/uploads/complete', { sensorId: uploaded.sensorId, filename });
@@ -133,7 +160,7 @@ export function AnalysisWorkspace() {
       setStage('analyzing');
       const result = await apiJson<{ report: AnalysisReport }>('/api/analysis', {
         sensorId: uploaded.sensorId,
-        filepath: uploaded.filePath,
+        filepath: filePath,
         filename,
       });
       setStage('saving');
