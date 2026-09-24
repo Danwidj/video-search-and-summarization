@@ -16,11 +16,14 @@ For this fork's own capstone work (team, VM specifics, incident-profile deploy m
 
 A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
 
-- [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — human-facing profile guide: decisions, rationale, what ships when (MVP1/MVP2), dev/deploy workflows, and status. Start here.
-- [`.docs/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-local.md) / [`.docs/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
+- [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — short human entry point: doc index and setup steps. Start here.
+- [`.docs/incident-profile-operations.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-profile-operations.md) — AI/implementer-facing operational facts: runtime, deploy, topology, troubleshooting.
 - [`.docs/incident-plan-implementation-shared.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-shared.md) — AI/implementer-facing, deployment-mode-independent: Postgres, R2, frontend, API, feature implementation, engineering evaluation, resulting directory tree.
+- [`.docs/incident-plan-implementation-local.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-local.md) / [`.docs/incident-plan-implementation-remote.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-plan-implementation-remote.md) — AI/implementer-facing, split by LLM/VLM deployment mode (local NIM containers vs. NGC-hosted remote): profile setup, GPU topology, dev/deploy guide, NVIDIA stock-profile reference.
 
 When working on this project, read the profile README first, then whichever Implementation doc(s) match the task.
+
+**Standing docs rule:** Any change under `deploy/docker/developer-profiles/dev-profile-incident/` (code, scripts, config, deployment, env/secrets layout, architecture) must update the affected `.docs/` file(s) in the same PR — `.docs/incident-profile-operations.md` for runtime/deploy/topology/troubleshooting facts, `.docs/incident-plan-implementation-shared.md` for scope/architecture/feature/schema changes, and `.docs/incident-plan-implementation-local.md` or `.docs/incident-plan-implementation-remote.md` for deployment-mode-specific changes — and keep the profile README's doc index accurate if a doc is added, moved, or renamed. Stale docs are a defect, not a follow-up.
 
 Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](services/agent/AGENTS.md)) — consult those when touching that service directly.
 
