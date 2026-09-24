@@ -50,8 +50,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should report the agent, gateway, PostgREST,
-and R2 services as ready before testing the upload-to-report workflow.
+Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should report the services as ready before testing the upload-to-report workflow (in `agent` mode, gateway readiness is omitted from the overall readiness check).
 
 Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `tests/*.test.mjs`).
 
@@ -61,9 +60,10 @@ Next.js loads them from `.env.local` in this directory, which is a symlink to th
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
 
-- `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`.
+- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required).
+- `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
 - `VLM_MODEL` — optional hosted model ID; defaults to `nvidia/cosmos-3-nano-reasoner`.
-- `INCIDENT_AGENT_BASE_URL` — mock or real vss-agent base URL used for the three-step video upload.
+- `INCIDENT_AGENT_BASE_URL` — mock or real vss-agent base URL used for video upload, agent chat, and incident analysis (in `agent` mode).
 - `INCIDENT_SUPABASE_URL` / `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` — PostgREST access.
 - `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` — private video storage.
 

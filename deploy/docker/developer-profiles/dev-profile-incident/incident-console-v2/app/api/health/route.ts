@@ -27,7 +27,8 @@ export async function GET() {
       : Promise.resolve(false),
   ]);
 
-  const ready = agentReachable && gatewayReachable && postgrestReachable && r2Configured;
+  const gatewayReady = config.analysisMode === 'agent' ? true : gatewayReachable;
+  const ready = agentReachable && gatewayReady && postgrestReachable && r2Configured;
 
   return NextResponse.json(
     {
