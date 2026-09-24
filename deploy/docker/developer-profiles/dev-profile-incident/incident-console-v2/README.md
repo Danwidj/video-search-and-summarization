@@ -20,8 +20,8 @@ uv run --env-file ../../.env.local \
   uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
-`../../.env.local` is the shared `dev-profile-incident/.env.local` secrets file (see the profile README's "Laptop
-Setup"); the backend needs its `R2_*` and `INCIDENT_SUPABASE_*` values.
+`../../.env.local` is the shared `dev-profile-incident/.env.local` secrets file (see the profile README's
+"Secrets & environment files" section); the backend needs its `R2_*` and `INCIDENT_SUPABASE_*` values.
 
 Verify it at `http://127.0.0.1:7777/health`. The v2 frontend should have
 `INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777` in its local server configuration.

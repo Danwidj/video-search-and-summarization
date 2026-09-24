@@ -71,8 +71,8 @@ the shared root file at `dev-profile-incident/.env.local`. In this directory,
 `.env.local` is a symlink pointing to `../.env.local`:
 
 ```bash
-# If .env.local symlink is missing:
-ln -s ../.env.local .env.local
+# If the symlink is missing or points to the wrong file:
+ln -sfn ../.env.local .env.local
 
 # Ensure VLM_GATEWAY_API_KEY is set in dev-profile-incident/.env.local (captain provides)
 ```
