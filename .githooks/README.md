@@ -23,16 +23,15 @@ the env is current.
 
 ## Shared setup (`setup-worktree.sh`)
 
-1. **dev-profile-incident root `.env.local` seed.** In every worktree
-   (including the main worktree), if
-   `deploy/docker/developer-profiles/dev-profile-incident/.env.local` does
-   not exist, copy it from the tracked `.env` template (blank/placeholder
-   values, ready for the developer to fill in). Never overwrites an existing
-   root file. This is meant as the fresh-clone fallback only: a new worktree
-   should get the main worktree's real root `.env.local` via step 2.
-   **Known bug:** the seed currently runs before step 2 in every worktree, so
-   step 2's copy-if-missing then skips the real file and a new worktree ends
-   up with the placeholder copy (tracked as a separate code fix).
+1. **dev-profile-incident root `.env.local` (real secrets).** Outside the
+   main worktree, when the main worktree has
+   `deploy/docker/developer-profiles/dev-profile-incident/.env.local`, copy it
+   here if this worktree has none, or if this worktree's file is still a
+   byte-exact copy of the placeholder `.env` template (what an older version of
+   this hook seeded). Any other existing `.env.local` is never overwritten.
+   Only when there is no real file to copy (a fresh clone, or the main worktree
+   itself) is a missing `.env.local` seeded from the tracked `.env` template
+   (blank/placeholder values, ready for the developer to fill in).
 2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
    found in the main worktree (pruning `node_modules`, `.venv`, `.git`)
    into the same relative path here, but only when the destination file

@@ -22,8 +22,8 @@
 # worktree into this worktree, copy-if-missing only, never overwriting. Covers the
 # committed dev-profile-*/.env and industry-profile .env templates plus any
 # untracked secret carriers that appear in the main worktree later
-# (dev-profile-incident/.env.local, service-level .env.local symlinks,
-# UI .env.local). Deliberately excludes generated.env (gitignored,
+# (service-level .env.local symlinks, UI .env.local; the dev-profile-incident
+# root .env.local is normally already handled by Part 0). Deliberately excludes generated.env (gitignored,
 # regenerated fresh by dev-profile.sh on every deploy).
 #
 # Part B (dev-profile-incident symlink self-heal): in every worktree including
