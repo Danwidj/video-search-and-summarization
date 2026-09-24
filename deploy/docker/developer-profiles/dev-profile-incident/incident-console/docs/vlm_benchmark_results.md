@@ -3,8 +3,8 @@
 This document records the results of a controlled three-model comparison on
 structured incident extraction (the "P1" prompt/schema). It is the tracked,
 durable summary of a run whose raw inputs (ground-truth Excel workbook, cached
-videos) and raw per-video outputs are intentionally **not** committed (see
-`eval_data/.gitignore`); this file, plus the split manifests under
+videos) and raw per-video outputs are intentionally **not** committed (see the
+`incident-console/eval_data/` rule in `dev-profile-incident/.gitignore`); this file, plus the split manifests under
 `eval_reproducibility/`, are what make the run's outcome and methodology
 reproducible without shipping the raw data.
 
@@ -235,7 +235,8 @@ a primary result).
   ground-truth field values): tracked at `eval_reproducibility/split_*.json`,
   copied verbatim from the generating run's `eval_data/split_*.json` (which
   remains gitignored, alongside the raw ground-truth workbook, cached videos,
-  and full per-video result JSON — see `eval_data/.gitignore`).
+  and full per-video result JSON — see the `incident-console/eval_data/`
+  rule in `dev-profile-incident/.gitignore`).
 - **P1/RP1 prompts**: `prompts.py` (`P1_PROMPT_VERSION = "P1-v1"`,
   `RP1_PROMPT_VERSION = "RP1-v1"`).
 - **Evaluator/matching code**: `eval_gt.py`, `matching.py`, `config.py`
