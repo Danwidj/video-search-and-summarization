@@ -80,12 +80,11 @@ ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile
 
 ## 3. Laptop-to-VM Connectivity & SSH Troubleshooting
 
-The primary UI (`incident-console-v2`) runs locally on developer laptops. VM mode connects the laptop to
-`kwanz-ws` through an SSH tunnel.
+The primary UI (`incident-console-v2`) runs locally on developer laptops. Running `./start.sh --mode vm` is THE canonical way to set up everything from your laptop: it checks the VM deploy state over SSH, automatically self-heals any missing Docker or native services, opens the backgrounded SSH tunnel, and launches the console.
 
-### SSH Port Tunneling
+### SSH Port Tunneling (Manual / Standalone)
 
-Run the tunnel from your laptop (do **not** run this on `kwanz-ws` itself):
+`start.sh --mode vm` manages the tunnel automatically. If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident
@@ -122,10 +121,8 @@ Forwarded ports:
 
 ## 4. Safe Deployment Principles
 
-1. **Do NOT Use `deploy/docker/scripts/dev-profile.sh` Directly for Incident Profile:**
-   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`). Deploying
-   `dev-profile-incident` is performed via `./start.sh --mode vm` or directly via Docker Compose using the
-   root `deploy/docker/compose.yml` with `--env-file developer-profiles/dev-profile-incident/generated.env.remote`.
+1. **Deploy Exclusively via `start.sh` (or Direct Compose on VM):**
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode local` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `kwanz-ws` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
 2. **NEVER Run `dev-profile.sh down` on `kwanz-ws`:**
    `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:
