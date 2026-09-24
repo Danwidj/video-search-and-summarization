@@ -87,6 +87,27 @@ def embedding_base_url() -> str:
     return _clean(os.getenv("INCIDENT_EMBEDDING_BASE_URL"))
 
 
+def incident_llm_api_key() -> str:
+    """Optional bearer token for ``INCIDENT_LLM_BASE_URL``.
+
+    Empty for the local, unauthenticated ``mock_llm_server.py`` (unchanged,
+    existing behavior); a real remote endpoint needs a real key here, sent as
+    ``Authorization: Bearer <key>`` only when non-empty.
+    """
+    return _clean(os.getenv("INCIDENT_LLM_API_KEY"))
+
+
+def incident_judge_model() -> str:
+    """Model name sent to ``INCIDENT_LLM_BASE_URL`` for LLM-as-a-judge scoring.
+
+    Defaults to ``"incident-judge"`` (what ``mock_llm_server.py`` accepts, and
+    ``eval_gt.judge_description_similarity``'s previous hardcoded value) so an
+    unset env var is a no-op for existing local-dev setups; a real upstream
+    endpoint needs its own real model name here instead.
+    """
+    return _clean(os.getenv("INCIDENT_JUDGE_MODEL")) or "incident-judge"
+
+
 # Minimum cosine similarity for an accepted entity/instrument/asset match against
 # ground truth (matching.py). A pairing the assignment solver produces below
 # this score is discarded as "no match" (missed detection or false positive)

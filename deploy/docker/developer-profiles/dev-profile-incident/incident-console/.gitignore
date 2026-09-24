@@ -1,3 +1,8 @@
 # Untracked local secrets for the incident console (Supabase DSN, R2 keys).
 # config.py loads this in addition to the committed placeholder .env.
 .env.local
+
+# P1/RP1 multi-model evaluation working data: real (not demo) ground-truth
+# Excel, split manifests, cached R2 video downloads, and result JSON/CSV.
+# Never committed - see prompts.py and scripts/eval_*.py.
+eval_data/

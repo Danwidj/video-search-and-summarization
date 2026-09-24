@@ -38,8 +38,10 @@ incidents' "Run GT Evaluation" sections demonstrates every code path:
 - ``Burglary002`` - a start timestamp shifted well outside tolerance.
 - ``Burglary003`` - a semantically-similar-but-differently-worded entity
   description, matched by the embedding endpoint despite the wording.
-- ``Burglary004`` - a fabricated extra model entity with no GT counterpart
-  (false positive).
+- ``Burglary004-DEMO`` - a fabricated extra model entity with no GT counterpart
+  (false positive). Suffixed ``-DEMO`` (not the bare ``Burglary004`` the real
+  ground-truth workbook also uses for the same underlying video) so the two
+  can coexist - see ``eval_ingest_gt.py``.
 - ``Burglary007`` - the model output omits the GT asset entirely
   (false negative).
 
@@ -197,7 +199,7 @@ INCIDENTS = [
     {
         # Scenario: one fabricated extra model entity with no GT counterpart
         # (false positive).
-        "incident_id": "Burglary004",
+        "incident_id": "Burglary004-DEMO",
         "filename": "Burglary004_x264.mp4",
         "video_duration": 90,
         "gt": {
