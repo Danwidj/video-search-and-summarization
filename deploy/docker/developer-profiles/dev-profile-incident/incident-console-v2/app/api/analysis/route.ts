@@ -162,7 +162,7 @@ async function analyzeViaGateway(
         messages: [
           {
             role: 'user',
-            content: `Convert the response below into the exact JSON structure originally requested. Return JSON only. Preserve its factual content and do not add new observations.\n\n${content}`,
+            content: `Convert the response below into the exact JSON structure originally requested. Return JSON only. Preserve its factual content and do not add new observations. Numeric fields must be JSON numbers, never quoted strings: use 3, not "3". For instruments.threatLevel, use an integer from 1 to 5 or null when unknown.\n\n${content}`,
           },
         ],
         stream: false,

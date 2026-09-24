@@ -3,6 +3,16 @@
 import { z } from 'zod';
 
 const nullableText = z.string().trim().min(1).nullable();
+const threatLevel = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    if (trimmed === '') return value;
+    const numericValue = Number(trimmed);
+    return Number.isFinite(numericValue) ? numericValue : value;
+  },
+  z.number().int().min(1).max(5).nullable(),
+);
 
 export const incidentAnalysisSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -28,7 +38,7 @@ export const incidentAnalysisSchema = z.object({
     z.object({
       name: z.string().trim().min(1),
       description: z.string().trim().min(1),
-      threatLevel: z.number().int().min(1).max(5).nullable(),
+      threatLevel,
     }),
   ),
   assets: z.array(z.object({ name: z.string().trim().min(1), description: z.string().trim().min(1) })),
