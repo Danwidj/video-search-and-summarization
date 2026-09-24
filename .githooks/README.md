@@ -23,13 +23,26 @@ the env is current.
 
 ## Shared setup (`setup-worktree.sh`)
 
-1. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
+1. **dev-profile-incident root `.env.local` seed.** In every worktree
+   (including the main worktree), if
+   `deploy/docker/developer-profiles/dev-profile-incident/.env.local` does
+   not exist, copy it from the tracked `.env` template (blank/placeholder
+   values, ready for the developer to fill in). Never overwrites an existing
+   root file.
+2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
    found in the main worktree (pruning `node_modules`, `.venv`, `.git`)
    into the same relative path here, but only when the destination file
    does not already exist - never overwrites. No-ops inside the main
    worktree itself (the copy source). `generated.env` never matches the
    patterns and is never copied.
-2. **incident-console uv venv.** Runs `uv sync` in
+3. **dev-profile-incident symlink self-heal.** In every worktree (including
+   the main worktree), explicitly verify each of the 3 known subfolder paths
+   (`incident-console/.env.local`, `incident-console-v2/.env.local`,
+   `vlm-gateway/.env.local`) is a symlink pointing at `../.env.local`. If a
+   path is missing, is a real file, or points anywhere else, replace it with
+   the correct relative symlink. Logs one line per path fixed. This targeted
+   check runs in addition to (not instead of) the generic propagation above.
+4. **incident-console uv venv.** Runs `uv sync` in
    `deploy/docker/developer-profiles/dev-profile-incident/incident-console`
    (which creates `.venv` on first run), skipped when `.venv` is newer
    than `pyproject.toml` and `uv.lock`. Warns and continues when `uv` is
