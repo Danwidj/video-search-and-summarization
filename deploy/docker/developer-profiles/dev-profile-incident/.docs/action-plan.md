@@ -115,7 +115,7 @@ and reporting loop; MVP2 adds natural-language semantic video search.
     - Kafka event bus streaming frame detections and embeddings to Elasticsearch.
   - **Elasticsearch Storage:** Ingest and index multi-modal video embeddings and detection metadata.
   - **Multi-Subagent Agent Configuration:**
-    - Wire `search_agent`, `embed_search`, and `attribute_search` alongside `report_agent` in `config.yml`.
+    - Wire `search_agent`, `embed_search`, and `attribute_search` alongside `report_agent` in `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml`.
     - Implement a unified routing prompt allowing `vss-agent` to dispatch natural-language search queries
       or incident report generation based on incoming requests.
   - **Search API & Console Search Interface:**

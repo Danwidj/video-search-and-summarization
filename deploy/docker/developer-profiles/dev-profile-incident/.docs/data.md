@@ -366,7 +366,7 @@ Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, 
 
 ##### `entity_matches`, `instrument_matches`, `asset_matches`
 Store accepted (above-threshold) similarity pairings produced during Tier 1 ground-truth evaluation
-(`matching.py`).
+(`incident-console/matching.py`).
 - **Composite Primary Key:** `(incident_id, model_run_id, <item>_id)`
 - **Foreign Keys:** References model items (`entities`/`instruments`/`assets`) and ground-truth items (`gt_*`)
   with `ON DELETE CASCADE`.

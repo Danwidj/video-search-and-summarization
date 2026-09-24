@@ -122,12 +122,12 @@ Forwarded ports:
 
 ## 4. Safe Deployment Principles
 
-1. **Do NOT Use `dev-profile.sh` Directly for Incident Profile:**
-   `dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`). Deploying
-   `dev-profile-incident` is performed via `start.sh --mode vm` or directly via Docker Compose using the
+1. **Do NOT Use `deploy/docker/scripts/dev-profile.sh` Directly for Incident Profile:**
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`). Deploying
+   `dev-profile-incident` is performed via `./start.sh --mode vm` or directly via Docker Compose using the
    root `deploy/docker/compose.yml` with `--env-file developer-profiles/dev-profile-incident/generated.env.remote`.
 2. **NEVER Run `dev-profile.sh down` on `kwanz-ws`:**
-   `dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
+   `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:
    ```bash
    ./.scripts/down.sh

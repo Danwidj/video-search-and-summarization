@@ -91,13 +91,13 @@ flowchart TB
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for local mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, and base profile responses |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis workflow, tool calling, report persistence; remote inference via Brev |
-| `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
-| `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
-| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `services/ingress/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
-| `vss-vios-streamprocessing`| `kwanz-ws` | Internal | Docker container (GPU 0) | `services/vios/streamprocessing/` | Core video decode, encode, and frame processing engine |
-| `vss-vios-nvstreamer` | `kwanz-ws` | Internal | Docker container (GPU 0) | `services/vios/nvstreamer/` | Video file ingestion and RTSP/WebRTC chunked stream publisher |
-| `vss-vios-ingress` | `kwanz-ws` | 10000 | Docker container | `services/vios/ingress/` | Nginx reverse proxy routing internal storage and streaming API calls |
-| `vss-vios-postgres` | `kwanz-ws` | 5432 (int) | Docker container | `services/vios/postgres/` | VIOS internal database for camera sensors and stream registrations |
+| `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
+| `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
+| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
+| `vss-vios-streamprocessing`| `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Core video decode, encode, and frame processing engine |
+| `vss-vios-nvstreamer` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Video file ingestion and RTSP/WebRTC chunked stream publisher |
+| `vss-vios-ingress` | `kwanz-ws` | 10000 | Docker container | `deploy/docker/services/vios/` | Nginx reverse proxy routing internal storage and streaming API calls |
+| `vss-vios-postgres` | `kwanz-ws` | 5432 (int) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
 | `vss-rtvi-cv` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | DeepStream perception container for real-time video analytics (MVP2) |
 | `vss-rtvi-embed` | `kwanz-ws` | 8017 | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | Triton inference server for real-time video embeddings (MVP2) |
 | `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |

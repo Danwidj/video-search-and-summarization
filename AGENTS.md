@@ -37,19 +37,19 @@ Other services in this repo have their own `AGENTS.md` (e.g. [`services/agent/AG
 `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a 12-table-plus-matches
 schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module
 docstring for the full table list and the `review_status` design note; see [`.docs/data.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/data.md)
-for the documented schema and ERD). `db.py` is the authoritative source for this schema. Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
+for the documented schema and ERD). `incident-console/db.py` is the authoritative source for this schema. Identity rule: 1 video = 1 incident (`incidents.incident_id` ==
 `videos.id`, no separate `video_id` column). Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
 (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
-(`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
+(`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `incident-console/scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
 36 real incidents under one shared `model_run_id`. The console is database-backed only; there is no offline
 CSV-preview UI mode.
 
 `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase
 PostgREST CRUD helper (`supabase-py`'s `AsyncClient`/`acreate_client`, not `asyncpg`/direct-Postgres) against
-the same schema, mirroring `db.py`'s tables/columns for the subset an agent-side caller plausibly writes
+the same schema, mirroring `incident-console/db.py`'s tables/columns for the subset an agent-side caller plausibly writes
 (videos/model_runs/incidents/entities/instruments/assets/reports/review_status/notifications; the `gt_*` and
 `*_matches` tables stay console/eval-only). Config is `INCIDENT_SUPABASE_URL` / `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`
-(deliberately NOT `INCIDENT_DB_DSN`, which stays owned by the console's own `db.py`); unset means the feature is
+(deliberately NOT `INCIDENT_DB_DSN`, which stays owned by the console's own `incident-console/db.py`); unset means the feature is
 unavailable, no fallback. This split exists because the deployment VM (`kwanz-ws`) DPI-blocks raw Postgres wire
 protocol on port 5432, so only the HTTPS-based PostgREST route works for the agent from there - a direct-Postgres
 driver on the agent side breaks Analyze on `kwanz-ws`. PostgREST has no client-held transactions or
@@ -60,17 +60,17 @@ driver on the agent side breaks Analyze on `kwanz-ws`. PostgREST has no client-h
 ## incident-console-v2 real-VST R2 upload fallback
 
 Real VST/NvStreamer's chunk-upload response never includes a durable R2 object key (`filePath`) — only
-`mock-backend`'s own reimplementation (`vst_storage.py`) fakes that field by doing its own R2 upload. Since
-`incident-console-v2`'s analysis flow (`app/api/analysis/route.ts`) hard-requires that key, `components/analysis-workspace.tsx`
+`mock-backend`'s own reimplementation (`mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py`) fakes that field by doing its own R2 upload. Since
+`incident-console-v2`'s analysis flow (`incident-console-v2/app/api/analysis/route.ts`) hard-requires that key, `incident-console-v2/components/analysis-workspace.tsx`
 checks the chunk-upload response for a valid key and, when missing (the real-VST case), uploads the file itself
-through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObject` via `lib/r2/config.ts`'s
+through a new server-side-only route, `incident-console-v2/app/api/uploads/r2/route.ts` (R2 `PutObject` via `incident-console-v2/lib/r2/config.ts`'s
 `putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key
 going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
-flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
+flow for obtaining `sensorId` (`incident-console-v2/lib/upload/chunked-upload.ts`) is unchanged.
 
 ## incident-console agent upload contract
 
-`agent_client.py`'s `upload_video()` (in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`)
+`incident-console/agent_client.py`'s `upload_video()` (in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`)
 implements vss-agent's 3-step upload (`POST /api/v1/videos` → chunked POST to nvstreamer → `POST /api/v1/videos/{sensor_id}/complete`).
 The chunk POST must use form field `mediaFile` plus a separate `filename` field (`services/ui/packages/common/lib-src/utils/chunkedUpload.ts`'s
 `formData.append('mediaFile', chunk, fileName)` / `formData.append('filename', fileName)`) — an
@@ -78,14 +78,13 @@ earlier version sent field `file` with no `filename`, which both the real VST en
 `mock-backend/base_profile_mock` silently ignore (empty body, fallback filename). Neither backend's
 `/complete` response carries a playable URL — `upload_video()` reads the chunk response's `filePath`
 field instead, since `sensor_id` alone is not durable enough to serve as `videos.id` (`String(20)`,
-but the agent's own sensor-id validation allows up to 128 chars): see `catalog_actions.derive_video_id()`
-for the id it derives instead, and `pages/2_Report_Review.py` (which consolidates video upload and automatic
-report generation via `catalog_actions.upload_and_record()` and `analyze_incident()`; the separate `1_Catalog.py`
-page was removed) for the UI built on it.
+but the agent's own sensor-id validation allows up to 128 chars): see `incident-console/catalog_actions.py`'s
+`derive_video_id()` for the id it derives instead, and `incident-console/pages/2_Report_Review.py` (which consolidates video upload and automatic
+report generation via `catalog_actions.upload_and_record()` and `analyze_incident()`; the legacy catalog page was removed) for the UI built on it.
 
 ## incident-console Report Review lazy previews
 
-`pages/2_Report_Review.py`'s incident library fetches a video preview only when the reviewer clicks
+`incident-console/pages/2_Report_Review.py`'s incident library fetches a video preview only when the reviewer clicks
 "Load preview" on that card (state in `st.session_state`, rendering scoped to an `st.fragment` so the
 click reruns only that card). This exists because Streamlit mounts and executes whatever a run
 renders even inside a collapsed `st.expander` or an unselected `st.tabs` tab — visually hiding content
@@ -99,23 +98,23 @@ content on this page; see `card_preview()`'s docstring and the "lazy about video
 [`deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/README.md) is a personal, opt-in bash bootstrap for the shared
 `kwanz-ws` VM (starship, fzf/ripgrep/bat/btop, per-account git-delta, and generic QoL aliases only — `bat`,
 `vim=nvim`, `cat=bat`, `htop=btop`). It is not mandatory team-wide provisioning and does not touch
-other accounts. The VSS deploy-lifecycle commands that used to be `aliases.sh` aliases/functions
+other accounts. The VSS deploy-lifecycle commands that used to be legacy shell aliases and functions (formerly in aliases.sh)
 (`mdx-ps`, `mdx-down`, `mdx-health`, `mdx-tunnel-incident`, `mdx-tunnel-incident-check`, `mdx-logs`,
 `mdx-disk`, `mdx-rebuild-svc`, `mdx-rebuild`, `mdx-clean-datalog`, `ngc-env-on`, `gpu`) moved to
 standalone executable scripts under
-`deploy/docker/developer-profiles/dev-profile-incident/.scripts/` (`status.sh`, `down.sh`, `health.sh`,
-`tunnel.sh`, `tunnel-check.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`,
-`clean-datalog.sh`, `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`). `start.sh` (at the top level of
-`dev-profile-incident/`, alongside `local-start.sh`) is the laptop-side one-command daily
+`deploy/docker/developer-profiles/dev-profile-incident/.scripts/` (`.scripts/status.sh`, `.scripts/down.sh`, `.scripts/health.sh`,
+`.scripts/tunnel.sh`, `.scripts/tunnel-check.sh`, `.scripts/logs.sh`, `.scripts/disk.sh`, `.scripts/rebuild-svc.sh`, `.scripts/rebuild.sh`,
+`.scripts/clean-datalog.sh`, `.scripts/ngc-env.sh`, `.scripts/gpu.sh`, `.scripts/resolve-ssh-target.sh`). `start.sh` (at the top level of
+`deploy/docker/developer-profiles/dev-profile-incident/`) is the laptop-side one-command daily
 entry point for **incident-console-v2** (it no longer launches the Streamlit v1 console — see
-`local-start.sh` or `incident-console/README.md` for that): it accepts `--mode local|vm` (or
+`incident-console/README.md` for that): it accepts `--mode local|vm` (or
 `VSS_START_MODE` env var, default `vm`) to select the backend. `vm` mode keeps today's SSH
 deploy-check/tunnel logic and exports `ANALYSIS_MODE=agent`; `local` mode skips SSH, starts
 `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file
 .env.local`, and exports `ANALYSIS_MODE=gateway`. Both modes launch `incident-console-v2` via
 `npm run dev -- --port 3200`. Cleanup/trap stops the local background processes. The VM-side
-scripts wrap the project's own canonical deploy scripts (`dev-profile.sh`,
-`cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker compose` invocations — see
+scripts wrap the project's own canonical deploy scripts (`deploy/docker/scripts/dev-profile.sh`,
+`deploy/docker/scripts/cleanup_all_datalog.sh`) rather than hardcoding raw `docker`/`docker compose` invocations — see
 each script's header for the doc it is grounded in. `.scripts/tunnel.sh`,
 `.scripts/tunnel-check.sh`, and top-level `start.sh` are laptop-side only (SSH tunnel from
 laptop to the VM backend for the locally-run incident-console); never run them on kwanz-ws
@@ -126,26 +125,26 @@ processes on `kwanz-ws` rather than Docker containers, managed by `.scripts/nati
 (`start`/`stop`/`restart`/`status`/`logs`, PID files and logs under `/srv/rise-up/vss/.run/`); VIOS/VST
 media engines and backing infra (Postgres, Redis, Phoenix, HAProxy) stay in Docker.
 `.scripts/prune-native-images.sh` removes the Docker images those native services no longer need. See
-`dev-profile-incident/README.md`'s "Native vs. Docker service split" section for the full picture.
+`deploy/docker/developer-profiles/dev-profile-incident/README.md`'s "Native vs. Docker service split" section for the full picture.
 
 ## UI development without GPU/NIM containers
 
-[`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. Its sibling `search_profile_mock/` is the `bp_developer_search` superset (port 7778). A `mock-backend/mock_data/` Postgres-schema mock for the incident-console was once planned but does not exist; do not conflate it with these.
+[`deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) mocks the entire `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) behind one FastAPI process, so `services/ui/apps/nv-metropolis-bp-vss-ui` can be run and clicked through unmodified with zero GPU, zero NIM containers, and no VM deployment. See its README for run instructions and the `NEXT_PUBLIC_*` env vars to point the real UI at it. Its sibling `mock-backend/search_profile_mock/` is the `bp_developer_search` superset (port 7778). A mock-data Postgres-schema mock for the incident-console was once planned but does not exist; do not conflate it with these.
 
 ## Automatic environment setup (git hooks)
 
-[`.githooks/`](.githooks/README.md) propagates untracked `.env` files from the main worktree into new/checked-out worktrees (copy-if-missing, never overwrites, `generated.env` excluded), copies the main worktree's real `dev-profile-incident/.env.local` into a new worktree (also replacing a leftover placeholder copy; seeds from the tracked `.env` template only when the main worktree has none), self-heals the three `.env.local -> ../.env.local` symlinks (`incident-console`, `incident-console-v2`, `vlm-gateway`), and keeps the incident-console `uv` venv in sync (`uv sync`, skipped when `.venv` is newer than `pyproject.toml`/`uv.lock`). Fires on checkout/switch/worktree-add (post-checkout), merge/pull (post-merge) and rebase/amend (post-rewrite). Activation is per-clone local config, so every fresh clone (laptop, VM) must run `.githooks/activate.sh` once. Out of scope there: `.ngc_env` and R2 config (separate phases).
+[`.githooks/`](.githooks/README.md) propagates untracked `.env` files from the main worktree into new/checked-out worktrees (copy-if-missing, never overwrites, `generated.env.remote` excluded), copies the main worktree's real `deploy/docker/developer-profiles/dev-profile-incident/.env.local` into a new worktree (also replacing a leftover placeholder copy; seeds from the tracked `.env` template only when the main worktree has none), self-heals the three `.env.local -> ../.env.local` symlinks (`incident-console`, `incident-console-v2`, `vlm-gateway`), and keeps the incident-console `uv` venv in sync (`uv sync`, skipped when `.venv` is newer than `incident-console/pyproject.toml`/`incident-console/uv.lock`). Fires on checkout/switch/worktree-add (post-checkout), merge/pull (post-merge) and rebase/amend (post-rewrite). Activation is per-clone local config, so every fresh clone (laptop, VM) must run `.githooks/activate.sh` once. Out of scope there: `.ngc_env` and R2 config (separate phases).
 
 ## incident-console Tier 1 GT evaluation
 
-In `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`, `eval_gt.py` scores one model run's `incidents`/`entities`/`instruments`/`assets` against the parallel
+In `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`, `incident-console/eval_gt.py` scores one model run's `incidents`/`entities`/`instruments`/`assets` against the parallel
 `gt_*` tables (type/severity exact match, an LLM-judge score for description via `INCIDENT_LLM_BASE_URL`,
-tolerance comparisons for timestamps/duration, and TP/FP/FN/P/R/F1 derived from `matching.py`'s existing
-embedding+Hungarian output - `matching.py` itself is untouched). `run_evaluation(db, incident_id,
-model_run_id)` is the one orchestration entry point; `report_detail.py`'s "Ground-truth evaluation" section
+tolerance comparisons for timestamps/duration, and TP/FP/FN/P/R/F1 derived from `incident-console/matching.py`'s existing
+embedding+Hungarian output - `incident-console/matching.py` itself is untouched). `run_evaluation(db, incident_id,
+model_run_id)` is the one orchestration entry point; `incident-console/report_detail.py`'s "Ground-truth evaluation" section
 (shown only when a `gt_incidents` row exists for that incident) calls it via `DBReports.run_gt_evaluation()`
-and renders the result - no new page. `mock_llm_server.py` provides the `/v1/embeddings` and judge-branched `/v1/chat/completions`
-routes this needs with zero live infra; `scripts/seed_gt_demo.py` seeds a 5-incident demo set (real
+and renders the result - no new page. `incident-console/mock_llm_server.py` provides the `/v1/embeddings` and judge-branched `/v1/chat/completions`
+routes this needs with zero live infra; `incident-console/scripts/seed_gt_demo.py` seeds a 5-incident demo set (real
 CSV-fixture ground truth + a perturbed model run under `MR-EVAL-DEMO`) covering every required scenario.
 See [`incident-console/README.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-console/README.md)'s "Tier 1 GT evaluation" section for the exact local run commands.
 
@@ -157,7 +156,7 @@ AUTOCOMMIT engine with its own pool that refuses write statements, one wire roun
 Never make AUTOCOMMIT global (not atomic), and do not enable it per checkout (two round trips). Every public
 `IncidentDB` method is replayed once after a dropped connection unless a COMMIT was attempted, so keep methods free
 of non-database side effects. Anything counting statements or checkouts must listen on `handle.engines` (both
-pools). `scripts/measure_db_roundtrips.py` measures round trips on a disposable Postgres; `scripts/db_timing.py` times
+pools). `incident-console/scripts/measure_db_roundtrips.py` measures round trips on a disposable Postgres; `incident-console/scripts/db_timing.py` times
 a real DSN without printing secrets. Hyperdrive is Workers-only and does not apply to this Streamlit app.
 
 ## incident-console Dashboard evidence path
@@ -165,12 +164,12 @@ a real DSN without printing secrets. Hyperdrive is Workers-only and does not app
 Never query per incident inside a page loop: over psycopg2 every `engine.connect()` also pays a pre-ping, `BEGIN` and
 `ROLLBACK` round trip, so the old Dashboard loop cost ~440 server round trips per rerun (~14 s at 30 ms RTT on a real
 Postgres). In `deploy/docker/developer-profiles/dev-profile-incident/incident-console/`, `IncidentDB.list_evidence_batch`
-(`db.py`) fetches all evidence in 3 statements on the read-only engine (`self.read_engine`, consistent with every
+(`incident-console/db.py`) fetches all evidence in 3 statements on the read-only engine (`self.read_engine`, consistent with every
 other read method - see "incident-console DB connection contract" above) and matches `(incident_id, model_run_id)`
-pairs - batching on `incident_id` alone mixes an incident's model runs. `dashboard_data.py` caches it (`st.cache_data`,
+pairs - batching on `incident_id` alone mixes an incident's model runs. `incident-console/dashboard_data.py` caches it (`st.cache_data`,
 30 s TTL); anything that rewrites evidence rows must call its `clear_evidence_cache()` (see
-`catalog_actions.analyze_and_refresh`). The incident list stays uncached. See the README's "Dashboard query cost" for
-`scripts/bench_dashboard_queries.py`.
+`incident-console/catalog_actions.py`). The incident list stays uncached. See the README's "Dashboard query cost" for
+`incident-console/scripts/bench_dashboard_queries.py`.
 
 ## Maintaining this file
 
