@@ -24,3 +24,14 @@ executable scripts, ready to run individually. Since the native split (see the p
 | `.scripts/clean-datalog.sh`       | `mdx-clean-datalog`         | VM         | Data-dir cleanup between deploys (requires passwordless sudo)                                                                                                                                                   |
 | `.scripts/ngc-env.sh`             | `ngc-env-on`                | VM         | `source ./ngc-env.sh` to export the shared NGC credentials (`/srv/rise-up/.ngc_env`; `VSS_NGC_ENV` overrides)                                                                                                   |
 | `.scripts/gpu.sh`                 | `gpu`                       | VM         | One-shot `nvidia-smi` status                                                                                                                                                                                    |
+
+## Laptop-side scripts & start.sh modes
+
+`tunnel.sh`, `tunnel-check.sh`, and top-level `start.sh` are **laptop-side only** (SSH tunnel from developer laptops to the `kwanz-ws` backend); never run them on `kwanz-ws` itself.
+
+`start.sh` (at the top level of `dev-profile-incident/`) is the laptop-side one-command daily entry point for **incident-console-v2** (it no longer launches the Streamlit v1 console — see [`../incident-console/README.md`](../incident-console/README.md) for that):
+- **Modes:** Accepts `--mode local|vm` (or `VSS_START_MODE` env var, default `vm`) to select the backend.
+  - **`vm` mode:** Checks the remote deployment state on `kwanz-ws` over SSH (deploying fresh if nothing is running, starting missing services for a partial deploy), opens the background SSH tunnel, and exports `ANALYSIS_MODE=agent`.
+  - **`local` mode:** Skips SSH, starts `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file .env.local`, and exports `ANALYSIS_MODE=gateway`.
+- **Frontend execution:** Both modes launch `incident-console-v2` via `npm run dev -- --port 3200`.
+- **Process cleanup:** A cleanup trap stops local background processes on exit.

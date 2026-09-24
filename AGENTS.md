@@ -16,7 +16,7 @@ Other services have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](ser
 A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
 
 - [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — Short human entry point: doc index and setup steps. Start here.
-- [`.docs/action-plan.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/action-plan.md) — Goals, MVP1 & MVP2 scope, success criteria, and verifiable status.
+- [`.docs/action-plan.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/action-plan.md) — Goals and MVP1/MVP2 scope.
 - [`.docs/status.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/status.md) — Current implementation status, outstanding items, known issues, and live VM configuration snapshot.
 - [`.docs/architecture.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/architecture.md) — System context, component tables, deployment topologies, and upload/analyze/search sequence diagrams.
 - [`.docs/data.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/data.md) — Supabase PostgreSQL schema (ERD & table specs), Cloudflare R2 bucket layout, and documented data quirks.
