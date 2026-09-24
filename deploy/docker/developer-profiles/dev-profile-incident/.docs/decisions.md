@@ -19,7 +19,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 ### 2026-09-25: Retire local GPU NIM deployment for LLM and VLM
 - **Decision:** Officially retire on-prem GPU NIM container deployment (`dev-profile-incident` local LLM/VLM) and move implementation documentation to `.docs/archive/`.
 - **Why:** Remote hosted inference was judged robust enough by the captain; no separate robustness verification was run.
-- **Alternatives rejected:** Reason not recorded - ask captain (no alternatives discussed; captain's only stated reason was that remote was already robust).
+- **Alternatives rejected:** None considered.
 - **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/archive/incident-plan-implementation-local.md`](archive/incident-plan-implementation-local.md).
 
 ### 2026-09-25: Standardize reference incident report schema on agent snake_case
@@ -31,13 +31,13 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 ### 2026-09-25: Restructure documentation into `.docs/` suite with standing update rule
 - **Decision:** Restructure profile documentation into modular files under `.docs/` (`action-plan.md`, `architecture.md`, `data.md`, `analysis-schema.md`, `incident-profile-operations.md`, `archive/`) and establish a standing docs rule in `AGENTS.md`.
 - **Why:** Monolithic and legacy plan documents drifted out of date; standing rule in `AGENTS.md` treats stale documentation as a defect and requires updating affected docs in the same PR.
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Alternatives rejected:** None considered.
 - **Links:** [PR #93](https://github.com/Danwidj/video-search-and-summarization/pull/93); [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`AGENTS.md`](../../../../AGENTS.md).
 
 ### 2026-09-25: Make incident-console-v2 analysis schema tolerant and lenient
 - **Decision:** Update `incident-console-v2`'s `incidentAnalysisSchema` with Zod transforms to provide safe defaults, clamp numeric ranges, map text severity levels, and passthrough unknown fields instead of throwing validation errors.
 - **Why:** Variations in VLM output or future prompt adjustments crashed the UI with validation errors; lenient defaults and Zod transforms avoid UI crashes.
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Alternatives rejected:** None considered.
 - **Links:** [PR #92](https://github.com/Danwidj/video-search-and-summarization/pull/92); commit [`88204849e`](https://github.com/Danwidj/video-search-and-summarization/commit/88204849e); [`incident-console-v2/lib/analysis/schema.ts`](../incident-console-v2/lib/analysis/schema.ts).
 
 ### 2026-09-24: Adopt dual analysis architecture ("Option A") in incident-console-v2 and start.sh
@@ -48,14 +48,14 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ### 2026-09-24: Retire Streamlit incident-console (v1) in favor of Next.js incident-console-v2
 - **Decision:** Drop the Streamlit-based `incident-console` from `start.sh` and active development on 2026-09-24; `incident-console-v2` becomes the sole UI.
-- **Why:** Dropped due to slow UI loading (captain, 2026-09-25).
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Why:** Slow UI loading, and the UI looked bad; Next.js is better for development (captain, 2026-09-25).
+- **Alternatives rejected:** None considered.
 - **Links:** [PR #80](https://github.com/Danwidj/video-search-and-summarization/pull/80); commit [`8fd8267ca`](https://github.com/Danwidj/video-search-and-summarization/commit/8fd8267ca); [`start.sh`](../start.sh).
 
 ### 2026-09-24: Fall back to direct R2 upload on real VST chunk uploads
 - **Decision:** In `incident-console-v2`, when chunked video upload through VST omits a durable R2 storage key (`filePath`), fall back to uploading directly to R2 via server-side route `/api/uploads/r2`.
 - **Why:** Real VST/NvStreamer chunk response never includes a durable R2 object key (`filePath`) — only `mock-backend` faked that field — and analysis flows hard-require that key.
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Alternatives rejected:** None considered.
 - **Links:** [PR #81](https://github.com/Danwidj/video-search-and-summarization/pull/81); commit [`7e9fb29f9`](https://github.com/Danwidj/video-search-and-summarization/commit/7e9fb29f9); [`incident-console-v2/app/api/uploads/r2/route.ts`](../incident-console-v2/app/api/uploads/r2/route.ts).
 
 ### 2026-09-24: Build standalone P1/RP1 evaluation pipeline separately from `nat eval`
@@ -84,14 +84,14 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ### 2026-09-21: Native service execution for vss-agent and analytics on kwanz-ws
 - **Decision:** Run `vss-agent`, `video-analytics-api`, and `behavior-analytics` as native host processes on `kwanz-ws` managed by `.scripts/native-services.sh`, leaving VIOS/VST media and databases in Docker.
-- **Why:** Fast-iterating application services run as native processes directly on `kwanz-ws` so a code change is a ~2s process restart instead of a container rebuild; media/appliance infra stays in Docker.
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Why:** Fast-iterating application services run as native processes directly on `kwanz-ws` so a code change is a ~2s process restart instead of a container rebuild; media/appliance infra stays in Docker. Captain wants services native as much as possible (captain, 2026-09-25).
+- **Alternatives rejected:** Docker for everything - rejected (slow rebuild per code change). Running VIOS/VST media engines, DeepStream perception, and core infra (Postgres, Redis, Kafka, Elasticsearch, Phoenix, HAProxy) natively - rejected: an investigation classified them infeasible or no-benefit natively because they depend on proprietary CUDA/GStreamer/DeepStream/Triton container toolchains or are heavy JVM appliances, while vss-agent, video-analytics-api and behavior-analytics are high-feasibility native. All services already use host networking, so native processes reach the Docker ones on localhost.
 - **Links:** [PR #70](https://github.com/Danwidj/video-search-and-summarization/pull/70); commit [`6bc80f2da`](https://github.com/Danwidj/video-search-and-summarization/commit/6bc80f2da); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
 
 ### 2026-09-17: Agent database access via Supabase PostgREST and insert_incident RPC
 - **Decision:** Agent accesses Supabase via PostgREST HTTPS client (`incident_db.py` via `supabase-py` `AsyncClient`), utilizing the stored procedure `insert_incident` Postgres RPC for atomic upserts and review status resets. Console and local tools retain direct Postgres (`db.py`).
 - **Why:** The campus network firewall on `kwanz-ws` silently drops outbound port 5432 regardless of destination, breaking raw Postgres drivers like `asyncpg`. HTTPS port 443 works. PostgREST lacks client-held transactions, so atomic delete-then-insert plus review reset requires the `insert_incident` RPC function.
-- **Alternatives rejected:** Direct-Postgres / `asyncpg` on `kwanz-ws` (fails because campus firewall drops outbound port 5432). Other alternatives: Reason not recorded - ask captain.
+- **Alternatives rejected:** Direct-Postgres / `asyncpg` on `kwanz-ws` (fails because campus firewall drops outbound port 5432). No other alternatives were considered.
 - **Links:** [PR #53](https://github.com/Danwidj/video-search-and-summarization/pull/53); [PR #54](https://github.com/Danwidj/video-search-and-summarization/pull/54); [PR #57](https://github.com/Danwidj/video-search-and-summarization/pull/57); [`.docs/data.md`](data.md); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../services/agent/src/vss_agents/utils/incident_db.py).
 
 ### 2026-09-06: Remote (hosted) LLM/VLM chosen over local GPU NIM deployment
@@ -102,6 +102,6 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ### 2026-09-06: MVP1 / MVP2 scope partitioning
 - **Decision:** Partition project deliverables into MVP1 (ingestion, automated extraction, human review UI, ground-truth evaluation) and MVP2 (real-time perception RT-CV/RT-Embed, Elasticsearch vector storage, multi-subagent routing, natural language search).
-- **Why:** MVP1 is due for the mid-term, MVP2 is due for finals (captain, 2026-09-25).
-- **Alternatives rejected:** Reason not recorded - ask captain.
+- **Why:** Scope entirely determined by deadline: MVP1 is due for the mid-term, MVP2 for finals (captain, 2026-09-25).
+- **Alternatives rejected:** None considered.
 - **Links:** [`.docs/action-plan.md`](action-plan.md); [`.docs/archive/incident-plan-implementation-shared.md`](archive/incident-plan-implementation-shared.md).
