@@ -19,10 +19,10 @@ leftover from an earlier shared-UI setup and is no longer the intended path).
 
 For technical reference docs (GPU topology, local vs. remote LLM/VLM deployment,
 detailed Postgres schema specs, and eval methodology), see the companion files in
-[`incident-plan/`](incident-plan/):
-- [`incident-plan-implementation-local.md`](incident-plan/incident-plan-implementation-local.md) — Local NIM container deployment mode, GPU topology, profile setup.
-- [`incident-plan-implementation-remote.md`](incident-plan/incident-plan-implementation-remote.md) — Remote NGC-hosted LLM/VLM deployment mode.
-- [`incident-plan-implementation-shared.md`](incident-plan/incident-plan-implementation-shared.md) — Mode-independent technical specs: Postgres schema, Cloudflare R2, UI/API specs, eval methodology.
+[`.docs/`](.docs/):
+- [`incident-plan-implementation-local.md`](.docs/incident-plan-implementation-local.md) — Local NIM container deployment mode, GPU topology, profile setup.
+- [`incident-plan-implementation-remote.md`](.docs/incident-plan-implementation-remote.md) — Remote NGC-hosted LLM/VLM deployment mode.
+- [`incident-plan-implementation-shared.md`](.docs/incident-plan-implementation-shared.md) — Mode-independent technical specs: Postgres schema, Cloudflare R2, UI/API specs, eval methodology.
 
 ---
 
@@ -55,12 +55,15 @@ detailed Postgres schema specs, and eval methodology), see the companion files i
 
 ## 2. Layout
 
-- [`compose.yml`](compose.yml) — Profile entrypoint. Includes `./incident-console/compose.yml`. No Kibana init block (this profile does not use Kibana).
-- [`incident-console/`](incident-console/README.md) — The Streamlit console (v1): Postgres-backed incident review UI (`INCIDENT_DB_DSN` required). See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
+- [`compose.yml`](compose.yml) — Profile entrypoint. Includes `./incident-console/compose.yml` and `./vlm-gateway/compose.yml`. No Kibana init block (this profile does not use Kibana).
+- [`.env`](.env) — Tracked placeholder template for the profile (compose-level variables, `VLM_GATEWAY_*`). Real values never go here; see [Laptop Setup](#6-laptop-setup-secrets--environment-files).
+- [`incident-console/`](incident-console/README.md) — The Streamlit console (v1): Postgres-backed incident review UI (`INCIDENT_DB_DSN` required), plus the Tier 1 GT evaluation and the P1 multi-model VLM evaluation scripts. See its README for the local dev loop and [`db.py`](incident-console/db.py) for the authoritative schema.
 - [`incident-console-v2/`](incident-console-v2/README.md) — Next.js App Router frontend (v2): video upload, VLM analysis, incident reporting, review, dashboard, and ground-truth evaluation. Server-only config via `VLM_GATEWAY_URL`, `VLM_MODEL`, `INCIDENT_AGENT_BASE_URL`, `INCIDENT_SUPABASE_URL`/`INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `R2_*`. See its README for the local dev loop (mock backend on 7777, VLM gateway on 8600, Next.js on 3200).
-- [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference); a `mock_data/` module is planned for a Postgres-schema mock of the console.
-- [`incident-plan/`](incident-plan/) — Technical reference docs (`incident-plan-implementation-local.md`, `-remote.md`, `-shared.md`).
-- [`scripts/`](scripts/) — Standalone deployment and operational scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `native-services.sh`, etc.).
+- [`vlm-gateway/`](vlm-gateway/README.md) — Thin FastAPI proxy (port 8600) that holds the upstream NVIDIA-hosted inference key (`VLM_GATEWAY_API_KEY`) server-side; v2 calls it for video analysis.
+- [`mock-backend/`](mock-backend/README.md) — Zero-GPU mock backends for local UI development: [`base_profile_mock/`](mock-backend/base_profile_mock/README.md) mocks the whole `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference, port 7777; used by both consoles); [`search_profile_mock/`](mock-backend/search_profile_mock/README.md) is its `bp_developer_search` superset (port 7778).
+- [`.docs/`](.docs/) — Technical reference docs (`incident-plan-implementation-local.md`, `-remote.md`, `-shared.md`).
+- [`.scripts/`](.scripts/README.md) — Standalone deployment and operational scripts (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `native-services.sh`, etc.).
+- [`.dotfiles/`](.dotfiles/README.md) — Personal, opt-in shell QoL bootstrap for `kwanz-ws` accounts.
 - [`start.sh`](start.sh) & [`local-start.sh`](local-start.sh) — Laptop-side entrypoint scripts (for v1 Streamlit console).
 
 ---
@@ -70,7 +73,7 @@ detailed Postgres schema specs, and eval methodology), see the companion files i
 - **Hardware (`kwanz-ws` VM):** 2× RTX A6000 (48 GB each), AMD Threadripper PRO 5975WX, 251 GiB RAM, 1.8 TB NVMe.
 - **Tailscale:** `kwanz-ws.tailf3aa43.ts.net`.
 - **VM checkout:** `/srv/rise-up/vss`.
-- **NGC credentials on VM:** `/srv/rise-up/.ngc_env` (`set -a; source /srv/rise-up/.ngc_env; set +a` or `source scripts/ngc-env.sh`).
+- **NGC credentials on VM:** `/srv/rise-up/.ngc_env` (`set -a; source /srv/rise-up/.ngc_env; set +a` or `source .scripts/ngc-env.sh`).
 - **Direct UI tunnel (base profile):** `ssh -N -L 7777:10.131.1.5:7777 <user>@kwanz-ws`, browse `http://localhost:7777`.
 - **Deploy flags used on this host:** `--host-ip 10.131.1.5 --external-ip localhost --hardware-profile OTHER`.
 
@@ -86,7 +89,7 @@ This profile is deployed and torn down with the project's canonical scripts
 
 For `dev-profile-incident`:
 - The backend deploys via direct docker compose invocation (`docker compose --env-file generated.env.<local|remote> up -d`) plus native services (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws) and [Native vs. Docker service split](#5-native-vs-docker-service-split)).
-- **Never run `dev-profile.sh down`** on `kwanz-ws` — that script tears down the stack with `-v` and wipes the data directory, destroying ~35 GB of cached model weights. Use `./scripts/down.sh` or plain `docker compose down`.
+- **Never run `dev-profile.sh down`** on `kwanz-ws` — that script tears down the stack with `-v` and wipes the data directory, destroying ~35 GB of cached model weights. Use `./.scripts/down.sh` or plain `docker compose down`.
 - Local UI iteration needs no GPU/VM:
   ```bash
   cd deploy/docker/developer-profiles/dev-profile-incident/incident-console
@@ -95,7 +98,7 @@ For `dev-profile-incident`:
   ```
   (See [`incident-console/README.md`](incident-console/README.md) for the full local dev loop).
 
-Each script under [`scripts/`](scripts/) preserves the original alias/function's
+Each script under [`.scripts/`](.scripts/README.md) preserves the original alias/function's
 grounding comment and safety behavior — check a script's header before using it.
 
 ### Reference: Running NVIDIA stock profiles
@@ -145,7 +148,7 @@ of a container rebuild. Media/appliance infra stays in Docker.
 | `video-analytics-api` (`node index.js`, port 8081, optional — `ENABLE_ANALYTICS=true`) | `elasticsearch`, `kafka` (also gated by `ENABLE_ANALYTICS=true`)                                                     |
 | `behavior-analytics` (`python3 apps/...`, port 8080, optional — `ENABLE_ANALYTICS=true`) |                                                                                                                        |
 
-[`scripts/native-services.sh`](scripts/native-services.sh) is the VM-side
+[`.scripts/native-services.sh`](.scripts/native-services.sh) is the VM-side
 control script for the native half (`start`/`stop`/`restart`/`status`/`logs`,
 each takes a space-separated service list, `all`, or `analytics` as
 shorthand). It backgrounds each process with `nohup`, tracks it with a PID
@@ -153,14 +156,14 @@ file under `/srv/rise-up/vss/.run/<service>.pid`, redirects its stdout/stderr
 to `/srv/rise-up/vss/.run/<service>.log`, and waits on a healthcheck loop
 before reporting a service up (`vss-agent`'s `/health` endpoint; the
 analytics services fall back to a port/log-line check). `start.sh`,
-`scripts/status.sh`, `scripts/down.sh`, `scripts/logs.sh`, and
-`scripts/rebuild-svc.sh` all delegate to it for the native half of their
+`.scripts/status.sh`, `.scripts/down.sh`, `.scripts/logs.sh`, and
+`.scripts/rebuild-svc.sh` all delegate to it for the native half of their
 respective jobs — see each script's header. Run it directly on the VM for
 finer-grained control than `start.sh`'s all-or-nothing deploy, e.g.:
 
 ```bash
 ssh kwanz-ws
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/scripts
+cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./native-services.sh status
 ./native-services.sh restart vss-agent   # ~2s, no Docker rebuild
 ./native-services.sh logs vss-agent      # tails .run/vss-agent.log
@@ -169,7 +172,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/script
 ### Pruning the now-unused Docker images
 
 Once a service has been switched to native execution, its old Docker image
-is dead weight on the VM's disk. `scripts/prune-native-images.sh` removes
+is dead weight on the VM's disk. `.scripts/prune-native-images.sh` removes
 the `vss-agent`, `vss-behavior-analytics`, and `vss-video-analytics-api`
 images (plus any stopped containers still referencing them and dangling
 leftovers) and prints disk usage before/after. It refuses to silently strand
@@ -178,16 +181,16 @@ warns and asks for interactive confirmation before proceeding. Run it on the
 VM after confirming the native services are up and healthy:
 
 ```bash
-ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/scripts/prune-native-images.sh"
+ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts/prune-native-images.sh"
 ```
 
 ---
 
 ## 6. Laptop Setup: Secrets & Environment Files
 
-Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh` for v1; `incident-console-v2/README.md` for v2).
+Both console frontends run on each teammate's laptop, connecting either to the shared backend on `kwanz-ws` via an SSH tunnel (`./start.sh` or `./.scripts/tunnel.sh`) or to a local mock backend (`./local-start.sh` for v1; `incident-console-v2/README.md` for v2).
 
-**Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only. On your laptop, all local credentials are consolidated into a single untracked file at the profile root (`dev-profile-incident/.env.local`), and each sub-service points to it via a relative symlink (`.env.local -> ../.env.local`):
+**Secrets never go in tracked files.** The tracked `.env` files in git are placeholder templates only (`dev-profile-incident/.env` for the profile/compose and `VLM_GATEWAY_*` keys, `incident-console/.env` for the console's `INCIDENT_*` / `R2_*` keys). On your laptop, all local credentials are consolidated into a single untracked file at the profile root (`dev-profile-incident/.env.local`), and each sub-service points to it via a relative symlink (`.env.local -> ../.env.local`):
 
 ### Secret Files Layout on Laptop
 
@@ -199,7 +202,7 @@ Both console frontends run on each teammate's laptop, connecting either to the s
 | `vlm-gateway/.env.local` | Symlink (`../.env.local`) | `vlm-gateway` (hosted LLM/VLM inference proxy) |
 
 > [!TIP]
-> **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook automatically propagates untracked `.env` and `.env.local` files as well as relative symlinks from the main worktree into newly created worktrees (copy-if-missing, never overwriting).
+> **Automatic Git Worktree Propagation:** If you use git worktrees, run `.githooks/activate.sh` once in your clone. The repo's [`.githooks/setup-worktree.sh`](../../../../.githooks/README.md) hook automatically propagates untracked `.env` and `.env.local` files as well as relative symlinks from the main worktree into newly created worktrees (copy-if-missing, never overwriting). In a fresh clone with no root `.env.local` it seeds one from the tracked `.env` template, and in every worktree it re-creates any of the three subfolder `.env.local` symlinks that is missing, a real file, or pointing elsewhere.
 
 ---
 
@@ -254,7 +257,7 @@ Both console frontends run on each teammate's laptop, connecting either to the s
    # 4. BACKEND SERVICE & INFERENCE ENDPOINTS
    # =============================================================================
    # Base URL of vss-agent API (upload + AI analyze routes).
-   # Under the SSH tunnel (scripts/tunnel.sh or start.sh), port 8000 forwards to the VM backend.
+   # Under the SSH tunnel (.scripts/tunnel.sh or start.sh), port 8000 forwards to the VM backend.
    INCIDENT_AGENT_BASE_URL=http://localhost:8000
 
    # OpenAI-compatible chat-completions endpoint for drafting & LLM judge:
@@ -271,8 +274,9 @@ Both console frontends run on each teammate's laptop, connecting either to the s
    ```
 
 3. **Verify configuration:**
-   - Run unit tests to verify the local environment parses cleanly:
+   - Run unit tests (from `incident-console/`) to verify the local environment parses cleanly:
      ```bash
+     cd incident-console
      uv run pytest
      ```
    - (Optional) Seed the database fixtures if starting fresh:
@@ -285,10 +289,12 @@ Both console frontends run on each teammate's laptop, connecting either to the s
 
 ### Step-by-Step Setup for `incident-console-v2/.env.local` (v2 Next.js)
 
-1. **Create the file from the server-only configuration documented in [`incident-console-v2/README.md`](incident-console-v2/README.md#server-only-configuration):**
-   ```bash
-   cd deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2
-   cat > .env.local <<'EOF'
+1. **Add the server-only configuration documented in [`incident-console-v2/README.md`](incident-console-v2/README.md#server-only-configuration) to the shared root file.**
+   `incident-console-v2/.env.local` is a symlink to `../.env.local` (Next.js loads it automatically), so edit
+   `deploy/docker/developer-profiles/dev-profile-incident/.env.local` — do **not** `cat >` or otherwise recreate
+   `incident-console-v2/.env.local`, which would overwrite the whole shared file through the symlink. Keys already
+   present for v1 (`INCIDENT_SUPABASE_*`, `R2_*`) are shared. The full set v2 reads:
+   ```dotenv
    # VLM Gateway (holds upstream inference credential; NOT exposed to browser)
    VLM_GATEWAY_URL=http://127.0.0.1:8600
    VLM_MODEL=nvidia/cosmos-3-nano-reasoner
@@ -305,8 +311,10 @@ Both console frontends run on each teammate's laptop, connecting either to the s
    R2_ACCESS_KEY=<s3-compatible-access-key-id>
    R2_SECRET_KEY=<s3-compatible-secret-access-key>
    R2_BUCKET=anomaly-detection-dataset
-   EOF
    ```
+
+   Note that v1 uses `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (tunneled real agent) in the same file; for the
+   v2 mock-backend loop set it to `http://127.0.0.1:7777` while you work on v2.
 
    > **Do not** prefix any of these with `NEXT_PUBLIC_` — they must remain server-only. `GET /api/health` returns only configuration and reachability booleans; it never returns URLs or credentials.
 
@@ -315,7 +323,7 @@ Both console frontends run on each teammate's laptop, connecting either to the s
      1. Mock backend on port 7777
      2. VLM gateway on port 8600
      3. `npm run dev` (Next.js on port 3200)
-   - Check `GET http://localhost:3200/api/health` — all four services (agent, gateway, PostgREST, R2) should report `reachable: true` / `configured: true` before testing the upload-to-report workflow.
+   - Check `GET http://localhost:3200/api/health` — it should return `status: "ready"` (HTTP 200): agent, gateway and PostgREST report `configured: true` / `reachable: true`, and R2 reports `configured: true` (R2 has no reachability probe), before testing the upload-to-report workflow.
 
 ---
 
@@ -333,14 +341,13 @@ If you are developing or running the thin proxy for NVIDIA-hosted LLM/VLM infere
 
    # Upstream API key provided by the NVIDIA team
    VLM_GATEWAY_API_KEY=<upstream-api-key>
-
-   # Local gateway listening port (default: 8600)
-   VLM_GATEWAY_PORT=8600
    ```
 
-3. **Run the gateway:**
+   The listening port is set by uvicorn's `--port` (8600 below); `app.py` does not read `VLM_GATEWAY_PORT`.
+
+3. **Run the gateway** (from `vlm-gateway/`). `app.py` does not load `.env.local` itself, so pass it to `uv`:
    ```bash
-   uv run uvicorn app:app --port 8600
+   uv run --env-file .env.local uvicorn app:app --port 8600
    ```
 
 ---
@@ -353,8 +360,8 @@ on the VM** — an SSH tunnel connects the laptop to the VM backend. This
 supersedes an earlier setup where the v1 console ran as a shared container on
 the VM (see [Live deployment on kwanz-ws](#82-live-deployment-on-kwanz-ws)).
 
-- **`incident-console` (v1):** Uses `./start.sh` (one-command: checks VM deploy state, deploys if needed, opens tunnel, starts Streamlit) or manual `./scripts/tunnel.sh` + Streamlit per its README.
-- **`incident-console-v2` (v2):** Uses the same SSH tunnel (`./scripts/tunnel.sh` forwards agent 8000, NIMs 30081/30082, ingress 7777). Configure `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (tunneled) and `VLM_GATEWAY_URL=http://localhost:8600` (if running gateway locally) or the tunneled VLM NIM endpoint. The v2 frontend does not have a dedicated `start.sh` entrypoint; run the tunnel manually, then `npm run dev` in `incident-console-v2/`. The mock-backend workflow (no VM) is documented in `incident-console-v2/README.md`.
+- **`incident-console` (v1):** Uses `./start.sh` (one-command: checks VM deploy state, deploys if needed, opens tunnel, starts Streamlit) or manual `./.scripts/tunnel.sh` + Streamlit per its README.
+- **`incident-console-v2` (v2):** Uses the same SSH tunnel (`./.scripts/tunnel.sh` forwards agent 8000, NIMs 30081/30082, ingress 7777). Configure `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (tunneled) and `VLM_GATEWAY_URL=http://localhost:8600` (if running gateway locally) or the tunneled VLM NIM endpoint. The v2 frontend does not have a dedicated `start.sh` entrypoint; run the tunnel manually, then `npm run dev` in `incident-console-v2/`. The mock-backend workflow (no VM) is documented in `incident-console-v2/README.md`.
 
 ### One command (recommended)
 
@@ -367,15 +374,17 @@ cd deploy/docker/developer-profiles/dev-profile-incident
 
 SSH access to kwanz-ws is per-person (see the manual flow below), so
 `start.sh` no longer hardcodes a VM username: it prompts for one, pre-filled
-with your local `$USER` as the default (just hit Enter if that matches your
-VM account, or type a different one). Set `VSS_SSH_USER` to skip the prompt
-non-interactively (e.g. in a script), or `VSS_SSH_TARGET` (full `user@host`)
-to override the login entirely, same as before. `scripts/tunnel.sh` resolves its VM
+with the `User` from your `~/.ssh/config` entry for `kwanz-ws` if there is one,
+else your local `$USER` (just hit Enter if that matches your VM account, or type
+a different one; the prompt accepts the default after 5 s). Set `VSS_SSH_USER` to
+skip the prompt non-interactively (e.g. in a script), `VSS_SSH_TARGET` (full
+`user@host`) to override the login entirely, or `VSS_SSH_HOST` to target a
+host other than `kwanz-ws`. `.scripts/tunnel.sh` resolves its VM
 login the same way.
 
 `start.sh` checks the VM's deploy state over SSH — Docker containers
 (`docker compose -p mdx ps`) **and** native services
-(`scripts/native-services.sh status`, see [Native vs. Docker service split](#5-native-vs-docker-service-split)):
+(`.scripts/native-services.sh status`, see [Native vs. Docker service split](#5-native-vs-docker-service-split)):
 
 - **Nothing running** → deploys the backend fresh over SSH: Docker appliance
   containers only (`docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <docker-services>`, no `vss-agent` in that list), then starts the native
@@ -395,8 +404,8 @@ Set `ENABLE_ANALYTICS=true` to also bring up `video-analytics-api` and
 - **No prompt appears at all** — a `VSS_SSH_TARGET` env var is already set in
   your shell (it takes priority over the prompt). `unset VSS_SSH_TARGET` to
   be prompted again.
-- **The pre-filled default is your local machine username, not necessarily
-  your VM account** — kwanz-ws access is per-person and Tailscale-gated;
+- **The pre-filled default is your ssh-config or local machine username, not
+  necessarily your VM account** — kwanz-ws access is per-person and Tailscale-gated;
   don't just accept the default if you know it's wrong for you.
 - **To check if a username is valid before running the whole script:**
   `ssh <username>@kwanz-ws echo ok`. A
@@ -418,16 +427,16 @@ to run on `kwanz-ws` itself.
 1. SSH access to kwanz-ws under your own account (you should already have
    one — `yang`, `faith`, `claris`, `heng` each have their own checkout under
    `/home/`).
-2. From your own laptop, run `./scripts/tunnel.sh` (replaces the old
+2. From your own laptop, run `./.scripts/tunnel.sh` (replaces the old
    `mdx-tunnel-incident` alias) to forward the backend ports (agent 8000,
    NIMs 30081/30082, ingress 7777):
    ```bash
-   ./scripts/tunnel.sh
+   ./.scripts/tunnel.sh
    ```
    Leave it running in its own terminal — it's supposed to sit there silently
    (that's correct, not stuck). Quick health check from a second terminal:
    ```bash
-   ./scripts/tunnel-check.sh
+   ./.scripts/tunnel-check.sh
    # or, plain curl:
    curl http://localhost:8000/health
    # should return: {"value":{"isAlive":true}}
@@ -439,21 +448,22 @@ to run on `kwanz-ws` itself.
 
 ---
 
-## 8. Current Status (as of 2026-09-21)
+## 8. Current Status (as of 2026-09-24)
 
 ### 8.1 Feature / verification status
 
 | Item | State |
 |---|---|
 | `incident-console` app (v1 Streamlit: catalog, report review, dashboard, human-eval; Postgres-backed, no offline mode) | Present; seed via `incident-console/scripts/seed_supabase.py` over `fixtures/data/*.csv` |
-| `incident-console-v2` app (v2 Next.js: video upload, VLM analysis, incident reporting, review, dashboard, alerts, model-run history, ground-truth/severity evaluation) | Present (PR #72, merged 2026-09-21); local mock-backend loop documented and smoke-tested (`/`, `/reports`, `/dashboard`, `/notifications`, `/api/reports`, `/api/notifications`, `/api/health`); typecheck/build/test pass; VM-tunnel integration not yet verified end-to-end |
+| `incident-console-v2` app (v2 Next.js: video upload, VLM analysis, incident reporting, review, dashboard, alerts, model-run history, ground-truth/severity evaluation) | Present (PR #72, merged 2026-09-21); local mock-backend loop documented and smoke-tested (`/`, `/reports`, `/dashboard`, `/notifications`, `/api/reports`, `/api/notifications`, `/api/health`); typecheck/build/test pass; direct-to-R2 upload fallback for real VST, which returns no object key (PR #81); VM-tunnel integration not yet verified end-to-end |
 | Console schema (`db.py`: videos/queries/model_runs/incidents + evidence, ground-truth, match, review tables) | Present; authoritative for schema questions (shared by v1 and v2 via PostgREST) |
 | Mock backend + local loop (`mock-backend/base_profile_mock`) | Present; verified loop documented (used by both v1 and v2) |
 | Stock base-local deploy (one model per GPU, `hw-OTHER.env` sizing) | Verified working |
 | Stock base-remote chat + VLM describe (`openai`-type, model above) | Verified working 2026-09-13 on corrected `--host-ip`: video upload to VST plus `video_understanding` through the remote VLM returned a correct description. Full `report_agent` path still needs a UI websocket (HITL), so it remains unverified headless. |
 | Stock `search` profile (local and remote) | Verified working 2026-09-13 both modes; deploy commands in the mode docs §3 |
-| `incident_report_gen` tool + `/analyze` API route | Built (PR #38, merged 2026-09-17); fresh deploy builds from source via `start.sh`'s `--build` (PR #63), and `vss-agent` runs natively on kwanz-ws (PR #70). Confirm the VM's active `vss-agent` process was restarted or redeployed since PR #63/#70 |
+| `incident_report_gen` tool + `/analyze` API route | Built (PR #38, merged 2026-09-17); `vss-agent` runs natively on kwanz-ws from this repo's source (PR #70; `native-services.sh restart vss-agent` picks up code changes), which superseded PR #63's `--build` container rebuild — `start.sh` no longer builds images. Confirm the VM's active `vss-agent` process was restarted since PR #70 |
 | Supabase / PostgREST integration | Migration validated against live project (PR #53); agent-side client ported from asyncpg to `supabase-py` PostgREST (PR #54, #57); `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` wired to agent (PR #62) for port-5432-safe access on kwanz-ws |
+| P1 structured-extraction eval pipeline + 3-model VLM benchmark | Built (PR #83, merged 2026-09-24): `incident-console/scripts/eval_*.py` run P1/RP1 through the VLM gateway's upstream and score against `gt_*`; results and methodology in [`incident-console/docs/vlm_benchmark_results.md`](incident-console/docs/vlm_benchmark_results.md); raw working data under the gitignored `incident-console/eval_data/` |
 | Tier 1 ground-truth evaluation | Built (PR #56, merged 2026-09-20); scores model runs against parallel `gt_*` tables via `eval_gt.py` / report detail UI (v1); v2 has its own evaluation form wired to the same tables |
 | `dev-profile-incident` `config.yml`, `/search` API route | Planned (shared doc §§4-6); not yet built |
 | `openai_vlm` missing-`base_url` patch (`base_url: ${VLM_BASE_URL}/v1` in `config.yml` + `config_rag.yml`) | Required; re-apply after any upstream sync |
@@ -472,9 +482,9 @@ cd /srv/rise-up/vss/deploy/docker
 sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <service>
 ```
 
-(the root `compose.yml` in `deploy/docker` is the one to use — **not** the one inside `dev-profile-incident/`, which only defines the console app by itself)
+(the root `compose.yml` in `deploy/docker` is the one to use — **not** the one inside `dev-profile-incident/`, which only defines the profile's own `incident-console` and `vlm-gateway` services)
 
-`vss-agent` itself is **not** one of these containers — it runs natively via `scripts/native-services.sh` (see [Native vs. Docker service split](#5-native-vs-docker-service-split)).
+`vss-agent` itself is **not** one of these containers — it runs natively via `.scripts/native-services.sh` (see [Native vs. Docker service split](#5-native-vs-docker-service-split)).
 
 | Service / Container         | Role                                      | Status                                                                                                                                                                                                                    |
 | ---------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -515,7 +525,7 @@ The untracked live env file on the VM diverges from the tracked `.env` template 
    instead of NVIDIA's locked prebuilt image. A plain `up -d` — no `--build` —
    still reuses whatever image already exists locally. What's currently running
    on the VM is still the prebuilt image; run one `--build` deploy there before
-   relying on any agent-side code change.~~ **FIXED** — `start.sh` now passes `--build` on fresh deploys (PR #63), and `vss-agent` now runs natively on kwanz-ws from source (PR #70). Confirm the VM process/container was restarted after PR #63/#70.
+   relying on any agent-side code change.~~ **FIXED** — `vss-agent` now runs natively on kwanz-ws from source (PR #70), superseding PR #63's `start.sh --build` fix (`start.sh` no longer starts or builds a `vss-agent` container). Confirm the VM process was restarted after PR #70.
 2. **The VLM (AI vision model) is crash-looping.** `VLM_DEVICE_ID='2'` in
    `generated.env.remote`, but this box only has GPUs `0` and `1`. Also
    `HARDWARE_PROFILE=H100` is wrong for this 2×A6000 box — should be `OTHER`.

@@ -22,8 +22,10 @@ Supabase project used by the console (the console itself keeps using its own
 `services/agent/src/vss_agents/utils/incident_db.py`'s module docstring).
 Also load the
 Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
-`R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file. R2 upload
-returns `503` when those settings are unset or unreachable. The Catalog page
+`R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file (the shared
+`dev-profile-incident/.env.local`, as in the command below). R2 upload
+returns `503` when those settings are unset or unreachable. The console's
+upload flow (Report Review page, `catalog_actions.upload_and_record()`)
 automatically triggers Analyze after the initial video row is committed. The
 response is explicitly marked `mock: true`, and Analyze writes
 the model run, incident entity, review status, and report through
@@ -34,7 +36,7 @@ the model run, incident entity, review status, and report through
 ```sh
 cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
 uv sync
-uv run --env-file ../../incident-console/.env \
+uv run --env-file ../../.env.local \
   uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
@@ -88,7 +90,7 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
   `services/agent/src/vss_agents/api/video_ingest.py` / `video_delete.py`.
 - `POST /api/v1/incidents/{id}/analyze` - deterministic mock incident report
   generation, persisted through the shared incident DB writer; invoked
-  automatically by the Catalog upload flow.
+  automatically by the console's upload flow.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,

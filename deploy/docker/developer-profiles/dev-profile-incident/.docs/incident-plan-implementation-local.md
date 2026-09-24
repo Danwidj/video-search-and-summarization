@@ -98,6 +98,8 @@ These came from a teammate's field notes and aren't otherwise documented anywher
 
 ## 2. Docker + Local Dev Guide
 
+> **Current deploy (supersedes the MVP1 up-list below):** `vss-agent` (and, with `ENABLE_ANALYTICS=true`, the analytics modules) runs natively on kwanz-ws via [`../.scripts/native-services.sh`](../.scripts/README.md), not as a container, and the incident-console runs on each teammate's laptop, not on the VM. The Docker half is only the appliance containers that `../start.sh` brings up with `generated.env.remote`. See the profile README's "Native vs. Docker Service Split", "Connecting to the Shared Backend" and "Live deployment on kwanz-ws" sections. The commands below are kept as the original plan.
+
 **Backend on the VM** (standard flow from the `vss-deploy-profile` skill, targeting the new `dev-profile-incident`, local LLM/VLM):
 ```bash
 cp deploy/docker/developer-profiles/dev-profile-incident/.env deploy/docker/developer-profiles/dev-profile-incident/generated.env.local
@@ -119,7 +121,7 @@ uv sync
 uv run streamlit run app.py
 ```
 This gets native hot reload (Streamlit's own `runOnSave`, no container involved) and needs nothing GPU-backed to run most of the app:
-- **Postgres:** point `INCIDENT_DB_DSN` at the real Hyperdrive-backed instance directly — no local Postgres, no fixture-seeding to maintain. Catalog, metadata edits, report edit/verify, notifications, dashboard, and eval-log all go straight to it and have zero GPU dependency by design (the shared doc's §3, "direct Postgres, not REST" decision). The only care needed: this is shared state across the team, so use an obvious convention for anything you insert yourself (e.g. a `test-` prefix) rather than editing real rows.
+- **Postgres:** point `INCIDENT_DB_DSN` at the real Supabase Postgres (session pooler; Hyperdrive does not apply to this app, see `incident-console/README.md`'s "Which DSN") directly — no local Postgres, no fixture-seeding to maintain. Catalog, metadata edits, report edit/verify, notifications, dashboard, and eval-log all go straight to it and have zero GPU dependency by design (the shared doc's §3, "direct Postgres, not REST" decision). The only care needed: this is shared state across the team, so use an obvious convention for anything you insert yourself (e.g. a `test-` prefix) rather than editing real rows.
 - **The two AI-trigger endpoints (shared doc §4)**, the only GPU-touching part of the app: don't require a real NIM or Elasticsearch to exercise, even in a local-deployment plan. Both `report_agent` and `search_agent` talk to their LLM/VLM over a plain OpenAI-compatible `/v1/chat/completions` `base_url` (confirmed — every `llms:` entry in `dev-profile-base/vss-agent/configs/config.yml` is `_type: nim` or `_type: openai` hitting a `base_url` this way). So for local frontend/API iteration specifically: run the *real* `vss-agent` locally too (per "Agent code locally" below), but point its `LLM_BASE_URL`/`VLM_BASE_URL` at a small local mock server instead of a real NIM — a tiny FastAPI/Uvicorn app implementing `POST /v1/chat/completions` and returning a canned completion shaped like `IncidentReport`, its own small `uv`-managed package (or folded into `incident-console`'s), run the same way: `uv run uvicorn mock_llm_server:app --port <LLM_PORT>`. This exercises the *real* route → tool-calling → schema-extraction → Postgres-write path with zero GPU, zero NIM container, zero Elasticsearch — a deliberate escape hatch from the local-NIM path for the sake of fast local iteration, not a statement that the deployed stack itself runs remotely. (A simpler fallback — mocking the two endpoints directly instead of the LLM — is less code but only useful for pure frontend-shape iteration once the response contracts are stable, since it bypasses `vss-agent`'s own logic entirely.)
 - **Video playback:** `st.video(url)` points straight at an R2 URL once a video exists there — no VIOS/NvStreamer/agent involvement for playback (only upload goes through the agent's contract). Point at real test-fixture R2 videos; no backend needs to be running for this at all.
 
@@ -130,7 +132,7 @@ Reachable over the Tailscale hostname when pointing at the real VM-hosted `vss-a
 2. `cd services/ui && npm install && npx turbo dev --filter=./apps/nv-metropolis-bp-vss-ui`
 3. Point `NEXT_PUBLIC_*` vars at `http://<tailscale-host>:<HAPROXY_PORT>/...`
 
-**Agent code locally:** `services/agent` is a normal uv-managed Python package — run locally against the VM's exposed NIM/VIOS/Postgres, or `docker compose up -d --build vss-agent` on the VM for a fast single-container rebuild (the `vss-agent` compose service's `build:` block builds from `services/agent/docker/Dockerfile`; plain `up -d` without `--build` reuses whatever image is already local).
+**Agent code locally:** `services/agent` is a normal uv-managed Python package — run locally against the VM's exposed NIM/VIOS/Postgres, or, on the VM, `../.scripts/native-services.sh restart vss-agent` (~2 s; `vss-agent` runs natively from the checkout's source, no image rebuild — see the profile README's "Native vs. Docker Service Split").
 
 **VIOS:** no dev-server mode — rebuild image + `docker compose up -d --force-recreate <vios-service>` on the VM.
 

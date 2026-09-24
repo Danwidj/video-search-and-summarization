@@ -28,7 +28,11 @@ the env is current.
    `deploy/docker/developer-profiles/dev-profile-incident/.env.local` does
    not exist, copy it from the tracked `.env` template (blank/placeholder
    values, ready for the developer to fill in). Never overwrites an existing
-   root file.
+   root file. This is meant as the fresh-clone fallback only: a new worktree
+   should get the main worktree's real root `.env.local` via step 2.
+   **Known bug:** the seed currently runs before step 2 in every worktree, so
+   step 2's copy-if-missing then skips the real file and a new worktree ends
+   up with the placeholder copy (tracked as a separate code fix).
 2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
    found in the main worktree (pruning `node_modules`, `.venv`, `.git`)
    into the same relative path here, but only when the destination file
@@ -57,8 +61,9 @@ machines without `git-lfs` they warn instead of failing the git command.
 
 ## G10 constraint (Phase 5 env plan)
 
-The `.env` propagation above copies real-value files (including
-`incident-console/.env.local`) into every new/checked-out worktree. That is
+The `.env` propagation above copies real-value files (including the root
+`deploy/docker/developer-profiles/dev-profile-incident/.env.local`, which the
+subfolder `.env.local` symlinks point at) into every new/checked-out worktree. That is
 accepted on a personal laptop, where all worktrees belong to one operator. On the
 shared VM it would spray one account's live Supabase/R2 credentials across
 per-account worktrees, so propagation there must stay laptop-only: on the shared

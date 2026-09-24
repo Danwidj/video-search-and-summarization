@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Streamlit console for the VSS incident search & reporting capstone. Front-end
 migrated from the sibling `rise-up` project onto this blueprint fork. See
-[`incident-plan/`](../incident-plan/) for the full plan;
+[`.docs/`](../.docs/) for the full plan;
 this app implements the frontend half of
 `incident-plan-implementation-shared.md` §3 and §5.
 
@@ -252,12 +252,12 @@ scores high, unrelated text scores low) with no ML dependency beyond what
 
 The local `base_profile_mock` implements
 `POST /api/v1/incidents/{id}/analyze` as an explicitly mock, Postgres-backed
-report generator. The real `vss-agent` analyze route now exists
+report generator. The real `vss-agent` analyze route
 (`services/agent/src/vss_agents/api/incident_analyze.py`, merged in PR #38)
-but isn't reachable on the deployed VM yet — see `DEPLOY_NOTES.md`'s Known
-Issue #1 (no `build:` wiring for vss-agent's container). `POST /api/v1/search`
-is still unbuilt (MVP2), so the client keeps returning a "not implemented yet"
-notice for that one.
+is served by the `vss-agent` process that runs natively from this repo's
+source on kwanz-ws (see the profile README's "Native vs. Docker Service
+Split"). `POST /api/v1/search` is still unbuilt (MVP2), so the client keeps
+returning a "not implemented yet" notice for that one.
 
 ### Tier 1 GT evaluation (mock backend, no live VSS)
 
@@ -286,6 +286,39 @@ never on startup, same contract as `seed_mock8.py`):
 uv run python scripts/seed_gt_demo.py
 ```
 
+### P1 multi-model VLM evaluation (PR #83)
+
+A batch pipeline that runs the P1 structured-extraction prompt (`prompts.py`)
+over held-out videos for several hosted VLMs, scores each prediction against the
+real ground truth with `eval_gt.run_evaluation()`, then runs RP1 report
+generation on it. Methodology and the recorded 3-model results are in
+[`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md). Working data
+(the ground-truth workbook `eval_data/ground_truth_labelling.xlsx`, split
+manifests, cached videos, result JSON) lives under `eval_data/`, which
+`../.gitignore` keeps out of git; the split manifests used for the recorded run
+are tracked in `eval_reproducibility/`.
+
+The scripts talk to the upstream inference endpoint directly with
+`VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` (`scripts/eval_vlm_client.py`),
+use `INCIDENT_LLM_BASE_URL` (plus `INCIDENT_LLM_API_KEY` / `INCIDENT_JUDGE_MODEL`
+for a real endpoint) as the description judge, and fall back to Supabase
+PostgREST (`db_postgrest.py`, `INCIDENT_SUPABASE_*`) when `INCIDENT_DB_DSN` is
+unreachable. `openpyxl` (GT ingest) and `sentence-transformers` (embedding
+server) are not declared in `pyproject.toml`; add them to the run yourself (for
+example `uv run --with openpyxl ...`). Point `INCIDENT_EMBEDDING_BASE_URL` at the
+local embedding server (`http://127.0.0.1:8811/v1`, the exact URL `eval_run.py`
+health-checks) in `dev-profile-incident/.env.local`: `config.py` loads that file
+with `override=True`, so a key there wins over a shell `export`. Order:
+
+```bash
+uv run --with openpyxl python scripts/eval_ingest_gt.py      # workbook -> gt_* tables
+uv run python scripts/eval_generate_split.py                  # once: eval_data/split_<category>.json
+uv run --with sentence-transformers python scripts/eval_embedding_server.py --port 8811 &
+uv run python scripts/eval_run.py --models nvidia/cosmos-3-nano-reasoner --categories Assault --limit 1  # smoke run
+uv run python scripts/eval_run.py                             # all models x all categories
+uv run python scripts/eval_aggregate.py                       # eval_data/results/summary.json
+```
+
 ### Real backend on kwanz-ws via SSH tunnel (Phase 4)
 
 The console runs on your laptop; the real backend (vss-agent, LLM/VLM NIMs)
@@ -298,7 +331,7 @@ Terminal 1 (tunnel):
  
 ```bash
 # laptop side; forwards localhost:8000/:30081/:30082 to the VM
-../scripts/tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
+../.scripts/tunnel.sh  # replaces the old mdx-tunnel-incident alias (from ../README.md's script table)
 ```
 
 Terminal 2 (console, same directory as the local loop):
@@ -322,7 +355,7 @@ R2 keys in `.env.local`); the tunnel carries only the agent/LLM/VLM traffic.
 Prove the tunnel before starting the console:
  
 ```bash
-../scripts/tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
+../.scripts/tunnel-check.sh  # replaces the old mdx-tunnel-incident-check alias
 # agent ok (localhost:8000 -> 10.131.1.5:8000)
 # nim :30081 -> 10.131.1.5:30081: HTTP 200
 # nim :30082 -> 10.131.1.5:30082: HTTP 200
@@ -395,6 +428,8 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 | `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` secret JWT | Supabase Project Settings -> API. Server-side only; put key in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
+| `INCIDENT_LLM_API_KEY` | Optional bearer token sent with `INCIDENT_LLM_BASE_URL` requests (only when non-empty) | Empty for `mock_llm_server.py`; the real endpoint's key otherwise |
+| `INCIDENT_JUDGE_MODEL` | Model name sent for LLM-as-a-judge description scoring (default `incident-judge`, what `mock_llm_server.py` accepts) | A real model id when `INCIDENT_LLM_BASE_URL` is a real endpoint |
 | `INCIDENT_EMBEDDING_BASE_URL` | OpenAI-compatible embeddings base URL for `matching.py` | `mock_llm_server.py`'s `/v1/embeddings` locally (`http://localhost:8900/v1`); the platform's real embedding endpoint otherwise; unset means matching fails soft to no matches |
 | `INCIDENT_VIDEO_BASE_URL` | Optional playback URL prefix; unset uses R2 presigned URLs | The R2 bucket public/presigned URL prefix |
 | `INCIDENT_SEVERITY_NOTIFY_THRESHOLD` | Severity ≥ this raises a notification on verify (default `4`) | **Plan default, not spec** — confirm with the team |
@@ -402,6 +437,7 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 | `INCIDENT_CONSOLE_PORT` | Host port for the Streamlit server in the VM deploy (default `8501`) | Set in the `generated.env.*` copy only if non-default |
 | `INCIDENT_DB_HEALTHCHECK_TTL_SECONDS` | Seconds a good database answer lets a page run skip its health probe (default `15`; `0` probes every run) | Set only if the default is wrong; see "Database connection" |
 | `INCIDENT_DB_POOL_RECYCLE_SECONDS` | Max age of a pooled connection before it is replaced (default `600`; `-1` never) | Tune from `scripts/db_timing.py --idle ...`; see "Database connection" |
+| `VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` | Upstream inference endpoint and key for the P1 evaluation scripts only (`scripts/eval_vlm_client.py`); the app itself does not read them | The same values `vlm-gateway` uses (`dev-profile-incident/.env.local`) |
 
 ## VM deploy
 
@@ -420,8 +456,12 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `pages/2_Report_Review.py` | Report review + edit + review status + jump-to-timestamp (database-backed) |
 | `pages/3_Dashboard.py` | Filters + aggregate insights over DB incidents + linked evidence (database-backed; evidence via `dashboard_data.py`) |
 | `dashboard_data.py` | Dashboard evidence path: batched fetch (`IncidentDB.list_evidence_batch`), 30 s `st.cache_data`, `clear_evidence_cache()`, and the flattening into `dashboard_view`'s row shapes |
+| `db_connection.py` | Engine/pool setup for `db.py`: the transactional write engine, the AUTOCOMMIT read engine, connection defaults and the replay-once-after-a-dropped-connection wrapper (authoritative description of the connection contract) |
+| `db_postgrest.py` | PostgREST adapter implementing the subset of `IncidentDB` the P1 evaluation uses, for networks where direct Postgres is blocked |
 | `db.py` | Direct-Postgres data layer (sync SQLAlchemy Core): `videos` / `queries` / `model_runs`, model-output `incidents` / `entities` / `instruments` / `assets` (keyed by `model_run_id`), ground-truth `gt_incidents` / `gt_entities` / `gt_instruments` / `gt_assets`, `entity_matches` / `instrument_matches` / `asset_matches`, `review_status`, `notifications`, `severity_eval_log` |
 | `db_reports.py` | Postgres-backed Incident view model (edits persist; reads the most recent model run per incident) |
+| `report_detail.py` | Report-detail presentation (incl. the "Ground-truth evaluation" section); see `REPORT_DETAIL.md` |
+| `dashboard_view.py` | Dashboard presentation and pure analytics (no database access) |
 | `r2_videos.py` | Read-only R2 catalog, presigned playback / screenshot URLs, bucket picker helpers |
 | `embed_client.py` | Embedding-endpoint HTTP client (fail-soft), used by `matching.py` |
 | `matching.py` | Similarity-based matching of one model run's entities/instruments/assets against ground truth (Hungarian assignment + threshold) |
@@ -429,6 +469,8 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `scripts/seed_gt_demo.py` | 5-incident Tier 1 GT-evaluation demo set: real CSV-fixture ground truth + a deterministically perturbed model run (`MR-EVAL-DEMO`), independent one-time idempotent importer |
+| `scripts/eval_*.py`, `prompts.py`, `eval_reproducibility/`, `docs/vlm_benchmark_results.md` | P1 multi-model VLM evaluation: GT ingest, split generation, few-shot block, gateway client, video resolution, batch runner, local embedding server, aggregation; P1/RP1 prompts; tracked split manifests; recorded results (see "P1 multi-model VLM evaluation") |
+| `scripts/db_timing.py` / `scripts/measure_db_roundtrips.py` / `scripts/latency_proxy.py` | Database round-trip tooling: time a real DSN read-only, and reproduce the round-trip table on a disposable Postgres behind a latency-injecting proxy (see "Database connection") |
 | `scripts/bench_dashboard_queries.py` | Statements / connection checkouts / wall-clock of the Dashboard evidence fetch, old per-incident loop vs batched (SQLite model with injected latency, or `--dsn` read-only) |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |
 | `catalog_actions.py` | Upload/analyze orchestration (no `st.*` calls) used by the Incident Reports upload flow, incl. the `videos.id`-fitting `derive_video_id()` and `analyze_and_refresh()` (analyze, then clear the Dashboard's cached evidence) |
