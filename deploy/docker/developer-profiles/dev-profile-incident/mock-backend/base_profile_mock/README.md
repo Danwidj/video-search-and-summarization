@@ -40,10 +40,10 @@ uv run --env-file ../../.env.local \
   uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
-For the complete local loop, from `dev-profile-incident/` run
-`./local-start.sh`. It loads `incident-console/.env.local` for the backend,
-starts the mock backend, and launches the Streamlit console; no secret exports
-are needed.
+For the complete local v2 loop, from `dev-profile-incident/` run
+`./start.sh --mode local`. It loads the shared `.env.local`, starts this mock
+backend and the VLM gateway, and launches `incident-console-v2`; no secret
+exports are needed.
 
 `GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`.
 For local runs, keep `MOCK_PUBLIC_BASE_URL=http://127.0.0.1:7777` if you override it; using

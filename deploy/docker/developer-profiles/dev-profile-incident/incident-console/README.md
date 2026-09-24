@@ -9,7 +9,7 @@ Streamlit console for the VSS incident search & reporting capstone. Front-end
 migrated from the sibling `rise-up` project onto this blueprint fork. See
 [`.docs/`](../.docs/) for the full plan;
 this app implements the frontend half of
-`incident-plan-implementation-shared.md` §3 and §5.
+the shared implementation reference in [`../.docs/incident-plan-implementation-shared.md`](../.docs/incident-plan-implementation-shared.md).
 
 This package is **profile-exclusive** — it lives here, not under the shared
 `deploy/docker/services/` tree.
@@ -55,7 +55,7 @@ Cloudflare R2 keys in `dev-profile-incident/.env.local` (untracked, loaded by
 `config.py` via the `incident-console/.env.local` symlink with `override=True`),
 which `.gitignore` keeps out of git. For the VM deploy, edit the real values
 into the ignored `generated.env.local` / `generated.env.remote` copy instead
-(see the local/remote implementation docs, §2) - never into `.env.local` on
+(see the local/remote implementation references) - never into `.env.local` on
 the build host.
 
 Local developer secrets for all services in this profile are consolidated into
@@ -65,8 +65,8 @@ the shared root file at `dev-profile-incident/.env.local`. In this directory,
 real values:
 
 ```bash
-# If .env.local symlink is missing:
-ln -s ../.env.local .env.local
+# If the symlink is missing or points to the wrong file:
+ln -sfn ../.env.local .env.local
 ```
 
 ```dotenv
@@ -418,13 +418,13 @@ code-live. Real values and their source are documented below. On the VM deploy
 nothing reads `.env` files inside the container - the real values live in the
 ignored `generated.env.local` / `generated.env.remote` copy passed to
 `docker compose --env-file`, interpolated into the container via `compose.yml`
-`environment:` (see §2 of the local/remote implementation docs).
+`environment:` (see the local/remote implementation references).
 
 | Variable | Purpose | Real source |
 |---|---|---|
-| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. `incident-plan-implementation-shared.md` §1. A SQLite DSN also works for local iteration — production stays Supabase Postgres via the session pooler |
+| `INCIDENT_DB_DSN` | SQLAlchemy sync URL for the incident Postgres | Supabase Postgres (session pooler, port 5432); put it in `.env.local`. See the shared implementation reference. A SQLite DSN also works for local iteration — production stays Supabase Postgres via the session pooler |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` | Cloudflare R2 for video clips + evidence screenshots (`r2_videos.py`) | The R2 bucket the captain uploaded footage to; put keys in `.env.local` |
-| `INCIDENT_SUPABASE_URL` | Supabase project URL (`https://<project_ref>.supabase.co`) | Supabase Project Settings -> API. Used by `vss_agents.utils.incident_db` when running the local mock backend (`local-start.sh`) or direct agent tests |
+| `INCIDENT_SUPABASE_URL` | Supabase project URL (`https://<project_ref>.supabase.co`) | Supabase Project Settings -> API. Used by `vss_agents.utils.incident_db` when running the local mock backend (`start.sh --mode local`) or direct agent tests |
 | `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Supabase `service_role` secret JWT | Supabase Project Settings -> API. Server-side only; put key in `.env.local` |
 | `INCIDENT_AGENT_BASE_URL` | Base URL of vss-agent's upload + AI-trigger API | The running `vss-agent` service (`VSS_AGENT_PORT`, default `8000`); via the Phase 4 SSH tunnel this stays `http://localhost:8000` (see "Real backend on kwanz-ws via SSH tunnel" above) |
 | `INCIDENT_LLM_BASE_URL` | OpenAI-compatible chat-completions base URL | `mock_llm_server.py` locally (`http://localhost:8900/v1`); the tunneled real NIM (`http://localhost:30081/v1`) under the Phase 4 tunnel above; vss-agent's `LLM_BASE_URL` / a real NIM on the VM |
@@ -444,7 +444,7 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 `Dockerfile` + `compose.yml` here are for the VM deploy only (service
 `incident-console`, compose profile `bp_developer_search_2d`). Local dev never
 uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
-`incident-plan-implementation-shared.md` §3. Never create `.env` / `.env.local`
+the shared implementation reference. Never create `.env` / `.env.local`
 with real values on the VM build host: `COPY . .` would bake them into the image
 (see `.dockerignore`).
 

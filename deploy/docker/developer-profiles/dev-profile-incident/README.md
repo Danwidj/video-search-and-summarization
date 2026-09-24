@@ -21,14 +21,15 @@ Human-facing overview for the incident search and reporting profile.
 
 Secrets & environment files
 
-1. Paste the `.env.local` under this directory
-2. Run the command below under this directory as well
+1. Paste the `.env.local` under this directory.
+2. Run the command below from this directory as well. The `-f` flag makes
+   rerunning the setup safe if a symlink already exists.
 
 ```bash
-ln -s ../.env.local incident-console/.env.local
-ln -s ../.env.local incident-console-v2/.env.local
-ln -s ../.env.local vlm-gateway/.env.local
-ln -s ../.env.local mock-backend/.env.local
+ln -sfn ../.env.local incident-console/.env.local
+ln -sfn ../.env.local incident-console-v2/.env.local
+ln -sfn ../.env.local vlm-gateway/.env.local
+ln -sfn ../.env.local mock-backend/.env.local
 ```
 
 3. Run `./start.sh --mode local` for the zero-GPU local v2 workflow, or `./start.sh --mode vm` to connect the laptop UI to the shared `kwanz-ws` backend.

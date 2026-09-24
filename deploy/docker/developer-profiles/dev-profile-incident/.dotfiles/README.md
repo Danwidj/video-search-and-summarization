@@ -74,7 +74,7 @@ Then start a new shell (or `source ~/.bashrc`).
   `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`,
   `rebuild.sh`, `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
   `tunnel-check.sh`, `resolve-ssh-target.sh` (plus the newer `native-services.sh` and
-  `prune-native-images.sh`, see [`../.scripts/README.md`](../.scripts/README.md)), and **`start.sh`** as the one-command daily entry point (which stays at the top level of `dev-profile-incident/` alongside `local-start.sh`).
+  `prune-native-images.sh`, see [`../.scripts/README.md`](../.scripts/README.md)), and **`start.sh`** as the one-command daily entry point at the top level of `dev-profile-incident/`.
   They wrap the project's own canonical deploy tooling
   (`deploy/docker/scripts/dev-profile.sh` and `cleanup_all_datalog.sh`)
   rather than hardcoding raw `docker`/`docker compose` invocations,
@@ -93,7 +93,8 @@ Then start a new shell (or `source ~/.bashrc`).
   the laptop-local incident-console reaches the real kwanz-ws backend
   (agent :8000, LLM :30081, VLM :30082) instead of the mock; `start.sh` is
   the one-command flow that checks the VM deploy state over SSH (deploying
-  the backend fresh if nothing is running, stopping on a partial deploy),
+  the backend fresh if nothing is running, starting missing services for a
+  partial deploy),
   opens the tunnel in the background, and launches the local console — see
-  `dev-profile-incident/README.md`'s "Connecting" section for the full
+  `dev-profile-incident/README.md`'s "Steps to deploy" section for the
   walkthrough and `start.sh`'s own header.

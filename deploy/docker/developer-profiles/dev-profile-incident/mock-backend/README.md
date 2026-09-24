@@ -11,6 +11,6 @@ touching another.
   `base_profile_mock` for `bp_developer_search`: all base routes plus agent
   search endpoints, VST sensor list, video-analytics-api `/frames`, Kibana
   stubs, and Elasticsearch/Logstash info stubs (port 7778, zero GPU).
-- `mock_data/` (if present) - mocks a separate, not-yet-built Postgres schema for the
-  planned "incident-console" Streamlit app described in `../.docs/`. Unrelated
-  to `base_profile_mock/` - do not conflate the two.
+The mock backends do not provide an offline CSV or Postgres mode for the
+incident console. Use the database-backed console and its documented seed or
+evaluation commands instead.
