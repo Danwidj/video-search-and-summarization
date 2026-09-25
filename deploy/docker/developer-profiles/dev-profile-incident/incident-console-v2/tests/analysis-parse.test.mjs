@@ -237,6 +237,7 @@ test('parseIncidentAnalysis handles duration_seconds coercion', () => {
   assert.equal(report2.duration_seconds, null);
 
   const report3 = parseIncidentAnalysis(baseReport({ duration_seconds: 'abc' }));
+  assert.equal(report3.duration_seconds, null);
 });
 
 test('parseIncidentAnalysis falls back to timeline span when duration_seconds is null or 0', () => {
@@ -276,6 +277,24 @@ test('parseIncidentAnalysis falls back to timeline span when duration_seconds is
     ],
   }));
   assert.equal(reportLastEndNull.duration_seconds, 3);
+
+  const reportOverlapping = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 5.0, description: 'Whole clip' },
+      { start_seconds: 1.0, end_seconds: 2.0, description: 'Inner event' },
+    ],
+  }));
+  assert.equal(reportOverlapping.duration_seconds, 5);
+
+  const reportUnordered = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 3.0, end_seconds: 5.0, description: 'Later event' },
+      { start_seconds: 0.0, end_seconds: 1.0, description: 'Earlier event' },
+    ],
+  }));
+  assert.equal(reportUnordered.duration_seconds, 5);
 
   const reportExplicit = parseIncidentAnalysis(baseReport({
     duration_seconds: 15,
