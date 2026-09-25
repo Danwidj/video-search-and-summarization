@@ -143,7 +143,7 @@ Forwarded ports:
 ## 4. Safe Deployment Principles
 
 1. **Deploy Exclusively via `start.sh` (or Direct Compose on VM):**
-   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode local` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `kwanz-ws` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 up -d <services>`) and native services via `.scripts/native-services.sh`.
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode local` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `kwanz-ws` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
 2. **NEVER Run `dev-profile.sh down` on `kwanz-ws`:**
    `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:

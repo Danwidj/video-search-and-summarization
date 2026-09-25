@@ -56,7 +56,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Pick up `generated.env.remote` changes | `./native-services.sh restart vss-agent`. Env is captured at process start; check it in `/proc/<pid>/environ`. |
 | Tail logs | `./logs.sh vss-agent` (native) or `./logs.sh <container>` (Docker) |
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
-| Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 up -d <services>` |
+| Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` (native stop + `compose down --remove-orphans`, no `-v`) |
 | Load NGC credentials | `source ./ngc-env.sh` |
 
