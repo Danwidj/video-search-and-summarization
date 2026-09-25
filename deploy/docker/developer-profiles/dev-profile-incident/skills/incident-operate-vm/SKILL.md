@@ -56,7 +56,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Pick up `generated.env.remote` changes | `./native-services.sh restart vss-agent`. Env is captured at process start; check it in `/proc/<pid>/environ`. |
 | Tail logs | `./logs.sh vss-agent` (native) or `./logs.sh <container>` (Docker) |
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
-| Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
+| Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` (native stop + `compose down --remove-orphans`, no `-v`) |
 | Load NGC credentials | `source ./ngc-env.sh` |
 
@@ -93,7 +93,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 3. `./logs.sh vss-agent`, `docker logs --tail 100 vss-haproxy-ingress`, `docker logs --tail 100 vss-vios-ingress`.
 4. Partial deploy: start only the missing service. Don't force-redeploy over inconsistent state.
 
-Known noise that is not a fault: `sdr-controller` in a restart loop. See [`.docs/status.md` §2](../../.docs/status.md#2-known-issues--technical-debt).
+Note: `sdr-controller` was removed from the incident deployment stack (unused and port-clashes with streamprocessing on port 10000; see [`.docs/decisions.md`](../../.docs/decisions.md)); it should not be running.
 
 ## After changing anything
 
