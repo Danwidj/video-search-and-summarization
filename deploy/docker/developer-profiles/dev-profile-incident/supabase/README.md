@@ -15,11 +15,19 @@ script: `services/agent/src/vss_agents/utils/incident_db.py`'s
 `insert_incident()` calls it at runtime via PostgREST's `/rpc/insert_incident`
 to get atomic delete-then-insert semantics across `incidents` +
 `review_status` — PostgREST has no client-held transactions, so this RPC is
-the only way that operation is atomic. Do not delete this file only because
-nothing in the repo runs `supabase db push` automatically; it is the only
-reason `insert_incident()` doesn't corrupt state on every call.
+the only way that operation is atomic. The PostgREST writers in
+`incident-console/db_postgrest.py` and `eval/db_postgrest.py` call the same
+RPC. Do not delete this file only because nothing in the repo runs
+`supabase db push` automatically; it is the only reason `insert_incident()`
+doesn't corrupt state on every call.
 
-## Applying this migration to a Supabase project
+`migrations/20260925031000_schema_defaults_and_precision.sql` adds real
+server-side column defaults (UTC timestamps, `review_status.status`,
+`notifications.acknowledged`) and replaces `insert_incident` so
+`p_confidence_score` is `DOUBLE PRECISION`. See `../.docs/data.md` for the
+resulting schema.
+
+## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have
 configured for local console dev (session-pooler URL, port 5432 — see
@@ -40,4 +48,4 @@ If `$INCIDENT_DB_DSN` carries a SQLAlchemy driver suffix (e.g.
 expects a standard libpq connection string, not a SQLAlchemy one.
 
 Run this once after cloning against a fresh Supabase project, and again any
-time this migration file changes.
+time a migration file is added or changed.

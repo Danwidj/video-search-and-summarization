@@ -27,6 +27,7 @@ import pytest
 from vss_agents.api.incident_analyze import _resolve_sensor_id
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.data_models.incident_report import Asset
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import TimelineItem
@@ -206,3 +207,54 @@ class TestAnalyzeIncidentRoute:
         assert data["timeline"][0]["start_seconds"] == 5.0
         assert data["timeline"][0]["end_seconds"] == 15.0
         assert data["uncertainties"] == ["suspect face obscured"]
+
+    def test_validation_failure_surfaces_422(self):
+        """Extraction validation failure returns HTTP 422 with descriptive detail."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        tool.ainvoke.side_effect = IncidentExtractionError("Incident extraction validation failed: bad type")
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "Incident report validation failed" in data["detail"]
+
+    def test_upstream_value_error_surfaces_500(self):
+        """A non-extraction ValueError (e.g. VLM/VST failure in video_report_gen) is a 500, not a 422."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        tool.ainvoke.side_effect = ValueError("Failed to analyze video: VLM unavailable")
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 500
+        assert "Analysis failed" in response.json()["detail"]
+
+    def test_timeout_failure_surfaces_504(self):
+        """Extraction timeout returns HTTP 504 with descriptive detail."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        tool.ainvoke.side_effect = TimeoutError("Incident extraction LLM call timed out after 60s")
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 504
+        data = response.json()
+        assert "Incident analysis timed out" in data["detail"]
+
+    def test_general_failure_surfaces_500(self):
+        """Unexpected internal errors return HTTP 500."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        tool.ainvoke.side_effect = RuntimeError("database connection dead")
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 500
+        data = response.json()
+        assert "Analysis failed" in data["detail"]

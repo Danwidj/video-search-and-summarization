@@ -29,6 +29,7 @@ from unittest.mock import patch
 import pytest
 
 from vss_agents.data_models.incident_report import Asset
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import Person
@@ -145,7 +146,9 @@ class TestExtractStructuredReportFailSoft:
         return llm
 
     @pytest.mark.asyncio
-    async def test_validation_error_degrades_to_default_report(self):
+    async def test_validation_error_raises_and_logs_error(self, caplog):
+        import logging
+
         from pydantic import BaseModel
         from pydantic import ValidationError
 
@@ -158,22 +161,25 @@ class TestExtractStructuredReportFailSoft:
         except ValidationError as exc:
             validation_error = exc
         llm = self._structured_llm(ainvoke_side_effect=validation_error)
-        result = await _extract_structured_report(llm, "report", 60.0)
-        assert isinstance(result, IncidentReport)
-        assert result.incident_type == "road accident"  # fresh default
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
+                await _extract_structured_report(llm, "report", 60.0)
+        assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_markdown_string_result_validation_error_degrades(self):
-        """The exact real-world failure: with_structured_output on a hosted model
-        returns raw markdown text, and model_validate(str) raises. Must fall back,
-        not raise."""
+    async def test_markdown_string_result_raises_validation_error(self, caplog):
+        """When with_structured_output returns raw markdown string instead of model/dict,
+        validation raises and logs at error level rather than degrading to a fake report."""
+        import logging
+
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(return_value="**Incident Report**\n\n* not json")
         llm = MagicMock()
         llm.with_structured_output = MagicMock(return_value=structured_llm)
-        result = await _extract_structured_report(llm, "report", 60.0)
-        assert isinstance(result, IncidentReport)
-        assert result.incident_type == "road accident"
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
+                await _extract_structured_report(llm, "report", 60.0)
+        assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_out_of_range_threat_level_keeps_rest_of_report(self):
@@ -201,18 +207,26 @@ class TestExtractStructuredReportFailSoft:
         assert result.assets[0].name == "car"
 
     @pytest.mark.asyncio
-    async def test_timeout_degrades_to_default_report(self):
+    async def test_timeout_raises_timeout_error(self, caplog):
+        import logging
+
         llm = self._structured_llm(ainvoke_side_effect=TimeoutError)
-        result = await _extract_structured_report(llm, "report", 60.0)
-        assert isinstance(result, IncidentReport)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(TimeoutError, match="timed out"):
+                await _extract_structured_report(llm, "report", 60.0)
+        assert any("timed out" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_parser_exception_degrades_to_default_report(self):
+    async def test_parser_exception_raises_value_error(self, caplog):
+        import logging
+
         from langchain_core.exceptions import OutputParserException
 
         llm = self._structured_llm(ainvoke_side_effect=OutputParserException("unparseable"))
-        result = await _extract_structured_report(llm, "report", 60.0)
-        assert isinstance(result, IncidentReport)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
+                await _extract_structured_report(llm, "report", 60.0)
+        assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
 
 class TestEndToEnd:
@@ -576,6 +590,35 @@ class TestEndToEnd:
         mock_db.delete_incident_entities.assert_awaited_once_with(expected_incident_id, custom_run_id)
         mock_db.delete_incident_instruments.assert_awaited_once_with(expected_incident_id, custom_run_id)
         mock_db.delete_incident_assets.assert_awaited_once_with(expected_incident_id, custom_run_id)
+
+    @pytest.mark.asyncio
+    async def test_extraction_failure_does_not_persist_fake_report(self):
+        """When extraction validation fails, the error propagates and _persist_incident is NOT called."""
+        config = IncidentReportGenConfig(llm_name="nim_llm")
+
+        video_report_tool = MagicMock()
+        video_report_tool.ainvoke = AsyncMock(
+            return_value=VideoReportGenOutput(
+                http_url="http://localhost:8000/static/report.md",
+                video_url="http://localhost:8000/vst/clip.mp4",
+                summary="summary",
+                content="unparseable markdown content",
+                file_size=123,
+            )
+        )
+
+        structured_llm = MagicMock()
+        # Returns unparseable output that will fail model_validate
+        structured_llm.ainvoke = AsyncMock(return_value="not a dict or incident report")
+        llm = MagicMock()
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+
+        builder = MagicMock()
+        builder.get_tool = AsyncMock(return_value=video_report_tool)
+        builder.get_llm = AsyncMock(return_value=llm)
+
+        with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
+            await self._run(config, builder, db_configured=True)
 
 
 class TestIncidentReportModels:

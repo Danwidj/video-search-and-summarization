@@ -53,6 +53,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
 
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.utils import incident_db
@@ -190,16 +191,17 @@ async def _extract_structured_report(
     try:
         result = await asyncio.wait_for(structured_llm.ainvoke(messages), timeout=timeout_seconds)
         return IncidentReport.model_validate(result)
-    except TimeoutError:
-        logger.warning("incident_report_gen: extraction LLM call timed out after %ss", timeout_seconds)
-        return IncidentReport()
+    except TimeoutError as exc:
+        logger.error("incident_report_gen: extraction LLM call timed out after %ss", timeout_seconds)
+        raise TimeoutError(f"Incident extraction LLM call timed out after {timeout_seconds}s") from exc
     except (
         OutputParserException,
         LangChainException,
         ValidationError,
+        ValueError,
     ) as e:
-        logger.warning("incident_report_gen: extraction LLM call failed: %s", e)
-        return IncidentReport()
+        logger.error("incident_report_gen: extraction LLM call failed: %s", e)
+        raise IncidentExtractionError(f"Incident extraction validation failed: {e}") from e
 
 
 def _derive_entity_id(incident_id: str, idx: int) -> str:
