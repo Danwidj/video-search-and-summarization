@@ -4,6 +4,12 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-25: Option B restructure planned, awaiting approval
+- **Decision:** Plan "Option B" architectural restructure to resolve the two-writer conflict between Next.js and `vss-agent`, split `videos.filepath` into `r2_key` and `stream_url`, elevate lost VLM intelligence fields (`title`, `severity_reason`, `uncertainties`, `location`, `timeline`) into first-class SQL schema and `incident_timeline` table, and transfer schema authority from retired `incident-console/db.py` to `supabase/migrations/`. No code changes implemented yet; implementation roadmap and migration DDL await captain approval.
+- **Why:** In the current Option A architecture, both the agent and Next.js console write to the database in agent mode, causing partial-failure risks and overwriting the durable R2 key with the ephemeral VST stream URL. Additionally, unstructured data is dumped into `model_runs.notes` JSON string, and the database schema lacks a versioned migration source of truth.
+- **Alternatives rejected:** Option A continuation (rejected: dual-writer race conditions, fragile filepath clobber/restore workarounds, unindexed JSON in `model_runs.notes`). Creating a separate intermediate microservice for database writes (rejected: adds moving parts and operational overhead; native PostgREST in agent + Next.js gateway orchestrator is the simplest path).
+- **Links:** [`.docs/restructure-plan.md`](restructure-plan.md); [`.docs/status.md`](status.md); [`.docs/architecture.md`](architecture.md); [`.docs/data.md`](data.md).
+
 ### 2026-09-25: Trim AGENTS.md to always-needed content
 - **Decision:** Reshuffle and trim the root `AGENTS.md` down to ~50–60 lines containing only context needed across almost every session; move detailed profile-specific sections (v1 Streamlit implementation notes, shared DB PostgREST/DPI details, kwanz-ws dotfiles and scripts, real-VST R2 upload fallback) into their respective component READMEs and `.docs/data.md`, leaving one-line pointers in `AGENTS.md`.
 - **Why:** loaded every session; captain request 2026-09-25.
