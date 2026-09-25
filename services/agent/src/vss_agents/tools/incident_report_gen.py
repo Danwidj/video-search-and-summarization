@@ -201,9 +201,6 @@ async def _extract_structured_report(
     ) as e:
         logger.error("incident_report_gen: extraction LLM call failed: %s", e)
         raise ValueError(f"Incident extraction validation failed: {e}") from e
-    except Exception as e:
-        logger.error("incident_report_gen: extraction LLM call encountered unexpected error: %s", e)
-        raise
 
 
 def _derive_entity_id(incident_id: str, idx: int) -> str:

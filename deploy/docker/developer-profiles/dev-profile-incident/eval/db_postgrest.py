@@ -195,13 +195,7 @@ class PostgrestIncidentDB:
         params = {
             "p_incident_id": incident_id,
             "p_model_run_id": model_run_id,
-            "p_type": fields.get("type"),
-            "p_start_timestamp": fields.get("start_timestamp"),
-            "p_end_timestamp": fields.get("end_timestamp"),
-            "p_duration": fields.get("duration"),
-            "p_description": fields.get("description"),
-            "p_severity_level": fields.get("severity_level"),
-            "p_confidence_score": fields.get("confidence_score"),
+            **{f"p_{k}": fields.get(k) for k in self._INCIDENT_FIELDS},
         }
         self._rpc("insert_incident", params)
         return incident_id, model_run_id

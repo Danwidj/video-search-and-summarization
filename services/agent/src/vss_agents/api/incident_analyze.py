@@ -137,8 +137,6 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
-        except HTTPException:
-            raise
         except (ValueError, ValidationError) as exc:
             logger.error("/analyze validation failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
             raise HTTPException(status_code=422, detail=f"Incident report validation failed: {exc}") from exc

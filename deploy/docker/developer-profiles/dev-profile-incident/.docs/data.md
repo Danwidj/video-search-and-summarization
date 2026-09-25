@@ -262,7 +262,7 @@ AI-extracted incident intelligence for a specific model run over a video.
 | `duration` | `INTEGER` | NULLABLE | Incident duration in seconds |
 | `description` | `TEXT` | NULLABLE | Narrative summary of the incident |
 | `severity_level` | `INTEGER` | NULLABLE | Severity score (1 to 5) |
-| `confidence_score`| `DOUBLE PRECISION` | NULLABLE | Model confidence score (0.0 to 1.0). Updated from single-precision `REAL` in migration `20260925031000` to prevent precision loss. |
+| `confidence_score`| `DOUBLE PRECISION` | NULLABLE | Model confidence score (0.0 to 1.0). The column has always been `DOUBLE PRECISION`; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL` to `DOUBLE PRECISION`, so rows written through the old RPC may still hold float4-rounded values. |
 
 ##### `reports`
 Artifact pointer table linking an incident and model run to external files or queries.

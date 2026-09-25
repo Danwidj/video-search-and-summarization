@@ -159,7 +159,7 @@ per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.p
 | `duration_seconds` | `duration` | `INTEGER` |
 | `description` | `description` | `TEXT` |
 | `severity` | `severity_level` | `INTEGER` |
-| `confidence` | `confidence_score` | `DOUBLE PRECISION` (updated from single-precision `REAL` in migration `20260925031000`) |
+| `confidence` | `confidence_score` | `DOUBLE PRECISION` (column always double precision; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL`, so older rows may hold float4-rounded values) |
 
 ### Child Evidence Persistence Mapping
 
