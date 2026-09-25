@@ -237,7 +237,67 @@ test('parseIncidentAnalysis handles duration_seconds coercion', () => {
   assert.equal(report2.duration_seconds, null);
 
   const report3 = parseIncidentAnalysis(baseReport({ duration_seconds: 'abc' }));
-  assert.equal(report3.duration_seconds, null);
+});
+
+test('parseIncidentAnalysis falls back to timeline span when duration_seconds is null or 0', () => {
+  const reportNull = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 0.3, description: 'Knock over vase' },
+      { start_seconds: 0.3, end_seconds: 2.6, description: 'Jump on table' },
+      { start_seconds: 2.6, end_seconds: 5.0, description: 'Explore floor' },
+    ],
+  }));
+  assert.equal(reportNull.duration_seconds, 5);
+
+  const reportZero = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 0.3, description: 'Knock over vase' },
+      { start_seconds: 0.3, end_seconds: 2.6, description: 'Jump on table' },
+      { start_seconds: 2.6, end_seconds: 5.0, description: 'Explore floor' },
+    ],
+  }));
+  assert.equal(reportZero.duration_seconds, 5);
+
+  const reportZeroStr = parseIncidentAnalysis(baseReport({
+    duration_seconds: '0',
+    timeline: [
+      { start_seconds: 1.0, end_seconds: 4.2, description: 'Event' },
+    ],
+  }));
+  assert.equal(reportZeroStr.duration_seconds, 3);
+
+  const reportLastEndNull = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 1.0, end_seconds: 2.0, description: 'Start event' },
+      { start_seconds: 4.2, end_seconds: null, description: 'End event' },
+    ],
+  }));
+  assert.equal(reportLastEndNull.duration_seconds, 3);
+
+  const reportExplicit = parseIncidentAnalysis(baseReport({
+    duration_seconds: 15,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 5.0, description: 'Event' },
+    ],
+  }));
+  assert.equal(reportExplicit.duration_seconds, 15);
+
+  const reportNoSpan = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 2.0, end_seconds: null, description: 'Instant event' },
+    ],
+  }));
+  assert.equal(reportNoSpan.duration_seconds, null);
+
+  const reportZeroNoSpan = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [],
+  }));
+  assert.equal(reportZeroNoSpan.duration_seconds, 0);
 });
 
 test('parseIncidentAnalysis filters empty uncertainties', () => {

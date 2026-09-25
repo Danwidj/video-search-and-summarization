@@ -186,7 +186,18 @@ export const incidentAnalysisSchema = z.object({
   const rawEnd = val.incident_end;
   const incident_end = rawEnd != null && String(rawEnd).trim() !== '' ? String(rawEnd).trim() : '0:00';
 
-  const duration_seconds = coerceNonNegativeNumberOrNull(val.duration_seconds);
+  let duration_seconds = coerceNonNegativeNumberOrNull(val.duration_seconds);
+  if ((duration_seconds === null || duration_seconds === 0) && val.timeline.length > 0) {
+    const firstStart = val.timeline[0].start_seconds;
+    const lastEvent = val.timeline[val.timeline.length - 1];
+    const lastEndOrStart = typeof lastEvent.end_seconds === 'number' && Number.isFinite(lastEvent.end_seconds)
+      ? lastEvent.end_seconds
+      : lastEvent.start_seconds;
+    const span = lastEndOrStart - firstStart;
+    if (span > 0) {
+      duration_seconds = Math.max(0, Math.round(span));
+    }
+  }
 
   const persons = Array.isArray(val.persons) ? val.persons : [];
 
