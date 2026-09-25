@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IncidentReportContract",
+  "description": "Unified incident report analysis contract shared between vss-agent and incident-console-v2",
+  "version": "incident-v2-2",
+  "system_prompt_rules": [
+    "title is a short factual title summarizing the incident (max 160 characters).",
+    "incident_type must be exactly one of: road accident, burglary, explosion, fighting, animal. Pick the closest match; if nothing in the report matches any of these, use \"burglary\" only if there is a clear property-crime element, otherwise pick the single best fit from the list - never invent a new type.",
+    "severity is an integer from 1 (minor) to 5 (critical).",
+    "severity_reason is a concise explanation of why this severity level was selected based on observable risk or harm.",
+    "confidence is a float from 0.0 to 1.0 reflecting how confident you are in incident_type given the video/report.",
+    "incident_start is a timestamp string (\"M:SS\" or \"H:MM:SS\") marking incident onset (default \"0:00\").",
+    "incident_end is a timestamp string (\"M:SS\" or \"H:MM:SS\") marking incident resolution (default \"0:00\").",
+    "incident_start_confirmed is a boolean indicating whether the onset time is conclusively identified in footage.",
+    "duration_seconds is the duration of the incident in seconds (integer) if observable or stated, else null.",
+    "description is a 1-3 sentence plain-language executive summary of the incident.",
+    "persons should list each distinct person mentioned, with a short physical description and their actions.",
+    "instruments should list objects, tools, weapons, or vehicles actively used in the incident, each with name, description of use, and optional threat_level (1-5, or null if unrated/harmless).",
+    "assets should list property, structures, vehicles, or items affected or targeted in the incident, each with name and description of observable state/damage.",
+    "timeline should be an ordered chronological list of observable events, each with start_seconds (float offset from video start), optional end_seconds (float or null), and description.",
+    "uncertainties should list any ambiguities or aspects that cannot be determined confidently (do not invent unconfirmed details).",
+    "location is the camera/location name if mentioned or visible, else empty string."
+  ],
+  "fields": {
+    "title": { "type": "string", "default": "", "maxLength": 160 },
+    "incident_type": { "type": "string", "default": "road accident", "maxLength": 32, "enum": ["road accident", "burglary", "explosion", "fighting", "animal"] },
+    "severity": { "type": "integer", "default": 1, "minimum": 1, "maximum": 5 },
+    "severity_reason": { "type": "string", "default": "" },
+    "confidence": { "type": "number", "default": 0.0, "minimum": 0.0, "maximum": 1.0 },
+    "incident_start": { "type": "string", "default": "0:00" },
+    "incident_end": { "type": "string", "default": "0:00" },
+    "incident_start_confirmed": { "type": "boolean", "default": false },
+    "duration_seconds": { "type": ["integer", "null"], "default": null, "minimum": 0 },
+    "description": { "type": "string", "default": "" },
+    "persons": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string", "default": "" },
+          "actions": { "type": "string", "default": "" }
+        },
+        "required": ["description", "actions"]
+      }
+    },
+    "instruments": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "default": "" },
+          "description": { "type": "string", "default": "" },
+          "threat_level": { "type": ["integer", "null"], "default": null, "minimum": 1, "maximum": 5 }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "assets": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "default": "" },
+          "description": { "type": "string", "default": "" }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "start_seconds": { "type": "number", "default": 0.0, "minimum": 0.0 },
+          "end_seconds": { "type": ["number", "null"], "default": null },
+          "description": { "type": "string", "default": "" }
+        },
+        "required": ["start_seconds", "description"]
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "default": [],
+      "items": { "type": "string" }
+    },
+    "location": { "type": "string", "default": "" }
+  }
+}

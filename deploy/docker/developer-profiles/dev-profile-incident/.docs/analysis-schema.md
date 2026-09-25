@@ -1,12 +1,12 @@
 # Incident Analysis Schema & Output Alignment
 
-This document defines the reference schema for automated incident analysis reports and provides a
-comprehensive mapping between the reference agent model (`services/agent/`) and the console /
-gateway representation (`incident-console-v2/`).
+This document defines the unified schema for automated incident analysis reports and provides the
+contract specification shared between the reference agent model (`services/agent/`) and the console /
+gateway implementation (`incident-console-v2/`).
 
 > [!NOTE]
-> This document is descriptive of the codebase as it exists today. It documents discrepancies and
-> translation behavior for implementers and AI agents. It does not alter runtime code.
+> As of 2026-09-25, the analysis contract across Gateway Mode (local) and Agent Mode (VM) is unified
+> on the native `snake_case` schema defined by `vss-agent` and validated by `incident-console-v2`.
 
 ---
 
@@ -58,15 +58,15 @@ Represents a discrete chronological event or phase within the incident.
 
 | Field | Type | Constraints / Range | Default | Description |
 |---|---|---|---|---|
-| `title` | `str` | Text | `""` | Short descriptive title of the incident |
-| `incident_type` | `str` | `str`; taxonomy (`road accident`, `burglary`, `explosion`, `fighting`, `animal`) requested by prompt, not model-validated | `"road accident"` | Classification |
+| `title` | `str` | Text, max 160 characters | `""` | Short descriptive title of the incident |
+| `incident_type` | `str` | `str`; taxonomy (`road accident`, `burglary`, `explosion`, `fighting`, `animal`) requested by prompt | `"road accident"` | Classification |
 | `severity` | `int` | Integer, `1 <= severity <= 5` | `1` | Overall incident severity score |
 | `severity_reason` | `str` | Text | `""` | Justification and visible evidence supporting the severity score |
 | `confidence` | `float` | Float, `0.0 <= confidence <= 1.0` | `0.0` | Model confidence in the classification and report |
-| `incident_start` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking onset; prompt forbids LLM from filling — derived from `[Xs-Ys]` markers (`"0:00"` if none) |
-| `incident_end` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking resolution; prompt forbids LLM from filling — derived from `[Xs-Ys]` markers (`"0:00"` if none) |
-| `incident_start_confirmed` | `bool` | Boolean | `False` | Whether onset time is conclusively identified in footage (set `True` when valid `[Xs-Ys]` markers exist) |
-| `duration_seconds` | `int | None` | `int or None, unconstrained`; derived as `max(0, round(span_end - span_start))` from `[Xs-Ys]` markers when LLM gives None | `None` | Calculated or estimated incident duration |
+| `incident_start` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking onset |
+| `incident_end` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking resolution |
+| `incident_start_confirmed` | `bool` | Boolean | `False` | Whether onset time is conclusively identified in footage |
+| `duration_seconds` | `int | None` | `int or None, unconstrained (>= 0)` | `None` | Calculated or estimated incident duration |
 | `description` | `str` | Text | `""` | Comprehensive narrative description of the incident |
 | `persons` | `list[Person]` | List of `Person` objects | `[]` | Identified persons and actors (empty list valid) |
 | `instruments` | `list[Instrument]` | List of `Instrument` objects | `[]` | Tools, weapons, and objects observed |
@@ -77,69 +77,44 @@ Represents a discrete chronological event or phase within the incident.
 
 ---
 
-## 2. Field Mapping & Translator Divergence
+## 2. Unified Analysis Contract & Frontend Alignment
 
-The Next.js console (`incident-console-v2`) defines an alternate camelCase schema in TypeScript/Zod (`incident-console-v2/lib/analysis/schema.ts`: `incidentAnalysisSchema`). `vlm-gateway` is a schema-less Python passthrough proxy (`vlm-gateway/app.py`); in gateway mode v2 parses and validates the VLM output itself via `parseIncidentAnalysis`. Furthermore, `incident-console-v2/app/api/analysis/route.ts` implements runtime translator logic (`analyzeViaAgent`) to convert the native agent's output into the console's shape.
+### Single Contract Across Both Analysis Modes
 
-The table below contrasts the reference agent fields, the console v2 fields, the translation logic, and every documented discrepancy.
+`incident-console-v2` uses the agent's native `snake_case` `IncidentReport` shape as its single analysis contract in **both** modes:
 
-| Reference Field (`services/agent`) | Console v2 Field (`incident-console-v2/lib/analysis/schema.ts`) | Translation in `incident-console-v2/app/api/analysis/route.ts` (`analyzeViaAgent`) | Mismatch & Divergence Notes |
-|---|---|---|---|
-| `title` (`str`, def `""`) | `title` (`string`, def `'Untitled Incident'`, max 160) | `(agentPayload.title \|\| '').trim() \|\| 'Incident Report'` | **Default mismatch:** Agent defaults to empty string; Console defaults to `'Untitled Incident'` (fallback `'Incident Report'` in translation). Console enforces 160 character limit. |
-| `incident_type` (`str`, def `"road accident"`) | `incidentType` (`string`, def `'other'`, max 32) | `(agentPayload.incident_type \|\| '').trim() \|\| 'other'` | **Naming & Default mismatch:** Snake_case vs camelCase. Agent taxonomy default is `"road accident"` (`INCIDENT_TYPES[0]`); Console default is `'other'` with max 32 chars. |
-| `description` (`str`, def `""`) | `summary` (`string`, def `""`) | `(agentPayload.description \|\| agentPayload.summary \|\| '').trim() \|\| 'No incident summary available.'` | **Naming mismatch:** Agent names this `description`; Console names this `summary`. Translator accepts either `description` or `summary` (note: agent never returns `summary`, so that fallback is dead in practice). |
-| `severity` (`int`, 1–5, def `1`) | `severityLevel` (`number`, 1–5, def `1`) | `Math.min(5, Math.max(1, Math.round(agentPayload.severity ?? 1)))` | **Naming & Rounding mismatch:** Snake_case `severity` vs camelCase `severityLevel`. Translator rounds and clamps to 1–5; Console Zod schema floors numeric inputs and also supports string coercion (`"critical"` -> 5, `"high"` -> 4, etc.). |
-| `severity_reason` (`str`, def `""`) | `severityReason` (`string`, def `'Severity determined from visible evidence.'`) | `(agentPayload.severity_reason \|\| '').trim() \|\| 'Assessed by agent.'` | **Naming & Default mismatch:** CamelCase in console. Differing default fallback strings when empty. |
-| `confidence` (`float`, 0.0–1.0, def `0.0`) | `confidenceScore` (`number`, 0.0–1.0, def `0.5`) | `typeof agentPayload.confidence === 'number' ? Math.min(1, Math.max(0, agentPayload.confidence)) : 0` | **Naming & Default mismatch:** Snake_case `confidence` vs camelCase `confidenceScore`. Agent defaults to `0.0`; Console Zod defaults to `0.5`. (Console clamps and normalizes percentages > 1). |
-| `incident_start` (`str`, def `"0:00"`) | `startTimestamp` (`string \| null`, def `null`) | `agentPayload.incident_start?.trim() \|\| null` | **Naming & Type mismatch:** Agent uses `"0:00"` string default (derived from `[Xs-Ys]`); Console uses nullable string defaulting to `null`. |
-| `incident_end` (`str`, def `"0:00"`) | `endTimestamp` (`string \| null`, def `null`) | `agentPayload.incident_end?.trim() \|\| null` | **Naming & Type mismatch:** Agent uses `"0:00"` string default (derived from `[Xs-Ys]`); Console uses nullable string defaulting to `null`. |
-| `incident_start_confirmed` (`bool`, def `False`) | *(None)* | *(Dropped)* | **Field dropped:** Agent tracks whether onset timestamp is confirmed; Console v2 schema does not represent this field. |
-| `duration_seconds` (`int \| None`, def `None`) | `durationSeconds` (`number \| null`, def `null`) | `typeof agentPayload.duration_seconds === 'number' && agentPayload.duration_seconds >= 0 ? Math.round(agentPayload.duration_seconds) : null` | **Naming & Coercion mismatch:** Snake_case vs camelCase. Translator keeps 0 (unlike falsy `|| null` checks); Zod's `coerceNonNegativeNumberOrNull` then applies `Math.floor`. |
-| `persons` (`list[Person]`, def `[]`) | `entities` (`array`, def `[]`) | Maps `persons` to `{ type: 'human', description: "${person.description}: ${person.actions}" }` | **Structural divergence:** Agent has explicit `persons` model (with `description` and `actions`). Console has generalized `entities` array supporting `type: 'human' \| 'animal' \| 'unknown'`. In translation, agent `persons` are collapsed into `entities` with `type: 'human'`. Translator checks `agentPayload.entities` first, but the agent's `response_model=IncidentReport` never returns `entities`, making that branch dead. (In gateway mode, Zod's `mapEntityType` maps `person` to `'unknown'`). |
-| `instruments` (`list[Instrument]`) | `instruments` (`array`, def `[]`) | Maps items: `name`, `description`, `threat_level` -> `threatLevel` | **Naming & Clamping mismatch:** Nested `threat_level` is converted to camelCase `threatLevel`. Translator rounds and clamps to 1–5; Zod floors and turns out-of-range values to null; Agent Pydantic model maps <1 to None and clamps >5 to 5. |
-| `assets` (`list[Asset]`) | `assets` (`array`, def `[]`) | Maps items: `name`, `description` | **Aligned:** Sub-fields identical (`name`, `description`). |
-| `timeline` (`list[TimelineItem]`) | `timeline` (`array`, def `[]`) | Maps items: `start_seconds` -> `startSeconds`, `end_seconds` -> `endSeconds`, `description` | **Naming & Precision mismatch:** Translator maps `startSeconds` (`Math.max(0, item.start_seconds)`) and `endSeconds` (`Math.max(0, item.end_seconds)`). Zod's schema then floors both to integers, losing sub-second precision; agent allows raw floats. |
-| `uncertainties` (`list[str]`, def `[]`) | `uncertainties` (`array`, def `[]`) | Filters and trims non-empty strings | **Aligned:** String array representation identical. |
-| `location` (`str`, def `""`) | *(None)* | *(Dropped)* | **Field dropped:** Agent captures general scene/location setting (`location: str = ""`); Console v2 schema omits location entirely. |
+1. **Gateway Mode (`ANALYSIS_MODE=gateway`):**
+   - Prompt (`incident-console-v2/lib/analysis/prompt.ts`, version `incident-v2-snake`) incorporates the agent's extraction rules and requests the exact 16-field `snake_case` JSON shape.
+   - Output from the VLM gateway is parsed and validated directly with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`).
+2. **Agent Mode (`ANALYSIS_MODE=agent`):**
+   - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
+   - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema` (no translator or camelCase conversion).
+   - Full native report is saved to `model_runs.notes` and returned in the HTTP response.
 
-### Additional Mismatch Details
+### Checked-in Contract Artifact & Drift Prevention
 
-1. **Timeline Integer Flooring:** Zod's schema (`schema.ts: coerceNonNegativeNumberOrNull`) floors `startSeconds` and `endSeconds` to integers (`Math.floor`), losing sub-second precision. The translator clamps both to `Math.max(0, ...)`, whereas the agent's Pydantic model permits unconstrained floats.
-2. **Severity and Threat Level Mapping:** The translator rounds severity and threat level and clamps both to 1–5 (`Math.min(5, Math.max(1, Math.round(...)))`). Zod floors numeric inputs; `mapThreatLevel` turns out-of-range values into `null`, whereas the agent's validator maps `< 1` to `None` and clamps `> 5` to `5`.
-3. **Entities Fallbacks:** The translator checks `agentPayload.entities` first (mapping `person` -> `human`) and falls back to `agentPayload.persons`. Because the agent's `response_model=IncidentReport` only has `persons`, the `entities` branch is dead in practice. Furthermore, in direct gateway mode, Zod's `mapEntityType` maps unrecognized strings like `"person"` to `"unknown"`.
-4. **Summary Fallback:** The translator's `agentPayload.summary` fallback is dead, because the agent's schema only defines `description`.
+The authoritative JSON contract specification is checked in at:
+`incident-console-v2/lib/analysis/incident-report-contract.json` (contract version `incident-v2-2`).
 
----
+Automated drift-prevention tests guarantee continuous parity across both environments:
+- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that all 16 fields, defaults, and types in `incident-report-contract.json` are accepted by `incidentAnalysisSchema` and instructed by `INCIDENT_ANALYSIS_PROMPT`.
+- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, enum taxonomy matches `INCIDENT_TYPES`, and prompt extraction rules match `_EXTRACTION_SYSTEM_PROMPT`.
 
-### Agent Mode Double-Write Architecture
+### Tolerant Parsing Behaviors
 
-When `incident-console-v2` executes in **Agent Mode** (invoking the `vss-agent` container via `POST /api/v1/incident/analyze`), database persistence occurs in two distinct stages across different processes:
+The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydantic model's constraints while retaining the resilient parsing behavior established in PR #92:
+- **Threat Level Normalization:** Strings (`"3"`), words (`"high"` -> 4, `"critical"` -> 5), and floating-point values are converted to integers; values > 5 are clamped to 5; values < 1 or unparseable are coerced to `null`.
+- **Severity Clamping:** Words (`"medium"` -> 3, `"critical"` -> 5) and out-of-range numbers are clamped to the 1–5 range.
+- **Confidence Normalization:** Decimal percentages (e.g. `85` -> 0.85) are normalized and clamped to `0.0 <= confidence <= 1.0`.
+- **String Bounds:** `title` is clamped to 160 characters; `incident_type` is trimmed to 32 characters.
+- **Pass-through Unknowns:** Unrecognized fields in model responses are preserved via `.passthrough()` rather than rejecting the payload.
 
-1. **Agent Self-Persistence (`services/agent/src/vss_agents/tools/incident_report_gen.py:_persist_incident`):**
-   - Directly writes `videos`: `filepath = report_result.video_url` (temporary VST streaming URL) and `duration = NULL`.
-   - Writes `model_runs`: `model_name = 'incident_report_gen'` (configurable default) and `notes = NULL`.
-   - Executes atomic stored procedure `insert_incident(...)` with native agent values: `type` (unvalidated string), `start_timestamp`/`end_timestamp` (`"M:SS"`), `duration`, `description`, `severity_level`, and `confidence_score`.
-   - Inserts child evidence rows:
-     - `entities`: id = `e` + 19 hex of sha256(`incident_id:idx`), `type = 'person'`, and `description = f"{person.description} {person.actions}".strip()`.
-     - `instruments`: id = `i` + 19 hex of sha256(`incident_id:idx`), name, description, threat_level.
-     - `assets`: id = `a` + 19 hex of sha256(`incident_id:idx`), name, description.
-2. **Console v2 Post-Processing (`incident-console-v2/app/api/analysis/route.ts:analyzeViaAgent`):**
-   - Overwrites `model_runs`: sets `model_name = 'vss-agent'` (because the agent's HTTP response model does not expose `model_name`), sets `notes` to serialized JSON (`{"incidentConsoleV2": {report, rawModelOutput, normalizedModelOutput}}`), and updates `run_datetime`.
-   - Re-upserts `videos.filepath` with the durable Cloudflare R2 key, restoring it from the transient VST URL.
-   - Inserts `reports` record pointing to the model run.
+### Legacy DB Read-Compatibility (`model_runs.notes`)
 
-> [!IMPORTANT]
-> Because of this double-write architecture, the translated camelCase report exists **only** inside `model_runs.notes` JSON and in the HTTP response. The relational database rows in `incidents`, `entities`, `instruments`, and `assets` hold the untranslated, native agent values.
-
----
-
-### Extraction Validation Failure Handling
-
-In `services/agent/src/vss_agents/tools/incident_report_gen.py:_extract_structured_report`, structured output is extracted from the model's text generation:
-
-- **Visibility & Error Surfacing:** If the model fails to return valid JSON, schema validation fails (`pydantic.ValidationError`, such as severity out of bounds), or extraction times out, `_extract_structured_report` logs an `ERROR`-level message and raises `IncidentExtractionError` (a `ValueError` subclass in `vss_agents.data_models.incident_report`, for invalid output) or `TimeoutError`.
-- **HTTP Status Codes:** `services/agent/src/vss_agents/api/incident_analyze.py` catches these exceptions and surfaces them directly to the client as **HTTP 422 (Unprocessable Entity)** (extraction failures only) or **HTTP 504 (Gateway Timeout)**. Any other error, including upstream `ValueError`s from `video_report_gen` (VLM/VST failures), returns **HTTP 500**.
-- **Persistence Aborted:** Raising on extraction failure prevents `_persist_incident` from executing, ensuring invalid or fallback dummy data (`"road accident"`, severity 1, confidence 0.0) is never persisted to the database.
+Historical incident runs created before contract unification stored `camelCase` JSON objects in `model_runs.notes`. To maintain full backward compatibility:
+- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Transparently accepts both legacy `camelCase` notes (`severityLevel`, `summary`, `startTimestamp`, `entities`, etc.) and modern `snake_case` notes (`severity`, `description`, `incident_start`, `persons`, etc.).
+- **Tolerant Schema Fallbacks:** `lib/analysis/schema.ts` provides fallback getters for legacy keys (e.g., `summary` if `description` is omitted, `entities` mapped to `persons` if `persons` is omitted).
+- **Writer:** All new writes through PostgREST and Next.js routes write strictly `snake_case` payloads.
 
 ---
 
@@ -147,11 +122,11 @@ In `services/agent/src/vss_agents/tools/incident_report_gen.py:_extract_structur
 
 ### Primary Incident Record (`incidents` table)
 
-When persisting an `IncidentReport` to the Supabase PostgreSQL database, `services/agent/src/vss_agents/tools/incident_report_gen.py`
-maps the extraction-facing Pydantic model names to the SQL column names expected by `insert_incident`
+When persisting an `IncidentReport` to the Supabase PostgreSQL database, both `services/agent/src/vss_agents/tools/incident_report_gen.py`
+and `incident-console-v2/app/api/analysis/route.ts` map the extraction-facing fields to the SQL column names expected by `insert_incident`
 per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`:
 
-| Pydantic Model Field (`IncidentReport`) | Database Column (`incidents` table) | Stored Format / Notes |
+| Unified Model Field (`IncidentReport`) | Database Column (`incidents` table) | Stored Format / Notes |
 |---|---|---|
 | `incident_type` | `type` | `VARCHAR(32)` (free text, unconstrained) |
 | `incident_start` | `start_timestamp` | `VARCHAR(32)` (`"M:SS"` or `"H:MM:SS"`) |
@@ -159,11 +134,11 @@ per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.p
 | `duration_seconds` | `duration` | `INTEGER` |
 | `description` | `description` | `TEXT` |
 | `severity` | `severity_level` | `INTEGER` |
-| `confidence` | `confidence_score` | `DOUBLE PRECISION` (column always double precision; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL`, so older rows may hold float4-rounded values) |
+| `confidence` | `confidence_score` | `DOUBLE PRECISION` (column always double precision; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL`) |
 
 ### Child Evidence Persistence Mapping
 
-The agent persists observed actors, tools, and impacted property into their respective relational tables:
+Observed actors, tools, and impacted property are persisted into their respective relational tables:
 
 | Model Sub-List | Target Table | Primary Key (`*_id`) Generation | Stored Attributes / Notes |
 |---|---|---|---|
@@ -173,7 +148,7 @@ The agent persists observed actors, tools, and impacted property into their resp
 
 ### Unpersisted Fields
 
-The following fields in `IncidentReport` and Console v2 schemas have **no corresponding database columns** in PostgreSQL:
+The following fields in `IncidentReport` have **no corresponding database columns** in PostgreSQL:
 
 - `title`
 - `severity_reason`
@@ -182,4 +157,4 @@ The following fields in `IncidentReport` and Console v2 schemas have **no corres
 - `location`
 - `incident_start_confirmed`
 
-**Storage behavior:** In Gateway Mode, these fields survive within `model_runs.notes` JSON. In Agent Mode, `location` and `incident_start_confirmed` are dropped entirely, while `title`, `severity_reason`, `timeline`, and `uncertainties` are stored in `model_runs.notes` when `incident-console-v2` updates the record.
+**Storage behavior:** In both Gateway Mode and Agent Mode, these fields are durably stored within `model_runs.notes` JSON. Displays and report review in `incident-console-v2` hydrate these fields directly from `model_runs.notes`.

@@ -54,6 +54,16 @@ Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should repo
 
 Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `tests/*.test.mjs`).
 
+## Unified analysis contract
+
+The incident analysis contract is unified across both Gateway Mode and Agent Mode on the native `snake_case` schema defined by `vss-agent` (`services/agent/src/vss_agents/data_models/incident_report.py`).
+
+- **Authoritative spec:** `lib/analysis/incident-report-contract.json` (contract version `incident-v2-2`).
+- **Schema & Validation:** `lib/analysis/schema.ts` (`incidentAnalysisSchema`) implements lenient/tolerant parsing mirroring the Pydantic model.
+- **Prompt:** `lib/analysis/prompt.ts` (`INCIDENT_PROMPT_VERSION = 'incident-v2-snake'`) instructs the VLM gateway with the agent's extraction rules and requests the unified `snake_case` JSON shape.
+- **Legacy read-compatibility:** `lib/reports/storage.ts` (`reportFromNotes`) normalizes older `camelCase` notes stored in `model_runs.notes` to `snake_case`, while all writes are strictly `snake_case`.
+- **Parity verification:** Node test runner (`npm test`) runs `tests/contract-parity.test.mjs` ensuring zero schema drift against the contract and prompt.
+
 ## Server-only configuration
 
 Next.js loads them from `.env.local` in this directory, which is a symlink to the shared

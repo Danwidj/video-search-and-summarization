@@ -55,16 +55,25 @@ export async function GET() {
       if (r2Key) {
         try { playbackUrl = await createR2PlaybackUrl(config, r2Key); } catch { /* card remains usable */ }
       }
+      const incType = text(incident?.type) || stored?.incident_type || 'Unclassified';
+      const desc = text(incident?.description) || stored?.description || 'No summary was recorded.';
+      const sev = typeof incident?.severity_level === 'number' ? incident.severity_level : stored?.severity || 1;
+      const conf = typeof incident?.confidence_score === 'number' ? incident.confidence_score : stored?.confidence ?? 0;
+
       return {
         reportId: String(metadata.id || stored?.reportId || `${videoId}-${modelRunId}`),
         videoId,
         modelRunId,
         title: stored?.title || `${text(incident?.type) || 'Incident'} report`,
         filename: stored?.filename || r2Key?.split('/').pop() || videoId,
-        incidentType: text(incident?.type) || stored?.incidentType || 'Unclassified',
-        summary: text(incident?.description) || stored?.summary || 'No summary was recorded.',
-        severityLevel: typeof incident?.severity_level === 'number' ? incident.severity_level : stored?.severityLevel || 1,
-        confidenceScore: typeof incident?.confidence_score === 'number' ? incident.confidence_score : stored?.confidenceScore ?? 0,
+        incident_type: incType,
+        description: desc,
+        severity: sev,
+        confidence: conf,
+        incidentType: incType,
+        summary: desc,
+        severityLevel: sev,
+        confidenceScore: conf,
         generatedAt: text(metadata.generated_datetime) || text(run.run_datetime) || text(video.uploaded_datetime) || '',
         uploadedAt: text(video.uploaded_datetime),
         model: text(run.model_name) || stored?.model || 'Unknown model',
