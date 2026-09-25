@@ -19,5 +19,13 @@ export function parseIncidentAnalysis(content: string): IncidentAnalysis {
   }
   const result = incidentAnalysisSchema.safeParse(value);
   if (!result.success) throw new Error(`The VLM report did not match the required structure: ${result.error.message}`);
-  return result.data;
+  return withTimelineDuration(result.data);
+}
+
+function withTimelineDuration(analysis: IncidentAnalysis): IncidentAnalysis {
+  if ((analysis.duration_seconds !== null && analysis.duration_seconds !== 0) || analysis.timeline.length === 0) return analysis;
+  const minStart = Math.min(...analysis.timeline.map((e) => e.start_seconds));
+  const maxEnd = Math.max(...analysis.timeline.map((e) => e.end_seconds ?? e.start_seconds));
+  const span = maxEnd - minStart;
+  return span > 0 ? { ...analysis, duration_seconds: Math.round(span) } : analysis;
 }

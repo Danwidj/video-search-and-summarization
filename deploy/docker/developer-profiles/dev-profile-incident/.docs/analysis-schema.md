@@ -85,7 +85,7 @@ Represents a discrete chronological event or phase within the incident.
 
 1. **Gateway Mode (`ANALYSIS_MODE=gateway`):**
    - Prompt (`incident-console-v2/lib/analysis/prompt.ts`, version `incident-v2-snake`) incorporates the agent's extraction rules and requests the exact 16-field `snake_case` JSON shape.
-   - Output from the VLM gateway is parsed and validated directly with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`).
+   - Output from the VLM gateway goes through `parseIncidentAnalysis` (`incident-console-v2/lib/analysis/parse.ts`), which validates it with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`) and then applies the gateway-only duration fallback (see Tolerant Parsing Behaviors).
 2. **Agent Mode (`ANALYSIS_MODE=agent`):**
    - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
    - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema` (no translator or camelCase conversion).
@@ -97,7 +97,7 @@ The authoritative JSON contract field specification is checked in at:
 `incident-console-v2/lib/analysis/incident-report-contract.json`. It holds only the field set, types, and defaults; the prompt text has one source per runtime (`_EXTRACTION_SYSTEM_PROMPT` in the agent, `INCIDENT_ANALYSIS_PROMPT` in `lib/analysis/prompt.ts`).
 
 Automated drift-prevention tests guarantee continuous parity across both environments:
-- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that the contract defines exactly the 16 fields, that its defaults parse through `incidentAnalysisSchema`, that `INCIDENT_ANALYSIS_PROMPT` has exactly one `Rules:` line per contract field, and that the prompt's "Use exactly this shape" JSON (top-level and nested keys) matches the contract and survives schema parsing.
+- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that the contract defines exactly the 16 fields, that its defaults parse through `incidentAnalysisSchema`, that `INCIDENT_ANALYSIS_PROMPT` has exactly one `Rules:` line per contract field, and that the prompt's "Use exactly this shape" JSON (top-level and nested keys) matches the contract and survives schema parsing, and that the example uses `null` (not `0` / `"0:00"`) placeholders for `duration_seconds`, `incident_start` and `incident_end`.
 - **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, that the `incident_type` enum matches `INCIDENT_TYPES`, and that `_EXTRACTION_SYSTEM_PROMPT` has exactly one rule per model field except `incident_start` / `incident_end` / `incident_start_confirmed`, which the agent derives rather than asks the model for.
 
 ### Tolerant Parsing Behaviors
@@ -107,6 +107,7 @@ The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydant
 - **Severity Clamping:** Words (`"medium"` -> 3, `"critical"` -> 5) and out-of-range numbers are clamped to the 1–5 range.
 - **Confidence Normalization:** Decimal percentages (e.g. `85` -> 0.85) are normalized and clamped to `0.0 <= confidence <= 1.0`.
 - **String Bounds:** `title` is clamped to 160 characters; `incident_type` is trimmed to 32 characters.
+- **Duration Fallback (gateway only):** `parseIncidentAnalysis` (`lib/analysis/parse.ts`, used only by gateway mode) applies this after schema parsing; `incidentAnalysisSchema` itself leaves `duration_seconds` untouched, so agent-mode responses and stored reports keep their value. When `duration_seconds` is `null` or `0` and the timeline span is positive, it is derived as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. This deliberately goes beyond the agent, which only fills a `null` duration, because `nvidia/cosmos-3-nano-reasoner` emits `0` even when its timeline shows a real span.
 - **Pass-through Unknowns:** Unrecognized fields in model responses are preserved via `.passthrough()` rather than rejecting the payload.
 
 ### Legacy DB Read-Compatibility (`model_runs.notes`)

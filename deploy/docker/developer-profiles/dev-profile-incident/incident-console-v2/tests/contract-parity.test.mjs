@@ -88,6 +88,13 @@ test('contract-parity: INCIDENT_ANALYSIS_PROMPT response shape matches the contr
   assert.deepEqual(Object.keys(parsed.assets[0]).sort(), Object.keys(contract.fields.assets.items.properties).sort());
 });
 
+test('contract-parity: INCIDENT_ANALYSIS_PROMPT example placeholders do not suggest fake 0 or 0:00', () => {
+  const shape = promptShape(INCIDENT_ANALYSIS_PROMPT);
+  assert.equal(shape.duration_seconds, null, 'example duration_seconds should be null, not 0');
+  assert.equal(shape.incident_start, null, 'example incident_start should be null, not 0:00');
+  assert.equal(shape.incident_end, null, 'example incident_end should be null, not 0:00');
+});
+
 test('contract-parity: full report payload parses into snake_case schema', () => {
   const sampleReport = {
     title: 'Break-in at Warehouse B',

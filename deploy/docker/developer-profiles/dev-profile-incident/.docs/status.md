@@ -50,8 +50,8 @@ The following anomalies are currently present in the codebase and represent inte
    Row Level Security is currently disabled across public schema tables, and default Supabase grants permit full DML to `anon` and `authenticated` roles. Backend code exclusively uses the service role key server-side, but restricting `anon` access remains a pending hardening step.
 7. **Content Divergence Between Agent and Gateway Modes:**
    The two modes share one schema and prompt but call different VLMs (agent: `nvidia/cosmos-3-super-reasoner`; gateway: `nvidia/cosmos-3-nano-reasoner`), so the same clip yields different reports. In the 2026-09-25 two-flows run on `test2.mp4` (§5), agent mode reported a monkey, severity 1, `duration_seconds` 5; gateway mode reported a cat, severity 3, `duration_seconds` 0.
-8. **Gateway Mode Writes `duration_seconds: 0`:**
-   In the same run, gateway mode stored `duration_seconds: 0` for a 5.3s clip while its own timeline runs to 5.0s. The wrong value is persisted without any validation error. Not yet fixed.
+8. **Gateway Mode Writes `duration_seconds: 0` (Fixed 2026-09-25):**
+   In the 2026-09-25 initial run, gateway mode stored `duration_seconds: 0` for a 5.3s clip while its own timeline ran to 5.0s, caused by `prompt.ts` example placeholders suggesting `0` and missing timeline-span fallback in the gateway parser. Fixed on 2026-09-25: updated example placeholders to `null` and added a gateway-only timeline-span fallback in `lib/analysis/parse.ts` (`Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events) that fills a `null` or explicit `0` duration when the span is positive (deliberately beyond the agent, which only fills `null`). Re-analysis on `test2.mp4` via local gateway verified storing `duration_seconds: 5` (run `m6d4b327cf8970d4132f`).
 
 ---
 
