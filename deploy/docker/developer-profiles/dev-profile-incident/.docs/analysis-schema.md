@@ -107,7 +107,7 @@ The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydant
 - **Severity Clamping:** Words (`"medium"` -> 3, `"critical"` -> 5) and out-of-range numbers are clamped to the 1–5 range.
 - **Confidence Normalization:** Decimal percentages (e.g. `85` -> 0.85) are normalized and clamped to `0.0 <= confidence <= 1.0`.
 - **String Bounds:** `title` is clamped to 160 characters; `incident_type` is trimmed to 32 characters.
-- **Duration Fallback:** When `duration_seconds` is `null` or `0` and the timeline span is positive, it is derived as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. This deliberately goes beyond the agent, which only fills a `null` duration, because `nvidia/cosmos-3-nano-reasoner` emits `0` even when its timeline shows a real span.
+- **Duration Fallback (gateway only):** `parseIncidentAnalysis` (`lib/analysis/parse.ts`, used only by gateway mode) applies this after schema parsing; `incidentAnalysisSchema` itself leaves `duration_seconds` untouched, so agent-mode responses and stored reports keep their value. When `duration_seconds` is `null` or `0` and the timeline span is positive, it is derived as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. This deliberately goes beyond the agent, which only fills a `null` duration, because `nvidia/cosmos-3-nano-reasoner` emits `0` even when its timeline shows a real span.
 - **Pass-through Unknowns:** Unrecognized fields in model responses are preserved via `.passthrough()` rather than rejecting the payload.
 
 ### Legacy DB Read-Compatibility (`model_runs.notes`)
