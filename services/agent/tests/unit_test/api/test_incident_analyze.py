@@ -27,6 +27,7 @@ import pytest
 from vss_agents.api.incident_analyze import _resolve_sensor_id
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.data_models.incident_report import Asset
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import TimelineItem
@@ -210,7 +211,7 @@ class TestAnalyzeIncidentRoute:
     def test_validation_failure_surfaces_422(self):
         """Extraction validation failure returns HTTP 422 with descriptive detail."""
         app, tool, _ = self._build_app(resolved_source=None)
-        tool.ainvoke.side_effect = ValueError("Incident extraction validation failed: bad type")
+        tool.ainvoke.side_effect = IncidentExtractionError("Incident extraction validation failed: bad type")
 
         with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
             client = TestClient(app)
@@ -219,6 +220,18 @@ class TestAnalyzeIncidentRoute:
         assert response.status_code == 422
         data = response.json()
         assert "Incident report validation failed" in data["detail"]
+
+    def test_upstream_value_error_surfaces_500(self):
+        """A non-extraction ValueError (e.g. VLM/VST failure in video_report_gen) is a 500, not a 422."""
+        app, tool, _ = self._build_app(resolved_source=None)
+        tool.ainvoke.side_effect = ValueError("Failed to analyze video: VLM unavailable")
+
+        with patch("vss_agents.api.incident_analyze.incident_db.is_configured", return_value=False):
+            client = TestClient(app)
+            response = client.post("/api/v1/incidents/v0123456789abcdef01/analyze", json={})
+
+        assert response.status_code == 500
+        assert "Analysis failed" in response.json()["detail"]
 
     def test_timeout_failure_surfaces_504(self):
         """Extraction timeout returns HTTP 504 with descriptive detail."""

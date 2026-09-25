@@ -137,8 +137,8 @@ When `incident-console-v2` executes in **Agent Mode** (invoking the `vss-agent` 
 
 In `services/agent/src/vss_agents/tools/incident_report_gen.py:_extract_structured_report`, structured output is extracted from the model's text generation:
 
-- **Visibility & Error Surfacing:** If the model fails to return valid JSON, schema validation fails (`pydantic.ValidationError`, such as severity out of bounds), or extraction times out, `_extract_structured_report` logs an `ERROR`-level message and raises `ValueError` (for invalid output) or `TimeoutError`.
-- **HTTP Status Codes:** `services/agent/src/vss_agents/api/incident_analyze.py` catches these exceptions and surfaces them directly to the client as **HTTP 422 (Unprocessable Entity)** or **HTTP 504 (Gateway Timeout)**.
+- **Visibility & Error Surfacing:** If the model fails to return valid JSON, schema validation fails (`pydantic.ValidationError`, such as severity out of bounds), or extraction times out, `_extract_structured_report` logs an `ERROR`-level message and raises `IncidentExtractionError` (a `ValueError` subclass in `vss_agents.data_models.incident_report`, for invalid output) or `TimeoutError`.
+- **HTTP Status Codes:** `services/agent/src/vss_agents/api/incident_analyze.py` catches these exceptions and surfaces them directly to the client as **HTTP 422 (Unprocessable Entity)** (extraction failures only) or **HTTP 504 (Gateway Timeout)**. Any other error, including upstream `ValueError`s from `video_report_gen` (VLM/VST failures), returns **HTTP 500**.
 - **Persistence Aborted:** Raising on extraction failure prevents `_persist_incident` from executing, ensuring invalid or fallback dummy data (`"road accident"`, severity 1, confidence 0.0) is never persisted to the database.
 
 ---

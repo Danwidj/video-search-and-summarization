@@ -41,8 +41,8 @@ from fastapi import HTTPException
 from nat.builder.framework_enum import LLMFrameworkEnum
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic import ValidationError
 
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.utils import incident_db
 
@@ -137,7 +137,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
-        except (ValueError, ValidationError) as exc:
+        except IncidentExtractionError as exc:
             logger.error("/analyze validation failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
             raise HTTPException(status_code=422, detail=f"Incident report validation failed: {exc}") from exc
         except TimeoutError as exc:

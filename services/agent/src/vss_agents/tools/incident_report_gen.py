@@ -53,6 +53,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
 
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.utils import incident_db
@@ -200,7 +201,7 @@ async def _extract_structured_report(
         ValueError,
     ) as e:
         logger.error("incident_report_gen: extraction LLM call failed: %s", e)
-        raise ValueError(f"Incident extraction validation failed: {e}") from e
+        raise IncidentExtractionError(f"Incident extraction validation failed: {e}") from e
 
 
 def _derive_entity_id(incident_id: str, idx: int) -> str:

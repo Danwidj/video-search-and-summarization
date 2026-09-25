@@ -87,6 +87,10 @@ class Asset(BaseModel):
     description: str = ""
 
 
+class IncidentExtractionError(ValueError):
+    """The extraction LLM output could not be parsed or validated into an ``IncidentReport``."""
+
+
 class IncidentReport(BaseModel):
     """Structured incident report extracted from a generated video report."""
 
