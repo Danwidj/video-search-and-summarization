@@ -563,6 +563,14 @@ class VideoReportGenInput(BaseModel):
             "use 0 for 'no upper bound (until now)'. Ignored when media_type='video'."
         ),
     )
+    skip_hitl: bool = Field(
+        default=False,
+        description=(
+            "Internal field set by headless callers (e.g. the incident /analyze REST route) that have no "
+            "human prompt callback; uses the configured VLM prompt without HITL. "
+            "Do not populate this field from LLM tool calls."
+        ),
+    )
 
     model_config = {
         "extra": "forbid",
@@ -1487,11 +1495,7 @@ Enter your choice or press Submit to keep current value:"""
 
         human_prompt = HumanPromptText(text=prompt_text, required=required, placeholder=placeholder)
 
-        try:
-            response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
-        except NotImplementedError:
-            logger.info("No human prompt callback was registered; bypassing HITL prompt")
-            return ""
+        response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
 
         # Check if user cancelled - content will be None when cancelled
         if response.content is None:
@@ -1803,7 +1807,7 @@ Enter your choice or press Submit to keep current value:"""
 
         # Step 2: Collect base VLM prompt upfront (if any base videos and HITL enabled)
         vlm_prompt_override: str | None = None
-        if base_sensor_ids and config.hitl_enabled:
+        if base_sensor_ids and config.hitl_enabled and not report_input.skip_hitl:
             thread_id = ContextState.get().conversation_id.get()
             current_prompt = _get_prompt(thread_id)
             resolved_prompt = await _collect_hitl_vlm_prompt(
@@ -1830,6 +1834,7 @@ Enter your choice or press Submit to keep current value:"""
                 sensor_id=lvs_sensor_ids if len(lvs_sensor_ids) > 1 else lvs_sensor_ids[0],
                 user_query=report_input.user_query,
                 vlm_reasoning=report_input.vlm_reasoning,
+                skip_hitl=report_input.skip_hitl,
             )
             tasks.append(
                 (
@@ -1843,6 +1848,7 @@ Enter your choice or press Submit to keep current value:"""
                 sensor_id=sid,
                 user_query=report_input.user_query,
                 vlm_reasoning=report_input.vlm_reasoning,
+                skip_hitl=report_input.skip_hitl,
             )
             tasks.append(([sid], _video_report_gen_single(base_input, vlm_prompt_override=vlm_prompt_override)))
 
@@ -2212,7 +2218,7 @@ Enter your choice or press Submit to keep current value:"""
             if vlm_prompt_override is not None:
                 logger.info(f"[PROMPT LOADED] Using pre-collected VLM prompt: '{vlm_prompt_override[:100]}...'")
                 clean_prompt = _remove_som_markers(vlm_prompt_override)
-            elif config.hitl_enabled:
+            elif config.hitl_enabled and not report_input.skip_hitl:
                 thread_id = ContextState.get().conversation_id.get()
                 current_prompt = _get_prompt(thread_id)
                 resolved_prompt = await _collect_hitl_vlm_prompt(current_prompt)

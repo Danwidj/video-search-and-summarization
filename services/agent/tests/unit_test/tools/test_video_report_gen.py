@@ -580,16 +580,11 @@ class TestMaxImagesPerVlmCallChunking:
 
 
 class TestHitlWithoutCallback:
-    """When hitl_enabled is True but no user input callback is registered (e.g.
+    """With hitl_enabled and no human prompt callback registered, only headless
+    callers that pass skip_hitl proceed with the configured prompt; every other
+    caller keeps raising the missing-callback error so report_agent can surface it."""
 
-    headless REST API invocations or tasks where NAT's default callback raises
-    NotImplementedError), _prompt_user_input must catch NotImplementedError and
-    return empty string so execution proceeds with the default prompt instead of
-    failing the entire request with an unhandled exception.
-    """
-
-    @pytest.mark.asyncio
-    async def test_hitl_falls_back_when_no_callback_registered(self):
+    def _build(self):
         config = VideoReportGenConfig(
             object_store="test_object_store",
             video_understanding_tool="video_understanding",
@@ -610,22 +605,41 @@ class TestHitlWithoutCallback:
         builder.get_tool = AsyncMock(return_value=video_understanding_tool)
         builder.get_function_config = Mock(return_value=vu_config)
         builder.get_llm = AsyncMock(return_value=Mock(model_name="test-vlm-model"))
+        return config, builder, video_understanding_tool
 
+    async def _run(self, config, builder, report_input):
         start = "2025-01-01T00:00:00.000Z"
         end = "2025-01-01T00:00:10.000Z"
-
         with (
             patch("vss_agents.tools.video_report_gen.get_stream_id", new_callable=AsyncMock, return_value="stream-1"),
             patch("vss_agents.tools.video_report_gen.get_timeline", new_callable=AsyncMock, return_value=(start, end)),
         ):
             async with video_report_gen(config, builder) as function_info:
-                output = await function_info.single_fn(
-                    VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?")
-                )
-                assert output is not None
-                assert video_understanding_tool.ainvoke.call_count >= 1
-                call_args = video_understanding_tool.ainvoke.call_args_list[0]
-                assert "Default test prompt" in call_args.kwargs["input"]["user_prompt"]
+                return await function_info.single_fn(report_input)
+
+    @pytest.mark.asyncio
+    async def test_skip_hitl_uses_configured_prompt_without_callback(self):
+        config, builder, video_understanding_tool = self._build()
+
+        output = await self._run(
+            config,
+            builder,
+            VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?", skip_hitl=True),
+        )
+
+        assert output is not None
+        assert video_understanding_tool.ainvoke.call_count >= 1
+        call_args = video_understanding_tool.ainvoke.call_args_list[0]
+        assert "Default test prompt" in call_args.kwargs["input"]["user_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_interactive_caller_still_raises_missing_callback_error(self):
+        config, builder, video_understanding_tool = self._build()
+
+        with pytest.raises(NotImplementedError, match="No human prompt callback was registered"):
+            await self._run(config, builder, VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?"))
+
+        video_understanding_tool.ainvoke.assert_not_called()
 
 
 class TestFilterShortDurationAcrossChunks:

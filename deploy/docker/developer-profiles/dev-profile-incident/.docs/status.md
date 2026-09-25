@@ -152,7 +152,7 @@ End-to-end verification of `start.sh --mode vm` with Brev Switchyard and the uni
 1. **HITL `NotImplementedError` on REST API Endpoint:**
    - *Symptom:* `POST /api/v1/incidents/{id}/analyze` crashed with HTTP 500: `NotImplementedError: No human prompt callback was registered. Unable to handle requested prompt.`
    - *Cause:* `config.yml` enables `hitl_enabled: true`. When called non-interactively via the REST API or console, no callback is registered with NAT's `user_input_manager`.
-   - *Fix:* Catch `NotImplementedError` in `video_report_gen.py`, falling back cleanly to the default prompt. The LVS tools are not on the incident path and are unchanged.
+   - *Fix:* The `/analyze` route passes an internal `skip_hitl=True` through `incident_report_gen` to `video_report_gen`, which then uses the configured VLM prompt with no HITL prompt. Interactive callers still prompt and still raise the missing-callback error. The LVS tools are not on the incident path and are unchanged.
 2. **Short-Duration Event Filter Discarding All Events on Short Clips:**
    - *Symptom:* VLM correctly detected monkey activity across 5 consecutive segments, but report extraction returned `"Empty Video Analysis Report - No Incident Detected"`.
    - *Cause:* `_filter_short_duration_from_markdown(min_duration_seconds=2.0)` dropped every segment because `test2.mp4` chunk durations were ~1.1s each (< 2.0s). This stripped all events from the markdown summary passed to the extraction LLM.
