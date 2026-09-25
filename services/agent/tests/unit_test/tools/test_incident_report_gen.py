@@ -29,6 +29,7 @@ from unittest.mock import patch
 import pytest
 
 from vss_agents.data_models.incident_report import Asset
+from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import Person
@@ -161,7 +162,7 @@ class TestExtractStructuredReportFailSoft:
             validation_error = exc
         llm = self._structured_llm(ainvoke_side_effect=validation_error)
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(ValueError, match="Incident extraction validation failed"):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
                 await _extract_structured_report(llm, "report", 60.0)
         assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
@@ -176,7 +177,7 @@ class TestExtractStructuredReportFailSoft:
         llm = MagicMock()
         llm.with_structured_output = MagicMock(return_value=structured_llm)
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(ValueError, match="Incident extraction validation failed"):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
                 await _extract_structured_report(llm, "report", 60.0)
         assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
@@ -223,7 +224,7 @@ class TestExtractStructuredReportFailSoft:
 
         llm = self._structured_llm(ainvoke_side_effect=OutputParserException("unparseable"))
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(ValueError, match="Incident extraction validation failed"):
+            with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
                 await _extract_structured_report(llm, "report", 60.0)
         assert any("extraction LLM call failed" in record.message for record in caplog.records)
 
@@ -616,7 +617,7 @@ class TestEndToEnd:
         builder.get_tool = AsyncMock(return_value=video_report_tool)
         builder.get_llm = AsyncMock(return_value=llm)
 
-        with pytest.raises(ValueError, match="Incident extraction validation failed"):
+        with pytest.raises(IncidentExtractionError, match="Incident extraction validation failed"):
             await self._run(config, builder, db_configured=True)
 
 
