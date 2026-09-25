@@ -563,6 +563,14 @@ class VideoReportGenInput(BaseModel):
             "use 0 for 'no upper bound (until now)'. Ignored when media_type='video'."
         ),
     )
+    skip_hitl: bool = Field(
+        default=False,
+        description=(
+            "Internal field set by headless callers (e.g. the incident /analyze REST route) that have no "
+            "human prompt callback; uses the configured VLM prompt without HITL. "
+            "Do not populate this field from LLM tool calls."
+        ),
+    )
 
     model_config = {
         "extra": "forbid",
@@ -815,6 +823,10 @@ def _normalize_chunk_timestamps(content: str, chunk_start: float, chunk_end: flo
     return result
 
 
+# Pattern to match [Xs-Ys] timestamps
+_TIMESTAMP_RANGE_PATTERN = re.compile(r"\[\s*(\d+(?:\.\d+)?)(?:s)?\s*-\s*(\d+(?:\.\d+)?)(?:s)?\s*\]")
+
+
 def _filter_short_duration_from_markdown(content: str, min_duration_seconds: float = 2.0) -> str:
     """
     Filter out sentences/lines containing timestamp ranges with duration less than the specified threshold.
@@ -832,16 +844,13 @@ def _filter_short_duration_from_markdown(content: str, min_duration_seconds: flo
     if not content:
         return content
 
-    # Pattern to match [Xs-Ys] timestamps
-    timestamp_pattern = re.compile(r"\[\s*(\d+(?:\.\d+)?)(?:s)?\s*-\s*(\d+(?:\.\d+)?)(?:s)?\s*\]")
-
     # Process line by line
     lines = content.split("\n")
     filtered_lines = []
 
     for line in lines:
         # Find all timestamps in the line
-        matches = list(timestamp_pattern.finditer(line))
+        matches = list(_TIMESTAMP_RANGE_PATTERN.finditer(line))
 
         if not matches:
             # No timestamps, keep the line
@@ -871,6 +880,28 @@ def _filter_short_duration_from_markdown(content: str, min_duration_seconds: flo
             )
 
     return "\n".join(filtered_lines)
+
+
+def _filter_short_duration_across_chunks(chunk_contents: list[str], min_duration_seconds: float = 2.0) -> list[str]:
+    """
+    Filter short duration events from every chunk, keeping the unfiltered chunks if no timestamped event survives.
+
+    Args:
+        chunk_contents: Markdown content of each chunk with timestamps in [Xs-Ys] format
+        min_duration_seconds: Minimum event duration in seconds (default: 2.0)
+
+    Returns:
+        Filtered chunk contents, or the original chunk contents if filtering would remove every timestamped event
+    """
+    filtered = [_filter_short_duration_from_markdown(content, min_duration_seconds) for content in chunk_contents]
+    had_timestamps = any(_TIMESTAMP_RANGE_PATTERN.search(content) for content in chunk_contents)
+    has_timestamps = any(_TIMESTAMP_RANGE_PATTERN.search(content) for content in filtered)
+    if had_timestamps and not has_timestamps:
+        logger.warning(
+            "Short duration filter would remove all timestamped events from the report; preserving original content"
+        )
+        return chunk_contents
+    return filtered
 
 
 def _mmss_to_iso(time_str: str, ref_timestamp: str) -> str:
@@ -1776,7 +1807,7 @@ Enter your choice or press Submit to keep current value:"""
 
         # Step 2: Collect base VLM prompt upfront (if any base videos and HITL enabled)
         vlm_prompt_override: str | None = None
-        if base_sensor_ids and config.hitl_enabled:
+        if base_sensor_ids and config.hitl_enabled and not report_input.skip_hitl:
             thread_id = ContextState.get().conversation_id.get()
             current_prompt = _get_prompt(thread_id)
             resolved_prompt = await _collect_hitl_vlm_prompt(
@@ -1803,6 +1834,7 @@ Enter your choice or press Submit to keep current value:"""
                 sensor_id=lvs_sensor_ids if len(lvs_sensor_ids) > 1 else lvs_sensor_ids[0],
                 user_query=report_input.user_query,
                 vlm_reasoning=report_input.vlm_reasoning,
+                skip_hitl=report_input.skip_hitl,
             )
             tasks.append(
                 (
@@ -1816,6 +1848,7 @@ Enter your choice or press Submit to keep current value:"""
                 sensor_id=sid,
                 user_query=report_input.user_query,
                 vlm_reasoning=report_input.vlm_reasoning,
+                skip_hitl=report_input.skip_hitl,
             )
             tasks.append(([sid], _video_report_gen_single(base_input, vlm_prompt_override=vlm_prompt_override)))
 
@@ -2185,7 +2218,7 @@ Enter your choice or press Submit to keep current value:"""
             if vlm_prompt_override is not None:
                 logger.info(f"[PROMPT LOADED] Using pre-collected VLM prompt: '{vlm_prompt_override[:100]}...'")
                 clean_prompt = _remove_som_markers(vlm_prompt_override)
-            elif config.hitl_enabled:
+            elif config.hitl_enabled and not report_input.skip_hitl:
                 thread_id = ContextState.get().conversation_id.get()
                 current_prompt = _get_prompt(thread_id)
                 resolved_prompt = await _collect_hitl_vlm_prompt(current_prompt)
@@ -2420,10 +2453,11 @@ Enter your choice or press Submit to keep current value:"""
                     normalized = _normalize_chunk_timestamps(cleaned, chunk_start, chunk_end)
                 else:
                     normalized = cleaned
-                # Filter out short duration events from markdown
-                filtered = _filter_short_duration_from_markdown(normalized, min_duration_seconds=2.0)
-                normalized_results.append(filtered)
-            vlm_content = "\n\n".join(normalized_results)
+                normalized_results.append(normalized)
+            # Filter out short duration events from markdown
+            vlm_content = "\n\n".join(
+                _filter_short_duration_across_chunks(normalized_results, min_duration_seconds=2.0)
+            )
 
         # Generate the report using the helper method
         report_metadata = await _generate_single_report(

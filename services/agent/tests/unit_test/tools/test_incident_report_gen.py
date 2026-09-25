@@ -301,6 +301,20 @@ class TestEndToEnd:
         video_report_tool.ainvoke.assert_awaited_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("skip_hitl", [True, False])
+    async def test_passes_skip_hitl_through_to_video_report_gen(self, skip_hitl):
+        config, builder, video_report_tool = self._build_mocks(extracted=IncidentReport(incident_type="fighting"))
+
+        await self._run(
+            config,
+            builder,
+            db_configured=False,
+            tool_input=IncidentReportGenInput(sensor_id="cam1.mp4", skip_hitl=skip_hitl),
+        )
+
+        assert video_report_tool.ainvoke.await_args.args[0]["skip_hitl"] is skip_hitl
+
+    @pytest.mark.asyncio
     async def test_persists_to_incident_db_when_configured(self):
         extracted = IncidentReport(incident_type="fighting", severity=4, confidence=0.6)
         config, builder, _ = self._build_mocks(extracted=extracted)
