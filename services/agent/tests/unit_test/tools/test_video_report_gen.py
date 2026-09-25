@@ -30,6 +30,7 @@ from vss_agents.tools.video_report_gen import VideoReportGenInput
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.tools.video_report_gen import _convert_markdown_to_pdf
 from vss_agents.tools.video_report_gen import _divide_video_into_chunks
+from vss_agents.tools.video_report_gen import _filter_short_duration_across_chunks
 from vss_agents.tools.video_report_gen import _filter_short_duration_from_markdown
 from vss_agents.tools.video_report_gen import _inject_video_clips
 from vss_agents.tools.video_report_gen import _normalize_chunk_timestamps
@@ -627,13 +628,29 @@ class TestHitlWithoutCallback:
                 assert "Default test prompt" in call_args.kwargs["input"]["user_prompt"]
 
 
-class TestFilterShortDurationFromMarkdown:
+class TestFilterShortDurationAcrossChunks:
     def test_preserves_content_when_all_events_below_threshold(self):
-        content = "[0.3s-1.4s] Monkey jumps on table.\n[1.4s-2.5s] Monkey climbs sofa.\n"
-        result = _filter_short_duration_from_markdown(content, min_duration_seconds=2.0)
-        assert result == content
+        chunks = [
+            "[0.3s-1.4s] Monkey jumps on table.\n",
+            "[1.4s-2.5s] Monkey climbs sofa.\n",
+        ]
+        result = _filter_short_duration_across_chunks(chunks, min_duration_seconds=2.0)
+        assert result == chunks
 
-    def test_filters_only_short_when_longer_events_exist(self):
+    def test_filters_short_events_in_every_chunk_when_any_long_event_survives(self):
+        chunks = [
+            "[0.0s-8.0s] Person walks.\n[8.0s-8.5s] Glare.",
+            "[10.0s-10.4s] Shadow.",
+            "[20.1s-20.6s] Flicker.",
+        ]
+        result = _filter_short_duration_across_chunks(chunks, min_duration_seconds=2.0)
+        joined = "\n\n".join(result)
+        assert "[0.0s-8.0s] Person walks." in joined
+        assert "[8.0s-8.5s]" not in joined
+        assert "[10.0s-10.4s]" not in joined
+        assert "[20.1s-20.6s]" not in joined
+
+    def test_single_chunk_filter_drops_short_events(self):
         content = "[0.0s-0.5s] Quick flicker.\n[1.0s-5.0s] Sustained action.\n"
         result = _filter_short_duration_from_markdown(content, min_duration_seconds=2.0)
         assert "[0.0s-0.5s]" not in result
