@@ -85,7 +85,7 @@ Represents a discrete chronological event or phase within the incident.
 
 1. **Gateway Mode (`ANALYSIS_MODE=gateway`):**
    - Prompt (`incident-console-v2/lib/analysis/prompt.ts`, version `incident-v2-snake`) incorporates the agent's extraction rules and requests the exact 16-field `snake_case` JSON shape.
-   - Output from the VLM gateway is parsed and validated directly with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`).
+   - Output from the VLM gateway goes through `parseIncidentAnalysis` (`incident-console-v2/lib/analysis/parse.ts`), which validates it with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`) and then applies the gateway-only duration fallback (see Tolerant Parsing Behaviors).
 2. **Agent Mode (`ANALYSIS_MODE=agent`):**
    - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
    - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema` (no translator or camelCase conversion).
