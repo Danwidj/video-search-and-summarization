@@ -41,13 +41,11 @@ The following anomalies are currently present in the codebase and represent inte
 3. **`videos.filepath` Overwritten by Agent with VST URL:**
    In `services/agent/src/vss_agents/tools/incident_report_gen.py` (line 392), after completing analysis, the agent calls `await db.upsert_video(incident_id, filepath=report_result.video_url, source=sensor_id)`. Because `video_url` points to the internal VST stream URL (`http://10.131.1.5:10000/...`), this call overwrites the permanent Cloudflare R2 object key stored in `videos.filepath`.
    *Active Workaround:* `incident-console-v2`'s `analyzeViaAgent` in `incident-console-v2/app/api/analysis/route.ts` explicitly re-saves the original R2 filepath after the agent completes: `await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt })`.
-4. **`sdr-controller` Container in Restart Loop:**
-   On `kwanz-ws`, the `sdr-controller` Docker container is observed repeatedly exiting and restarting (`Restarting (1)`). It does not block core VIOS video ingestion or agent analysis flows, but produces continuous container restart churn in `docker ps`.
-5. **Mock-Backend Hash-Picked `anomaly/<category>` Uploads:**
+4. **Mock-Backend Hash-Picked `anomaly/<category>` Uploads:**
    `mock-backend/base_profile_mock/.../routers/vst_storage.py` writes uploaded files to `anomaly/<category>/<original filename>` using `_CATEGORIES[sha256(incident_id)[0] % 5]`. This category assignment is pseudo-random rather than content-derived, resulting in test files (e.g. `AnimalN_xN.mp4`) polluting dataset fixture folders like `anomaly/fighting/` or `anomaly/road_accidents/`.
-6. **Legacy Database Tables Remaining in Live Schema:**
+5. **Legacy Database Tables Remaining in Live Schema:**
    Four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) remain in the live Supabase database from a pre-v1 integer-report-id schema. No current codebase references them, but they consume table namespace.
-7. **RLS Disabled on Public Tables:**
+6. **RLS Disabled on Public Tables:**
    Row Level Security is currently disabled across public schema tables, and default Supabase grants permit full DML to `anon` and `authenticated` roles. Backend code exclusively uses the service role key server-side, but restricting `anon` access remains a pending hardening step.
 
 ---

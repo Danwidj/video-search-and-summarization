@@ -264,9 +264,9 @@ COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
 
 echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
 if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+  sudo docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 \${COMPOSE_SERVICES}
 else
-  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+  docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 \${COMPOSE_SERVICES}
 fi
 EOF
 )
@@ -319,9 +319,9 @@ COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
 
 echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
 if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+  sudo docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 \${COMPOSE_SERVICES}
 else
-  docker compose -f compose.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
+  docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d --scale init-dirs=0 --scale render-config=0 --scale wdm-env-from-config=0 --scale sdr-controller=0 \${COMPOSE_SERVICES}
 fi
 EOF
 )
