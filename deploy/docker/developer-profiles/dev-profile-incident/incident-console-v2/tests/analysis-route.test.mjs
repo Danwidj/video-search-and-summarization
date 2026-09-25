@@ -381,3 +381,70 @@ test('gateway mode: calls VLM gateway with snake_case prompt and persists to Sup
   assert.equal(entityBody[0].type, 'person');
   assert.equal(entityBody[0].description, 'Intruder in dark jacket climbed fence');
 });
+
+test('agent mode: keeps the agent-reported duration_seconds of 0 even with a positive timeline span', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  delete process.env.VLM_GATEWAY_URL;
+
+  globalThis.fetch = async (url) => {
+    const body = String(url).includes('/api/v1/incidents/')
+      ? {
+          title: 'Short clip',
+          incident_type: 'other',
+          duration_seconds: 0,
+          timeline: [{ start_seconds: 0, end_seconds: 5, description: 'Event' }],
+        }
+      : [{ id: 'ok' }];
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  const response = await POST(
+    jsonRequest({ sensorId: 'sensor-cam-03', filepath: 'uploads/sensor-cam-03/clip.mp4', filename: 'clip.mp4' }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.report.duration_seconds, 0);
+});
+
+test('gateway mode: derives duration_seconds from the timeline span when the VLM reports 0', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+
+  const recordedCalls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const urlStr = String(url);
+    recordedCalls.push({ url: urlStr, options });
+    const body = urlStr.includes('/v1/chat/completions')
+      ? {
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  title: 'Short clip',
+                  incident_type: 'other',
+                  duration_seconds: 0,
+                  timeline: [
+                    { start_seconds: 2.6, end_seconds: 5.0, description: 'Later event' },
+                    { start_seconds: 0.0, end_seconds: 0.3, description: 'Earlier event' },
+                  ],
+                }),
+              },
+            },
+          ],
+          model: 'nvidia/cosmos-3-nano-reasoner',
+        }
+      : [{ id: 'ok' }];
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  const response = await POST(
+    jsonRequest({ sensorId: 'sensor-cam-04', filepath: 'uploads/sensor-cam-04/clip.mp4', filename: 'clip.mp4' }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.report.duration_seconds, 5);
+  const rpcCall = recordedCalls.find((c) => c.url.includes('/rpc/insert_incident'));
+  assert.equal(JSON.parse(rpcCall.options.body).p_duration, 5);
+});

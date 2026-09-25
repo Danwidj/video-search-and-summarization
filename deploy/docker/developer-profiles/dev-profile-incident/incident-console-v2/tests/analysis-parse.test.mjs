@@ -240,6 +240,85 @@ test('parseIncidentAnalysis handles duration_seconds coercion', () => {
   assert.equal(report3.duration_seconds, null);
 });
 
+test('parseIncidentAnalysis falls back to timeline span when duration_seconds is null or 0', () => {
+  const reportNull = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 0.3, description: 'Knock over vase' },
+      { start_seconds: 0.3, end_seconds: 2.6, description: 'Jump on table' },
+      { start_seconds: 2.6, end_seconds: 5.0, description: 'Explore floor' },
+    ],
+  }));
+  assert.equal(reportNull.duration_seconds, 5);
+
+  const reportZero = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 0.3, description: 'Knock over vase' },
+      { start_seconds: 0.3, end_seconds: 2.6, description: 'Jump on table' },
+      { start_seconds: 2.6, end_seconds: 5.0, description: 'Explore floor' },
+    ],
+  }));
+  assert.equal(reportZero.duration_seconds, 5);
+
+  const reportZeroStr = parseIncidentAnalysis(baseReport({
+    duration_seconds: '0',
+    timeline: [
+      { start_seconds: 1.0, end_seconds: 4.2, description: 'Event' },
+    ],
+  }));
+  assert.equal(reportZeroStr.duration_seconds, 3);
+
+  const reportLastEndNull = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 1.0, end_seconds: 2.0, description: 'Start event' },
+      { start_seconds: 4.2, end_seconds: null, description: 'End event' },
+    ],
+  }));
+  assert.equal(reportLastEndNull.duration_seconds, 3);
+
+  const reportOverlapping = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 5.0, description: 'Whole clip' },
+      { start_seconds: 1.0, end_seconds: 2.0, description: 'Inner event' },
+    ],
+  }));
+  assert.equal(reportOverlapping.duration_seconds, 5);
+
+  const reportUnordered = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 3.0, end_seconds: 5.0, description: 'Later event' },
+      { start_seconds: 0.0, end_seconds: 1.0, description: 'Earlier event' },
+    ],
+  }));
+  assert.equal(reportUnordered.duration_seconds, 5);
+
+  const reportExplicit = parseIncidentAnalysis(baseReport({
+    duration_seconds: 15,
+    timeline: [
+      { start_seconds: 0.0, end_seconds: 5.0, description: 'Event' },
+    ],
+  }));
+  assert.equal(reportExplicit.duration_seconds, 15);
+
+  const reportNoSpan = parseIncidentAnalysis(baseReport({
+    duration_seconds: null,
+    timeline: [
+      { start_seconds: 2.0, end_seconds: null, description: 'Instant event' },
+    ],
+  }));
+  assert.equal(reportNoSpan.duration_seconds, null);
+
+  const reportZeroNoSpan = parseIncidentAnalysis(baseReport({
+    duration_seconds: 0,
+    timeline: [],
+  }));
+  assert.equal(reportZeroNoSpan.duration_seconds, 0);
+});
+
 test('parseIncidentAnalysis filters empty uncertainties', () => {
   const report = parseIncidentAnalysis(baseReport({
     uncertainties: ['Valid uncertainty', '', '   ', null, 'Another valid'],
