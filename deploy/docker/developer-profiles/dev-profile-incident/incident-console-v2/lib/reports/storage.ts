@@ -10,6 +10,48 @@ interface StoredNotes {
   };
 }
 
+const LEGACY_KEYS: Record<string, string> = {
+  incidentType: 'incident_type',
+  summary: 'description',
+  severityLevel: 'severity',
+  severityReason: 'severity_reason',
+  confidenceScore: 'confidence',
+  startTimestamp: 'incident_start',
+  endTimestamp: 'incident_end',
+  durationSeconds: 'duration_seconds',
+};
+
+function records(value: unknown): Record<string, unknown>[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : undefined;
+}
+
+function legacyToSnake(report: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...report };
+  for (const [legacy, current] of Object.entries(LEGACY_KEYS)) {
+    if (result[current] === undefined && report[legacy] !== undefined) result[current] = report[legacy];
+  }
+  const entities = records(report.entities);
+  if (result.persons === undefined && entities) {
+    result.persons = entities.map((item) => ({ description: item.description, actions: '' }));
+  }
+  const timeline = records(report.timeline);
+  if (timeline) {
+    result.timeline = timeline.map(({ startSeconds, endSeconds, ...item }) => ({
+      ...item,
+      start_seconds: item.start_seconds ?? startSeconds,
+      end_seconds: item.end_seconds ?? endSeconds,
+    }));
+  }
+  const instruments = records(report.instruments);
+  if (instruments) {
+    result.instruments = instruments.map(({ threatLevel, ...item }) => ({
+      ...item,
+      threat_level: item.threat_level ?? threatLevel,
+    }));
+  }
+  return result;
+}
+
 export function reportFromNotes(notes: unknown): AnalysisReport | null {
   if (typeof notes !== 'string') return null;
   try {
@@ -33,7 +75,7 @@ export function reportFromNotes(notes: unknown): AnalysisReport | null {
       return null;
     }
 
-    const validated = incidentAnalysisSchema.parse(baseReport);
+    const validated = incidentAnalysisSchema.parse(legacyToSnake(baseReport));
 
     return {
       ...validated,
@@ -68,10 +110,6 @@ export interface ReportLibraryItem {
   description: string;
   severity: number;
   confidence: number;
-  incidentType: string;
-  summary: string;
-  severityLevel: number;
-  confidenceScore: number;
   generatedAt: string;
   uploadedAt?: string;
   model: string;

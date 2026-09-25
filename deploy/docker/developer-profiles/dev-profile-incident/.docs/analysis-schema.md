@@ -93,12 +93,12 @@ Represents a discrete chronological event or phase within the incident.
 
 ### Checked-in Contract Artifact & Drift Prevention
 
-The authoritative JSON contract specification is checked in at:
-`incident-console-v2/lib/analysis/incident-report-contract.json` (contract version `incident-v2-2`).
+The authoritative JSON contract field specification is checked in at:
+`incident-console-v2/lib/analysis/incident-report-contract.json`. It holds only the field set, types, and defaults; the prompt text has one source per runtime (`_EXTRACTION_SYSTEM_PROMPT` in the agent, `INCIDENT_ANALYSIS_PROMPT` in `lib/analysis/prompt.ts`).
 
 Automated drift-prevention tests guarantee continuous parity across both environments:
 - **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that all 16 fields, defaults, and types in `incident-report-contract.json` are accepted by `incidentAnalysisSchema` and instructed by `INCIDENT_ANALYSIS_PROMPT`.
-- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, enum taxonomy matches `INCIDENT_TYPES`, and prompt extraction rules match `_EXTRACTION_SYSTEM_PROMPT`.
+- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, and enum taxonomy matches `INCIDENT_TYPES`.
 
 ### Tolerant Parsing Behaviors
 
@@ -112,8 +112,8 @@ The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydant
 ### Legacy DB Read-Compatibility (`model_runs.notes`)
 
 Historical incident runs created before contract unification stored `camelCase` JSON objects in `model_runs.notes`. To maintain full backward compatibility:
-- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Transparently accepts both legacy `camelCase` notes (`severityLevel`, `summary`, `startTimestamp`, `entities`, etc.) and modern `snake_case` notes (`severity`, `description`, `incident_start`, `persons`, etc.).
-- **Tolerant Schema Fallbacks:** `lib/analysis/schema.ts` provides fallback getters for legacy keys (e.g., `summary` if `description` is omitted, `entities` mapped to `persons` if `persons` is omitted).
+- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Maps legacy `camelCase` notes (`incidentType`, `summary`, `severityLevel`, `confidenceScore`, `startTimestamp`, `entities` → `persons`, timeline `startSeconds`, instrument `threatLevel`, etc.) to `snake_case` before validating with `incidentAnalysisSchema`. This is the only place camelCase aliases are accepted.
+- **Snake-case-only parsing:** `lib/analysis/schema.ts` accepts only `snake_case` keys, so new VLM gateway and vss-agent replies are parsed against the agent contract with no camelCase fallbacks.
 - **Writer:** All new writes through PostgREST and Next.js routes write strictly `snake_case` payloads.
 
 ---

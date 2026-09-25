@@ -9,7 +9,6 @@ const contractPath = join(process.cwd(), 'lib/analysis/incident-report-contract.
 const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
 
 test('contract-parity: incident-report-contract.json defines expected fields and types', () => {
-  assert.equal(contract.version, 'incident-v2-2');
   assert.ok(contract.fields, 'contract must have fields');
 
   const expectedFields = [

@@ -82,7 +82,7 @@ export function ReportsLibrary() {
     window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, datePreset, fromDate, toDate, fromTime, toTime, sort, scrollY: window.scrollY, reportId: item.reportId }));
   }
 
-  const types = useMemo(() => Array.from(new Set(reports.map((item) => item.incident_type || item.incidentType))).sort(), [reports]);
+  const types = useMemo(() => Array.from(new Set(reports.map((item) => item.incident_type))).sort(), [reports]);
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const now = new Date();
@@ -103,13 +103,10 @@ export function ReportsLibrary() {
       const minutes = generated.getHours() * 60 + generated.getMinutes();
       const fromMinutes = fromTime ? Number(fromTime.slice(0, 2)) * 60 + Number(fromTime.slice(3)) : null;
       const toMinutes = toTime ? Number(toTime.slice(0, 2)) * 60 + Number(toTime.slice(3)) : null;
-      const itemType = item.incident_type || item.incidentType;
-      const itemSummary = item.description || item.summary;
-      const itemSeverity = item.severity ?? item.severityLevel;
-      const haystack = `${item.title} ${item.filename} ${itemType} ${itemSummary} ${item.searchableEvidence}`.toLowerCase();
+      const haystack = `${item.title} ${item.filename} ${item.incident_type} ${item.description} ${item.searchableEvidence}`.toLowerCase();
       return (!needle || haystack.includes(needle))
-        && (type === 'all' || itemType === type)
-        && (severity === 'all' || (severity === 'high' ? itemSeverity >= 4 : itemSeverity === Number(severity)))
+        && (type === 'all' || item.incident_type === type)
+        && (severity === 'all' || (severity === 'high' ? item.severity >= 4 : item.severity === Number(severity)))
         && (status === 'all' || item.status === status)
         && (after === null || timestamp >= after)
         && (before === null || timestamp <= before)
@@ -117,15 +114,11 @@ export function ReportsLibrary() {
         && (toMinutes === null || minutes <= toMinutes);
     });
     return result.sort((a, b) => {
-      const aSeverity = a.severity ?? a.severityLevel;
-      const bSeverity = b.severity ?? b.severityLevel;
-      const aConfidence = a.confidence ?? a.confidenceScore;
-      const bConfidence = b.confidence ?? b.confidenceScore;
       if (sort === 'oldest') return +new Date(a.generatedAt) - +new Date(b.generatedAt);
-      if (sort === 'severity-high') return bSeverity - aSeverity;
-      if (sort === 'severity-low') return aSeverity - bSeverity;
-      if (sort === 'confidence-high') return bConfidence - aConfidence;
-      if (sort === 'confidence-low') return aConfidence - bConfidence;
+      if (sort === 'severity-high') return b.severity - a.severity;
+      if (sort === 'severity-low') return a.severity - b.severity;
+      if (sort === 'confidence-high') return b.confidence - a.confidence;
+      if (sort === 'confidence-low') return a.confidence - b.confidence;
       return +new Date(b.generatedAt) - +new Date(a.generatedAt);
     });
   }, [reports, search, type, severity, status, datePreset, fromDate, toDate, fromTime, toTime, sort]);
@@ -205,13 +198,9 @@ export function ReportsLibrary() {
 
 function ReportCard({ item, busy, onStatus, onReanalyze, onDelete, onOpen }: { item: ReportLibraryItem; busy: boolean; onStatus: (item: ReportLibraryItem, status: ReviewStatus) => void; onReanalyze: (item: ReportLibraryItem) => void; onDelete: (item: ReportLibraryItem) => void; onOpen: (item: ReportLibraryItem) => void }) {
   const href = `/reports/${encodeURIComponent(item.videoId)}?run=${encodeURIComponent(item.modelRunId)}`;
-  const itemType = item.incident_type || item.incidentType;
-  const itemSummary = item.description || item.summary;
-  const itemSeverity = item.severity ?? item.severityLevel;
-  const itemConfidence = item.confidence ?? item.confidenceScore;
   return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.reportId}`} tabIndex={-1}>
-    <div className="relative aspect-video bg-ink/90">{item.playbackUrl ? <video className="h-full w-full object-cover opacity-85" muted playsInline preload="metadata" src={item.playbackUrl} /> : <div className="grid h-full place-items-center text-sm text-white/50">Preview unavailable</div>}<span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(itemSeverity)}`}>Severity {itemSeverity}</span><span className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink">{statusLabel(item.status)}</span></div>
-    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{itemType}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div><span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(itemConfidence * 100)}%</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{itemSummary}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {new Date(item.generatedAt).toLocaleString()}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>
+    <div className="relative aspect-video bg-ink/90">{item.playbackUrl ? <video className="h-full w-full object-cover opacity-85" muted playsInline preload="metadata" src={item.playbackUrl} /> : <div className="grid h-full place-items-center text-sm text-white/50">Preview unavailable</div>}<span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(item.severity)}`}>Severity {item.severity}</span><span className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink">{statusLabel(item.status)}</span></div>
+    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div><span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {new Date(item.generatedAt).toLocaleString()}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>
       <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><button className="action" disabled={busy} onClick={() => onReanalyze(item)} type="button">Re-analyze</button><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
     </div>
   </article>;
