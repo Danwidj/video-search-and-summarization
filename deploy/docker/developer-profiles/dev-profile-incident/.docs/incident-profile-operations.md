@@ -175,7 +175,7 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 7. **Client Type Enforcement:** Remote models must use `_type: openai` (`LLM_MODEL_TYPE=openai`, `VLM_MODEL_TYPE=openai`). Never use `_type: nim` against remote endpoints; the `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible endpoints.
 
 > [!NOTE]
-> For the current live environment values and deployed model configurations on `kwanz-ws`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#3-live-vm-configuration-snapshot).
+> For the current live environment values and deployed model configurations on `kwanz-ws`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#4-live-vm-configuration-snapshot-kwanz-ws).
 
 ---
 

@@ -4,6 +4,22 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-25: Adopt NVIDIA's agent-doc layout (profile AGENTS.md + profile-local agentskills.io skills)
+- **Decision:** Mirror how upstream VSS structures agent guidance.
+  - Add `dev-profile-incident/AGENTS.md` (with a `CLAUDE.md` that imports it) for code changes: components, per-component checks, architecture rules, Always / Ask first / Never boundaries, the docs rule as a table, and a `.docs/` map. This follows the pattern of `services/agent/AGENTS.md`.
+  - Add operational skills in agentskills.io format under `dev-profile-incident/skills/` (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`), with a router `skills/README.md` modelled on the root `skills/README.md`.
+  - Make them discoverable to Claude Code through symlinks in repo-root `.claude/skills/`. Narrow the root `.gitignore` from `.claude` to `**/.claude/*` plus `!/.claude/skills/`, so local Claude state stays untracked.
+  - Skills link to `.docs/` rather than copying it.
+  - Tidy while here: renumber the duplicate `## 3.` in `status.md`, fix broken archive and anchor links, and remove the drifting duplicate `incident-console/docs/vlm_benchmark_results.md` (single copy kept in `eval/docs/`).
+- **Why:** NVIDIA separates *coding* guidance (per-component `AGENTS.md`/`CLAUDE.md`) from *operating* guidance (skills: deploy and runtime procedures an agent follows from natural language). The profile had reference docs only, with no task-shaped procedures, so agents re-derived runbooks from long `.docs/` files each session.
+  - Symlinks in root `.claude/skills/` load at session start, whereas a nested `.claude/skills/` loads only after a file in that subdirectory is read.
+- **Alternatives rejected:**
+  - Putting the skills in root `skills/` next to the `vss-*` skills. Rejected because it edits NVIDIA's catalogue and `skills/README.md`, creating merge conflicts on every upstream sync, and upstream Skills Eval CI would run on them.
+  - One `AGENTS.md` per component. Deferred: a single profile file is lean enough at this size.
+  - Renaming `.docs/` to `docs/`. Rejected by the captain (avoids link churn).
+  - A `incident-update-docs` skill. Rejected because the docs rule is coding guidance, which belongs in `AGENTS.md`.
+- **Links:** [`../AGENTS.md`](../AGENTS.md); [`../skills/README.md`](../skills/README.md); [NVIDIA `skills/README.md`](../../../../../skills/README.md); [Claude Code skills docs](https://code.claude.com/docs/en/skills).
+
 ### 2026-09-25: Unify analysis contract on agent snake_case schema and agent prompt
 - **Decision:** Unify `incident-console-v2` onto the reference `snake_case` analysis schema defined by `vss-agent` (`IncidentReport` in `services/agent/src/vss_agents/data_models/incident_report.py`) across both Gateway and Agent modes. Delete the agent-mode `camelCase` translator in `app/api/analysis/route.ts`. Update Gateway mode prompt (`lib/analysis/prompt.ts`, version `incident-v2-snake`) to use the agent's extraction rules and request the identical `snake_case` JSON shape. Preserve tolerant parsing and legacy `camelCase` read-compatibility in `reportFromNotes`. Enforce schema parity through checked-in `incident-report-contract.json` and unit tests in both v2 and agent.
 - **Why:** Gateway mode and Agent mode previously maintained divergent schemas (`camelCase` vs `snake_case`, different default values, entity mapping differences, dropped fields like `location` and `incident_start_confirmed`). The captain decided: one contract, the agent's `snake_case` field names, and the agent's prompt used for both modes.

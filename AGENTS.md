@@ -13,30 +13,19 @@ Other services have their own `AGENTS.md` (e.g. [`services/agent/AGENTS.md`](ser
 
 ## Incident Search & Reporting Capstone (Daniel's team)
 
-A video-driven incident search and reporting system is being built on this VSS blueprint fork, sponsored by NVIDIA NVAITC. The profile README and technical reference docs live under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/):
+This fork adds a video-driven incident search and reporting system (sponsored by NVIDIA NVAITC) under [`deploy/docker/developer-profiles/dev-profile-incident/`](deploy/docker/developer-profiles/dev-profile-incident/). It is laid out like NVIDIA's own agent docs:
 
-- [`README.md`](deploy/docker/developer-profiles/dev-profile-incident/README.md) — Short human entry point: doc index and setup steps. Start here.
-- [`.docs/action-plan.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/action-plan.md) — Goals and MVP1/MVP2 scope.
-- [`.docs/status.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/status.md) — Current implementation status, outstanding items, known issues, and live VM configuration snapshot.
-- [`.docs/architecture.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/architecture.md) — System context, component tables, deployment topologies, and upload/analyze/search sequence diagrams.
-- [`.docs/data.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/data.md) — Supabase PostgreSQL schema (ERD & table specs), Cloudflare R2 bucket layout, and documented data quirks.
-- [`.docs/analysis-schema.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/analysis-schema.md) — Reference incident report format (agent `snake_case`), field specs, the unified contract shared by gateway and agent modes, and DB persistence mapping.
-- [`.docs/incident-profile-operations.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-profile-operations.md) — AI/implementer-facing operational facts: environments, native vs Docker split, SSH troubleshooting, deploy runbook, and verification checklist.
-- [`.docs/decisions.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/decisions.md) — Chronological architectural and tooling decision log with context, alternatives, and citations.
-- [`.docs/restructure-plan.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/restructure-plan.md) — Option B architecture restructure plan: single machine-output writer, schema migration to Supabase, and field persistence clean-up.
-- [`.docs/archive/`](deploy/docker/developer-profiles/dev-profile-incident/.docs/archive/) — Retired local deployment and legacy plan documents preserved for reference.
+- **Code changes:** [`dev-profile-incident/AGENTS.md`](deploy/docker/developer-profiles/dev-profile-incident/AGENTS.md) has the components, checks, architecture rules, boundaries, the standing docs rule and a map of `.docs/`. Read it before touching anything in the profile, including its `services/agent` incident code.
+- **Operating the profile:** [`dev-profile-incident/skills/`](deploy/docker/developer-profiles/dev-profile-incident/skills/README.md) holds agentskills.io skills (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`). Claude Code loads them automatically through the symlinks in [`.claude/skills/`](.claude/skills/).
+- **Background facts:** [`dev-profile-incident/.docs/`](deploy/docker/developer-profiles/dev-profile-incident/.docs/). Start with `status.md`.
+- **Never** deploy or tear down this profile with `dev-profile.sh` or NVIDIA's `vss-deploy-profile` skill. Use `start.sh` and the `incident-*` skills.
 
-When working on this project, read the profile README first, then whichever `.docs/` document(s) match the task.
+**Standing docs rule:** any change under `dev-profile-incident/` updates the affected `.docs/` file(s) and `incident-*` skill(s) in the same PR, and any architectural or tooling decision adds a `.docs/decisions.md` entry. The table in the profile `AGENTS.md` says which file to update. Stale docs are a defect, not a follow-up.
 
-**Standing docs rule:** Any change under `deploy/docker/developer-profiles/dev-profile-incident/` (code, scripts, config, deployment, env/secrets layout, architecture) must update the affected `.docs/` file(s) in the same PR — `.docs/action-plan.md` for scope/milestones, `.docs/status.md` for implementation status or known issues, `.docs/architecture.md` for topology/diagrams/components, `.docs/data.md` for database schema or R2 storage changes, `.docs/analysis-schema.md` for report model/contract changes, and `.docs/incident-profile-operations.md` for runtime/deploy/troubleshooting facts — and keep the profile README's doc index accurate if a doc is added, moved, or renamed. Any PR making an architectural or tooling decision must also add an entry to `.docs/decisions.md`. Stale docs are a defect, not a follow-up.
+## Environment Pointers
 
-## Component & Environment Pointers
-
-- **Incident Console v2 (Next.js):** Active frontend under [`incident-console-v2/`](deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/README.md), including the real-VST R2 upload fallback.
-- **Incident Console v1 (Streamlit, retired):** Implementation notes (v1 schema, upload contract, lazy previews, GT eval, DB connection contract, evidence batching) are in [`incident-console/README.md`](deploy/docker/developer-profiles/dev-profile-incident/incident-console/README.md); shared DB truth, PostgREST CRUD helper, and VM DPI blocking are in [`.docs/data.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/data.md).
-- **Shell Dotfiles & Deploy Scripts:** VM dotfiles bootstrap in [`.dotfiles/`](deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/README.md), standalone deploy scripts in [`.scripts/`](deploy/docker/developer-profiles/dev-profile-incident/.scripts/README.md), and daily laptop launcher [`start.sh`](deploy/docker/developer-profiles/dev-profile-incident/start.sh).
-- **UI Mocking (Zero GPU/NIM):** See [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server; a mock-data Postgres-schema mock does not exist (do not conflate).
-- **Automatic Environment Setup:** [`.githooks/`](.githooks/README.md) synchronizes untracked `.env` files, `.env.local` copies, symlinks, and `uv` virtual environments across worktrees. Run `.githooks/activate.sh` once per clone.
+- **Zero-GPU UI work:** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two).
+- **Automatic environment setup:** [`.githooks/`](.githooks/README.md) keeps untracked `.env` files, `.env.local` copies, symlinks and `uv` virtual environments in sync across worktrees. Run `.githooks/activate.sh` once per clone.
 
 ## Maintaining this file
 

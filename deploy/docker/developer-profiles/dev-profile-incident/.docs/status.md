@@ -67,7 +67,7 @@ The following items were identified during schema validation and are deferred to
 
 ---
 
-## 3. Live VM Configuration Snapshot (`kwanz-ws`)
+## 4. Live VM Configuration Snapshot (`kwanz-ws`)
 
 *Verified live read-only over SSH via `.scripts/resolve-ssh-target.sh` on 2026-09-25 01:43:45+08:00 (2026-09-24T17:43:45Z).*
 
