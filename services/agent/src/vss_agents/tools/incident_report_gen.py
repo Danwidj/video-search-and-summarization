@@ -345,6 +345,13 @@ class IncidentReportGenInput(BaseModel):
         default=None,
         description="Optional override for user_query (kept separate so callers can pass both explicitly).",
     )
+    skip_hitl: bool = Field(
+        default=False,
+        description=(
+            "Internal field set by the incident /analyze REST route, which has no human prompt callback; "
+            "passed through to video_report_gen. Do not populate this field from LLM tool calls."
+        ),
+    )
 
 
 @register_function(config_type=IncidentReportGenConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
@@ -360,6 +367,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             "sensor_id": tool_input.sensor_id,
             "user_query": user_query,
             "media_type": "video",
+            "skip_hitl": tool_input.skip_hitl,
         }
         if tool_input.vlm_reasoning is not None:
             video_report_input["vlm_reasoning"] = tool_input.vlm_reasoning

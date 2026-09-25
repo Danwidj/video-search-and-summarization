@@ -116,6 +116,7 @@ class TestAnalyzeIncidentRoute:
         tool_input = tool.ainvoke.await_args.args[0]
         assert tool_input["sensor_id"] == "camera-uploads/dock-b.mp4"
         assert tool_input["incident_id"] == "v0123456789abcdef01"
+        assert tool_input["skip_hitl"] is True
 
     def test_uses_incident_id_as_sensor_id_when_db_unconfigured(self):
         app, tool, _ = self._build_app(resolved_source=None)

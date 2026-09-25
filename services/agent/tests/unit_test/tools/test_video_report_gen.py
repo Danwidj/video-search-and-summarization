@@ -30,6 +30,8 @@ from vss_agents.tools.video_report_gen import VideoReportGenInput
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.tools.video_report_gen import _convert_markdown_to_pdf
 from vss_agents.tools.video_report_gen import _divide_video_into_chunks
+from vss_agents.tools.video_report_gen import _filter_short_duration_across_chunks
+from vss_agents.tools.video_report_gen import _filter_short_duration_from_markdown
 from vss_agents.tools.video_report_gen import _inject_video_clips
 from vss_agents.tools.video_report_gen import _normalize_chunk_timestamps
 from vss_agents.tools.video_report_gen import _parse_timestamps
@@ -575,3 +577,95 @@ class TestMaxImagesPerVlmCallChunking:
         assert output.http_url is not None
         builder.get_llm.assert_not_called()
         assert tool.ainvoke.call_count >= 1
+
+
+class TestHitlWithoutCallback:
+    """With hitl_enabled and no human prompt callback registered, only headless
+    callers that pass skip_hitl proceed with the configured prompt; every other
+    caller keeps raising the missing-callback error so report_agent can surface it."""
+
+    def _build(self):
+        config = VideoReportGenConfig(
+            object_store="test_object_store",
+            video_understanding_tool="video_understanding",
+            hitl_enabled=True,
+            vlm_prompt="Default test prompt",
+        )
+        vu_config = Mock(max_fps=2, vlm_name="vlm_llm")
+
+        video_understanding_tool = MagicMock()
+        video_understanding_tool.args_schema = None
+        video_understanding_tool.ainvoke = AsyncMock(return_value="## Analysis\n\n[0.0s-5.0s] Event observed.")
+
+        object_store = MagicMock()
+        object_store.upsert_object = AsyncMock()
+
+        builder = MagicMock()
+        builder.get_object_store_client = AsyncMock(return_value=object_store)
+        builder.get_tool = AsyncMock(return_value=video_understanding_tool)
+        builder.get_function_config = Mock(return_value=vu_config)
+        builder.get_llm = AsyncMock(return_value=Mock(model_name="test-vlm-model"))
+        return config, builder, video_understanding_tool
+
+    async def _run(self, config, builder, report_input):
+        start = "2025-01-01T00:00:00.000Z"
+        end = "2025-01-01T00:00:10.000Z"
+        with (
+            patch("vss_agents.tools.video_report_gen.get_stream_id", new_callable=AsyncMock, return_value="stream-1"),
+            patch("vss_agents.tools.video_report_gen.get_timeline", new_callable=AsyncMock, return_value=(start, end)),
+        ):
+            async with video_report_gen(config, builder) as function_info:
+                return await function_info.single_fn(report_input)
+
+    @pytest.mark.asyncio
+    async def test_skip_hitl_uses_configured_prompt_without_callback(self):
+        config, builder, video_understanding_tool = self._build()
+
+        output = await self._run(
+            config,
+            builder,
+            VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?", skip_hitl=True),
+        )
+
+        assert output is not None
+        assert video_understanding_tool.ainvoke.call_count >= 1
+        call_args = video_understanding_tool.ainvoke.call_args_list[0]
+        assert "Default test prompt" in call_args.kwargs["input"]["user_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_interactive_caller_still_raises_missing_callback_error(self):
+        config, builder, video_understanding_tool = self._build()
+
+        with pytest.raises(NotImplementedError, match="No human prompt callback was registered"):
+            await self._run(config, builder, VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?"))
+
+        video_understanding_tool.ainvoke.assert_not_called()
+
+
+class TestFilterShortDurationAcrossChunks:
+    def test_preserves_content_when_all_events_below_threshold(self):
+        chunks = [
+            "[0.3s-1.4s] Monkey jumps on table.\n",
+            "[1.4s-2.5s] Monkey climbs sofa.\n",
+        ]
+        result = _filter_short_duration_across_chunks(chunks, min_duration_seconds=2.0)
+        assert result == chunks
+
+    def test_filters_short_events_in_every_chunk_when_any_long_event_survives(self):
+        chunks = [
+            "[0.0s-8.0s] Person walks.\n[8.0s-8.5s] Glare.",
+            "[10.0s-10.4s] Shadow.",
+            "[20.1s-20.6s] Flicker.",
+        ]
+        result = _filter_short_duration_across_chunks(chunks, min_duration_seconds=2.0)
+        joined = "\n\n".join(result)
+        assert "[0.0s-8.0s] Person walks." in joined
+        assert "[8.0s-8.5s]" not in joined
+        assert "[10.0s-10.4s]" not in joined
+        assert "[20.1s-20.6s]" not in joined
+
+    def test_single_chunk_filter_drops_short_events(self):
+        content = "[0.0s-0.5s] Quick flicker.\n[1.0s-5.0s] Sustained action.\n"
+        result = _filter_short_duration_from_markdown(content, min_duration_seconds=2.0)
+        assert "[0.0s-0.5s]" not in result
+        assert "[1.0s-5.0s] Sustained action." in result

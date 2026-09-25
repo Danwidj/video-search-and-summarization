@@ -126,7 +126,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             ) from exc
 
         sensor_id = await _resolve_sensor_id(incident_id)
-        tool_input: dict[str, Any] = {"sensor_id": sensor_id, "incident_id": incident_id}
+        tool_input: dict[str, Any] = {"sensor_id": sensor_id, "incident_id": incident_id, "skip_hitl": True}
         if body is not None:
             if body.reasoning is not None:
                 tool_input["vlm_reasoning"] = body.reasoning
