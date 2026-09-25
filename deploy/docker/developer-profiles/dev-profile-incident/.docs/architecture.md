@@ -28,28 +28,29 @@ flowchart TB
     subgraph Tunnel["SSH Port Forwarding Tunnel"]
         FwdAgent["localhost:8000 -> VM:8000"]
         FwdHAProxy["localhost:7777 -> VM:7777"]
-        FwdNIM["localhost:30081/30082 -> VM:30081/30082"]
+        FwdNIM["localhost:30081/30082 -> VM:30081/30082<br/>(Unused in Brev mode)"]
     end
 
     subgraph VM["kwanz-ws Shared Workstation"]
         subgraph VMNative["Native Processes (High Feasibility / Fast Restart)"]
             Agent["vss-agent<br/>(NAT Framework, Port 8000)"]
             VideoAnalytics["video-analytics-api<br/>(Optional, Port 8081)"]
-            BehaviorAnalytics["behavior-analytics<br/>(Optional, Port 8080)"]
+            BehaviorAnalytics["behavior-analytics<br/>(Optional, no HTTP port; Kafka consumer)"]
         end
 
         subgraph VMDocker["Docker Appliances (Proprietary Toolchains / JVM / Infra)"]
             HAProxy["vss-haproxy-ingress<br/>(Port 7777)"]
-            VIOSIngress["vss-vios-ingress<br/>(Port 10000)"]
-            StreamProcessing["vss-vios-streamprocessing<br/>(GPU 0)"]
-            NvStreamer["vss-vios-nvstreamer<br/>(GPU 0)"]
-            VIOSPostgres["vss-vios-postgres<br/>(Internal DB)"]
+            VIOSIngress["vss-vios-ingress<br/>(nginx, Port 30888)"]
+            StreamProcessing["vss-vios-streamprocessing<br/>(VST storage API, Port 10000; all GPUs visible)"]
+            VIOSSensor["vss-vios-sensor<br/>(Port 30000)"]
+            NvStreamer["vss-vios-nvstreamer<br/>(RTSP streamer, Port 31000; GPU 0)"]
+            VIOSPostgres["vss-vios-postgres<br/>(Internal DB, Unix socket only)"]
             Redis["redis<br/>(State Cache)"]
-            Phoenix["phoenix<br/>(Telemetry)"]
-            Kafka["kafka<br/>(Analytics Bus, Optional)"]
+            Phoenix["phoenix<br/>(Telemetry, Port 6006)"]
+            Kafka["kafka<br/>(Analytics Bus, always started by start.sh)"]
             Elasticsearch["elasticsearch<br/>(Search Index, Optional)"]
-            RTVICV["vss-rtvi-cv<br/>(DeepStream Perception, MVP2)"]
-            RTVIEmbed["vss-rtvi-embed<br/>(Triton Embeddings, MVP2)"]
+            RTVICV["vss-rtvi-cv<br/>(DeepStream Perception, Port 9000, MVP2)"]
+            RTVIEmbed["vss-rtvi-embed<br/>(Triton Embeddings, Port 8017, GPU 1, MVP2)"]
         end
     end
 
@@ -77,7 +78,7 @@ flowchart TB
     %% VM Internal Routing
     HAProxy --> VIOSIngress
     VIOSIngress --> StreamProcessing
-    VIOSIngress --> NvStreamer
+    VIOSIngress --> VIOSSensor
     Agent -->|Fetch Video Bytes| VIOSIngress
     Agent -->|OpenAI Protocol Inference| Brev
     Agent -->|HTTPS PostgREST & RPC| Supabase
@@ -87,21 +88,24 @@ flowchart TB
 
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
-| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 14 App Router) | `incident-console-v2/` | Primary user interface: video upload, review workflow, eval form, report display |
+| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, review workflow, eval form, report display |
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for local mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, and base profile responses |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis workflow, tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
-| `behavior-analytics` | `kwanz-ws` | 8080 | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
-| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Gateway reverse proxy exposing VIOS, NvStreamer, and storage endpoints |
-| `vss-vios-streamprocessing`| `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Core video decode, encode, and frame processing engine |
-| `vss-vios-nvstreamer` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/vios/` | Video file ingestion and RTSP/WebRTC chunked stream publisher |
-| `vss-vios-ingress` | `kwanz-ws` | 10000 | Docker container | `deploy/docker/services/vios/` | Nginx reverse proxy routing internal storage and streaming API calls |
-| `vss-vios-postgres` | `kwanz-ws` | 5432 (int) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
-| `vss-rtvi-cv` | `kwanz-ws` | Internal | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | DeepStream perception container for real-time video analytics (MVP2) |
-| `vss-rtvi-embed` | `kwanz-ws` | 8017 | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | Triton inference server for real-time video embeddings (MVP2) |
+| `behavior-analytics` | `kwanz-ws` | none (8080 is a HAProxy/label placeholder) | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
+| `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends |
+| `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (nvidia runtime, all GPUs) | `deploy/docker/services/vios/` | VST storage/upload + replay API (receives chunked uploads via the ingress) |
+| `vss-vios-nvstreamer` | `kwanz-ws` | 31000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-alerts/compose.yml` | NvStreamer RTSP file streamer (not in the upload path; not routed by ingress/HAProxy) |
+| `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 |
+| `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker (nvidia runtime) | `deploy/docker/services/vios/initiator/` | VST sensor-ms (sensor registration; /vst/api/v1/sensor via ingress) |
+| `vss-vios-postgres` | `kwanz-ws` | none (Unix socket only) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
+| `vss-rtvi-cv` | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | DeepStream perception container for real-time video analytics (MVP2) |
+| `vss-rtvi-embed` | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 1, bridged) | `deploy/docker/services/rtvi/` | Triton inference server for real-time video embeddings (MVP2) |
 | `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |
-| `phoenix` | `kwanz-ws` | 6006 (int) | Docker container | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
+| `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
+| `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
+| `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
 | `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` | Relational store for reports, incidents, evidence, reviews, and ground truth |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
@@ -112,9 +116,9 @@ flowchart TB
 
 Services are split based on feasibility:
 - **Native Processes (High Feasibility):** `vss-agent` (Python/uv), `video-analytics-api` (Node.js), and `behavior-analytics` (Python). Running natively eliminates Docker image rebuilds on code changes (~2s process restart vs multi-minute container build).
-- **Docker Appliances (Infeasible Natively):** Media engines and perception services (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-postgres`, `vss-rtvi-cv`, `vss-rtvi-embed`). These depend on proprietary CUDA, GStreamer, DeepStream, or Triton container toolchains; host installation is infeasible.
+- **Docker Appliances (Infeasible Natively):** Media engines and perception services (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-sensor`, `vss-vios-postgres`, `vss-rtvi-cv`, `vss-rtvi-embed`). These depend on proprietary CUDA, GStreamer, DeepStream, or Triton container toolchains; host installation is infeasible.
 - **Docker Appliances (No Benefit / JVM):** Infrastructure appliances (`redis`, `kafka`, `elasticsearch`, `phoenix`, `vss-haproxy-ingress`). Standard prebuilt containers or heavy JVM runtimes where native execution provides no development benefit.
-- **Networking:** All containers use host networking (`network_mode: host`), allowing native host processes to reach containerized services directly on `localhost`.
+- **Networking:** Nearly all containers use host networking (`network_mode: host`); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
 
 ---
 
@@ -127,14 +131,13 @@ flowchart TD
     Start["./start.sh --mode local|vm"] --> CheckMode{Mode?}
 
     %% Local Mode Path
-    CheckMode -->|local| LocalInit["Export ANALYSIS_MODE=gateway"]
-    LocalInit --> StartMock["Start mock-backend (127.0.0.1:7777)"]
+    CheckMode -->|local| StartMock["Start mock-backend (127.0.0.1:7777)"]
     StartMock --> StartGateway["Start vlm-gateway (127.0.0.1:8600)"]
-    StartGateway --> RunV2Local["Launch incident-console-v2 (Port 3200)"]
+    StartGateway --> LocalInit["Export INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777,<br/>VLM_GATEWAY_URL=http://127.0.0.1:8600,<br/>ANALYSIS_MODE=gateway"]
+    LocalInit --> RunV2Local["Launch incident-console-v2 (Port 3200)"]
 
     %% VM Mode Path
-    CheckMode -->|vm| VMInit["Export ANALYSIS_MODE=agent"]
-    VMInit --> CheckSSH["Check VM State via SSH<br/>(docker compose ps & native-services.sh status)"]
+    CheckMode -->|vm| CheckSSH["Check VM State via SSH<br/>(docker compose ps & native-services.sh status)"]
     CheckSSH --> StateDecision{Deploy State?}
     
     StateDecision -->|Nothing Running| FreshDeploy["Deploy Docker Appliances over SSH<br/>Start Native Services via native-services.sh"]
@@ -145,20 +148,21 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open SSH Tunnel (.scripts/tunnel.sh)<br/>8000, 7777, 30081, 30082"] --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777, 30081, 30082<br/>then wait for localhost:8000/health"] --> VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
+    VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
 ### SSH Tunnel Port Forwards
 
-When running in VM mode, `.scripts/tunnel.sh` establishes an SSH tunnel forwarding the following
+When running in VM mode, `start.sh` opens a backgrounded SSH tunnel (the standalone equivalent is `.scripts/tunnel.sh`) forwarding the following
 ports from `localhost` to `kwanz-ws` (`10.131.1.5`):
 
 | Local Port | Remote Destination | Target Service | Usage |
 |---|---|---|---|
 | `8000` | `10.131.1.5:8000` | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`) |
 | `7777` | `10.131.1.5:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
-| `30081` | `10.131.1.5:30081` | LLM NIM Endpoint | Tunneled LLM inference (when running local NIM or tunneled proxy) |
-| `30082` | `10.131.1.5:30082` | VLM NIM Endpoint | Tunneled VLM inference (when running local NIM or tunneled proxy) |
+| `30081` | `10.131.1.5:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
+| `30082` | `10.131.1.5:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |
 
 ---
 
@@ -193,7 +197,7 @@ OPENAI_API_KEY=<brev-switchyard-api-key>
    - **VLM (`nvidia/cosmos-3-super-reasoner`):** Must support base64 MP4 `video_url` inlining (`data:video/mp4;base64,...`) and frame-by-frame JPEG extraction.
 3. **URL Format Rule:** Set `*_BASE_URL` without a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Agent and LangChain client instantiations append `/v1` automatically.
 4. **Authentication Rule:** Set `OPENAI_API_KEY` to the Brev Switchyard key; it is shared across LLM, VLM, and `eval_llm_judge`.
-5. **GPU Device Allocation Rule:** In remote mode, dedicate GPU 0 to video infrastructure (`vss-vios-nvstreamer`, `vss-vios-streamprocessing`, and in MVP2 `vss-rtvi-cv`/`vss-rtvi-embed`). Keep GPU 1 idle and unallocated.
+5. **GPU Device Allocation:** nvstreamer is pinned to GPU 0 and streamprocessing/sensor see all GPUs (nvidia runtime). For MVP2, RT-CV uses GPU 0 (`RT_CV_DEVICE_ID=0`) and RT-Embed uses GPU 1 (`RT_EMBED_DEVICE_ID=1`). No local LLM/VLM NIM uses either GPU in remote mode.
 
 ---
 
@@ -215,32 +219,38 @@ sequenceDiagram
     participant DB as Supabase PostgREST & RPC
 
     User->>UI: Select and upload video clip
-    UI->>VST: Chunked upload (mediaFile, filename)
+    UI->>UI: POST /api/uploads
+    UI->>VST: POST /api/v1/videos (via INCIDENT_AGENT_BASE_URL)
+    VST-->>UI: upload url (.../vst/api/v1/storage/file)
+    UI->>VST: Single-request chunked upload (mediaFile, filename, nvstreamer-* headers)
     VST-->>UI: Chunk response (sensorId, filePath)
     
-    alt Missing durable R2 key (real VST case)
+    alt Chunk response lacks a valid R2 key (never with mock-backend, which returns anomaly/<category>/<filename>)
         UI->>UI: Call Next.js POST /api/uploads/r2
-        UI->>R2: PutObject (uploads/<sensorId>/<uuid>.mp4)
+        UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
         R2-->>UI: Stored object key
     end
 
+    UI->>VST: POST /api/uploads/complete → /api/v1/videos/{sensorId}/complete
+
     UI->>UI: Trigger POST /api/analysis
-    UI->>R2: Generate 1-hour presigned GET URL
-    R2-->>UI: Signed video URL
+    UI->>UI: Sign 1-hour R2 GET URL locally (no R2 call)
     
     UI->>Gateway: POST /v1/chat/completions (Prompt + Video URL)
     Gateway->>Brev: Forward with Bearer Auth Header
+    Brev->>R2: GET video via presigned URL
     Brev-->>Gateway: VLM Completion (JSON / text)
     Gateway-->>UI: Raw Completion
 
-    opt Invalid JSON structure
+    UI->>UI: Validate & parse with incidentAnalysisSchema (Zod)
+
+    opt parse/schema validation fails
         UI->>Gateway: Retry repair prompt with raw content
         Gateway->>Brev: Forward repair request
         Brev-->>Gateway: Corrected JSON response
-        Gateway-->>UI: Sanitized JSON
+        Gateway-->>UI: Raw repaired completion
+        UI->>UI: Re-validate & parse repaired JSON with schema
     end
-
-    UI->>UI: Validate & parse with incidentAnalysisSchema (Zod)
     
     %% Persistence
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
@@ -264,21 +274,29 @@ sequenceDiagram
     actor User as Reviewer (Browser)
     participant UI as incident-console-v2 (Next.js)
     participant Tunnel as SSH Tunnel (:7777 / :8000)
-    participant VIOS as VIOS / NvStreamer (:7777)
+    participant VIOS as HAProxy :7777 → vss-vios-ingress :30888 → VST streamprocessing :10000
     participant R2 as Cloudflare R2 Bucket
     participant Agent as vss-agent (:8000)
     participant Brev as Brev Switchyard API
     participant DB as Supabase PostgREST & RPC
 
     User->>UI: Select and upload video clip
-    UI->>Tunnel: Chunked upload to localhost:7777
-    Tunnel->>VIOS: Forward chunked upload
+    UI->>UI: POST /api/uploads
+    UI->>Tunnel: POST localhost:8000/api/v1/videos (INCIDENT_AGENT_BASE_URL)
+    Tunnel->>Agent: Forward /api/v1/videos
+    Agent-->>UI: upload url (http://localhost:7777/vst/api/v1/storage/file)
+
+    UI->>Tunnel: Single-request chunked upload to localhost:7777
+    Tunnel->>VIOS: Forward chunked upload (mediaFile, filename, nvstreamer-* headers)
     VIOS-->>UI: Sensor registration (sensorId)
 
     %% R2 Fallback
     UI->>UI: POST /api/uploads/r2
-    UI->>R2: PutObject (uploads/<sensorId>/<uuid>.mp4)
+    UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     R2-->>UI: Durable R2 object key
+
+    UI->>Tunnel: POST localhost:8000/api/v1/videos/{sensorId}/complete
+    Tunnel->>Agent: Forward complete (fetches timeline & storage URL)
 
     UI->>UI: Trigger POST /api/analysis
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
@@ -286,16 +304,18 @@ sequenceDiagram
     UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze
     Tunnel->>Agent: Forward analyze request (model_run_id)
 
-    Agent->>VIOS: Fetch video bytes from internal URL (10.131.1.5:10000)
+    Agent->>DB: GET videos (resolve sensor_id from videos.source)
+    Agent->>VIOS: Fetch video from VST_INTERNAL_URL (http://10.131.1.5:30888, vss-vios-ingress → streamprocessing :10000)
     VIOS-->>Agent: Video stream bytes
     
     Agent->>Brev: VLM & LLM Inference (nemotron-3-ultra / cosmos-3-super)
     Brev-->>Agent: Structured output
     
-    Agent->>Agent: Parse into IncidentReport (Pydantic)
-    Agent->>DB: Call /rpc/insert_incident (atomic delete/insert)
-    Agent->>DB: Upsert entities, instruments, assets
-    Agent->>DB: Upsert videos (WARNING: overwrites filepath with VST URL!)
+    Agent->>Agent: Parse into IncidentReport (Pydantic, LLM structured output)
+    Agent->>DB: Upsert videos (filepath = VST URL — overwritten later by UI)
+    Agent->>DB: Upsert model_runs (agent model_name)
+    Agent->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
+    Agent->>DB: Delete+insert entities, instruments, assets (best-effort, failures only logged)
 
     Agent-->>Tunnel: Return IncidentReport JSON
     Tunnel-->>UI: Forward agent response
@@ -313,6 +333,9 @@ sequenceDiagram
 ### Sequence C: Natural Language Video Search (Planned MVP2)
 
 *Multi-subagent search workflow querying indexed Elasticsearch video embeddings.*
+
+> [!NOTE]
+> The search route `/api/v1/incidents/search` and the UI `/search` view are planned for MVP2. In `dev-profile-search`, search components (`search_agent`, `embed_search`, `attribute_search`, and `/api/v1/embed_search`) exist, but the VM incident profile currently loads `dev-profile-base`'s configuration which does not register them.
 
 ```mermaid
 sequenceDiagram
