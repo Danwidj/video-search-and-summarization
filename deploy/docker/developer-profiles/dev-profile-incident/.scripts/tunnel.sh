@@ -33,7 +33,7 @@
 # when the console exits.
 #
 # VM username resolution (VSS_SSH_TARGET / VSS_SSH_USER / VSS_SSH_HOST) is
-# the same as start.sh — see resolve-ssh-target.sh for the full order.
+# non-interactive (no prompt) — see resolve-ssh-target.sh for the full order.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
