@@ -23,7 +23,7 @@ Current delivery status verified against the codebase:
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
 | **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (Unified contract across gateway and agent modes onto agent snake_case schema and agent extraction prompt; legacy camelCase read-compatibility retained) |
-| **Live VM & Brev Verification** | **Done (Live)** | Verified live via `./start.sh --mode vm` with `~/Desktop/test2.mp4` against Brev Switchyard; Agent and Gateway modes both produce valid non-empty snake_case reports; fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
+| **Live VM & Brev Verification** | **Done (Live)** | Two-flows end-to-end run on 2026-09-25 with `~/Desktop/test2.mp4` against Brev Switchyard (see §5): `./start.sh --mode vm` (agent mode on `kwanz-ws`) and `./start.sh --mode local` (gateway mode via `mock-backend` + `vlm-gateway`) both produce valid non-empty snake_case reports; each re-analysis writes a distinct `model_runs` row in both modes; review flow `unreviewed` -> `verified` works in both modes. Schema/field parity holds across the flows; content consistency does not (different VLMs, see known issue 7). Fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
 | **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
 | **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
 | **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
@@ -48,6 +48,10 @@ The following anomalies are currently present in the codebase and represent inte
    Four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) remain in the live Supabase database from a pre-v1 integer-report-id schema. No current codebase references them, but they consume table namespace.
 6. **RLS Disabled on Public Tables:**
    Row Level Security is currently disabled across public schema tables, and default Supabase grants permit full DML to `anon` and `authenticated` roles. Backend code exclusively uses the service role key server-side, but restricting `anon` access remains a pending hardening step.
+7. **Content Divergence Between Agent and Gateway Modes:**
+   The two modes share one schema and prompt but call different VLMs (agent: `nvidia/cosmos-3-super-reasoner`; gateway: `nvidia/cosmos-3-nano-reasoner`), so the same clip yields different reports. In the 2026-09-25 two-flows run on `test2.mp4` (§5), agent mode reported a monkey, severity 1, `duration_seconds` 5; gateway mode reported a cat, severity 3, `duration_seconds` 0.
+8. **Gateway Mode Writes `duration_seconds: 0`:**
+   In the same run, gateway mode stored `duration_seconds: 0` for a 5.3s clip while its own timeline runs to 5.0s. The wrong value is persisted without any validation error. Not yet fixed.
 
 ---
 
@@ -98,57 +102,56 @@ Active configuration inspected in `/srv/rise-up/vss/deploy/docker/developer-prof
 
 ---
 
-## 5. Live Verification Log (2026-09-25)
+## 5. Live Verification Log: Two-Flows End-to-End Test (2026-09-25)
 
-End-to-end verification of `start.sh --mode vm` with Brev Switchyard and the unified snake_case analysis contract using `~/Desktop/test2.mp4` (5.3s clip):
+Comprehensive end-to-end verification of `dev-profile-incident` across both analysis modes (**VM / Agent Mode** on `kwanz-ws` and **Local / Gateway Mode** with `mock-backend` + `vlm-gateway`), verifying the unified snake_case analysis contract, distinct model run generation on re-analysis, review status transitions, and storage integrity using `~/Desktop/test2.mp4` (2.3 MB, 5.3s clip):
 
-### Commands Executed
-1. **Stack Startup:**
-   ```bash
-   deploy/docker/developer-profiles/dev-profile-incident/start.sh --mode vm
-   ```
-   - SSH preflight to `kwanz-ws`: PASS.
-   - Idempotent deploy check (Docker appliances + native `vss-agent`): PASS (already running).
-   - Tunnel established (ports 8000, 30081, 30082, 7777 forwarded to `10.131.1.5`): PASS.
-   - `incident-console-v2` dev server started on `http://localhost:3200` with `ANALYSIS_MODE=agent`: PASS.
-2. **Video Ingestion:**
-   - Initialized VST storage upload: `POST /api/uploads` -> sensorId `5b79fdb6-8424-4c08-adbb-eae9509325bf`.
-   - Chunked upload to VST ingress (port 7777).
-   - Uploaded video directly to Cloudflare R2 bucket: `POST /api/uploads/r2` -> R2 key `uploads/5b79fdb6-8424-4c08-adbb-eae9509325bf/23e2e7b2-f293-4737-a3b4-b57faa9ff47f.mp4`.
-   - Finalized upload registration: `POST /api/uploads/complete`.
-3. **Agent Mode Live Verification:**
-   - Ran `POST /api/v1/incidents/v5f895248445d65f47d3/analyze` (or via console `POST /api/analysis` with `ANALYSIS_MODE=agent`).
-   - Latency: 15.7s total inference time on Brev (`nvidia/nemotron-3-ultra` + `nvidia/cosmos-3-super-reasoner`).
-   - Result: PASS (HTTP 200). Valid, non-empty snake_case `IncidentReport` generated.
-   - PostgREST Persistence: rows successfully verified in `videos`, `model_runs`, `incidents`, `reports`, `entities`, `assets`. R2 video filepath preserved.
-   - Report Excerpt:
-     - `title`: "Monkey enters living room, knocks over vase, and plays on furniture"
-     - `incident_type`: "animal"
-     - `severity`: 1
-     - `severity_reason`: "A monkey enters a living room, knocks over a vase, and causes general disruption, but no individuals are in immediate physical danger and property damage is minor."
-     - `confidence`: 0.95
-     - `duration_seconds`: 5
-     - `timeline`: 5 items spanning [0.0s-1.1s], [1.1s-2.2s], [2.2s-3.3s], [3.3s-4.4s], [4.4s-5.3s].
-     - `persons`: `[{"description": "Small monkey", "actions": "Enters the living room, knocks over a vase on the coffee table, moves around the room, jumps on a red stool, and stands on the sofa."}]`
-     - `assets`: Vase (knocked over), Stool (climbed), Sofa (walked on), Coffee Table (climbed).
-     - `uncertainties`: `["The exact species of the monkey is not determined.", "It is unclear if the monkey caused any unseen damage or left items behind."]`
-4. **Gateway Mode Live Verification:**
-   - Ran `POST /api/analysis` with `ANALYSIS_MODE=gateway` and `VLM_GATEWAY_URL=http://127.0.0.1:8600`.
-   - Latency: 8.2s total inference time on Brev (`nvidia/cosmos-3-nano-reasoner`).
-   - Result: PASS (HTTP 200). Valid, non-empty snake_case `IncidentReport` generated.
-   - PostgREST Persistence: rows successfully written via `saveVideo`, `saveModelRun`, `insert_incident` RPC, `reports`, `entities`, `instruments`, `assets`.
-   - Report Excerpt:
-     - `title`: "Cat knocks over vase of sunflowers, scattering flowers and glass on living room floor"
-     - `incident_type`: "animal"
-     - `severity`: 3
-     - `severity_reason`: "Cat knocks over a vase, causing broken glass and scattered flowers, creating a safety hazard and property damage"
-     - `confidence`: 1.0
-     - `duration_seconds`: 0
-     - `timeline`: 3 items spanning [0s-0.3s], [0.3s-2.6s], [2.6s-5s].
-     - `instruments`: Vase of sunflowers (threat level 3), Coffee table (threat level 2).
-     - `assets`: Sunflowers (scattered), Glass vase (broken), Living room furniture (unaffected).
+### 5.1 Verification Checklist & Results
 
-### Bugs Found & Fixed
+| # | Verification Item | Mode / Scope | Result | Details |
+|---|---|---|---|---|
+| 1 | **Appliance Stack & Agent Startup** | VM (`kwanz-ws`) | **PASS** | `docker compose -p mdx ps` confirmed 8 appliances up and healthy (`streamprocessing-ms`, `nvstreamer-2d-fusion`, `vst-ingress`, `centralizedb`, `vss-haproxy-ingress`, `redis`, `phoenix`, `kafka`). `vss-agent` restarted on current `main` (`dc878d985`) via `.scripts/native-services.sh` and healthy on port 8000 (`{"value":{"isAlive":true}}`). No `sdr-controller` running. |
+| 2 | **Laptop Launcher: VM Mode** | VM (`./start.sh --mode vm`) | **PASS** | SSH preflight passed; backend appliances detected running; SSH tunnel opened (forwarding 8000, 7777, 30081, 30082); console dev server ready on `:3200`. `GET /api/health` returned HTTP 200 `ready`. |
+| 3 | **Video Ingestion (VM Mode)** | VM (`test2.mp4`) | **PASS** | `POST /api/uploads` -> VST chunked upload to `:7777` (`sensorId: 18d62a4d-9698-4407-a877-63f74803d134`) -> direct R2 upload via `/api/uploads/r2` (`uploads/18d62a4d-9698-4407-a877-63f74803d134/bf704656-3b88-435b-aaa1-b0c18bd1c73f.mp4`) -> finalized via `POST /api/uploads/complete`. |
+| 4 | **Agent Mode Analysis** | VM (`ANALYSIS_MODE=agent`) | **PASS** | `POST /api/analysis` invoked native `vss-agent` on `kwanz-ws` using Brev Switchyard models (`nvidia/nemotron-3-ultra` + `nvidia/cosmos-3-super-reasoner`). Latency: 32s. Valid `IncidentReport` returned: `videoId=v03e884e1dfba65ab953`, `modelRunId=m5b613baff9759dca358`. |
+| 5 | **Storage Integrity (VM Mode)** | VM | **PASS** | `videos.filepath` contains R2 key (`uploads/...`), not overwritten by internal VST URL. Rows persisted to `videos`, `model_runs`, `incidents`, `reports`, `entities`, `assets`. |
+| 6 | **Re-Analysis (VM Mode)** | VM | **PASS** | Triggered second `POST /api/analysis` on same video. Generated a distinct model run ID (`modelRunId=m0929a3a7bd056d6f247`, `reportId=r747e3d6f8c1a6d671e4`). Both runs remain accessible via `GET /api/reports/v03e884e1dfba65ab953?run=<runId>`. |
+| 7 | **Review Workflow (VM Mode)** | VM | **PASS** | `PATCH /api/reports/v03e884e1dfba65ab953/review` transitioned `unreviewed` -> `verified` (`reviewedBy: daniel`). |
+| 8 | **Tunnel Teardown & Port Check** | Laptop | **PASS** | VM mode stopped; trap cleanup closed SSH tunnel. Verified local ports 7777, 8000, 3200, 8600 completely released with zero collisions prior to local mode. |
+| 9 | **Laptop Launcher: Local Mode** | Local (`./start.sh --mode local`) | **PASS** | Mock backend started on `:7777`, `vlm-gateway` started on `:8600`, console started on `:3200`. Health endpoints on all three services returned healthy (`{"value":{"isAlive":true}}`, `{"status":"ok"}`, `{"status":"ready"}`). |
+| 10 | **Video Ingestion (Local Mode)** | Local (`test2.mp4`) | **PASS** | `POST /api/uploads` -> chunked upload to mock VST on `:7777` (`sensorId: sensor-30c7994e0ae95304`, R2 key: `anomaly/road_accidents/test2.mp4`) -> finalized via `POST /api/uploads/complete`. |
+| 11 | **Gateway Mode Analysis** | Local (`ANALYSIS_MODE=gateway`) | **PASS** | `POST /api/analysis` called `vlm-gateway` on `:8600` proxying Brev Switchyard (`nvidia/cosmos-3-nano-reasoner`). Latency: 9s. Valid `IncidentReport` returned: `videoId=v2b6a3a3813585476b01`, `modelRunId=m6868a8b2e7d0aea7650`. |
+| 12 | **Storage Integrity (Local Mode)** | Local | **PASS** | `videos.filepath` confirmed holding R2 key (`anomaly/road_accidents/test2.mp4`). Rows persisted to `videos`, `model_runs`, `incidents`, `reports`, `entities`, `instruments`, `assets`. |
+| 13 | **Re-Analysis (Local Mode)** | Local | **PASS** | Triggered second `POST /api/analysis` on same video. Generated a distinct model run ID (`modelRunId=m907febd09dfb9185af0`, `reportId=rf8821a989f4733f4e25`). Both runs remain accessible via `GET /api/reports/v2b6a3a3813585476b01?run=<runId>`. |
+| 14 | **Review Workflow (Local Mode)** | Local | **PASS** | `PATCH /api/reports/v2b6a3a3813585476b01/review` transitioned `unreviewed` -> `verified` (`reviewedBy: daniel`). |
+| 15a | **Cross-Flow Schema / Contract Parity** | Both Flows | **PASS** | Both modes produce the identical unified snake_case schema (`title`, `incident_type`, `severity`, `severity_reason`, `confidence`, `duration_seconds`, `timeline`, `persons`, `instruments`, `assets`, `uncertainties`, `location`). Contract parity confirmed across Pydantic model, JSON contract, and Zod parser. |
+| 15b | **Cross-Flow Content Consistency** | Both Flows | **NOT MET** | Divergence between `nvidia/cosmos-3-super-reasoner` (agent: monkey, severity 1, `duration_seconds` 5) and `nvidia/cosmos-3-nano-reasoner` (gateway: cat, severity 3, `duration_seconds` 0) on the same 5.3s clip. See known issues 7 and 8. |
+
+### 5.2 Excerpts from Live Verification
+
+#### Agent Mode Live Report Excerpt (`v03e884e1dfba65ab953`, `m5b613baff9759dca358`)
+- **Model:** `vss-agent` (`nvidia/nemotron-3-ultra` + `nvidia/cosmos-3-super-reasoner` via Brev Switchyard)
+- **Title:** "Monkey enters living room, knocks over vase and plays on furniture"
+- **Incident Type:** `animal` (Severity: 1, Confidence: 0.95, Duration: 5s)
+- **Severity Reason:** "Minor property damage (spilled vase) with no human presence, injuries, or structural damage observed. The monkey's behavior was playful rather than aggressive."
+- **Timeline:** 5 items spanning [0.3s-1.4s], [1.4s-2.5s], [2.5s-3.6s], [3.6s-4.7s], [5.0s-5.3s]
+- **Persons / Entities:** `[{"description": "Monkey with dark fur and lighter face, agile and playful movements", "actions": "Knocked over vase of sunflowers; jumped between floor, coffee table, and sectional sofa; explored room energetically"}]`
+- **Assets:** `Vase of sunflowers` (knocked over), `Sunflowers and greenery` (scattered), `Coffee table` (climbed), `Beige sectional sofa` (climbed)
+- **Uncertainties:** "How the monkey entered the residence is not shown", "Whether the monkey caused any damage beyond the spilled vase", "The monkey's origin (pet, escapee, wild) is unknown"
+- **Location:** "Residential living room (camera location unspecified)"
+
+#### Gateway Mode Live Report Excerpt (`v2b6a3a3813585476b01`, `m6868a8b2e7d0aea7650`)
+- **Model:** `nvidia/cosmos-3-nano-reasoner` (via `vlm-gateway` :8600)
+- **Title:** "Cat knocks over vase of sunflowers, scattering flowers and glass on living room floor"
+- **Incident Type:** `animal` (Severity: 3, Confidence: 1.0, Duration: 0s)
+- **Severity Reason:** "Cat knocks over a vase, causing broken glass and scattered flowers, creating a safety hazard and property damage"
+- **Timeline:** 3 items: [0.0s-0.3s] "A cat leaps onto a table with a vase of sunflowers.", [0.3s-2.6s] "The cat knocks over the vase, causing it to shatter on the floor.", [2.6s-5.0s] "Sunflowers and broken glass scatter across the living room floor."
+- **Persons / Entities:** `[]`
+- **Instruments:** `Vase of sunflowers` (threat level 3), `Coffee table` (threat level 2)
+- **Assets:** `Sunflowers`, `Broken glass`, `Living room furniture`
+- **Location:** "Indoor living room with large windows and a balcony view"
+
+### 5.3 Bugs Found & Fixed During Implementation
 1. **HITL `NotImplementedError` on REST API Endpoint:**
    - *Symptom:* `POST /api/v1/incidents/{id}/analyze` crashed with HTTP 500: `NotImplementedError: No human prompt callback was registered. Unable to handle requested prompt.`
    - *Cause:* `config.yml` enables `hitl_enabled: true`. When called non-interactively via the REST API or console, no callback is registered with NAT's `user_input_manager`.
