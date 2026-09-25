@@ -142,7 +142,7 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
 
-test('agent mode: calls agent analyze endpoint, maps snake_case report, writes only report bookkeeping', async () => {
+test('agent mode: calls agent analyze endpoint, keeps native snake_case report, writes only report bookkeeping', async () => {
   process.env.ANALYSIS_MODE = 'agent';
   delete process.env.VLM_GATEWAY_URL;
 
@@ -157,13 +157,14 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, writes o
         confidence: 0.95,
         incident_start: '00:01:15',
         incident_end: '00:01:45',
+        incident_start_confirmed: true,
         description: 'Two vehicles collided at the intersection.',
         persons: [
           { description: 'Driver of sedan', actions: 'exited vehicle' }
         ],
         severity_reason: 'High impact collision with lane obstruction.',
         timeline: [
-          { start_seconds: 75, end_seconds: 105, description: 'Sedan enters intersection and collides' }
+          { start_seconds: 75.5, end_seconds: 105.0, description: 'Sedan enters intersection and collides' }
         ],
         instruments: [
           { name: 'Sedan', description: 'Blue four-door passenger car', threat_level: 3 }
@@ -172,6 +173,7 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, writes o
           { name: 'Traffic signal', description: 'Damaged post on southwest corner' }
         ],
         uncertainties: ['Exact speed prior to braking'],
+        location: 'Intersection Cam 4',
         duration_seconds: 30,
       };
       return new Response(JSON.stringify(mockAgentResponse), {
@@ -250,29 +252,31 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, writes o
   assert.equal(reportWrite.body.incident_id, report.videoId);
   assert.equal(reportWrite.body.model_run_id, report.modelRunId);
 
-  // Schema & mapping verification
+  // Schema & mapping verification (unified snake_case matching agent Pydantic model)
   assert.equal(report.title, 'Vehicle Collision at Intersection');
-  assert.equal(report.incidentType, 'road accident');
-  assert.equal(report.summary, 'Two vehicles collided at the intersection.');
-  assert.equal(report.startTimestamp, '00:01:15');
-  assert.equal(report.endTimestamp, '00:01:45');
-  assert.equal(report.durationSeconds, 30);
-  assert.equal(report.severityLevel, 4);
-  assert.equal(report.severityReason, 'High impact collision with lane obstruction.');
-  assert.equal(report.confidenceScore, 0.95);
+  assert.equal(report.incident_type, 'road accident');
+  assert.equal(report.description, 'Two vehicles collided at the intersection.');
+  assert.equal(report.incident_start, '00:01:15');
+  assert.equal(report.incident_end, '00:01:45');
+  assert.equal(report.incident_start_confirmed, true);
+  assert.equal(report.duration_seconds, 30);
+  assert.equal(report.severity, 4);
+  assert.equal(report.severity_reason, 'High impact collision with lane obstruction.');
+  assert.equal(report.confidence, 0.95);
   assert.deepEqual(report.timeline, [
-    { startSeconds: 75, endSeconds: 105, description: 'Sedan enters intersection and collides' },
+    { start_seconds: 75.5, end_seconds: 105.0, description: 'Sedan enters intersection and collides' },
   ]);
-  assert.deepEqual(report.entities, [
-    { type: 'human', description: 'Driver of sedan: exited vehicle' },
+  assert.deepEqual(report.persons, [
+    { description: 'Driver of sedan', actions: 'exited vehicle' },
   ]);
   assert.deepEqual(report.instruments, [
-    { name: 'Sedan', description: 'Blue four-door passenger car', threatLevel: 3 },
+    { name: 'Sedan', description: 'Blue four-door passenger car', threat_level: 3 },
   ]);
   assert.deepEqual(report.assets, [
     { name: 'Traffic signal', description: 'Damaged post on southwest corner' },
   ]);
   assert.deepEqual(report.uncertainties, ['Exact speed prior to braking']);
+  assert.equal(report.location, 'Intersection Cam 4');
   assert.equal(report.playbackUrl, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
   assert.equal(report.model, 'vss-agent');
   assert.match(report.videoId, /^v[0-9a-f]{19}$/);
@@ -280,7 +284,7 @@ test('agent mode: calls agent analyze endpoint, maps snake_case report, writes o
   assert.match(report.reportId, /^r[0-9a-f]{19}$/);
 });
 
-test('gateway mode: calls VLM gateway and persists to Supabase', async () => {
+test('gateway mode: calls VLM gateway with snake_case prompt and persists to Supabase', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
 
   const recordedCalls = [];
@@ -295,19 +299,21 @@ test('gateway mode: calls VLM gateway and persists to Supabase', async () => {
               role: 'assistant',
               content: JSON.stringify({
                 title: 'Warehouse Trespassing',
-                incidentType: 'burglary',
-                summary: 'Unauthorized entry detected after hours.',
-                startTimestamp: '00:00:10',
-                endTimestamp: '00:00:50',
-                durationSeconds: 40,
-                severityLevel: 3,
-                severityReason: 'Unauthorized presence in restricted area.',
-                confidenceScore: 0.9,
-                timeline: [{ startSeconds: 10, endSeconds: 50, description: 'Subject climbed fence' }],
-                entities: [{ type: 'human', description: 'Intruder in dark jacket' }],
-                instruments: [{ name: 'Flashlight', description: 'Handheld beam', threatLevel: null }],
+                incident_type: 'burglary',
+                description: 'Unauthorized entry detected after hours.',
+                incident_start: '00:00:10',
+                incident_end: '00:00:50',
+                incident_start_confirmed: true,
+                duration_seconds: 40,
+                severity: 3,
+                severity_reason: 'Unauthorized presence in restricted area.',
+                confidence: 0.9,
+                timeline: [{ start_seconds: 10, end_seconds: 50, description: 'Subject climbed fence' }],
+                persons: [{ description: 'Intruder in dark jacket', actions: 'climbed fence' }],
+                instruments: [{ name: 'Flashlight', description: 'Handheld beam', threat_level: null }],
                 assets: [{ name: 'Perimeter fence', description: 'Cut section' }],
                 uncertainties: ['Entry point details'],
+                location: 'Warehouse Perimeter',
               }),
             },
           },
@@ -338,10 +344,40 @@ test('gateway mode: calls VLM gateway and persists to Supabase', async () => {
   const payload = await response.json();
   assert.ok(payload.report);
   assert.equal(payload.report.title, 'Warehouse Trespassing');
+  assert.equal(payload.report.incident_type, 'burglary');
+  assert.equal(payload.report.description, 'Unauthorized entry detected after hours.');
+  assert.equal(payload.report.severity, 3);
+  assert.equal(payload.report.confidence, 0.9);
+  assert.deepEqual(payload.report.persons, [{ description: 'Intruder in dark jacket', actions: 'climbed fence' }]);
+  assert.deepEqual(payload.report.instruments, [{ name: 'Flashlight', description: 'Handheld beam', threat_level: null }]);
 
   const gatewayCalls = recordedCalls.filter((c) => c.url.includes('/v1/chat/completions'));
   assert.equal(gatewayCalls.length, 1);
+  const gatewayBody = JSON.parse(gatewayCalls[0].options.body);
+  const promptText = gatewayBody.messages[0].content[0].text;
+  assert.ok(promptText.includes('incident_type'));
+  assert.ok(promptText.includes('threat_level'));
+  assert.ok(promptText.includes('duration_seconds'));
 
   const supabaseCalls = recordedCalls.filter((c) => c.url.includes('supabase.test'));
   assert.ok(supabaseCalls.length > 0, 'gateway mode must persist to Supabase');
+
+  // Verify RPC insert call has snake_case mappings
+  const rpcCall = supabaseCalls.find((c) => c.url.includes('/rpc/insert_incident'));
+  assert.ok(rpcCall, 'insert_incident RPC must be called');
+  const rpcBody = JSON.parse(rpcCall.options.body);
+  assert.equal(rpcBody.p_type, 'burglary');
+  assert.equal(rpcBody.p_description, 'Unauthorized entry detected after hours.');
+  assert.equal(rpcBody.p_severity_level, 3);
+  assert.equal(rpcBody.p_confidence_score, 0.9);
+  assert.equal(rpcBody.p_start_timestamp, '00:00:10');
+  assert.equal(rpcBody.p_end_timestamp, '00:00:50');
+  assert.equal(rpcBody.p_duration, 40);
+
+  // Verify entities written from persons
+  const entityCall = supabaseCalls.find((c) => c.url.includes('/entities') && c.options.method === 'POST');
+  assert.ok(entityCall, 'entities table must be written');
+  const entityBody = JSON.parse(entityCall.options.body);
+  assert.equal(entityBody[0].type, 'person');
+  assert.equal(entityBody[0].description, 'Intruder in dark jacket climbed fence');
 });

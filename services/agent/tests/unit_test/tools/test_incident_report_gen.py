@@ -22,18 +22,22 @@ in ``TestEndToEnd`` is a candidate for a live check against a real endpoint
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
+from vss_agents.data_models.incident_report import INCIDENT_TYPES
 from vss_agents.data_models.incident_report import Asset
 from vss_agents.data_models.incident_report import IncidentExtractionError
 from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import Person
 from vss_agents.data_models.incident_report import TimelineItem
+from vss_agents.tools.incident_report_gen import _EXTRACTION_SYSTEM_PROMPT
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
@@ -672,3 +676,37 @@ class TestIncidentReportModels:
         assert inst_id.startswith("i")
         assert len(asset_id) <= 20
         assert asset_id.startswith("a")
+
+    def test_contract_parity_with_json_spec(self):
+        contract_path = (
+            Path(__file__).parents[5]
+            / "deploy"
+            / "docker"
+            / "developer-profiles"
+            / "dev-profile-incident"
+            / "incident-console-v2"
+            / "lib"
+            / "analysis"
+            / "incident-report-contract.json"
+        )
+        assert contract_path.exists(), f"Contract file missing at {contract_path}"
+
+        with open(contract_path, encoding="utf-8") as f:
+            contract = json.load(f)
+
+        assert "fields" in contract
+        agent_fields = set(IncidentReport.model_fields.keys())
+        contract_fields = set(contract["fields"].keys())
+        assert agent_fields == contract_fields, (
+            f"Field mismatch between IncidentReport and contract: diff={agent_fields ^ contract_fields}"
+        )
+
+        # Verify taxonomy enum parity
+        assert contract["fields"]["incident_type"]["enum"] == INCIDENT_TYPES
+
+    def test_extraction_prompt_has_one_rule_per_extracted_field(self):
+        rules = _EXTRACTION_SYSTEM_PROMPT.split("Rules:\n")[1]
+        rule_fields = [line[2:].split()[0] for line in rules.splitlines() if line.startswith("- ")]
+        derived_by_agent = {"incident_start", "incident_end", "incident_start_confirmed"}
+        assert len(rule_fields) == len(set(rule_fields))
+        assert set(rule_fields) == set(IncidentReport.model_fields) - derived_by_agent
