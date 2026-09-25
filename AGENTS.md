@@ -23,6 +23,7 @@ A video-driven incident search and reporting system is being built on this VSS b
 - [`.docs/analysis-schema.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/analysis-schema.md) — Reference incident report format (agent `snake_case`), field specs, and console/gateway translation mapping.
 - [`.docs/incident-profile-operations.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/incident-profile-operations.md) — AI/implementer-facing operational facts: environments, native vs Docker split, SSH troubleshooting, deploy runbook, and verification checklist.
 - [`.docs/decisions.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/decisions.md) — Chronological architectural and tooling decision log with context, alternatives, and citations.
+- [`.docs/restructure-plan.md`](deploy/docker/developer-profiles/dev-profile-incident/.docs/restructure-plan.md) — Option B architecture restructure plan: single machine-output writer, schema migration to Supabase, and field persistence clean-up.
 - [`.docs/archive/`](deploy/docker/developer-profiles/dev-profile-incident/.docs/archive/) — Retired local deployment and legacy plan documents preserved for reference.
 
 When working on this project, read the profile README first, then whichever `.docs/` document(s) match the task.

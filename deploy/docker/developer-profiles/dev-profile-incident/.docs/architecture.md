@@ -124,7 +124,7 @@ Services are split based on feasibility:
 
 ## 2. Deployment & Connectivity
 
-The laptop-to-VM development loop is driven by the unified entrypoint script `start.sh`.
+The one-command entry point for setting up and launching the system is `start.sh` (`./start.sh --mode local` or `./start.sh --mode vm`), executed directly from developer laptops. It automates backend checks, self-healing service deployment, port tunneling, and UI initialization.
 
 ```mermaid
 flowchart TD
