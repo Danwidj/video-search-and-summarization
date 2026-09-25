@@ -124,8 +124,8 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
 | 12 | **Storage Integrity (Local Mode)** | Local | **PASS** | `videos.filepath` confirmed holding R2 key (`anomaly/road_accidents/test2.mp4`). Rows persisted to `videos`, `model_runs`, `incidents`, `reports`, `entities`, `instruments`, `assets`. |
 | 13 | **Re-Analysis (Local Mode)** | Local | **PASS** | Triggered second `POST /api/analysis` on same video. Generated a distinct model run ID (`modelRunId=m907febd09dfb9185af0`, `reportId=rf8821a989f4733f4e25`). Both runs remain accessible via `GET /api/reports/v2b6a3a3813585476b01?run=<runId>`. |
 | 14 | **Review Workflow (Local Mode)** | Local | **PASS** | `PATCH /api/reports/v2b6a3a3813585476b01/review` transitioned `unreviewed` -> `verified` (`reviewedBy: daniel`). |
-| 15a | **Cross-Flow Schema/Field Parity** | Both Flows | **PASS** | Both modes produce the identical unified snake_case schema (`title`, `incident_type`, `severity`, `severity_reason`, `confidence`, `duration_seconds`, `timeline`, `persons`, `instruments`, `assets`, `uncertainties`, `location`). Contract parity confirmed across Pydantic model, JSON contract, and Zod parser. |
-| 15b | **Cross-Flow Content Consistency** | Both Flows | **NOT MET** | The flows use different VLMs (agent: `nvidia/cosmos-3-super-reasoner`; gateway: `nvidia/cosmos-3-nano-reasoner`) and disagree on the same clip: subject monkey vs cat, severity 1 vs 3, `duration_seconds` 5 vs 0 (clip is 5.3s). See known issues 7 and 8. |
+| 15a | **Cross-Flow Schema / Contract Parity** | Both Flows | **PASS** | Both modes produce the identical unified snake_case schema (`title`, `incident_type`, `severity`, `severity_reason`, `confidence`, `duration_seconds`, `timeline`, `persons`, `instruments`, `assets`, `uncertainties`, `location`). Contract parity confirmed across Pydantic model, JSON contract, and Zod parser. |
+| 15b | **Cross-Flow Content Consistency** | Both Flows | **NOT MET** | Divergence between `nvidia/cosmos-3-super-reasoner` (agent: monkey, severity 1, `duration_seconds` 5) and `nvidia/cosmos-3-nano-reasoner` (gateway: cat, severity 3, `duration_seconds` 0) on the same 5.3s clip. See known issues 7 and 8. |
 
 ### 5.2 Excerpts from Live Verification
 
@@ -141,16 +141,14 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
 - **Location:** "Residential living room (camera location unspecified)"
 
 #### Gateway Mode Live Report Excerpt (`v2b6a3a3813585476b01`, `m6868a8b2e7d0aea7650`)
-> [!WARNING]
-> Not re-verified against the database. This excerpt is nearly word-for-word the gateway excerpt from the previous verification log (only the `assets` entry differs), so it may have been carried over rather than read from run `m6868a8b2e7d0aea7650`. An attempt to re-pull the stored `model_runs.notes` for this run failed because no Supabase credentials were available to the reviewer. Re-pull it via the `incident-manage-database` skill and replace these values if they differ.
-
 - **Model:** `nvidia/cosmos-3-nano-reasoner` (via `vlm-gateway` :8600)
 - **Title:** "Cat knocks over vase of sunflowers, scattering flowers and glass on living room floor"
 - **Incident Type:** `animal` (Severity: 3, Confidence: 1.0, Duration: 0s)
 - **Severity Reason:** "Cat knocks over a vase, causing broken glass and scattered flowers, creating a safety hazard and property damage"
-- **Timeline:** 3 items spanning [0.0s-0.3s], [0.3s-2.6s], [2.6s-5.0s]
+- **Timeline:** 3 items: [0.0s-0.3s] "A cat leaps onto a table with a vase of sunflowers.", [0.3s-2.6s] "The cat knocks over the vase, causing it to shatter on the floor.", [2.6s-5.0s] "Sunflowers and broken glass scatter across the living room floor."
+- **Persons / Entities:** `[]`
 - **Instruments:** `Vase of sunflowers` (threat level 3), `Coffee table` (threat level 2)
-- **Assets:** `Sunflowers` (scattered), `Broken glass` (hazardous), `Living room furniture` (unaffected)
+- **Assets:** `Sunflowers`, `Broken glass`, `Living room furniture`
 - **Location:** "Indoor living room with large windows and a balcony view"
 
 ### 5.3 Bugs Found & Fixed During Implementation
