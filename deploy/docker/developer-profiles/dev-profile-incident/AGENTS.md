@@ -48,6 +48,7 @@ uv sync && uv run pytest tests/
 - **Two analysis modes:**
   - `ANALYSIS_MODE=gateway`: the console calls `vlm-gateway` and writes Supabase itself.
   - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent`, which writes `incidents` and evidence.
+  - Both modes share the agent's `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change the contract in both places together.
   - A change to one mode's persistence must be checked against the other. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
 - **PostgREST only from `kwanz-ws`:** port 5432 is DPI-blocked there. All PostgREST writers use `/rpc/insert_incident` for atomic `incidents` + `review_status`.
 - **Storage split:**

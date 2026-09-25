@@ -73,5 +73,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- In agent mode the relational rows hold native agent values. The translated camelCase report exists only in `model_runs.notes`. Fields like `title`, `timeline` and `uncertainties` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
+- Both modes share one `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, enforced by parity tests). The full report lives in `model_runs.notes`. Legacy camelCase notes are still readable. `title`, `severity_reason`, `timeline`, `uncertainties` and `location` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
 - The mock backend picks the `anomaly/<category>` folder by hashing the incident id, not from the content.

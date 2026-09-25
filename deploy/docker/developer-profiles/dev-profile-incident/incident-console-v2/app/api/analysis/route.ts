@@ -34,46 +34,6 @@ function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceC
   return config;
 }
 
-interface AgentIncidentReportResponse {
-  incident_type?: string;
-  severity?: number;
-  confidence?: number;
-  incident_start?: string | null;
-  incident_end?: string | null;
-  incident_start_confirmed?: boolean;
-  description?: string;
-  summary?: string;
-  persons?: Array<{
-    description?: string;
-    actions?: string;
-  }>;
-  entities?: Array<{
-    type?: string;
-    description?: string;
-  }>;
-  location?: string;
-  title?: string;
-  severity_reason?: string;
-  timeline?: Array<{
-    start_seconds?: number;
-    end_seconds?: number | null;
-    description?: string;
-  }>;
-  instruments?: Array<{
-    name?: string;
-    description?: string;
-    threat_level?: number | null;
-  }>;
-  assets?: Array<{
-    name?: string;
-    description?: string;
-  }>;
-  uncertainties?: string[];
-  duration_seconds?: number | null;
-  model_name?: string;
-  model?: string;
-}
-
 async function saveVideo(
   db: PostgrestClient,
   video: { videoId: string; filepath: string; sensorId: string; uploadedAt: string; duration?: number | null },
@@ -162,7 +122,7 @@ async function analyzeViaGateway(
         messages: [
           {
             role: 'user',
-            content: `Convert the response below into the exact JSON structure originally requested. Return JSON only. Preserve its factual content and do not add new observations. Numeric fields must be JSON numbers, never quoted strings: use 3, not "3". For instruments.threatLevel, use an integer from 1 to 5 or null when unknown.\n\n${content}`,
+            content: `Convert the response below into the exact JSON structure originally requested. Return JSON only. Preserve its factual content and do not add new observations. Numeric fields must be JSON numbers, never quoted strings: use 3, not "3". For instruments.threat_level, use an integer from 1 to 5 or null when unknown.\n\n${content}`,
           },
         ],
         stream: false,
@@ -200,7 +160,7 @@ async function analyzeViaGateway(
       filepath: input.filepath,
       sensorId: input.sensorId,
       uploadedAt: generatedAt,
-      duration: analysis.durationSeconds,
+      duration: analysis.duration_seconds,
     });
     operation = 'saving the model run to PostgREST';
     await saveModelRun(db, report);
@@ -208,13 +168,13 @@ async function analyzeViaGateway(
     await db.insertIncident({
       p_incident_id: videoId,
       p_model_run_id: modelRunId,
-      p_type: analysis.incidentType,
-      p_start_timestamp: analysis.startTimestamp,
-      p_end_timestamp: analysis.endTimestamp,
-      p_duration: analysis.durationSeconds,
-      p_description: analysis.summary,
-      p_severity_level: analysis.severityLevel,
-      p_confidence_score: analysis.confidenceScore,
+      p_type: analysis.incident_type,
+      p_start_timestamp: analysis.incident_start,
+      p_end_timestamp: analysis.incident_end,
+      p_duration: analysis.duration_seconds,
+      p_description: analysis.description,
+      p_severity_level: analysis.severity,
+      p_confidence_score: analysis.confidence,
     });
 
     operation = 'resetting incident evidence in PostgREST';
@@ -223,16 +183,16 @@ async function analyzeViaGateway(
       db.deleteWhere('instruments', { incident_id: videoId, model_run_id: modelRunId }),
       db.deleteWhere('assets', { incident_id: videoId, model_run_id: modelRunId }),
     ]);
-    if (analysis.entities.length) {
+    if (analysis.persons.length) {
       operation = 'saving entities to PostgREST';
       await db.upsert(
         'entities',
-        analysis.entities.map((item, index) => ({
+        analysis.persons.map((person, index) => ({
           incident_id: videoId,
           model_run_id: modelRunId,
           entity_id: `e${String(index + 1).padStart(2, '0')}`,
-          type: item.type,
-          description: item.description,
+          type: 'person',
+          description: [person.description?.trim(), person.actions?.trim()].filter(Boolean).join(' ') || 'Person',
           image: null,
         })),
       );
@@ -248,7 +208,7 @@ async function analyzeViaGateway(
           entity_id: null,
           name: item.name,
           description: item.description,
-          threat_level: item.threatLevel,
+          threat_level: item.threat_level,
           image: null,
         })),
       );
@@ -314,102 +274,15 @@ async function analyzeViaAgent(
     });
 
     operation = 'parsing the incident agent response';
-    const agentPayload = (await readUpstream(response, 'Incident agent')) as AgentIncidentReportResponse | null;
+    const agentPayload = (await readUpstream(response, 'Incident agent')) as Record<string, unknown> | null;
     if (!agentPayload || typeof agentPayload !== 'object') {
       throw new Error('Incident agent returned an empty report');
     }
 
     const rawOutput = JSON.stringify(agentPayload);
 
-    operation = 'mapping the incident report';
-    const title = (agentPayload.title || '').trim() || 'Incident Report';
-    const incidentType = (agentPayload.incident_type || '').trim() || 'other';
-    const summary = (agentPayload.description || agentPayload.summary || '').trim() || 'No incident summary available.';
-    const startTimestamp =
-      agentPayload.incident_start && agentPayload.incident_start.trim().length > 0
-        ? agentPayload.incident_start.trim()
-        : null;
-    const endTimestamp =
-      agentPayload.incident_end && agentPayload.incident_end.trim().length > 0
-        ? agentPayload.incident_end.trim()
-        : null;
-    const durationSeconds =
-      typeof agentPayload.duration_seconds === 'number' && agentPayload.duration_seconds >= 0
-        ? Math.round(agentPayload.duration_seconds)
-        : null;
-    const severityLevel = Math.min(5, Math.max(1, Math.round(agentPayload.severity ?? 1)));
-    const severityReason = (agentPayload.severity_reason || '').trim() || 'Assessed by agent.';
-    const confidenceScore =
-      typeof agentPayload.confidence === 'number' ? Math.min(1, Math.max(0, agentPayload.confidence)) : 0;
-
-    const timeline = Array.isArray(agentPayload.timeline)
-      ? agentPayload.timeline.map((item) => ({
-          startSeconds: typeof item.start_seconds === 'number' ? Math.max(0, item.start_seconds) : 0,
-          endSeconds: typeof item.end_seconds === 'number' ? Math.max(0, item.end_seconds) : null,
-          description: (item.description || '').trim() || 'Observed event',
-        }))
-      : [];
-
-    let entities: Array<{ type: 'human' | 'animal' | 'unknown'; description: string }> = [];
-    if (Array.isArray(agentPayload.entities) && agentPayload.entities.length > 0) {
-      entities = agentPayload.entities.map((item) => {
-        let type: 'human' | 'animal' | 'unknown' = 'unknown';
-        const lower = (item.type || '').toLowerCase();
-        if (lower === 'human' || lower === 'person') type = 'human';
-        else if (lower === 'animal') type = 'animal';
-        return {
-          type,
-          description: (item.description || '').trim() || 'Entity',
-        };
-      });
-    } else if (Array.isArray(agentPayload.persons)) {
-      entities = agentPayload.persons.map((person) => {
-        const desc = [person.description?.trim(), person.actions?.trim()].filter(Boolean).join(': ');
-        return {
-          type: 'human' as const,
-          description: desc || person.description?.trim() || 'Person',
-        };
-      });
-    }
-
-    const instruments = Array.isArray(agentPayload.instruments)
-      ? agentPayload.instruments.map((inst) => ({
-          name: (inst.name || '').trim() || 'Instrument',
-          description: (inst.description || '').trim() || 'Identified instrument',
-          threatLevel:
-            typeof inst.threat_level === 'number'
-              ? Math.min(5, Math.max(1, Math.round(inst.threat_level)))
-              : null,
-        }))
-      : [];
-
-    const assets = Array.isArray(agentPayload.assets)
-      ? agentPayload.assets.map((asset) => ({
-          name: (asset.name || '').trim() || 'Asset',
-          description: (asset.description || '').trim() || 'Identified asset',
-        }))
-      : [];
-
-    const uncertainties = Array.isArray(agentPayload.uncertainties)
-      ? agentPayload.uncertainties.map((u) => String(u).trim()).filter(Boolean)
-      : [];
-
-    const analysis = incidentAnalysisSchema.parse({
-      title,
-      incidentType,
-      summary,
-      startTimestamp,
-      endTimestamp,
-      durationSeconds,
-      severityLevel,
-      severityReason,
-      confidenceScore,
-      timeline,
-      entities,
-      instruments,
-      assets,
-      uncertainties,
-    });
+    operation = 'validating the incident report';
+    const analysis = incidentAnalysisSchema.parse(agentPayload);
 
     const report: AnalysisReport = {
       ...analysis,
@@ -418,7 +291,7 @@ async function analyzeViaAgent(
       reportId,
       filename: input.filename,
       playbackUrl,
-      model: agentPayload.model || agentPayload.model_name || 'vss-agent',
+      model: (typeof agentPayload.model === 'string' && agentPayload.model) || (typeof agentPayload.model_name === 'string' && agentPayload.model_name) || 'vss-agent',
       generatedAt,
       rawModelOutput: rawOutput,
       normalizedModelOutput: rawOutput,
