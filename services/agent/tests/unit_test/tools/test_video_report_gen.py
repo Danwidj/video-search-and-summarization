@@ -30,6 +30,7 @@ from vss_agents.tools.video_report_gen import VideoReportGenInput
 from vss_agents.tools.video_report_gen import VideoReportGenOutput
 from vss_agents.tools.video_report_gen import _convert_markdown_to_pdf
 from vss_agents.tools.video_report_gen import _divide_video_into_chunks
+from vss_agents.tools.video_report_gen import _filter_short_duration_from_markdown
 from vss_agents.tools.video_report_gen import _inject_video_clips
 from vss_agents.tools.video_report_gen import _normalize_chunk_timestamps
 from vss_agents.tools.video_report_gen import _parse_timestamps
@@ -575,3 +576,65 @@ class TestMaxImagesPerVlmCallChunking:
         assert output.http_url is not None
         builder.get_llm.assert_not_called()
         assert tool.ainvoke.call_count >= 1
+
+
+class TestHitlWithoutCallback:
+    """When hitl_enabled is True but no user input callback is registered (e.g.
+
+    headless REST API invocations or tasks where NAT's default callback raises
+    NotImplementedError), _prompt_user_input must catch NotImplementedError and
+    return empty string so execution proceeds with the default prompt instead of
+    failing the entire request with an unhandled exception.
+    """
+
+    @pytest.mark.asyncio
+    async def test_hitl_falls_back_when_no_callback_registered(self):
+        config = VideoReportGenConfig(
+            object_store="test_object_store",
+            video_understanding_tool="video_understanding",
+            hitl_enabled=True,
+            vlm_prompt="Default test prompt",
+        )
+        vu_config = Mock(max_fps=2, vlm_name="vlm_llm")
+
+        video_understanding_tool = MagicMock()
+        video_understanding_tool.args_schema = None
+        video_understanding_tool.ainvoke = AsyncMock(return_value="## Analysis\n\n[0.0s-5.0s] Event observed.")
+
+        object_store = MagicMock()
+        object_store.upsert_object = AsyncMock()
+
+        builder = MagicMock()
+        builder.get_object_store_client = AsyncMock(return_value=object_store)
+        builder.get_tool = AsyncMock(return_value=video_understanding_tool)
+        builder.get_function_config = Mock(return_value=vu_config)
+        builder.get_llm = AsyncMock(return_value=Mock(model_name="test-vlm-model"))
+
+        start = "2025-01-01T00:00:00.000Z"
+        end = "2025-01-01T00:00:10.000Z"
+
+        with (
+            patch("vss_agents.tools.video_report_gen.get_stream_id", new_callable=AsyncMock, return_value="stream-1"),
+            patch("vss_agents.tools.video_report_gen.get_timeline", new_callable=AsyncMock, return_value=(start, end)),
+        ):
+            async with video_report_gen(config, builder) as function_info:
+                output = await function_info.single_fn(
+                    VideoReportGenInput(sensor_id="video1.mp4", user_query="What happened?")
+                )
+                assert output is not None
+                assert video_understanding_tool.ainvoke.call_count >= 1
+                call_args = video_understanding_tool.ainvoke.call_args_list[0]
+                assert "Default test prompt" in call_args.kwargs["input"]["user_prompt"]
+
+
+class TestFilterShortDurationFromMarkdown:
+    def test_preserves_content_when_all_events_below_threshold(self):
+        content = "[0.3s-1.4s] Monkey jumps on table.\n[1.4s-2.5s] Monkey climbs sofa.\n"
+        result = _filter_short_duration_from_markdown(content, min_duration_seconds=2.0)
+        assert result == content
+
+    def test_filters_only_short_when_longer_events_exist(self):
+        content = "[0.0s-0.5s] Quick flicker.\n[1.0s-5.0s] Sustained action.\n"
+        result = _filter_short_duration_from_markdown(content, min_duration_seconds=2.0)
+        assert "[0.0s-0.5s]" not in result
+        assert "[1.0s-5.0s] Sustained action." in result

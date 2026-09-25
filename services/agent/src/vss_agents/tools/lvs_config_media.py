@@ -107,8 +107,12 @@ async def _prompt_user_input(prompt_text: str, required: bool = True, placeholde
     user_input_manager = nat_context.user_interaction_manager
 
     human_prompt = HumanPromptText(text=prompt_text, required=required, placeholder=placeholder)
-    response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
-    return str(response.content.text).strip()
+    try:
+        response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
+        return str(response.content.text).strip()
+    except NotImplementedError:
+        logger.info("No human prompt callback was registered; proceeding with default")
+        return ""
 
 
 class LVSConfigMediaConfig(FunctionBaseConfig, name="lvs_config_media"):

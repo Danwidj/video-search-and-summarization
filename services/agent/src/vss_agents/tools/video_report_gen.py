@@ -869,6 +869,14 @@ def _filter_short_duration_from_markdown(content: str, min_duration_seconds: flo
                 f"Filtered out short duration line (duration={duration:.1f}s < {min_duration_seconds:.1f}s): "
                 f"{line_preview}"
             )
+    # If filtering removed all timestamped lines, preserve original content so short clips/events are not wiped out
+    has_original_timestamps = bool(timestamp_pattern.search(content))
+    has_filtered_timestamps = any(bool(timestamp_pattern.search(line)) for line in filtered_lines)
+    if has_original_timestamps and not has_filtered_timestamps:
+        logger.warning(
+            "Short duration filter would remove all timestamped events from the report; preserving original content"
+        )
+        return content
 
     return "\n".join(filtered_lines)
 
@@ -1464,7 +1472,11 @@ Enter your choice or press Submit to keep current value:"""
 
         human_prompt = HumanPromptText(text=prompt_text, required=required, placeholder=placeholder)
 
-        response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
+        try:
+            response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
+        except NotImplementedError:
+            logger.info("No human prompt callback was registered; bypassing HITL prompt")
+            return ""
 
         # Check if user cancelled - content will be None when cancelled
         if response.content is None:

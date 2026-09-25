@@ -391,8 +391,12 @@ async def lvs_video_understanding(
         user_input_manager = nat_context.user_interaction_manager
 
         human_prompt = HumanPromptText(text=prompt_text, required=required, placeholder=placeholder)
-        response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
-        response_text: str = str(response.content.text).strip()
+        try:
+            response: InteractionResponse = await user_input_manager.prompt_user_input(human_prompt)
+            response_text: str = str(response.content.text).strip()
+        except NotImplementedError:
+            logger.info("No human prompt callback was registered; proceeding with default choice")
+            response_text = ""
 
         return response_text
 

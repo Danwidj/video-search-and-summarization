@@ -23,6 +23,7 @@ Current delivery status verified against the codebase:
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
 | **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (Unified contract across gateway and agent modes onto agent snake_case schema and agent extraction prompt; legacy camelCase read-compatibility retained) |
+| **Live VM & Brev Verification** | **Done (Live)** | Verified live via `./start.sh --mode vm` with `~/Desktop/test2.mp4` against Brev Switchyard; Agent and Gateway modes both produce valid non-empty snake_case reports; fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
 | **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
 | **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
 | **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
@@ -93,4 +94,67 @@ Active configuration inspected in `/srv/rise-up/vss/deploy/docker/developer-prof
 | `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | *(Set)* | Supabase Service Role Key |
 
 > [!NOTE]
-> On 2026-09-25, the VM `vss-agent` venv was relinked editable to the repository checkout (`services/agent`) with public dependencies (`supabase`, `opencv-python-headless`, `setuptools`). The live agent process (pid 3721448) was restarted and is actively connected to Brev Switchyard for LLM (`nvidia/nemotron-3-ultra`), VLM (`nvidia/cosmos-3-super-reasoner`), and eval judge inference.
+> On 2026-09-25, the VM `vss-agent` venv was relinked editable to the repository checkout (`services/agent`) with public dependencies (`supabase`, `opencv-python-headless`, `setuptools`). The live agent process was restarted and is actively connected to Brev Switchyard for LLM (`nvidia/nemotron-3-ultra`), VLM (`nvidia/cosmos-3-super-reasoner`), and eval judge inference.
+
+---
+
+## 5. Live Verification Log (2026-09-25)
+
+End-to-end verification of `start.sh --mode vm` with Brev Switchyard and the unified snake_case analysis contract using `~/Desktop/test2.mp4` (5.3s clip):
+
+### Commands Executed
+1. **Stack Startup:**
+   ```bash
+   deploy/docker/developer-profiles/dev-profile-incident/start.sh --mode vm
+   ```
+   - SSH preflight to `kwanz-ws`: PASS.
+   - Idempotent deploy check (Docker appliances + native `vss-agent`): PASS (already running).
+   - Tunnel established (ports 8000, 30081, 30082, 7777 forwarded to `10.131.1.5`): PASS.
+   - `incident-console-v2` dev server started on `http://localhost:3200` with `ANALYSIS_MODE=agent`: PASS.
+2. **Video Ingestion:**
+   - Initialized VST storage upload: `POST /api/uploads` -> sensorId `5b79fdb6-8424-4c08-adbb-eae9509325bf`.
+   - Chunked upload to VST ingress (port 7777).
+   - Uploaded video directly to Cloudflare R2 bucket: `POST /api/uploads/r2` -> R2 key `uploads/5b79fdb6-8424-4c08-adbb-eae9509325bf/23e2e7b2-f293-4737-a3b4-b57faa9ff47f.mp4`.
+   - Finalized upload registration: `POST /api/uploads/complete`.
+3. **Agent Mode Live Verification:**
+   - Ran `POST /api/v1/incidents/v5f895248445d65f47d3/analyze` (or via console `POST /api/analysis` with `ANALYSIS_MODE=agent`).
+   - Latency: 15.7s total inference time on Brev (`nvidia/nemotron-3-ultra` + `nvidia/cosmos-3-super-reasoner`).
+   - Result: PASS (HTTP 200). Valid, non-empty snake_case `IncidentReport` generated.
+   - PostgREST Persistence: rows successfully verified in `videos`, `model_runs`, `incidents`, `reports`, `entities`, `assets`. R2 video filepath preserved.
+   - Report Excerpt:
+     - `title`: "Monkey enters living room, knocks over vase, and plays on furniture"
+     - `incident_type`: "animal"
+     - `severity`: 1
+     - `severity_reason`: "A monkey enters a living room, knocks over a vase, and causes general disruption, but no individuals are in immediate physical danger and property damage is minor."
+     - `confidence`: 0.95
+     - `duration_seconds`: 5
+     - `timeline`: 5 items spanning [0.0s-1.1s], [1.1s-2.2s], [2.2s-3.3s], [3.3s-4.4s], [4.4s-5.3s].
+     - `persons`: `[{"description": "Small monkey", "actions": "Enters the living room, knocks over a vase on the coffee table, moves around the room, jumps on a red stool, and stands on the sofa."}]`
+     - `assets`: Vase (knocked over), Stool (climbed), Sofa (walked on), Coffee Table (climbed).
+     - `uncertainties`: `["The exact species of the monkey is not determined.", "It is unclear if the monkey caused any unseen damage or left items behind."]`
+4. **Gateway Mode Live Verification:**
+   - Ran `POST /api/analysis` with `ANALYSIS_MODE=gateway` and `VLM_GATEWAY_URL=http://127.0.0.1:8600`.
+   - Latency: 8.2s total inference time on Brev (`nvidia/cosmos-3-nano-reasoner`).
+   - Result: PASS (HTTP 200). Valid, non-empty snake_case `IncidentReport` generated.
+   - PostgREST Persistence: rows successfully written via `saveVideo`, `saveModelRun`, `insert_incident` RPC, `reports`, `entities`, `instruments`, `assets`.
+   - Report Excerpt:
+     - `title`: "Cat knocks over vase of sunflowers, scattering flowers and glass on living room floor"
+     - `incident_type`: "animal"
+     - `severity`: 3
+     - `severity_reason`: "Cat knocks over a vase, causing broken glass and scattered flowers, creating a safety hazard and property damage"
+     - `confidence`: 1.0
+     - `duration_seconds`: 0
+     - `timeline`: 3 items spanning [0s-0.3s], [0.3s-2.6s], [2.6s-5s].
+     - `instruments`: Vase of sunflowers (threat level 3), Coffee table (threat level 2).
+     - `assets`: Sunflowers (scattered), Glass vase (broken), Living room furniture (unaffected).
+
+### Bugs Found & Fixed
+1. **HITL `NotImplementedError` on REST API Endpoint:**
+   - *Symptom:* `POST /api/v1/incidents/{id}/analyze` crashed with HTTP 500: `NotImplementedError: No human prompt callback was registered. Unable to handle requested prompt.`
+   - *Cause:* `config.yml` enables `hitl_enabled: true`. When called non-interactively via the REST API or console, no callback is registered with NAT's `user_input_manager`.
+   - *Fix:* Catch `NotImplementedError` across `video_report_gen.py`, `lvs_video_understanding.py`, and `lvs_config_media.py`, falling back cleanly to empty string / default prompts.
+2. **Short-Duration Event Filter Discarding All Events on Short Clips:**
+   - *Symptom:* VLM correctly detected monkey activity across 5 consecutive segments, but report extraction returned `"Empty Video Analysis Report - No Incident Detected"`.
+   - *Cause:* `_filter_short_duration_from_markdown(min_duration_seconds=2.0)` dropped every segment because `test2.mp4` chunk durations were ~1.1s each (< 2.0s). This stripped all events from the markdown summary passed to the extraction LLM.
+   - *Fix:* In `video_report_gen.py`, if filtering would remove 100% of timestamped events, fall back to the original unfiltered events so short clips are preserved. Added unit tests in `test_video_report_gen.py`.
+
