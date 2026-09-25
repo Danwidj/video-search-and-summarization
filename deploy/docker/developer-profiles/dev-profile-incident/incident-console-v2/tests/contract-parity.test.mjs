@@ -61,20 +61,31 @@ test('contract-parity: incidentAnalysisSchema validates contract default instanc
   assert.equal(parsed.location, '');
 });
 
-test('contract-parity: INCIDENT_ANALYSIS_PROMPT matches contract schema and prompt rules', () => {
+function promptRuleFields(prompt) {
+  const rules = prompt.split('Rules:\n')[1].split('\n\n')[0];
+  return rules.split('\n').filter((line) => line.startsWith('- ')).map((line) => line.slice(2).split(/[\s:]/)[0]);
+}
+
+function promptShape(prompt) {
+  return JSON.parse(prompt.slice(prompt.indexOf('Use exactly this shape:\n') + 'Use exactly this shape:\n'.length));
+}
+
+test('contract-parity: INCIDENT_ANALYSIS_PROMPT has one rule per contract field', () => {
   assert.equal(INCIDENT_PROMPT_VERSION, 'incident-v2-snake');
+  const fields = promptRuleFields(INCIDENT_ANALYSIS_PROMPT);
+  assert.equal(new Set(fields).size, fields.length);
+  assert.deepEqual([...fields].sort(), Object.keys(contract.fields).sort());
+});
 
-  // Verify that all 16 contract field names appear in the prompt instructions
-  for (const field of Object.keys(contract.fields)) {
-    assert.ok(
-      INCIDENT_ANALYSIS_PROMPT.includes(`"${field}"`) || INCIDENT_ANALYSIS_PROMPT.includes(`- ${field}`),
-      `Prompt must reference contract field: ${field}`
-    );
-  }
-
-  // Verify extraction rules are present
-  assert.ok(INCIDENT_ANALYSIS_PROMPT.includes('road accident, burglary, explosion, fighting, animal'));
-  assert.ok(INCIDENT_ANALYSIS_PROMPT.includes('severity is an integer from 1 (minor) to 5 (critical)'));
+test('contract-parity: INCIDENT_ANALYSIS_PROMPT response shape matches the contract and schema', () => {
+  const shape = promptShape(INCIDENT_ANALYSIS_PROMPT);
+  assert.deepEqual(Object.keys(shape).sort(), Object.keys(contract.fields).sort());
+  const parsed = incidentAnalysisSchema.parse(shape);
+  assert.deepEqual(Object.keys(parsed).sort(), Object.keys(contract.fields).sort());
+  assert.deepEqual(Object.keys(parsed.timeline[0]).sort(), Object.keys(contract.fields.timeline.items.properties).sort());
+  assert.deepEqual(Object.keys(parsed.persons[0]).sort(), Object.keys(contract.fields.persons.items.properties).sort());
+  assert.deepEqual(Object.keys(parsed.instruments[0]).sort(), Object.keys(contract.fields.instruments.items.properties).sort());
+  assert.deepEqual(Object.keys(parsed.assets[0]).sort(), Object.keys(contract.fields.assets.items.properties).sort());
 });
 
 test('contract-parity: full report payload parses into snake_case schema', () => {

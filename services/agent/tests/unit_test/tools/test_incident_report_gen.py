@@ -40,6 +40,7 @@ from vss_agents.data_models.incident_report import TimelineItem
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
+from vss_agents.tools.incident_report_gen import _EXTRACTION_SYSTEM_PROMPT
 from vss_agents.tools.incident_report_gen import _derive_asset_id
 from vss_agents.tools.incident_report_gen import _derive_incident_bounds
 from vss_agents.tools.incident_report_gen import _derive_instrument_id
@@ -703,3 +704,10 @@ class TestIncidentReportModels:
 
         # Verify taxonomy enum parity
         assert contract["fields"]["incident_type"]["enum"] == INCIDENT_TYPES
+
+    def test_extraction_prompt_has_one_rule_per_extracted_field(self):
+        rules = _EXTRACTION_SYSTEM_PROMPT.split("Rules:\n")[1]
+        rule_fields = [line[2:].split()[0] for line in rules.splitlines() if line.startswith("- ")]
+        derived_by_agent = {"incident_start", "incident_end", "incident_start_confirmed"}
+        assert len(rule_fields) == len(set(rule_fields))
+        assert set(rule_fields) == set(IncidentReport.model_fields) - derived_by_agent

@@ -9,28 +9,13 @@ import { PostgrestClient } from '@/lib/postgrest/client';
 const editSchema = z.object({
   modelRunId: z.string().min(1),
   editor: z.string().trim().min(1),
-  incident_type: z.string().trim().min(1).max(32).optional(),
-  incidentType: z.string().trim().min(1).max(32).optional(),
-  description: z.string().trim().min(1).optional(),
-  summary: z.string().trim().min(1).optional(),
-  incident_start: z.string().nullable().optional(),
-  startTimestamp: z.string().nullable().optional(),
-  incident_end: z.string().nullable().optional(),
-  endTimestamp: z.string().nullable().optional(),
-  severity: z.number().int().min(1).max(5).optional(),
-  severityLevel: z.number().int().min(1).max(5).optional(),
-  confidence: z.number().min(0).max(1).optional(),
-  confidenceScore: z.number().min(0).max(1).optional(),
-}).transform((val) => ({
-  modelRunId: val.modelRunId,
-  editor: val.editor,
-  incident_type: (val.incident_type ?? val.incidentType ?? 'road accident').trim(),
-  description: (val.description ?? val.summary ?? '').trim(),
-  incident_start: val.incident_start !== undefined ? val.incident_start : (val.startTimestamp !== undefined ? val.startTimestamp : null),
-  incident_end: val.incident_end !== undefined ? val.incident_end : (val.endTimestamp !== undefined ? val.endTimestamp : null),
-  severity: val.severity ?? val.severityLevel ?? 1,
-  confidence: val.confidence ?? val.confidenceScore ?? 0.0,
-}));
+  incident_type: z.string().trim().min(1).max(32),
+  description: z.string().trim().min(1),
+  incident_start: z.string().nullable(),
+  incident_end: z.string().nullable(),
+  severity: z.number().int().min(1).max(5),
+  confidence: z.number().min(0).max(1),
+});
 
 export async function PATCH(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
