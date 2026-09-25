@@ -97,8 +97,8 @@ The authoritative JSON contract field specification is checked in at:
 `incident-console-v2/lib/analysis/incident-report-contract.json`. It holds only the field set, types, and defaults; the prompt text has one source per runtime (`_EXTRACTION_SYSTEM_PROMPT` in the agent, `INCIDENT_ANALYSIS_PROMPT` in `lib/analysis/prompt.ts`).
 
 Automated drift-prevention tests guarantee continuous parity across both environments:
-- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that all 16 fields, defaults, and types in `incident-report-contract.json` are accepted by `incidentAnalysisSchema` and instructed by `INCIDENT_ANALYSIS_PROMPT`.
-- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, and enum taxonomy matches `INCIDENT_TYPES`.
+- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that the contract defines exactly the 16 fields, that its defaults parse through `incidentAnalysisSchema`, that `INCIDENT_ANALYSIS_PROMPT` has exactly one `Rules:` line per contract field, and that the prompt's "Use exactly this shape" JSON (top-level and nested keys) matches the contract and survives schema parsing.
+- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, that the `incident_type` enum matches `INCIDENT_TYPES`, and that `_EXTRACTION_SYSTEM_PROMPT` has exactly one rule per model field except `incident_start` / `incident_end` / `incident_start_confirmed`, which the agent derives rather than asks the model for.
 
 ### Tolerant Parsing Behaviors
 

@@ -37,10 +37,10 @@ from vss_agents.data_models.incident_report import IncidentReport
 from vss_agents.data_models.incident_report import Instrument
 from vss_agents.data_models.incident_report import Person
 from vss_agents.data_models.incident_report import TimelineItem
+from vss_agents.tools.incident_report_gen import _EXTRACTION_SYSTEM_PROMPT
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
-from vss_agents.tools.incident_report_gen import _EXTRACTION_SYSTEM_PROMPT
 from vss_agents.tools.incident_report_gen import _derive_asset_id
 from vss_agents.tools.incident_report_gen import _derive_incident_bounds
 from vss_agents.tools.incident_report_gen import _derive_instrument_id
@@ -698,8 +698,7 @@ class TestIncidentReportModels:
         agent_fields = set(IncidentReport.model_fields.keys())
         contract_fields = set(contract["fields"].keys())
         assert agent_fields == contract_fields, (
-            f"Field mismatch between IncidentReport and contract: "
-            f"diff={agent_fields ^ contract_fields}"
+            f"Field mismatch between IncidentReport and contract: diff={agent_fields ^ contract_fields}"
         )
 
         # Verify taxonomy enum parity
