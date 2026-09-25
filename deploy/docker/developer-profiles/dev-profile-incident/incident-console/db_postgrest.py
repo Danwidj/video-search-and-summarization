@@ -93,6 +93,11 @@ class PostgrestIncidentDB:
         if resp.status_code >= 400:
             raise PostgrestError(f"DELETE {table} -> {resp.status_code}: {resp.text[:500]}")
 
+    def _rpc(self, function_name: str, params: dict) -> None:
+        resp = self._client.post(f"/rpc/{function_name}", json=params)
+        if resp.status_code >= 400:
+            raise PostgrestError(f"RPC {function_name} -> {resp.status_code}: {resp.text[:500]}")
+
     def _get_one(self, table: str, params: dict) -> dict:
         rows = self._get(table, {**params, "limit": 1})
         return rows[0] if rows else {}
@@ -186,11 +191,13 @@ class PostgrestIncidentDB:
     )
 
     def insert_incident(self, incident_id: str, model_run_id: str, *, fields: dict | None = None) -> tuple[str, str]:
-        payload = {k: (fields or {}).get(k) for k in self._INCIDENT_FIELDS}
-        self._delete("incidents", {"incident_id": f"eq.{incident_id}", "model_run_id": f"eq.{model_run_id}"})
-        self._post("incidents", {"incident_id": incident_id, "model_run_id": model_run_id, **payload})
-        self._delete("review_status", {"incident_id": f"eq.{incident_id}", "model_run_id": f"eq.{model_run_id}"})
-        self._post("review_status", {"incident_id": incident_id, "model_run_id": model_run_id, "status": "unreviewed"})
+        fields = fields or {}
+        params = {
+            "p_incident_id": incident_id,
+            "p_model_run_id": model_run_id,
+            **{f"p_{k}": fields.get(k) for k in self._INCIDENT_FIELDS},
+        }
+        self._rpc("insert_incident", params)
         return incident_id, model_run_id
 
     def get_incident(self, incident_id: str, model_run_id: str) -> dict:

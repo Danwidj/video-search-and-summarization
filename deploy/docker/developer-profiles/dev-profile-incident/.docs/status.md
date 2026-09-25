@@ -17,7 +17,8 @@ Current delivery status verified against the codebase:
 | **mock-backend (Zero-GPU)** | **Done** | `mock-backend/base_profile_mock/` (port 7777, mock VST upload, mock stream registration, mock incident analysis) |
 | **Agent /analyze Route & Tool** | **Done** | `services/agent/src/vss_agents/api/incident_analyze.py`, `services/agent/src/vss_agents/tools/incident_report_gen.py` |
 | **Native VM Services Architecture** | **Done** | `.scripts/native-services.sh`, `.scripts/prune-native-images.sh` (`vss-agent` runs natively on `kwanz-ws` for 2s fast restarts; relinked editable to `services/agent/` with Brev inference) |
-| **PostgREST Agent Persistence** | **Done** | `services/agent/src/vss_agents/utils/incident_db.py`, `supabase/migrations/20260917141225_insert_incident_function.sql` |
+| **PostgREST Agent Persistence** | **Done** | `services/agent/src/vss_agents/utils/incident_db.py`, `supabase/migrations/20260917141225_insert_incident_function.sql`, `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` |
+| **Database Defaults & Precision Fix** | **Done (Live)** | `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` applied to live Supabase DB on 2026-09-25: server-side UTC defaults on 9 timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` updated to `p_confidence_score DOUBLE PRECISION`. PostgREST writers (`incident-console/db_postgrest.py`, `eval/db_postgrest.py`) updated to use `/rpc/insert_incident`. Agent extraction validation failure now surfaces HTTP 422/504 instead of persisting default reports. |
 | **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `incident-console-v2/app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py` |
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
@@ -32,8 +33,8 @@ Current delivery status verified against the codebase:
 
 The following anomalies are currently present in the codebase and represent intentional compromises or pending work:
 
-1. **Two Independent Writers:**
-   Both `incident-console-v2` (`incident-console-v2/app/api/analysis/route.ts`) and the native `vss-agent` (`services/agent/src/vss_agents/tools/incident_report_gen.py` via `services/agent/src/vss_agents/utils/incident_db.py`) possess full write logic to Supabase PostgREST tables. In Gateway Mode, the Next.js API route writes all tables directly. In Agent Mode, the agent writes `incidents`, `entities`, `instruments`, and `assets`, while the console writes `model_runs.notes` and `reports`. Consolidation into the agent ("Option B") is planned but not started.
+1. **Two Independent Writers & Agent-Mode Double-Write:**
+   Both `incident-console-v2` (`incident-console-v2/app/api/analysis/route.ts`) and the native `vss-agent` (`services/agent/src/vss_agents/tools/incident_report_gen.py` via `services/agent/src/vss_agents/utils/incident_db.py`) possess full write logic to Supabase PostgREST tables. In Gateway Mode, the Next.js API route writes all tables directly. In Agent Mode, the agent persists untranslated records (`incidents`, `entities`, `instruments`, `assets`), while the console subsequently updates `model_runs` (setting `notes` to serialized camelCase JSON and `model_name = 'vss-agent'`), restores the video R2 key, and inserts `reports`. Relational rows hold the native agent values, while the translated report exists only in `model_runs.notes` and the HTTP response. Consolidation into the agent ("Option B") is planned but not started.
 2. **Full Report JSON Serialized into `model_runs.notes`:**
    Instead of normalizing full VLM output or adding a dedicated `JSONB` column, `incident-console-v2` serializes the entire report dictionary (including raw and normalized VLM responses) as a JSON string stored within the SQL `TEXT` column `model_runs.notes`. Report display and sharing rely on reading and re-parsing this field.
 3. **`videos.filepath` Overwritten by Agent with VST URL:**
@@ -41,6 +42,27 @@ The following anomalies are currently present in the codebase and represent inte
    *Active Workaround:* `incident-console-v2`'s `analyzeViaAgent` in `incident-console-v2/app/api/analysis/route.ts` explicitly re-saves the original R2 filepath after the agent completes: `await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt })`.
 4. **`sdr-controller` Container in Restart Loop:**
    On `kwanz-ws`, the `sdr-controller` Docker container is observed repeatedly exiting and restarting (`Restarting (1)`). It does not block core VIOS video ingestion or agent analysis flows, but produces continuous container restart churn in `docker ps`.
+5. **Mock-Backend Hash-Picked `anomaly/<category>` Uploads:**
+   `mock-backend/base_profile_mock/.../routers/vst_storage.py` writes uploaded files to `anomaly/<category>/<original filename>` using `_CATEGORIES[sha256(incident_id)[0] % 5]`. This category assignment is pseudo-random rather than content-derived, resulting in test files (e.g. `AnimalN_xN.mp4`) polluting dataset fixture folders like `anomaly/fighting/` or `anomaly/road_accidents/`.
+6. **Legacy Database Tables Remaining in Live Schema:**
+   Four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) remain in the live Supabase database from a pre-v1 integer-report-id schema. No current codebase references them, but they consume table namespace.
+7. **RLS Disabled on Public Tables:**
+   Row Level Security is currently disabled across public schema tables, and default Supabase grants permit full DML to `anon` and `authenticated` roles. Backend code exclusively uses the service role key server-side, but restricting `anon` access remains a pending hardening step.
+
+---
+
+## 3. Follow-Ups & Out-of-Scope Items
+
+The following items were identified during schema validation and are deferred to future tasks:
+
+1. **Analysis Schema Unification:**
+   Unifying the naming and structure between the native Python Pydantic models (`IncidentReport`), the Next.js TypeScript/Zod schema (`incidentAnalysisSchema`), and the prompt instructions. This includes formalizing whether `title`, `severity_reason`, `timeline`, and `uncertainties` receive first-class relational columns or migrate to a unified JSONB column.
+2. **Legacy Tables Cleanup:**
+   Creating a migration to safely archive or drop the four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) once verified that no third-party scripts depend on them.
+3. **RLS Policy Implementation:**
+   Enabling Row Level Security on all public tables and revoking public/anon DML permissions to enforce service-role-only writes.
+4. **Writer Consolidation (Option B):**
+   Refactoring analysis persistence so all database writes flow through a single authority (the agent service) rather than dual writers in `incident-console-v2` and `vss-agent`.
 
 ---
 
