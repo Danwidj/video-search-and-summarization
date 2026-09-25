@@ -27,3 +27,7 @@ pnpm-debug.log*
 *.swp
 *.swo
 *~
+
+# Negate global ignore for Next.js lib directory
+!lib/
+!lib/**

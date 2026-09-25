@@ -284,7 +284,7 @@ Observed actors or persons extracted by the model during a specific run.
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
 | `entity_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `E1`/`E2` (seed/eval), `e01`/`e02` (console-v2 gateway), `e` + 19 hex sha256 (agent), `p...` (mock). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
-| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): `human` / `animal` / `unknown` from console/seed; the agent writes `"person"`. |
+| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): both the agent and console-v2 gateway mode write `"person"`; legacy seed/v1 rows may hold `human` / `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
 | `description` | `TEXT` | NULLABLE | Visual description and observed actions |
 | `image` | `VARCHAR(1024)` | NULLABLE | R2 object key for cropped evidence screenshot (schema-only, always NULL today) |
 

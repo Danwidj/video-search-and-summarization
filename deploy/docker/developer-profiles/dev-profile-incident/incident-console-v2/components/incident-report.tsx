@@ -71,12 +71,14 @@ export function IncidentReport({ report, onNewAnalysis }: { report: AnalysisRepo
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-moss">Analysis complete</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">{report.title}</h2>
-            <p className="mt-3 text-sm text-ink/55">{report.incidentType} · {report.filename}</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">{report.title || 'Incident Report'}</h2>
+            <p className="mt-3 text-sm text-ink/55">
+              {report.incident_type}{report.location ? ` · ${report.location}` : ''} · {report.filename}
+            </p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <span className={`rounded-full px-4 py-2 text-sm font-bold ${severityStyle(report.severityLevel)}`}>Severity {report.severityLevel}/5</span>
-            <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink/65">{Math.round(report.confidenceScore * 100)}% confidence</span>
+            <span className={`rounded-full px-4 py-2 text-sm font-bold ${severityStyle(report.severity)}`}>Severity {report.severity}/5</span>
+            <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink/65">{Math.round(report.confidence * 100)}% confidence</span>
           </div>
         </div>
       </header>
@@ -97,9 +99,9 @@ export function IncidentReport({ report, onNewAnalysis }: { report: AnalysisRepo
             <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-ink/45">Event timeline</h3>
             {report.timeline.length ? <ol className="mt-3 space-y-2">
               {report.timeline.map((event, index) => (
-                <li key={`${event.startSeconds}-${index}`}>
-                  <button aria-label={`Play video from ${secondsLabel(event.startSeconds)}: ${event.description}`} className="group flex w-full gap-4 rounded-xl border border-ink/8 p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-none focus:ring-2 focus:ring-signal" onClick={() => seek(event.startSeconds)} type="button">
-                    <span className="font-mono text-xs font-bold text-moss">{secondsLabel(event.startSeconds)}</span>
+                <li key={`${event.start_seconds}-${index}`}>
+                  <button aria-label={`Play video from ${secondsLabel(event.start_seconds)}: ${event.description}`} className="group flex w-full gap-4 rounded-xl border border-ink/8 p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-none focus:ring-2 focus:ring-signal" onClick={() => seek(event.start_seconds)} type="button">
+                    <span className="font-mono text-xs font-bold text-moss">{secondsLabel(event.start_seconds)}</span>
                     <span className="text-sm leading-5 text-ink/70 group-hover:text-ink">{event.description}</span>
                   </button>
                 </li>
@@ -111,18 +113,34 @@ export function IncidentReport({ report, onNewAnalysis }: { report: AnalysisRepo
         <div className="p-6 sm:p-8">
           <section>
             <h3 className="text-sm font-bold uppercase tracking-[0.12em] text-ink/45">Executive summary</h3>
-            <p className="mt-3 text-base leading-7 text-ink/75">{report.summary}</p>
+            <p className="mt-3 text-base leading-7 text-ink/75">{report.description}</p>
           </section>
           <section className="mt-7 rounded-2xl bg-canvas p-5">
-            <h3 className="font-semibold">Why severity {report.severityLevel}</h3>
-            <p className="mt-2 text-sm leading-6 text-ink/60">{report.severityReason}</p>
+            <h3 className="font-semibold">Why severity {report.severity}</h3>
+            <p className="mt-2 text-sm leading-6 text-ink/60">{report.severity_reason}</p>
           </section>
 
           <div className="mt-7 grid gap-5 sm:grid-cols-2">
-            <EvidenceGroup title="People and entities" empty="None identified" items={report.entities.map((item) => item.description)} />
-            <EvidenceGroup title="Instruments" empty="None identified" items={report.instruments.map((item) => `${item.name}: ${item.description}`)} />
-            <EvidenceGroup title="Assets" empty="None identified" items={report.assets.map((item) => `${item.name}: ${item.description}`)} />
-            <EvidenceGroup title="Uncertainties" empty="No material uncertainty reported" items={report.uncertainties} />
+            <EvidenceGroup
+              title="People and entities"
+              empty="None identified"
+              items={report.persons.map((item) => [item.description, item.actions].filter(Boolean).join(': ') || item.description || 'Person')}
+            />
+            <EvidenceGroup
+              title="Instruments"
+              empty="None identified"
+              items={report.instruments.map((item) => `${item.name}${item.threat_level ? ` (threat: ${item.threat_level}/5)` : ''}: ${item.description}`)}
+            />
+            <EvidenceGroup
+              title="Assets"
+              empty="None identified"
+              items={report.assets.map((item) => `${item.name}: ${item.description}`)}
+            />
+            <EvidenceGroup
+              title="Uncertainties"
+              empty="No material uncertainty reported"
+              items={report.uncertainties}
+            />
           </div>
         </div>
       </div>

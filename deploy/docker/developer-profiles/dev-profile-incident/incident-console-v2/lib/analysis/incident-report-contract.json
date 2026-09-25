@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IncidentReportContract",
+  "description": "Unified incident report analysis contract shared between vss-agent and incident-console-v2",
+  "fields": {
+    "title": { "type": "string", "default": "", "maxLength": 160 },
+    "incident_type": { "type": "string", "default": "road accident", "maxLength": 32, "enum": ["road accident", "burglary", "explosion", "fighting", "animal"] },
+    "severity": { "type": "integer", "default": 1, "minimum": 1, "maximum": 5 },
+    "severity_reason": { "type": "string", "default": "" },
+    "confidence": { "type": "number", "default": 0.0, "minimum": 0.0, "maximum": 1.0 },
+    "incident_start": { "type": "string", "default": "0:00" },
+    "incident_end": { "type": "string", "default": "0:00" },
+    "incident_start_confirmed": { "type": "boolean", "default": false },
+    "duration_seconds": { "type": ["integer", "null"], "default": null, "minimum": 0 },
+    "description": { "type": "string", "default": "" },
+    "persons": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string", "default": "" },
+          "actions": { "type": "string", "default": "" }
+        },
+        "required": ["description", "actions"]
+      }
+    },
+    "instruments": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "default": "" },
+          "description": { "type": "string", "default": "" },
+          "threat_level": { "type": ["integer", "null"], "default": null, "minimum": 1, "maximum": 5 }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "assets": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "default": "" },
+          "description": { "type": "string", "default": "" }
+        },
+        "required": ["name", "description"]
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "start_seconds": { "type": "number", "default": 0.0, "minimum": 0.0 },
+          "end_seconds": { "type": ["number", "null"], "default": null },
+          "description": { "type": "string", "default": "" }
+        },
+        "required": ["start_seconds", "description"]
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "default": [],
+      "items": { "type": "string" }
+    },
+    "location": { "type": "string", "default": "" }
+  }
+}

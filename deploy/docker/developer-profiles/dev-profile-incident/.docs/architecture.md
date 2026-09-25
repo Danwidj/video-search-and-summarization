@@ -320,7 +320,7 @@ sequenceDiagram
     Agent-->>Tunnel: Return IncidentReport JSON
     Tunnel-->>UI: Forward agent response
 
-    UI->>UI: Translate snake_case agent response (analyzeViaAgent)
+    UI->>UI: Parse & validate snake_case agent response directly with incidentAnalysisSchema (Zod)
     UI->>DB: Upsert model_runs (id, notes=full JSON report)
     UI->>DB: Re-upsert videos (RESTORING durable R2 filepath!)
     UI->>DB: Upsert reports (id, incident_id, model_run_id)

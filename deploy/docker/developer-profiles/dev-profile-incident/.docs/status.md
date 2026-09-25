@@ -22,6 +22,7 @@ Current delivery status verified against the codebase:
 | **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `incident-console-v2/app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py` |
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
+| **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (Unified contract across gateway and agent modes onto agent snake_case schema and agent extraction prompt; legacy camelCase read-compatibility retained) |
 | **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
 | **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
 | **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
@@ -34,7 +35,7 @@ Current delivery status verified against the codebase:
 The following anomalies are currently present in the codebase and represent intentional compromises or pending work:
 
 1. **Two Independent Writers & Agent-Mode Double-Write:**
-   Both `incident-console-v2` (`incident-console-v2/app/api/analysis/route.ts`) and the native `vss-agent` (`services/agent/src/vss_agents/tools/incident_report_gen.py` via `services/agent/src/vss_agents/utils/incident_db.py`) possess full write logic to Supabase PostgREST tables. In Gateway Mode, the Next.js API route writes all tables directly. In Agent Mode, the agent persists untranslated records (`incidents`, `entities`, `instruments`, `assets`), while the console subsequently updates `model_runs` (setting `notes` to serialized camelCase JSON and `model_name = 'vss-agent'`), restores the video R2 key, and inserts `reports`. Relational rows hold the native agent values, while the translated report exists only in `model_runs.notes` and the HTTP response. Consolidation into the agent ("Option B") is planned but not started.
+   Both `incident-console-v2` (`incident-console-v2/app/api/analysis/route.ts`) and the native `vss-agent` (`services/agent/src/vss_agents/tools/incident_report_gen.py` via `services/agent/src/vss_agents/utils/incident_db.py`) possess full write logic to Supabase PostgREST tables. In Gateway Mode, the Next.js API route writes all tables directly. In Agent Mode, the agent persists records (`incidents`, `entities`, `instruments`, `assets`), while the console subsequently updates `model_runs` (setting `notes` to serialized native snake_case JSON and `model_name = 'vss-agent'`), restores the video R2 key, and inserts `reports`. Both modes now share the identical unified `snake_case` contract. Consolidation into the agent ("Option B") is planned but not started.
 2. **Full Report JSON Serialized into `model_runs.notes`:**
    Instead of normalizing full VLM output or adding a dedicated `JSONB` column, `incident-console-v2` serializes the entire report dictionary (including raw and normalized VLM responses) as a JSON string stored within the SQL `TEXT` column `model_runs.notes`. Report display and sharing rely on reading and re-parsing this field.
 3. **`videos.filepath` Overwritten by Agent with VST URL:**
@@ -55,8 +56,8 @@ The following anomalies are currently present in the codebase and represent inte
 
 The following items were identified during schema validation and are deferred to future tasks:
 
-1. **Analysis Schema Unification:**
-   Unifying the naming and structure between the native Python Pydantic models (`IncidentReport`), the Next.js TypeScript/Zod schema (`incidentAnalysisSchema`), and the prompt instructions. This includes formalizing whether `title`, `severity_reason`, `timeline`, and `uncertainties` receive first-class relational columns or migrate to a unified JSONB column.
+1. **Analysis Schema Unification (Completed 2026-09-25):**
+   Unified the analysis schema and prompt across both Gateway Mode and Agent Mode on the native `snake_case` contract defined by `IncidentReport` (see [`.docs/analysis-schema.md`](analysis-schema.md) and [`.docs/decisions.md`](decisions.md)). Relational columns for `title`, `severity_reason`, `timeline`, `uncertainties`, `location` await Option B migration.
 2. **Legacy Tables Cleanup:**
    Creating a migration to safely archive or drop the four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) once verified that no third-party scripts depend on them.
 3. **RLS Policy Implementation:**

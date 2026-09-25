@@ -54,6 +54,10 @@ Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should repo
 
 Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `tests/*.test.mjs`).
 
+## Unified analysis contract
+
+Both analysis modes share the agent's `snake_case` `IncidentReport` contract (`lib/analysis/incident-report-contract.json`, `lib/analysis/schema.ts`, `lib/analysis/prompt.ts`; legacy camelCase notes are read only via `reportFromNotes`). See [`.docs/analysis-schema.md`](../.docs/analysis-schema.md) for the field spec, tolerant-parsing rules, and parity tests.
+
 ## Server-only configuration
 
 Next.js loads them from `.env.local` in this directory, which is a symlink to the shared
