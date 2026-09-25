@@ -101,7 +101,7 @@ These came from a teammate's field notes and aren't otherwise documented anywher
 
 ## 2. Docker + Local Dev Guide
 
-> **Current deploy (supersedes the MVP1 up-list below):** `vss-agent` (and, with `ENABLE_ANALYTICS=true`, the analytics modules) runs natively on kwanz-ws via [`../.scripts/native-services.sh`](../.scripts/README.md), not as a container, and the incident-console runs on each teammate's laptop, not on the VM. The Docker half is only the appliance containers that `../start.sh` brings up with `generated.env.remote`. See the profile README's "Native vs. Docker Service Split", "Connecting to the Shared Backend" and "Live deployment on kwanz-ws" sections. The commands below are kept as the original plan.
+> **Current deploy (supersedes the MVP1 up-list below):** `vss-agent` (and, with `ENABLE_ANALYTICS=true`, the analytics modules) runs natively on kwanz-ws via [`../.scripts/native-services.sh`](../../.scripts/README.md), not as a container, and the incident-console runs on each teammate's laptop, not on the VM. The Docker half is only the appliance containers that `../start.sh` brings up with `generated.env.remote`. See the profile README's "Native vs. Docker Service Split", "Connecting to the Shared Backend" and "Live deployment on kwanz-ws" sections. The commands below are kept as the original plan.
 
 **Backend on the VM** (standard flow from the `vss-deploy-profile` skill, targeting the new `dev-profile-incident`, local LLM/VLM):
 ```bash

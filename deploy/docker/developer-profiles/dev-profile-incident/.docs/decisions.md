@@ -4,6 +4,22 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-25: Adopt NVIDIA's agent-doc layout (profile AGENTS.md + profile-local agentskills.io skills)
+- **Decision:** Mirror how upstream VSS structures agent guidance.
+  - Add `dev-profile-incident/AGENTS.md` (with a `CLAUDE.md` that imports it) for code changes: components, per-component checks, architecture rules, Always / Ask first / Never boundaries, the docs rule as a table, and a `.docs/` map. This follows the pattern of `services/agent/AGENTS.md`.
+  - Add operational skills in agentskills.io format under `dev-profile-incident/skills/` (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`), with a router `skills/README.md` modelled on the root `skills/README.md`.
+  - Make them discoverable to Claude Code through symlinks in repo-root `.claude/skills/`. Narrow the root `.gitignore` from `.claude` to `**/.claude/*` plus `!/.claude/skills/`, so local Claude state stays untracked.
+  - Skills link to `.docs/` rather than copying it.
+  - Tidy while here: renumber the duplicate `## 3.` in `status.md`, fix broken archive and anchor links, and remove the drifting duplicate `incident-console/docs/vlm_benchmark_results.md` (single copy kept in `eval/docs/`).
+- **Why:** NVIDIA separates *coding* guidance (per-component `AGENTS.md`/`CLAUDE.md`) from *operating* guidance (skills: deploy and runtime procedures an agent follows from natural language). The profile had reference docs only, with no task-shaped procedures, so agents re-derived runbooks from long `.docs/` files each session.
+  - Symlinks in root `.claude/skills/` load at session start, whereas a nested `.claude/skills/` loads only after a file in that subdirectory is read.
+- **Alternatives rejected:**
+  - Putting the skills in root `skills/` next to the `vss-*` skills. Rejected because it edits NVIDIA's catalogue and `skills/README.md`, creating merge conflicts on every upstream sync, and upstream Skills Eval CI would run on them.
+  - One `AGENTS.md` per component. Deferred: a single profile file is lean enough at this size.
+  - Renaming `.docs/` to `docs/`. Rejected by the captain (avoids link churn).
+  - A `incident-update-docs` skill. Rejected because the docs rule is coding guidance, which belongs in `AGENTS.md`.
+- **Links:** [`../AGENTS.md`](../AGENTS.md); [`../skills/README.md`](../skills/README.md); [NVIDIA `skills/README.md`](../../../../../skills/README.md); [Claude Code skills docs](https://code.claude.com/docs/en/skills).
+
 ### 2026-09-25: Add database-side column defaults, widen insert_incident p_confidence_score to double precision, atomic RPC writers, and error surfacing
 - **Decision:** Apply migration `20260925031000_schema_defaults_and_precision.sql` to the live Supabase database adding server-side defaults (`(now() AT TIME ZONE 'utc')` across 9 timestamp columns, `'unreviewed'` on `review_status.status`, and `FALSE` on `notifications.acknowledged`) and replacing `insert_incident` RPC with `p_confidence_score DOUBLE PRECISION`. Update PostgREST writers (`incident-console/db_postgrest.py`, `eval/db_postgrest.py`) to call `/rpc/insert_incident` atomically. Update `services/agent` to raise errors and return HTTP 422/504 on extraction failure instead of persisting and returning a fake default report. Keep foreign key composite `ON DELETE CASCADE` behavior and document it.
 - **Why:** Schema validation found 43 discrepancies between code, live DB, and documentation: timestamp columns were documented as DB defaults but were SQLAlchemy client-side defaults only, leaving 58/162 live video rows with NULL `uploaded_datetime`; `p_confidence_score` as single-precision `REAL` caused precision loss against the `DOUBLE PRECISION` column; non-RPC PostgREST writers performed non-atomic writes; agent extraction failures silently persisted a default "road accident / severity 1" report. Captain approved live database migration and keeping `ON DELETE CASCADE`.
