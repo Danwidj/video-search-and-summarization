@@ -101,13 +101,13 @@ sequenceDiagram
    - Stashing the entire report in `model_runs.notes` as stringified JSON prevents indexing, relational queries, structured filtering, and direct PostgREST operations.
 4. **Zombie Schema Definition in Retired Code:**
    - The authoritative DDL still resides in `incident-console/db.py` (the deprecated Streamlit UI dropped on 2026-09-24).
-   - `supabase/migrations/` contains only `20260917141225_insert_incident_function.sql`. A clean environment cannot bootstrap the database without running dead code.
+   - `supabase/migrations/` contains only the `insert_incident` RPC (`20260917141225`) and the defaults/precision fix (`20260925031000`), not the table DDL. A clean environment cannot bootstrap the database without running dead code.
 5. **Redundant & Vestigial Tables:**
    - `queries`: 0 rows live; unused by all active code.
    - `reports`: Merely a duplicate tuple `(id, incident_id, model_run_id, filepath, generated_datetime)`. Because 1 video = 1 incident (`incident_id == video_id`), this table duplicates the `(incident_id, model_run_id)` composite key of `incidents`.
 6. **Data Type and Default Quirks:**
-   - Live database inspection revealed that column defaults (`uploaded_datetime`, `status='unreviewed'`, `acknowledged=false`) were only defined client-side in SQLAlchemy, leading to 58 NULL rows in `videos.uploaded_datetime`.
-   - `p_confidence_score` in `/rpc/insert_incident` is `REAL` (float4), whereas `incidents.confidence_score` is `FLOAT` (float8 / double precision), causing precision degradation (e.g. `0.85` becomes `0.8500000238...`).
+   - Live database inspection revealed that column defaults (`uploaded_datetime`, `status='unreviewed'`, `acknowledged=false`) were only defined client-side in SQLAlchemy, leading to 58 NULL rows in `videos.uploaded_datetime`. *(Defaults resolved by migration `20260925031000`; historical NULLs remain.)*
+   - `p_confidence_score` in `/rpc/insert_incident` is `REAL` (float4), whereas `incidents.confidence_score` is `FLOAT` (float8 / double precision), causing precision degradation (e.g. `0.85` becomes `0.8500000238...`). *(Resolved by migration `20260925031000`.)*
    - Entity type divergence: agent writes `type="person"` while console writes `type="human"`.
 
 ---
