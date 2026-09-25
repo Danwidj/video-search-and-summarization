@@ -23,7 +23,7 @@ Current delivery status verified against the codebase:
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
 | **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (Unified contract across gateway and agent modes onto agent snake_case schema and agent extraction prompt; legacy camelCase read-compatibility retained) |
-| **Live VM & Brev Verification** | **Done (Live)** | Verified live via `./start.sh --mode vm` with `~/Desktop/test2.mp4` against Brev Switchyard; Agent and Gateway modes both produce valid non-empty snake_case reports; fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
+| **Live VM & Brev Verification** | **Done (Live)** | Two-flows end-to-end run on 2026-09-25 with `~/Desktop/test2.mp4` against Brev Switchyard (see §5): `./start.sh --mode vm` (agent mode on `kwanz-ws`) and `./start.sh --mode local` (gateway mode via `mock-backend` + `vlm-gateway`) both produce valid non-empty snake_case reports; each re-analysis writes a distinct `model_runs` row in both modes; review flow `unreviewed` -> `verified` works in both modes. Schema/field parity holds across the flows; content consistency does not (different VLMs, see known issue 7). Fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
 | **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
 | **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
 | **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
@@ -48,6 +48,10 @@ The following anomalies are currently present in the codebase and represent inte
    Four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) remain in the live Supabase database from a pre-v1 integer-report-id schema. No current codebase references them, but they consume table namespace.
 6. **RLS Disabled on Public Tables:**
    Row Level Security is currently disabled across public schema tables, and default Supabase grants permit full DML to `anon` and `authenticated` roles. Backend code exclusively uses the service role key server-side, but restricting `anon` access remains a pending hardening step.
+7. **Content Divergence Between Agent and Gateway Modes:**
+   The two modes share one schema and prompt but call different VLMs (agent: `nvidia/cosmos-3-super-reasoner`; gateway: `nvidia/cosmos-3-nano-reasoner`), so the same clip yields different reports. In the 2026-09-25 two-flows run on `test2.mp4` (§5), agent mode reported a monkey, severity 1, `duration_seconds` 5; gateway mode reported a cat, severity 3, `duration_seconds` 0.
+8. **Gateway Mode Writes `duration_seconds: 0`:**
+   In the same run, gateway mode stored `duration_seconds: 0` for a 5.3s clip while its own timeline runs to 5.0s. The wrong value is persisted without any validation error. Not yet fixed.
 
 ---
 
@@ -106,7 +110,7 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
 
 | # | Verification Item | Mode / Scope | Result | Details |
 |---|---|---|---|---|
-| 1 | **Appliance Stack & Agent Startup** | VM (`kwanz-ws`) | **PASS** | `docker compose -p mdx ps` confirmed 9 appliances up and healthy (`streamprocessing-ms`, `nvstreamer-2d-fusion`, `vst-ingress`, `centralizedb`, `vss-haproxy-ingress`, `redis`, `phoenix`, `kafka`). `vss-agent` restarted on current `main` (`dc878d985`) via `.scripts/native-services.sh` and healthy on port 8000 (`{"value":{"isAlive":true}}`). No `sdr-controller` running. |
+| 1 | **Appliance Stack & Agent Startup** | VM (`kwanz-ws`) | **PASS** | `docker compose -p mdx ps` confirmed 8 appliances up and healthy (`streamprocessing-ms`, `nvstreamer-2d-fusion`, `vst-ingress`, `centralizedb`, `vss-haproxy-ingress`, `redis`, `phoenix`, `kafka`). `vss-agent` restarted on current `main` (`dc878d985`) via `.scripts/native-services.sh` and healthy on port 8000 (`{"value":{"isAlive":true}}`). No `sdr-controller` running. |
 | 2 | **Laptop Launcher: VM Mode** | VM (`./start.sh --mode vm`) | **PASS** | SSH preflight passed; backend appliances detected running; SSH tunnel opened (forwarding 8000, 7777, 30081, 30082); console dev server ready on `:3200`. `GET /api/health` returned HTTP 200 `ready`. |
 | 3 | **Video Ingestion (VM Mode)** | VM (`test2.mp4`) | **PASS** | `POST /api/uploads` -> VST chunked upload to `:7777` (`sensorId: 18d62a4d-9698-4407-a877-63f74803d134`) -> direct R2 upload via `/api/uploads/r2` (`uploads/18d62a4d-9698-4407-a877-63f74803d134/bf704656-3b88-435b-aaa1-b0c18bd1c73f.mp4`) -> finalized via `POST /api/uploads/complete`. |
 | 4 | **Agent Mode Analysis** | VM (`ANALYSIS_MODE=agent`) | **PASS** | `POST /api/analysis` invoked native `vss-agent` on `kwanz-ws` using Brev Switchyard models (`nvidia/nemotron-3-ultra` + `nvidia/cosmos-3-super-reasoner`). Latency: 32s. Valid `IncidentReport` returned: `videoId=v03e884e1dfba65ab953`, `modelRunId=m5b613baff9759dca358`. |
@@ -120,7 +124,8 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
 | 12 | **Storage Integrity (Local Mode)** | Local | **PASS** | `videos.filepath` confirmed holding R2 key (`anomaly/road_accidents/test2.mp4`). Rows persisted to `videos`, `model_runs`, `incidents`, `reports`, `entities`, `instruments`, `assets`. |
 | 13 | **Re-Analysis (Local Mode)** | Local | **PASS** | Triggered second `POST /api/analysis` on same video. Generated a distinct model run ID (`modelRunId=m907febd09dfb9185af0`, `reportId=rf8821a989f4733f4e25`). Both runs remain accessible via `GET /api/reports/v2b6a3a3813585476b01?run=<runId>`. |
 | 14 | **Review Workflow (Local Mode)** | Local | **PASS** | `PATCH /api/reports/v2b6a3a3813585476b01/review` transitioned `unreviewed` -> `verified` (`reviewedBy: daniel`). |
-| 15 | **Cross-Flow Consistency** | Both Flows | **PASS** | Both modes produce the identical unified snake_case schema (`title`, `incident_type`, `severity`, `severity_reason`, `confidence`, `duration_seconds`, `timeline`, `persons`, `instruments`, `assets`, `uncertainties`, `location`). Contract parity confirmed across Pydantic model, JSON contract, and Zod parser. |
+| 15a | **Cross-Flow Schema/Field Parity** | Both Flows | **PASS** | Both modes produce the identical unified snake_case schema (`title`, `incident_type`, `severity`, `severity_reason`, `confidence`, `duration_seconds`, `timeline`, `persons`, `instruments`, `assets`, `uncertainties`, `location`). Contract parity confirmed across Pydantic model, JSON contract, and Zod parser. |
+| 15b | **Cross-Flow Content Consistency** | Both Flows | **NOT MET** | The flows use different VLMs (agent: `nvidia/cosmos-3-super-reasoner`; gateway: `nvidia/cosmos-3-nano-reasoner`) and disagree on the same clip: subject monkey vs cat, severity 1 vs 3, `duration_seconds` 5 vs 0 (clip is 5.3s). See known issues 7 and 8. |
 
 ### 5.2 Excerpts from Live Verification
 
@@ -136,6 +141,9 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
 - **Location:** "Residential living room (camera location unspecified)"
 
 #### Gateway Mode Live Report Excerpt (`v2b6a3a3813585476b01`, `m6868a8b2e7d0aea7650`)
+> [!WARNING]
+> Not re-verified against the database. This excerpt is nearly word-for-word the gateway excerpt from the previous verification log (only the `assets` entry differs), so it may have been carried over rather than read from run `m6868a8b2e7d0aea7650`. An attempt to re-pull the stored `model_runs.notes` for this run failed because no Supabase credentials were available to the reviewer. Re-pull it via the `incident-manage-database` skill and replace these values if they differ.
+
 - **Model:** `nvidia/cosmos-3-nano-reasoner` (via `vlm-gateway` :8600)
 - **Title:** "Cat knocks over vase of sunflowers, scattering flowers and glass on living room floor"
 - **Incident Type:** `animal` (Severity: 3, Confidence: 1.0, Duration: 0s)
