@@ -1,4 +1,6 @@
-.claude
+# Local Claude Code state stays untracked; shared project skills (symlinks) are tracked
+**/.claude/*
+!/.claude/skills/
 
 # Python
 __pycache__/

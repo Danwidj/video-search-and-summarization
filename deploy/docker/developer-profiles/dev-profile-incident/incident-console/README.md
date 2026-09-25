@@ -292,7 +292,7 @@ A batch pipeline that runs the P1 structured-extraction prompt (`prompts.py`)
 over held-out videos for several hosted VLMs, scores each prediction against the
 real ground truth with `eval_gt.run_evaluation()`, then runs RP1 report
 generation on it. Methodology and the recorded 3-model results are in
-[`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md). Working data
+[`../eval/docs/vlm_benchmark_results.md`](../eval/docs/vlm_benchmark_results.md) (single copy, owned by the standalone `eval/` pipeline). Working data
 (the ground-truth workbook `eval_data/ground_truth_labelling.xlsx`, split
 manifests, cached videos, result JSON) lives under `eval_data/`, which
 `../.gitignore` keeps out of git; the split manifests used for the recorded run
@@ -469,7 +469,7 @@ with real values on the VM build host: `COPY . .` would bake them into the image
 | `scripts/seed_data.py` / `scripts/seed_supabase.py` | The 36 real, video-backed CSV-fixture incidents (one shared `model_run_id`; the 36 synthetic `SYN-`-prefixed placeholder rows are dropped, having no matching R2 video) + evidence, and the one-time idempotent importer |
 | `scripts/seed_mock8.py` | The captain's 8-video custom demo set (its own `model_run_id`, `MOCK8`) + evidence, independent one-time idempotent importer |
 | `scripts/seed_gt_demo.py` | 5-incident Tier 1 GT-evaluation demo set: real CSV-fixture ground truth + a deterministically perturbed model run (`MR-EVAL-DEMO`), independent one-time idempotent importer |
-| `scripts/eval_*.py`, `prompts.py`, `eval_reproducibility/`, `docs/vlm_benchmark_results.md` | P1 multi-model VLM evaluation: GT ingest, split generation, few-shot block, gateway client, video resolution, batch runner, local embedding server, aggregation; P1/RP1 prompts; tracked split manifests; recorded results (see "P1 multi-model VLM evaluation") |
+| `scripts/eval_*.py`, `prompts.py`, `eval_reproducibility/` | P1 multi-model VLM evaluation: GT ingest, split generation, few-shot block, gateway client, video resolution, batch runner, local embedding server, aggregation; P1/RP1 prompts; tracked split manifests; recorded results (see "P1 multi-model VLM evaluation") |
 | `scripts/db_timing.py` / `scripts/measure_db_roundtrips.py` / `scripts/latency_proxy.py` | Database round-trip tooling: time a real DSN read-only, and reproduce the round-trip table on a disposable Postgres behind a latency-injecting proxy (see "Database connection") |
 | `scripts/bench_dashboard_queries.py` | Statements / connection checkouts / wall-clock of the Dashboard evidence fetch, old per-incident loop vs batched (SQLite model with injected latency, or `--dsn` read-only) |
 | `agent_client.py` | vss-agent upload + AI-trigger HTTP client (fail-soft) |

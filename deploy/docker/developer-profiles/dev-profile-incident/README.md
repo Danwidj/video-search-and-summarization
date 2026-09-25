@@ -5,24 +5,38 @@ SPDX-License-Identifier: Apache-2.0
 
 # dev-profile-incident
 
-Human-facing overview for the incident search and reporting profile.
+Human-facing overview for the incident search and reporting profile. Coding agents start at [`AGENTS.md`](AGENTS.md).
 
 ## Documentation
 
-- [Action plan & scope](.docs/action-plan.md)
+**For agents**
+- [AGENTS.md](AGENTS.md): components, checks, architecture rules, boundaries, docs rule
+- [Skills router](skills/README.md): operational skills (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`)
+
+**Reference (`.docs/`)**
 - [Current status & known issues](.docs/status.md)
+- [Action plan & scope](.docs/action-plan.md)
 - [System architecture & sequence flows](.docs/architecture.md)
 - [Database schema & R2 storage](.docs/data.md)
 - [Incident analysis schema & field mapping](.docs/analysis-schema.md)
 - [Profile operations & runbook](.docs/incident-profile-operations.md)
 - [Decision log](.docs/decisions.md)
-- [Option B architecture restructure plan](.docs/restructure-plan.md)
-- [Archive / Retired plans](.docs/archive/)
-- [Streamlit console](incident-console/README.md)
-- [Next.js console](incident-console-v2/README.md)
-- [Lifecycle scripts](.scripts/README.md)
+- [Option B architecture restructure plan](.docs/restructure-plan.md) (proposed)
+- [Archive / retired plans](.docs/archive/)
 
-# Steps to set up and deploy
+**Components**
+- [Next.js console (v2, active)](incident-console-v2/README.md)
+- [VLM gateway](vlm-gateway/README.md)
+- [Mock backends](mock-backend/README.md)
+- [Evaluation pipeline](eval/README.md)
+- [Supabase migrations](supabase/README.md)
+- [Lifecycle scripts](.scripts/README.md)
+- [VM dotfiles](.dotfiles/README.md)
+- [Streamlit console (v1, retired)](incident-console/README.md)
+
+## Steps to set up and deploy
+
+Full procedure, checks and troubleshooting: [`incident-start`](skills/incident-start/SKILL.md).
 
 `./start.sh` is THE single command to set up and launch everything from your laptop.
 
