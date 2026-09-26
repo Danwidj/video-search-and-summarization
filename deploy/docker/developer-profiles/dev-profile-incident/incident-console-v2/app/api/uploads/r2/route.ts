@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { MAX_R2_PUT_BYTES, putR2Video } from '@/lib/r2/config';
+import { MAX_R2_PUT_BYTES, putR2Video, verifyR2Video } from '@/lib/r2/config';
 
 export const maxDuration = 120;
 
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     const key = `uploads/${encodeURIComponent(sensorId.trim())}/${safeName}`;
     const body = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]);
     await putR2Video(config, key, body, file.type || 'video/mp4', file.size);
+    await verifyR2Video(config, key, file.size);
 
     return NextResponse.json({ filePath: key });
   } catch (error) {

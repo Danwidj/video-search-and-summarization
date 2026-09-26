@@ -4,7 +4,7 @@ import type { Readable } from 'node:stream';
 
 import type { ServiceConfiguration } from '@/lib/env';
 import { isValidR2Key } from '@/lib/r2/key';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // Cloudflare R2's limit for a single (non-multipart) PutObject.
@@ -43,6 +43,31 @@ export async function createR2PlaybackUrl(config: ServiceConfiguration, key: str
     new GetObjectCommand({ Bucket: r2.bucket, Key: key, ResponseContentDisposition: 'inline' }),
     { expiresIn: 3600 },
   );
+}
+
+export async function verifyR2Video(
+  config: ServiceConfiguration,
+  key: string,
+  expectedContentLength?: number,
+): Promise<{ contentLength: number }> {
+  const r2 = createR2Configuration(config);
+  if (!r2) throw new Error('R2 is not configured');
+  if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
+
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: r2.endpoint,
+    credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
+  });
+  const result = await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: key }));
+  const contentLength = result.ContentLength;
+  if (typeof contentLength !== 'number' || contentLength <= 0) {
+    throw new Error('R2 object is empty or has no content length');
+  }
+  if (expectedContentLength !== undefined && contentLength !== expectedContentLength) {
+    throw new Error(`R2 object size mismatch: expected ${expectedContentLength} bytes, found ${contentLength}`);
+  }
+  return { contentLength };
 }
 
 export async function putR2Video(

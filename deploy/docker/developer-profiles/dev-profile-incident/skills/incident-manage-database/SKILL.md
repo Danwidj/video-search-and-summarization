@@ -55,8 +55,9 @@ curl -s "$INCIDENT_SUPABASE_URL/rest/v1/incidents?incident_id=eq.<id>&select=*" 
 
 ### R2 objects
 
-- **Keys:** vm-mode uploads go to `uploads/<encodeURIComponent(sensorId)>/<uuid><ext>`. Mock uploads and dataset clips go to `anomaly/<category>/<file>`.
+- **Keys:** all new user uploads go to `uploads/<encodeURIComponent(sensorId)>/<uuid><ext>` in both modes. Classified seed/evaluation clips remain under `anomaly/<category>/<file>`.
 - **Valid keys** (per `isValidR2Key`): not absolute, no `.`/`..` prefix. VST `./streamer/media/...` paths are not keys.
+- **Durability check:** `verifyR2Video` uses `HeadObject`; direct uploads require an exact nonzero byte-length match, and analysis requires a nonempty object before inference.
 - **Playback** is by 1-hour presigned GET only. The bucket is private.
 
 ## After changing anything
