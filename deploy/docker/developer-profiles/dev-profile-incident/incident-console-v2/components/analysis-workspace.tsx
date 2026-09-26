@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { IncidentReport } from '@/components/incident-report';
 import type { AnalysisReport } from '@/lib/analysis/schema';
 import { isValidR2Key } from '@/lib/r2/key';
+import { thumbnailCaptureTime } from '@/lib/reports/thumbnail';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';
 
 type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
@@ -88,7 +89,7 @@ async function captureThumbnail(file: File): Promise<Blob> {
       video.onloadedmetadata = () => { window.clearTimeout(timeout); resolve(); };
       video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not decode a thumbnail frame')); };
     });
-    const target = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(1, video.duration / 2) : 0;
+    const target = thumbnailCaptureTime(video.duration);
     if (target > 0) {
       await new Promise<void>((resolve, reject) => {
         const timeout = window.setTimeout(() => reject(new Error('Timed out seeking thumbnail frame')), 10_000);
