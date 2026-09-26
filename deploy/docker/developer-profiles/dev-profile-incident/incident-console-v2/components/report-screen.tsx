@@ -12,7 +12,7 @@ import type { AnalysisReport } from '@/lib/analysis/schema';
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; report: AnalysisReport };
+  | { status: 'ready'; report: AnalysisReport & { originalReport?: AnalysisReport } };
 
 export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRunId: string }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -26,7 +26,7 @@ export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRu
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as { report?: AnalysisReport; error?: string };
+        const payload = (await response.json()) as { report?: AnalysisReport & { originalReport?: AnalysisReport }; error?: string };
         if (!response.ok || !payload.report) throw new Error(payload.error || `Report request failed with HTTP ${response.status}`);
         setState({ status: 'ready', report: payload.report });
       })

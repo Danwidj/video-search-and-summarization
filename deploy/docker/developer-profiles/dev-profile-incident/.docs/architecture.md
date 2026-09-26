@@ -227,6 +227,16 @@ sequenceDiagram
     API-->>UI: Full report + playback URL
 ```
 
+### Inline report editing
+
+The individual report view keeps editing in context with the evidence: `Edit report` opens a workspace with the
+original AI result and editable copy side by side. It covers title, incident type, summary, severity, confidence,
+time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties.
+`PATCH /api/reports/[videoId]/edit` stores the editable copy under `incidentConsoleV2.editedReport` in
+`model_runs.notes` and updates searchable incident fields. The original `incidentConsoleV2.report` remains intact.
+After saving, the editor closes and the normal report view renders the updated human copy, including its title,
+summary, timeline, and evidence sections. Video playback and follow-up/evaluation tools stay on the report page.
+
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
 *Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2.*
