@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 
 import { parseIncidentAnalysis } from '@/lib/analysis/parse';
+import { persistAgentBookkeeping, persistGatewayAnalysis, prepareAgentVideo } from '@/lib/analysis/persistence';
 import { INCIDENT_ANALYSIS_PROMPT, INCIDENT_PROMPT_VERSION } from '@/lib/analysis/prompt';
 import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
@@ -11,7 +12,7 @@ import { GatewayClient } from '@/lib/gateway/client';
 import { errorResponse, readUpstream } from '@/lib/http';
 import { compactId } from '@/lib/ids';
 import { PostgrestClient } from '@/lib/postgrest/client';
-import { createR2PlaybackUrl } from '@/lib/r2/config';
+import { createR2PlaybackUrl, verifyR2Video } from '@/lib/r2/config';
 
 export const maxDuration = 120;
 
@@ -34,62 +35,15 @@ function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceC
   return config;
 }
 
-async function saveVideo(
-  db: PostgrestClient,
-  video: { videoId: string; filepath: string; sensorId: string; uploadedAt: string; duration?: number | null },
-): Promise<void> {
-  const row: Record<string, unknown> = {
-    id: video.videoId,
-    filepath: video.filepath,
-    source: video.sensorId,
-    uploaded_datetime: video.uploadedAt,
-  };
-  if (video.duration !== undefined) row.duration = video.duration;
-  await db.upsert('videos', row, 'id');
-}
-
-async function saveModelRun(db: PostgrestClient, report: AnalysisReport): Promise<void> {
-  await db.upsert(
-    'model_runs',
-    {
-      id: report.modelRunId,
-      model_name: report.model,
-      model_version: null,
-      prompt_version: report.promptVersion ?? null,
-      run_datetime: report.generatedAt,
-      notes: JSON.stringify({
-        incidentConsoleV2: {
-          report,
-          rawModelOutput: report.rawModelOutput,
-          normalizedModelOutput: report.normalizedModelOutput,
-        },
-      }),
-    },
-    'id',
-  );
-}
-
-async function saveReport(db: PostgrestClient, report: AnalysisReport): Promise<void> {
-  await db.upsert(
-    'reports',
-    {
-      id: report.reportId,
-      incident_id: report.videoId,
-      query_id: null,
-      model_run_id: report.modelRunId,
-      filepath: null,
-      generated_datetime: report.generatedAt,
-    },
-    'id',
-  );
-}
-
 async function analyzeViaGateway(
   input: AnalysisRequest & { sensorId: string; filepath: string; filename: string },
   config: ServiceConfiguration,
 ): Promise<AnalysisReport> {
   let operation = 'creating the signed R2 video URL';
   try {
+    operation = 'verifying the R2 video object';
+    await verifyR2Video(config, input.filepath);
+    operation = 'creating the signed R2 video URL';
     const playbackUrl = await createR2PlaybackUrl(config, input.filepath);
     const gateway = new GatewayClient(config.gatewayUrl!);
     operation = 'calling the VLM gateway';
@@ -154,81 +108,12 @@ async function analyzeViaGateway(
     };
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    operation = 'saving the video to PostgREST';
-    await saveVideo(db, {
-      videoId,
-      filepath: input.filepath,
+    await persistGatewayAnalysis(db, report, {
+      r2Key: input.filepath,
       sensorId: input.sensorId,
       uploadedAt: generatedAt,
       duration: analysis.duration_seconds,
-    });
-    operation = 'saving the model run to PostgREST';
-    await saveModelRun(db, report);
-    operation = 'saving the incident through the PostgREST RPC';
-    await db.insertIncident({
-      p_incident_id: videoId,
-      p_model_run_id: modelRunId,
-      p_type: analysis.incident_type,
-      p_start_timestamp: analysis.incident_start,
-      p_end_timestamp: analysis.incident_end,
-      p_duration: analysis.duration_seconds,
-      p_description: analysis.description,
-      p_severity_level: analysis.severity,
-      p_confidence_score: analysis.confidence,
-    });
-
-    operation = 'resetting incident evidence in PostgREST';
-    await Promise.all([
-      db.deleteWhere('entities', { incident_id: videoId, model_run_id: modelRunId }),
-      db.deleteWhere('instruments', { incident_id: videoId, model_run_id: modelRunId }),
-      db.deleteWhere('assets', { incident_id: videoId, model_run_id: modelRunId }),
-    ]);
-    if (analysis.persons.length) {
-      operation = 'saving entities to PostgREST';
-      await db.upsert(
-        'entities',
-        analysis.persons.map((person, index) => ({
-          incident_id: videoId,
-          model_run_id: modelRunId,
-          entity_id: `e${String(index + 1).padStart(2, '0')}`,
-          type: 'person',
-          description: [person.description?.trim(), person.actions?.trim()].filter(Boolean).join(' ') || 'Person',
-          image: null,
-        })),
-      );
-    }
-    if (analysis.instruments.length) {
-      operation = 'saving instruments to PostgREST';
-      await db.upsert(
-        'instruments',
-        analysis.instruments.map((item, index) => ({
-          incident_id: videoId,
-          model_run_id: modelRunId,
-          instrument_id: `i${String(index + 1).padStart(2, '0')}`,
-          entity_id: null,
-          name: item.name,
-          description: item.description,
-          threat_level: item.threat_level,
-          image: null,
-        })),
-      );
-    }
-    if (analysis.assets.length) {
-      operation = 'saving assets to PostgREST';
-      await db.upsert(
-        'assets',
-        analysis.assets.map((item, index) => ({
-          incident_id: videoId,
-          model_run_id: modelRunId,
-          asset_id: `a${String(index + 1).padStart(2, '0')}`,
-          name: item.name,
-          description: item.description,
-          image: null,
-        })),
-      );
-    }
-    operation = 'saving report metadata to PostgREST';
-    await saveReport(db, report);
+    }, (nextOperation) => { operation = nextOperation; });
 
     return report;
   } catch (error) {
@@ -243,6 +128,9 @@ async function analyzeViaAgent(
 ): Promise<AnalysisReport> {
   let operation = 'creating the signed R2 video URL';
   try {
+    operation = 'verifying the R2 video object';
+    await verifyR2Video(config, input.filepath);
+    operation = 'creating the signed R2 video URL';
     const playbackUrl = await createR2PlaybackUrl(config, input.filepath);
 
     const generatedAt = new Date().toISOString();
@@ -263,7 +151,11 @@ async function analyzeViaAgent(
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     operation = 'saving the video to PostgREST';
-    await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt });
+    await prepareAgentVideo(db, { videoId }, {
+      r2Key: input.filepath,
+      sensorId: input.sensorId,
+      uploadedAt: generatedAt,
+    });
 
     operation = 'calling the incident agent';
     const endpoint = `${config.agentUrl!.replace(/\/$/, '')}/api/v1/incidents/${videoId}/analyze`;
@@ -297,12 +189,11 @@ async function analyzeViaAgent(
       normalizedModelOutput: rawOutput,
     };
 
-    operation = 'saving the model run to PostgREST';
-    await saveModelRun(db, report);
-    operation = 'restoring the video R2 key in PostgREST';
-    await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt });
-    operation = 'saving report metadata to PostgREST';
-    await saveReport(db, report);
+    await persistAgentBookkeeping(db, report, {
+      r2Key: input.filepath,
+      sensorId: input.sensorId,
+      uploadedAt: generatedAt,
+    }, (nextOperation) => { operation = nextOperation; });
 
     return report;
   } catch (error) {

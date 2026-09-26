@@ -475,13 +475,13 @@ Local disks on `kwanz-ws` are treated as temporary caches only (though VST store
 
 ```
 anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
-├── anomaly/                         # dataset clips (seed/eval) AND mock-backend uploads
+├── anomaly/                         # classified dataset clips (seed/eval) only
 │   ├── animal_attacks/  assault/  burglary/  explosion/
 │   ├── fighting/  road_accidents/  shooting/
-│   │   └── <clip-name>.mp4          # mock-backend writes anomaly/<hash-picked category>/<original filename>
+│   │   └── <clip-name>.mp4
 ├── normal_videos/                   # baseline non-incident clips
 │   └── <clip-name>.mp4
-├── uploads/                         # incident-console-v2 real-VST uploads (/api/uploads/r2)
+├── uploads/                         # all new user uploads (real VST fallback and local mock)
 │   └── <encodeURIComponent(sensorId)>/<uuid>.<ext>   # ext lowercased, default .mp4
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # planned, not created; entities/instruments/assets.image are always NULL today
@@ -489,7 +489,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ```
 
 > [!NOTE]
-> The `anomaly/` subfolders are actively used: `mock-backend` (local mode) uploads videos to `anomaly/<category>/<original filename>`, where the category is picked by hash (`sha256(incident_id)[0] % 5`), not by video content.
+> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<sensorId>/<uuid>.<ext>` in both local-mock and real-VST flows; the VLM's later incident classification does not move or rename the object.
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree is planned for cropped entity/instrument/asset evidence thumbnails, but `image` columns are always NULL in the database today.
@@ -505,7 +505,10 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 2. **Upload Key Pattern:**
    Direct uploads from `incident-console-v2/app/api/uploads/r2/route.ts` format keys as:
    `uploads/${encodeURIComponent(sensorId.trim())}/${randomUUID()}${ext}`.
-3. **Presigned Playback URLs:**
+3. **Durability Verification:**
+   `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
+   and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.
+4. **Presigned Playback URLs:**
    Access is private by default. Playback URLs are generated server-side using AWS SDK S3 client
    presigning (`getSignedUrl` with `GetObjectCommand`, `ResponseContentDisposition: 'inline'`, and a 1-hour
    expiration window).

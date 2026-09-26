@@ -6,11 +6,13 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+let headContentLength = 1024;
+
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
-      send() {
-        return Promise.resolve({});
+      send(command) {
+        return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: headContentLength } : {});
       }
     },
     GetObjectCommand: class {
@@ -19,6 +21,11 @@ mock.module('@aws-sdk/client-s3', {
       }
     },
     PutObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    HeadObjectCommand: class HeadObjectCommand {
       constructor(input) {
         this.input = input;
       }
@@ -62,8 +69,25 @@ function jsonRequest(body) {
   });
 }
 
+function successfulPostgrestResponse(url, expectedR2Key) {
+  const parsed = new URL(String(url));
+  const table = parsed.pathname.replace('/rest/v1/', '');
+  const filterValue = (name) => parsed.searchParams.get(name)?.replace(/^eq\./, '');
+  const rows = {
+    videos: [{ id: filterValue('id'), filepath: expectedR2Key }],
+    model_runs: [{ id: filterValue('id') }],
+    incidents: [{ incident_id: filterValue('incident_id'), model_run_id: filterValue('model_run_id') }],
+    reports: [{ id: filterValue('id'), incident_id: 'verified', model_run_id: 'verified' }],
+  }[table];
+  return new Response(JSON.stringify(rows ?? [{ id: 'ok' }]), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 beforeEach(() => {
   setBaseEnv();
+  headContentLength = 1024;
 });
 
 afterEach(() => {
@@ -103,6 +127,23 @@ test('analysis route: rejects requests missing required fields', async () => {
 
   const res3 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4' }));
   assert.equal(res3.status, 400);
+});
+
+test('analysis route: rejects an R2 key whose object is empty before calling inference', async () => {
+  headContentLength = 0;
+  let inferenceCalled = false;
+  globalThis.fetch = async () => {
+    inferenceCalled = true;
+    return new Response('{}', { status: 200 });
+  };
+
+  const response = await POST(
+    jsonRequest({ sensorId: 'sensor-empty', filepath: 'uploads/sensor-empty/clip.mp4', filename: 'clip.mp4' }),
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(inferenceCalled, false);
+  assert.match((await response.json()).error, /verifying the R2 video object/);
 });
 
 test('gateway mode: configuration validation requires gatewayUrl and Supabase', async () => {
@@ -181,10 +222,7 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    return new Response(JSON.stringify([{ id: 'ok' }]), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return successfulPostgrestResponse(url, 'uploads/sensor-camera-01/clip.mp4');
   };
 
   const response = await POST(
@@ -216,7 +254,7 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
   const agentIndex = recordedCalls.findIndex((c) => c.url.includes('/api/v1/incidents/'));
   const supabaseWrites = recordedCalls
     .map((c, index) => ({ ...c, index }))
-    .filter((c) => c.url.includes('supabase.test'))
+    .filter((c) => c.url.includes('supabase.test') && c.options.method === 'POST')
     .map((c) => ({
       index: c.index,
       table: new URL(c.url).pathname.replace('/rest/v1/', ''),
@@ -325,11 +363,7 @@ test('gateway mode: calls VLM gateway with snake_case prompt and persists to Sup
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    // PostgREST responses
-    return new Response(JSON.stringify([{ id: 'ok' }]), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return successfulPostgrestResponse(url, 'uploads/sensor-cam-02/night.mp4');
   };
 
   const response = await POST(
@@ -387,15 +421,15 @@ test('agent mode: keeps the agent-reported duration_seconds of 0 even with a pos
   delete process.env.VLM_GATEWAY_URL;
 
   globalThis.fetch = async (url) => {
-    const body = String(url).includes('/api/v1/incidents/')
-      ? {
+    if (String(url).includes('/api/v1/incidents/')) {
+      return new Response(JSON.stringify({
           title: 'Short clip',
           incident_type: 'other',
           duration_seconds: 0,
           timeline: [{ start_seconds: 0, end_seconds: 5, description: 'Event' }],
-        }
-      : [{ id: 'ok' }];
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return successfulPostgrestResponse(url, 'uploads/sensor-cam-03/clip.mp4');
   };
 
   const response = await POST(
@@ -414,8 +448,8 @@ test('gateway mode: derives duration_seconds from the timeline span when the VLM
   globalThis.fetch = async (url, options = {}) => {
     const urlStr = String(url);
     recordedCalls.push({ url: urlStr, options });
-    const body = urlStr.includes('/v1/chat/completions')
-      ? {
+    if (urlStr.includes('/v1/chat/completions')) {
+      return new Response(JSON.stringify({
           choices: [
             {
               message: {
@@ -433,9 +467,9 @@ test('gateway mode: derives duration_seconds from the timeline span when the VLM
             },
           ],
           model: 'nvidia/cosmos-3-nano-reasoner',
-        }
-      : [{ id: 'ok' }];
-    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return successfulPostgrestResponse(url, 'uploads/sensor-cam-04/clip.mp4');
   };
 
   const response = await POST(
@@ -447,4 +481,33 @@ test('gateway mode: derives duration_seconds from the timeline span when the VLM
   assert.equal(payload.report.duration_seconds, 5);
   const rpcCall = recordedCalls.find((c) => c.url.includes('/rpc/insert_incident'));
   assert.equal(JSON.parse(rpcCall.options.body).p_duration, 5);
+});
+
+test('gateway mode: does not report success when persistence read-back is incomplete', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/v1/chat/completions')) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ title: 'Test report', incident_type: 'other' }) } }],
+        model: 'nvidia/cosmos-3-nano-reasoner',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (String(url).includes('select=')) {
+      return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify([{ id: 'ok' }]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  const response = await POST(
+    jsonRequest({ sensorId: 'sensor-missing', filepath: 'uploads/sensor-missing/clip.mp4', filename: 'clip.mp4' }),
+  );
+
+  assert.equal(response.status, 500);
+  const payload = await response.json();
+  assert.match(payload.error, /verifying the persisted report/);
+  assert.match(payload.error, /videos, model_runs, incidents, reports/);
 });

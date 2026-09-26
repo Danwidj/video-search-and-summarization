@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
-import hashlib
 import os
 from pathlib import PurePosixPath
 from typing import Any
@@ -30,13 +29,13 @@ from base_profile_mock.state import get_state
 
 router = APIRouter(prefix="/vst/api/v1")
 
-_CATEGORIES = (
-    ("road_accidents", "road accident"),
-    ("fighting", "fighting"),
-    ("animal_attacks", "animal"),
-    ("burglary", "burglary"),
-    ("explosion", "explosion"),
-)
+def _upload_key(stream: Stream, sensor_id: str) -> str:
+    """Return a classification-neutral key for a user-uploaded video."""
+    filename = PurePosixPath(stream.filename or "video.mp4").name
+    suffix = PurePosixPath(filename).suffix.lower()
+    if not suffix or len(suffix) > 11 or not suffix[1:].isalnum():
+        suffix = ".mp4"
+    return f"uploads/{sensor_id}/{uuid.uuid4()}{suffix}"
 
 
 def _r2_upload(stream: Stream, sensor_id: str) -> str:
@@ -48,10 +47,7 @@ def _r2_upload(stream: Stream, sensor_id: str) -> str:
     missing = [name for name in required if not os.getenv(name)]
     if missing:
         raise RuntimeError(f"R2 storage is not configured; missing {', '.join(missing)}")
-    incident_id = "v" + hashlib.sha256(sensor_id.encode("utf-8")).hexdigest()[:19]
-    folder, _ = _CATEGORIES[hashlib.sha256(incident_id.encode("utf-8")).digest()[0] % len(_CATEGORIES)]
-    filename = PurePosixPath(stream.filename or f"{incident_id}.mp4").name
-    key = f"anomaly/{folder}/{filename}"
+    key = _upload_key(stream, sensor_id)
     client = boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",

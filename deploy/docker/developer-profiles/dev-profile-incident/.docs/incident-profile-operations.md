@@ -184,10 +184,12 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 Verify deployment health against this checklist before declaring a build ready:
 
 - [ ] **Video Ingestion:** Upload an `.mp4` clip via `incident-console-v2`. Verify that chunked upload succeeds,
-      the clip is stored in Cloudflare R2 (vm mode: `uploads/<sensorId>/<uuid><ext>`; local mock: `anomaly/<category>/<filename>`), and a playback URL generates.
+      the clip is stored in Cloudflare R2 as a classification-neutral `uploads/<sensorId>/<uuid><ext>` key in both modes, `HeadObject` reports a nonzero size, and a playback URL generates.
 - [ ] **Automated Report Generation:** Trigger incident analysis. Verify all structured fields populate
       (type, severity, confidence, summary, timeline, entities, instruments, assets). Confirm ambiguous footage
       gracefully degrades (e.g. empty persons array, unconfirmed start time).
+- [ ] **Persistence Read-Back:** Confirm `POST /api/analysis` returns 200 only after `videos`, `model_runs`,
+      `incidents`, and `reports` can be read back and `videos.filepath` exactly matches the submitted R2 key.
 - [ ] **Metadata Editing & Re-Analysis:** Modify input metadata, re-run analysis, and confirm that a new model run ID
       is generated and prior runs remain accessible in the run picker.
 - [ ] **Pipeline Error Handling:** Induce an invalid video or disconnect the tunnel; verify that the frontend surfaces
