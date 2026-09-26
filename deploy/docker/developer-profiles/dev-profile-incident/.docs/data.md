@@ -519,7 +519,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.
 4. **Presigned Media URLs:**
-   Access is private by default. Video playback and six report-card thumbnail URLs are generated server-side using AWS SDK S3 client
+   Access is private by default. Video playback and up to six report-card thumbnail URLs are generated server-side using AWS SDK S3 client
    presigning (`getSignedUrl` with `GetObjectCommand`, `ResponseContentDisposition: 'inline'`, and a 1-hour
    expiration window).
 
