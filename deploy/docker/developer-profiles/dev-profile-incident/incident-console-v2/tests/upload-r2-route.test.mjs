@@ -14,11 +14,17 @@ process.env.R2_SECRET_KEY = 'test-secret-key';
 process.env.R2_BUCKET = 'test-bucket';
 
 const puts = [];
+const heads = [];
+let headContentLengthOverride;
 
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
+        if (command.constructor.name === 'HeadObjectCommand') {
+          heads.push(command.input);
+          return Promise.resolve({ ContentLength: headContentLengthOverride ?? puts.at(-1)?.ContentLength ?? 1 });
+        }
         puts.push(command.input);
         return Promise.resolve({ ETag: '"fake-etag"' });
       }
@@ -29,6 +35,11 @@ mock.module('@aws-sdk/client-s3', {
       }
     },
     GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    HeadObjectCommand: class HeadObjectCommand {
       constructor(input) {
         this.input = input;
       }
@@ -89,10 +100,13 @@ test('uploads an attacker-controlled filename under a generated key, not the raw
   assert.equal(puts[0].Key, payload.filePath);
   assert.equal(puts[0].ContentType, 'video/mp4');
   assert.equal(puts[0].ContentLength, bytes.length);
+  assert.equal(heads.length, 1, 'the route must verify the uploaded object exactly once');
+  assert.equal(heads[0].Key, payload.filePath);
 });
 
 test('two uploads with the identical filename never collide on the same R2 key', async () => {
   puts.length = 0;
+  heads.length = 0;
   const first = await POST(
     multipartRequest({ file: new Blob([new Uint8Array([1])], { type: 'video/mp4' }), sensorId: 'sensor-7', filename: 'video.mp4' }),
   );
@@ -115,5 +129,17 @@ test('reports a clear error when R2 is not configured', async () => {
     assert.equal(payload.error, 'R2 is not configured');
   } finally {
     process.env.R2_ACCOUNT_ID = 'test-account';
+  }
+});
+
+test('does not return an R2 key when object verification reports an empty upload', async () => {
+  headContentLengthOverride = 0;
+  try {
+    const file = new Blob([new Uint8Array([1])], { type: 'video/mp4' });
+    const response = await POST(multipartRequest({ file, sensorId: 'sensor-empty', filename: 'clip.mp4' }));
+    assert.equal(response.status, 500);
+    assert.match((await response.json()).error, /empty or has no content length/);
+  } finally {
+    headContentLengthOverride = undefined;
   }
 });

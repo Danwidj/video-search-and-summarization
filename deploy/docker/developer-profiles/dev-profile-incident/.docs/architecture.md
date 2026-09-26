@@ -225,15 +225,19 @@ sequenceDiagram
     UI->>VST: Single-request chunked upload (mediaFile, filename, nvstreamer-* headers)
     VST-->>UI: Chunk response (sensorId, filePath)
     
-    alt Chunk response lacks a valid R2 key (never with mock-backend, which returns anomaly/<category>/<filename>)
+    alt Chunk response lacks a valid R2 key (real VST)
         UI->>UI: Call Next.js POST /api/uploads/r2
         UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
         R2-->>UI: Stored object key
+        UI->>R2: HeadObject (exact uploaded byte length required)
+    else Mock backend returns its durable R2 key
+        VST->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     end
 
     UI->>VST: POST /api/uploads/complete → /api/v1/videos/{sensorId}/complete
 
     UI->>UI: Trigger POST /api/analysis
+    UI->>R2: HeadObject (object must exist and be nonempty)
     UI->>UI: Sign 1-hour R2 GET URL locally (no R2 call)
     
     UI->>Gateway: POST /v1/chat/completions (Prompt + Video URL)
@@ -258,6 +262,8 @@ sequenceDiagram
     UI->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
     UI->>DB: Upsert entities, instruments, assets
     UI->>DB: Upsert reports (id, incident_id, model_run_id)
+    UI->>DB: Read back videos, model_runs, incidents, reports
+    Note over UI,DB: Success requires all four rows and videos.filepath == submitted R2 key
 
     UI-->>User: Render Incident Report & redirect to /reports/[id]
 ```
@@ -294,11 +300,13 @@ sequenceDiagram
     UI->>UI: POST /api/uploads/r2
     UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     R2-->>UI: Durable R2 object key
+    UI->>R2: HeadObject (exact uploaded byte length required)
 
     UI->>Tunnel: POST localhost:8000/api/v1/videos/{sensorId}/complete
     Tunnel->>Agent: Forward complete (fetches timeline & storage URL)
 
     UI->>UI: Trigger POST /api/analysis
+    UI->>R2: HeadObject (object must exist and be nonempty)
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
 
     UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze
@@ -324,6 +332,8 @@ sequenceDiagram
     UI->>DB: Upsert model_runs (id, notes=full JSON report)
     UI->>DB: Re-upsert videos (RESTORING durable R2 filepath!)
     UI->>DB: Upsert reports (id, incident_id, model_run_id)
+    UI->>DB: Read back videos, model_runs, incidents, reports
+    Note over UI,DB: Success requires all four rows and videos.filepath == submitted R2 key
 
     UI-->>User: Render Incident Report & redirect to /reports/[id]
 ```

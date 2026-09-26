@@ -88,7 +88,7 @@ Represents a discrete chronological event or phase within the incident.
    - Output from the VLM gateway goes through `parseIncidentAnalysis` (`incident-console-v2/lib/analysis/parse.ts`), which validates it with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`) and then applies the gateway-only duration fallback (see Tolerant Parsing Behaviors).
 2. **Agent Mode (`ANALYSIS_MODE=agent`):**
    - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
-   - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema` (no translator or camelCase conversion).
+   - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema`. At this ingestion boundary, legacy/common VLM aliases (`incidentType`, `summary`, `severityLevel`, `confidenceScore`, timestamp/duration camelCase fields, `entities`, nested `threatLevel`, and camelCase timeline offsets) are normalized into the same canonical snake-case object before validation and persistence.
    - Full native report is saved to `model_runs.notes` and returned in the HTTP response.
 
 ### Checked-in Contract Artifact & Drift Prevention
@@ -113,8 +113,8 @@ The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydant
 ### Legacy DB Read-Compatibility (`model_runs.notes`)
 
 Historical incident runs created before contract unification stored `camelCase` JSON objects in `model_runs.notes`. To maintain full backward compatibility:
-- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Maps legacy `camelCase` notes (`incidentType`, `summary`, `severityLevel`, `confidenceScore`, `startTimestamp`, `entities` → `persons`, timeline `startSeconds`, instrument `threatLevel`, etc.) to `snake_case` before validating with `incidentAnalysisSchema`. This is the only place camelCase aliases are accepted.
-- **Snake-case-only parsing:** `lib/analysis/schema.ts` accepts only `snake_case` keys, so new VLM gateway and vss-agent replies are parsed against the agent contract with no camelCase fallbacks.
+- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Maps legacy `camelCase` notes before validating with `incidentAnalysisSchema`.
+- **Ingestion parser:** `lib/analysis/schema.ts` keeps snake_case canonical but accepts common camelCase/entity aliases so a semantically valid VLM reply is not silently replaced with defaults.
 - **Writer:** All new writes through PostgREST and Next.js routes write strictly `snake_case` payloads.
 
 ---

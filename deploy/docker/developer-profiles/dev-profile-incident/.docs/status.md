@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-09-25**
+> **As of 2026-09-26**
 >
 > This is a volatile snapshot document capturing the current operational state, delivery milestones, known issues, and environment configuration. It is intended to be rewritten as reality evolves, not monotonically appended.
 
@@ -12,17 +12,17 @@ Current delivery status verified against the codebase:
 
 | Component / Feature | Current State | Verifiable Source Files |
 |---|---|---|
-| **incident-console-v2 (Next.js)** | **Done** | `incident-console-v2/` (App Router UI, chunked VST upload, R2 direct fallback, report workspace, review flow, notification banner, eval form) |
+| **incident-console-v2 (Next.js)** | **Done (Live verified 2026-09-26)** | `incident-console-v2/` (App Router UI, chunked VST upload, R2 direct fallback, report workspace, review flow, notification banner, eval form). Analysis verifies R2, maps normalized VLM output through one persistence module, and reads back the required row graph before returning success. A full local frontend-API upload of `incident-ingestion-e2e-20260926.mp4` created R2 key `anomaly/road_accidents/incident-ingestion-e2e-20260926.mp4`, video `vc468d0b5487a1c4d814`, model run `ma45e70563428ae88220`, and report `r12abb87e701877fdfbd`; all required and applicable evidence rows were independently read back and the durable report route returned 200. |
 | **vlm-gateway Proxy** | **Done** | `vlm-gateway/app.py`, `vlm-gateway/README.md` (FastAPI proxy on port 8600 holding upstream API credentials) |
 | **mock-backend (Zero-GPU)** | **Done** | `mock-backend/base_profile_mock/` (port 7777, mock VST upload, mock stream registration, mock incident analysis) |
 | **Agent /analyze Route & Tool** | **Done** | `services/agent/src/vss_agents/api/incident_analyze.py`, `services/agent/src/vss_agents/tools/incident_report_gen.py` |
 | **Native VM Services Architecture** | **Done** | `.scripts/native-services.sh`, `.scripts/prune-native-images.sh` (`vss-agent` runs natively on `kwanz-ws` for 2s fast restarts; relinked editable to `services/agent/` with Brev inference) |
 | **PostgREST Agent Persistence** | **Done** | `services/agent/src/vss_agents/utils/incident_db.py`, `supabase/migrations/20260917141225_insert_incident_function.sql`, `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` |
 | **Database Defaults & Precision Fix** | **Done (Live)** | `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` applied to live Supabase DB on 2026-09-25: server-side UTC defaults on 9 timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` updated to `p_confidence_score DOUBLE PRECISION`. PostgREST writers (`incident-console/db_postgrest.py`, `eval/db_postgrest.py`) updated to use `/rpc/insert_incident`. Agent extraction validation failure now surfaces HTTP 422/504 instead of persisting default reports. |
-| **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `incident-console-v2/app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py` |
+| **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `incident-console-v2/app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py`. Direct uploads are verified by `HeadObject` against the submitted byte length, and analysis re-verifies that the object is nonempty before inference. |
 | **Tier 1 Ground-Truth Evaluation** | **Done** | `incident-console/eval_gt.py`, `incident-console/matching.py`, `incident-console-v2/components/advanced-report-tools.tsx` |
 | **Unified Launcher (`start.sh`)** | **Done** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, preflight check, and auto self-heal) |
-| **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (Unified contract across gateway and agent modes onto agent snake_case schema and agent extraction prompt; legacy camelCase read-compatibility retained) |
+| **Analysis Contract Unification** | **Done** | `incident-console-v2/lib/analysis/schema.ts`, `incident-console-v2/lib/analysis/prompt.ts`, `incident-console-v2/lib/analysis/persistence.ts`, `incident-console-v2/lib/analysis/incident-report-contract.json`, `services/agent/src/vss_agents/data_models/incident_report.py` (canonical snake_case contract in both modes; common VLM aliases normalized before one table-mapping layer persists them) |
 | **Live VM & Brev Verification** | **Done (Live)** | Two-flows end-to-end run on 2026-09-25 with `~/Desktop/test2.mp4` against Brev Switchyard (see §5): `./start.sh --mode vm` (agent mode on `kwanz-ws`) and `./start.sh --mode local` (gateway mode via `mock-backend` + `vlm-gateway`) both produce valid non-empty snake_case reports; each re-analysis writes a distinct `model_runs` row in both modes; review flow `unreviewed` -> `verified` works in both modes. Schema/field parity holds across the flows; content consistency does not (different VLMs, see known issue 7). Fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
 | **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
 | **Natural Language Search Route** | **Outstanding (MVP2)** | `POST /api/v1/incidents/search` on `vss-agent` and UI search box not yet implemented |
@@ -42,8 +42,8 @@ The following anomalies are currently present in the codebase and represent inte
 3. **`videos.filepath` Overwritten by Agent with VST URL:**
    In `services/agent/src/vss_agents/tools/incident_report_gen.py` (line 392), after completing analysis, the agent calls `await db.upsert_video(incident_id, filepath=report_result.video_url, source=sensor_id)`. Because `video_url` points to the internal VST stream URL (`http://10.131.1.5:10000/...`), this call overwrites the permanent Cloudflare R2 object key stored in `videos.filepath`.
    *Active Workaround:* `incident-console-v2`'s `analyzeViaAgent` in `incident-console-v2/app/api/analysis/route.ts` explicitly re-saves the original R2 filepath after the agent completes: `await saveVideo(db, { videoId, filepath: input.filepath, sensorId: input.sensorId, uploadedAt: generatedAt })`.
-4. **Mock-Backend Hash-Picked `anomaly/<category>` Uploads:**
-   `mock-backend/base_profile_mock/.../routers/vst_storage.py` writes uploaded files to `anomaly/<category>/<original filename>` using `_CATEGORIES[sha256(incident_id)[0] % 5]`. This category assignment is pseudo-random rather than content-derived, resulting in test files (e.g. `AnimalN_xN.mp4`) polluting dataset fixture folders like `anomaly/fighting/` or `anomaly/road_accidents/`.
+4. **Mock Upload Classification Coupling (Fixed 2026-09-26):**
+   Mock uploads previously used a hash-picked `anomaly/<category>/<original filename>` path unrelated to VLM output. They now use the same classification-neutral `uploads/<sensorId>/<uuid>.<ext>` convention as real-VST fallback uploads. Existing objects are not moved; `anomaly/` remains the seed/evaluation dataset namespace.
 5. **Legacy Database Tables Remaining in Live Schema:**
    Four legacy tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) remain in the live Supabase database from a pre-v1 integer-report-id schema. No current codebase references them, but they consume table namespace.
 6. **RLS Disabled on Public Tables:**
@@ -160,4 +160,3 @@ Comprehensive end-to-end verification of `dev-profile-incident` across both anal
    - *Symptom:* VLM correctly detected monkey activity across 5 consecutive segments, but report extraction returned `"Empty Video Analysis Report - No Incident Detected"`.
    - *Cause:* `_filter_short_duration_from_markdown(min_duration_seconds=2.0)` dropped every segment because `test2.mp4` chunk durations were ~1.1s each (< 2.0s). This stripped all events from the markdown summary passed to the extraction LLM.
    - *Fix:* In `video_report_gen.py`, filter every chunk first; if that would remove 100% of timestamped events across the whole report, fall back to the unfiltered chunks so short clips are preserved. Added unit tests in `test_video_report_gen.py`.
-

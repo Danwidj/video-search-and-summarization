@@ -36,9 +36,9 @@ Open `http://localhost:3200`, choose Analyze, and select the clip. Upload, analy
 ### Scripted: console API (same path the UI uses)
 
 1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
-2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`.
+2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
 3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
-4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "reasoning"?, "promptOverride"?}`.
+4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "reasoning"?, "promptOverride"?}`. Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
 
 Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video, go straight to step 4 with the existing R2 key.
 
@@ -68,10 +68,11 @@ The agent looks up the sensor id from `videos.source`, so the `videos` row must 
 Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-to-end-verification-checklist). Minimum checks after one analysis:
 
 - The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
-- `videos.filepath` is an **R2 key** (`uploads/<sensorId>/<uuid><ext>` in vm mode, `anomaly/<category>/<file>` with the mock), **not** a `http://10.131.1.5:...` VST URL. In agent mode, the agent overwrites it and the console restores it. See known issue 3 in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt).
+- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. In agent mode, the agent overwrites it and the console restores it. See known issue 3 in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt).
 - There is a new `model_runs` row, and the previous runs still appear in the run picker.
+- The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 
 ## Known quirks
 
 - Both modes share one `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, enforced by parity tests). The full report lives in `model_runs.notes`. Legacy camelCase notes are still readable. `title`, `severity_reason`, `timeline`, `uncertainties` and `location` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
-- The mock backend picks the `anomaly/<category>` folder by hashing the incident id, not from the content.
+- `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

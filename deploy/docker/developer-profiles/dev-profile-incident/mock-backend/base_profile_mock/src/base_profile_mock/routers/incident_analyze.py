@@ -8,8 +8,6 @@ import asyncio
 import hashlib
 import os
 from pathlib import Path
-from pathlib import PurePosixPath
-import re
 import sys
 import uuid
 
@@ -18,6 +16,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from base_profile_mock.routers.vst_storage import _upload_key
 from base_profile_mock.state import AppState
 from base_profile_mock.state import Stream
 from base_profile_mock.state import get_state
@@ -82,16 +81,6 @@ def _mock_category(incident_id: str) -> dict[str, object]:
     return _MOCK_CATEGORIES[digest[0] % len(_MOCK_CATEGORIES)]
 
 
-def _safe_filename(filename: str, incident_id: str) -> str:
-    name = PurePosixPath(filename or f"{incident_id}.mp4").name
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
-    if not cleaned:
-        cleaned = f"{incident_id}.mp4"
-    if "." not in cleaned:
-        cleaned = f"{cleaned}.mp4"
-    return cleaned
-
-
 def _r2_client():
     try:
         import boto3
@@ -114,8 +103,8 @@ def _r2_client():
 
 
 def _upload_video_to_r2(*, stream: Stream, incident_id: str, category: dict[str, object]) -> str:
-    filename = _safe_filename(stream.filename, incident_id)
-    key = f"anomaly/{category['folder']}/{filename}"
+    del incident_id, category
+    key = _upload_key(stream, stream.stream_id)
     _r2_client().put_object(
         Bucket=os.environ["R2_BUCKET"],
         Key=key,

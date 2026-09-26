@@ -240,6 +240,37 @@ test('parseIncidentAnalysis handles duration_seconds coercion', () => {
   assert.equal(report3.duration_seconds, null);
 });
 
+test('parseIncidentAnalysis preserves legacy camelCase fields and entities aliases', () => {
+  const report = parseIncidentAnalysis(JSON.stringify({
+    title: 'Alias report',
+    incidentType: 'fighting',
+    summary: 'Two people were involved in an altercation.',
+    severityLevel: 'high',
+    severityReason: 'Physical confrontation observed.',
+    confidenceScore: '82',
+    startTimestamp: '0:02',
+    endTimestamp: '0:09',
+    incidentStartConfirmed: 'true',
+    durationSeconds: '7',
+    entities: [{ description: 'Person in blue', action: 'pushed another person' }],
+    instruments: [{ name: 'Chair', description: 'Moved during incident', threatLevel: 'low' }],
+    timeline: [{ startSeconds: '2', endSeconds: '9', description: 'Altercation' }],
+  }));
+
+  assert.equal(report.incident_type, 'fighting');
+  assert.equal(report.description, 'Two people were involved in an altercation.');
+  assert.equal(report.severity, 4);
+  assert.equal(report.severity_reason, 'Physical confrontation observed.');
+  assert.equal(report.confidence, 0.82);
+  assert.equal(report.incident_start, '0:02');
+  assert.equal(report.incident_end, '0:09');
+  assert.equal(report.incident_start_confirmed, true);
+  assert.equal(report.duration_seconds, 7);
+  assert.deepEqual(report.persons, [{ description: 'Person in blue', actions: 'pushed another person' }]);
+  assert.equal(report.instruments[0].threat_level, 2);
+  assert.deepEqual(report.timeline, [{ start_seconds: 2, end_seconds: 9, description: 'Altercation' }]);
+});
+
 test('parseIncidentAnalysis falls back to timeline span when duration_seconds is null or 0', () => {
   const reportNull = parseIncidentAnalysis(baseReport({
     duration_seconds: null,
@@ -327,7 +358,7 @@ test('parseIncidentAnalysis filters empty uncertainties', () => {
   assert.deepEqual(report.uncertainties, ['Valid uncertainty', 'Another valid']);
 });
 
-test('parseIncidentAnalysis reads snake_case only and ignores legacy camelCase keys', () => {
+test('parseIncidentAnalysis maps legacy camelCase keys into the canonical report', () => {
   const report = parseIncidentAnalysis(JSON.stringify({
     title: 'Camel reply',
     incidentType: 'burglary',
@@ -337,10 +368,10 @@ test('parseIncidentAnalysis reads snake_case only and ignores legacy camelCase k
     entities: [{ type: 'human', description: 'Intruder' }],
     instruments: [{ name: 'Crowbar', description: 'Tool', threatLevel: 4 }],
   }));
-  assert.equal(report.incident_type, 'road accident');
-  assert.equal(report.description, '');
-  assert.equal(report.severity, 1);
-  assert.equal(report.confidence, 0);
-  assert.deepEqual(report.persons, []);
-  assert.equal(report.instruments[0].threat_level, null);
+  assert.equal(report.incident_type, 'burglary');
+  assert.equal(report.description, 'Legacy summary text');
+  assert.equal(report.severity, 5);
+  assert.equal(report.confidence, 0.9);
+  assert.deepEqual(report.persons, [{ description: 'Intruder', actions: '' }]);
+  assert.equal(report.instruments[0].threat_level, 4);
 });
