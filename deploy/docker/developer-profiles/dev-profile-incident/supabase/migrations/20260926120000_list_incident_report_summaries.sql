@@ -41,7 +41,18 @@ STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $$
-WITH filtered AS (
+WITH parameters AS (
+    SELECT replace(
+        replace(
+            replace(p_search, E'\\', E'\\\\'),
+            '%',
+            E'\\%'
+        ),
+        '_',
+        E'\\_'
+    ) AS escaped_search
+),
+filtered AS (
     SELECT
         r.id AS report_id,
         r.incident_id AS video_id,
@@ -74,6 +85,7 @@ WITH filtered AS (
     LEFT JOIN public.review_status AS rs
       ON rs.incident_id = r.incident_id
      AND rs.model_run_id = r.model_run_id
+    CROSS JOIN parameters AS params
     WHERE (p_type IS NULL OR i.type = p_type)
       AND (
           p_severity IS NULL
@@ -88,7 +100,7 @@ WITH filtered AS (
       AND (p_time_from IS NULL OR r.generated_datetime::TIME >= p_time_from)
       AND (p_time_to IS NULL OR r.generated_datetime::TIME <= p_time_to)
       AND (
-          p_search IS NULL
+          params.escaped_search IS NULL
           OR concat_ws(
               ' ',
               COALESCE(
@@ -98,21 +110,21 @@ WITH filtered AS (
               i.type,
               i.description,
               regexp_replace(COALESCE(v.filepath, ''), '^.*/', '')
-          ) ILIKE '%' || p_search || '%'
+          ) ILIKE '%' || params.escaped_search || '%' ESCAPE E'\\'
           OR EXISTS (
               SELECT 1 FROM public.entities AS e
               WHERE e.incident_id = r.incident_id AND e.model_run_id = r.model_run_id
-                AND concat_ws(' ', e.type, e.description) ILIKE '%' || p_search || '%'
+                AND concat_ws(' ', e.type, e.description) ILIKE '%' || params.escaped_search || '%' ESCAPE E'\\'
           )
           OR EXISTS (
               SELECT 1 FROM public.instruments AS ins
               WHERE ins.incident_id = r.incident_id AND ins.model_run_id = r.model_run_id
-                AND concat_ws(' ', ins.name, ins.description) ILIKE '%' || p_search || '%'
+                AND concat_ws(' ', ins.name, ins.description) ILIKE '%' || params.escaped_search || '%' ESCAPE E'\\'
           )
           OR EXISTS (
               SELECT 1 FROM public.assets AS a
               WHERE a.incident_id = r.incident_id AND a.model_run_id = r.model_run_id
-                AND concat_ws(' ', a.name, a.description) ILIKE '%' || p_search || '%'
+                AND concat_ws(' ', a.name, a.description) ILIKE '%' || params.escaped_search || '%' ESCAPE E'\\'
           )
       )
 ),
