@@ -203,6 +203,30 @@ OPENAI_API_KEY=<brev-switchyard-api-key>
 
 ## 4. Runtime Interaction Sequences
 
+### Report library pagination and deferred report loading
+
+```mermaid
+sequenceDiagram
+    actor User as Reviewer
+    participant UI as /reports
+    participant API as Next.js /api/reports
+    participant DB as Supabase RPC
+    participant R2 as Cloudflare R2
+
+    User->>UI: Open library or change page/filter
+    UI->>API: GET summaries (page size 6)
+    API->>DB: list_incident_report_summaries(...)
+    DB-->>API: 6 summaries + total count
+    API->>R2: Sign up to 6 derived thumbnail keys
+    API-->>UI: Metadata + small thumbnail URLs (no video URL)
+    UI-->>User: Lazy screenshot images or skeleton fallback
+    User->>UI: Open one report
+    UI->>API: GET /api/reports/videoId?run=modelRunId
+    API->>DB: Read selected report graph
+    API->>R2: Create selected object's signed URL
+    API-->>UI: Full report + playback URL
+```
+
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
 *Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2.*
@@ -233,6 +257,9 @@ sequenceDiagram
     else Mock backend returns its durable R2 key
         VST->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     end
+
+    UI->>UI: Capture and resize one local video frame
+    UI->>R2: PUT thumbnail via /api/uploads/thumbnail
 
     UI->>VST: POST /api/uploads/complete → /api/v1/videos/{sensorId}/complete
 

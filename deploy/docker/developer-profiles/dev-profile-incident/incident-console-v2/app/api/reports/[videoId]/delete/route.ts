@@ -6,6 +6,7 @@ import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { deleteR2Video } from '@/lib/r2/config';
+import { thumbnailKeyForVideo } from '@/lib/r2/key';
 
 export async function DELETE(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -19,7 +20,10 @@ export async function DELETE(request: Request, context: { params: Promise<{ vide
     if (params.get('deleteVideo') === 'true') {
       const video = await db.selectOne('videos', { id: videoId });
       if (typeof video?.filepath !== 'string') throw new Error('Video has no R2 object key');
-      await deleteR2Video(config, video.filepath);
+      await Promise.all([
+        deleteR2Video(config, video.filepath),
+        deleteR2Video(config, thumbnailKeyForVideo(video.filepath)),
+      ]);
       await db.deleteWhere('videos', { id: videoId });
     } else {
       await db.deleteWhere('incidents', { incident_id: videoId, model_run_id: modelRunId });

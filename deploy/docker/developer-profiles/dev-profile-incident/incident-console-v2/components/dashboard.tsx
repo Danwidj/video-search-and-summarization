@@ -7,7 +7,7 @@ import type { ReportLibraryItem } from '@/lib/reports/storage';
 
 export function Dashboard() {
   const [reports, setReports] = useState<ReportLibraryItem[]>([]); const [days, setDays] = useState('30'); const [error, setError] = useState('');
-  useEffect(() => { fetch('/api/reports', { cache: 'no-store' }).then((r) => r.json()).then((p: { reports?: ReportLibraryItem[]; error?: string }) => { if (!p.reports) throw new Error(p.error); setReports(p.reports); }).catch((e: Error) => setError(e.message)); }, []);
+  useEffect(() => { fetch('/api/reports?all=true', { cache: 'no-store' }).then((r) => r.json()).then((p: { reports?: ReportLibraryItem[]; error?: string }) => { if (!p.reports) throw new Error(p.error); setReports(p.reports); }).catch((e: Error) => setError(e.message)); }, []);
   const filtered = useMemo(() => reports.filter((r) => days === 'all' || +new Date(r.generatedAt) >= Date.now() - Number(days) * 86400000), [reports, days]);
   const verified = filtered.filter((r) => r.status === 'verified'); const high = filtered.filter((r) => r.severity >= 4); const pending = filtered.filter((r) => r.status !== 'verified');
   const types = Object.entries(filtered.reduce<Record<string, number>>((a, r) => { a[r.incident_type] = (a[r.incident_type] || 0) + 1; return a; }, {})).sort((a, b) => b[1] - a[1]);
