@@ -258,7 +258,7 @@ sequenceDiagram
         VST->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     end
 
-    UI->>UI: Attempt to capture and resize one local video frame
+    UI->>UI: Attempt to capture the 25% frame and resize it
     UI->>R2: PUT thumbnail via /api/uploads/thumbnail (non-blocking)
 
     UI->>VST: POST /api/uploads/complete → /api/v1/videos/{sensorId}/complete

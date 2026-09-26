@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { afterEach, beforeEach, mock, test } from 'node:test';
-import { reportThumbnailView } from '../lib/reports/thumbnail.ts';
+import { reportThumbnailView, thumbnailCaptureTime } from '../lib/reports/thumbnail.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -85,4 +85,11 @@ test('report thumbnail contract lazy-loads only its screenshot image', () => {
 test('report thumbnail contract falls back to a skeleton when missing or failed', () => {
   assert.deepEqual(reportThumbnailView(), { kind: 'skeleton' });
   assert.deepEqual(reportThumbnailView('https://signed.r2.test/thumbnail.webp', true), { kind: 'skeleton' });
+});
+
+test('thumbnail capture samples exactly one quarter into the video', () => {
+  assert.equal(thumbnailCaptureTime(20), 5);
+  assert.equal(thumbnailCaptureTime(5), 1.25);
+  assert.equal(thumbnailCaptureTime(0), 0);
+  assert.equal(thumbnailCaptureTime(Number.NaN), 0);
 });

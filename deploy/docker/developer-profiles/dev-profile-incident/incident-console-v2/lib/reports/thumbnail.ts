@@ -9,3 +9,7 @@ export function reportThumbnailView(thumbnailUrl?: string, failed = false): Repo
     ? { kind: 'image', loading: 'lazy', src: thumbnailUrl }
     : { kind: 'skeleton' };
 }
+
+export function thumbnailCaptureTime(durationSeconds: number): number {
+  return Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds * 0.25 : 0;
+}
