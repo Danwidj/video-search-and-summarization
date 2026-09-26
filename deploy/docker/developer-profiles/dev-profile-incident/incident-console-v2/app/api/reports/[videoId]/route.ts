@@ -33,6 +33,12 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
     if (!modelRun || !video || !incident) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
 
     const stored = reportFromNotes(modelRun.notes);
+    let editedReport: Record<string, unknown> | null = null;
+    try {
+      const notes = typeof modelRun.notes === 'string' ? JSON.parse(modelRun.notes) as Record<string, unknown> : {};
+      const wrapper = notes.incidentConsoleV2 as Record<string, unknown> | undefined;
+      if (wrapper?.editedReport && typeof wrapper.editedReport === 'object') editedReport = wrapper.editedReport as Record<string, unknown>;
+    } catch { /* Legacy notes are handled by reportFromNotes and the relational fallback. */ }
     if (typeof video.filepath !== 'string' || !video.filepath) throw new Error('The report has no linked R2 video');
 
     const playbackUrl = await createR2PlaybackUrl(config, video.filepath);
@@ -63,21 +69,19 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
       location: '',
     };
     const report: AnalysisReport = stored && stored.videoId === videoId && stored.modelRunId === modelRunId ? {
+      ...fallback,
       ...stored,
-      incident_type: fallback.incident_type,
-      description: fallback.description,
-      incident_start: fallback.incident_start,
-      incident_end: fallback.incident_end,
-      duration_seconds: fallback.duration_seconds,
-      severity: fallback.severity,
-      confidence: fallback.confidence,
-      persons: fallback.persons.length > 0 ? fallback.persons : stored.persons,
-      instruments: fallback.instruments.length > 0 ? fallback.instruments : stored.instruments,
-      assets: fallback.assets.length > 0 ? fallback.assets : stored.assets,
-    } : fallback;
+      ...(editedReport || {}),
+      videoId,
+      modelRunId,
+      persons: editedReport?.persons as AnalysisReport['persons'] || (fallback.persons.length > 0 ? fallback.persons : stored.persons),
+      instruments: editedReport?.instruments as AnalysisReport['instruments'] || (fallback.instruments.length > 0 ? fallback.instruments : stored.instruments),
+      assets: editedReport?.assets as AnalysisReport['assets'] || (fallback.assets.length > 0 ? fallback.assets : stored.assets),
+    } : { ...fallback, ...(editedReport || {}) } as AnalysisReport;
     return NextResponse.json({
       report: {
         ...report,
+        originalReport: stored && stored.videoId === videoId && stored.modelRunId === modelRunId ? stored : fallback,
         playbackUrl,
         promptVersion: typeof modelRun.prompt_version === 'string' ? modelRun.prompt_version : report.promptVersion,
         reviewStatus: typeof review?.status === 'string' ? review.status : 'unreviewed',
