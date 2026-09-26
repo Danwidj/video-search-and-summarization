@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { mock, test } from 'node:test';
 
-import { isValidR2Key } from '../lib/r2/key.ts';
+import { isValidR2Key, thumbnailKeyForVideo } from '../lib/r2/key.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -53,6 +53,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 
 const { POST } = await import('../app/api/uploads/r2/route.ts');
+const { POST: POST_THUMBNAIL } = await import('../app/api/uploads/thumbnail/route.ts');
 const { putR2Video, MAX_R2_PUT_BYTES } = await import('../lib/r2/config.ts');
 const { getServiceConfiguration } = await import('../lib/env.ts');
 
@@ -142,4 +143,26 @@ test('does not return an R2 key when object verification reports an empty upload
   } finally {
     headContentLengthOverride = undefined;
   }
+});
+
+test('uploads a small image to the deterministic thumbnail key', async () => {
+  puts.length = 0;
+  heads.length = 0;
+  const videoKey = 'uploads/sensor-1/video.mp4';
+  const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' });
+  const response = await POST_THUMBNAIL(multipartRequest({ file, videoKey }));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.thumbnailKey, thumbnailKeyForVideo(videoKey));
+  assert.equal(puts[0].Key, 'thumbnails/uploads/sensor-1/video.mp4.webp');
+  assert.equal(puts[0].ContentType, 'image/webp');
+  assert.equal(heads[0].Key, puts[0].Key);
+});
+
+test('thumbnail upload rejects non-image content', async () => {
+  const response = await POST_THUMBNAIL(multipartRequest({
+    file: new Blob([new Uint8Array([1])], { type: 'video/mp4' }),
+    videoKey: 'uploads/sensor-1/video.mp4',
+  }));
+  assert.equal(response.status, 415);
 });

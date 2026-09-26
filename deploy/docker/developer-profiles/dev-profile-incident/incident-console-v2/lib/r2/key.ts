@@ -16,3 +16,8 @@ export function isValidR2Key(key: unknown): key is string {
     !key.includes('..')
   );
 }
+
+export function thumbnailKeyForVideo(videoKey: string): string {
+  if (!isValidR2Key(videoKey)) throw new Error('Invalid R2 video object key');
+  return `thumbnails/${videoKey}.webp`;
+}

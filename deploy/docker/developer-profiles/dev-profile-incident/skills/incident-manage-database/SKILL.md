@@ -22,6 +22,7 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (ERD, table specs, `inse
 | Laptop tooling, `supabase` CLI, v1 console | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
 All PostgREST writers must use `/rpc/insert_incident` for the `incidents` + `review_status` pair. PostgREST has no client-held transactions.
+The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; it does not read or sign video on the library path.
 
 ## Rules
 
@@ -59,6 +60,7 @@ curl -s "$INCIDENT_SUPABASE_URL/rest/v1/incidents?incident_id=eq.<id>&select=*" 
 - **Valid keys** (per `isValidR2Key`): not absolute, no `.`/`..` prefix. VST `./streamer/media/...` paths are not keys.
 - **Durability check:** `verifyR2Video` uses `HeadObject`; direct uploads require an exact nonzero byte-length match, and analysis requires a nonempty object before inference.
 - **Playback** is by 1-hour presigned GET only. The bucket is private.
+- **Report-card thumbnails:** new uploads use `thumbnails/<video-key>.webp`, derived by `thumbnailKeyForVideo`; legacy videos may have no thumbnail and use the UI skeleton. Deleting a video deletes this derived object too.
 
 ## After changing anything
 

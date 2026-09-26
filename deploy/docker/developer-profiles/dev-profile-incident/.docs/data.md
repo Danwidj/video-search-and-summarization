@@ -12,6 +12,12 @@ using SQLAlchemy Core (`metadata.create_all(checkfirst=True)`) and `deploy/docke
 (applied via `supabase db push`, see [`../supabase/README.md`](../supabase/README.md)). It supports multi-model runs over
 the same video, a parallel ground-truth evaluation structure, and human review workflows.
 
+### Report-library summary RPC
+
+`list_incident_report_summaries` is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`. It joins the existing `reports`, `incidents`, `model_runs`, `videos`, and `review_status` rows, applies library search/filter/sort criteria in Postgres, and returns a JSON object containing a bounded page, the filtered total, and the global incident-type list. Search is a literal, case-insensitive substring match, including for `%`, `_`, and `\`. The service-role-only `try_parse_jsonb` helper safely extracts the optional title from legacy or current `model_runs.notes`; malformed legacy notes fall back to an incident-type title. Evidence tables are consulted only through `EXISTS` clauses for search. Neither function creates a table or stores duplicate data.
+
+The normal library API fixes `page_size` at 6. An explicit server-side `all=true` compatibility call may request up to 1,000 lightweight summaries for the dashboard and per-video run tools. The RPC itself returns no `model_runs.notes`, evidence arrays, signed URL, or video content. For the normal six-item response, Next.js derives and signs each small R2 thumbnail key; `all=true` does not sign thumbnails. The individual report route fetches the complete selected report and signs its video object.
+
 ### Entity-Relationship Diagram
 
 ```mermaid
@@ -483,6 +489,8 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 │   └── <clip-name>.mp4
 ├── uploads/                         # all new user uploads (real VST fallback and local mock)
 │   └── <encodeURIComponent(sensorId)>/<uuid>.<ext>   # ext lowercased, default .mp4
+├── thumbnails/                      # browser-captured report-card screenshots for new uploads
+│   └── <video-key>.webp             # e.g. thumbnails/uploads/<sensor>/<uuid>.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # planned, not created; entities/instruments/assets.image are always NULL today
     └── <incidentId>/{entities,instruments,assets}/<id>.jpg
@@ -505,11 +513,13 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 2. **Upload Key Pattern:**
    Direct uploads from `incident-console-v2/app/api/uploads/r2/route.ts` format keys as:
    `uploads/${encodeURIComponent(sensorId.trim())}/${randomUUID()}${ext}`.
+   Thumbnail keys are deterministic: `thumbnailKeyForVideo(videoKey)` returns
+   `thumbnails/${videoKey}.webp`; no database column is required.
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.
-4. **Presigned Playback URLs:**
-   Access is private by default. Playback URLs are generated server-side using AWS SDK S3 client
+4. **Presigned Media URLs:**
+   Access is private by default. Video playback and up to six report-card thumbnail URLs are generated server-side using AWS SDK S3 client
    presigning (`getSignedUrl` with `GetObjectCommand`, `ResponseContentDisposition: 'inline'`, and a 1-hour
    expiration window).
 
