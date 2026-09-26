@@ -75,6 +75,65 @@ async function uploadToR2(file: File, sensorId: string, filename: string, signal
   return payload.filePath;
 }
 
+async function captureThumbnail(file: File): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.preload = 'metadata';
+  video.playsInline = true;
+  video.src = url;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error('Timed out reading video metadata')), 10_000);
+      video.onloadedmetadata = () => { window.clearTimeout(timeout); resolve(); };
+      video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not decode a thumbnail frame')); };
+    });
+    const target = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(1, video.duration / 2) : 0;
+    if (target > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Timed out seeking thumbnail frame')), 10_000);
+        video.onseeked = () => { window.clearTimeout(timeout); resolve(); };
+        video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not seek the thumbnail frame')); };
+        video.currentTime = target;
+      });
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Timed out decoding thumbnail frame')), 10_000);
+        video.onloadeddata = () => { window.clearTimeout(timeout); resolve(); };
+        video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not decode the thumbnail frame')); };
+      });
+    }
+
+    const scale = Math.min(1, 640 / Math.max(video.videoWidth, 1), 360 / Math.max(video.videoHeight, 1));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Browser could not create a thumbnail canvas');
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error('Browser could not encode the thumbnail')),
+      'image/webp',
+      0.78,
+    ));
+  } finally {
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function uploadThumbnail(thumbnail: Blob, videoKey: string, signal: AbortSignal): Promise<void> {
+  const form = new FormData();
+  form.append('file', thumbnail, 'thumbnail.webp');
+  form.append('videoKey', videoKey);
+  const response = await fetch('/api/uploads/thumbnail', { method: 'POST', body: form, signal });
+  if (!response.ok) {
+    const payload = (await response.json()) as ApiError;
+    throw new Error(payload.error || 'Could not upload the video thumbnail');
+  }
+}
+
 export function AnalysisWorkspace() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,6 +184,7 @@ export function AnalysisWorkspace() {
     setUploadProgress(0);
 
     try {
+      const thumbnail = captureThumbnail(file).catch(() => null);
       const filename = safeFilename(file.name);
       setStage('uploading');
       const initialized = await apiJson<UploadInitialization>('/api/uploads', { filename });
@@ -153,6 +213,9 @@ export function AnalysisWorkspace() {
       const filePath = isValidR2Key(uploaded.filePath)
         ? uploaded.filePath
         : await uploadToR2(file, uploaded.sensorId, filename, controller.signal);
+
+      const thumbnailBlob = await thumbnail;
+      if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, controller.signal).catch(() => undefined);
 
       setStage('preparing');
       await apiJson('/api/uploads/complete', { sensorId: uploaded.sensorId, filename });

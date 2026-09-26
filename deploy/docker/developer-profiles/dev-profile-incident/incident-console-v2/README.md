@@ -95,6 +95,10 @@ through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObje
 going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
 flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
 
+For each new upload, the browser also attempts to capture one frame from the already-local file, scale it to at most
+640×360, and upload it through `/api/uploads/thumbnail` to `thumbnails/<video-key>.webp`. Thumbnail failure never blocks
+analysis. Existing videos without this derived object retain the report-card skeleton until separately backfilled.
+
 ## Phase 3 report workspace
 
 Completed analyses navigate to a durable route shaped like
@@ -105,7 +109,10 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
 
 ## Phase 4 report library and review
 
-`/reports` lists persisted v2 reports with signed R2 previews. It supports full-text evidence search; incident type,
+`/reports` lists persisted v2 reports as server-paginated pages of six lightweight summaries. Cards lazy-load small,
+signed R2 screenshots when available and otherwise use a static skeleton; they never request video. The full report
+and its video are fetched only after opening a report.
+The library supports full-text evidence search; incident type,
 severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
 date sorting. Review transitions are persisted to `review_status`, and verifying severity 4–5 reports creates a
 notification. Re-analysis creates a new model run and preserves prior results. Deleting only a report keeps its R2

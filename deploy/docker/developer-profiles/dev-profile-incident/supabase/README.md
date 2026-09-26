@@ -27,6 +27,11 @@ server-side column defaults (UTC timestamps, `review_status.status`,
 `p_confidence_score` is `DOUBLE PRECISION`. See `../.docs/data.md` for the
 resulting schema.
 
+`migrations/20260926120000_list_incident_report_summaries.sql` creates the
+service-role-only `list_incident_report_summaries` RPC used by the Next.js
+report library for filtered six-item pages. It joins existing tables and does
+not create or maintain a summary table.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have
