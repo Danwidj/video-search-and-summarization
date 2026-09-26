@@ -11,7 +11,8 @@ separate inference mock - one process plays the role that HAProxy + vss-agent + 
 LLM/VLM NIMs jointly play in a real deployment, all on one port.
 
 Most mock state is in-memory only and resets on restart. Completed uploads are
-also copied to R2 immediately; the returned `filePath` is the durable object
+also copied to R2 immediately under a classification-neutral
+`uploads/<sensorId>/<uuid>.<ext>` key; the returned `filePath` is the durable object
 key. The incident Analyze route writes report records to the shared
 incident-console Postgres database.
 

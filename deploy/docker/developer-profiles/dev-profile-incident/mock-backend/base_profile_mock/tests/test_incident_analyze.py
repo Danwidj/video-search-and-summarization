@@ -122,7 +122,7 @@ def test_uploaded_bytes_are_playable_from_vst_url(monkeypatch):
     # focused on the mock VST's in-memory playback contract.
     from base_profile_mock.routers import vst_storage
 
-    monkeypatch.setattr(vst_storage, "_r2_upload", lambda *_args: "anomaly/uploads/clip.mp4")
+    monkeypatch.setattr(vst_storage, "_r2_upload", lambda *_args: "uploads/sensor-test/generated.mp4")
     client = TestClient(create_app())
     response = client.post(
         "/vst/api/v1/storage/file",
@@ -136,3 +136,17 @@ def test_uploaded_bytes_are_playable_from_vst_url(monkeypatch):
     video = client.get(playback.json()["videoUrl"])
     assert video.status_code == 200
     assert video.content == b"video-bytes"
+
+
+def test_mock_upload_key_is_neutral_unique_and_keeps_safe_extension(monkeypatch):
+    from base_profile_mock.routers import vst_storage
+    from base_profile_mock.state import Stream
+
+    values = iter(["first-id", "second-id", "fallback-id"])
+    monkeypatch.setattr(vst_storage.uuid, "uuid4", lambda: next(values))
+    stream = Stream(stream_id="sensor-1", name="clip", filename="incident.MP4", bytes_total=1, content=b"x")
+    assert vst_storage._upload_key(stream, "sensor-1") == "uploads/sensor-1/first-id.mp4"
+    assert vst_storage._upload_key(stream, "sensor-1") == "uploads/sensor-1/second-id.mp4"
+
+    unsafe = Stream(stream_id="sensor-1", name="clip", filename="clip.not-valid!", bytes_total=1, content=b"x")
+    assert vst_storage._upload_key(unsafe, "sensor-1") == "uploads/sensor-1/fallback-id.mp4"

@@ -76,11 +76,63 @@ function mapThreatLevel(value: unknown): number | null {
   return null;
 }
 
+function normalizeIncidentAliases(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const source = value as Record<string, unknown>;
+  const pick = (snake: string, camel: string) => source[snake] ?? source[camel];
+  const rawPersons = source.persons ?? source.entities;
+  const persons = Array.isArray(rawPersons)
+    ? rawPersons.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+        const person = item as Record<string, unknown>;
+        return {
+          ...person,
+          description: person.description ?? person.name,
+          actions: person.actions ?? person.action,
+        };
+      })
+    : rawPersons;
+  const instruments = Array.isArray(source.instruments)
+    ? source.instruments.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+        const instrument = item as Record<string, unknown>;
+        return { ...instrument, threat_level: instrument.threat_level ?? instrument.threatLevel };
+      })
+    : source.instruments;
+  const timeline = Array.isArray(source.timeline)
+    ? source.timeline.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+        const event = item as Record<string, unknown>;
+        return {
+          ...event,
+          start_seconds: event.start_seconds ?? event.startSeconds,
+          end_seconds: event.end_seconds ?? event.endSeconds,
+        };
+      })
+    : source.timeline;
+
+  return {
+    ...source,
+    incident_type: pick('incident_type', 'incidentType') ?? source.type,
+    description: source.description ?? source.summary,
+    severity: source.severity ?? source.severityLevel,
+    severity_reason: pick('severity_reason', 'severityReason'),
+    confidence: source.confidence ?? source.confidenceScore,
+    incident_start: pick('incident_start', 'incidentStart') ?? source.startTimestamp,
+    incident_end: pick('incident_end', 'incidentEnd') ?? source.endTimestamp,
+    incident_start_confirmed: pick('incident_start_confirmed', 'incidentStartConfirmed'),
+    duration_seconds: pick('duration_seconds', 'durationSeconds'),
+    persons,
+    instruments,
+    timeline,
+  };
+}
+
 export const timelineItemSchema = z.object({
   start_seconds: z.union([z.number(), z.string(), z.null(), z.undefined()]).optional(),
   end_seconds: z.union([z.number(), z.string(), z.null(), z.undefined()]).optional(),
   description: z.union([z.string(), z.null(), z.undefined()]).optional(),
-}).passthrough().transform((val) => {
+}).transform((val) => {
   const rawStart = val.start_seconds;
   let start_seconds = 0.0;
   if (typeof rawStart === 'number' && Number.isFinite(rawStart) && rawStart >= 0) {
@@ -106,13 +158,13 @@ export const timelineItemSchema = z.object({
 export const personSchema = z.object({
   description: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
   actions: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
-}).passthrough();
+});
 
 export const instrumentSchema = z.object({
   name: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
   description: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
   threat_level: z.union([z.number(), z.string(), z.boolean(), z.null(), z.undefined()]).optional(),
-}).passthrough().transform((val) => ({
+}).transform((val) => ({
   name: val.name,
   description: val.description,
   threat_level: mapThreatLevel(val.threat_level),
@@ -121,9 +173,9 @@ export const instrumentSchema = z.object({
 export const assetSchema = z.object({
   name: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
   description: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => (val == null ? '' : String(val).trim())),
-}).passthrough();
+});
 
-export const incidentAnalysisSchema = z.object({
+export const incidentAnalysisSchema = z.preprocess(normalizeIncidentAliases, z.object({
   title: z.union([z.string(), z.null(), z.undefined()]).optional().transform((val) => {
     if (val === null || val === undefined) return '';
     const trimmed = String(val).trim();
@@ -208,7 +260,7 @@ export const incidentAnalysisSchema = z.object({
     uncertainties: val.uncertainties,
     location: val.location,
   };
-});
+}));
 
 export type Person = z.infer<typeof personSchema>;
 export type Instrument = z.infer<typeof instrumentSchema>;
