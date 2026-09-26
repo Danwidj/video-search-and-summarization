@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import { afterEach, beforeEach, mock, test } from 'node:test';
+import { reportThumbnailView } from '../lib/reports/thumbnail.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -74,10 +74,15 @@ test('report library rejects a severity that could make the RPC cast fail', asyn
   assert.equal(called, false);
 });
 
-test('report cards contain lazy screenshot images with a skeleton fallback and no video elements', async () => {
-  const source = await readFile(new URL('../components/reports-library.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /<video\b/);
-  assert.match(source, /\[1, 2, 3, 4, 5, 6\]\.map/);
-  assert.match(source, /loading="lazy"/);
-  assert.match(source, /Video screenshot preview/);
+test('report thumbnail contract lazy-loads only its screenshot image', () => {
+  assert.deepEqual(reportThumbnailView('https://signed.r2.test/thumbnail.webp'), {
+    kind: 'image',
+    loading: 'lazy',
+    src: 'https://signed.r2.test/thumbnail.webp',
+  });
+});
+
+test('report thumbnail contract falls back to a skeleton when missing or failed', () => {
+  assert.deepEqual(reportThumbnailView(), { kind: 'skeleton' });
+  assert.deepEqual(reportThumbnailView('https://signed.r2.test/thumbnail.webp', true), { kind: 'skeleton' });
 });
