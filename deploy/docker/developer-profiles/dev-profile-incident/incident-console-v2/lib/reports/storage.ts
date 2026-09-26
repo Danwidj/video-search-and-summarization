@@ -118,8 +118,7 @@ export interface ReportLibraryItem {
   verifiedAt?: string;
   editedBy?: string;
   editedAt?: string;
-  playbackUrl?: string;
+  thumbnailUrl?: string;
   r2Key?: string;
   sensorId?: string;
-  searchableEvidence: string;
 }

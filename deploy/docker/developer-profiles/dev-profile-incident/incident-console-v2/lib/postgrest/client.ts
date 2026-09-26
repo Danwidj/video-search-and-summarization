@@ -75,6 +75,13 @@ export class PostgrestClient {
     await this.request('/rpc/insert_incident', { method: 'POST', body: JSON.stringify(parameters) });
   }
 
+  async rpc(functionName: string, parameters: Record<string, unknown>): Promise<unknown> {
+    return this.request(`/rpc/${encodeURIComponent(functionName)}`, {
+      method: 'POST',
+      body: JSON.stringify(parameters),
+    });
+  }
+
   async selectOne(table: string, filters: Record<string, string>, select = '*'): Promise<Record<string, unknown> | null> {
     const query = new URLSearchParams({ select, limit: '1' });
     Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));
