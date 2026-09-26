@@ -95,8 +95,8 @@ through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObje
 going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
 flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
 
-For each new upload, the browser also captures one frame from the already-local file, scales it to at most 640×360,
-and uploads it through `/api/uploads/thumbnail` to `thumbnails/<video-key>.webp`. Thumbnail failure never blocks
+For each new upload, the browser also attempts to capture one frame from the already-local file, scale it to at most
+640×360, and upload it through `/api/uploads/thumbnail` to `thumbnails/<video-key>.webp`. Thumbnail failure never blocks
 analysis. Existing videos without this derived object retain the report-card skeleton until separately backfilled.
 
 ## Phase 3 report workspace
