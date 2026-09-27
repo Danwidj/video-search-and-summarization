@@ -148,6 +148,20 @@ RP1  POST {gateway}/v1/chat/completions
   - Cosmos reasoning is prompt-activated (`<think>`) and has no parser, so under strict JSON it cannot reason first. An `analysis` field placed first in the schema is the candidate fix.
 - **NVIDIA sampling guidance for Cosmos:** media before text (already done). Temperature 0.6-0.7 with `seed=0`, rather than greedy decoding, for reproducibility.
 
+**Sampling test, 2026-09-27T03:31:02Z** (`--sampling-tests`, same clip). The prompt-token counts below are decisive; the answer text is not, because answers vary between runs even at temperature 0.
+
+| Model | Tokens per frame | Default frames (no `media_io_kwargs`) | `num_frames` takes effect |
+|---|---|---|---|
+| `cosmos-3-nano-reasoner` | about 44 ((2840 - 372) / 56) | about 24 | yes |
+| `cosmos-3-super-reasoner` | n/a | about 24 (a flat 1080 tokens) | **no** (1080 tokens at 8 and at 64 frames) |
+| `nemotron-3-nano-omni-30b-a3b-reasoning` | about 141 | about 24 | yes |
+
+- **The gateway forwards `media_io_kwargs`, but invalid combinations are accepted, not rejected.** That is vLLM-style capping rather than NIM validation.
+- **The effective default is about 24 frames per video, whatever its length.** Long UCF-Crime clips are therefore sampled roughly every 5-10 s, which is the likely cause of the misclassifications.
+- **Cosmos Nano sees frames at thumbnail resolution** (about 44 tokens each).
+- **Cosmos Super cannot be tuned through this gateway.**
+- **Nemotron P1 ended with `finish_reason=length` after 14,805 reasoning characters,** which confirms that the 4096 budget is too small.
+
 **Next (run 2).** The probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It also adds:
 - `--compare-base64`: URL vs inline A/B;
 - `--p1-max-tokens`;
