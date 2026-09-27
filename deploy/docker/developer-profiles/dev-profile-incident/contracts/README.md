@@ -1,0 +1,32 @@
+# Incident contract (`incident-contract-v1`)
+
+This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Background and phasing are in [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md).
+
+**Status:** phase 0. Only `eval/` reads these files so far (`eval/contract.py`, used by the probe). The console and agent still use their own contract until phases 2 and 3.
+
+| File | Purpose |
+|---|---|
+| [`incident_report.schema.json`](incident_report.schema.json) | JSON Schema (draft 2020-12) for the P1 output. It is sent to the model as `response_format: json_schema` (strict) and validates every response. |
+| [`incident_extraction_prompt.md`](incident_extraction_prompt.md) | P1 prompt. It defines field **meaning** only; the schema defines the shape, so there is no JSON template, and there is no few-shot block. |
+| [`report_generation_prompt.md`](report_generation_prompt.md) | RP1 prompt (P1 JSON → prose report). Its one placeholder is `{structured_incident_json}`. |
+| [`VERSION`](VERSION) | Contract version, stored as `prompt_version` on model runs |
+
+## Rules
+
+- **Strict-mode compatible schema.** Every object has `additionalProperties: false`, and all of its properties are listed in `required`. An optional value is written as a nullable type, never by leaving it out of `required`.
+- **Strict parsing.** A response is valid only if all three hold:
+  - `json.loads` / `JSON.parse` of the raw `content` succeeds, with no fence stripping or brace extraction;
+  - it passes schema validation;
+  - it passes the cross-field rules below.
+
+  Anything else is an error (HTTP 422 in services), never repaired.
+- **Cross-field rules** (in `eval/contract.py`, `cross_field_errors`):
+  - `duration == end_timestamp - start_timestamp`, and `end >= start`;
+  - IDs run in sequence: `E1..En`, `I1..In`, `A1..An`;
+  - every `instruments[].entity_id` is `null` or an existing entity;
+  - timeline events fall within `[start_timestamp, end_timestamp]` and are in chronological order.
+- **Changing anything here** means bumping `VERSION`, updating every consumer in the same PR, and updating [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md) once the contract is live. Taxonomy changes also need a database migration.
+
+## Checking a model
+
+Run the phase 0 probe with [`../eval/scripts/probe_structured_output.py`](../eval/scripts/probe_structured_output.py) (see the [`incident-run-eval`](../skills/incident-run-eval/SKILL.md) skill). It needs `.env.local` with the gateway key and R2 credentials.

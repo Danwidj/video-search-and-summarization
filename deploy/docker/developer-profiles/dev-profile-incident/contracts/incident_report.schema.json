@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Danwidj/video-search-and-summarization/dev-profile-incident/contracts/incident_report.schema.json",
+  "title": "incident_report",
+  "description": "incident-contract-v1: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "road accident",
+            "burglary",
+            "explosion",
+            "assault",
+            "animal attack"
+          ],
+          "description": "Primary incident classification."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short neutral headline, normally 4-10 words."
+        },
+        "start_timestamp": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds from video start at which the incident begins."
+        },
+        "end_timestamp": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Seconds from video start at which the incident ends."
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "end_timestamp - start_timestamp."
+        },
+        "description": {
+          "type": "string",
+          "description": "Short objective description, normally 1-3 sentences."
+        },
+        "severity_level": {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "description": "Severity 1-5 per the rubric."
+        },
+        "severity_reason": {
+          "type": "string",
+          "description": "Observable evidence for the chosen severity_level."
+        },
+        "confidence_score": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Native model/API confidence only; null otherwise. Never self-reported."
+        },
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Visible setting; null if it cannot be described."
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "start_timestamp",
+        "end_timestamp",
+        "duration",
+        "description",
+        "severity_level",
+        "severity_reason",
+        "confidence_score",
+        "location"
+      ]
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "Sequential ID: E1, E2, ..."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "human",
+              "animal",
+              "unknown"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Objective appearance, actions and role."
+          }
+        },
+        "required": [
+          "entity_id",
+          "type",
+          "description"
+        ]
+      }
+    },
+    "instruments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "instrument_id": {
+            "type": "string",
+            "description": "Sequential ID: I1, I2, ..."
+          },
+          "entity_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "entity_id of the holder; null only if the holder cannot be determined."
+          },
+          "name": {
+            "type": "string",
+            "description": "Concise lowercase noun."
+          },
+          "description": {
+            "type": "string",
+            "description": "Objective description and relevance."
+          },
+          "threat_level": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "description": "Potential to cause harm, 1-5."
+          }
+        },
+        "required": [
+          "instrument_id",
+          "entity_id",
+          "name",
+          "description",
+          "threat_level"
+        ]
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Sequential ID: A1, A2, ..."
+          },
+          "name": {
+            "type": "string",
+            "description": "Concise lowercase noun."
+          },
+          "description": {
+            "type": "string",
+            "description": "Objective description and relevance."
+          }
+        },
+        "required": [
+          "asset_id",
+          "name",
+          "description"
+        ]
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "start_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Event start, seconds from video start."
+          },
+          "end_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Event end; null if instantaneous or not observable."
+          },
+          "description": {
+            "type": "string",
+            "description": "One objective sentence."
+          }
+        },
+        "required": [
+          "start_seconds",
+          "end_seconds",
+          "description"
+        ]
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "incident",
+    "entities",
+    "instruments",
+    "assets",
+    "timeline",
+    "uncertainties"
+  ]
+}
