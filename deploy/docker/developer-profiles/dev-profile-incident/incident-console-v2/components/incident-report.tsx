@@ -8,6 +8,7 @@ import { StructuredEditor } from '@/components/structured-editor';
 import type { ReviewStatus } from '@/lib/reports/storage';
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
+import { formatTimestamp } from '@/lib/time';
 
 function severityStyle(level: number | null): string {
   if (level !== null && level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
@@ -120,7 +121,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/40">Human review</p>
           <p className="mt-1 text-sm text-ink/60">Current status: <strong className="text-ink">{statusLabel(reviewStatus)}</strong></p>
           {report.review.editedBy && report.review.editedAt && (
-            <p className="mt-1 text-xs text-ink/45" data-testid="last-edited">Structured fields last edited by {report.review.editedBy} on {new Date(report.review.editedAt).toLocaleString()}</p>
+            <p className="mt-1 text-xs text-ink/45" data-testid="last-edited">Structured fields last edited by {report.review.editedBy} on {formatTimestamp(report.review.editedAt)}</p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -224,7 +225,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
       <RunDetailsPanel report={report} />
 
       <footer className="flex flex-col gap-3 border-t border-ink/10 bg-canvas/70 px-6 py-4 text-xs text-ink/45 sm:flex-row sm:items-center sm:justify-between">
-        <span>{run.model} · {run.promptVersion || 'legacy prompt'} · {run.generatedAt ? new Date(run.generatedAt).toLocaleString() : 'time unknown'}</span>
+        <span>{run.model} · {run.promptVersion || 'legacy prompt'} · {formatTimestamp(run.generatedAt, 'time unknown')}</span>
         <button className="font-semibold text-moss" onClick={onNewAnalysis} type="button">Analyze another video</button>
       </footer>
     </article>
@@ -275,7 +276,7 @@ function RunDetailsPanel({ report }: { report: ReportView }) {
             <Provenance label="Model" value={run.model} />
             <Provenance label="Contract / prompt version" value={run.promptVersion || 'Legacy prompt'} />
             <Provenance label="Model run" value={run.modelRunId} />
-            <Provenance label="Generated" value={run.generatedAt ? new Date(run.generatedAt).toLocaleString() : 'Unknown'} />
+            <Provenance label="Generated" value={formatTimestamp(run.generatedAt)} />
             {run.status && <Provenance label="Analysis outcome" value={`${OUTCOME_LABELS[run.status]}${run.statusInferred ? ' (recorded before outcomes were stored)' : ''}`} />}
             {request && <Provenance label="Additional instruction" value={request.additionalInstruction || 'None'} />}
             {response && <Provenance label="Finish reason" value={response.finishReason || 'Not returned'} />}

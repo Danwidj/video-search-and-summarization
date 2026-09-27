@@ -44,11 +44,22 @@ afterEach(() => {
 
 test('report library requests one filtered six-item summary page without video URLs', async () => {
   let rpcBody;
+  let outcomeQuery;
   globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith('https://supabase.test/rest/v1/model_runs?')) {
+      outcomeQuery = new URL(String(url)).searchParams;
+      return new Response(JSON.stringify([
+        { id: 'm1', notes: JSON.stringify({ incidentConsoleV2: { contractVersion: 'incident-contract-v2', status: 'valid_after_structural_repair' } }) },
+        { id: 'm2', notes: 'legacy text notes' },
+      ]), { status: 200 });
+    }
     assert.equal(String(url), 'https://supabase.test/rest/v1/rpc/list_incident_report_summaries');
     rpcBody = JSON.parse(String(init?.body));
     return new Response(JSON.stringify({
-      reports: [{ reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road Accident report', r2Key: 'uploads/sensor-1/video.mp4' }],
+      reports: [
+        { reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road Accident report', r2Key: 'uploads/sensor-1/video.mp4' },
+        { reportId: 'r2', videoId: 'v2', modelRunId: 'm2', title: 'Older report', r2Key: 'uploads/sensor-2/video.mp4' },
+      ],
       totalItems: 13,
       incidentTypes: ['road accident'],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -72,6 +83,9 @@ test('report library requests one filtered six-item summary page without video U
   assert.deepEqual(payload.pagination, { page: 2, pageSize: 6, totalItems: 13, totalPages: 3 });
   assert.equal('playbackUrl' in payload.reports[0], false);
   assert.equal(payload.reports[0].thumbnailUrl, 'https://signed.r2.test/thumbnails/uploads/sensor-1/video.mp4.webp');
+  assert.equal(outcomeQuery.get('id'), 'in.("m1","m2")');
+  assert.equal(payload.reports[0].outcome, 'valid_after_structural_repair', 'repaired reports carry the marker');
+  assert.equal(payload.reports[1].outcome, 'legacy', 'pre-outcome runs are shown as earlier analyses, not failures');
 });
 
 test('report library rejects excessive evidence filters before calling Supabase', async () => {

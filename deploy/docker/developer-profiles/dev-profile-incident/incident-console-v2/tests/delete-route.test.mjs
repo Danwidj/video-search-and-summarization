@@ -36,7 +36,7 @@ const attempt = (id, videoId, status) => ({
   notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, contractVersion: 'incident-contract-v2', videoId, request: {}, response: null, validation: { firstPass: [] }, repair: null } }),
 });
 
-test('deleting a video removes only failed attempts that explicitly name that video and have no incident', async () => {
+test('deleting a video removes the run records that explicitly name that video and no longer have an incident', async () => {
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
@@ -50,6 +50,8 @@ test('deleting a video removes only failed attempts that explicitly name that vi
         attempt('m-request', 'v-target', 'request_failed'),
         attempt('m-other-video', 'v-target-2', 'contract_failed'),
         attempt('m-valid', 'v-target', 'valid_first_pass'),
+        { id: 'm-legacy', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v-target', incident_type: 'burglary' } } }) },
+        { id: 'm-legacy-other', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v-target-2' } } }) },
         { id: 'm-mentions', notes: JSON.stringify({ incidentConsoleV2: { contractVersion: 'incident-contract-v2', note: '"videoId":"v-target"' } }) },
         attempt('m-has-incident', 'v-target', 'contract_failed'),
       ]));
@@ -64,8 +66,8 @@ test('deleting a video removes only failed attempts that explicitly name that vi
   const response = await DELETE(new Request('http://localhost/api/reports/v-target/delete?run=m-valid&deleteVideo=true', { method: 'DELETE' }), { params: Promise.resolve({ videoId: 'v-target' }) });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(deletes.filter((d) => d.startsWith('model_runs')).sort(), ['model_runs?id=eq.m-failed', 'model_runs?id=eq.m-request']);
-  assert.ok(deletes.includes('videos?id=eq.v-target'));
+  assert.deepEqual(deletes.filter((d) => d.startsWith('model_runs')).sort(), ['model_runs?id=eq.m-failed', 'model_runs?id=eq.m-legacy', 'model_runs?id=eq.m-request', 'model_runs?id=eq.m-valid']);
+  assert.ok(deletes.indexOf('videos?id=eq.v-target') < deletes.indexOf('model_runs?id=eq.m-failed'), 'the video (and its cascaded report rows) goes first');
 });
 
 test('deleting a single report does not touch attempt records', async () => {

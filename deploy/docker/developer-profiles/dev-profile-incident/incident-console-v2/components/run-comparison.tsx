@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
+import { formatTimestamp } from '@/lib/time';
 
 export function RunComparison({ videoId, left, right }: { videoId: string; left: string; right: string }) {
   const [reports, setReports] = useState<Array<ReportView | null>>([null, null]);
@@ -37,7 +38,7 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
   const model = report.modelOutput;
   return (
     <article className="rounded-3xl border border-ink/10 bg-white p-6">
-      <p className="font-mono text-xs uppercase tracking-wider text-moss">{index === 0 ? 'Run A' : 'Run B'} · {report.run.generatedAt ? new Date(report.run.generatedAt).toLocaleString() : ''}</p>
+      <p className="font-mono text-xs uppercase tracking-wider text-moss">{index === 0 ? 'Run A' : 'Run B'} · {formatTimestamp(report.run.generatedAt, '')}</p>
       <h2 className="mt-3 text-2xl font-semibold">{reportHeading(report)}</h2>
       <p className="mt-1 text-xs text-ink/45">{report.run.model} · {report.run.promptVersion || 'legacy prompt'}</p>
       <dl className="mt-5 grid grid-cols-2 gap-3">

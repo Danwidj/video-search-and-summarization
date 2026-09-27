@@ -7,6 +7,7 @@ import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
+import { recordedOutcome } from '@/lib/reports/run-notes';
 import type { ReportLibraryItem } from '@/lib/reports/storage';
 
 export const dynamic = 'force-dynamic';
@@ -72,7 +73,19 @@ export async function GET(request: Request) {
       p_day_of_week: dayOfWeek,
       p_sort: sort,
     }) as RpcResult;
-    const summaries = Array.isArray(result?.reports) ? result.reports : [];
+    const listed = Array.isArray(result?.reports) ? result.reports : [];
+    // Library cards show how each report's analysis ended (e.g. IDs repaired).
+    // Reports only ever come from successful analyses, so the outcome is a
+    // valid one or 'legacy'; it is read from the runs' immutable notes.
+    const runIds = [...new Set(listed.map((report) => report.modelRunId).filter(Boolean))];
+    const notesById = new Map<string, unknown>();
+    if (runIds.length) {
+      for (const row of await db.selectIn('model_runs', 'id', runIds, 'id,notes')) notesById.set(String(row.id), row.notes);
+    }
+    const summaries = listed.map((report) => {
+      const outcome = recordedOutcome(notesById.get(report.modelRunId));
+      return { ...report, outcome: outcome === 'valid_after_structural_repair' || outcome === 'valid_first_pass' ? outcome : 'legacy' } as ReportLibraryItem;
+    });
     const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
       if (!isValidR2Key(report.r2Key)) return report;
       try {

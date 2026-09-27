@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
+import { formatTimestamp } from '@/lib/time';
 
 type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
@@ -198,17 +199,6 @@ export function ReportsLibrary() {
     finally { setBusy(''); }
   }
 
-  async function reanalyze(item: ReportLibraryItem) {
-    if (!item.sensorId || !item.r2Key) return window.alert('This report does not retain enough upload metadata to re-analyze.');
-    setBusy(item.reportId);
-    try {
-      const response = await fetch('/api/analysis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sensorId: item.sensorId, filepath: item.r2Key, filename: item.filename }) });
-      const payload = (await response.json()) as { report?: { videoId: string; modelRunId: string }; error?: string };
-      if (!response.ok || !payload.report) throw new Error(payload.error || 'Re-analysis failed');
-      window.location.href = `/reports/${encodeURIComponent(payload.report.videoId)}?run=${encodeURIComponent(payload.report.modelRunId)}`;
-    } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'Re-analysis failed'); setBusy(''); }
-  }
-
   async function deleteReport(item: ReportLibraryItem) {
     const deleteVideo = window.confirm('Delete the stored R2 video too?\n\nOK deletes the video and every report for it. Cancel keeps the video and deletes only this report.');
     const message = deleteVideo ? 'Permanently delete this video and all of its reports?' : 'Delete only this report? The R2 video will be kept.';
@@ -255,18 +245,18 @@ export function ReportsLibrary() {
       </section>
 
       <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
-      {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onReanalyze={reanalyze} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
+      {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
     </div>
   );
 }
 
-function ReportCard({ item, busy, onStatus, onReanalyze, onDelete, onOpen }: { item: ReportLibraryItem; busy: boolean; onStatus: (item: ReportLibraryItem, status: ReviewStatus) => void; onReanalyze: (item: ReportLibraryItem) => void; onDelete: (item: ReportLibraryItem) => void; onOpen: (item: ReportLibraryItem) => void }) {
+function ReportCard({ item, busy, onStatus, onDelete, onOpen }: { item: ReportLibraryItem; busy: boolean; onStatus: (item: ReportLibraryItem, status: ReviewStatus) => void; onDelete: (item: ReportLibraryItem) => void; onOpen: (item: ReportLibraryItem) => void }) {
   const href = `/reports/${encodeURIComponent(item.videoId)}?run=${encodeURIComponent(item.modelRunId)}`;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.reportId}`} tabIndex={-1}>
     <ReportThumbnail failed={thumbnailFailed} onError={() => setThumbnailFailed(true)} severity={item.severity} status={item.status} thumbnailUrl={item.thumbnailUrl} />
-    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {new Date(item.generatedAt).toLocaleString()}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>
-      <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><button className="action" disabled={busy} onClick={() => onReanalyze(item)} type="button">Re-analyze</button><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
+    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {formatTimestamp(item.generatedAt)}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>{item.outcome === 'valid_after_structural_repair' && <p className="mt-2 inline-block rounded-full bg-[#fff1c7] px-2.5 py-0.5 text-[11px] font-bold text-[#765300]" data-testid="library-repair-marker">Contract repair applied (IDs only)</p>}
+      <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><Link className="action" href={`/videos/${encodeURIComponent(item.videoId)}`} onClick={() => onOpen(item)}>Re-analyze / history</Link><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
     </div>
   </article>;
 }

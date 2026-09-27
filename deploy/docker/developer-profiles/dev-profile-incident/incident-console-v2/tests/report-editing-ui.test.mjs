@@ -37,7 +37,7 @@ test('library cards omit the confidence percentage when the model returned none'
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
   const clientOnly = await readFile(new URL('../lib/reports/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['incident-report.tsx', 'structured-editor.tsx', 'report-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
+  for (const name of ['incident-report.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'ground-truth-screen.tsx', 'videos-screen.tsx', 'report-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -54,4 +54,27 @@ test('the structured editor edits Class A only and shows the original model outp
     assert.ok(!new RegExp(`setIncident\\(\\{ ${classB.replace(':', '')}`).test(editor), `${classB} must not be editable`);
   }
   assert.match(editor, /editFromDraft/);
+});
+
+test('the report page offers re-analysis and history; ground truth lives on its own page, never pre-filled', async () => {
+  const tools = await readFile(new URL('advanced-report-tools.tsx', components), 'utf8');
+  assert.match(tools, /ReanalysisCard/);
+  assert.match(tools, /RunHistoryList/);
+  assert.doesNotMatch(tools, /ground-truth`, \{ method: 'PUT'/, 'no ground-truth editor on the report page');
+  const groundTruth = await readFile(new URL('ground-truth-screen.tsx', components), 'utf8');
+  assert.match(groundTruth, /never pre-filled/);
+  assert.doesNotMatch(groundTruth, /structured\.incident\.(type|description|severityLevel) \|\|/);
+  const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
+  assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
+  assert.match(library, /library-repair-marker/);
+  const history = await readFile(new URL('run-history.tsx', components), 'utf8');
+  assert.match(history, /no report/);
+  assert.match(history, /Contract violations/);
+});
+
+test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
+  for (const name of ['incident-report.tsx', 'run-comparison.tsx', 'reports-library.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'ground-truth-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx']) {
+    const source = await readFile(new URL(name, components), 'utf8');
+    assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
+  }
 });

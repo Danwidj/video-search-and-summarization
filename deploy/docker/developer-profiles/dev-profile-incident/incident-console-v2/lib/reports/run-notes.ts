@@ -37,14 +37,50 @@ export interface AttemptAudit {
 }
 
 export type RunNotes =
-  | ({ kind: 'contract'; status: ValidStatus; contractVersion: string; report: DerivedContractReport; request: ContractRunRequest; response: ContractRunResponse } & AttemptAudit)
-  | ({ kind: 'failed-attempt'; status: FailedStatus; contractVersion: string; videoId: string | null; stage: string | null; failure: { code: string; message: string } | null; request: ContractRunRequest; response: ContractRunResponse | null } & AttemptAudit)
+  | ({ kind: 'contract'; status: ValidStatus; contractVersion: string; videoId: string | null; attemptedAt: string | null; report: DerivedContractReport; request: ContractRunRequest; response: ContractRunResponse } & AttemptAudit)
+  | ({ kind: 'failed-attempt'; status: FailedStatus; contractVersion: string; videoId: string | null; attemptedAt: string | null; stage: string | null; failure: { code: string; message: string } | null; request: ContractRunRequest; response: ContractRunResponse | null } & AttemptAudit)
   | { kind: 'invalid-contract'; contractVersion: string; error: string; request: ContractRunRequest; response: ContractRunResponse }
   | { kind: 'legacy'; report: AnalysisReport; rawModelOutput?: string; legacyReviewerEdits?: Record<string, unknown> }
   | { kind: 'none' };
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/**
+ * The videoId a run record explicitly names in its notes (attempt records:
+ * incidentConsoleV2.videoId; legacy console reports: incidentConsoleV2.report.videoId
+ * or a flat incidentConsoleV2.videoId), without validating the report. Null when absent.
+ */
+export function explicitVideoId(notes: unknown): string | null {
+  if (typeof notes !== 'string') return null;
+  try {
+    const wrapper = asObject(asObject(JSON.parse(notes))?.incidentConsoleV2);
+    if (!wrapper) return null;
+    if (typeof wrapper.videoId === 'string' && wrapper.videoId) return wrapper.videoId;
+    const report = asObject(wrapper.report);
+    return typeof report?.videoId === 'string' && report.videoId ? report.videoId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cheap outcome lookup for listings (no contract re-validation): the recorded
+ * status, 'valid_first_pass' for pre-outcome contract records, and 'legacy'
+ * for everything recorded before outcomes existed.
+ */
+export function recordedOutcome(notes: unknown): ValidStatus | FailedStatus | 'legacy' {
+  if (typeof notes !== 'string') return 'legacy';
+  try {
+    const wrapper = asObject(asObject(JSON.parse(notes))?.incidentConsoleV2);
+    if (!wrapper || typeof wrapper.contractVersion !== 'string') return 'legacy';
+    const status = wrapper.status;
+    if (status === 'valid_after_structural_repair' || status === 'contract_failed' || status === 'request_failed') return status;
+    return 'valid_first_pass';
+  } catch {
+    return 'legacy';
+  }
 }
 
 export function parseRunNotes(notes: unknown): RunNotes {
@@ -72,6 +108,7 @@ export function parseRunNotes(notes: unknown): RunNotes {
       return {
         kind: 'failed-attempt', status: rawStatus, contractVersion: wrapper.contractVersion,
         videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null,
+        attemptedAt: typeof wrapper.attemptedAt === 'string' ? wrapper.attemptedAt : null,
         stage: typeof wrapper.stage === 'string' ? wrapper.stage : null,
         failure: failure && typeof failure.code === 'string' ? { code: failure.code, message: String(failure.message ?? '') } : null,
         request, response: asObject(wrapper.response) ? response : null, ...audit,
@@ -92,7 +129,7 @@ export function parseRunNotes(notes: unknown): RunNotes {
       const report = validateReport({ ...stored, incident: modelIncident });
       const expected = report.incident.end_timestamp - report.incident.start_timestamp;
       if (duration !== expected) throw new Error(`stored incident.duration ${String(duration)} is not ${expected}`);
-      return { kind: 'contract', status, contractVersion: wrapper.contractVersion, report: { ...report, incident: { ...report.incident, duration: expected } }, request, response, ...audit };
+      return { kind: 'contract', status, contractVersion: wrapper.contractVersion, videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null, attemptedAt: typeof wrapper.attemptedAt === 'string' ? wrapper.attemptedAt : typeof wrapper.generatedAt === 'string' ? wrapper.generatedAt : null, report: { ...report, incident: { ...report.incident, duration: expected } }, request, response, ...audit };
     } catch (error) {
       return { kind: 'invalid-contract', contractVersion: wrapper.contractVersion, error: error instanceof Error ? error.message : String(error), request, response };
     }

@@ -4,10 +4,11 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 
 import { persistAgentBookkeeping, prepareAgentVideo } from '@/lib/analysis/persistence';
-import { AnalysisRequestError, runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
+import { analysisErrorResponse } from '@/lib/analysis/responses';
+import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
-import { errorResponse, readUpstream } from '@/lib/http';
+import { readUpstream } from '@/lib/http';
 import { compactId } from '@/lib/ids';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl, verifyR2Video } from '@/lib/r2/config';
@@ -177,9 +178,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ report });
   } catch (error) {
-    if (error instanceof AnalysisRequestError) {
-      return NextResponse.json({ error: error.message, ...(error.details || {}) }, { status: error.status });
-    }
-    return errorResponse(error, 'Video analysis failed');
+    return analysisErrorResponse(error, 'Video analysis failed');
   }
 }

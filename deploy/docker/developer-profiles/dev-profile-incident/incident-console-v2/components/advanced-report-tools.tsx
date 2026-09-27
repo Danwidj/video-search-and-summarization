@@ -3,7 +3,9 @@
 'use client';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
-import { formatClock } from '@/lib/reports/normalize';
+
+import { ReanalysisCard } from '@/components/reanalysis-card';
+import { RunHistoryList, useRunHistory } from '@/components/run-history';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
 import type { ReportLibraryItem } from '@/lib/reports/storage';
 
@@ -12,7 +14,7 @@ export function AdvancedReportTools({ report }: { report: ReportView }) {
     <>
       <section className="print-hidden mt-6 grid gap-6 xl:grid-cols-2">
         <FollowUpChat report={report} />
-        <ComparisonAndEvaluation report={report} />
+        <AnalysisHistoryCard report={report} />
       </section>
       <RunComparisonLauncher report={report} />
     </>
@@ -32,14 +34,27 @@ function FollowUpChat({ report }: { report: ReportView }) {
   return <section className="flex min-h-[420px] flex-col rounded-3xl border border-ink/10 bg-white p-6"><p className="font-mono text-xs uppercase tracking-[.15em] text-moss">Report-grounded</p><h2 className="mt-2 text-xl font-semibold">Ask a follow-up</h2><div className="mt-4 flex-1 space-y-3 overflow-auto">{messages.length === 0 && <p className="text-sm leading-6 text-ink/45">Ask about timestamps, people, objects, evidence, or uncertainty. Answers use this stored report as context.</p>}{messages.map((m, i) => <div className={`rounded-2xl p-3 text-sm leading-6 ${m.role === 'user' ? 'ml-8 bg-ink text-white' : 'mr-8 bg-canvas text-ink/70'}`} key={i}>{m.content}</div>)}</div>{error && <p className="mt-2 text-xs text-clay">{error}</p>}<form className="mt-4 flex gap-2" onSubmit={ask}><input aria-label="Follow-up question" className="control" onChange={(e) => setQuestion(e.target.value)} placeholder="What happened before…?" value={question} /><button className="rounded-full bg-moss px-4 text-xs font-semibold text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? 'Thinking…' : 'Ask'}</button></form></section>;
 }
 
-function ComparisonAndEvaluation({ report }: { report: ReportView }) {
-  const [runs, setRuns] = useState<ReportLibraryItem[]>([]); const [gt, setGt] = useState({ type: report.structured.incident.type || '', description: report.structured.incident.description || '', startTimestamp: report.structured.incident.startSeconds === null ? '' : formatClock(report.structured.incident.startSeconds), endTimestamp: report.structured.incident.endSeconds === null ? '' : formatClock(report.structured.incident.endSeconds), severityLevel: report.structured.incident.severityLevel ?? 1 }); const [message, setMessage] = useState('');
-  useEffect(() => { void fetch('/api/reports?all=true').then((r) => r.json()).then((p: { reports?: ReportLibraryItem[] }) => setRuns((p.reports || []).filter((item) => item.videoId === report.videoId))); void fetch(`/api/reports/${encodeURIComponent(report.videoId)}/ground-truth`).then((r) => r.json()).then((p: { groundTruth?: Record<string, unknown> | null }) => { const g = p.groundTruth; if (g) setGt({ type: String(g.type || ''), description: String(g.description || ''), startTimestamp: String(g.start_timestamp || ''), endTimestamp: String(g.end_timestamp || ''), severityLevel: Number(g.severity_level || 1) }); }); }, [report]);
-  async function saveGroundTruth() { const labelledBy = window.prompt('Evaluator name'); if (!labelledBy?.trim()) return; const response = await fetch(`/api/reports/${encodeURIComponent(report.videoId)}/ground-truth`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...gt, startTimestamp: gt.startTimestamp || null, endTimestamp: gt.endTimestamp || null, duration: report.structured.incident.duration, modelRunId: report.modelRunId, labelledBy }) }); const payload = await response.json() as { error?: string }; setMessage(response.ok ? 'Ground truth and severity evaluation saved.' : payload.error || 'Save failed'); }
-  return <section className="rounded-3xl border border-ink/10 bg-white p-6"><p className="font-mono text-xs uppercase tracking-[.15em] text-moss">Evaluation</p><h2 className="mt-2 text-xl font-semibold">Runs and ground truth</h2><div className="mt-4"><p className="text-xs font-bold uppercase tracking-wider text-ink/40">Model runs for this video</p><div className="mt-2 space-y-2">{runs.map((run) => <Link className={`block rounded-xl border p-3 text-xs ${run.modelRunId === report.modelRunId ? 'border-signal bg-signal/5' : 'border-ink/10'}`} href={`/reports/${encodeURIComponent(run.videoId)}?run=${encodeURIComponent(run.modelRunId)}`} key={run.modelRunId}><strong>{run.model}</strong><span className="mt-1 block text-ink/45">Severity {run.severity}{run.confidence === null ? '' : ` · ${Math.round(run.confidence * 100)}%`} · {new Date(run.generatedAt).toLocaleString()}</span></Link>)}</div></div><div className="mt-5 border-t border-ink/10 pt-5"><p className="text-xs font-bold uppercase tracking-wider text-ink/40">Human ground truth</p><input className="control mt-2" onChange={(e) => setGt({ ...gt, type: e.target.value })} placeholder="Incident type" value={gt.type} /><textarea className="control mt-2 min-h-[80px]" onChange={(e) => setGt({ ...gt, description: e.target.value })} placeholder="Human description" value={gt.description} /><div className="mt-2 grid grid-cols-3 gap-2"><input className="control" onChange={(e) => setGt({ ...gt, startTimestamp: e.target.value })} placeholder="Start" value={gt.startTimestamp} /><input className="control" onChange={(e) => setGt({ ...gt, endTimestamp: e.target.value })} placeholder="End" value={gt.endTimestamp} /><input aria-label="Human severity" className="control" max={5} min={1} onChange={(e) => setGt({ ...gt, severityLevel: Number(e.target.value) })} type="number" value={gt.severityLevel} /></div><button className="mt-3 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" onClick={() => void saveGroundTruth()} type="button">Save evaluation</button>{message && <p className="mt-2 text-xs text-ink/55">{message}</p>}</div></section>;
+/** Re-analysis of this video plus its analysis history (replaces the former evaluation / ground-truth card). */
+function AnalysisHistoryCard({ report }: { report: ReportView }) {
+  const { history, error, reload } = useRunHistory(report.videoId);
+  return (
+    <section className="rounded-3xl border border-ink/10 bg-white p-6" data-testid="analysis-history-card">
+      <p className="font-mono text-xs uppercase tracking-[.15em] text-moss">Analysis</p>
+      <h2 className="mt-2 text-xl font-semibold">Analyse this video again</h2>
+      <div className="mt-3"><ReanalysisCard onAttempted={() => void reload()} videoId={report.videoId} /></div>
+      <div className="mt-6 border-t border-ink/10 pt-5">
+        <p className="text-xs font-bold uppercase tracking-wider text-ink/40">Analysis history for this video</p>
+        {error && <p className="mt-2 text-xs text-clay">{error}</p>}
+        {history ? <div className="mt-2"><RunHistoryList compact currentRunId={report.modelRunId} history={history} /></div> : !error && <p className="mt-2 text-xs text-ink/45">Loading…</p>}
+        <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold">
+          <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}`}>Full analysis history →</Link>
+          <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}/ground-truth?run=${encodeURIComponent(report.modelRunId)}`}>Ground truth for this video →</Link>
+        </div>
+      </div>
+    </section>
+  );
 }
 
-/** Report-grounded chat context: current structured fields plus the read-only model output. */
 function chatContext(report: ReportView) {
   const { incident, entities, instruments, assets } = report.structured;
   return {
