@@ -271,14 +271,15 @@ export function AnalysisWorkspace() {
       />
 
       {modelSelection && models.length > 0 && (
-        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex flex-1 flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:flex-row sm:items-center sm:gap-3" htmlFor="analysis-model">
-            Vision-language model
-            <select className="control normal-case tracking-normal sm:max-w-xs" disabled={busy} id="analysis-model" onChange={(event) => setModel(event.target.value)} value={model}>
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
+          {/* The select keeps its natural width (the longest model name) and never shrinks; the note wraps below it instead. */}
+          <label className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3" htmlFor="analysis-model">
+            <span className="whitespace-nowrap">Vision-language model</span>
+            <select className="control normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" disabled={busy} id="analysis-model" onChange={(event) => setModel(event.target.value)} value={model}>
               {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </label>
-          <p className="text-xs text-ink/45">Choose before selecting a video. Analysis can take several minutes.</p>
+          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">Choose before selecting a video. Analysis can take several minutes.</p>
         </div>
       )}
 

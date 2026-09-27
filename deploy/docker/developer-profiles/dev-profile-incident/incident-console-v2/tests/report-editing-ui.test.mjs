@@ -84,3 +84,17 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
 });
+
+test('the new-analysis model selector shows full model names and never clips them', async () => {
+  const workspace = await readFile(new URL('analysis-workspace.tsx', components), 'utf8');
+  const select = /<select className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
+  assert.ok(select, 'the model selector exists');
+  const classes = select[1].split(/\s+/);
+  for (const needed of ['sm:w-auto', 'sm:min-w-[19rem]', 'sm:shrink-0']) assert.ok(classes.includes(needed), `select has ${needed}`);
+  assert.ok(!classes.some((name) => /max-w-/.test(name)), 'no max width that would clip a model name');
+  assert.match(workspace, /<option key=\{option\.id\} value=\{option\.id\}>\{option\.label\}<\/option>/, 'options show the full friendly label and keep the model id as value');
+  assert.match(workspace, /sm:flex-wrap/, 'on narrow rows the note wraps instead of squeezing the selector');
+
+  const inference = JSON.parse(await readFile(new URL('../../contracts/inference.json', import.meta.url), 'utf8'));
+  assert.deepEqual(inference.models.map((model) => model.label), ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning']);
+});
