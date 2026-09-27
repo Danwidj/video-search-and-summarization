@@ -54,15 +54,10 @@ DEFAULT_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com/v1"
 # goes through chat_completion). temperature=0.0 for reproducibility.
 FIXED_INFERENCE_CONFIG = {"temperature": 0.0, "max_tokens": 4096}
 
-# The fixed P1 configuration, identical for every model and every video - never
-# varied per model (see .docs/prompt-contract-plan.md §5a for the evidence):
-# - max_tokens 16384: nemotron-3-nano-omni's reasoning exhausts 4096 before it
-#   emits any JSON (finish_reason=length).
-# - media_io_kwargs num_frames 64: the gateway otherwise samples ~24 frames per
-#   video whatever its length. cosmos-3-super-reasoner ignores the setting and
-#   stays at ~24; the other two honour it.
+# The fixed P1 configuration lives in contracts/p1_request.json, shared with the
+# console and agent, and is identical for every model and every video (see
+# .docs/prompt-contract-plan.md §5a for why max_tokens 16384 and num_frames 64).
 # response_format (the contract schema, strict) is added per call.
-P1_INFERENCE_CONFIG = {"max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
 
 MODELS = [
     "nvidia/cosmos-3-nano-reasoner",
@@ -151,7 +146,7 @@ def chat_completion(
 
 def p1_request_config() -> dict:
     """Everything sent with a P1 call beyond model/messages (recorded in results)."""
-    return {**FIXED_INFERENCE_CONFIG, **P1_INFERENCE_CONFIG, "response_format": contract.response_format()}
+    return {**FIXED_INFERENCE_CONFIG, **contract.p1_request(), "response_format": contract.response_format()}
 
 
 def analyze_video_with_p1(model: str, video_url: str) -> ChatResult:
