@@ -61,7 +61,7 @@ The agent looks up the sensor id from `videos.source`, so the `videos` row must 
 
 ## Review lifecycle
 
-`PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`. Verifying a report with severity ≥ 4 creates a `notifications` row. Re-analysing resets `review_status` to `unreviewed` for that run (via the `insert_incident` RPC).
+`PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`. Re-analysing resets `review_status` to `unreviewed` for that run (via the `insert_incident` RPC).
 
 ## Verify
 

@@ -52,10 +52,9 @@ export function IncidentReport({ report, onNewAnalysis }: { report: AnalysisRepo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelRunId: report.modelRunId, status, reviewedBy: reviewer }),
       });
-      const payload = (await response.json()) as { error?: string; notified?: boolean };
+      const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Review update failed');
       setReviewStatus(status);
-      if (payload.notified) window.alert('Verified. A high-severity notification was created.');
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Review update failed');
     } finally {

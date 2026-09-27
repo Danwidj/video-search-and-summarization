@@ -15,8 +15,7 @@ The system replaces manual video inspection with automated Vision-Language Model
 1. **Ingest surveillance and anomaly video clips** via high-throughput video streaming infrastructure.
 2. **Extract structured, timestamped incident intelligence** (incident classification, severity,
    confidence, summary, observed entities, weapons/instruments, affected assets, and event timeline).
-3. **Facilitate human review, editing, and verification** of AI findings through an interactive web
-   console with high-severity alert notifications.
+3. **Facilitate human review, editing, and verification** of AI findings through an interactive web console.
 4. **Benchmark AI output quality** against human ground truth through automated evaluation.
 5. **Enable natural language video retrieval** (MVP2) across video archives using multi-modal embeddings
    and vector search.
@@ -86,7 +85,6 @@ and reporting loop; MVP2 adds natural-language semantic video search.
     - Video upload workspace with progress tracking.
     - Incident report view with timestamp seeking, evidence cards, and print styling.
     - Review lifecycle transitions: `unreviewed` -> `under review` -> `verified`.
-    - High-severity notifications (severity >= 4).
     - Model run comparison (comparing multiple analyses over the same video).
   - **Ground-Truth Evaluation (Tier 1):**
     - Parallel ground-truth schema (`gt_*` tables) populated from human annotations.

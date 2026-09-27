@@ -2,6 +2,14 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-09-27: Remove alerts from the active incident console
+- **Decision:** Remove the Alerts navigation item, unread polling, `/notifications` page and API, notification UI component, and high-severity notification writes from `incident-console-v2`. Keep the existing `notifications` database table temporarily for compatibility with the retired Streamlit console and evaluation tooling.
+- **Why:** The review workflow only needs persisted review states; an alert queue is no longer part of the active product.
+- **Alternatives rejected:** Hiding only the navigation link (leaves polling, routes, and writes active); immediately dropping the table (breaks retired/evaluation tooling and requires a separately approved live migration).
+- **Links:** [`../incident-console-v2/components/app-header.tsx`](../incident-console-v2/components/app-header.tsx); [`../incident-console-v2/app/api/reports/[videoId]/review/route.ts`](../incident-console-v2/app/api/reports/[videoId]/review/route.ts); [`.docs/data.md`](data.md).
+
+---
+
 ### 2026-09-27: Persist reviewer edits as atomic field-level patches
 - **Decision:** Compute changed top-level report fields in the edit API and apply them through a single `apply_incident_report_patch` transaction. The function locks the target model run and incident, merges only the supplied patch into the latest stored report, updates only corresponding incident projections/evidence categories, preserves the original AI report, and advances `edited_at`. Report-library filters now include weekday and low/medium severity bands; dashboard navigation carries exact period bounds and must ignore stale session filters on entry.
 - **Why:** Independent PostgREST writes can leave report JSON, incidents, evidence, and edit metadata disagreeing after a partial failure. Replacing the entire client-submitted report also risks overwriting concurrent edits or losing omitted fields. The database transaction makes a failed edit all-or-nothing and untouched fields remain unchanged.

@@ -114,17 +114,17 @@ signed R2 screenshots when available and otherwise use a static skeleton; they n
 and its video are fetched only after opening a report.
 The library supports full-text evidence search; incident type,
 severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
-date sorting. Review transitions are persisted to `review_status`, and verifying severity 4–5 reports creates a
-notification. Re-analysis creates a new model run and preserves prior results. Deleting only a report keeps its R2
+date sorting. Review transitions are persisted to `review_status`. Re-analysis creates a new model run and preserves
+prior results. Deleting only a report keeps its R2
 video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
 database cascade.
 
 ## Phase 5 review and operations workspace
 
-The global header keeps Analyze, Reports, Dashboard, notifications, and service health consistent throughout the
+The global header keeps Analyze, Reports, Dashboard, and service health consistent throughout the
 application. The report library remembers filters, scroll position, and its originating card when a report is opened.
 `/dashboard` summarizes report volume, review progress, confidence, severity, and incident types with drill-down
-links. `/notifications` polls and acknowledges high-severity verification alerts.
+links.
 
 Each report provides human-attributed structured corrections, non-streaming report-grounded follow-up chat through
 the agent `/chat` contract, model-run history and side-by-side comparison, and a ground-truth/severity evaluation
