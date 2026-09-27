@@ -53,7 +53,7 @@ uv run python scripts/probe_structured_output.py --video-key anomaly/<category>/
 uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner      # one model
 ```
 
-Results are printed as a table and written to `eval_data/probe/probe_<UTC>.json`; the exit code is 1 if any model fails.
+Results are printed as a table and written to `eval_data/probe/probe_<UTC>.json`. The file is rewritten after every model, so an interrupted run keeps what finished, and presigned-URL credentials are redacted so it is safe to share. The exit code is 1 if any model fails.
 
 ## Running
 

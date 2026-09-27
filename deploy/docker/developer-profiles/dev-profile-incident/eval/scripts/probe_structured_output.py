@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -223,7 +224,7 @@ def print_table(results: list[ModelResult]) -> None:
     names = ["schema_enforced", "url_fetch", "url_negative_control", "p1_contract"]
     print(f"\n{'model':48} " + " ".join(f"{n:20}" for n in names) + " verdict")
     for r in results:
-        cells = " ".join(f"{('PASS' if r.checks[n].passed else 'FAIL'):20}" for n in names)
+        cells = " ".join(f"{('PASS' if n in r.checks and r.checks[n].passed else 'FAIL'):20}" for n in names)
         print(f"{r.model:48} {cells} {'PASS' if r.passed else 'FAIL'}")
     for r in results:
         for name, check in r.checks.items():
@@ -244,31 +245,45 @@ def main(argv: list[str] | None = None) -> int:
     missing_url = signed_url(client, f"probe-missing/{uuid.uuid4()}.mp4")
     print(f"contract {contract.contract_version()} | video {video_key} | models {len(args.models)}")
 
-    results = []
-    for model in args.models:
-        print(f"probing {model} ...", flush=True)
-        results.append(probe_model(model, video_url, missing_url))
-    print_table(results)
-
     PROBE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out_path = PROBE_DIR / f"probe_{stamp}.json"
-    out_path.write_text(
-        json.dumps(
-            {
-                "contract_version": contract.contract_version(),
-                "video_key": video_key,
-                "run_at": stamp,
-                "results": [
-                    {"model": r.model, "passed": r.passed, "checks": {k: asdict(v) for k, v in r.checks.items()}}
-                    for r in results
-                ],
-            },
-            indent=2,
-        )
-    )
+
+    results: list[ModelResult] = []
+    for model in args.models:
+        print(f"probing {model} ...", flush=True)
+        try:
+            results.append(probe_model(model, video_url, missing_url))
+        except Exception as exc:  # keep probing the other models; record why this one stopped
+            failed = ModelResult(model)
+            failed.checks["probe_error"] = Check(False, f"{type(exc).__name__}: {exc}")
+            results.append(failed)
+        # Saved after every model so an interrupted run keeps what finished.
+        write_results(out_path, video_key, stamp, results)
+    print_table(results)
     print(f"\nwrote {out_path}")
     return 0 if all(r.passed for r in results) else 1
+
+
+_SIGNED_QUERY = re.compile(r"(X-Amz-(?:Signature|Credential|Security-Token))=[^&\s\"']+")
+
+
+def redact(text: str) -> str:
+    """Strip presigned-URL credentials so the saved JSON is safe to share."""
+    return _SIGNED_QUERY.sub(r"\1=REDACTED", text)
+
+
+def write_results(out_path: Path, video_key: str, stamp: str, results: list[ModelResult]) -> None:
+    payload = {
+        "contract_version": contract.contract_version(),
+        "video_key": video_key,
+        "run_at": stamp,
+        "results": [
+            {"model": r.model, "passed": r.passed, "checks": {k: asdict(v) for k, v in r.checks.items()}}
+            for r in results
+        ],
+    }
+    out_path.write_text(redact(json.dumps(payload, indent=2)))
 
 
 if __name__ == "__main__":
