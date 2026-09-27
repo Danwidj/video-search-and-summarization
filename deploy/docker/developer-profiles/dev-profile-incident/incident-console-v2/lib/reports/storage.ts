@@ -109,7 +109,8 @@ export interface ReportLibraryItem {
   incident_type: string;
   description: string;
   severity: number;
-  confidence: number;
+  /** null when the model reported no confidence (incident-contract-v2 allows null). */
+  confidence: number | null;
   generatedAt: string;
   uploadedAt?: string;
   model: string;

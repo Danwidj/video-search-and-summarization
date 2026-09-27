@@ -2,7 +2,7 @@
 
 This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Background and phasing are in [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md).
 
-**Status:** phase 1. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). The console and agent still use their own contract until phases 2 and 3.
+**Status:** phase 1 done; phase 2 (console) in progress. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` gateway-mode analysis now uses it too (`lib/contract/`, `lib/analysis/build-request.ts`), but its report view is still being migrated. The agent keeps its own contract until phase 3.
 
 | File | Purpose |
 |---|---|
@@ -10,6 +10,8 @@ This directory is the single source of truth for incident extraction: one prompt
 | [`incident_extraction_prompt.md`](incident_extraction_prompt.md) | P1 prompt. It defines field **meaning** only; the schema defines the shape, so there is no JSON template, and there is no few-shot block. |
 | [`report_generation_prompt.md`](report_generation_prompt.md) | RP1 prompt (derived P1 JSON → prose report). Its one placeholder is `{structured_incident_json}`. |
 | [`VERSION`](VERSION) | Contract version, stored as `prompt_version` on model runs |
+| [`inference.json`](inference.json) | Shared P1 inference settings and the allowlist of VLMs the console may call (with per-model timeouts). eval keeps its own constants; `eval/tests/test_contract_fixtures.py` asserts they match this file. |
+| [`fixtures/`](fixtures/) | Valid and invalid example reports, plus the expected `response_format`. Both the Python validator (`eval/tests/test_contract_fixtures.py`) and the console's TypeScript validator (`incident-console-v2/tests/contract-validate.test.mjs`) must agree on every fixture. |
 
 ## Rules
 
@@ -20,7 +22,7 @@ This directory is the single source of truth for incident extraction: one prompt
   - it passes the cross-field rules below.
 
   Anything else is an error (HTTP 422 in services), never repaired.
-- **Cross-field rules** (in `eval/contract.py`, `cross_field_errors`):
+- **Cross-field rules** (in `eval/contract.py` `cross_field_errors`, ported to `incident-console-v2/lib/contract/validate.ts` `crossFieldErrors`):
   - `end_timestamp >= start_timestamp`;
   - IDs run in sequence: `E1..En`, `I1..In`, `A1..An`;
   - every `instruments[].entity_id` is `null` or an existing entity;

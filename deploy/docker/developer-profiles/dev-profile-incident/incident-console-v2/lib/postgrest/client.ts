@@ -59,6 +59,23 @@ export class PostgrestClient {
     });
   }
 
+  /** Insert, leaving an existing row with the same key untouched (never updates it). */
+  async insertIfAbsent(table: string, row: Record<string, unknown>, onConflict: string) {
+    return this.request(`/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify(row),
+    });
+  }
+
+  /** Rows whose text column contains `fragment` (a candidate pre-filter only; callers must confirm matches). */
+  async selectContaining(table: string, column: string, fragment: string, select = '*'): Promise<Array<Record<string, unknown>>> {
+    const escaped = fragment.replace(/[\\*%_]/g, (character) => `\\${character}`);
+    const query = new URLSearchParams({ select, [column]: `like.*${escaped}*` });
+    const result = await this.request(`/${table}?${query}`);
+    return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+  }
+
   async deleteWhere(table: string, filters: Record<string, string>): Promise<void> {
     const query = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));

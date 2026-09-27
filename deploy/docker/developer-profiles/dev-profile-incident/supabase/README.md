@@ -50,6 +50,28 @@ cache was reloaded. The Supabase management connector recorded it as version
 `20260927075044` (its UTC application timestamp), while the checked-in migration
 filename retains the repository's ordered migration timestamp.
 
+`migrations/20260927150000_report_summaries_contract_v2_title.sql` replaces
+`list_incident_report_summaries` (same signature) so incident-contract-v2 runs
+show and search their model-generated title from
+`model_runs.notes` `incidentConsoleV2.report.incident.title`, returns a null
+confidence as null instead of 0, and sorts null confidences last. **Not yet
+applied to shared Supabase**: it was validated with a transactional dry run
+(applied inside a transaction, results checked, rolled back) and awaits
+approval.
+
+`migrations/20260927160000_apply_structured_report_edit.sql` adds the
+service-role-only `apply_structured_report_edit` RPC used by the console's
+structured (Class A) reviewer editor. In one transaction it replaces a run's
+`incidents` values (type, integer-second start/end, recomputed duration,
+description, severity level) and its `entities` / `instruments` /
+`assets`, and sets `review_status.edited_by` / `edited_at`. It never touches
+`model_runs.notes`, and it rejects any edit that breaks the contract's types,
+ranges, sequential IDs or instrument-holder references (no rules stricter
+than incident-contract-v2). **Not yet applied to
+shared Supabase**: validated with a transactional dry run and awaiting
+approval. `apply_incident_report_patch` is left in place but is no longer
+called by the console.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

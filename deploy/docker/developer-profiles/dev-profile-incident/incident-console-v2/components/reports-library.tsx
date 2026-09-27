@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import type { AnalysisReport } from '@/lib/analysis/schema';
 import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
 
@@ -204,7 +203,7 @@ export function ReportsLibrary() {
     setBusy(item.reportId);
     try {
       const response = await fetch('/api/analysis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sensorId: item.sensorId, filepath: item.r2Key, filename: item.filename }) });
-      const payload = (await response.json()) as { report?: AnalysisReport; error?: string };
+      const payload = (await response.json()) as { report?: { videoId: string; modelRunId: string }; error?: string };
       if (!response.ok || !payload.report) throw new Error(payload.error || 'Re-analysis failed');
       window.location.href = `/reports/${encodeURIComponent(payload.report.videoId)}?run=${encodeURIComponent(payload.report.modelRunId)}`;
     } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'Re-analysis failed'); setBusy(''); }
@@ -266,7 +265,7 @@ function ReportCard({ item, busy, onStatus, onReanalyze, onDelete, onOpen }: { i
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.reportId}`} tabIndex={-1}>
     <ReportThumbnail failed={thumbnailFailed} onError={() => setThumbnailFailed(true)} severity={item.severity} status={item.status} thumbnailUrl={item.thumbnailUrl} />
-    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div><span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span></div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {new Date(item.generatedAt).toLocaleString()}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>
+    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {new Date(item.generatedAt).toLocaleString()}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>
       <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><button className="action" disabled={busy} onClick={() => onReanalyze(item)} type="button">Re-analyze</button><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
     </div>
   </article>;
