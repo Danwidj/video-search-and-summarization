@@ -13,6 +13,7 @@ import type { ErrorObject, ValidateFunction } from 'ajv';
 
 import { schema } from '@/lib/contract/load';
 import type { DerivedContractReport, IncidentContractReport } from '@/lib/contract/types';
+import { timestampWithinVideo } from '@/lib/contract/video-bounds';
 
 /**
  * Machine-readable violation codes. The messages match eval/contract.py's text;
@@ -30,12 +31,77 @@ export type ContractViolationCode =
   | 'INSTRUMENT_HOLDER_UNKNOWN'
   | 'TIMELINE_START_OUTSIDE_WINDOW'
   | 'TIMELINE_END_OUTSIDE_WINDOW'
-  | 'TIMELINE_NOT_CHRONOLOGICAL';
+  | 'TIMELINE_NOT_CHRONOLOGICAL'
+  // Contextual (validation policy core-scored-v1, needs the video length):
+  | 'WINDOW_BEYOND_VIDEO'
+  | 'TIMELINE_BEYOND_VIDEO';
 
 export interface ContractViolation {
   code: ContractViolationCode;
   path: string;
   message: string;
+}
+
+// --- Validation policy core-scored-v1 (mirrors eval/contract.py evaluate_policy) ---
+//
+// A layer on top of the unchanged contract. Full contract validity (schema +
+// every cross-field rule) is what validateReport checks. core-scored-v1 decides
+// what is persisted (and, in eval, scored): the database-backed fields must be
+// valid; a cross-field failure confined to the best-effort enrichment fields
+// (title, severity_reason, location, timeline, uncertainties) does not make the
+// report invalid. Only cross-field rules are split: any schema violation stays
+// fatal. Nothing is repaired, clipped or removed.
+
+export const VALIDATION_POLICY = 'core-scored-v1';
+
+// The whole-second tolerance lives in the browser-safe lib/contract/video-bounds.ts.
+export { timestampWithinVideo, WHOLE_SECOND_RESOLUTION } from '@/lib/contract/video-bounds';
+
+export type ViolationScope = 'core' | 'enrichment';
+
+const ENRICHMENT_CODES: ReadonlySet<ContractViolationCode> = new Set([
+  'TIMELINE_START_OUTSIDE_WINDOW',
+  'TIMELINE_END_OUTSIDE_WINDOW',
+  'TIMELINE_NOT_CHRONOLOGICAL',
+  'TIMELINE_BEYOND_VIDEO',
+]);
+
+/** 'enrichment' for violations confined to unscored, non-database fields; 'core' otherwise. */
+export function violationScope(code: string): ViolationScope {
+  return ENRICHMENT_CODES.has(code as ContractViolationCode) ? 'enrichment' : 'core';
+}
+
+/** Runtime context for the contextual rules; an unknown length means they are not applied. */
+export interface ValidationContext { videoDurationSeconds?: number | null }
+
+function formatSeconds(value: number): string {
+  return String(Number(value.toPrecision(6)));
+}
+
+/** Contextual rules (runtime input, not the schema): timestamps must lie within the video. */
+export function videoBoundsViolations(report: IncidentContractReport, videoDurationSeconds: number): ContractViolation[] {
+  const violations: ContractViolation[] = [];
+  const length = formatSeconds(videoDurationSeconds);
+  for (const key of ['start_timestamp', 'end_timestamp'] as const) {
+    const value = report.incident[key];
+    if (!timestampWithinVideo(value, videoDurationSeconds)) {
+      violations.push({ code: 'WINDOW_BEYOND_VIDEO', path: `incident/${key}`, message: `${key} ${value} is outside the ${length} s video` });
+    }
+  }
+  report.timeline.forEach((event, index) => {
+    for (const key of ['start_seconds', 'end_seconds'] as const) {
+      const value = event[key];
+      if (value !== null && !timestampWithinVideo(value, videoDurationSeconds)) {
+        violations.push({ code: 'TIMELINE_BEYOND_VIDEO', path: `timeline/${index}/${key}`, message: `timeline[${index}].${key} ${value} is outside the ${length} s video` });
+      }
+    }
+  });
+  return violations;
+}
+
+function knownDuration(context?: ValidationContext): number | null {
+  const value = context?.videoDurationSeconds;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export class ContractError extends Error {
@@ -132,6 +198,45 @@ export function validateReport(report: unknown): IncidentContractReport {
   const violations = crossFieldViolations(typed);
   if (violations.length) throw new ContractError(`cross-field violation: ${violations.map((v) => v.message).join('; ')}`, violations);
   return typed;
+}
+
+export interface CoreValidation {
+  report: IncidentContractReport;
+  /** Every cross-field and contextual violation found; the core ones are empty here. */
+  violations: ContractViolation[];
+  enrichment: ContractViolation[];
+  /** Incident-contract validity exactly as validateReport (the contextual rules never affect it). */
+  fullContractValid: boolean;
+  videoBoundsChecked: boolean;
+}
+
+/**
+ * core-scored-v1: validate an already-decoded report. Throws ContractError for
+ * a schema violation or any core violation (including a window outside the
+ * video when its length is known); returns the report - unaltered - with its
+ * enrichment violations when only those fail.
+ */
+export function validateCore(report: unknown, context?: ValidationContext): CoreValidation {
+  const validate = validator();
+  if (!validate(report)) {
+    const violations = [...(validate.errors ?? [])]
+      .sort((a, b) => a.instancePath.localeCompare(b.instancePath))
+      .map(schemaViolation);
+    throw new ContractError(`schema violation: ${violations.map((v) => v.message).join('; ')}`, violations);
+  }
+  const typed = report as IncidentContractReport;
+  const contractViolations = crossFieldViolations(typed);
+  const duration = knownDuration(context);
+  const violations = duration === null ? contractViolations : [...contractViolations, ...videoBoundsViolations(typed, duration)];
+  const core = violations.filter((violation) => violationScope(violation.code) === 'core');
+  if (core.length) throw new ContractError(`core violation: ${core.map((v) => v.message).join('; ')}`, violations);
+  return {
+    report: typed,
+    violations,
+    enrichment: violations.filter((violation) => violationScope(violation.code) === 'enrichment'),
+    fullContractValid: contractViolations.length === 0,
+    videoBoundsChecked: duration !== null,
+  };
 }
 
 /** Add fields computed by code, never requested from the model (incident.duration). */

@@ -43,6 +43,7 @@ function fromNotes(entry: RunHistoryEntry, notes: unknown): RunHistoryEntry {
       repair: parsed.status === 'valid_after_structural_repair' && parsed.repair
         ? { ruleSet: String(parsed.repair.ruleSet ?? ''), operations: Array.isArray(parsed.repair.operations) ? (parsed.repair.operations as Array<Record<string, unknown>>) : [] }
         : null,
+      enrichmentIssues: [...new Set(parsed.enrichment.map((violation) => violation.code))],
     };
   }
   if (parsed.kind === 'failed-attempt') {

@@ -22,6 +22,8 @@ export interface RunHistoryEntry {
   additionalInstruction: string | null;
   failure: { stage: string | null; code: string; message: string; violations: Array<{ code: string; message: string }> } | null;
   repair: { ruleSet: string; operations: Array<Record<string, unknown>> } | null;
+  /** Successful runs: problems confined to unscored model fields (e.g. the timeline); they do not affect validity. */
+  enrichmentIssues?: string[];
   isOfficial?: boolean;
 }
 

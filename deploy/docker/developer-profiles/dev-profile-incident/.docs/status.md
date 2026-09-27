@@ -36,7 +36,10 @@ Current delivery status verified against the codebase:
 
 1. **Two writers and agent-mode double write.** In gateway mode the console writes all rows; in agent mode the agent writes `incidents`/evidence and the console writes `model_runs`/`videos`/`reports`. Agent mode also still uses the older contract, and the agent overwrites `videos.filepath` with a VST URL (the console restores the R2 key). Consolidation (Option B) is not started.
 2. **Model output lives in `model_runs.notes` (TEXT).** It is intentional: an immutable per-attempt record. It is queried through `try_parse_jsonb` in RPCs and a `like` pre-filter plus parsing in the app. Scale is small today (57 runs); a JSONB column or index would be needed at volume.
-3. **Cosmos Super often breaks the timeline rule.** It includes lead-up/aftermath events outside its own incident window (seen on 2 clips). These are recorded as `contract_failed` (not repairable; strict timeline rule kept). The eval benchmark should quantify the rate before deciding whether to keep Super.
+3. **The Cosmos models often break the timeline rule.** They include lead-up/aftermath events outside their own incident window (Super on Animal003, Assault018, Burglary005 and the phase-0 road clip; Nano on Animal003).
+   - Clarified prompt wording did not change this in a 12-call pilot.
+   - Since validation policy `core-scored-v1` it is an unscored-field issue: recorded and flagged on the report page, no longer a rejection.
+   - Whether the timeline should become a whole-video context timeline is an open decision.
 4. **Pre-existing orphaned runs.** 20 legacy console `model_runs` rows name videos that no longer exist (left by earlier deletions). They are not shown anywhere and were not deleted (a destructive production-data change); new deletions clean up explicitly associated run records.
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values are folded at query time only.** `fighting`/`animal` types and `person` entities remain stored; one legacy report has the non-contract type `other`. A data migration (prompt-contract phase 4) would need approval.
@@ -49,7 +52,11 @@ Current delivery status verified against the codebase:
 ## 3. Follow-Ups & Out-of-Scope Items
 
 1. **Prompt-contract phase 3:** move `vss-agent` onto `incident-contract-v2` (then retire `lib/analysis/schema.ts` and `incident-report-contract.json`).
-2. **Eval benchmark run** on the contract, including malformed-ID frequency (from `contract_error` text) and per-model contract-failure rates.
+2. **Eval benchmark run** under `core-scored-v1`, including malformed-ID frequency and per-model core and enrichment failure rates.
+   - The raw answers of the earlier full run were not retained.
+   - Runs now keep an immutable copy per run.
+   - Fixed P1 run ids still overwrite the benchmark rows in the DB.
+2a. **RP1 and inconsistent timelines (proposal):** run RP1 when `core_ok` with unchanged input, and add one RP1 prompt line that timeline events outside the incident time are context. This is a prompt change, not made.
 3. **Possible contract v3:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
 4. **Legacy type/entity data migration** (phase 4) and legacy table cleanup: approval needed.
 5. **RLS policies** and **writer consolidation (Option B).**

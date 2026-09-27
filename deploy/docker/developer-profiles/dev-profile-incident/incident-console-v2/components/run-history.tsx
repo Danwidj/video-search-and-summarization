@@ -91,6 +91,9 @@ function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHis
           {run.outcome === 'request_failed' && run.failure.message && <p className="mt-1 text-[#8c3d25]/80">{run.failure.message}</p>}
         </div>
       )}
+      {run.enrichmentIssues && run.enrichmentIssues.length > 0 && (
+        <p className="mt-2 text-ink/55" data-testid="enrichment-issues">Unscored model output: {run.enrichmentIssues.map(describeCode).join('; ')}</p>
+      )}
       {run.repair && (
         <p className="mt-2 text-[#765300]">Contract repair applied (IDs only) · {run.repair.ruleSet}: {run.repair.operations.map((operation) => String(operation.op)).join(', ')}</p>
       )}

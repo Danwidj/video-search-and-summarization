@@ -2,6 +2,28 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
+- **Decision:**
+  - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).
+  - `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment and are never scored.
+  - A `TIMELINE_*` failure is recorded and shown ("not consistent with the detected incident window"), but no longer rejects the report or empties the eval prediction. It is never repaired, clipped or removed. D11's rule stays as the timeline's consistency check; only its consequence moved.
+  - New contextual core rule: the incident window must lie within the video when its length can be read from the MP4 header. A whole-second timestamp T is valid iff `0 <= T < duration + 1`.
+  - Schema violations stay fatal. The ID-only repair is unchanged and considers core violations only.
+  - `full_contract_ok` / `fullContractValid` keeps incident-contract validity exactly as before; `core_ok` / `coreValid` is the validity that decides.
+  - Eval results also carry the policy, the violations by scope and the video length, and each run keeps a never-overwritten copy under `results/runs/`. RP1 gating is unchanged (full contract validity) pending a separate decision.
+- **Why:**
+  - A 12-call A/B pilot on Animal003 and Assault018 showed clarified prompt wording did not change the lead-up/aftermath timeline behaviour.
+  - D11 rejected 7 of the 12 answers, 4 of them with windows matching ground truth, while accepting a 29-36 s window on a 12.54 s clip.
+  - Recovered answers (pilot plus the eval smoke run): accepted 6 of 15 before, 13 of 15 now, with one correct new rejection (the window beyond the video).
+- **Versioning:** prompt and schema are byte-identical, so `VERSION` stays `incident-contract-v2` and the policy is identified separately as `core-scored-v1`.
+- **Alternatives rejected:**
+  - Redefining the timeline as a whole-video context timeline (deferred; this change makes that decision low-stakes).
+  - Isolating enrichment schema errors (needs partial-schema parsing).
+  - Showing only database fields in the UI (does not stop the rejection, which happens before persistence).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/lib/contract/validate.ts`](../incident-console-v2/lib/contract/validate.ts); [`../contracts/fixtures/policy/`](../contracts/fixtures/policy/).
+
+---
+
 ### 2026-09-27: Dashboard counts official incidents; the URL is the reports filter state
 - **Decision:**
   - `get_incident_dashboard` counts incident statistics only through each video's selected official report.

@@ -1,0 +1,11 @@
+{
+  "description": "Recorded nvidia/cosmos-3-nano-reasoner response for Assault018 (timeline-wording pilot, prompt arm A; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 12.539,
+  "content": "{\"assets\": [{\"asset_id\": \"A1\", \"description\": \"A white van parked on the right side of the sidewalk.\", \"name\": \"white van\"}, {\"asset_id\": \"A2\", \"description\": \"A blue car parked behind the white van.\", \"name\": \"blue car\"}], \"entities\": [{\"description\": \"A person wearing dark clothing and carrying a bag, walking on the sidewalk.\", \"entity_id\": \"E1\", \"type\": \"human\"}, {\"description\": \"A person wearing dark clothing, walking on the sidewalk.\", \"entity_id\": \"E2\", \"type\": \"human\"}], \"incident\": {\"confidence_score\": null, \"description\": \"A person walking on the sidewalk suddenly falls to the ground, while another person continues walking nearby.\", \"end_timestamp\": 11, \"location\": \"sidewalk near parked vehicles\", \"severity_level\": 2, \"severity_reason\": \"A person falls to the ground, indicating a minor injury or loss of balance, but no serious harm or major disruption is observed.\", \"start_timestamp\": 1, \"title\": \"Person falls on sidewalk while walking.\",\"type\": \"assault\"},\"instruments\": [], \"timeline\": [{\"description\": \"A person walks on the sidewalk and suddenly falls to the ground.\", \"end_seconds\": 2, \"start_seconds\": 1}, {\"description\": \"Another person walks past the fallen individual.\", \"end_seconds\": 6, \"start_seconds\": 3}, {\"description\": \"The fallen person remains on the ground while the other person continues walking away.\", \"end_seconds\": 11, \"start_seconds\": 6}], \"uncertainties\": [\"The cause of the fall is not clearly visible in the video.\"]}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}

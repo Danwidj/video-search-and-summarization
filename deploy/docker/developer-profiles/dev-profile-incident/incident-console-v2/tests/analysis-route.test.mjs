@@ -9,15 +9,38 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 let headContentLength = 1024;
+// The stored video's bytes for ranged reads (the MP4 length reader); null = unreadable.
+let videoBytes = null;
+
+/** A minimal MP4 (ftyp, mdat, then moov/mvhd) whose header says `seconds` long. */
+function mp4Bytes(seconds, mdatBytes = 1000) {
+  const box = (type, body) => {
+    const out = Buffer.alloc(8 + body.length);
+    out.writeUInt32BE(8 + body.length, 0);
+    out.write(type, 4, 'latin1');
+    body.copy(out, 8);
+    return out;
+  };
+  const mvhdBody = Buffer.alloc(4 + 8 + 8 + 80);
+  mvhdBody.writeUInt32BE(1000, 12);
+  mvhdBody.writeUInt32BE(Math.round(seconds * 1000), 16);
+  return Buffer.concat([box('ftyp', Buffer.alloc(8)), box('mdat', Buffer.alloc(mdatBytes)), box('moov', box('mvhd', mvhdBody))]);
+}
 
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
-        return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: headContentLength } : {});
+        if (command.constructor.name === 'HeadObjectCommand') return Promise.resolve({ ContentLength: videoBytes ? videoBytes.length : headContentLength });
+        if (command.constructor.name === 'GetObjectCommand' && command.input?.Range && videoBytes) {
+          const [, from, to] = /bytes=(\d+)-(\d+)/.exec(command.input.Range);
+          const slice = new Uint8Array(videoBytes.subarray(Number(from), Number(to) + 1));
+          return Promise.resolve({ Body: { transformToByteArray: async () => slice } });
+        }
+        return Promise.resolve({});
       }
     },
-    GetObjectCommand: class {
+    GetObjectCommand: class GetObjectCommand {
       constructor(input) {
         this.input = input;
       }
@@ -90,6 +113,7 @@ function successfulPostgrestResponse(url, expectedR2Key) {
 beforeEach(() => {
   setBaseEnv();
   headContentLength = 1024;
+  videoBytes = null;
 });
 
 afterEach(() => {
@@ -356,6 +380,7 @@ function supabaseWrites(recordedCalls) {
 
 test('gateway mode: sends the shared contract P1 request for the selected model and persists a contract run', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
+  videoBytes = mp4Bytes(60);
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/sensor-cam-02/night.mp4');
 
@@ -392,7 +417,8 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
   assert.equal(notes.recordType, 'analysis_attempt');
   assert.equal(notes.status, 'valid_first_pass');
-  assert.deepEqual(notes.validation, { firstPass: [] });
+  assert.deepEqual(notes.validation, { firstPass: [], policy: 'core-scored-v1', fullContractValid: true, coreValid: true, videoBoundsChecked: true });
+  assert.equal(notes.request.videoDurationSeconds, 60, 'the video length is read from the stored MP4 header');
   assert.equal(notes.repair, null);
   assert.equal(notes.contractVersion, 'incident-contract-v2');
   assert.deepEqual(notes.report, { ...validContractReport(), incident: { ...validContractReport().incident, duration: 8 } });
@@ -471,13 +497,14 @@ function attemptNotesFrom(recordedCalls) {
 
 test('gateway mode: a contract failure is a 422 with no model repair call; only the video and the attempt record are written', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
+  // [content, the core codes that decide the failure, every first-pass code recorded]
   const cases = [
-    ['```json\n' + JSON.stringify(validContractReport()) + '\n```', ['INVALID_JSON']],
-    [contractFixture('invalid/cross-unknown-instrument-holder.json'), ['INSTRUMENT_HOLDER_UNKNOWN']],
-    [contractFixture('invalid/schema-legacy-incident-type.json'), ['SCHEMA_VIOLATION']],
-    [contractFixture('invalid/cross-timeline-outside-incident.json'), ['TIMELINE_END_OUTSIDE_WINDOW']],
+    ['```json\n' + JSON.stringify(validContractReport()) + '\n```', ['INVALID_JSON'], ['INVALID_JSON']],
+    [contractFixture('invalid/cross-unknown-instrument-holder.json'), ['INSTRUMENT_HOLDER_UNKNOWN'], ['INSTRUMENT_HOLDER_UNKNOWN']],
+    [contractFixture('invalid/schema-legacy-incident-type.json'), ['SCHEMA_VIOLATION'], ['SCHEMA_VIOLATION']],
+    [contractFixture('invalid/cross-end-before-start.json'), ['WINDOW_END_BEFORE_START'], ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']],
   ];
-  for (const [content, codes] of cases) {
+  for (const [content, codes, firstPassCodes] of cases) {
     const recordedCalls = [];
     globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-bad/clip.mp4');
 
@@ -503,10 +530,67 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     assert.equal(notes.stage, 'contract_validation');
     assert.equal(notes.videoId, compactVideoId('s-bad'));
     assert.equal(notes.response.content, content, 'the original response is stored unaltered');
-    assert.deepEqual(notes.validation.firstPass.map((v) => v.code), codes);
+    assert.deepEqual(notes.validation.firstPass.map((v) => v.code), firstPassCodes);
+    assert.equal(notes.validation.coreValid, false);
     assert.equal(notes.repair.eligible, false);
     assert.ok(!('report' in notes));
   }
+});
+
+test('gateway mode: a timeline outside the incident window is recorded, not fatal; the report is saved unaltered', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  videoBytes = mp4Bytes(60);
+  for (const [fixture, code] of [['invalid/cross-timeline-outside-incident.json', 'TIMELINE_END_OUTSIDE_WINDOW'], ['invalid/cross-timeline-not-chronological.json', 'TIMELINE_NOT_CHRONOLOGICAL']]) {
+    const content = contractFixture(fixture);
+    const recordedCalls = [];
+    globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-tl/clip.mp4');
+
+    const response = await POST(jsonRequest({ sensorId: 's-tl', filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+
+    assert.equal(response.status, 200, fixture);
+    const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+    for (const table of ['rpc/insert_incident', 'reports']) assert.ok(tables.includes(table), `${fixture}: the database-backed fields are persisted (${table})`);
+    const { notes } = attemptNotesFrom(recordedCalls);
+    assert.equal(notes.status, 'valid_first_pass');
+    assert.equal(notes.response.content, content, 'the original response is stored unaltered');
+    const original = JSON.parse(content);
+    assert.deepEqual(notes.report.timeline, original.timeline, 'the timeline is neither repaired, clipped nor removed');
+    assert.equal(notes.validation.policy, 'core-scored-v1');
+    assert.equal(notes.validation.fullContractValid, false);
+    assert.equal(notes.validation.coreValid, true);
+    assert.ok(notes.validation.firstPass.length > 0);
+    assert.ok(notes.validation.firstPass.every((v) => v.scope === 'enrichment' && v.code === code), fixture);
+    assert.equal(notes.repair, null, 'no repair is attempted for an unscored field');
+  }
+});
+
+test('gateway mode: an incident window outside the video is a core failure (422); an unreadable length is not checked', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const report = validContractReport();
+  const content = JSON.stringify(report);
+  const end = report.incident.end_timestamp;
+
+  videoBytes = mp4Bytes(end - 1.5);
+  let recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
+  let response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  assert.equal(response.status, 422);
+  const payload = await response.json();
+  assert.ok(payload.codes.includes('WINDOW_BEYOND_VIDEO'));
+  let { notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(notes.status, 'contract_failed');
+  assert.equal(notes.validation.fullContractValid, true, 'the video rule never changes full contract validity');
+  assert.equal(notes.validation.videoBoundsChecked, true);
+  for (const table of REPORT_TABLES) assert.ok(!supabaseWrites(recordedCalls).map((w) => w.table).includes(table));
+
+  videoBytes = null;
+  recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
+  response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  assert.equal(response.status, 200);
+  ({ notes } = attemptNotesFrom(recordedCalls));
+  assert.equal(notes.request.videoDurationSeconds, null);
+  assert.equal(notes.validation.videoBoundsChecked, false);
 });
 
 test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and saved as valid_after_structural_repair', async () => {

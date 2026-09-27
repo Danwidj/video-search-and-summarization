@@ -30,7 +30,27 @@ export interface StructuredEntity { entityId: string; type: string; description:
 export interface StructuredInstrument { instrumentId: string; entityId: string | null; name: string; description: string; threatLevel: number | null }
 export interface StructuredAsset { assetId: string; name: string; description: string }
 
-export interface TimelineEvent { startSeconds: number; endSeconds: number | null; description: string }
+export interface TimelineEvent {
+  startSeconds: number;
+  endSeconds: number | null;
+  description: string;
+  /** Inside the model's own incident window. Events outside it are model context, never incident timestamps. */
+  insideWindow: boolean;
+  /** False only when the start is outside the video itself (known length); jumping there would be meaningless. */
+  seekable: boolean;
+}
+
+/**
+ * The timeline is unscored best-effort model output (validation policy
+ * core-scored-v1). Its consistency checks decide how it is presented, never
+ * whether the report is valid; the events themselves are never altered.
+ */
+export interface TimelineCheck {
+  consistentWithWindow: boolean;
+  /** Timeline violation codes, e.g. TIMELINE_START_OUTSIDE_WINDOW. */
+  codes: string[];
+  videoDurationSeconds: number | null;
+}
 
 export interface ModelOutput {
   source: 'contract' | 'legacy';
@@ -38,6 +58,7 @@ export interface ModelOutput {
   location: string | null;
   severityReason: string | null;
   timeline: TimelineEvent[];
+  timelineCheck: TimelineCheck;
   uncertainties: string[];
   /** The model's own structured values, for comparison with the (possibly edited) projection. */
   original: { type: string | null; severityLevel: number | null; startSeconds: number | null; endSeconds: number | null; description: string | null };
@@ -56,7 +77,9 @@ export interface RunDetails {
   /** Contract runs only: how the stored report was obtained. */
   status?: 'valid_first_pass' | 'valid_after_structural_repair' | 'contract_failed' | 'request_failed';
   statusInferred?: boolean;
-  firstPassViolations?: Array<{ code: string; path: string; message: string }>;
+  firstPassViolations?: Array<{ code: string; path: string; message: string; scope?: string }>;
+  /** Contract runs: how the original response was judged (absent before validation policy core-scored-v1). */
+  validation?: { policy?: string; fullContractValid?: boolean; coreValid?: boolean; videoBoundsChecked?: boolean };
   repair?: Record<string, unknown> | null;
   notesError?: string;
   request?: ContractRunRequest;

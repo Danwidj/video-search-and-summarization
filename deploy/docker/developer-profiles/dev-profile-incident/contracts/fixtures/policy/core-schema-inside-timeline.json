@@ -1,0 +1,13 @@
+{
+  "description": "A schema error inside the timeline stays fatal under core-scored-v1 (no partial parsing).",
+  "video_duration_seconds": null,
+  "content": "{\"incident\": {\"type\": \"road accident\", \"title\": \"Vehicle collides with a barrier\", \"start_timestamp\": 0, \"end_timestamp\": 5, \"description\": \"A vehicle collides with a roadside barrier.\", \"severity_level\": 2, \"severity_reason\": \"Minor visible damage.\", \"confidence_score\": 0.42, \"location\": null}, \"entities\": [], \"instruments\": [], \"assets\": [], \"timeline\": [{\"start_seconds\": \"2\", \"end_seconds\": null, \"description\": \"x\"}], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": false,
+    "core_codes": [
+      "SCHEMA_VIOLATION"
+    ],
+    "enrichment_codes": []
+  }
+}

@@ -41,6 +41,8 @@ const CODE_LABELS: Record<string, string> = {
   TIMELINE_START_OUTSIDE_WINDOW: 'A timeline event starts outside the incident window',
   TIMELINE_END_OUTSIDE_WINDOW: 'A timeline event ends outside the incident window',
   TIMELINE_NOT_CHRONOLOGICAL: 'Timeline events are not in chronological order',
+  WINDOW_BEYOND_VIDEO: 'The incident window lies outside the video',
+  TIMELINE_BEYOND_VIDEO: 'A timeline event lies outside the video',
 };
 
 export function describeCode(code: string): string {

@@ -68,3 +68,36 @@ def test_inference_json_models_match_eval():
 def test_inference_json_p1_settings_match_eval():
     eval_p1 = {**eval_vlm_client.FIXED_INFERENCE_CONFIG, **eval_vlm_client.P1_INFERENCE_CONFIG}
     assert INFERENCE["p1"] == eval_p1
+
+
+# --- Validation policy core-scored-v1 -------------------------------------------------
+# contracts/fixtures/policy/ holds recorded model responses and boundary cases with the
+# video length they are judged against; the console's tests/contract-policy.test.mjs
+# asserts the same expectations for the TypeScript validator.
+
+
+def _policy_fixtures() -> list[Path]:
+    return sorted((FIXTURES / "policy").glob("*.json"))
+
+
+def test_policy_fixture_directory_is_populated():
+    assert len(_policy_fixtures()) >= 20
+
+
+@pytest.mark.parametrize("path", _policy_fixtures(), ids=lambda p: p.stem)
+def test_policy_fixture(path: Path):
+    case = json.loads(path.read_text())
+    result = contract.evaluate_policy(case["content"], case["video_duration_seconds"])
+    expected = case["expected"]
+    assert result["full_contract_ok"] == expected["full_contract_ok"]
+    assert result["core_ok"] == expected["core_ok"]
+    assert sorted({v["code"] for v in result["core"]}) == expected["core_codes"]
+    assert sorted({v["code"] for v in result["enrichment"]}) == expected["enrichment_codes"]
+    assert result["video_bounds_checked"] == (case["video_duration_seconds"] is not None)
+    # full_contract_ok is exactly incident-contract-v2 validity (parse_report).
+    try:
+        contract.parse_report(case["content"])
+        strict_ok = True
+    except contract.ContractError:
+        strict_ok = False
+    assert strict_ok == expected["full_contract_ok"]

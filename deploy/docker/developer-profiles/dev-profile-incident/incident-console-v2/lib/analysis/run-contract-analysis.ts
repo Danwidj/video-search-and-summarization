@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The single incident-contract-v2 analysis path, shared by the upload flow and
-// (later) re-runs of an existing video: allowlisted model -> signed R2 URL ->
-// P1 request identical to eval's -> strict contract validation -> optional
-// id-normalization-v1 repair (re-validated) -> a new, unique model run.
+// re-runs of an existing video: allowlisted model -> signed R2 URL -> P1
+// request identical to eval's -> validation under policy core-scored-v1 ->
+// optional id-normalization-v1 repair (re-validated) -> a new, unique model run.
+//
+// core-scored-v1 (lib/contract/validate.ts validateCore, same as eval): the
+// database-backed fields decide the outcome. A cross-field failure confined to
+// the unscored enrichment fields (e.g. a timeline outside the incident window)
+// is recorded, not fatal, and never repaired; the incident window must also lie
+// within the video when its length can be read from the MP4 header.
 //
 // Every attempt that reaches the model is recorded with one of four outcomes:
 //   valid_first_pass | valid_after_structural_repair  -> report rows + notes
@@ -24,12 +30,22 @@ import {
 import { contractVersion, findAllowedModel, promptSha256, schemaSha256 } from '@/lib/contract/load';
 import { attemptIdNormalization, REPAIR_RULE_SET } from '@/lib/contract/repair';
 import type { IncidentContractReport } from '@/lib/contract/types';
-import { ContractError, decodeContent, validateReport, withDerivedFields, type ContractViolation } from '@/lib/contract/validate';
+import {
+  ContractError,
+  decodeContent,
+  validateCore,
+  VALIDATION_POLICY,
+  violationScope,
+  withDerivedFields,
+  type ContractViolation,
+  type ValidationContext,
+  type ViolationScope,
+} from '@/lib/contract/validate';
 import type { ServiceConfiguration } from '@/lib/env';
 import { GatewayClient, GatewayError, type GatewayCompletionResponse } from '@/lib/gateway/client';
 import { compactId } from '@/lib/ids';
 import { PostgrestClient } from '@/lib/postgrest/client';
-import { createR2PlaybackUrl, verifyR2Video } from '@/lib/r2/config';
+import { createR2PlaybackUrl, readR2VideoDurationSeconds, verifyR2Video } from '@/lib/r2/config';
 
 /** A request the caller must fix, or an attempt whose outcome is a recorded failure. */
 export class AnalysisRequestError extends Error {
@@ -64,49 +80,83 @@ export function resolveAllowedModel(model: unknown) {
   return allowed;
 }
 
-type Outcome =
-  | { kind: 'valid'; report: IncidentContractReport; firstPass: ContractViolation[]; repair: AttemptRepair | null }
-  | { kind: 'contract_failed'; stage: 'contract_validation' | 'structural_repair'; firstPass: ContractViolation[]; repair: AttemptRepair | null; message: string };
+/** Summary of the original response under core-scored-v1, recorded on every validated attempt. */
+export interface PolicyVerdict {
+  firstPass: Array<ContractViolation & { scope: ViolationScope }>;
+  fullContractValid: boolean;
+  videoBoundsChecked: boolean;
+}
 
-/** Strict validation, then id-normalization-v1 only when every first-pass violation is eligible, then strict validation again. */
-export function evaluateContent(content: string): Outcome {
+type Outcome =
+  | ({ kind: 'valid'; report: IncidentContractReport; repair: AttemptRepair | null } & PolicyVerdict)
+  | ({ kind: 'contract_failed'; stage: 'contract_validation' | 'structural_repair'; repair: AttemptRepair | null; message: string } & PolicyVerdict);
+
+const withScope = (violations: ContractViolation[]) => violations.map((violation) => ({ ...violation, scope: violationScope(violation.code) }));
+
+/**
+ * core-scored-v1 validation, then id-normalization-v1 only when every core
+ * first-pass violation is eligible, then core validation again. Enrichment
+ * violations are recorded but never block, trigger or are touched by repair.
+ */
+export function evaluateContent(content: string, context: ValidationContext = {}): Outcome {
+  const videoBoundsChecked = typeof context.videoDurationSeconds === 'number' && context.videoDurationSeconds > 0;
   let decoded: unknown;
   try {
     decoded = decodeContent(content);
-    return { kind: 'valid', report: validateReport(decoded), firstPass: [], repair: null };
+    const core = validateCore(decoded, context);
+    return { kind: 'valid', report: core.report, repair: null, firstPass: withScope(core.violations), fullContractValid: core.fullContractValid, videoBoundsChecked: core.videoBoundsChecked };
   } catch (error) {
     if (!(error instanceof ContractError)) throw error;
-    const firstPass = error.violations;
+    const firstPass = withScope(error.violations);
+    const coreViolations = firstPass.filter((violation) => violation.scope === 'core');
     const structural = firstPass.every((violation) => !['EMPTY_CONTENT', 'INVALID_JSON', 'SCHEMA_VIOLATION'].includes(violation.code));
+    // Full incident-contract validity of the original response: the contextual
+    // video rules never affect it, so it fails only on a contract violation.
+    const verdict: PolicyVerdict = {
+      firstPass,
+      fullContractValid: structural && !firstPass.some((violation) => violation.code !== 'WINDOW_BEYOND_VIDEO' && violation.code !== 'TIMELINE_BEYOND_VIDEO'),
+      videoBoundsChecked: structural && videoBoundsChecked,
+    };
     if (!structural) {
       const blockingCodes = [...new Set(firstPass.map((violation) => violation.code))];
       return {
         kind: 'contract_failed',
         stage: 'contract_validation',
-        firstPass,
         repair: { eligible: false, ruleSet: REPAIR_RULE_SET, reason: 'INELIGIBLE_VIOLATION', blockingCodes, detail: error.message },
         message: error.message,
+        ...verdict,
       };
     }
-    const attempt = attemptIdNormalization(decoded as IncidentContractReport, firstPass);
+    const attempt = attemptIdNormalization(decoded as IncidentContractReport, coreViolations);
     if (!attempt.eligible) {
       const { eligible, ruleSet, reason, blockingCodes, detail } = attempt;
-      return { kind: 'contract_failed', stage: 'contract_validation', firstPass, repair: { eligible, ruleSet, reason, blockingCodes, detail }, message: error.message };
+      return { kind: 'contract_failed', stage: 'contract_validation', repair: { eligible, ruleSet, reason, blockingCodes, detail }, message: error.message, ...verdict };
     }
     try {
-      const report = validateReport(attempt.repaired);
-      return { kind: 'valid', report, firstPass, repair: { eligible: true, ruleSet: attempt.ruleSet, operations: attempt.operations, revalidation: [] } };
+      const repaired = validateCore(attempt.repaired, context);
+      return { kind: 'valid', report: repaired.report, repair: { eligible: true, ruleSet: attempt.ruleSet, operations: attempt.operations, revalidation: repaired.violations }, ...verdict };
     } catch (revalidationError) {
       if (!(revalidationError instanceof ContractError)) throw revalidationError;
       return {
         kind: 'contract_failed',
         stage: 'structural_repair',
-        firstPass,
         repair: { eligible: true, ruleSet: attempt.ruleSet, operations: attempt.operations, revalidation: revalidationError.violations },
         message: `${error.message}; after ${attempt.ruleSet}: ${revalidationError.message}`,
+        ...verdict,
       };
     }
   }
+}
+
+function validationRecord(outcome: Outcome): AnalysisAttemptRecord['validation'] {
+  return {
+    firstPass: outcome.firstPass,
+    policy: VALIDATION_POLICY,
+    fullContractValid: outcome.fullContractValid,
+    // The original response's core validity, before any ID repair.
+    coreValid: outcome.kind === 'valid' && outcome.repair === null,
+    videoBoundsChecked: outcome.videoBoundsChecked,
+  };
 }
 
 function completionResponse(completion: GatewayCompletionResponse): NonNullable<AnalysisAttemptRecord['response']> {
@@ -139,13 +189,16 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
   const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
   let operation = 'verifying the R2 video object';
   try {
-    await verifyR2Video(config, input.r2Key);
+    const { contentLength } = await verifyR2Video(config, input.r2Key);
     if (input.newVideo) {
       operation = 'recording the uploaded video';
       await recordUploadedVideo(db, input.videoId, { r2Key: input.r2Key, sensorId: input.newVideo.sensorId, uploadedAt: input.newVideo.uploadedAt });
     }
     operation = 'creating the signed R2 video URL';
     const playbackUrl = await createR2PlaybackUrl(config, input.r2Key);
+
+    operation = 'reading the video length';
+    const videoDurationSeconds = await readR2VideoDurationSeconds(config, input.r2Key, contentLength);
 
     const attemptedAt = new Date().toISOString();
     const modelRunId = compactId('m', `${input.videoId}:${attemptedAt}:${randomUUID()}`);
@@ -161,6 +214,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         additionalInstruction,
         promptSha256: promptSha256(),
         schemaSha256: schemaSha256(),
+        videoDurationSeconds,
       },
     };
 
@@ -197,12 +251,15 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
     }
 
     operation = 'validating the VLM response against the incident contract';
-    const outcome = evaluateContent(content);
+    const outcome = evaluateContent(content, { videoDurationSeconds });
     if (outcome.kind === 'contract_failed') {
-      const codes = [...new Set([...outcome.firstPass, ...(outcome.repair?.eligible ? outcome.repair.revalidation : [])].map((violation) => violation.code))];
+      // The failure is decided by core violations; enrichment ones stay in validation.firstPass.
+      const codes = [...new Set([...outcome.firstPass, ...(outcome.repair?.eligible ? outcome.repair.revalidation : [])]
+        .filter((violation) => violationScope(violation.code) === 'core')
+        .map((violation) => violation.code))];
       const attempt: AnalysisAttemptRecord = {
         ...base, status: 'contract_failed', stage: outcome.stage, failure: { code: codes.join(','), message: outcome.message },
-        response, validation: { firstPass: outcome.firstPass }, repair: outcome.repair,
+        response, validation: validationRecord(outcome), repair: outcome.repair,
       };
       const recorded = await recordFailure(db, attempt);
       throw new AnalysisRequestError(422, `The model's response did not satisfy the incident contract: ${outcome.message}`, {
@@ -216,7 +273,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       stage: null,
       failure: null,
       response,
-      validation: { firstPass: outcome.firstPass },
+      validation: validationRecord(outcome),
       repair: outcome.repair,
       reportId: compactId('r', `${input.videoId}:${modelRunId}`),
       generatedAt: attemptedAt,

@@ -6,6 +6,7 @@ import { useRef, useState, type ReactNode } from 'react';
 
 import { OfficialControls } from '@/components/official-controls';
 import { StructuredEditor } from '@/components/structured-editor';
+import { timestampWithinVideo } from '@/lib/contract/video-bounds';
 import type { ReviewStatus } from '@/lib/reports/storage';
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
@@ -33,6 +34,8 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>(report.review.status);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  // The player's own length, a second guard (besides the recorded length) before jumping to a timeline time.
+  const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const windowEdited = differences.fields.includes('incident window');
   const original = modelOutput?.original;
   const holderLabel = new Map(structured.entities.map((entity) => [entity.entityId, `${entity.entityId} (${entity.type})`]));
@@ -146,7 +149,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
 
       <div className="grid lg:grid-cols-[1.08fr_0.92fr]">
         <div className="border-b border-ink/10 p-5 lg:border-b-0 lg:border-r sm:p-7">
-          <video className="aspect-video w-full rounded-2xl bg-black object-contain" controls ref={videoRef} src={run.playbackUrl} />
+          <video className="aspect-video w-full rounded-2xl bg-black object-contain" controls onLoadedMetadata={(event) => { const length = event.currentTarget.duration; setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null); }} ref={videoRef} src={run.playbackUrl} />
           <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-ink/65">
             <span className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">Incident window</span>
             {incident.startSeconds !== null ? (
@@ -164,16 +167,41 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
             {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
               <p className="mb-2 text-[11px] text-clay">Event times are the model&apos;s, relative to its original window {formatClock(original.startSeconds)}–{formatClock(original.endSeconds)}.</p>
             )}
+            {modelOutput && modelOutput.timelineCheck && !modelOutput.timelineCheck.consistentWithWindow && (
+              <p className="mb-2 rounded-xl border border-[#e8d49a] bg-[#fffaf0] p-3 text-xs leading-5 text-[#765300]" data-testid="timeline-inconsistent">
+                Model-generated timeline, not consistent with the detected incident window
+                {original && original.startSeconds !== null && original.endSeconds !== null ? ` (${formatClock(original.startSeconds)}–${formatClock(original.endSeconds)})` : ''}.
+                {' '}Events outside the window are the model&apos;s context, not incident timestamps. The timeline is not scored and does not affect the report&apos;s validity.
+              </p>
+            )}
             {modelOutput?.timeline.length ? (
               <ol className="space-y-2">
-                {modelOutput.timeline.map((event, index) => (
-                  <li key={`${event.startSeconds}-${index}`}>
-                    <button aria-label={`Play video from ${formatClock(event.startSeconds)}: ${event.description}`} className="group flex w-full gap-4 rounded-xl border border-ink/8 p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-none focus:ring-2 focus:ring-signal" onClick={() => seek(event.startSeconds)} type="button">
-                      <span className="whitespace-nowrap font-mono text-xs font-bold text-moss">{formatClock(event.startSeconds)}{event.endSeconds !== null && event.endSeconds !== event.startSeconds ? `–${formatClock(event.endSeconds)}` : ''}</span>
-                      <span className="text-sm leading-5 text-ink/70 group-hover:text-ink">{event.description}</span>
-                    </button>
-                  </li>
-                ))}
+                {modelOutput.timeline.map((event, index) => {
+                  const clock = `${formatClock(event.startSeconds)}${event.endSeconds !== null && event.endSeconds !== event.startSeconds ? `–${formatClock(event.endSeconds)}` : ''}`;
+                  const outsideWindow = event.insideWindow === false;
+                  const seekable = event.seekable !== false && (playerDuration === null || timestampWithinVideo(event.startSeconds, playerDuration));
+                  const tags = (
+                    <>
+                      {outsideWindow && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink/50" data-testid="event-outside-window">outside incident window</span>}
+                      {!seekable && <span className="rounded-full bg-[#ffe8df] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#9b3518]" data-testid="event-outside-video">outside the video</span>}
+                    </>
+                  );
+                  return (
+                    <li key={`${event.startSeconds}-${index}`}>
+                      {seekable ? (
+                        <button aria-label={`Play video from ${formatClock(event.startSeconds)}: ${event.description}`} className={`group flex w-full gap-4 rounded-xl border p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-none focus:ring-2 focus:ring-signal ${outsideWindow ? 'border-dashed border-ink/15' : 'border-ink/8'}`} onClick={() => seek(event.startSeconds)} type="button">
+                          <span className={`whitespace-nowrap font-mono text-xs font-bold ${outsideWindow ? 'text-ink/45' : 'text-moss'}`}>{clock}</span>
+                          <span className={`text-sm leading-5 group-hover:text-ink ${outsideWindow ? 'text-ink/55' : 'text-ink/70'}`}>{event.description} {tags}</span>
+                        </button>
+                      ) : (
+                        <div className="flex w-full gap-4 rounded-xl border border-dashed border-ink/15 p-3 text-left" data-testid="event-not-seekable">
+                          <span className="whitespace-nowrap font-mono text-xs font-bold text-ink/40">{clock}</span>
+                          <span className="text-sm leading-5 text-ink/50">{event.description} {tags}</span>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ol>
             ) : <p className="rounded-xl border border-dashed border-ink/15 p-4 text-sm text-ink/45">{modelOutput ? 'The model returned no timestamped events.' : 'The original model output was not retained for this run.'}</p>}
           </ModelSection>
@@ -291,7 +319,16 @@ function RunDetailsPanel({ report }: { report: ReportView }) {
             {request?.inferenceConfig && <Provenance label="Inference settings" value={JSON.stringify(request.inferenceConfig)} />}
             {request?.promptSha256 && <Provenance label="Prompt SHA-256" value={request.promptSha256} />}
             {request?.schemaSha256 && <Provenance label="Schema SHA-256" value={request.schemaSha256} />}
+            {run.notesKind === 'contract' && <Provenance label="Validation policy" value={run.validation?.policy ?? 'Full contract validity (recorded before core-scored-v1)'} />}
+            {run.validation?.fullContractValid !== undefined && <Provenance label="Full contract validity (first response)" value={run.validation.fullContractValid ? 'Valid' : 'Not valid: only unscored or ID issues, see below'} />}
+            {request && 'videoDurationSeconds' in request && <Provenance label="Video length checked against" value={typeof request.videoDurationSeconds === 'number' ? `${Number(request.videoDurationSeconds.toFixed(3))} s` : 'Unknown (not checked)'} />}
           </dl>
+          {(run.firstPassViolations ?? []).some((violation) => violation.scope === 'enrichment') && (
+            <div className="mt-4 rounded-xl border border-ink/10 bg-white/60 p-4 text-xs text-ink/65" data-testid="enrichment-violations">
+              <p className="font-semibold">Issues in unscored model fields (recorded, not repaired, do not affect validity)</p>
+              <ul className="mt-1 list-disc pl-5">{(run.firstPassViolations ?? []).filter((violation) => violation.scope === 'enrichment').map((violation, index) => <li key={index}><span className="font-mono">{violation.code}</span>: {violation.message}</li>)}</ul>
+            </div>
+          )}
           {run.notesKind === 'invalid-contract' && <p className="mt-4 text-xs text-clay">The stored model output could not be re-validated: {run.notesError}</p>}
           {run.notesKind === 'none' && <p className="mt-4 text-xs italic text-ink/40">The original model output was not retained for this run.</p>}
           {run.status === 'valid_after_structural_repair' && <RepairDetails run={run} />}
@@ -324,7 +361,7 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
   return (
     <div className="mt-6 rounded-xl border border-[#e8d49a] bg-[#fffaf0] p-4 text-xs text-ink/70" data-testid="repair-details">
       <h4 className="font-bold uppercase tracking-[0.12em] text-[#765300]">Contract repair applied (IDs only) · {String(repair.ruleSet ?? '')}</h4>
-      <p className="mt-2">The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was changed, and the result passed full contract validation again.</p>
+      <p className="mt-2">The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was changed, and the result passed validation again.</p>
       <p className="mt-3 font-semibold">First-pass violations</p>
       <ul className="mt-1 list-disc pl-5">{(run.firstPassViolations ?? []).map((violation, index) => <li key={index}><span className="font-mono">{violation.code}</span>: {violation.message}</li>)}</ul>
       <p className="mt-3 font-semibold">Repair operations</p>

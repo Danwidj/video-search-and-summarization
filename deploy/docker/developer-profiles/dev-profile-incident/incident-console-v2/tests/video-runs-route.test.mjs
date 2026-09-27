@@ -23,6 +23,7 @@ const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
+const coreFailure = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'invalid', 'cross-end-before-start.json'), 'utf8');
 const V = repaired.videoId;
 const R2_KEY = repaired.video.filepath;
 const originalFetch = globalThis.fetch;
@@ -77,14 +78,27 @@ test('re-analysis uses the stored video object, creates a new run and never writ
 
 test('a failed re-run is recorded in history only and returns its reason', async () => {
   const calls = [];
-  globalThis.fetch = db(calls, timelineFailure);
+  globalThis.fetch = db(calls, coreFailure);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
   assert.equal(response.status, 422);
   const payload = await response.json();
   assert.equal(payload.outcome, 'contract_failed');
-  assert.deepEqual(payload.codes.sort(), ['TIMELINE_END_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+  assert.deepEqual(payload.codes, ['WINDOW_END_BEFORE_START'], 'the failure names the core violation only');
   const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions')).map((c) => c.path);
   assert.deepEqual(writes, ['model_runs'], 'only the attempt record; no report, incident, evidence, review or video rows');
+});
+
+test('a re-run whose only problem is its timeline gets its own report rows (core-scored-v1)', async () => {
+  const calls = [];
+  globalThis.fetch = db(calls, timelineFailure);
+  const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
+  assert.equal(response.status, 200);
+  const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions'));
+  assert.ok(writes.some((c) => c.path === 'rpc/insert_incident'));
+  const notes = JSON.parse(writes.find((c) => c.path === 'model_runs').body.notes).incidentConsoleV2;
+  assert.equal(notes.status, 'valid_first_pass');
+  assert.equal(notes.validation.fullContractValid, false);
+  assert.equal(notes.response.content, timelineFailure);
 });
 
 test('re-analysis refuses unknown models, missing videos and agent mode', async () => {

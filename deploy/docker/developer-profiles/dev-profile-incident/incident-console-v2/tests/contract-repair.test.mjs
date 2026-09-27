@@ -57,14 +57,53 @@ test('real Nemotron response (E2,E1 and instrument id ",") is repaired by reorde
   assert.equal(outcome.report.instruments.find((i) => i.name === 'bag').entity_id, 'E1', 'the bag is still held by the attacker');
 });
 
-test('real Cosmos Super response (timeline outside the incident window) is not eligible and stays contract_failed', () => {
+test('real Cosmos Super response (timeline outside the incident window) is valid under core-scored-v1, unrepaired and unaltered', () => {
   const { rawContent } = fixture('cosmos-3-super-timeline-window.json');
   const outcome = evaluateContent(rawContent);
+  assert.equal(outcome.kind, 'valid');
+  assert.equal(outcome.repair, null, 'an unscored-field problem never triggers repair');
+  assert.equal(outcome.fullContractValid, false);
+  assert.deepEqual([...new Set(outcome.firstPass.map((v) => v.code))].sort(), ['TIMELINE_END_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+  assert.ok(outcome.firstPass.every((v) => v.scope === 'enrichment'));
+  assert.deepEqual(outcome.report, JSON.parse(rawContent), 'the report, timeline included, is exactly the model output');
+});
+
+test('ID repair considers core violations only: an inconsistent timeline neither blocks nor is touched by it', () => {
+  const report = validReport();
+  report.entities.reverse();
+  report.timeline[1].end_seconds = 99;
+  const outcome = evaluateContent(JSON.stringify(report));
+  assert.equal(outcome.kind, 'valid');
+  assert.equal(outcome.repair.eligible, true);
+  assert.deepEqual(outcome.firstPass.map((v) => [v.code, v.scope]), [['ID_NOT_SEQUENTIAL_ENTITY', 'core'], ['TIMELINE_END_OUTSIDE_WINDOW', 'enrichment']]);
+  assert.deepEqual(outcome.repair.revalidation.map((v) => v.code), ['TIMELINE_END_OUTSIDE_WINDOW'], 'the enrichment issue remains, recorded');
+  assert.equal(outcome.report.timeline[1].end_seconds, 99, 'the timeline is not altered');
+  assertOnlyIdsChanged(report, outcome.report);
+});
+
+test('a core violation that is not an ID rule still blocks repair, whatever enrichment issues exist', () => {
+  const report = validReport();
+  report.entities.reverse();
+  report.incident.end_timestamp = report.incident.start_timestamp - 1;
+  const outcome = evaluateContent(JSON.stringify(report));
   assert.equal(outcome.kind, 'contract_failed');
-  assert.equal(outcome.stage, 'contract_validation');
   assert.equal(outcome.repair.eligible, false);
-  assert.equal(outcome.repair.reason, 'INELIGIBLE_VIOLATION');
-  assert.deepEqual(outcome.repair.blockingCodes.sort(), ['TIMELINE_END_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+  assert.deepEqual(outcome.repair.blockingCodes, ['WINDOW_END_BEFORE_START']);
+});
+
+test('the incident window must lie within a known video length; the rule is skipped when the length is unknown', () => {
+  const report = validReport();
+  const end = report.incident.end_timestamp;
+  const beyond = evaluateContent(JSON.stringify(report), { videoDurationSeconds: end - 1 });
+  assert.equal(beyond.kind, 'contract_failed');
+  assert.ok(beyond.repair.blockingCodes.includes('WINDOW_BEYOND_VIDEO'));
+  assert.equal(beyond.fullContractValid, true);
+  assert.equal(beyond.videoBoundsChecked, true);
+  const within = evaluateContent(JSON.stringify(report), { videoDurationSeconds: end - 0.5 });
+  assert.equal(within.kind, 'valid', 'a whole-second end one partial second past the length still names a moment of the video');
+  const unknown = evaluateContent(JSON.stringify(report), { videoDurationSeconds: null });
+  assert.equal(unknown.kind, 'valid');
+  assert.equal(unknown.videoBoundsChecked, false);
 });
 
 test('one ineligible violation blocks repair even when ID violations are also present', () => {

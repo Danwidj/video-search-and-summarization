@@ -1,0 +1,13 @@
+{
+  "description": "End before start is a core failure.",
+  "video_duration_seconds": null,
+  "content": "{\"incident\": {\"type\": \"road accident\", \"title\": \"Vehicle collides with a barrier\", \"start_timestamp\": 8, \"end_timestamp\": 5, \"description\": \"A vehicle collides with a roadside barrier.\", \"severity_level\": 2, \"severity_reason\": \"Minor visible damage.\", \"confidence_score\": 0.42, \"location\": null}, \"entities\": [], \"instruments\": [], \"assets\": [], \"timeline\": [], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": false,
+    "core_codes": [
+      "WINDOW_END_BEFORE_START"
+    ],
+    "enrichment_codes": []
+  }
+}

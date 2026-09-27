@@ -19,6 +19,12 @@ anything, never changes a threshold or a value - purely aggregates what is
 already persisted. Metrics stay broken out throughout (by category x model,
 by model pooled, overall pooled) - never collapsed into one blended score,
 per the confirmed requirement.
+
+Only the database-backed fields are scored. ``p1_failures`` are the responses
+scored as a miss; ``contract_failures`` (not fully incident-contract valid),
+``core_failures`` (database-backed fields invalid) and
+``enrichment_violation_videos`` (unscored-field problems, e.g. a timeline
+outside the incident window) are diagnostics, never part of a quality score.
 """
 
 from __future__ import annotations
@@ -64,13 +70,27 @@ def aggregate_one(category_model: dict) -> dict:
     rp1_failures = []
 
     contract_failures = []
+    core_failures = []
+    enrichment_violation_videos: dict[str, int] = {}
     for v in videos:
-        # A P1 failure is a failed call or (incident-contract results) a response
-        # that failed strict contract validation; both are scored as a miss.
-        if not v["p1_raw"]["ok"] or not v["p1_raw"].get("contract_ok", True):
+        raw = v["p1_raw"]
+        # The validity that decided scoring: core_ok under core-scored-v1; older
+        # results (written before it) were scored by full contract validity.
+        scored_valid = raw.get("core_ok", raw.get("contract_ok", True))
+        # A P1 failure is a failed call or a response whose scored fields were
+        # invalid; both were scored as a miss (empty prediction).
+        if not raw["ok"] or not scored_valid:
             p1_failures.append(v["filename"])
-        if v["p1_raw"]["ok"] and not v["p1_raw"].get("contract_ok", True):
+        # Diagnostics only, outside the quality scores: responses that were not
+        # fully incident-contract valid, responses whose database-backed (core)
+        # fields were invalid, and how many videos had each unscored-field
+        # (enrichment) violation.
+        if raw["ok"] and not raw.get("contract_ok", True):
             contract_failures.append(v["filename"])
+        if raw["ok"] and not scored_valid:
+            core_failures.append(v["filename"])
+        for code in sorted({e["code"] for e in (v.get("validation") or {}).get("enrichment_violations", [])}):
+            enrichment_violation_videos[code] = enrichment_violation_videos.get(code, 0) + 1
         # RP1 is skipped, not failed, when P1 produced nothing valid to report on.
         if not v["rp1_report"]["ok"] and not v["rp1_report"].get("skipped"):
             rp1_failures.append(v["filename"])
@@ -112,6 +132,8 @@ def aggregate_one(category_model: dict) -> dict:
         "num_videos": n,
         "p1_failures": p1_failures,
         "contract_failures": contract_failures,
+        "core_failures": core_failures,
+        "enrichment_violation_videos": enrichment_violation_videos,
         "rp1_failures": rp1_failures,
         "incident_field_accuracy": {
             "type": _pct(sum(field_pass["type"]), len(field_pass["type"])),
@@ -132,6 +154,11 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
     n = sum(a["num_videos"] for a in aggregates)
     p1_failures = [f for a in aggregates for f in a["p1_failures"]]
     contract_failures = [f for a in aggregates for f in a.get("contract_failures", [])]
+    core_failures = [f for a in aggregates for f in a.get("core_failures", [])]
+    enrichment_violation_videos: dict[str, int] = {}
+    for a in aggregates:
+        for code, count in a.get("enrichment_violation_videos", {}).items():
+            enrichment_violation_videos[code] = enrichment_violation_videos.get(code, 0) + count
     rp1_failures = [f for a in aggregates for f in a["rp1_failures"]]
 
     def pool_field(name, sub=None):
@@ -149,7 +176,8 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
                 if pct is not None:
                     vals.append((pct, a["num_videos"]))
         weighted = sum(p * w for p, w in vals) / sum(w for _, w in vals) if vals else None
-        result = {"tolerance_accuracy_pct": round(weighted, 1)} if sub else round(weighted, 1) if weighted is not None else None
+        rounded = round(weighted, 1) if weighted is not None else None
+        result = {"tolerance_accuracy_pct": rounded} if sub else rounded
         if sub:
             result["mean_abs_error_s"] = _mean(errs)
         return result
@@ -187,6 +215,8 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
         "num_videos": n,
         "p1_failures": p1_failures,
         "contract_failures": contract_failures,
+        "core_failures": core_failures,
+        "enrichment_violation_videos": dict(sorted(enrichment_violation_videos.items())),
         "rp1_failures": rp1_failures,
         "incident_field_accuracy": {
             "type": pool_field("type"),
@@ -215,7 +245,12 @@ def main() -> None:
         agg = aggregate_one(data)
         by_category_and_model.setdefault(category, {})[model] = agg
         by_model_raw.setdefault(model, []).append(agg)
-        models_seen[model] = {"model_id": model, "prompt_version": data["prompt_version"], "inference_config": data["inference_config"]}
+        seen = models_seen.setdefault(model, {"model_id": model, "validation_policies": []})
+        seen.update({"prompt_version": data["prompt_version"], "inference_config": data["inference_config"]})
+        # Results written before core-scored-v1 were scored by full contract validity.
+        policy = data.get("validation_policy", "full-contract (before core-scored-v1)")
+        if policy not in seen["validation_policies"]:
+            seen["validation_policies"].append(policy)
 
     by_model = {model: pool_aggregates(aggs) for model, aggs in by_model_raw.items()}
     overall = pool_aggregates([agg for aggs in by_model_raw.values() for agg in aggs])

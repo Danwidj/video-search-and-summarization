@@ -3,7 +3,7 @@
 import type { AnalysisReport } from '@/lib/analysis/schema';
 import type { RepairOperation, RepairIneligibility } from '@/lib/contract/repair';
 import type { DerivedContractReport } from '@/lib/contract/types';
-import type { ContractViolation, ContractViolationCode } from '@/lib/contract/validate';
+import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/lib/contract/validate';
 import { PostgrestClient } from '@/lib/postgrest/client';
 
 interface VideoReference {
@@ -135,6 +135,8 @@ export interface AnalysisAttemptRecord {
     additionalInstruction: string | null;
     promptSha256: string;
     schemaSha256: string;
+    /** The video's length from its MP4 header; null when it could not be read (video-length rule not applied). */
+    videoDurationSeconds?: number | null;
   };
   /** Only the fields the gateway actually returned; the content is the original, never altered. */
   response: {
@@ -145,7 +147,20 @@ export interface AnalysisAttemptRecord {
     finishReason?: string | null;
     usage?: Record<string, unknown> | null;
   } | null;
-  validation: { firstPass: ContractViolation[] };
+  /**
+   * firstPass: every violation of the original response, each with its
+   * core-scored-v1 scope. The outcome follows core validity; fullContractValid
+   * records incident-contract validity (schema + every cross-field rule) of the
+   * original response for comparison with eval. Absent on records written
+   * before the policy existed (those required full contract validity).
+   */
+  validation: {
+    firstPass: Array<ContractViolation & { scope?: ViolationScope }>;
+    policy?: string;
+    fullContractValid?: boolean;
+    coreValid?: boolean;
+    videoBoundsChecked?: boolean;
+  };
   repair: AttemptRepair | null;
 }
 

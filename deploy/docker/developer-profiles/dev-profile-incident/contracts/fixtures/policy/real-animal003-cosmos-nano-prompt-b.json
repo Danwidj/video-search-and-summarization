@@ -1,0 +1,13 @@
+{
+  "description": "Recorded nvidia/cosmos-3-nano-reasoner response for Animal003 (timeline-wording pilot, prompt arm B; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 22.8333,
+  "content": "{\"assets\": [], \"entities\": [{\"description\": \"A young child wearing a blue shirt and light-colored shorts, running along a paved path.\", \"entity_id\": \"E1\", \"type\": \"human\"}, {\"description\": \"A young child wearing a white shirt and light-colored shorts, running along a paved path.\", \"entity_id\": \"E2\", \"type\": \"human\"}, {\"description\": \"A dark-colored dog running along the paved path.\", \"entity_id\": \"E3\", \"type\": \"animal\"}, {\"description\": \"A second dark-colored dog running along the paved path.\", \"entity_id\": \"E4\", \"type\": \"animal\"}], \"incident\": {\"confidence_score\": null, \"description\": \"A child in a white shirt runs along a paved path and is suddenly attacked by two dogs. The child falls to the ground as the dogs continue to chase them.\", \"end_timestamp\": 22, \"location\": \"Paved path in a residential area with buildings and vegetation on either side.\", \"severity_level\": 4, \"severity_reason\": \"The child is physically attacked by multiple animals, resulting in a fall and potential injury.\", \"start_timestamp\": 16, \"title\": \"Child attacked by dogs on a paved path.\",\"type\": \"animal attack\"},\"instruments\": [], \"timeline\": [{\"description\": \"A child in a blue shirt runs along the path, while another child in a white shirt runs ahead.\", \"end_seconds\": 16, \"start_seconds\": 0}, {\"description\": \"Two dogs enter the frame and begin running along the path.\", \"end_seconds\": 16, \"start_seconds\": 8}, {\"description\": \"The child in the white shirt is attacked by the dogs and falls to the ground.\", \"end_seconds\": 22, \"start_seconds\": 16}], \"uncertainties\": [\"The extent of the child's injuries is not visible in the video.\"]}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": [
+      "TIMELINE_START_OUTSIDE_WINDOW"
+    ]
+  }
+}

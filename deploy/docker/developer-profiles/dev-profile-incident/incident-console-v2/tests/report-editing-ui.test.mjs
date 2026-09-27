@@ -27,6 +27,12 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /Model classified this as/);
   assert.match(report, /model window/);
   assert.match(report, /last edited by/);
+  assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
+  assert.match(report, /outside incident window/);
+  assert.match(report, /outside the video/);
+  assert.match(report, /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/, 'seeking is blocked only for a time outside the video');
+  assert.match(report, /Validation policy/);
+  assert.match(report, /Full contract validity \(first response\)/);
 });
 
 test('library cards omit the confidence percentage when the model returned none', async () => {
