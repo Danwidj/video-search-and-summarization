@@ -54,6 +54,26 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
         confidence_score: edited.confidence,
       },
     );
+    await db.rpc('replace_incident_evidence', {
+      p_incident_id: videoId,
+      p_model_run_id: input.modelRunId,
+      p_entities: edited.persons.map((person, index) => ({
+        entity_id: `e${String(index + 1).padStart(2, '0')}`,
+        type: 'person',
+        description: [person.description, person.actions].filter(Boolean).join(' '),
+      })),
+      p_instruments: edited.instruments.map((item, index) => ({
+        instrument_id: `i${String(index + 1).padStart(2, '0')}`,
+        name: item.name,
+        description: item.description,
+        threat_level: item.threat_level,
+      })),
+      p_assets: edited.assets.map((item, index) => ({
+        asset_id: `a${String(index + 1).padStart(2, '0')}`,
+        name: item.name,
+        description: item.description,
+      })),
+    });
     await db.updateWhere('review_status', { incident_id: videoId, model_run_id: input.modelRunId }, { edited_at: new Date().toISOString() });
     return NextResponse.json({ saved: true });
   } catch (error) {
