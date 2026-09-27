@@ -18,6 +18,7 @@ the gateway; only its P1 evaluation scripts use the same upstream
 - **Upstream**: Configured via `VLM_GATEWAY_BASE_URL` (default: `https://switchyard-13doh4lsz.brevlab.com/v1`)
 - **Model selection**: Caller specifies model in request body's `model` field; gateway is model-agnostic
 - **No streaming** in this first version (returns full response verbatim)
+- **Upstream timeout**: `VLM_GATEWAY_TIMEOUT_SECONDS` (default `330`). It must exceed the slowest per-model timeout the console uses (`timeout_seconds` in [`../contracts/inference.json`](../contracts/inference.json)), because reasoning VLMs with a 16k-token budget can run for minutes
 
 ## Available Models (upstream)
 

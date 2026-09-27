@@ -1,0 +1,56 @@
+{
+  "incident": {
+    "type": "assault",
+    "title": "Person strikes another person with a bottle",
+    "start_timestamp": 3,
+    "end_timestamp": 11,
+    "description": "E1 approaches E2 and strikes E2 with a bottle.",
+    "severity_level": 3,
+    "severity_reason": "Repeated strikes with an improvised weapon.",
+    "confidence_score": null,
+    "location": "shop interior near the counter"
+  },
+  "entities": [
+    {
+      "entity_id": "E1",
+      "type": "human",
+      "description": "Person in a dark jacket attacking."
+    },
+    {
+      "entity_id": "E2",
+      "type": "human",
+      "description": "Person at the counter being struck."
+    }
+  ],
+  "instruments": [
+    {
+      "instrument_id": "I1",
+      "entity_id": "E1",
+      "name": "bottle",
+      "description": "Glass bottle.",
+      "threat_level": 3
+    }
+  ],
+  "assets": [
+    {
+      "asset_id": "A1",
+      "name": "counter",
+      "description": "Shop counter E2 stands at."
+    }
+  ],
+  "timeline": [
+    {
+      "start_seconds": 3,
+      "end_seconds": 5,
+      "description": "E1 approaches E2."
+    },
+    {
+      "start_seconds": 5,
+      "end_seconds": 11,
+      "description": "E1 strikes E2 with I1."
+    }
+  ],
+  "uncertainties": [
+    "It is unclear whether E2 was injured."
+  ]
+}

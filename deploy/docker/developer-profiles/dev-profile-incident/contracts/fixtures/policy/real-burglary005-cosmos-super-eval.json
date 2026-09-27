@@ -1,0 +1,13 @@
+{
+  "description": "Recorded nvidia/cosmos-3-super-reasoner response for Burglary005 from the incident-contract-v2 eval smoke run.",
+  "video_duration_seconds": 258.077,
+  "content": "{\n  \"assets\": [\n    {\n      \"asset_id\": \"A1\",\n      \"description\": \"A black bag lying on the ground near the door.\",\n      \"name\": \"bag\"\n    }\n  ],\n  \"entities\": [\n    {\n      \"description\": \"A person wearing a white shirt and dark pants, with long hair.\",\n      \"entity_id\": \"E1\",\n      \"type\": \"human\"\n    },\n    {\n      \"description\": \"A person wearing a red cap and light-colored clothing.\",\n      \"entity_id\": \"E2\",\n      \"type\": \"human\"\n    }\n  ],\n  \"incident\": {\n    \"confidence_score\": 0.9,\n    \"description\": \"A person in a white shirt approaches a door, interacts with it, and then a second person in a red cap appears and approaches the first person.\",\n    \"end_timestamp\": 170,\n    \"location\": \"Front porch area of a house with a brick wall and a door.\",\n    \"severity_level\": 2,\n    \"severity_reason\": \"The interaction between the two individuals involves physical proximity and potential confrontation, but no visible injury or major damage is observed.\",\n    \"start_timestamp\": 120,\n    \"title\": \"Two individuals interact near a front door\"\n  ,\n  \"type\": \"assault\"\n},\n  \"instruments\": [],\n  \"timeline\": [\n    {\n      \"description\": \"A person in a white shirt approaches the door and interacts with it.\",\n      \"end_seconds\": 120,\n      \"start_seconds\": 0\n    },\n    {\n      \"description\": \"A second person in a red cap appears and approaches the first person.\",\n      \"end_seconds\": 170,\n      \"start_seconds\": 120\n    }\n  ],\n  \"uncertainties\": [\n    \"The exact nature of the interaction between the two individuals is unclear.\",\n    \"The reason for the second person's approach is not specified.\"\n  ]\n}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": [
+      "TIMELINE_START_OUTSIDE_WINDOW"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "description": "Non-sequential entity IDs (core) plus a timeline outside the window (enrichment): core fails; eval never repairs.",
+  "video_duration_seconds": null,
+  "content": "{\"incident\": {\"type\": \"road accident\", \"title\": \"Vehicle collides with a barrier\", \"start_timestamp\": 5, \"end_timestamp\": 8, \"description\": \"A vehicle collides with a roadside barrier.\", \"severity_level\": 2, \"severity_reason\": \"Minor visible damage.\", \"confidence_score\": 0.42, \"location\": null}, \"entities\": [{\"entity_id\": \"E2\", \"type\": \"human\", \"description\": \"A driver.\"}], \"instruments\": [], \"assets\": [], \"timeline\": [{\"start_seconds\": 0, \"end_seconds\": null, \"description\": \"E2 approaches.\"}], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": false,
+    "core_codes": [
+      "ID_NOT_SEQUENTIAL_ENTITY"
+    ],
+    "enrichment_codes": [
+      "TIMELINE_START_OUTSIDE_WINDOW"
+    ]
+  }
+}

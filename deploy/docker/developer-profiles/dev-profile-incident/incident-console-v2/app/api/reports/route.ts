@@ -21,6 +21,9 @@ interface RpcResult {
   incidentTypes?: string[];
 }
 
+const SCOPES = new Set(['all', 'official']);
+const MATCHES = new Set(['contains', 'exact']);
+const ENTITY_TYPES = new Set(['human', 'animal', 'unknown']);
 const MAX_EVIDENCE_FILTERS = 10;
 const MAX_EVIDENCE_FILTER_LENGTH = 100;
 
@@ -50,7 +53,13 @@ export async function GET(request: Request) {
     const severity = params.get('severity') || 'all';
     const dayRaw = params.get('day');
     const dayOfWeek = dayRaw === null ? null : Number(dayRaw);
+    const scope = params.get('scope') || 'all';
+    const match = params.get('match') || 'contains';
+    const entityTypes = [...new Set(params.getAll('entityType').map((value) => value.trim().toLowerCase()).filter(Boolean))];
     if (!SORTS.has(sort)) return NextResponse.json({ error: 'Invalid report sort' }, { status: 400 });
+    if (!SCOPES.has(scope)) return NextResponse.json({ error: 'Invalid report scope' }, { status: 400 });
+    if (!MATCHES.has(match)) return NextResponse.json({ error: 'Invalid evidence match' }, { status: 400 });
+    if (entityTypes.some((value) => !ENTITY_TYPES.has(value))) return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
     if (!SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid report severity' }, { status: 400 });
     if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
 
@@ -71,7 +80,13 @@ export async function GET(request: Request) {
       p_assets: evidenceFilters(params, 'asset'),
       p_day_of_week: dayOfWeek,
       p_sort: sort,
+      p_scope: scope,
+      p_entity_types: entityTypes.length ? entityTypes : null,
+      p_evidence_match: match,
     }) as RpcResult;
+    // The summary RPC returns each report's analysis outcome (from the run's
+    // immutable notes, e.g. IDs repaired) and whether it is the video's
+    // official report.
     const summaries = Array.isArray(result?.reports) ? result.reports : [];
     const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
       if (!isValidR2Key(report.r2Key)) return report;

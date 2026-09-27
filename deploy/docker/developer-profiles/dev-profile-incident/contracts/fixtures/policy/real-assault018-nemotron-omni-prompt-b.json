@@ -1,0 +1,15 @@
+{
+  "description": "Recorded nvidia/nemotron-3-nano-omni-30b-a3b-reasoning response for Assault018 (timeline-wording pilot, prompt arm B; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 12.539,
+  "content": "{\"assets\":[],\"entities\":[{\"description\":\"Assailant in dark clothing who initiates the physical attack and subsequently flees.\", \"entity_id\":\"E1\", \"type\":\"human\"},{\"description\":\"Victim in light top and dark pants who falls to the ground and remains motionless.\", \"entity_id\":\"E2\", \"type\":\"human\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A pedestrian walking on a sidewalk is attacked from behind by an individual in dark clothing, causing them to fall to the ground. The assailant then flees the scene on foot while the victim remains motionless.\", \"end_timestamp\":36,\"location\":\"Sidewalk adjacent to a street with a white van and blue car\",\"severity_level\":4,\"severity_reason\":\"The victim is left lying motionless on the ground after the attack, indicating severe harm, while the perpetrator flees the immediate area.\",\"start_timestamp\":29,\"title\":\"Assault on pedestrian\"\t,\"type\":\"assault\"},\"instruments\":[],\"timeline\":[{\"description\":\"Assailant strikes victim causing them to fall to the ground.\", \"end_seconds\":31,\"start_seconds\":29},{\"description\":\"Assailant stands up and runs away from the scene.\", \"end_seconds\":36,\"start_seconds\":33}],\"uncertainties\":[\"Exact nature of injuries cannot be determined visually.\", \"Assailant identity is not visible.\"]}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": false,
+    "core_codes": [
+      "WINDOW_BEYOND_VIDEO"
+    ],
+    "enrichment_codes": [
+      "TIMELINE_BEYOND_VIDEO"
+    ]
+  }
+}

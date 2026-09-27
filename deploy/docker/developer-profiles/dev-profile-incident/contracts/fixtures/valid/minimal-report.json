@@ -1,0 +1,24 @@
+{
+  "incident": {
+    "type": "road accident",
+    "title": "Vehicle collides with a barrier",
+    "start_timestamp": 0,
+    "end_timestamp": 0,
+    "description": "A vehicle collides with a roadside barrier.",
+    "severity_level": 2,
+    "severity_reason": "Minor visible damage.",
+    "confidence_score": 0.42,
+    "location": null
+  },
+  "entities": [],
+  "instruments": [],
+  "assets": [],
+  "timeline": [
+    {
+      "start_seconds": 0,
+      "end_seconds": null,
+      "description": "The vehicle hits the barrier."
+    }
+  ],
+  "uncertainties": []
+}

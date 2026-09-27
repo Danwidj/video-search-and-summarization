@@ -20,3 +20,13 @@ test('dashboard rejects invalid heatmap coordinates before Supabase', async () =
   const response = await GET(new Request('http://localhost/api/dashboard?hour=24'));
   assert.equal(response.status, 400); assert.equal(called, false);
 });
+
+test('dashboard period bounds are read as UTC whatever the server time zone', async () => {
+  const { GET: dashboard } = await import('../app/api/dashboard/route.ts');
+  let body;
+  globalThis.fetch = async (_url, init) => { body = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ total: 0 })); };
+  const response = await dashboard(new Request('http://localhost/api/dashboard?days=30&after=2026-08-28T11:00:00.000&before=2026-09-27T11:00:00.000'));
+  assert.equal(response.status, 200);
+  assert.equal(body.p_period_start, '2026-08-28T11:00:00.000');
+  assert.equal(body.p_period_end, '2026-09-27T11:00:00.000');
+});

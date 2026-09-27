@@ -5,19 +5,96 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const components = new URL('../components/', import.meta.url);
-const apiRoute = new URL('../app/api/reports/[videoId]/route.ts', import.meta.url);
 
-test('report editing is embedded beside the original AI summary', async () => {
+test('report page separates structured fields, read-only model output and run details', async () => {
   const report = await readFile(new URL('incident-report.tsx', components), 'utf8');
-  const tools = await readFile(new URL('advanced-report-tools.tsx', components), 'utf8');
-  const route = await readFile(apiRoute, 'utf8');
 
-  assert.match(report, /'Edit report'/);
-  assert.match(report, /Original AI report/);
-  assert.match(report, /Your editable report/);
-  assert.match(report, /Timeline/);
-  assert.match(report, /People and entities/);
-  assert.doesNotMatch(report, /Start review/);
-  assert.doesNotMatch(tools, /Edit structured report/);
-  assert.match(route, /editedReport/);
+  assert.match(report, /Model severity rationale/);
+  assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
+  assert.match(report, /Model event timeline/);
+  assert.match(report, /Model-reported uncertainties/);
+  assert.match(report, /Original model output · read-only/);
+  assert.match(report, /Run &amp; model output details/);
+  assert.match(report, /Additional instruction/);
+  assert.match(report, /Prompt SHA-256/);
+  assert.match(report, /Contract repair applied \(IDs only\)/);
+  assert.match(report, /Repair operations/);
+  assert.match(report, /First-pass violations/);
+  assert.match(report, /Valid after structural repair/);
+  assert.match(report, /confidenceScore !== null/, 'no confidence percentage when the model returned none');
+  assert.doesNotMatch(report, /<input|<textarea/, 'the report view itself has no inputs; editing happens in the structured editor');
+  assert.match(report, /StructuredEditor/);
+  assert.match(report, /Model classified this as/);
+  assert.match(report, /model window/);
+  assert.match(report, /last edited by/);
+  assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
+  assert.match(report, /outside incident window/);
+  assert.match(report, /outside the video/);
+  assert.match(report, /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/, 'seeking is blocked only for a time outside the video');
+  assert.match(report, /Validation policy/);
+  assert.match(report, /Full contract validity \(first response\)/);
+});
+
+test('library cards omit the confidence percentage when the model returned none', async () => {
+  const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
+  assert.match(library, /item\.confidence !== null && <span/);
+});
+
+test('browser components import only browser-safe report modules', async () => {
+  const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
+  const clientOnly = await readFile(new URL('../lib/reports/report-view.ts', import.meta.url), 'utf8');
+  for (const name of ['incident-report.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'ground-truth-screen.tsx', 'videos-screen.tsx', 'report-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
+    const source = await readFile(new URL(name, components), 'utf8');
+    for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
+  }
+  for (const line of clientOnly.split('\n').filter((l) => l.startsWith('import '))) {
+    assert.match(line, /^import type /, `lib/reports/report-view.ts may only import types: ${line}`);
+  }
+});
+
+test('the structured editor edits Class A only and shows the original model output read-only', async () => {
+  const editor = await readFile(new URL('structured-editor.tsx', components), 'utf8');
+  assert.match(editor, /Original model output · read-only/);
+  assert.match(editor, /Model severity rationale/);
+  for (const classB of ['severity_reason', 'title:', 'location:', 'uncertainties:', 'timeline:']) {
+    assert.ok(!new RegExp(`setIncident\\(\\{ ${classB.replace(':', '')}`).test(editor), `${classB} must not be editable`);
+  }
+  assert.match(editor, /editFromDraft/);
+});
+
+test('the report page offers re-analysis and history; ground truth lives on its own page, never pre-filled', async () => {
+  const tools = await readFile(new URL('advanced-report-tools.tsx', components), 'utf8');
+  assert.match(tools, /ReanalysisCard/);
+  assert.match(tools, /RunHistoryList/);
+  assert.doesNotMatch(tools, /ground-truth`, \{ method: 'PUT'/, 'no ground-truth editor on the report page');
+  const groundTruth = await readFile(new URL('ground-truth-screen.tsx', components), 'utf8');
+  assert.match(groundTruth, /never pre-filled/);
+  assert.doesNotMatch(groundTruth, /structured\.incident\.(type|description|severityLevel) \|\|/);
+  const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
+  assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
+  assert.match(library, /library-repair-marker/);
+  const history = await readFile(new URL('run-history.tsx', components), 'utf8');
+  assert.match(history, /no report/);
+  assert.match(history, /Contract violations/);
+});
+
+test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
+  for (const name of ['incident-report.tsx', 'run-comparison.tsx', 'reports-library.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'ground-truth-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx']) {
+    const source = await readFile(new URL(name, components), 'utf8');
+    assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
+  }
+});
+
+test('the new-analysis model selector shows full model names and never clips them', async () => {
+  const workspace = await readFile(new URL('analysis-workspace.tsx', components), 'utf8');
+  const select = /<select className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
+  assert.ok(select, 'the model selector exists');
+  const classes = select[1].split(/\s+/);
+  for (const needed of ['sm:w-auto', 'sm:min-w-[19rem]', 'sm:shrink-0']) assert.ok(classes.includes(needed), `select has ${needed}`);
+  assert.ok(!classes.some((name) => /max-w-/.test(name)), 'no max width that would clip a model name');
+  assert.match(workspace, /<option key=\{option\.id\} value=\{option\.id\}>\{option\.label\}<\/option>/, 'options show the full friendly label and keep the model id as value');
+  assert.match(workspace, /sm:flex-wrap/, 'on narrow rows the note wraps instead of squeezing the selector');
+
+  const inference = JSON.parse(await readFile(new URL('../../contracts/inference.json', import.meta.url), 'utf8'));
+  assert.deepEqual(inference.models.map((model) => model.label), ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning']);
 });

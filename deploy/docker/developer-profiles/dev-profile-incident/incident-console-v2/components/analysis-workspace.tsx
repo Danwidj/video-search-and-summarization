@@ -5,8 +5,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { IncidentReport } from '@/components/incident-report';
-import type { AnalysisReport } from '@/lib/analysis/schema';
 import { isValidR2Key } from '@/lib/r2/key';
 import { thumbnailCaptureTime } from '@/lib/reports/thumbnail';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';
@@ -19,6 +17,11 @@ interface UploadInitialization {
 
 interface ApiError {
   error?: string;
+}
+
+interface ModelOption {
+  id: string;
+  label: string;
 }
 
 const stageLabels: Array<{ key: StageKey; label: string }> = [
@@ -144,8 +147,24 @@ export function AnalysisWorkspace() {
   const [stage, setStage] = useState<StageKey>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<AnalysisReport | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [model, setModel] = useState('');
+  const [modelSelection, setModelSelection] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/models', { cache: 'no-store' })
+      .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string; modelSelection?: boolean }>)
+      .then((payload) => {
+        if (!active) return;
+        setModels(payload.models || []);
+        setModel(payload.defaultModel || payload.models?.[0]?.id || '');
+        setModelSelection(payload.modelSelection !== false);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!file) {
@@ -170,7 +189,6 @@ export function AnalysisWorkspace() {
       return;
     }
     setFile(selected);
-    setReport(null);
     setError(null);
     setStage('idle');
     setUploadProgress(0);
@@ -181,7 +199,6 @@ export function AnalysisWorkspace() {
     const controller = new AbortController();
     abortRef.current = controller;
     setError(null);
-    setReport(null);
     setUploadProgress(0);
 
     try {
@@ -222,14 +239,13 @@ export function AnalysisWorkspace() {
       await apiJson('/api/uploads/complete', { sensorId: uploaded.sensorId, filename });
 
       setStage('analyzing');
-      const result = await apiJson<{ report: AnalysisReport }>('/api/analysis', {
+      const result = await apiJson<{ report: { videoId: string; modelRunId: string } }>('/api/analysis', {
         sensorId: uploaded.sensorId,
         filepath: filePath,
         filename,
+        ...(modelSelection && model ? { model } : {}),
       });
       setStage('saving');
-      setReport(result.report);
-      window.localStorage.setItem('incident-console-v2:last-report', JSON.stringify(result.report));
       setStage('complete');
       router.push(`/reports/${encodeURIComponent(result.report.videoId)}?run=${encodeURIComponent(result.report.modelRunId)}`);
     } catch (caught) {
@@ -240,19 +256,6 @@ export function AnalysisWorkspace() {
       abortRef.current = null;
     }
   }
-
-  function reset() {
-    abortRef.current?.abort();
-    setFile(null);
-    setReport(null);
-    setStage('idle');
-    setError(null);
-    setUploadProgress(0);
-    window.localStorage.removeItem('incident-console-v2:last-report');
-    if (inputRef.current) inputRef.current.value = '';
-  }
-
-  if (report) return <IncidentReport onNewAnalysis={reset} report={report} />;
 
   const activeIndex = stageOrder[stage];
   const busy = ['uploading', 'preparing', 'analyzing', 'saving'].includes(stage);
@@ -266,6 +269,19 @@ export function AnalysisWorkspace() {
         ref={inputRef}
         type="file"
       />
+
+      {modelSelection && models.length > 0 && (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
+          {/* The select keeps its natural width (the longest model name) and never shrinks; the note wraps below it instead. */}
+          <label className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3" htmlFor="analysis-model">
+            <span className="whitespace-nowrap">Vision-language model</span>
+            <select className="control normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" disabled={busy} id="analysis-model" onChange={(event) => setModel(event.target.value)} value={model}>
+              {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">Choose before selecting a video. Analysis can take several minutes.</p>
+        </div>
+      )}
 
       {file && previewUrl ? (
         <div className="overflow-hidden rounded-[1.45rem] bg-ink text-white">

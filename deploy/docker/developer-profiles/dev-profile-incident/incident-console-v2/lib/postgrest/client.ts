@@ -59,6 +59,46 @@ export class PostgrestClient {
     });
   }
 
+  /** Insert, leaving an existing row with the same key untouched (never updates it). */
+  async insertIfAbsent(table: string, row: Record<string, unknown>, onConflict: string) {
+    return this.request(`/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify(row),
+    });
+  }
+
+  /** One page of rows plus the exact total, with raw PostgREST query parameters (select, filters, order). */
+  async selectPage(table: string, params: Record<string, string>, limit: number, offset: number): Promise<{ rows: Array<Record<string, unknown>>; total: number }> {
+    const query = new URLSearchParams({ ...params, limit: String(limit), offset: String(offset) });
+    let response: Response;
+    try {
+      response = await fetch(`${this.restUrl}/${table}?${query}`, { headers: { ...this.headers(), Prefer: 'count=exact' }, cache: 'no-store' });
+    } catch (error) {
+      throw new Error(`Could not reach PostgREST: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (!response.ok) throw new Error(`PostgREST returned HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    const rows = (await response.json()) as Array<Record<string, unknown>>;
+    const total = Number((response.headers.get('content-range') || '').split('/')[1]);
+    return { rows: Array.isArray(rows) ? rows : [], total: Number.isFinite(total) ? total : rows.length };
+  }
+
+  /** Rows whose `column` is one of `values` (PostgREST in-filter). */
+  async selectIn(table: string, column: string, values: string[], select = '*'): Promise<Array<Record<string, unknown>>> {
+    const list = values.map((value) => `"${value.replace(/"/g, '\\"')}"`).join(',');
+    const query = new URLSearchParams({ select, [column]: `in.(${list})` });
+    const result = await this.request(`/${table}?${query}`);
+    return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+  }
+
+  /** Rows whose text column contains `fragment` (a candidate pre-filter only; callers must confirm matches). */
+  async selectContaining(table: string, column: string, fragment: string, select = '*'): Promise<Array<Record<string, unknown>>> {
+    const escaped = fragment.replace(/[\\*%_]/g, (character) => `\\${character}`);
+    const query = new URLSearchParams({ select, [column]: `like.*${escaped}*` });
+    const result = await this.request(`/${table}?${query}`);
+    return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+  }
+
   async deleteWhere(table: string, filters: Record<string, string>): Promise<void> {
     const query = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));

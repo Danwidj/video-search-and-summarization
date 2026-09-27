@@ -1,0 +1,11 @@
+{
+  "description": "Recorded nvidia/nemotron-3-nano-omni-30b-a3b-reasoning response for Animal003 (timeline-wording pilot, prompt arm B; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 22.8333,
+  "content": "{\"assets\":[],\"entities\":[{\"description\":\"Child in white shirt running and being attacked\",\"entity_id\":\"E1\",\"type\":\"human\"},{\"description\":\"Dogs chasing and attacking the child\",\"entity_id\":\"E2\",\"type\":\"animal\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A child running on a paved road is chased by multiple dogs. One dog bites the child's leg, causing them to fall. The child recovers and runs away while the dogs pursue.\",\"end_timestamp\":23,\"location\":\"Paved road in a residential area with houses and debris\",\"severity_level\":3,\"severity_reason\":\"The child is visibly bitten and falls to the ground, indicating moderate physical harm.\",\"start_timestamp\":16,\"title\":\"Child attacked by dogs on road\" ,\"type\":\"animal attack\"},\"instruments\":[],\"timeline\":[{\"description\":\"Dogs chase and attack the child\",\"end_seconds\":19,\"start_seconds\":16},{\"description\":\"Child falls to the ground and gets up\",\"end_seconds\":21,\"start_seconds\":19},{\"description\":\"Child runs away from the dogs\",\"end_seconds\":23,\"start_seconds\":21}],\"uncertainties\":[\"Exact severity of injuries cannot be determined visually.\",\"Number of dogs involved is difficult to count precisely but appears to be 2-3.\"]}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}

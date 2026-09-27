@@ -109,7 +109,8 @@ export interface ReportLibraryItem {
   incident_type: string;
   description: string;
   severity: number;
-  confidence: number;
+  /** null when the model reported no confidence (incident-contract-v2 allows null). */
+  confidence: number | null;
   generatedAt: string;
   uploadedAt?: string;
   model: string;
@@ -121,4 +122,8 @@ export interface ReportLibraryItem {
   thumbnailUrl?: string;
   r2Key?: string;
   sensorId?: string;
+  /** How the report's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */
+  outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy';
+  /** The video's explicitly selected official report (D6). */
+  isOfficial?: boolean;
 }

@@ -1,0 +1,11 @@
+{
+  "description": "Recorded nvidia/nemotron-3-nano-omni-30b-a3b-reasoning response for Assault018 (timeline-wording pilot, prompt arm A; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 12.539,
+  "content": "{\"assets\":[{\"asset_id\":\"A1\",\"description\":\"Parked white van on the street adjacent to the sidewalk where the incident occurs.\",\"name\":\"white van\"},{\"asset_id\":\"A2\",\"description\":\"Parked blue car on the street adjacent to the sidewalk.\",\"name\":\"blue car\"},{\"asset_id\":\"A3\",\"description\":\"White bag lying on the ground near the victim after the fall.\",\"name\":\"white bag\"}],\"entities\":[{\"description\":\"Victim walking on sidewalk, then attacked and falling to the ground.\",\"entity_id\":\"E1\",\"type\":\"human\"},{\"description\":\"Aggressor approaching victim, striking them, and fleeing the scene.\",\"entity_id\":\"E2\",\"type\":\"human\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A person walking on a sidewalk is attacked by another individual who strikes them, causing them to fall. The attacker then flees the scene. The victim remains on the ground.\",\"end_timestamp\":5,\"location\":\"Sidewalk adjacent to a street with parked vehicles (white van, blue car).\",\"severity_level\":3,\"severity_reason\":\"Visible physical struggle resulting in one person falling to the ground, followed by the aggressor fleeing. This indicates moderate harm.\",\"start_timestamp\":2,\"title\":\"Assault on sidewalk\"\t,\"type\":\"assault\"},\"instruments\":[],\"timeline\":[{\"description\":\"Aggressor approaches and strikes the victim.\",\"end_seconds\":3,\"start_seconds\":2},{\"description\":\"Victim falls to the ground.\",\"end_seconds\":4,\"start_seconds\":3},{\"description\":\"Aggressor flees the scene on foot.\",\"end_seconds\":5,\"start_seconds\":4}],\"uncertainties\":[\"Exact nature of any potential instrument used is unclear due to video quality.\",\"Extent of injuries to the victim cannot be visually established.\"]}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}

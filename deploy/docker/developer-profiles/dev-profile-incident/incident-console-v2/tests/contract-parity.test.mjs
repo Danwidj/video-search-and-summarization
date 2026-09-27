@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { incidentAnalysisSchema } from '../lib/analysis/schema.ts';
-import { INCIDENT_ANALYSIS_PROMPT, INCIDENT_PROMPT_VERSION } from '../lib/analysis/prompt.ts';
 
+// Agent-mode parity only: vss-agent still returns this legacy IncidentReport
+// shape (services/agent tests read the same JSON file). Gateway analysis uses
+// the shared incident-contract-v2 in ../contracts (tests/contract-validate.test.mjs).
 const contractPath = join(process.cwd(), 'lib/analysis/incident-report-contract.json');
 const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
 
@@ -61,39 +63,7 @@ test('contract-parity: incidentAnalysisSchema validates contract default instanc
   assert.equal(parsed.location, '');
 });
 
-function promptRuleFields(prompt) {
-  const rules = prompt.split('Rules:\n')[1].split('\n\n')[0];
-  return rules.split('\n').filter((line) => line.startsWith('- ')).map((line) => line.slice(2).split(/[\s:]/)[0]);
-}
 
-function promptShape(prompt) {
-  return JSON.parse(prompt.slice(prompt.indexOf('Use exactly this shape:\n') + 'Use exactly this shape:\n'.length));
-}
-
-test('contract-parity: INCIDENT_ANALYSIS_PROMPT has one rule per contract field', () => {
-  assert.equal(INCIDENT_PROMPT_VERSION, 'incident-v2-snake');
-  const fields = promptRuleFields(INCIDENT_ANALYSIS_PROMPT);
-  assert.equal(new Set(fields).size, fields.length);
-  assert.deepEqual([...fields].sort(), Object.keys(contract.fields).sort());
-});
-
-test('contract-parity: INCIDENT_ANALYSIS_PROMPT response shape matches the contract and schema', () => {
-  const shape = promptShape(INCIDENT_ANALYSIS_PROMPT);
-  assert.deepEqual(Object.keys(shape).sort(), Object.keys(contract.fields).sort());
-  const parsed = incidentAnalysisSchema.parse(shape);
-  assert.deepEqual(Object.keys(parsed).sort(), Object.keys(contract.fields).sort());
-  assert.deepEqual(Object.keys(parsed.timeline[0]).sort(), Object.keys(contract.fields.timeline.items.properties).sort());
-  assert.deepEqual(Object.keys(parsed.persons[0]).sort(), Object.keys(contract.fields.persons.items.properties).sort());
-  assert.deepEqual(Object.keys(parsed.instruments[0]).sort(), Object.keys(contract.fields.instruments.items.properties).sort());
-  assert.deepEqual(Object.keys(parsed.assets[0]).sort(), Object.keys(contract.fields.assets.items.properties).sort());
-});
-
-test('contract-parity: INCIDENT_ANALYSIS_PROMPT example placeholders do not suggest fake 0 or 0:00', () => {
-  const shape = promptShape(INCIDENT_ANALYSIS_PROMPT);
-  assert.equal(shape.duration_seconds, null, 'example duration_seconds should be null, not 0');
-  assert.equal(shape.incident_start, null, 'example incident_start should be null, not 0:00');
-  assert.equal(shape.incident_end, null, 'example incident_end should be null, not 0:00');
-});
 
 test('contract-parity: full report payload parses into snake_case schema', () => {
   const sampleReport = {

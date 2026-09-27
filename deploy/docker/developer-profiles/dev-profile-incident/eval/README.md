@@ -54,7 +54,16 @@ P1 follows the shared [incident contract](../contracts/README.md) (`incident-con
 - the fixed configuration `temperature 0`, `max_tokens 16384` and `media_io_kwargs {"video": {"num_frames": 64}}`, identical for every model (`eval_vlm_client.P1_INFERENCE_CONFIG`);
 - **no few-shot examples.** The earlier category-specific block leaked the label.
 
-The response is parsed strictly by [`contract.py`](contract.py): the raw content must be one JSON document, pass the schema and pass the cross-field rules. `incident.duration` is then derived as `end - start`. A failure is recorded in `p1_raw.contract_ok` / `contract_error`, scored as an empty prediction (a miss) and listed under `contract_failures` in the aggregate. RP1 is skipped for that video. Nothing is repaired or extracted from surrounding text.
+The response is judged by [`contract.py`](contract.py) `evaluate_policy` under validation policy **`core-scored-v1`** ([`../contracts/README.md`](../contracts/README.md)). The raw content must be one JSON document and pass the schema; nothing is repaired or extracted from surrounding text. `incident.duration` is derived as `end - start`.
+
+- **Scored fields:** only the database-backed fields (incident type, window, description, severity; entities, instruments, assets). Title, severity rationale, location, timeline and uncertainties are never scored.
+- **`p1_raw.contract_ok` / `contract_error`:** full incident-contract validity, meaning unchanged: schema plus every cross-field rule.
+- **`p1_raw.core_ok`:** decides scoring. The prediction is scored when its database-backed fields are valid; otherwise it is an empty prediction (a miss). A failure confined to the unscored fields, e.g. a timeline outside the incident window, never empties it.
+- **Video length:** read from each clip's MP4 header ([`video_duration.py`](video_duration.py), ranged R2 reads). An incident window outside the video is a core failure. An unreadable length means the rule is not applied (`video_bounds_checked: false`).
+- **`validation` block, per video:** contract version, policy, both validities, core and enrichment violations (with codes), video length.
+- **Aggregate:** `p1_failures` are the misses. `contract_failures`, `core_failures` and `enrichment_violation_videos` are diagnostics, outside every quality score.
+- **RP1:** still runs only on fully contract-valid responses.
+- **Files:** each run also writes a never-overwritten copy of every results file under `eval_data/results/runs/<run start>/`, so the raw responses, versions, diagnostics and inference settings of past runs stay available for re-scoring without another VLM call. Results written before `core-scored-v1` were scored by full contract validity; the summary lists each model's `validation_policies`.
 
 The split manifests are unchanged, so results stay comparable video-for-video with the earlier run. The 5 former few-shot demonstration videos per category are still excluded from evaluation.
 

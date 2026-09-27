@@ -14,13 +14,45 @@ the same video, a parallel ground-truth evaluation structure, and human review w
 
 ### Report-library summary RPC
 
-`list_incident_report_summaries` is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`. It joins the existing `reports`, `incidents`, `model_runs`, `videos`, and `review_status` rows, applies library search/filter/sort criteria in Postgres, and returns a JSON object containing a bounded page, the filtered total, and the global incident-type list. Search is a literal, case-insensitive substring match, including for `%`, `_`, and `\`. The service-role-only `try_parse_jsonb` helper safely extracts the optional title from legacy or current `model_runs.notes`; malformed legacy notes fall back to an incident-type title. `p_entities`, `p_instruments`, and `p_assets` apply independent case-insensitive substring filters through correlated `EXISTS` clauses keyed by both `incident_id` and `model_run_id`; categories combine with AND and repeated terms within one category combine with OR. Weekday and severity-band predicates are also applied in this RPC. Neither function creates a table or stores duplicate summary data.
+`list_incident_report_summaries` (latest: migration `20260927180000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
+- **Inputs:** it joins `reports`, `incidents`, `model_runs`, `videos` and `review_status` and applies search, filter, sort and pagination in Postgres. Beyond the earlier type, severity, status, date/time/weekday and evidence-substring filters it takes:
+  - `p_scope`: `'all'` (default: every successful report) or `'official'` (only each video's selected official report);
+  - `p_entity_types`: exact canonical entity type;
+  - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality).
+- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display.
+- **Per-report outputs:**
+  - the analysis `outcome`, from `run_outcome(notes)`;
+  - `isOfficial`;
+  - a nullable `confidence`;
+  - the contract-v2 title (`incidentConsoleV2.report.incident.title`), falling back to the legacy title paths.
+- **What it never returns:** notes, evidence arrays, signed URLs or video content. The normal library API fixes `page_size` at 6; `all=true` may request up to 1,000 lightweight summaries.
 
-The normal library API fixes `page_size` at 6. An explicit server-side `all=true` compatibility call may request up to 1,000 lightweight summaries for the dashboard and per-video run tools. The RPC itself returns no `model_runs.notes`, evidence arrays, signed URL, or video content. For the normal six-item response, Next.js derives and signs each small R2 thumbnail key; `all=true` does not sign thumbnails. The individual report route fetches the complete selected report and signs its video object.
+Helper functions (service role, `20260927180000`):
+- `canonical_incident_type`, `canonical_entity_type` (`person` → `human`) and `normalized_name` (lower-case, trimmed, single spaces);
+- `run_outcome(notes)`: `valid_first_pass`, `valid_after_structural_repair`, `contract_failed`, `request_failed` or `legacy`.
 
-`apply_incident_report_patch` is a service-role-only, `SECURITY INVOKER` RPC used when a reviewer saves an edited report. It locks the model run and incident, merges only changed top-level fields into the current report, and atomically updates `model_runs.notes`, the matching incident columns, only the evidence categories included in the patch, and `review_status.edited_at`. An exception rolls the entire edit back. Unchanged fields and evidence categories remain untouched; the original AI report remains preserved inside `model_runs.notes.incidentConsoleV2.report`. Migration `20260927140000_atomic_report_edits_and_exact_dashboard_links.sql` adds this RPC and weekday filtering; it was applied to the shared database on 2026-09-27 and PostgREST's schema cache was reloaded.
+**Reviewer edits.** `apply_structured_report_edit(p_incident_id, p_model_run_id, p_edit, p_edited_by)` (`20260927160000`) replaces one run's structured projection in a single transaction:
+- incident type, integer-second start/end, recomputed duration, description and severity level;
+- that run's `entities` / `instruments` / `assets`;
+- `review_status.edited_by/edited_at`.
 
-`get_incident_dashboard` is a service-role-only, `SECURITY INVOKER`, `STABLE` aggregation RPC. It accepts a generated-time period plus optional incident-type, severity-band, weekday, and hour cross-filters. It returns counts and bounded JSON aggregates for daily trends, type/evidence drill-downs, severity, review status, confidence buckets, weekday/hour activity, global entity and asset leaders, and the equivalent previous-period KPI counts. It returns no report notes, video paths, or evidence images.
+It re-checks the contract's types, ranges, sequential IDs and holder references, and **never touches `model_runs.notes`**. The earlier `apply_incident_report_patch` (which wrote an `editedReport` copy into notes) remains in the database but is no longer called.
+
+**Official report selection (D6).** `select_official_report(p_video_id, p_model_run_id, p_selected_by)` and `clear_official_report(p_video_id, p_cleared_by)` (`20260927170000`):
+- only a successful analysis of the same video with a `reports` row can be selected;
+- analysis never selects;
+- selection is independent of review status.
+
+**Dashboard.** `get_incident_dashboard` (latest: `20260927180000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (UTC). It returns:
+- `total`;
+- all-time `videos` counts: `uploaded`, `withOfficial`, `awaitingSelection` (has reports, none official) and `withoutReport` (no incident);
+- severity, review funnel, types with per-type evidence, daily trend and heatmap;
+- `entityTypes`, `topInstruments` and `topAssets` (by normalised name, counted per distinct incident);
+- `threatLevels`;
+- a confidence histogram excluding nulls, plus `confidenceNotProvided`;
+- `modelCoverage`: per model, attempts by outcome, including failed attempts in the period.
+
+Every dashboard count equals the library total for `scope=official` with the same filters (instrument/asset links use `match=exact`).
 
 ### Entity-Relationship Diagram
 
@@ -233,6 +265,8 @@ Primary registry of ingested video assets.
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Real DB default added in migration `20260925031000`; previously client-side SQLAlchemy `default=_utcnow` in `incident-console/db.py` only — PostgREST writers that omitted it received NULL (58/162 historical rows have NULL `uploaded_datetime`). |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
+| `selected_model_run_id` | `VARCHAR(20)` | NULLABLE; composite FK `(id, selected_model_run_id)` → `incidents(incident_id, model_run_id)` ON DELETE SET NULL (`selected_model_run_id`) | The video's explicitly selected **official report** (D6). NULL = awaiting selection. Only set/cleared by `select_official_report` / `clear_official_report`; analysis never writes it. Because of this second relationship, PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey`. |
+| `selected_by` / `selected_at` | `VARCHAR(256)` / `TIMESTAMP` | NULLABLE | Who selected the official report and when (naive UTC). May outlive a selection cleared by the FK when the official incident is deleted; the UI treats `selected_model_run_id IS NULL` as "no official report". |
 
 ##### `queries`
 Tracks natural language queries submitted by users (MVP2 search).
@@ -253,7 +287,7 @@ Tracks each execution of an AI pipeline run over an incident video.
 | `model_version` | `VARCHAR(128)` | NULLABLE | Optional version tag of the model |
 | `prompt_version` | `VARCHAR(64)` | NULLABLE | Prompt template version tag |
 | `run_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC execution timestamp (DB default added in migration `20260925031000`) |
-| `notes` | `TEXT` | NULLABLE | Free text, nullable. `incident-console-v2` stores JSON `{"incidentConsoleV2":{report,editedReport?,rawModelOutput,normalizedModelOutput}}`; `report` is the preserved AI output and `editedReport` is the optional human-edited copy. `mock-backend` stores a plain-text note (`MOCK output generated by base_profile_mock...`); agent/seed/eval runs leave it NULL. |
+| `notes` | `TEXT` | NULLABLE | Free text, nullable. Since 2026-09-27 `incident-console-v2` writes the **immutable analysis-attempt record** `{"incidentConsoleV2":{recordType:"analysis_attempt", status, stage, failure, contractVersion, videoId, r2Key, attemptedAt, request, response, validation, repair, report?}}` for every attempt (see [`analysis-schema.md` §4](analysis-schema.md#4-storage)); it is never modified afterwards. Failed attempts (`contract_failed` / `request_failed`) are `model_runs` rows with no incident, report, review or evidence rows; their video association is `notes.incidentConsoleV2.videoId`. Earlier console rows hold `{"incidentConsoleV2":{report,editedReport?,rawModelOutput,normalizedModelOutput}}`; `mock-backend` stores a plain-text note; agent/seed/eval runs leave it NULL. Batch eval/seed runs (`P1-*`, `MR-SEED`, `MOCK8`) are shared by many videos: run history is keyed by (video, run), not by `model_runs` row. Any count of runs must filter by outcome (`run_outcome(notes)`) or count via `reports`. |
 
 ---
 

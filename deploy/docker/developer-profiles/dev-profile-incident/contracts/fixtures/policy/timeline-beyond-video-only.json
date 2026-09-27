@@ -1,0 +1,14 @@
+{
+  "description": "Window inside the video, one timeline event ending past it: enrichment only.",
+  "video_duration_seconds": 12.54,
+  "content": "{\"incident\": {\"type\": \"road accident\", \"title\": \"Vehicle collides with a barrier\", \"start_timestamp\": 0, \"end_timestamp\": 10, \"description\": \"A vehicle collides with a roadside barrier.\", \"severity_level\": 2, \"severity_reason\": \"Minor visible damage.\", \"confidence_score\": 0.42, \"location\": null}, \"entities\": [], \"instruments\": [], \"assets\": [], \"timeline\": [{\"start_seconds\": 5, \"end_seconds\": 14, \"description\": \"The vehicle rolls away.\"}], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": [
+      "TIMELINE_BEYOND_VIDEO",
+      "TIMELINE_END_OUTSIDE_WINDOW"
+    ]
+  }
+}

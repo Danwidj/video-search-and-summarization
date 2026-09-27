@@ -2,6 +2,116 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
+- **Decision:**
+  - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).
+  - `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment and are never scored.
+  - A `TIMELINE_*` failure is recorded and shown ("not consistent with the detected incident window"), but no longer rejects the report or empties the eval prediction. It is never repaired, clipped or removed. D11's rule stays as the timeline's consistency check; only its consequence moved.
+  - New contextual core rule: the incident window must lie within the video when its length can be read from the MP4 header. A whole-second timestamp T is valid iff `0 <= T < duration + 1`.
+  - Schema violations stay fatal. The ID-only repair is unchanged and considers core violations only.
+  - `full_contract_ok` / `fullContractValid` keeps incident-contract validity exactly as before; `core_ok` / `coreValid` is the validity that decides.
+  - Eval results also carry the policy, the violations by scope and the video length, and each run keeps a never-overwritten copy under `results/runs/`. RP1 gating is unchanged (full contract validity) pending a separate decision.
+- **Why:**
+  - A 12-call A/B pilot on Animal003 and Assault018 showed clarified prompt wording did not change the lead-up/aftermath timeline behaviour.
+  - D11 rejected 7 of the 12 answers, 4 of them with windows matching ground truth, while accepting a 29-36 s window on a 12.54 s clip.
+  - Recovered answers (pilot plus the eval smoke run): accepted 6 of 15 before, 13 of 15 now, with one correct new rejection (the window beyond the video).
+- **Versioning:** prompt and schema are byte-identical, so `VERSION` stays `incident-contract-v2` and the policy is identified separately as `core-scored-v1`.
+- **Alternatives rejected:**
+  - Redefining the timeline as a whole-video context timeline (deferred; this change makes that decision low-stakes).
+  - Isolating enrichment schema errors (needs partial-schema parsing).
+  - Showing only database fields in the UI (does not stop the rejection, which happens before persistence).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/lib/contract/validate.ts`](../incident-console-v2/lib/contract/validate.ts); [`../contracts/fixtures/policy/`](../contracts/fixtures/policy/).
+
+---
+
+### 2026-09-27: Dashboard counts official incidents; the URL is the reports filter state
+- **Decision:**
+  - `get_incident_dashboard` counts incident statistics only through each video's selected official report.
+  - Uploaded videos, videos awaiting an official report and videos without a report are counted separately, all time.
+  - Evidence statistics use canonical entity types and normalised instrument and asset names, counted per distinct incident.
+  - Every number links to `/reports?scope=official&...`, with exact names for instruments and assets.
+  - The library RPC gains `p_scope`, `p_entity_types` and `p_evidence_match`, and folds legacy types.
+  - The reports page applies URL filters alone whenever the URL carries any.
+- **Why:**
+  - Counting every run made re-running a video look like more incidents.
+  - Counting free-text descriptions made "entities" near-unique.
+  - Hidden dashboard-only state made links unshareable.
+  - The dry run checked 40 dashboard-to-library parity cases per period, with no mismatches.
+- **Deviation from plan:** the library's *default* scope stays "all successful reports", not "official". Otherwise every existing report would disappear until reviewers select officials. Dashboard links always carry `scope=official`.
+- **Alternatives rejected:**
+  - "Latest (verified) run wins" as the representative (implicit, and D6 forbids it).
+  - Substring evidence matching for dashboard links (the totals don't match).
+- **Links:** [`../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql`](../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx).
+
+---
+
+### 2026-09-27: Explicit official report per video (D6)
+- **Decision:**
+  - `videos.selected_model_run_id/selected_by/selected_at`, with a composite FK to the video's own incidents (ON DELETE SET NULL of the run column only).
+  - `select_official_report` / `clear_official_report` RPCs.
+  - Only a reviewer sets it. Analysis never does, and it is independent of review status.
+- **Why:** a video can have many analyses; official statistics need one explicitly chosen report, never an inferred "newest".
+- **Alternatives rejected:**
+  - Deriving it from the single verified run ("verified" means accurate, not chosen; several can be verified).
+  - Counting runs instead of incidents (categories multiply on re-runs).
+- **Note:** the second videos/incidents FK makes PostgREST embeds ambiguous; embeds must name `incidents_incident_id_fkey`.
+- **Links:** [`../supabase/migrations/20260927170000_official_report_selection.sql`](../supabase/migrations/20260927170000_official_report_selection.sql).
+
+---
+
+### 2026-09-27: Video run history and re-analysis
+- **Decision:**
+  - A video is the parent of its analyses. History is keyed by (video, run): batch eval/seed runs are shared by many videos.
+  - History combines incident-backed runs with incident-less attempt records whose notes explicitly name the video.
+  - Re-analysis runs the stored R2 object through the same pipeline as an upload: always a new run, never writing the video row or the official selection.
+  - Video deletion removes the run records that explicitly name the video and have no incident left.
+  - Ground truth moves to its own page and is never pre-filled from model output.
+- **Why:** failed attempts must be auditable without ever becoming reports.
+- **Alternatives rejected:**
+  - A new attempts table (not needed: 34 of 56 run rows already had no incident, and no consumer assumes one).
+  - Deleting the 20 pre-existing orphaned legacy run rows (a destructive production-data change; left in place).
+- **Links:** [`../incident-console-v2/lib/runs/history.ts`](../incident-console-v2/lib/runs/history.ts); [`../incident-console-v2/app/api/videos/[videoId]/runs/route.ts`](../incident-console-v2/app/api/videos/[videoId]/runs/route.ts).
+
+---
+
+### 2026-09-27: Structured (Class A) editing; model output immutable
+- **Decision:**
+  - The report view combines three sources: the relational projection (Class A, editable), read-only model output from notes (Class B: title, severity rationale, location, timeline, uncertainties), and provenance (Class C).
+  - Edits go through `apply_structured_report_edit`, which validates against the contract's own sub-schemas and ID/holder/window rules, changes only the projection and `review_status.edited_by/edited_at`, and never touches notes.
+  - The severity rationale is labelled "Model severity rationale", and is shown with the model's severity once a reviewer changes it.
+  - No application-only rules stricter than the contract (e.g. no non-empty-summary rule).
+- **Why:**
+  - Reviewer edits must never alter what the model produced.
+  - Class B fields are useful to reviewers but are not needed as columns.
+- **Alternatives rejected:**
+  - Editing notes (as `apply_incident_report_patch` did).
+  - Showing only relational fields (loses the rationale and timeline).
+  - Making Class B editable (needs new columns and blurs model vs reviewer).
+- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../supabase/migrations/20260927160000_apply_structured_report_edit.sql`](../supabase/migrations/20260927160000_apply_structured_report_edit.sql).
+
+---
+
+### 2026-09-27: Console analysis on incident-contract-v2 (prompt-contract phase 2), with ID-only repair
+- **Decision:**
+  - Gateway-mode analysis sends eval's exact P1 request (allowlisted model from `contracts/inference.json`, canonical prompt, strict `response_format`, 16384 tokens, 64 frames), plus an optional fenced reviewer instruction that cannot change the output contract.
+  - It validates strictly and records every attempt immutably in `model_runs.notes`, with the outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`.
+  - The only repair is `id-normalization-v1`:
+    - it applies only when every violation is ID-only;
+    - it changes only IDs, holder references and order;
+    - free text is never touched;
+    - an invariance check runs, followed by full re-validation.
+  - Eval is unchanged and never credits repaired output.
+- **Why:** live checks showed the endpoint enforces the schema, but cross-field rules (sequential IDs, the timeline window) can only be checked after the response.
+  - Nemotron's malformed or out-of-order IDs are safely repairable.
+  - Cosmos Super's lead-up timeline events are a content judgement and stay a failure (consistent with D11).
+- **Alternatives rejected:**
+  - LLM repair passes (they change semantics or need re-inference).
+  - Retrying the same request (deterministic at temperature 0).
+  - Adding ID patterns to the contract (deferred to a possible future contract version, pending malformed-ID frequency evidence).
+- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../contracts/inference.json`](../contracts/inference.json); [`../incident-console-v2/lib/contract/repair.ts`](../incident-console-v2/lib/contract/repair.ts).
+
+---
+
 ### 2026-09-27: Remove alerts from the active incident console
 - **Decision:** Remove the Alerts navigation item, unread polling, `/notifications` page and API, notification UI component, and high-severity notification writes from `incident-console-v2`. Keep the existing `notifications` database table temporarily for compatibility with the retired Streamlit console and evaluation tooling.
 - **Why:** The review workflow only needs persisted review states; an alert queue is no longer part of the active product.

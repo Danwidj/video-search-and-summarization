@@ -35,4 +35,6 @@ services:
       - VLM_GATEWAY_API_KEY=${VLM_GATEWAY_API_KEY:-}
       # Host port the gateway listens on (compose maps it via host networking).
       - VLM_GATEWAY_PORT=${VLM_GATEWAY_PORT:-8600}
+      # Upstream timeout (seconds); must exceed the slowest model timeout in contracts/inference.json.
+      - VLM_GATEWAY_TIMEOUT_SECONDS=${VLM_GATEWAY_TIMEOUT_SECONDS:-330}
     restart: unless-stopped

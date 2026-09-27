@@ -1,6 +1,6 @@
 # Unified Prompt & Structured-Output Contract Plan
 
-> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. Phases 2-5 have not started.
+> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. **Phase 2 (console) is implemented and live-verified (2026-09-27)** for gateway mode: shared prompt/schema/settings, strict validation without a repair prompt, `entities` instead of `persons`, nullable confidence, a read-only legacy adapter, plus the ID-only `id-normalization-v1` recovery and recorded outcomes ([analysis-schema.md](analysis-schema.md)). RP1 is not called by the console (no prose report). Phases 3-5 have not started; phase 4's type/entity migration is replaced for now by query-time folding.
 > **Date:** 2026-09-27
 > **Scope:** `eval/`, `incident-console-v2/`, `services/agent/` (incident path), `supabase/migrations/`
 

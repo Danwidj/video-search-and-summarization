@@ -234,28 +234,42 @@ time constraints. The API forwards inclusive day boundaries and optional time-of
 
 ### Dashboard analytics and cross-filtering
 
-`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC rather than downloading up to 1,000
-report summaries. The RPC aggregates daily trends, review and severity distributions, confidence buckets,
-weekday/hour activity, evidence leaders, per-type drill-downs, and previous-period KPIs. Clicking a severity or
-heatmap cell reissues this single aggregate request with cross-filters. Evidence items and "View all" links carry
-the type plus entity, instrument, asset, hour, status, or supported severity filter into `/reports`.
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC. Since 2026-09-27 it counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
+- Videos with reports but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
+- Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
+- Model coverage counts every analysis attempt in the period by outcome.
+- Every other number links to `/reports?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
+- The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
 
-### Inline report editing
+### Structured (Class A) report editing
 
-The individual report view keeps editing in context with the evidence: `Edit report` opens a workspace with the
-original AI result and editable copy side by side. It covers title, incident type, summary, severity, confidence,
-time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties.
-`PATCH /api/reports/[videoId]/edit` computes a patch containing only changed report fields and calls
-`apply_incident_report_patch`. The service-role RPC locks the model run and incident, preserves untouched values,
-updates only affected normalized evidence categories, and stores the edit in `model_runs.notes` in one transaction.
-An error rolls back the entire edit. Those normalized rows drive the report-library evidence filters. The original
-`incidentConsoleV2.report` remains intact.
-After saving, the editor closes and the normal report view renders the updated human copy, including its title,
-summary, timeline, and evidence sections. Video playback and follow-up/evaluation tools stay on the report page.
+`Edit report` opens a side-by-side editor: the original model output read-only on the left, and the structured fields on the right.
+- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets. IDs are renumbered by position.
+- **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
+- **Provenance:** never editable.
+
+`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `apply_structured_report_edit`. That function updates the relational projection and `review_status.edited_by/edited_at` in one transaction and never touches `model_runs.notes`.
+
+The report then shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
+
+### Run history, re-analysis and official report
+
+- **Video history.** A video is the parent of its analyses. `GET /api/videos/[videoId]/runs` builds the history from two sources:
+  - runs with an incident for the video;
+  - incident-less attempt records whose notes explicitly name the video: failed attempts, and runs whose report was deleted.
+
+  Each entry shows model, time, outcome, failure reasons or repair operations, and any additional instruction. Failed attempts are never reports.
+- **Re-analysis.** `POST /api/videos/[videoId]/runs {model, additionalInstruction?}` re-analyses the stored R2 object:
+  - the same canonical request, strict validation and ID-only recovery as an upload;
+  - always a new run;
+  - it never writes the `videos` row (the upload time is kept);
+  - it never selects the official report.
+- **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `select_official_report` / `clear_official_report`, used from the report page and the video history.
+- **Where it appears:** pages `/videos`, `/videos/[id]` and `/videos/[id]/ground-truth`. The report page's analysis card combines re-analysis with a compact history.
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
-*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2.*
+*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v2`.*
 
 ```mermaid
 sequenceDiagram
@@ -268,57 +282,32 @@ sequenceDiagram
     participant Brev as Brev Switchyard API
     participant DB as Supabase PostgREST & RPC
 
-    User->>UI: Select and upload video clip
-    UI->>UI: POST /api/uploads
-    UI->>VST: POST /api/v1/videos (via INCIDENT_AGENT_BASE_URL)
-    VST-->>UI: upload url (.../vst/api/v1/storage/file)
-    UI->>VST: Single-request chunked upload (mediaFile, filename, nvstreamer-* headers)
-    VST-->>UI: Chunk response (sensorId, filePath)
-    
+    User->>UI: Choose a model (allowlist from contracts/inference.json), then a video
+    UI->>VST: POST /api/v1/videos, chunked upload, complete (via /api/uploads*)
     alt Chunk response lacks a valid R2 key (real VST)
-        UI->>UI: Call Next.js POST /api/uploads/r2
-        UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
-        R2-->>UI: Stored object key
-        UI->>R2: HeadObject (exact uploaded byte length required)
+        UI->>R2: PutObject + HeadObject via /api/uploads/r2
     else Mock backend returns its durable R2 key
         VST->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
     end
-
-    UI->>UI: Attempt to capture the 25% frame and resize it
-    UI->>R2: PUT thumbnail via /api/uploads/thumbnail (non-blocking)
-
-    UI->>VST: POST /api/uploads/complete → /api/v1/videos/{sensorId}/complete
-
-    UI->>UI: Trigger POST /api/analysis
+    UI->>UI: POST /api/analysis {sensorId, filepath, filename, model}
     UI->>R2: HeadObject (object must exist and be nonempty)
-    UI->>UI: Sign 1-hour R2 GET URL locally (no R2 call)
-    
-    UI->>Gateway: POST /v1/chat/completions (Prompt + Video URL)
-    Gateway->>Brev: Forward with Bearer Auth Header
+    UI->>DB: Insert videos row if absent (upload lifecycle; never updated later)
+    UI->>UI: Sign R2 GET URL; build P1 request = eval P1 (video, canonical prompt, strict response_format, 16384 tokens, 64 frames)
+    UI->>Gateway: POST /v1/chat/completions (per-model timeout)
+    Gateway->>Brev: Forward with Bearer auth (VLM_GATEWAY_TIMEOUT_SECONDS)
     Brev->>R2: GET video via presigned URL
-    Brev-->>Gateway: VLM Completion (JSON / text)
-    Gateway-->>UI: Raw Completion
-
-    UI->>UI: Validate & parse with incidentAnalysisSchema (Zod)
-
-    opt parse/schema validation fails
-        UI->>Gateway: Retry repair prompt with raw content
-        Gateway->>Brev: Forward repair request
-        Brev-->>Gateway: Corrected JSON response
-        Gateway-->>UI: Raw repaired completion
-        UI->>UI: Re-validate & parse repaired JSON with schema
+    Brev-->>Gateway: Completion
+    Gateway-->>UI: Completion
+    UI->>UI: Strict parse + schema + cross-field rules; id-normalization-v1 only if every violation is ID-only, then re-validate
+    alt valid_first_pass / valid_after_structural_repair
+        UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
+        UI->>DB: /rpc/insert_incident, entities (E#), instruments (I#, holder), assets (A#), reports
+        UI->>DB: Read back and verify
+        UI-->>User: Redirect to /reports/[videoId]?run=[modelRunId]
+    else contract_failed / request_failed
+        UI->>DB: model_runs attempt record only (no incident/report/review/evidence rows)
+        UI-->>User: 422 / 502 / 504 with the reason; the attempt appears in the video's history
     end
-    
-    %% Persistence
-    UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
-    UI->>DB: Upsert model_runs (id, notes=full JSON report)
-    UI->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
-    UI->>DB: Upsert entities, instruments, assets
-    UI->>DB: Upsert reports (id, incident_id, model_run_id)
-    UI->>DB: Read back videos, model_runs, incidents, reports
-    Note over UI,DB: Success requires all four rows and videos.filepath == submitted R2 key
-
-    UI-->>User: Render Incident Report & redirect to /reports/[id]
 ```
 
 ---

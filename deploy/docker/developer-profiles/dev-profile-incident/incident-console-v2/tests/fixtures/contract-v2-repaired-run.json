@@ -1,0 +1,89 @@
+{
+  "description": "Real incident-contract-v2 run saved as valid_after_structural_repair (id-normalization-v1) in the 2026-09-27 live repair verification: video v4992173cd9c16efbd15, run m811cf2b237f50ff9812, nvidia/nemotron-3-nano-omni-30b-a3b-reasoning. Captured read-only from Supabase.",
+  "videoId": "v4992173cd9c16efbd15",
+  "modelRunId": "m811cf2b237f50ff9812",
+  "video": {
+    "id": "v4992173cd9c16efbd15",
+    "filepath": "uploads/sensor-0402b85adbabdc3f/1a72fbf8-1bae-472f-b8f8-1080f15d3ba6.mp4",
+    "uploaded_datetime": "2026-09-27T09:56:55.716",
+    "duration": null,
+    "source": "sensor-0402b85adbabdc3f"
+  },
+  "modelRun": {
+    "id": "m811cf2b237f50ff9812",
+    "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    "model_version": null,
+    "prompt_version": "incident-contract-v2",
+    "run_datetime": "2026-09-27T10:53:54.791",
+    "notes": "{\"incidentConsoleV2\":{\"recordType\":\"analysis_attempt\",\"contractVersion\":\"incident-contract-v2\",\"videoId\":\"v4992173cd9c16efbd15\",\"r2Key\":\"uploads/sensor-0402b85adbabdc3f/1a72fbf8-1bae-472f-b8f8-1080f15d3ba6.mp4\",\"modelRunId\":\"m811cf2b237f50ff9812\",\"attemptedAt\":\"2026-09-27T10:53:54.791Z\",\"request\":{\"model\":\"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning\",\"inferenceConfig\":{\"temperature\":0,\"max_tokens\":16384,\"media_io_kwargs\":{\"video\":{\"num_frames\":64}}},\"additionalInstruction\":null,\"promptSha256\":\"7cca8e34f6d9747f7d49652f89df12da796fb8860ce12f98c891f39b5f0059d7\",\"schemaSha256\":\"6ac8cb1b8235c2ca47e34464fd55509daa32d3620c1f6e3ec7f0e37068de03ee\"},\"status\":\"valid_after_structural_repair\",\"stage\":null,\"failure\":null,\"response\":{\"content\":\"{\\\"assets\\\":[],\\\"entities\\\":[{\\\"description\\\":\\\"Person walking on sidewalk, becomes victim of assault\\\",\\\"entity_id\\\":\\\"E2\\\",\\\"type\\\":\\\"human\\\"},{\\\"description\\\":\\\"Person attacking victim with object\\\",\\\"entity_id\\\":\\\"E1\\\",\\\"type\\\":\\\"human\\\"}],\\\"incident\\\":{\\\"confidence_score\\\":null,\\\"description\\\":\\\"A pedestrian is struck by an assailant wielding a bag-like object while walking near a parked white van. The victim falls to the ground and remains there.\\\",\\\"end_timestamp\\\":13,\\\"location\\\":\\\"Sidewalk adjacent to a white van\\\",\\\"severity_level\\\":3,\\\"severity_reason\\\":\\\"The victim is struck and falls to the pavement, remaining prone for the remainder of the video, indicating significant harm or risk.\\\",\\\"start_timestamp\\\":1,\\\"title\\\":\\\"Assault on sidewalk\\\"   ,\\\"type\\\":\\\"assault\\\"},\\\"instruments\\\":[{\\\"description\\\":\\\"Bag-like object used to strike victim\\\",\\\"entity_id\\\":\\\"E1\\\",\\\"instrument_id\\\":\\\"I1\\\",\\\"name\\\":\\\"bag\\\",\\\"threat_level\\\":2},{\\\"description\\\":\\\"Vehicle involved or present at scene\\\",\\\"entity_id\\\":null,\\\"instrument_id\\\":\\\",\\\",\\\"name\\\":\\\"white van\\\",\\\"threat_level\\\":1}],\\\"timeline\\\":[{\\\"description\\\":\\\"Assailant strikes victim with object causing fall\\\",\\\"end_seconds\\\":2,\\\"start_seconds\\\":1},{\\\"description\\\":\\\"Victim remains on ground\\\",\\\"end_seconds\\\":13,\\\"start_seconds\\\":2}],\\\"uncertainties\\\":[\\\"Exact nature of object unclear\\\",\\\"Extent of injuries not visible\\\"]}\",\"reasoningContent\":\"The user wants me to analyze a surveillance video and extract a structured incident report.\\n\\n**1. INCIDENT**\\n*   **TYPE:** The video shows a person being attacked with an object (looks like a bag or cloth) and then falling to the ground. This fits \\\"assault\\\".\\n*   **START_TIMESTAMP:** The attack begins around 00:01. The person is walking, then gets hit. The fall happens around 00:02. The aftermath is until the end. Let's look closer. The attacker approaches around 00:01. The hit is at 00:02. The fall is immediate. The incident continues as the person lies on the ground. So start is ~1, end is the end of the video (00:13).\\n*   **END_TIMESTAMP:** The person is lying on the ground from 00:02 onwards. The video ends at 00:13. The incident is ongoing or has reached a stable state (lying on ground). I will set end timestamp to the end of the video, 13.\\n*   **TITLE:** \\\"Assault on pedestrian near parked van\\\".\\n*   **DESCRIPTION:** A person walking on the sidewalk is struck by another individual wielding a bag-like object. The victim falls to the pavement and remains there. A white van is parked nearby.\\n*   **SEVERITY_LEVEL:** The victim falls and lies on the ground. It looks like a significant blow. It's definitely more than minimal (1) or low (2). It looks like a moderate assault. Let's check the rubric. Moderate (3) is \\\"Significant harm or clear public-safety risk. May involve significant injuries...\\\". The person is down, possibly injured. High (4) is \\\"Severe harm...\\\". It's hard to say if it's severe without seeing injuries, but the force looks significant. Let's look at the attacker. They hit and run. The victim is down for a long time. This suggests a serious assault. I'll lean towards 3 or 4. Let's look at the \\\"SEVERITY_REASON\\\". \\\"Victim falls to ground and remains motionless/on ground for duration.\\\" This implies significant harm/risk. I will classify as 3 (Moderate). Wait, looking at the impact, it's a heavy swing. The victim goes down hard. Let's call it 3.\\n*   **SEVERITY_REASON:** The victim is struck with a bag/object and falls to the pavement, remaining there for the duration of the clip, indicating significant harm or risk.\\n*   **CONFIDENCE_SCORE:** null (no native measure).\\n*   **LOCATION:** \\\"Sidewalk next to a white van\\\".\\n\\n**2. ENTITIES**\\n*   **E1:** The attacker. Visible as a person running towards the victim and striking. Type: human.\\n*   **E2:** The victim. Visible as a person walking, then struck, then falling. Type: human.\\n\\n**3. INSTRUMENTS**\\n*   **I1:** The object used to strike. It looks like a bag or a piece of cloth. It is held in the hand of E1. Type: bag/cloth. Threat level: Low (2) - it's a soft object, though used aggressively. Or maybe Moderate (3) if it's a heavy bag. It looks like a shopping bag or similar. Let's say Low (2).\\n*   **ASSET:** The white van is an asset. It's relevant (parked nearby, maybe related to the attacker/victim, or just background). The blue car is also an asset.\\n\\n**4. TIMELINE**\\n*   Event 1: Attacker approaches and strikes. Start ~1, End ~2.\\n*   Event 2: Victim falls and stays down. Start ~2, End ~13.\\n\\n**5. UNCERTAINTIES**\\n*   Uncertainty about the exact nature of the object (is it a bag? a hat?).\\n*   Uncertainty about injuries (can't see clearly).\\n\\nLet's refine the JSON structure.\\n\\n**Incident Type:** assault.\\n**Start Time:** 1.\\n**End Time:** 13.\\n**Title:** Assault on sidewalk.\\n**Description:** A pedestrian is struck by an assailant wielding a bag-like object while walking near a parked white van. The victim falls to the ground and remains there.\\n**Severity Level:** 3 (Moderate).\\n**Severity Reason:** The victim is struck and falls to the pavement, remaining prone for the remainder of the video, indicating significant harm or risk.\\n**Location:** Sidewalk adjacent to a white van.\\n\\n**Entities:**\\n*   E1: Attacker (human).\\n*   E2: Victim (human).\\n\\n**Instruments:**\\n*   I1: Bag/Object (held by E1). Threat level: 2 (Low).\\n\\n**Assets:**\\n*   A1: White van.\\n*   A2: Blue car (parked nearby).\\n\\n**Timeline:**\\n*   Event 1: Attacker (E1) strikes victim (E2) with object (I1). Start: 1, End: 2.\\n*   Event 2: Victim (E2) falls to ground and remains there. Start: 2, End: 13.\\n\\n**Uncertainties:**\\n*   Exact nature of the weapon/object.\\n*   Extent of injuries (not visible).\\n\\nLet's double check the timestamps.\\nVideo starts at 00:00.\\nAt 00:01, a figure (E1) is visible approaching another figure (E2).\\nAt 00:02, E1 swings the object. E2 falls.\\nFrom 00:02 to 00:13, E2 lies on the ground. E1 runs away (visible around 00:03-00:05).\\n\\nSo, Start Timestamp = 1. End Timestamp = 13.\\n\\nEntities:\\nE1: Human, attacker.\\nE2: Human, victim.\\n\\nInstruments:\\nI1: Object (bag/cloth) held by E1. Threat level 2.\\n\\nAssets:\\nA1: White van.\\nA2: Blue car.\\n\\nTimeline events:\\n1. Attack initiation.\\n2. Aftermath.\\n\\nLet's format the JSON.\",\"finishReason\":\"stop\",\"usage\":{\"completion_tokens\":1663,\"prompt_tokens\":12225,\"total_tokens\":13888}},\"validation\":{\"firstPass\":[{\"code\":\"ID_NOT_SEQUENTIAL_ENTITY\",\"path\":\"entities\",\"message\":\"entity_id values [\\\"E2\\\",\\\"E1\\\"] are not sequential [\\\"E1\\\",\\\"E2\\\"]\"},{\"code\":\"ID_NOT_SEQUENTIAL_INSTRUMENT\",\"path\":\"instruments\",\"message\":\"instrument_id values [\\\"I1\\\",\\\",\\\"] are not sequential [\\\"I1\\\",\\\"I2\\\"]\"}]},\"repair\":{\"eligible\":true,\"ruleSet\":\"id-normalization-v1\",\"operations\":[{\"op\":\"reorder\",\"collection\":\"entities\",\"from\":[\"E2\",\"E1\"],\"to\":[\"E1\",\"E2\"]},{\"op\":\"rename-id\",\"collection\":\"instruments\",\"from\":\",\",\"to\":\"I2\"}],\"revalidation\":[]},\"reportId\":\"r4a0af1f2a8a1bab313f\",\"generatedAt\":\"2026-09-27T10:53:54.791Z\",\"report\":{\"assets\":[],\"entities\":[{\"description\":\"Person attacking victim with object\",\"entity_id\":\"E1\",\"type\":\"human\"},{\"description\":\"Person walking on sidewalk, becomes victim of assault\",\"entity_id\":\"E2\",\"type\":\"human\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A pedestrian is struck by an assailant wielding a bag-like object while walking near a parked white van. The victim falls to the ground and remains there.\",\"end_timestamp\":13,\"location\":\"Sidewalk adjacent to a white van\",\"severity_level\":3,\"severity_reason\":\"The victim is struck and falls to the pavement, remaining prone for the remainder of the video, indicating significant harm or risk.\",\"start_timestamp\":1,\"title\":\"Assault on sidewalk\",\"type\":\"assault\",\"duration\":12},\"instruments\":[{\"description\":\"Bag-like object used to strike victim\",\"entity_id\":\"E1\",\"instrument_id\":\"I1\",\"name\":\"bag\",\"threat_level\":2},{\"description\":\"Vehicle involved or present at scene\",\"entity_id\":null,\"instrument_id\":\"I2\",\"name\":\"white van\",\"threat_level\":1}],\"timeline\":[{\"description\":\"Assailant strikes victim with object causing fall\",\"end_seconds\":2,\"start_seconds\":1},{\"description\":\"Victim remains on ground\",\"end_seconds\":13,\"start_seconds\":2}],\"uncertainties\":[\"Exact nature of object unclear\",\"Extent of injuries not visible\"]}}}"
+  },
+  "incident": {
+    "incident_id": "v4992173cd9c16efbd15",
+    "model_run_id": "m811cf2b237f50ff9812",
+    "type": "assault",
+    "start_timestamp": "1",
+    "end_timestamp": "13",
+    "duration": 12,
+    "description": "A pedestrian is struck by an assailant wielding a bag-like object while walking near a parked white van. The victim falls to the ground and remains there.",
+    "severity_level": 3,
+    "confidence_score": null
+  },
+  "entities": [
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "entity_id": "E1",
+      "model_run_id": "m811cf2b237f50ff9812",
+      "type": "human",
+      "description": "Person attacking victim with object",
+      "image": null
+    },
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "entity_id": "E2",
+      "model_run_id": "m811cf2b237f50ff9812",
+      "type": "human",
+      "description": "Person walking on sidewalk, becomes victim of assault",
+      "image": null
+    }
+  ],
+  "instruments": [
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "instrument_id": "I1",
+      "model_run_id": "m811cf2b237f50ff9812",
+      "entity_id": "E1",
+      "name": "bag",
+      "description": "Bag-like object used to strike victim",
+      "threat_level": 2,
+      "image": null
+    },
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "instrument_id": "I2",
+      "model_run_id": "m811cf2b237f50ff9812",
+      "entity_id": null,
+      "name": "white van",
+      "description": "Vehicle involved or present at scene",
+      "threat_level": 1,
+      "image": null
+    }
+  ],
+  "assets": [],
+  "reportRow": {
+    "id": "r4a0af1f2a8a1bab313f",
+    "incident_id": "v4992173cd9c16efbd15",
+    "query_id": null,
+    "model_run_id": "m811cf2b237f50ff9812",
+    "filepath": null,
+    "generated_datetime": "2026-09-27T10:53:54.791"
+  },
+  "review": {
+    "incident_id": "v4992173cd9c16efbd15",
+    "model_run_id": "m811cf2b237f50ff9812",
+    "status": "unreviewed",
+    "verified_by": null,
+    "verified_at": null,
+    "edited_by": null,
+    "edited_at": null
+  }
+}

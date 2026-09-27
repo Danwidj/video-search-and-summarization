@@ -1,0 +1,85 @@
+{
+  "description": "Real incident-contract-v2 run from the 2026-09-27 live smoke test (video v4992173cd9c16efbd15, run m86a5c319e26659804b0, nvidia/cosmos-3-nano-reasoner), captured read-only from Supabase. Used as a compatibility fixture for the report view.",
+  "videoId": "v4992173cd9c16efbd15",
+  "modelRunId": "m86a5c319e26659804b0",
+  "video": {
+    "id": "v4992173cd9c16efbd15",
+    "filepath": "uploads/sensor-0402b85adbabdc3f/1a72fbf8-1bae-472f-b8f8-1080f15d3ba6.mp4",
+    "uploaded_datetime": "2026-09-27T09:56:55.716",
+    "duration": null,
+    "source": "sensor-0402b85adbabdc3f"
+  },
+  "modelRun": {
+    "id": "m86a5c319e26659804b0",
+    "model_name": "nvidia/cosmos-3-nano-reasoner",
+    "model_version": null,
+    "prompt_version": "incident-contract-v2",
+    "run_datetime": "2026-09-27T09:57:02.273",
+    "notes": "{\"incidentConsoleV2\":{\"contractVersion\":\"incident-contract-v2\",\"report\":{\"assets\":[{\"asset_id\":\"A1\",\"description\":\"A white van parked on the right side of the sidewalk.\",\"name\":\"white van\"},{\"asset_id\":\"A2\",\"description\":\"A blue car parked behind the white van.\",\"name\":\"blue car\"}],\"entities\":[{\"description\":\"A person wearing dark clothing and carrying a bag, walking on the sidewalk.\",\"entity_id\":\"E1\",\"type\":\"human\"},{\"description\":\"A person wearing dark clothing, walking on the sidewalk.\",\"entity_id\":\"E2\",\"type\":\"human\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A person walking on the sidewalk suddenly falls to the ground, while another person continues walking nearby.\",\"end_timestamp\":11,\"location\":\"sidewalk near parked vehicles\",\"severity_level\":2,\"severity_reason\":\"A person falls to the ground, indicating a minor injury or loss of balance, but no serious harm or major disruption is observed.\",\"start_timestamp\":1,\"title\":\"Person falls on sidewalk while walking.\",\"type\":\"assault\",\"duration\":10},\"instruments\":[],\"timeline\":[{\"description\":\"A person walks on the sidewalk and suddenly falls to the ground.\",\"end_seconds\":2,\"start_seconds\":1},{\"description\":\"Another person walks past the fallen individual.\",\"end_seconds\":6,\"start_seconds\":3},{\"description\":\"The fallen person remains on the ground while the other person continues walking away.\",\"end_seconds\":11,\"start_seconds\":6}],\"uncertainties\":[\"The cause of the fall is not clearly visible in the video.\"]},\"request\":{\"model\":\"nvidia/cosmos-3-nano-reasoner\",\"inferenceConfig\":{\"temperature\":0,\"max_tokens\":16384,\"media_io_kwargs\":{\"video\":{\"num_frames\":64}}},\"additionalInstruction\":null,\"promptSha256\":\"7cca8e34f6d9747f7d49652f89df12da796fb8860ce12f98c891f39b5f0059d7\",\"schemaSha256\":\"6ac8cb1b8235c2ca47e34464fd55509daa32d3620c1f6e3ec7f0e37068de03ee\"},\"response\":{\"content\":\"{\\\"assets\\\": [{\\\"asset_id\\\": \\\"A1\\\", \\\"description\\\": \\\"A white van parked on the right side of the sidewalk.\\\", \\\"name\\\": \\\"white van\\\"}, {\\\"asset_id\\\": \\\"A2\\\", \\\"description\\\": \\\"A blue car parked behind the white van.\\\", \\\"name\\\": \\\"blue car\\\"}], \\\"entities\\\": [{\\\"description\\\": \\\"A person wearing dark clothing and carrying a bag, walking on the sidewalk.\\\", \\\"entity_id\\\": \\\"E1\\\", \\\"type\\\": \\\"human\\\"}, {\\\"description\\\": \\\"A person wearing dark clothing, walking on the sidewalk.\\\", \\\"entity_id\\\": \\\"E2\\\", \\\"type\\\": \\\"human\\\"}], \\\"incident\\\": {\\\"confidence_score\\\": null, \\\"description\\\": \\\"A person walking on the sidewalk suddenly falls to the ground, while another person continues walking nearby.\\\", \\\"end_timestamp\\\": 11, \\\"location\\\": \\\"sidewalk near parked vehicles\\\", \\\"severity_level\\\": 2, \\\"severity_reason\\\": \\\"A person falls to the ground, indicating a minor injury or loss of balance, but no serious harm or major disruption is observed.\\\", \\\"start_timestamp\\\": 1, \\\"title\\\": \\\"Person falls on sidewalk while walking.\\\",\\\"type\\\": \\\"assault\\\"},\\\"instruments\\\": [], \\\"timeline\\\": [{\\\"description\\\": \\\"A person walks on the sidewalk and suddenly falls to the ground.\\\", \\\"end_seconds\\\": 2, \\\"start_seconds\\\": 1}, {\\\"description\\\": \\\"Another person walks past the fallen individual.\\\", \\\"end_seconds\\\": 6, \\\"start_seconds\\\": 3}, {\\\"description\\\": \\\"The fallen person remains on the ground while the other person continues walking away.\\\", \\\"end_seconds\\\": 11, \\\"start_seconds\\\": 6}], \\\"uncertainties\\\": [\\\"The cause of the fall is not clearly visible in the video.\\\"]}\",\"reasoningContent\":null,\"finishReason\":\"stop\",\"usage\":{\"completion_tokens\":364,\"prompt_tokens\":5915,\"total_tokens\":6279}},\"videoId\":\"v4992173cd9c16efbd15\",\"modelRunId\":\"m86a5c319e26659804b0\",\"reportId\":\"r03ba684293caa75f533\",\"generatedAt\":\"2026-09-27T09:57:02.273Z\"}}"
+  },
+  "incident": {
+    "incident_id": "v4992173cd9c16efbd15",
+    "model_run_id": "m86a5c319e26659804b0",
+    "type": "assault",
+    "start_timestamp": "1",
+    "end_timestamp": "11",
+    "duration": 10,
+    "description": "A person walking on the sidewalk suddenly falls to the ground, while another person continues walking nearby.",
+    "severity_level": 2,
+    "confidence_score": null
+  },
+  "entities": [
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "entity_id": "E1",
+      "model_run_id": "m86a5c319e26659804b0",
+      "type": "human",
+      "description": "A person wearing dark clothing and carrying a bag, walking on the sidewalk.",
+      "image": null
+    },
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "entity_id": "E2",
+      "model_run_id": "m86a5c319e26659804b0",
+      "type": "human",
+      "description": "A person wearing dark clothing, walking on the sidewalk.",
+      "image": null
+    }
+  ],
+  "instruments": [],
+  "assets": [
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "asset_id": "A1",
+      "model_run_id": "m86a5c319e26659804b0",
+      "name": "white van",
+      "description": "A white van parked on the right side of the sidewalk.",
+      "image": null
+    },
+    {
+      "incident_id": "v4992173cd9c16efbd15",
+      "asset_id": "A2",
+      "model_run_id": "m86a5c319e26659804b0",
+      "name": "blue car",
+      "description": "A blue car parked behind the white van.",
+      "image": null
+    }
+  ],
+  "reportRow": {
+    "id": "r03ba684293caa75f533",
+    "incident_id": "v4992173cd9c16efbd15",
+    "query_id": null,
+    "model_run_id": "m86a5c319e26659804b0",
+    "filepath": null,
+    "generated_datetime": "2026-09-27T09:57:02.273"
+  },
+  "review": {
+    "incident_id": "v4992173cd9c16efbd15",
+    "model_run_id": "m86a5c319e26659804b0",
+    "status": "unreviewed",
+    "verified_by": null,
+    "verified_at": null,
+    "edited_by": null,
+    "edited_at": null
+  }
+}

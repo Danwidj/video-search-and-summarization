@@ -24,23 +24,23 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev (VLM `VLM_MODEL`, default `nvidia/cosmos-3-nano-reasoner`) | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
+| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
 | `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev | Agent writes `incidents` and evidence. Console writes `videos` before and after, `model_runs.notes` and `reports`. |
 
 ## Instructions
 
 ### Preferred: through the UI
 
-Open `http://localhost:3200`, choose Analyze, and select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?run=<model-run-id>`.
+Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?run=<model-run-id>`. To analyse an already-uploaded video again (any model, optional additional instruction), open `/videos/<video-id>` or the report page's analysis card. Every attempt is a new run, failed attempts appear in the history only, and choosing the official report is a separate explicit action.
 
 ### Scripted: console API (same path the UI uses)
 
 1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
 2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
 3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
-4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "reasoning"?, "promptOverride"?}`. Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
+4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "model"?}` (gateway; `reasoning`/`promptOverride` apply to agent mode only). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
 
-Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video, go straight to step 4 with the existing R2 key.
+Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video use `POST /api/videos/<video-id>/runs` with `{"model", "additionalInstruction"?}`: it never touches the video row. Responses: 200 `{run: {..., outcome}}` (`valid_first_pass` or `valid_after_structural_repair`), 422 `contract_failed` with `codes`, 502/504 `request_failed` with `code`; failures are recorded in `GET /api/videos/<video-id>/runs`.
 
 ### Direct agent call (vm mode, for debugging the agent)
 
@@ -74,5 +74,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- Both modes share one `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, enforced by parity tests). The full report lives in `model_runs.notes`. Legacy camelCase notes are still readable. `title`, `severity_reason`, `timeline`, `uncertainties` and `location` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
+- Gateway mode uses `incident-contract-v2` (the same request as eval) and records every attempt immutably in `model_runs.notes` with its outcome. Agent mode still uses the older snake_case `IncidentReport` (`lib/analysis/incident-report-contract.json`). See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

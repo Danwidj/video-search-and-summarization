@@ -1,0 +1,11 @@
+{
+  "description": "22.83 s video: 23 names a moment in the last partial second.",
+  "video_duration_seconds": 22.83,
+  "content": "{\"incident\": {\"type\": \"road accident\", \"title\": \"Vehicle collides with a barrier\", \"start_timestamp\": 0, \"end_timestamp\": 23, \"description\": \"A vehicle collides with a roadside barrier.\", \"severity_level\": 2, \"severity_reason\": \"Minor visible damage.\", \"confidence_score\": 0.42, \"location\": null}, \"entities\": [], \"instruments\": [], \"assets\": [], \"timeline\": [{\"start_seconds\": 0, \"end_seconds\": null, \"description\": \"The vehicle hits the barrier.\"}], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}
