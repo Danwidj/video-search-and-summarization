@@ -19,6 +19,13 @@ without pulling in the live VLM/DB calls ``eval_run.py`` itself makes.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import contract  # noqa: E402
+
 
 class EvaluatorDependencyError(RuntimeError):
     """The embedding server or LLM judge is unavailable or returned an invalid
@@ -80,12 +87,12 @@ def check_judge_ok(eval_result) -> None:
 # elsewhere (services/agent/src/vss_agents/utils/reasoning_utils.py). With it
 # set, the same requests return finish_reason="stop" with a complete,
 # well-formed report in `content` using a few hundred tokens, not 4096.
-RP1_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
-RP1_INFERENCE_CONFIG = {
-    "temperature": 0.0,
-    "max_tokens": 4096,
-    "chat_template_kwargs": {"enable_thinking": False},
-}
+#
+# The model and settings live in contracts/rp1_request.json, shared with the
+# console and agent.
+_RP1_REQUEST = contract.rp1_request()
+RP1_MODEL = _RP1_REQUEST.pop("model")
+RP1_INFERENCE_CONFIG = _RP1_REQUEST
 
 # gt_incidents.model_run_id is String(20) - full model names don't fit, so a
 # short, explicit (never algorithmically-truncated) code per model.

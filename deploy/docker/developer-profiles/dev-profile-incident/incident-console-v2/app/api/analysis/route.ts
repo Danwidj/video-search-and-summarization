@@ -3,10 +3,10 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 
-import { parseIncidentAnalysis } from '@/lib/analysis/parse';
+import { ContractError, contractVersion, validateContractReport } from '@/lib/analysis/contract';
+import type { AnalysisReport } from '@/lib/analysis/contract-types';
+import { runP1, runRP1 } from '@/lib/analysis/generate';
 import { persistAgentBookkeeping, persistGatewayAnalysis, prepareAgentVideo } from '@/lib/analysis/persistence';
-import { INCIDENT_ANALYSIS_PROMPT, INCIDENT_PROMPT_VERSION } from '@/lib/analysis/prompt';
-import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
 import { GatewayClient } from '@/lib/gateway/client';
 import { errorResponse, readUpstream } from '@/lib/http';
@@ -14,16 +14,19 @@ import { compactId } from '@/lib/ids';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl, verifyR2Video } from '@/lib/r2/config';
 
-export const maxDuration = 120;
+// P1 with 64 frames or a reasoning model, plus RP1, can take several minutes.
+export const maxDuration = 300;
 
 interface AnalysisRequest {
   sensorId?: string;
   filepath?: string;
   filename?: string;
-  reasoning?: boolean;
-  promptOverride?: string;
-  prompt_override?: string;
 }
+
+type ValidRequest = { sensorId: string; filepath: string; filename: string };
+
+/** A model output that breaks the contract: surfaced as HTTP 422, never repaired. */
+class ContractViolation extends Error {}
 
 function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceConfiguration()): ServiceConfiguration {
   if (config.analysisMode === 'agent') {
@@ -35,169 +38,125 @@ function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceC
   return config;
 }
 
-async function analyzeViaGateway(
-  input: AnalysisRequest & { sensorId: string; filepath: string; filename: string },
-  config: ServiceConfiguration,
-): Promise<AnalysisReport> {
-  let operation = 'creating the signed R2 video URL';
+function newIdentifiers(sensorId: string) {
+  const generatedAt = new Date().toISOString();
+  const videoId = compactId('v', sensorId);
+  const modelRunId = compactId('m', `${videoId}:${generatedAt}:${randomUUID()}`);
+  const reportId = compactId('r', `${videoId}:${modelRunId}`);
+  return { generatedAt, videoId, modelRunId, reportId };
+}
+
+async function analyzeViaGateway(input: ValidRequest, config: ServiceConfiguration): Promise<AnalysisReport> {
+  let operation = 'verifying the R2 video object';
   try {
-    operation = 'verifying the R2 video object';
     await verifyR2Video(config, input.filepath);
     operation = 'creating the signed R2 video URL';
     const playbackUrl = await createR2PlaybackUrl(config, input.filepath);
     const gateway = new GatewayClient(config.gatewayUrl!);
-    operation = 'calling the VLM gateway';
-    const completion = await gateway.complete({
-      model: config.vlmModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: INCIDENT_ANALYSIS_PROMPT },
-            { type: 'video_url', video_url: { url: playbackUrl } },
-          ],
-        },
-      ],
-      stream: false,
-      temperature: 0,
-      max_tokens: 4096,
-    });
-    const content = completion.choices[0]?.message.content;
-    if (!content) throw new Error('The VLM returned no report content');
-    let normalizedModelOutput = content;
-    let analysis;
+
+    operation = 'extracting the incident (P1)';
+    let p1;
     try {
-      operation = 'validating the VLM response';
-      analysis = parseIncidentAnalysis(content);
-    } catch (firstError) {
-      operation = 'repairing the VLM response JSON';
-      const corrected = await gateway.complete({
-        model: config.vlmModel,
-        messages: [
-          {
-            role: 'user',
-            content: `Convert the response below into the exact JSON structure originally requested. Return JSON only. Preserve its factual content and do not add new observations. Numeric fields must be JSON numbers, never quoted strings: use 3, not "3". For instruments.threat_level, use an integer from 1 to 5 or null when unknown.\n\n${content}`,
-          },
-        ],
-        stream: false,
-        temperature: 0,
-        max_tokens: 4096,
-      });
-      const correctedContent = corrected.choices[0]?.message.content;
-      if (!correctedContent) throw firstError;
-      normalizedModelOutput = correctedContent;
-      analysis = parseIncidentAnalysis(correctedContent);
+      p1 = await runP1(gateway, config.vlmModel, playbackUrl);
+    } catch (error) {
+      if (error instanceof ContractError) throw new ContractViolation(error.message);
+      throw error;
     }
 
-    const generatedAt = new Date().toISOString();
-    const videoId = compactId('v', input.sensorId);
-    const modelRunId = compactId('m', `${videoId}:${generatedAt}:${randomUUID()}`);
-    const reportId = compactId('r', `${videoId}:${modelRunId}`);
+    operation = 'writing the incident report (RP1)';
+    const rp1 = await runRP1(gateway, p1.report);
+
+    const ids = newIdentifiers(input.sensorId);
     const report: AnalysisReport = {
-      ...analysis,
-      videoId,
-      modelRunId,
-      reportId,
+      ...p1.report,
+      ...ids,
       filename: input.filename,
       playbackUrl,
-      model: completion.model || config.vlmModel,
-      generatedAt,
-      promptVersion: INCIDENT_PROMPT_VERSION,
-      rawModelOutput: content,
-      normalizedModelOutput,
+      model: p1.model,
+      promptVersion: contractVersion(),
+      rawModelOutput: p1.rawModelOutput,
+      ...rp1,
     };
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     await persistGatewayAnalysis(db, report, {
       r2Key: input.filepath,
       sensorId: input.sensorId,
-      uploadedAt: generatedAt,
-      duration: analysis.duration_seconds,
+      uploadedAt: ids.generatedAt,
     }, (nextOperation) => { operation = nextOperation; });
-
     return report;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    if (error instanceof ContractViolation) throw new ContractViolation(`${operation} failed: ${detail}`);
     throw new Error(`${operation} failed: ${detail}`);
   }
 }
 
-async function analyzeViaAgent(
-  input: AnalysisRequest & { sensorId: string; filepath: string; filename: string },
-  config: ServiceConfiguration,
-): Promise<AnalysisReport> {
-  let operation = 'creating the signed R2 video URL';
+interface AgentAnalyzeResponse {
+  report?: unknown;
+  report_text?: string | null;
+  report_text_error?: string | null;
+  model?: string;
+  contract_version?: string;
+  raw_output?: string;
+}
+
+async function analyzeViaAgent(input: ValidRequest, config: ServiceConfiguration): Promise<AnalysisReport> {
+  let operation = 'verifying the R2 video object';
   try {
-    operation = 'verifying the R2 video object';
     await verifyR2Video(config, input.filepath);
     operation = 'creating the signed R2 video URL';
     const playbackUrl = await createR2PlaybackUrl(config, input.filepath);
-
-    const generatedAt = new Date().toISOString();
-    const videoId = compactId('v', input.sensorId);
-    const modelRunId = compactId('m', `${videoId}:${generatedAt}:${randomUUID()}`);
-    const reportId = compactId('r', `${videoId}:${modelRunId}`);
-
-    const requestBody: { model_run_id: string; reasoning?: boolean; prompt_override?: string } = {
-      model_run_id: modelRunId,
-    };
-    if (typeof input.reasoning === 'boolean') {
-      requestBody.reasoning = input.reasoning;
-    }
-    const promptOverride = input.promptOverride || input.prompt_override;
-    if (promptOverride) {
-      requestBody.prompt_override = promptOverride;
-    }
+    const ids = newIdentifiers(input.sensorId);
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     operation = 'saving the video to PostgREST';
-    await prepareAgentVideo(db, { videoId }, {
-      r2Key: input.filepath,
-      sensorId: input.sensorId,
-      uploadedAt: generatedAt,
-    });
+    await prepareAgentVideo(db, ids, { r2Key: input.filepath, sensorId: input.sensorId, uploadedAt: ids.generatedAt });
 
     operation = 'calling the incident agent';
-    const endpoint = `${config.agentUrl!.replace(/\/$/, '')}/api/v1/incidents/${videoId}/analyze`;
+    const endpoint = `${config.agentUrl!.replace(/\/$/, '')}/api/v1/incidents/${ids.videoId}/analyze`;
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
+      // The agent runs the same P1 -> RP1 call on the same signed URL, so it needs no R2 credentials.
+      body: JSON.stringify({ model_run_id: ids.modelRunId, video_url: playbackUrl }),
     });
+    if (response.status === 422) {
+      const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
+      throw new ContractViolation(`the agent rejected the model output: ${String(payload.detail ?? 'contract violation')}`);
+    }
+    const payload = (await readUpstream(response, 'Incident agent')) as AgentAnalyzeResponse | null;
 
-    operation = 'parsing the incident agent response';
-    const agentPayload = (await readUpstream(response, 'Incident agent')) as Record<string, unknown> | null;
-    if (!agentPayload || typeof agentPayload !== 'object') {
-      throw new Error('Incident agent returned an empty report');
+    operation = 'validating the agent report against the contract';
+    let validated;
+    try {
+      validated = validateContractReport(payload?.report);
+    } catch (error) {
+      if (error instanceof ContractError) throw new ContractViolation(error.message);
+      throw error;
     }
 
-    const rawOutput = JSON.stringify(agentPayload);
-
-    operation = 'validating the incident report';
-    const analysis = incidentAnalysisSchema.parse(agentPayload);
-
     const report: AnalysisReport = {
-      ...analysis,
-      videoId,
-      modelRunId,
-      reportId,
+      ...validated,
+      ...ids,
       filename: input.filename,
       playbackUrl,
-      model: (typeof agentPayload.model === 'string' && agentPayload.model) || (typeof agentPayload.model_name === 'string' && agentPayload.model_name) || 'vss-agent',
-      generatedAt,
-      rawModelOutput: rawOutput,
-      normalizedModelOutput: rawOutput,
+      model: payload?.model || 'vss-agent',
+      promptVersion: payload?.contract_version || contractVersion(),
+      rawModelOutput: payload?.raw_output,
+      reportText: payload?.report_text ?? undefined,
+      reportTextError: payload?.report_text_error ?? undefined,
     };
 
     await persistAgentBookkeeping(db, report, {
       r2Key: input.filepath,
       sensorId: input.sensorId,
-      uploadedAt: generatedAt,
+      uploadedAt: ids.generatedAt,
     }, (nextOperation) => { operation = nextOperation; });
-
     return report;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    if (error instanceof ContractViolation) throw new ContractViolation(`${operation} failed: ${detail}`);
     throw new Error(`${operation} failed: ${detail}`);
   }
 }
@@ -224,13 +183,13 @@ export async function POST(request: Request) {
       throw new Error(`validating service configuration failed: ${detail}`);
     }
 
-    const report =
-      config.analysisMode === 'agent'
-        ? await analyzeViaAgent(input as AnalysisRequest & { sensorId: string; filepath: string; filename: string }, config)
-        : await analyzeViaGateway(input as AnalysisRequest & { sensorId: string; filepath: string; filename: string }, config);
-
+    const valid = input as ValidRequest;
+    const report = config.analysisMode === 'agent' ? await analyzeViaAgent(valid, config) : await analyzeViaGateway(valid, config);
     return NextResponse.json({ report });
   } catch (error) {
+    if (error instanceof ContractViolation) {
+      return NextResponse.json({ error: `The model output did not match the incident contract: ${error.message}` }, { status: 422 });
+    }
     return errorResponse(error, 'Video analysis failed');
   }
 }

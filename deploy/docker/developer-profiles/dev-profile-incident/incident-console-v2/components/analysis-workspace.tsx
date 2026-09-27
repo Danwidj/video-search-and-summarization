@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { IncidentReport } from '@/components/incident-report';
-import type { AnalysisReport } from '@/lib/analysis/schema';
+import type { AnalysisReport } from '@/lib/analysis/contract-types';
 import { isValidR2Key } from '@/lib/r2/key';
 import { thumbnailCaptureTime } from '@/lib/reports/thumbnail';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';

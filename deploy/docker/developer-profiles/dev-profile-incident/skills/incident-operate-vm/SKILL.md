@@ -52,7 +52,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 
 | Goal | Command |
 |---|---|
-| Pick up agent code changes (`services/agent/src`) | `git pull` in `/srv/rise-up/vss`, then `./native-services.sh restart vss-agent` |
+| Pick up agent code changes (`services/agent/src`) | `git pull` in `/srv/rise-up/vss`, then `./native-services.sh restart vss-agent`. The incident contract (`vss_agents/incident_contract/`) is package data in the editable install, so a restart picks it up; it adds no dependencies. |
 | Pick up `generated.env.remote` changes | `./native-services.sh restart vss-agent`. Env is captured at process start; check it in `/proc/<pid>/environ`. |
 | Tail logs | `./logs.sh vss-agent` (native) or `./logs.sh <container>` (Docker) |
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
@@ -85,6 +85,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - `REPORT_REFERENCE_BASE_DIR` is set (for example `/tmp`).
 - `STREAM_PROCESSOR_HTTP_PORT=10000`.
 - `LLM_MODEL_TYPE=openai` and `VLM_MODEL_TYPE=openai`, with bare Brev URLs.
+- `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
 
 ## Troubleshooting order
 

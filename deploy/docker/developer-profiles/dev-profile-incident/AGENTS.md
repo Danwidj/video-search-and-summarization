@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown | Shared P1/RP1 prompts and incident output schema (`incident-contract-v2`) | Phase 1: eval uses it; console and agent pending ([plan](.docs/prompt-contract-plan.md)) |
+| `contracts/` | JSON Schema, Markdown | Shared P1/RP1 prompts, request settings and incident output schema (`incident-contract-v2`) | Active: eval, console and agent all use it ([plan](.docs/prompt-contract-plan.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -49,7 +49,8 @@ uv sync && uv run pytest tests/
 - **Two analysis modes:**
   - `ANALYSIS_MODE=gateway`: the console calls `vlm-gateway` and writes Supabase itself.
   - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent`, which writes `incidents` and evidence.
-  - Both modes share the agent's `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change the contract in both places together.
+  - Both modes, eval and the agent run the same contract from [`contracts/`](contracts/README.md): P1 then RP1, JSON Schema `response_format`, strict parsing (a violation is 422, never repaired). The agent reads a vendored copy in `services/agent/src/vss_agents/incident_contract/`; change `contracts/`, copy it there, and bump `VERSION` in the same PR (parity tests fail otherwise).
+  - `duration` is derived by code, never requested from the model.
   - A change to one mode's persistence must be checked against the other. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
 - **PostgREST only from `kwanz-ws`:** port 5432 is DPI-blocked there. All PostgREST writers use `/rpc/insert_incident` for atomic `incidents` + `review_status`.
 - **Storage split:**
@@ -108,5 +109,5 @@ Stale docs are a defect, not a follow-up. Any change in this directory updates, 
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/restructure-plan.md`](.docs/restructure-plan.md) | Option B (proposed, not approved) |
-| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (proposed, not approved) |
+| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (phases 0-3 implemented; phase 4 pending) |
 | [`.docs/archive/`](.docs/archive/) | Historical plans only. Not current truth. |

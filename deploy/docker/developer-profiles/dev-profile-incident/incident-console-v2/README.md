@@ -56,7 +56,15 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Unified analysis contract
 
-Both analysis modes share the agent's `snake_case` `IncidentReport` contract (`lib/analysis/incident-report-contract.json`, `lib/analysis/schema.ts`, `lib/analysis/prompt.ts`; legacy camelCase notes are read only via `reportFromNotes`). See [`.docs/analysis-schema.md`](../.docs/analysis-schema.md) for the field spec, tolerant-parsing rules, and parity tests.
+Both analysis modes run the shared incident contract in [`../contracts/`](../contracts/README.md) (`incident-contract-v2`), the same one eval and `vss-agent` use:
+
+- `lib/analysis/contract.ts` (server only) loads the schema, prompts and request settings from `INCIDENT_CONTRACTS_DIR` (default `../contracts`, resolved from the working directory) and validates with Ajv plus the cross-field rules. Client components import types and constants from `lib/analysis/contract-types.ts` only.
+- `lib/analysis/generate.ts` builds the P1 request (signed R2 URL first, then the prompt, strict `response_format`) and the text-only RP1 request.
+- Parsing is strict: a response that is not one valid JSON document is **HTTP 422** and nothing is persisted. There is no repair retry, alias mapping or fence stripping. `duration` is computed by code.
+- If RP1 fails, the P1 report is kept and `reportTextError` records why.
+- Reports stored before the contract are converted read-only for display (`legacyToContract` in `lib/reports/storage.ts`).
+
+See [`.docs/analysis-schema.md`](../.docs/analysis-schema.md) for the field spec and persistence.
 
 ## Server-only configuration
 
@@ -64,9 +72,10 @@ Next.js loads them from `.env.local` in this directory, which is a symlink to th
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
 
-- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the agent persists the incident and its evidence; v2 only upserts the `videos` row (before the call, so the agent can resolve the sensor id, and again after it to keep `filepath` as the R2 key), the `model_runs` notes and the `reports` row.
+- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode v2 sends `{model_run_id, video_url}` (the signed R2 URL), the agent runs P1 and RP1 and persists the incident and its evidence, and v2 re-validates the returned report. v2 writes the `videos` row (before the call, because `incidents` references it), the `model_runs` notes and the `reports` row; the agent never writes `videos`.
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
-- `VLM_MODEL` — optional hosted model ID; defaults to `nvidia/cosmos-3-nano-reasoner`.
+- `VLM_MODEL` — optional hosted P1 model ID; defaults to `nvidia/cosmos-3-nano-reasoner`. The RP1 model is fixed by `contracts/rp1_request.json`.
+- `INCIDENT_CONTRACTS_DIR` — optional path to the shared `contracts/` directory; defaults to `../contracts`. Set it when the app runs from somewhere other than this directory.
 - `INCIDENT_AGENT_BASE_URL` — mock or real vss-agent base URL used for video upload, agent chat, and incident analysis (in `agent` mode).
 - `INCIDENT_SUPABASE_URL` / `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` — PostgREST access.
 - `R2_ACCOUNT_ID` / `R2_ACCESS_KEY` / `R2_SECRET_KEY` / `R2_BUCKET` — private video storage.
@@ -79,10 +88,9 @@ reachability booleans; it never returns URLs or credentials.
 Selecting a video immediately starts the three-step nvstreamer upload. If that upload has no durable R2 key (the
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
-for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to Cosmos through the gateway, normalizes common VLM aliases into the canonical snake-case contract, validates the structured result, persists it
+for temporary model access only after `HeadObject` confirms the object exists and is nonempty, runs P1 then RP1 through the gateway, validates the P1 result strictly against the contract, persists it
 through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent analyzes
-and persists the incident instead of the gateway; see the variable list above). Start with short clips while inference remains
-synchronous.
+and persists the incident instead of the gateway; see the variable list above). Inference is synchronous: the route allows 300 s (`maxDuration`), matching the gateway's upstream timeout, so start with short clips.
 
 ### Real-VST R2 upload fallback
 
@@ -104,7 +112,7 @@ analysis. Existing videos without this derived object retain the report-card ske
 Completed analyses navigate to a durable route shaped like
 `/reports/<video-id>?run=<model-run-id>`. Reloading or sharing that route reads the stored model-run notes from
 PostgREST and creates a fresh one-hour R2 playback URL; it does not depend on browser local storage. Newly generated
-reports retain raw and normalized model output for diagnostics alongside model, prompt, run, and generation metadata.
+reports retain the raw P1 output, the validated report and the RP1 text alongside model, contract version, run, and generation metadata.
 The report provides timestamp seeking, explicit empty states, a copy-link action, and print-specific presentation.
 
 ## Phase 4 report library and review

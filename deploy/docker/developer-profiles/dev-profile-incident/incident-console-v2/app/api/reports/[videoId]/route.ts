@@ -2,12 +2,12 @@
 
 import { NextResponse } from 'next/server';
 
-import type { AnalysisReport } from '@/lib/analysis/schema';
+import type { AnalysisReport } from '@/lib/analysis/contract-types';
 import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
-import { reportFromNotes } from '@/lib/reports/storage';
+import { reportsFromNotes, toSeconds } from '@/lib/reports/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,17 +32,10 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
     ]);
     if (!modelRun || !video || !incident) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
 
-    const stored = reportFromNotes(modelRun.notes);
-    let editedReport: Record<string, unknown> | null = null;
-    try {
-      const notes = typeof modelRun.notes === 'string' ? JSON.parse(modelRun.notes) as Record<string, unknown> : {};
-      const wrapper = notes.incidentConsoleV2 as Record<string, unknown> | undefined;
-      if (wrapper?.editedReport && typeof wrapper.editedReport === 'object') editedReport = wrapper.editedReport as Record<string, unknown>;
-    } catch { /* Legacy notes are handled by reportFromNotes and the relational fallback. */ }
     if (typeof video.filepath !== 'string' || !video.filepath) throw new Error('The report has no linked R2 video');
-
     const playbackUrl = await createR2PlaybackUrl(config, video.filepath);
-    const fallback: AnalysisReport = {
+
+    const metadata = {
       videoId,
       modelRunId,
       reportId: typeof reportMetadata?.id === 'string' ? reportMetadata.id : `${videoId}-${modelRunId}`,
@@ -51,39 +44,59 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
       model: typeof modelRun.model_name === 'string' ? modelRun.model_name : 'Unknown model',
       generatedAt: typeof reportMetadata?.generated_datetime === 'string' ? reportMetadata.generated_datetime : typeof modelRun.run_datetime === 'string' ? modelRun.run_datetime : '',
       promptVersion: typeof modelRun.prompt_version === 'string' ? modelRun.prompt_version : undefined,
-      title: `${typeof incident.type === 'string' ? incident.type : 'Incident'} report`,
-      incident_type: typeof incident.type === 'string' ? incident.type : 'Unclassified',
-      description: typeof incident.description === 'string' ? incident.description : 'No summary was recorded.',
-      incident_start: typeof incident.start_timestamp === 'string' ? incident.start_timestamp : '',
-      incident_end: typeof incident.end_timestamp === 'string' ? incident.end_timestamp : '',
-      incident_start_confirmed: false,
-      duration_seconds: typeof incident.duration === 'number' ? incident.duration : null,
-      severity: typeof incident.severity_level === 'number' ? incident.severity_level : 1,
-      severity_reason: 'No separate severity rationale was retained for this report.',
-      confidence: typeof incident.confidence_score === 'number' ? incident.confidence_score : 0,
-      timeline: [],
-      persons: entities.map((row) => ({ description: String(row.description || 'Person'), actions: '' })),
-      instruments: instruments.map((row) => ({ name: String(row.name || 'Unknown'), description: String(row.description || 'No description'), threat_level: typeof row.threat_level === 'number' ? row.threat_level : null })),
-      assets: assets.map((row) => ({ name: String(row.name || 'Unknown'), description: String(row.description || 'No description') })),
-      uncertainties: [],
-      location: '',
     };
-    const report: AnalysisReport = stored && stored.videoId === videoId && stored.modelRunId === modelRunId ? {
-      ...fallback,
-      ...stored,
-      ...(editedReport || {}),
-      videoId,
-      modelRunId,
-      persons: editedReport?.persons as AnalysisReport['persons'] || (fallback.persons.length > 0 ? fallback.persons : stored.persons),
-      instruments: editedReport?.instruments as AnalysisReport['instruments'] || (fallback.instruments.length > 0 ? fallback.instruments : stored.instruments),
-      assets: editedReport?.assets as AnalysisReport['assets'] || (fallback.assets.length > 0 ? fallback.assets : stored.assets),
-    } : { ...fallback, ...(editedReport || {}) } as AnalysisReport;
+
+    // Relational fallback, for runs whose notes hold no report (e.g. eval, seed or agent-only rows).
+    const start = toSeconds(incident.start_timestamp);
+    const end = Math.max(start, toSeconds(incident.end_timestamp));
+    const fallback: AnalysisReport = {
+      ...metadata,
+      legacy: true,
+      incident: {
+        type: typeof incident.type === 'string' ? incident.type : 'Unclassified',
+        title: `${typeof incident.type === 'string' ? incident.type : 'Incident'} report`,
+        start_timestamp: start,
+        end_timestamp: end,
+        duration: typeof incident.duration === 'number' ? incident.duration : end - start,
+        description: typeof incident.description === 'string' ? incident.description : 'No summary was recorded.',
+        severity_level: typeof incident.severity_level === 'number' ? incident.severity_level : 1,
+        severity_reason: '',
+        confidence_score: typeof incident.confidence_score === 'number' ? incident.confidence_score : null,
+        location: null,
+      },
+      entities: entities.map((row) => ({
+        entity_id: String(row.entity_id || ''),
+        type: String(row.type || 'unknown'),
+        description: String(row.description || ''),
+      })),
+      instruments: instruments.map((row) => ({
+        instrument_id: String(row.instrument_id || ''),
+        entity_id: typeof row.entity_id === 'string' ? row.entity_id : null,
+        name: String(row.name || 'Unknown'),
+        description: String(row.description || ''),
+        threat_level: typeof row.threat_level === 'number' ? row.threat_level : 1,
+      })),
+      assets: assets.map((row) => ({
+        asset_id: String(row.asset_id || ''),
+        name: String(row.name || 'Unknown'),
+        description: String(row.description || ''),
+      })),
+      timeline: [],
+      uncertainties: [],
+    };
+
+    // Notes hold the preserved AI report and, after a human edit, the editedReport copy shown by default.
+    const stored = reportsFromNotes(modelRun.notes);
+    const matches = stored && (!stored.original.videoId || stored.original.videoId === videoId)
+      && (!stored.original.modelRunId || stored.original.modelRunId === modelRunId);
+    const original: AnalysisReport = matches ? { ...stored!.original, ...metadata, rawModelOutput: stored!.original.rawModelOutput, reportText: stored!.original.reportText, reportTextError: stored!.original.reportTextError } : fallback;
+    const current: AnalysisReport = matches && stored!.edited ? { ...original, ...stored!.edited, ...metadata, rawModelOutput: original.rawModelOutput, reportText: original.reportText } : original;
+
     return NextResponse.json({
       report: {
-        ...report,
-        originalReport: stored && stored.videoId === videoId && stored.modelRunId === modelRunId ? stored : fallback,
+        ...current,
+        originalReport: original,
         playbackUrl,
-        promptVersion: typeof modelRun.prompt_version === 'string' ? modelRun.prompt_version : report.promptVersion,
         reviewStatus: typeof review?.status === 'string' ? review.status : 'unreviewed',
         verifiedBy: typeof review?.verified_by === 'string' ? review.verified_by : undefined,
         verifiedAt: typeof review?.verified_at === 'string' ? review.verified_at : undefined,

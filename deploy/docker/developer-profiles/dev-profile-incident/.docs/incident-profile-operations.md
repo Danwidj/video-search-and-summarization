@@ -85,6 +85,8 @@ For changes in `services/agent/src` to take effect across native process restart
 
 Environment variables are captured at process start: editing `generated.env.remote` does not take effect until `native-services.sh restart vss-agent` sources the file. Live environment values can be inspected in `/proc/<pid>/environ`.
 
+**Incident contract on the agent:** `incident_report_gen` reads the vendored contract in `services/agent/src/vss_agents/incident_contract/` (prompts, schema, `p1_request.json`, `rp1_request.json`) at request time. With an editable install, `git pull` plus `native-services.sh restart vss-agent` is the whole redeploy; the change adds no Python dependencies. It uses `VLM_BASE_URL`/`VLM_NAME` for P1, `LLM_BASE_URL` for RP1 (model fixed by the contract) and `OPENAI_API_KEY`. A console on `incident-contract-v2` needs an agent on the same contract: the new `/analyze` body is `{video_url, model_run_id?}`, and an older agent rejects it.
+
 **VM Agent Reinstall Procedure:**
 A full `uv sync` in `services/agent` on `kwanz-ws` fails because `nvdataset` only resolves from NVIDIA's internal artifactory. To relink `vss_agents` editably to the repo code and install dependencies:
 ```bash
@@ -186,8 +188,9 @@ Verify deployment health against this checklist before declaring a build ready:
 - [ ] **Video Ingestion:** Upload an `.mp4` clip via `incident-console-v2`. Verify that chunked upload succeeds,
       the clip is stored in Cloudflare R2 as a classification-neutral `uploads/<sensorId>/<uuid><ext>` key in both modes, `HeadObject` reports a nonzero size, and a playback URL generates.
 - [ ] **Automated Report Generation:** Trigger incident analysis. Verify all structured fields populate
-      (type, severity, confidence, summary, timeline, entities, instruments, assets). Confirm ambiguous footage
-      gracefully degrades (e.g. empty persons array, unconfirmed start time).
+      (type, severity, summary, timeline, entities, instruments, assets, written report; confidence may be "—").
+      Confirm ambiguous footage degrades to empty arrays and `uncertainties`, and that output breaking the
+      contract surfaces as a 422 with nothing persisted.
 - [ ] **Persistence Read-Back:** Confirm `POST /api/analysis` returns 200 only after `videos`, `model_runs`,
       `incidents`, and `reports` can be read back and `videos.filepath` exactly matches the submitted R2 key.
 - [ ] **Metadata Editing & Re-Analysis:** Modify input metadata, re-run analysis, and confirm that a new model run ID

@@ -183,3 +183,17 @@ def test_empty_arrays_and_null_holder_are_valid():
     report["assets"] = []
     report["uncertainties"] = []
     assert validate_report(report) is report
+
+
+def test_shared_request_configs():
+    assert contract.p1_request() == {"temperature": 0.0, "max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
+    rp1 = contract.rp1_request()
+    assert rp1["model"] == "nvidia/nemotron-3-nano-30b-a3b"
+    assert rp1["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_eval_rp1_constants_come_from_contract():
+    import eval_run_lib
+
+    assert eval_run_lib.RP1_MODEL == contract.rp1_request()["model"]
+    assert eval_run_lib.RP1_INFERENCE_CONFIG == {k: v for k, v in contract.rp1_request().items() if k != "model"}

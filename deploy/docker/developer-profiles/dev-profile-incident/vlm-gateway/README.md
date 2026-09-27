@@ -77,6 +77,8 @@ curl -X POST http://localhost:8600/v1/chat/completions \
   }'
 ```
 
+The gateway forwards the request body unchanged (including `response_format` and `media_io_kwargs` from the incident contract). Its upstream timeout is **300 s**, because a P1 call with a reasoning VLM and a 16k token budget can run for minutes; the console's analysis route allows the same.
+
 ## VM Deployment
 
 Deployed as part of the `dev-profile-incident` stack via `docker compose --profile bp_developer_search_2d up -d vlm-gateway`.
