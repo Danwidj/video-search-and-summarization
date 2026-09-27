@@ -122,6 +122,26 @@ RP1  POST {gateway}/v1/chat/completions
 | 4. database | Migration mapping `incidents.type` fighting → assault and animal → animal attack; `entities.type` person → human. Dry run first, then apply only after approval. | [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) rules |
 | 5. docs | Rewrite `analysis-schema.md`. Update `architecture.md` (sequences A and B), `data.md`, `status.md` and `decisions.md`, plus the `incident-analyze-video` and `incident-run-eval` skills. | Standing docs rule |
 
+## 5a. Phase 0 results
+
+**Run 1, 2026-09-27T03:18:56Z** (`anomaly/explosion/Explosion019_x264.mp4`, max_tokens 4096)
+
+| Model | schema_enforced | url_fetch | url_negative_control | p1_contract | P1 answer |
+|---|---|---|---|---|---|
+| `cosmos-3-nano-reasoner` | PASS | PASS | PASS (500 quoting R2's `404 Not Found`, so the fetch is proven) | PASS | `assault`, severity 1: **wrong type** |
+| `cosmos-3-super-reasoner` | PASS | PASS | PASS (200 with `null` body, weaker evidence) | PASS | `assault`, severity 1: **wrong type**. Its one-line description invents a "forklift collides with a worker". |
+| `nemotron-3-nano-omni-30b-a3b-reasoning` | PASS | PASS (describes a fire, consistent with the clip) | PASS (200 with `null` body) | **FAIL**: empty content | none |
+
+**Findings**
+- Server-side `json_schema` enforcement is real on all three models, so D3 is feasible.
+- A signed-URL fetch is proven for Cosmos Nano and plausible for the other two.
+- A strict pass says nothing about correctness. Both Cosmos models misclassified an explosion clip.
+- Nemotron's empty P1 content is unexplained; the likely cause is the reasoning budget running out before the JSON.
+
+**Next (run 2):** the probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It adds `--compare-base64` (URL vs inline A/B) and `--p1-max-tokens`. Before phase 1, re-run on 3 or more clips from different categories with `--compare-base64 --p1-max-tokens 16384` to find out:
+1. whether nemotron is exhausting its tokens;
+2. whether the Cosmos misclassification is caused by the URL input or by the model.
+
 ## 6. Risks
 
 | Risk | Mitigation |

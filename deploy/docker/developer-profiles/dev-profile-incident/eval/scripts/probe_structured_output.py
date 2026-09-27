@@ -32,14 +32,27 @@ A model passes only if all four pass. Results go to stdout and to
 ``eval_data/probe/probe_<UTC timestamp>.json``; the exit code is 1 if any model
 fails. Cost: 4 calls per model (2 carry the video).
 
+Every check also records ``finish_reason``, token ``usage`` and the length of
+``reasoning_content``, and a valid P1 check stores the full report, so both an
+empty answer and a wrong-but-valid answer can be diagnosed.
+
+Optional, not part of the verdict:
+- ``--compare-base64`` adds ``p1_contract_base64``: the same P1 call with the
+  video inlined as base64 (the pre-contract eval input), to tell URL effects
+  from model effects.
+- ``--p1-max-tokens N`` raises the P1 token budget, to test whether a reasoning
+  model runs out of tokens before emitting the JSON.
+
 Usage (from ``eval/``):
     uv run python scripts/probe_structured_output.py --video-key anomaly/assault/<clip>.mp4
     uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner
+    uv run python scripts/probe_structured_output.py --video-key <key> --compare-base64 --p1-max-tokens 16384
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -82,6 +95,10 @@ ENFORCEMENT_PROMPT = (
     "Do not use JSON, lists or code."
 )
 URL_FETCH_PROMPT = "In one sentence, describe what happens in this video."
+GATE_CHECKS = ["schema_enforced", "url_fetch", "url_negative_control", "p1_contract"]
+# Reported but excluded from the verdict: the same P1 call with the video inlined
+# as base64 (the pre-contract eval input), to separate URL effects from model effects.
+INFORMATIONAL_CHECKS = {"p1_contract_base64"}
 
 
 @dataclass
@@ -90,6 +107,13 @@ class Check:
     detail: str
     status_code: int | None = None
     content_preview: str = ""
+    # Diagnostics copied from the response: why a reasoning model returned no
+    # content (finish_reason "length" + large reasoning), and the full P1 report
+    # so answer quality - not just shape - can be reviewed.
+    finish_reason: str | None = None
+    usage: dict = field(default_factory=dict)
+    reasoning_chars: int = 0
+    report: dict | None = None
 
 
 @dataclass
@@ -99,7 +123,8 @@ class ModelResult:
 
     @property
     def passed(self) -> bool:
-        return bool(self.checks) and all(c.passed for c in self.checks.values())
+        gate = [c for name, c in self.checks.items() if name not in INFORMATIONAL_CHECKS]
+        return bool(gate) and all(c.passed for c in gate)
 
 
 def _preview(text: str | None, limit: int = 300) -> str:
@@ -168,29 +193,51 @@ def check_p1_contract(result: ChatResult) -> Check:
         f"valid: type={incident['type']!r} severity={incident['severity_level']} "
         f"entities={len(report['entities'])} timeline={len(report['timeline'])}",
         result.status_code,
+        report=report,
     )
 
 
-def probe_model(model: str, video_url: str, missing_url: str) -> ModelResult:
+def with_diagnostics(check: Check, result: ChatResult) -> Check:
+    check.finish_reason = result.finish_reason
+    check.usage = (result.raw or {}).get("usage") or {}
+    check.reasoning_chars = len(result.reasoning_content or "")
+    return check
+
+
+def probe_model(
+    model: str,
+    video_url: str,
+    missing_url: str,
+    *,
+    base64_url: str | None = None,
+    p1_max_tokens: int | None = None,
+) -> ModelResult:
     result = ModelResult(model)
-    result.checks["schema_enforced"] = check_schema_enforced(
-        chat_completion(
-            model,
-            [{"role": "user", "content": ENFORCEMENT_PROMPT}],
-            inference_config={"response_format": ENFORCEMENT_RESPONSE_FORMAT},
+
+    def run(check_fn, messages, response_format=None, max_tokens=None):
+        overrides = {}
+        if response_format is not None:
+            overrides["response_format"] = response_format
+        if max_tokens is not None:
+            overrides["max_tokens"] = max_tokens
+        response = chat_completion(model, messages, inference_config=overrides or None)
+        return with_diagnostics(check_fn(response), response)
+
+    result.checks["schema_enforced"] = run(
+        check_schema_enforced, [{"role": "user", "content": ENFORCEMENT_PROMPT}], ENFORCEMENT_RESPONSE_FORMAT
+    )
+    result.checks["url_fetch"] = run(check_url_fetch, _video_messages(video_url, URL_FETCH_PROMPT))
+    result.checks["url_negative_control"] = run(
+        check_url_negative_control, _video_messages(missing_url, URL_FETCH_PROMPT)
+    )
+    p1_prompt = contract.extraction_prompt()
+    result.checks["p1_contract"] = run(
+        check_p1_contract, _video_messages(video_url, p1_prompt), contract.response_format(), p1_max_tokens
+    )
+    if base64_url is not None:
+        result.checks["p1_contract_base64"] = run(
+            check_p1_contract, _video_messages(base64_url, p1_prompt), contract.response_format(), p1_max_tokens
         )
-    )
-    result.checks["url_fetch"] = check_url_fetch(chat_completion(model, _video_messages(video_url, URL_FETCH_PROMPT)))
-    result.checks["url_negative_control"] = check_url_negative_control(
-        chat_completion(model, _video_messages(missing_url, URL_FETCH_PROMPT))
-    )
-    result.checks["p1_contract"] = check_p1_contract(
-        chat_completion(
-            model,
-            _video_messages(video_url, contract.extraction_prompt()),
-            inference_config={"response_format": contract.response_format()},
-        )
-    )
     return result
 
 
@@ -221,14 +268,17 @@ def first_video_key(client, prefix: str) -> str:
 
 
 def print_table(results: list[ModelResult]) -> None:
-    names = ["schema_enforced", "url_fetch", "url_negative_control", "p1_contract"]
+    names = GATE_CHECKS + sorted({n for r in results for n in r.checks if n in INFORMATIONAL_CHECKS})
     print(f"\n{'model':48} " + " ".join(f"{n:20}" for n in names) + " verdict")
     for r in results:
         cells = " ".join(f"{('PASS' if n in r.checks and r.checks[n].passed else 'FAIL'):20}" for n in names)
         print(f"{r.model:48} {cells} {'PASS' if r.passed else 'FAIL'}")
     for r in results:
         for name, check in r.checks.items():
+            extra = f" (finish_reason={check.finish_reason}, reasoning_chars={check.reasoning_chars})"
             if not check.passed:
+                print(f"  {r.model} / {name}: {check.detail}{extra}")
+            elif check.report is not None:
                 print(f"  {r.model} / {name}: {check.detail}")
 
 
@@ -237,12 +287,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
     parser.add_argument("--video-key", help="R2 key of a short clip (default: first .mp4 under --prefix)")
     parser.add_argument("--prefix", default="anomaly/")
+    parser.add_argument(
+        "--compare-base64",
+        action="store_true",
+        help="also run P1 with the video inlined as base64 (informational, not part of the verdict)",
+    )
+    parser.add_argument(
+        "--p1-max-tokens", type=int, help="override max_tokens for the P1 calls only (default: the fixed 4096)"
+    )
     args = parser.parse_args(argv)
 
     client = _r2_client()
     video_key = args.video_key or first_video_key(client, args.prefix)
     video_url = signed_url(client, video_key)
     missing_url = signed_url(client, f"probe-missing/{uuid.uuid4()}.mp4")
+    base64_url = None
+    if args.compare_base64:
+        response = client.get_object(Bucket=os.environ["R2_BUCKET"], Key=video_key)
+        base64_url = "data:video/mp4;base64," + base64.b64encode(response["Body"].read()).decode()
     print(f"contract {contract.contract_version()} | video {video_key} | models {len(args.models)}")
 
     PROBE_DIR.mkdir(parents=True, exist_ok=True)
@@ -253,13 +315,15 @@ def main(argv: list[str] | None = None) -> int:
     for model in args.models:
         print(f"probing {model} ...", flush=True)
         try:
-            results.append(probe_model(model, video_url, missing_url))
+            results.append(
+                probe_model(model, video_url, missing_url, base64_url=base64_url, p1_max_tokens=args.p1_max_tokens)
+            )
         except Exception as exc:  # keep probing the other models; record why this one stopped
             failed = ModelResult(model)
             failed.checks["probe_error"] = Check(False, f"{type(exc).__name__}: {exc}")
             results.append(failed)
         # Saved after every model so an interrupted run keeps what finished.
-        write_results(out_path, video_key, stamp, results)
+        write_results(out_path, video_key, stamp, results, args.p1_max_tokens)
     print_table(results)
     print(f"\nwrote {out_path}")
     return 0 if all(r.passed for r in results) else 1
@@ -273,11 +337,14 @@ def redact(text: str) -> str:
     return _SIGNED_QUERY.sub(r"\1=REDACTED", text)
 
 
-def write_results(out_path: Path, video_key: str, stamp: str, results: list[ModelResult]) -> None:
+def write_results(
+    out_path: Path, video_key: str, stamp: str, results: list[ModelResult], p1_max_tokens: int | None = None
+) -> None:
     payload = {
         "contract_version": contract.contract_version(),
         "video_key": video_key,
         "run_at": stamp,
+        "p1_max_tokens": p1_max_tokens,
         "results": [
             {"model": r.model, "passed": r.passed, "checks": {k: asdict(v) for k, v in r.checks.items()}}
             for r in results
