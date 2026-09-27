@@ -45,7 +45,10 @@ drill-downs, cross-filters, and previous-period KPI counts.
 adds weekday and low/medium severity filtering to the report summary RPC and
 adds `apply_incident_report_patch`, which atomically applies changed report
 fields while preserving untouched values and evidence categories. This
-migration is pending application to the shared Supabase project.
+migration was applied to shared Supabase on 2026-09-27 and PostgREST's schema
+cache was reloaded. The Supabase management connector recorded it as version
+`20260927075044` (its UTC application timestamp), while the checked-in migration
+filename retains the repository's ordered migration timestamp.
 
 ## Applying these migrations to a Supabase project
 
