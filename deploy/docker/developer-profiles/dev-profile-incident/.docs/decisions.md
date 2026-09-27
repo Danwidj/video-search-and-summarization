@@ -11,19 +11,57 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
-### 2026-09-27: Aggregate dashboard intelligence in one service-only RPC
-- **Decision:** Replace the dashboard's `GET /api/reports?all=true` client aggregation with `get_incident_dashboard`, a bounded `SECURITY INVOKER` RPC available only to `service_role`. Render dependency-free SVG/CSS charts, expandable incident-type evidence summaries, chained report links, period comparisons, and severity/time cross-filtering from its response. Treat the heatmap explicitly as report-generation activity because incident timestamps are video-relative rather than wall-clock event times.
-- **Why:** Summary rows omit evidence, the compatibility endpoint caps at 1,000 reports, and downloading report graphs would be slow and expose unnecessary data. Server aggregation keeps counts and drill-downs consistent at any dataset size.
-- **Alternatives rejected:** Fetching every detailed report (N+1 requests and excessive transfer); adding a chart dependency (not needed for these compact visuals); presenting the heatmap as incident occurrence time (the schema does not retain an absolute occurrence timestamp).
-- **Live verification:** Migration applied and recorded as version `20260927130000` on 2026-09-27. A 31-day PostgREST call returned HTTP 200 with 13 reports, 4 type drill-downs, 31 trend points, 12 populated heatmap cells, and both evidence leaderboards.
-- **Links:** [`../supabase/migrations/20260927130000_dashboard_analytics.sql`](../supabase/migrations/20260927130000_dashboard_analytics.sql); [`../incident-console-v2/app/api/dashboard/route.ts`](../incident-console-v2/app/api/dashboard/route.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`.docs/data.md`](data.md); [`.docs/architecture.md`](architecture.md).
+### 2026-09-27: Eval moved onto the incident contract (phase 1); contract probe removed
+- **Decision:**
+  - `eval_run.py` sends a signed R2 URL, then the contract prompt, with the schema enforced, and parses strictly with `contract.parse_report`.
+  - The fixed P1 config is `temperature 0`, `max_tokens 16384`, `media_io_kwargs {"video": {"num_frames": 64}}`, identical for all models.
+  - A contract failure is scored as an empty prediction (a miss), listed under `contract_failures`, and its RP1 is skipped rather than counted as an RP1 failure.
+  - The split manifests are unchanged, so the former few-shot demonstration videos stay excluded and results stay comparable video-for-video.
+  - Deleted: `eval/prompts.py`, `eval/scripts/eval_few_shot.py`, `extract_json`, base64 video and the local video cache, and, at the captain's request, the phase 0 probe script and its tests.
+  - `eval/tests/test_contract.py` stays: it covers `contract.py`, which the runner now depends on.
+- **Why:** Phase 0 evidence (plan §5a):
+  - schema enforcement works on all three models;
+  - URL and base64 give identical results;
+  - Nemotron needs 16k tokens;
+  - the gateway samples only ~24 frames by default.
 
-### 2026-09-27: Filter reports through normalized effective evidence
-- **Decision:** Add dedicated people/entities, instrument, and asset filters to the report library. Execute them in the service-role-only `list_incident_report_summaries` RPC against evidence rows sharing the report's `(incident_id, model_run_id)`. Filter categories combine with AND; repeated terms within a category combine with OR. When a reviewer saves an edited report, atomically replace its normalized evidence through `replace_incident_evidence`; preserve the original AI report in `model_runs.notes`.
-- **Why:** Filtering must happen before pagination and counts, must not mix evidence from different analysis runs, and must reflect the reviewed report rather than stale machine output.
-- **Alternatives rejected:** Client-side filtering (only sees one six-item page); filtering serialized `model_runs.notes` (unindexed and inconsistent across legacy shapes); leaving evidence tables unchanged after edits (filter results disagree with the report UI); adding duplicated filter/facet tables (unnecessary at current scale).
-- **Live verification:** Migration applied 2026-09-27 and recorded as version `20260927120000`. PostgREST accepted the complete new signature and returned HTTP 200 for an entity-filtered query (`person`: 5 matching reports total).
-- **Links:** [`../supabase/migrations/20260927120000_filter_report_evidence.sql`](../supabase/migrations/20260927120000_filter_report_evidence.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx); [`.docs/data.md`](data.md); [`.docs/architecture.md`](architecture.md).
+  Scoring failures as misses keeps strict parsing honest in the numbers instead of hiding failures.
+- **Alternatives rejected:**
+  - Per-model configs (this breaks the one-variable comparison).
+  - Excluding failed videos from the scores (this inflates accuracy).
+  - Keeping the probe as a maintained tool (the captain asked for its removal; its results are recorded).
+- **Links:** [`../eval/README.md`](../eval/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
+### 2026-09-27: Strict timeline bounds; `duration` derived in code (`incident-contract-v2`)
+- **Decision:**
+  - Keep the cross-field rule that every timeline event falls within `[start_timestamp, end_timestamp]`; a lead-up event is a contract violation (HTTP 422).
+  - Remove `incident.duration` from the schema and the P1 prompt. Consumers compute it as `end_timestamp - start_timestamp` after validation (`with_derived_fields`).
+  - Bump the contract to `incident-contract-v2`.
+- **Why:** Probe run 2 showed `cosmos-3-super-reasoner` returning valid JSON with lead-up events before the incident window. The captain chose strictness over leniency for the timeline. Asking a model for a value that code can compute exactly only adds a failure mode.
+- **Alternatives rejected:**
+  - Relaxing the timeline to `[0, end_timestamp]`.
+  - Dropping the timeline rule.
+  - Keeping `duration` in the schema with a strict equality check.
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md) §2 and §5a.
+
+### 2026-09-27: Contract files in profile `contracts/`, validated with `jsonschema`; phase 0 probe with controls
+- **Decision:** Put the shared schema, the P1/RP1 prompts and `VERSION` in `dev-profile-incident/contracts/`. Validate in Python with `jsonschema` (Draft 2020-12, new `eval` dependency) plus explicit cross-field checks in `eval/contract.py`. Gate the rollout on `eval/scripts/probe_structured_output.py`, which proves schema enforcement with a contradictory-prompt control (the schema allows only `{"answer_code": "schema-enforced"}` while the prompt asks for prose) and proves URL fetching with a missing-object negative control.
+- **Why:** One location every consumer can read or vendor. `jsonschema` validates against the same file the model is sent, with no hand-written mirror. The controls stop a model that happens to emit JSON, or that answers without reading the video, from passing.
+- **Alternatives rejected:**
+  - Pydantic as the Python source (eval and agent are separate packages, so the file is the only neutral source; the agent will keep Pydantic with a parity test in phase 3).
+  - Probing with the P1 call alone (cannot tell enforcement from compliance, or a fetch from a hallucination).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); `eval/scripts/probe_structured_output.py` (removed); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
+### 2026-09-27: Unified prompt and structured-output contract planned, awaiting review
+- **Decision:** Plan one shared contract for eval P1, console gateway mode and agent mode: the eval P1 prompt as the base (with title, severity_reason, location, timeline and uncertainties added), a nested snake_case JSON Schema enforced through `response_format: json_schema`, strict parsing that returns 422 instead of repairing, and the same call chain everywhere (P1 video to JSON, then RP1 JSON to prose). Other choices: no few-shot, eval's 5-label taxonomy (road accident, burglary, explosion, assault, animal attack), signed R2 URLs for video input, and `confidence_score` null unless the API gives a native score. Agent mode is in scope. No code changes yet; a per-model structured-output and URL-fetch check (phase 0) gates everything else.
+- **Why:** The three paths differ in prompt, schema, taxonomy, video encoding, few-shot and parsing, so the benchmark does not measure production behaviour. Eval's category-specific few-shot block also leaks the label into the prompt. Lenient parsing hides model failures.
+- **Alternatives rejected:**
+  - A 7-label superset taxonomy (overlapping labels, and the ground truth cannot score `fighting` or `animal`).
+  - A fixed mixed-category few-shot set (the captain chose none).
+  - Base64 video (payload size, and the console would have to stream whole clips).
+  - Keeping agent mode on its flat contract (leaves two shapes).
+  - A prompted JSON template with tolerant parsing (the status quo).
+- **Links:** [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); `eval/prompts.py` (removed); `eval/scripts/eval_few_shot.py` (removed); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py).
 
 ### 2026-09-27: Edit the full report beside the original AI result
 - **Decision:** Replace the individual report's `Start review` action with `Edit report`. Editing opens the original AI structured result beside an editable copy. Title, incident type, summary, severity, confidence, time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties are editable. Store the editable copy as `incidentConsoleV2.editedReport` in `model_runs.notes`, update searchable incident fields, and leave the original `incidentConsoleV2.report` intact. Remove the separate bottom-page structured editor.

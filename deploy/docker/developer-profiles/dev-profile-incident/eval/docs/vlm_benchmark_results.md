@@ -1,5 +1,10 @@
 # P1 structured incident extraction — VLM benchmark results
 
+> **Superseded (2026-09-27).** These results used the pre-contract setup: P1-v1, 5 same-category few-shot examples
+> (which leak the label and inflate type accuracy), base64 video, 4096 max_tokens, and lenient JSON extraction.
+> `eval_run.py` now runs the shared incident contract (`../../contracts/`, see `../README.md`). The figures below are
+> kept for reference only and are not comparable with contract runs.
+
 This document records the results of a controlled three-model comparison on
 structured incident extraction (the "P1" prompt/schema). It is the tracked,
 durable summary of a run whose raw inputs (ground-truth Excel workbook, cached
