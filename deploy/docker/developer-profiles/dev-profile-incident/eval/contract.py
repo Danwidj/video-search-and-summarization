@@ -38,6 +38,8 @@ SCHEMA_PATH = CONTRACTS_DIR / "incident_report.schema.json"
 EXTRACTION_PROMPT_PATH = CONTRACTS_DIR / "incident_extraction_prompt.md"
 REPORT_PROMPT_PATH = CONTRACTS_DIR / "report_generation_prompt.md"
 VERSION_PATH = CONTRACTS_DIR / "VERSION"
+P1_REQUEST_PATH = CONTRACTS_DIR / "p1_request.json"
+RP1_REQUEST_PATH = CONTRACTS_DIR / "rp1_request.json"
 
 # Keys describing the schema document itself; stripped from what is sent to the
 # model because some OpenAI-compatible servers reject them inside response_format.
@@ -66,6 +68,16 @@ def extraction_prompt() -> str:
 @cache
 def report_prompt_template() -> str:
     return REPORT_PROMPT_PATH.read_text()
+
+
+def p1_request() -> dict[str, Any]:
+    """Fixed P1 request settings shared by every consumer (temperature, max_tokens, media_io_kwargs)."""
+    return json.loads(P1_REQUEST_PATH.read_text())
+
+
+def rp1_request() -> dict[str, Any]:
+    """Fixed RP1 request: ``model`` plus its inference settings, shared by every consumer."""
+    return json.loads(RP1_REQUEST_PATH.read_text())
 
 
 @cache

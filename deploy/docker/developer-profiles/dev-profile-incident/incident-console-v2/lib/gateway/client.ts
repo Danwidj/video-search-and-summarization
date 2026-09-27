@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-export interface GatewayCompletionRequest {
+// The gateway forwards the body verbatim, so contract fields (response_format,
+// media_io_kwargs, chat_template_kwargs, ...) pass straight through to Switchyard.
+export type GatewayCompletionRequest = {
   model: string;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: unknown }>;
   stream: false;
-  temperature?: number;
-  max_tokens?: number;
-}
+} & Record<string, unknown>;
 
 export interface GatewayCompletionResponse {
-  choices: Array<{ message: { role: string; content: string } }>;
+  choices: Array<{ message: { role: string; content: string | null; reasoning_content?: string | null }; finish_reason?: string | null }>;
   model?: string;
 }
 
