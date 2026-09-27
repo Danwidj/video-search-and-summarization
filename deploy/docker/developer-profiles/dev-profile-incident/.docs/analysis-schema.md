@@ -1,161 +1,115 @@
 # Incident Analysis Schema & Output Alignment
 
-This document defines the unified schema for automated incident analysis reports and provides the
-contract specification shared between the reference agent model (`services/agent/`) and the console /
-gateway implementation (`incident-console-v2/`).
+This document describes the incident report every analysis path produces, and how it is validated, stored and shown.
 
 > [!NOTE]
-> As of 2026-09-25, the analysis contract across Gateway Mode (local) and Agent Mode (VM) is unified
-> on the native `snake_case` schema defined by `vss-agent` and validated by `incident-console-v2`.
+> Since `incident-contract-v2`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, the same JSON Schema, the same request settings and the same strict parser. The source of truth is [`../contracts/`](../contracts/README.md). Background and decisions: [`prompt-contract-plan.md`](prompt-contract-plan.md).
 
 ---
 
-## 1. Reference Incident Report Schema
+## 1. The contract
 
-The authoritative reference format is defined in Python using Pydantic in
-`services/agent/src/vss_agents/data_models/incident_report.py`. All fields adhere to standard
-Python `snake_case` naming conventions.
+| File (`contracts/`) | Role |
+|---|---|
+| `incident_report.schema.json` | JSON Schema (draft 2020-12), strict-mode compatible. It is sent as `response_format: json_schema` (strict) and validates every response. |
+| `incident_extraction_prompt.md` | P1 prompt: the meaning of every field. There is no JSON template and no few-shot block. |
+| `report_generation_prompt.md` | RP1 prompt: derived P1 JSON → prose report. |
+| `p1_request.json` | Fixed P1 settings: `temperature 0`, `max_tokens 16384`, `media_io_kwargs {"video": {"num_frames": 64}}`. |
+| `rp1_request.json` | Fixed RP1 model and settings: `nvidia/nemotron-3-nano-30b-a3b`, `temperature 0`, `max_tokens 4096`, thinking off. |
+| `VERSION` | `incident-contract-v2`, stored as `model_runs.prompt_version`. |
 
-### Sub-Models
+### Shape
 
-#### `Person`
-Represents an individual person or actor observed during the incident footage.
+```text
+incident
+  type               "road accident" | "burglary" | "explosion" | "assault" | "animal attack"
+  title              string
+  start_timestamp    integer seconds >= 0
+  end_timestamp      integer seconds >= start_timestamp
+  duration           integer seconds, DERIVED by code (end - start), never requested from the model
+  description        string
+  severity_level     integer 1-5
+  severity_reason    string
+  confidence_score   number 0-1 | null   (null unless the model/API gives a native score)
+  location           string | null
+entities[]           entity_id "E1".."En", type "human" | "animal" | "unknown", description
+instruments[]        instrument_id "I1".."In", entity_id (an E id) | null, name, description, threat_level 1-5
+assets[]             asset_id "A1".."An", name, description
+timeline[]           start_seconds, end_seconds | null, description  (all within [start_timestamp, end_timestamp], chronological)
+uncertainties[]      string
+```
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `description` | `str` | Text | `""` | Visual appearance, clothing, identifiers, or physical traits |
-| `actions` | `str` | Text | `""` | Specific actions, movement, or behaviors exhibited |
+### Cross-field rules
 
-#### `Instrument`
-Represents an object, tool, or weapon observed in connection with the incident.
+These are checked after the schema:
+- `end_timestamp >= start_timestamp`.
+- IDs are sequential.
+- Every instrument holder is `null` or an existing entity.
+- The timeline falls within the incident window and is in chronological order. This is kept strict: lead-up events are a violation (decision D11).
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `name` | `str` | Text | `""` | Identifier or category (e.g. `crowbar`, `knife`, `lighter`) |
-| `description` | `str` | Text | `""` | Contextual usage or handling description |
-| `threat_level` | `int | None` | Integer 1–5 or `None`; before-validator rounds numeric input, maps <1 / bool / non-numeric to None, clamps >5 to 5 | `None` | Assessed threat rating |
+## 2. One call pattern, one parser
 
-#### `Asset`
-Represents physical property, infrastructure, equipment, or vehicles impacted by or involved in the incident.
-
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `name` | `str` | Text | `""` | Identifier (e.g. `front entrance glass`, `cash register`, `silver sedan`) |
-| `description` | `str` | Text | `""` | Observed damage, state, or location context |
-
-#### `TimelineItem`
-Represents a discrete chronological event or phase within the incident.
-
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `start_seconds` | `float` | `float, unconstrained (expected >= 0)` | `0.0` | Offset in seconds from video start when the event begins |
-| `end_seconds` | `float | None` | `float or None, unconstrained` | `None` | Offset in seconds when the event concludes |
-| `description` | `str` | Text | `""` | Concise description of the event occurring during this window |
-
----
-
-### Root Model: `IncidentReport`
-
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `title` | `str` | Text, max 160 characters | `""` | Short descriptive title of the incident |
-| `incident_type` | `str` | `str`; taxonomy (`road accident`, `burglary`, `explosion`, `fighting`, `animal`) requested by prompt | `"road accident"` | Classification |
-| `severity` | `int` | Integer, `1 <= severity <= 5` | `1` | Overall incident severity score |
-| `severity_reason` | `str` | Text | `""` | Justification and visible evidence supporting the severity score |
-| `confidence` | `float` | Float, `0.0 <= confidence <= 1.0` | `0.0` | Model confidence in the classification and report |
-| `incident_start` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking onset |
-| `incident_end` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking resolution |
-| `incident_start_confirmed` | `bool` | Boolean | `False` | Whether onset time is conclusively identified in footage |
-| `duration_seconds` | `int | None` | `int or None, unconstrained (>= 0)` | `None` | Calculated or estimated incident duration |
-| `description` | `str` | Text | `""` | Comprehensive narrative description of the incident |
-| `persons` | `list[Person]` | List of `Person` objects | `[]` | Identified persons and actors (empty list valid) |
-| `instruments` | `list[Instrument]` | List of `Instrument` objects | `[]` | Tools, weapons, and objects observed |
-| `assets` | `list[Asset]` | List of `Asset` objects | `[]` | Impacted or involved property, vehicles, or structures |
-| `timeline` | `list[TimelineItem]` | List of `TimelineItem` objects | `[]` | Chronological sequence of event milestones |
-| `uncertainties` | `list[str]` | List of strings | `[]` | Explicit ambiguities, blind spots, or occluded details |
-| `location` | `str` | Text | `""` | Inferred or observed setting (e.g. `indoor warehouse`, `parking lot`) |
-
----
-
-## 2. Unified Analysis Contract & Frontend Alignment
-
-### Single Contract Across Both Analysis Modes
-
-`incident-console-v2` uses the agent's native `snake_case` `IncidentReport` shape as its single analysis contract in **both** modes:
-
-1. **Gateway Mode (`ANALYSIS_MODE=gateway`):**
-   - Prompt (`incident-console-v2/lib/analysis/prompt.ts`, version `incident-v2-snake`) incorporates the agent's extraction rules and requests the exact 16-field `snake_case` JSON shape.
-   - Output from the VLM gateway goes through `parseIncidentAnalysis` (`incident-console-v2/lib/analysis/parse.ts`), which validates it with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`) and then applies the gateway-only duration fallback (see Tolerant Parsing Behaviors).
-2. **Agent Mode (`ANALYSIS_MODE=agent`):**
-   - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
-   - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema`. At this ingestion boundary, legacy/common VLM aliases (`incidentType`, `summary`, `severityLevel`, `confidenceScore`, timestamp/duration camelCase fields, `entities`, nested `threatLevel`, and camelCase timeline offsets) are normalized into the same canonical snake-case object before validation and persistence.
-   - Full native report is saved to `model_runs.notes` and returned in the HTTP response.
-
-### Checked-in Contract Artifact & Drift Prevention
-
-The authoritative JSON contract field specification is checked in at:
-`incident-console-v2/lib/analysis/incident-report-contract.json`. It holds only the field set, types, and defaults; the prompt text has one source per runtime (`_EXTRACTION_SYSTEM_PROMPT` in the agent, `INCIDENT_ANALYSIS_PROMPT` in `lib/analysis/prompt.ts`).
-
-Automated drift-prevention tests guarantee continuous parity across both environments:
-- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that the contract defines exactly the 16 fields, that its defaults parse through `incidentAnalysisSchema`, that `INCIDENT_ANALYSIS_PROMPT` has exactly one `Rules:` line per contract field, and that the prompt's "Use exactly this shape" JSON (top-level and nested keys) matches the contract and survives schema parsing, and that the example uses `null` (not `0` / `"0:00"`) placeholders for `duration_seconds`, `incident_start` and `incident_end`.
-- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, that the `incident_type` enum matches `INCIDENT_TYPES`, and that `_EXTRACTION_SYSTEM_PROMPT` has exactly one rule per model field except `incident_start` / `incident_end` / `incident_start_confirmed`, which the agent derives rather than asks the model for.
-
-### Tolerant Parsing Behaviors
-
-The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydantic model's constraints while retaining the resilient parsing behavior established in PR #92:
-- **Threat Level Normalization:** Strings (`"3"`), words (`"high"` -> 4, `"critical"` -> 5), and floating-point values are converted to integers; values > 5 are clamped to 5; values < 1 or unparseable are coerced to `null`.
-- **Severity Clamping:** Words (`"medium"` -> 3, `"critical"` -> 5) and out-of-range numbers are clamped to the 1–5 range.
-- **Confidence Normalization:** Decimal percentages (e.g. `85` -> 0.85) are normalized and clamped to `0.0 <= confidence <= 1.0`.
-- **String Bounds:** `title` is clamped to 160 characters; `incident_type` is trimmed to 32 characters.
-- **Duration Fallback (gateway only):** `parseIncidentAnalysis` (`lib/analysis/parse.ts`, used only by gateway mode) applies this after schema parsing; `incidentAnalysisSchema` itself leaves `duration_seconds` untouched, so agent-mode responses and stored reports keep their value. When `duration_seconds` is `null` or `0` and the timeline span is positive, it is derived as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. This deliberately goes beyond the agent, which only fills a `null` duration, because `nvidia/cosmos-3-nano-reasoner` emits `0` even when its timeline shows a real span.
-- **Pass-through Unknowns:** Unrecognized fields in model responses are preserved via `.passthrough()` rather than rejecting the payload.
-
-### Legacy DB Read-Compatibility (`model_runs.notes`)
-
-Historical incident runs created before contract unification stored `camelCase` JSON objects in `model_runs.notes`. To maintain full backward compatibility:
-- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Maps legacy `camelCase` notes before validating with `incidentAnalysisSchema`.
-- **Ingestion parser:** `lib/analysis/schema.ts` keeps snake_case canonical but accepts common camelCase/entity aliases so a semantically valid VLM reply is not silently replaced with defaults.
-- **Writer:** All new writes through PostgREST and Next.js routes write strictly `snake_case` payloads.
-
----
-
-## 3. Database Persistence Mapping
-
-### Primary Incident Record (`incidents` table)
-
-When persisting an `IncidentReport` to the Supabase PostgreSQL database, both `services/agent/src/vss_agents/tools/incident_report_gen.py`
-and `incident-console-v2/app/api/analysis/route.ts` map the extraction-facing fields to the SQL column names expected by `insert_incident`
-per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`:
-
-| Unified Model Field (`IncidentReport`) | Database Column (`incidents` table) | Stored Format / Notes |
+| Step | Request | Result |
 |---|---|---|
-| `incident_type` | `type` | `VARCHAR(32)` (free text, unconstrained) |
-| `incident_start` | `start_timestamp` | `VARCHAR(32)` (`"M:SS"` or `"H:MM:SS"`) |
-| `incident_end` | `end_timestamp` | `VARCHAR(32)` (`"M:SS"` or `"H:MM:SS"`) |
-| `duration_seconds` | `duration` | `INTEGER` |
-| `description` | `description` | `TEXT` |
-| `severity` | `severity_level` | `INTEGER` |
-| `confidence` | `confidence_score` | `DOUBLE PRECISION` (column always double precision; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL`) |
+| **P1** | The video as a **signed R2 URL** first, then `incident_extraction_prompt.md`, with the schema as strict `response_format` and `p1_request.json` settings. | The raw `content` must be one JSON document that passes the schema and cross-field rules, and `duration` is then added. There is **no** fence stripping, brace extraction, alias mapping, coercion or repair retry. A violation is **HTTP 422** and nothing is persisted. |
+| **RP1** | Text only: `report_generation_prompt.md` with the derived P1 JSON, using `rp1_request.json`. | Prose report text. If RP1 fails, the valid P1 report is kept and `reportTextError` / `report_text_error` records why. |
 
-### Child Evidence Persistence Mapping
+| Consumer | Validator | Where |
+|---|---|---|
+| eval | `jsonschema` + cross-field rules | `eval/contract.py` |
+| incident-console-v2 | Ajv (draft 2020-12) + cross-field rules | `incident-console-v2/lib/analysis/contract.ts` (server only; types in `contract-types.ts`) |
+| vss-agent | Strict Pydantic (`strict=True`, `extra="forbid"`) mirroring the schema + cross-field rules | `services/agent/src/vss_agents/incident_contract/` (a vendored copy of `contracts/`) |
 
-Observed actors, tools, and impacted property are persisted into their respective relational tables:
+**Drift protection:**
+- `services/agent/tests/unit_test/incident_contract/` fails if the vendored files differ from `contracts/`, or if the Pydantic models stop mirroring the schema.
+- `incident-console-v2/tests/contract.test.mjs` checks the TS types and constants against the schema file.
+- `eval/tests/test_contract.py` checks the schema's strict-mode shape and the prompt's taxonomy.
 
-| Model Sub-List | Target Table | Primary Key (`*_id`) Generation | Stored Attributes / Notes |
-|---|---|---|---|
-| `persons` | `entities` | `'e' + sha256(f"{incident_id}:{idx}")[:19]` | `type = 'person'` (VARCHAR(16)), `description = f"{person.description} {person.actions}".strip()`. `image` is NULL. |
-| `instruments` | `instruments` | `'i' + sha256(f"{incident_id}:{idx}")[:19]` | `name`, `description`, `threat_level` (INTEGER 1–5 or NULL). `image` is NULL. |
-| `assets` | `assets` | `'a' + sha256(f"{incident_id}:{idx}")[:19]` | `name`, `description`. `image` is NULL. |
+### Per analysis mode (`incident-console-v2`)
 
-### Unpersisted Fields
+- **Gateway mode (`ANALYSIS_MODE=gateway`):** the console runs P1 and RP1 through `vlm-gateway`, which forwards the body unchanged, then persists everything (§3).
+- **Agent mode (`ANALYSIS_MODE=agent`):**
+  - The console sends `POST /api/v1/incidents/{id}/analyze` with `{model_run_id, video_url}`, where `video_url` is the same signed R2 URL.
+  - `vss-agent` runs the identical P1 and RP1 and persists the incident rows.
+  - It returns `{report, report_text, report_text_error, model, contract_version, raw_output}`.
+  - The console validates `report` against the contract again, and persists the notes, the `videos` row (the R2 key) and `reports`.
+  - `reasoning` and `prompt_override` are no longer accepted, because they would break "one prompt everywhere".
 
-The following fields in `IncidentReport` have **no corresponding database columns** in PostgreSQL:
+## 3. Persistence
 
-- `title`
-- `severity_reason`
-- `timeline`
-- `uncertainties`
-- `location`
-- `incident_start_confirmed`
+### `model_runs.notes`
 
-**Storage behavior:** In both Gateway Mode and Agent Mode, these fields are durably stored within `model_runs.notes` JSON. Displays and report review in `incident-console-v2` hydrate these fields directly from `model_runs.notes`.
+```json
+{"incidentConsoleV2": {
+  "report": { "...metadata...", "incident": {"...": "..."}, "entities": [], "instruments": [], "assets": [], "timeline": [], "uncertainties": [] },
+  "rawModelOutput": "<P1 message content>",
+  "reportText": "<RP1 prose>",
+  "editedReport": { "...contract shape, only after a human edit..." }
+}}
+```
+
+- The original AI `report` is never overwritten.
+- Reviewer edits (`PATCH /api/reports/{videoId}/edit`) are validated against the same contract, get their `duration` recomputed and are stored as `editedReport`. An edit that breaks the contract returns **400**.
+
+### Relational rows
+
+| Table | Written from |
+|---|---|
+| `incidents` | `type`, `start_timestamp` / `end_timestamp` as **bare seconds** (`"3"`), the derived `duration`, `description`, `severity_level`, `confidence_score` (nullable), via the `insert_incident` RPC. |
+| `entities` | `entity_id` (`E1`...), `type` (`human`/`animal`/`unknown`), `description`. |
+| `instruments` | `instrument_id` (`I1`...), `entity_id` (holder or null), `name`, `description`, `threat_level`. |
+| `assets` | `asset_id` (`A1`...), `name`, `description`. |
+
+- **Gateway mode:** the console writes all of these.
+- **Agent mode:**
+  - the agent writes `model_runs`, `incidents` and the evidence tables;
+  - the console writes the notes, `videos` and `reports`;
+  - the agent **never** writes `videos`, so the durable R2 key is no longer overwritten.
+
+`title`, `severity_reason`, `location`, `timeline`, `uncertainties` and the RP1 text live only in `model_runs.notes` until Option B ([`restructure-plan.md`](restructure-plan.md)).
+
+## 4. Reports from before the contract
+
+- **Stored reports:** notes written before `incident-contract-v2` (flat snake_case or camelCase, `persons`, `M:SS` times, self-reported confidence) are converted **read-only** for display by `legacyToContract` in `incident-console-v2/lib/reports/storage.ts`. They are flagged `legacy`, map `fighting` to `assault` and `animal` to `animal attack` for display, and are never written back.
+- **Runs without notes** (eval, seed or older agent rows): these are rebuilt from the relational rows.
+- **Database rows:** live rows still hold the old taxonomy until the phase 4 migration.

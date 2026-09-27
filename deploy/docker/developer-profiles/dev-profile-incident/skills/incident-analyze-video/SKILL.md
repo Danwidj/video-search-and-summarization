@@ -13,7 +13,7 @@ metadata:
 
 Canonical facts:
 - Flows: [`.docs/architecture.md` §4](../../.docs/architecture.md#4-runtime-interaction-sequences), sequences A (gateway) and B (agent)
-- Report fields and translation: [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md)
+- Report contract, parsing and persistence: [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md); source files in [`contracts/`](../../contracts/README.md)
 - Tables: [`.docs/data.md`](../../.docs/data.md)
 
 ## Prerequisites
@@ -24,8 +24,10 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev (VLM `VLM_MODEL`, default `nvidia/cosmos-3-nano-reasoner`) | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
-| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev | Agent writes `incidents` and evidence. Console writes `videos` before and after, `model_runs.notes` and `reports`. |
+| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev. P1 on `VLM_MODEL` (default `nvidia/cosmos-3-nano-reasoner`), RP1 on the model in `contracts/rp1_request.json` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
+| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 on the agent's `VLM_NAME`, same RP1 | Agent writes `model_runs`, `incidents` and evidence. Console writes `videos` (before the call), `model_runs.notes` and `reports`. |
+
+Both modes run the same contract: P1 (signed R2 URL + prompt, JSON Schema `response_format`) then RP1 (prose). Output that breaks the contract is **422** and nothing is persisted.
 
 ## Instructions
 
@@ -38,7 +40,7 @@ Open `http://localhost:3200`, choose Analyze, and select the clip. Upload, analy
 1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
 2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
 3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
-4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "reasoning"?, "promptOverride"?}`. Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
+4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename"}` (`reasoning` and `promptOverride` are no longer accepted: one prompt everywhere). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success. A contract violation returns 422 with the violations listed. The route allows up to 300 s.
 
 Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video, go straight to step 4 with the existing R2 key.
 
@@ -47,14 +49,14 @@ Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploa
 ```bash
 curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -H 'Content-Type: application/json' \
-  -d '{"model_run_id": "<=20 chars, optional>", "reasoning": false}'
+  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>"}'
 ```
 
-The agent looks up the sensor id from `videos.source`, so the `videos` row must already exist. It returns an `IncidentReport` in snake_case.
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output}`, where `report` is the contract shape with the derived `incident.duration`.
 
 | Status | Meaning |
 |---|---|
-| 422 | The VLM/LLM output failed `IncidentReport` validation. Nothing default is persisted. |
+| 422 | P1 output broke the contract (schema or cross-field rule), or P1 hit `max_tokens` with no content. Nothing is persisted. |
 | 504 | Analysis timed out |
 | 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
 | 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |
@@ -67,12 +69,14 @@ The agent looks up the sensor id from `videos.source`, so the `videos` row must 
 
 Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-to-end-verification-checklist). Minimum checks after one analysis:
 
-- The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
-- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. In agent mode, the agent overwrites it and the console restores it. See known issue 3 in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt).
+- The report page shows type, severity, confidence ("—" when null), summary, timeline, evidence and the written (RP1) report, and the video plays from a fresh 1-hour signed R2 URL.
+- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (known issue 3, fixed on the contract branch; see [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
 - There is a new `model_runs` row, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 
 ## Known quirks
 
-- Both modes share one `snake_case` `IncidentReport` contract (`incident-console-v2/lib/analysis/incident-report-contract.json`, enforced by parity tests). The full report lives in `model_runs.notes`. Legacy camelCase notes are still readable. `title`, `severity_reason`, `timeline`, `uncertainties` and `location` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
+- The full report lives in `model_runs.notes` as `incidentConsoleV2.report` (plus `editedReport` after a reviewer edit). Notes written before `incident-contract-v2` are converted read-only and marked legacy in the UI. `title`, `severity_reason`, `timeline`, `uncertainties` and `location` are not relational columns yet (Option B: [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md)).
+- `confidence_score` is null unless the model API gives a native score; the model is never asked to self-report it.
+- Cosmos Super (the VM default) ignores `num_frames` and may put lead-up events outside the incident window, which is a 422 under the strict timeline rule.
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.
