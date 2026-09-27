@@ -9,7 +9,7 @@ import { PostgrestClient } from '@/lib/postgrest/client';
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 20;
-const FILTERS = new Set(['all', 'without-report']);
+const FILTERS = new Set(['all', 'without-report', 'awaiting-selection']);
 
 export interface VideoListItem {
   videoId: string;
@@ -35,11 +35,18 @@ export async function GET(request: Request) {
     const config = getServiceConfiguration();
     if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
+    // videos and incidents are linked by two foreign keys (incident -> its video,
+    // and video -> its official run), so every embed names the incident -> video one.
+    const base = 'id,filepath,uploaded_datetime,source,selected_model_run_id';
     const query: Record<string, string> = {
-      select: filter === 'without-report' ? 'id,filepath,uploaded_datetime,source,incidents!left(model_run_id)' : 'id,filepath,uploaded_datetime,source,incidents(model_run_id,reports(id))',
+      select: filter === 'without-report' ? `${base},incidents!incidents_incident_id_fkey(model_run_id)`
+        // Awaiting selection: at least one analysis with a report, and no official report chosen.
+        : filter === 'awaiting-selection' ? `${base},incidents!incidents_incident_id_fkey!inner(model_run_id,reports!inner(id))`
+          : `${base},incidents!incidents_incident_id_fkey(model_run_id,reports(id))`,
       order: 'uploaded_datetime.desc.nullslast,id.asc',
     };
     if (filter === 'without-report') query.incidents = 'is.null';
+    if (filter === 'awaiting-selection') query.selected_model_run_id = 'is.null';
     const { rows, total } = await db.selectPage('videos', query, PAGE_SIZE, (page - 1) * PAGE_SIZE);
     const videos: VideoListItem[] = rows.map((row) => {
       const incidents = Array.isArray(row.incidents) ? (row.incidents as Array<Record<string, unknown>>) : [];

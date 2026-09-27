@@ -33,7 +33,7 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
           <div className="p-6">
             <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-ink/45">Analysis history</h2>
             <p className="mt-1 text-xs text-ink/45">Every analysis of this video, newest first. Failed attempts are kept here with their reason; they never become reports.</p>
-            <div className="mt-3"><RunHistoryList history={history} /></div>
+            <div className="mt-3"><RunHistoryList history={history} onChanged={() => void reload()} /></div>
           </div>
         </div>
       </article>

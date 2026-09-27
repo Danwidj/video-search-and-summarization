@@ -121,3 +121,20 @@ test('history GET combines incident-backed runs with explicitly associated attem
   assert.equal(history.counts.withReport, 1);
   assert.equal(history.officialRunId, null);
 });
+
+test('the videos list names the incident -> video relationship (videos also reference their official incident)', async () => {
+  const { GET: listVideos } = await import('../app/api/videos/route.ts');
+  const selects = [];
+  globalThis.fetch = async (url) => {
+    const params = new URL(String(url)).searchParams;
+    selects.push([params.get('select'), params.get('incidents'), params.get('selected_model_run_id')]);
+    return new Response('[]', { headers: { 'content-range': '*/0' } });
+  };
+  for (const filter of ['all', 'without-report', 'awaiting-selection']) {
+    assert.equal((await listVideos(new Request(`http://localhost/api/videos?filter=${filter}`))).status, 200);
+  }
+  for (const [select] of selects) assert.match(select, /incidents!incidents_incident_id_fkey/);
+  assert.equal(selects[1][1], 'is.null', 'without-report is an anti-join');
+  assert.equal(selects[2][2], 'is.null', 'awaiting-selection = has a report but no official one');
+  assert.match(selects[2][0], /!inner\(model_run_id,reports!inner/);
+});

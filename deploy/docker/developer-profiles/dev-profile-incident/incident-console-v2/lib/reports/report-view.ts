@@ -72,6 +72,8 @@ export interface ReportView {
   structured: { incident: StructuredIncident; entities: StructuredEntity[]; instruments: StructuredInstrument[]; assets: StructuredAsset[] };
   modelOutput: ModelOutput | null;
   run: RunDetails;
+  /** Explicit official-report selection for the video (D6); never inferred from recency. */
+  official: { officialRunId: string | null; selectedBy: string | null; selectedAt: string | null; isOfficial: boolean };
   review: { status: ReviewStatus; verifiedBy?: string; verifiedAt?: string; editedBy?: string; editedAt?: string };
   /** Where the current structured values differ from the model's original ones. */
   differences: { type?: { model: string; current: string }; severity?: { model: number; current: number }; fields: string[] };

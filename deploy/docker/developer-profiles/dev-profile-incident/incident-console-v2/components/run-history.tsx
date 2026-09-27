@@ -5,6 +5,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { OfficialControls } from '@/components/official-controls';
 import { describeCode, OUTCOME_DESCRIPTIONS, OUTCOME_LABELS, type RunOutcome } from '@/lib/runs/labels';
 import type { RunHistoryEntry, VideoRunHistory } from '@/lib/runs/types';
 import { formatTimestamp } from '@/lib/time';
@@ -43,7 +44,7 @@ export function OutcomeBadge({ outcome, inferred = false }: { outcome: RunOutcom
 }
 
 /** A video's analysis history. Failed attempts are listed with their reason and never as reports. */
-export function RunHistoryList({ history, currentRunId, compact = false }: { history: VideoRunHistory; currentRunId?: string; compact?: boolean }) {
+export function RunHistoryList({ history, currentRunId, compact = false, onChanged }: { history: VideoRunHistory; currentRunId?: string; compact?: boolean; onChanged?: () => void }) {
   const runs = compact ? history.runs.slice(0, 6) : history.runs;
   const { counts } = history;
   return (
@@ -56,14 +57,14 @@ export function RunHistoryList({ history, currentRunId, compact = false }: { his
         {counts.legacy ? ` · ${counts.legacy} earlier` : ''}
       </p>
       <ol className="mt-3 space-y-2">
-        {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} key={run.modelRunId} run={run} videoId={history.video.videoId} />)}
+        {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} hasOfficial={Boolean(history.officialRunId)} key={run.modelRunId} onChanged={onChanged} run={run} videoId={history.video.videoId} />)}
       </ol>
       {compact && history.runs.length > runs.length && <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>}
     </div>
   );
 }
 
-function RunRow({ run, videoId, current }: { run: RunHistoryEntry; videoId: string; current: boolean }) {
+function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHistoryEntry; videoId: string; current: boolean; hasOfficial: boolean; onChanged?: () => void }) {
   const failed = run.outcome === 'contract_failed' || run.outcome === 'request_failed';
   return (
     <li className={`rounded-xl border p-3 text-xs ${current ? 'border-signal bg-signal/5' : 'border-ink/10 bg-white'}`} data-run={run.modelRunId}>
@@ -93,9 +94,12 @@ function RunRow({ run, videoId, current }: { run: RunHistoryEntry; videoId: stri
       {run.repair && (
         <p className="mt-2 text-[#765300]">Contract repair applied (IDs only) · {run.repair.ruleSet}: {run.repair.operations.map((operation) => String(operation.op)).join(', ')}</p>
       )}
-      {run.report && !current && (
-        <Link className="mt-2 inline-block font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?run=${encodeURIComponent(run.modelRunId)}`}>Open report →</Link>
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {run.report && !current && (
+          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?run=${encodeURIComponent(run.modelRunId)}`}>Open report →</Link>
+        )}
+        {run.report && onChanged && <OfficialControls hasOfficial={hasOfficial} isOfficial={Boolean(run.isOfficial)} modelRunId={run.modelRunId} onChanged={onChanged} videoId={videoId} />}
+      </div>
     </li>
   );
 }

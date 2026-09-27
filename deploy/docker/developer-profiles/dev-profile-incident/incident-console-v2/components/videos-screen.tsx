@@ -14,7 +14,8 @@ interface VideoItem { videoId: string; filename: string; uploadedAt: string | nu
 export function VideosScreen() {
   const query = useSearchParams();
   const router = useRouter();
-  const filter = query.get('filter') === 'without-report' ? 'without-report' : 'all';
+  const requested = query.get('filter');
+  const filter = requested === 'without-report' || requested === 'awaiting-selection' ? requested : 'all';
   const page = Math.max(1, Number(query.get('page') || '1') || 1);
   const [state, setState] = useState<{ videos: VideoItem[]; totalItems: number; totalPages: number } | null>(null);
   const [error, setError] = useState('');
@@ -38,7 +39,7 @@ export function VideosScreen() {
       <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em]">Uploaded videos</h1>
       <p className="mt-2 text-sm text-ink/55">Each video keeps its full analysis history. Reports list only successful analyses.</p>
       <div className="mt-6 flex gap-2" role="tablist">
-        {([['all', 'All videos'], ['without-report', 'Without a report']] as const).map(([value, label]) => (
+        {([['all', 'All videos'], ['awaiting-selection', 'Awaiting official report'], ['without-report', 'Without a report']] as const).map(([value, label]) => (
           <button aria-selected={filter === value} className={`rounded-full px-4 py-2 text-xs font-semibold ${filter === value ? 'bg-ink text-white' : 'border border-ink/15'}`} key={value} onClick={() => go({ filter: value })} role="tab" type="button">{label}</button>
         ))}
       </div>

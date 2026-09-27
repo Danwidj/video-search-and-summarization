@@ -152,6 +152,12 @@ export function buildReportView(rows: ReportRows): ReportView {
     structured,
     modelOutput,
     run,
+    official: {
+      officialRunId: text(rows.video.selected_model_run_id),
+      selectedBy: text(rows.video.selected_model_run_id) ? text(rows.video.selected_by) : null,
+      selectedAt: text(rows.video.selected_model_run_id) ? text(rows.video.selected_at) : null,
+      isOfficial: text(rows.video.selected_model_run_id) === rows.modelRunId,
+    },
     review: {
       status: (status && REVIEW_STATUSES.has(status) ? status : 'unreviewed') as ReviewStatus,
       verifiedBy: text(rows.review?.verified_by) ?? undefined,
