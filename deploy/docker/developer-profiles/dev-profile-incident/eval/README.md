@@ -53,6 +53,12 @@ uv run python scripts/probe_structured_output.py --video-key anomaly/<category>/
 uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner      # one model
 ```
 
+Optional flags, which are informational and do not change the verdict:
+- `--compare-base64`: URL vs inline video;
+- `--p1-max-tokens N`: a larger P1 budget for reasoning models;
+- `--fps F` / `--num-frames N`: frame sampling via `media_io_kwargs`;
+- `--sampling-tests`: whether `media_io_kwargs` reaches the model server and changes the answer.
+
 Results are printed as a table and written to `eval_data/probe/probe_<UTC>.json`. The file is rewritten after every model, so an interrupted run keeps what finished, and presigned-URL credentials are redacted so it is safe to share. The exit code is 1 if any model fails.
 
 ## Running

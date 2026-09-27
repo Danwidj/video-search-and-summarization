@@ -138,9 +138,27 @@ RP1  POST {gateway}/v1/chat/completions
 - A strict pass says nothing about correctness. Both Cosmos models misclassified an explosion clip.
 - Nemotron's empty P1 content is unexplained; the likely cause is the reasoning budget running out before the JSON.
 
-**Next (run 2):** the probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It adds `--compare-base64` (URL vs inline A/B) and `--p1-max-tokens`. Before phase 1, re-run on 3 or more clips from different categories with `--compare-base64 --p1-max-tokens 16384` to find out:
-1. whether nemotron is exhausting its tokens;
-2. whether the Cosmos misclassification is caused by the URL input or by the model.
+**Research after run 1** (sources in the linked notes below):
+- **The gateway stack is LiteLLM in front of a vLLM-based server.** The nano negative-control error text is LiteLLM wrapping the server's own `404` from R2, so the server downloads the URL itself.
+- **Frame sampling defaults depend on the server type.** A Cosmos 3 NIM defaults to 4 fps, matching the training data. Plain vLLM defaults to 32 frames spread evenly across the video. `Explosion019_x264` is a long UCF-Crime clip, so both defaults are poor for it: 32 frames means about one frame every few seconds, and 4 fps spreads the pixel budget across hundreds of low-resolution frames.
+- **Frame sampling is set with the top-level field `media_io_kwargs`** (`{"video": {"fps": F}}` or `{"video": {"num_frames": N}}`). Using both at once, or an fps above the video's own, returns HTTP 400 on a NIM. Whether LiteLLM forwards the field is unknown.
+- **Reasoning and structured output:**
+  - On the vLLM server, the grammar applies only after `</think>` when a reasoning parser is enabled, so Nemotron can reason and then emit JSON.
+  - Nemotron Omni's documented reasoning budget is 16,384 tokens, against our `max_tokens` of 4096. That is the likely cause of the empty P1 content.
+  - Cosmos reasoning is prompt-activated (`<think>`) and has no parser, so under strict JSON it cannot reason first. An `analysis` field placed first in the schema is the candidate fix.
+- **NVIDIA sampling guidance for Cosmos:** media before text (already done). Temperature 0.6-0.7 with `seed=0`, rather than greedy decoding, for reproducibility.
+
+**Next (run 2).** The probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It also adds:
+- `--compare-base64`: URL vs inline A/B;
+- `--p1-max-tokens`;
+- `--fps` / `--num-frames`: sent as `media_io_kwargs`;
+- `--sampling-tests`: whether `media_io_kwargs` reaches a validating server, and whether `num_frames` changes the answer.
+
+Steps:
+1. One clip with `--sampling-tests`, to learn whether frame control works through the gateway.
+2. Three or more short clips from different categories with `--compare-base64 --p1-max-tokens 16384`, plus `--num-frames` or `--fps` if step 1 shows they take effect.
+
+Decide the phase 1 model list and sampling settings from those results.
 
 ## 6. Risks
 
