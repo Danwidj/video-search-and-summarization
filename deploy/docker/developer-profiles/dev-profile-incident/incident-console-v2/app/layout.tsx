@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import './styles.css';
 
 export const metadata: Metadata = {
-  title: 'Incident Studio',
+  title: 'Rise Up!',
   description: 'Video-first incident analysis and reporting.',
 };
 
