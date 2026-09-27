@@ -37,11 +37,17 @@ export function ReportsLibrary() {
   const [type, setType] = useState('all');
   const [severity, setSeverity] = useState('all');
   const [status, setStatus] = useState('all');
+  const [entity, setEntity] = useState('');
+  const [instrument, setInstrument] = useState('');
+  const [asset, setAsset] = useState('');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [fromTime, setFromTime] = useState('');
   const [toTime, setToTime] = useState('');
+  const [day, setDay] = useState('');
+  const [rangeAfter, setRangeAfter] = useState('');
+  const [rangeBefore, setRangeBefore] = useState('');
   const [sort, setSort] = useState<Sort>('newest');
   const [busy, setBusy] = useState('');
   const [ready, setReady] = useState(false);
@@ -49,26 +55,70 @@ export function ReportsLibrary() {
   const restoredPosition = useRef(false);
   const loadSequence = useRef(0);
 
+  function changeDatePreset(value: DatePreset) {
+    setDatePreset(value);
+    setRangeAfter(''); setRangeBefore('');
+    if (value !== 'custom') {
+      setFromDate('');
+      setToDate('');
+    }
+    setPage(1);
+  }
+
+  function changeFromDate(value: string) {
+    setRangeAfter(''); setRangeBefore('');
+    setFromDate(value);
+    setDatePreset(value || toDate ? 'custom' : 'all');
+    setPage(1);
+  }
+
+  function changeToDate(value: string) {
+    setRangeAfter(''); setRangeBefore('');
+    setToDate(value);
+    setDatePreset(value || fromDate ? 'custom' : 'all');
+    setPage(1);
+  }
+
+  function resetDateAndTime() {
+    setDatePreset('all');
+    setFromDate('');
+    setToDate('');
+    setFromTime('');
+    setToTime('');
+    setDay(''); setRangeAfter(''); setRangeBefore('');
+    setPage(1);
+  }
+
   async function load(signal?: AbortSignal) {
     const sequence = ++loadSequence.current;
     setLoading(true); setError('');
     try {
+      if (datePreset === 'custom' && fromDate && toDate && fromDate > toDate) {
+        throw new Error('From date must be on or before To date');
+      }
       const params = new URLSearchParams({ page: String(page), sort });
+      if (query.get('dashboard') === '1') { params.set('dashboard', '1'); params.set('period', query.get('period') || 'all'); }
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
       if (type !== 'all') params.set('type', type);
       if (severity !== 'all') params.set('severity', severity);
       if (status !== 'all') params.set('status', status);
+      if (entity.trim()) params.append('entity', entity.trim());
+      if (instrument.trim()) params.append('instrument', instrument.trim());
+      if (asset.trim()) params.append('asset', asset.trim());
       const today = new Date();
       const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      if (datePreset === 'today') params.set('after', `${localDate(today)}T00:00:00`);
+      if (rangeAfter) params.set('after', rangeAfter);
+      else if (datePreset === 'today') params.set('after', `${localDate(today)}T00:00:00`);
       if (datePreset === '7d' || datePreset === '30d') {
         const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (datePreset === '7d' ? 6 : 29));
         params.set('after', `${localDate(start)}T00:00:00`);
       }
-      if (datePreset === 'custom' && fromDate) params.set('after', `${fromDate}T00:00:00`);
-      if (datePreset === 'custom' && toDate) params.set('before', `${toDate}T23:59:59.999`);
+      if (!rangeAfter && datePreset === 'custom' && fromDate) params.set('after', `${fromDate}T00:00:00`);
+      if (rangeBefore) params.set('before', rangeBefore);
+      else if (datePreset === 'custom' && toDate) params.set('before', `${toDate}T23:59:59.999`);
       if (fromTime) params.set('fromTime', fromTime);
       if (toTime) params.set('toTime', toTime);
+      if (day) params.set('day', day);
       const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
       const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
@@ -82,17 +132,28 @@ export function ReportsLibrary() {
   }
 
   useEffect(() => {
+    if (query.get('clearFilters') === '1') {
+      const after = query.get('after') || '';
+      const before = query.get('before') || '';
+      const period = query.get('period') || 'all';
+      setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all');
+      setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || '');
+      setRangeAfter(after); setRangeBefore(before); setDatePreset(period === 'all' ? 'all' : 'custom');
+      setFromDate(after.slice(0, 10)); setToDate(before.slice(0, 10)); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setSort('newest'); setPage(1); setReady(true);
+      return;
+    }
     const saved = window.sessionStorage.getItem('report-library-state');
     if (saved) {
       try {
         const state = JSON.parse(saved) as Record<string, string | number>;
         setSearch(String(state.search || '')); setType(query.get('type') || String(state.type || 'all'));
         setSeverity(query.get('severity') || String(state.severity || 'all')); setStatus(query.get('status') || String(state.status || 'all'));
+        setEntity(query.get('entity') || String(state.entity || '')); setInstrument(query.get('instrument') || String(state.instrument || '')); setAsset(query.get('asset') || String(state.asset || ''));
         setDatePreset((state.datePreset || 'all') as DatePreset); setFromDate(String(state.fromDate || '')); setToDate(String(state.toDate || ''));
-        setFromTime(String(state.fromTime || '')); setToTime(String(state.toTime || '')); setSort((state.sort || 'newest') as Sort);
+        setFromTime(String(state.fromTime || '')); setToTime(String(state.toTime || '')); setDay(String(state.day || '')); setRangeAfter(String(state.rangeAfter || '')); setRangeBefore(String(state.rangeBefore || '')); setSort((state.sort || 'newest') as Sort);
         setPage(Number(query.get('page') || state.page || 1));
       } catch { /* ignore stale state */ }
-    } else { setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all'); setPage(Number(query.get('page') || 1)); }
+    } else { setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all'); setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || ''); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setPage(Number(query.get('page') || 1)); }
     setReady(true);
   }, []);
 
@@ -106,7 +167,7 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, datePreset, fromDate, toDate, fromTime, toTime, sort]);
+  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -118,7 +179,7 @@ export function ReportsLibrary() {
   }, [loading]);
 
   function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, datePreset, fromDate, toDate, fromTime, toTime, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
+    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
   }
 
   async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
@@ -176,20 +237,26 @@ export function ReportsLibrary() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <label className="xl:col-span-2"><span className="sr-only">Search reports</span><input className="control" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search reports and evidence…" type="search" value={search} /></label>
           <Select label="Incident type" onChange={(value) => { setType(value); setPage(1); }} value={type} options={[['all', 'All incident types'], ...incidentTypes.map((value) => [value, value])]} />
-          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={[['all', 'All severities'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])]} />
+          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={ [['all', 'All severities'], ['low', 'Low (1–2)'], ['medium', 'Medium (3)'], ['high', 'High (4–5)'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])] } />
           <Select label="Review status" onChange={(value) => { setStatus(value); setPage(1); }} value={status} options={[['all', 'All review states'], ['unreviewed', 'Unreviewed'], ['under review', 'Under review'], ['verified', 'Verified']]} />
           <Select label="Sort reports" onChange={(value) => { setSort(value as Sort); setPage(1); }} value={sort} options={[['newest', 'Newest first'], ['oldest', 'Oldest first'], ['severity-high', 'Highest severity'], ['severity-low', 'Lowest severity'], ['confidence-high', 'Highest confidence'], ['confidence-low', 'Lowest confidence']]} />
         </div>
-        <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Select label="Generated date" onChange={(value) => { setDatePreset(value as DatePreset); setPage(1); }} value={datePreset} options={[['all', 'Any date'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom range']]} />
-          <DateInput disabled={datePreset !== 'custom'} label="From date" onChange={(value) => { setFromDate(value); setPage(1); }} type="date" value={fromDate} />
-          <DateInput disabled={datePreset !== 'custom'} label="To date" onChange={(value) => { setToDate(value); setPage(1); }} type="date" value={toDate} />
+        <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Select label="Generated date" onChange={(value) => changeDatePreset(value as DatePreset)} value={datePreset} options={[['all', 'Any date'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom range']]} />
+          <DateInput label="From date" onChange={changeFromDate} type="date" value={fromDate} />
+          <DateInput label="To date" onChange={changeToDate} type="date" value={toDate} />
           <DateInput label="From time" onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
           <DateInput label="To time" onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
+          <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime && !day && !rangeAfter && !rangeBefore} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
+        </div>
+        <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">
+          <FilterInput label="People and entities" onChange={(value) => { setEntity(value); setPage(1); }} placeholder="e.g. person, red jacket" value={entity} />
+          <FilterInput label="Instruments" onChange={(value) => { setInstrument(value); setPage(1); }} placeholder="e.g. knife, vehicle" value={instrument} />
+          <FilterInput label="Assets" onChange={(value) => { setAsset(value); setPage(1); }} placeholder="e.g. door, cash register" value={asset} />
         </div>
       </section>
 
-      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || datePreset !== 'all' || fromTime || toTime) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setPage(1); }} type="button">Clear filters</button>}</div>
+      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
       {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onReanalyze={reanalyze} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
     </div>
   );
@@ -212,6 +279,7 @@ function ReportThumbnail({ thumbnailUrl, failed = false, onError, severity, stat
 }
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) { return <label><span className="sr-only">{label}</span><select aria-label={label} className="control" onChange={(event) => onChange(event.target.value)} value={value}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>; }
-function DateInput({ label, value, type, disabled, onChange }: { label: string; value: string; type: 'date' | 'time'; disabled?: boolean; onChange: (value: string) => void }) { return <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</span><input aria-label={label} className="control disabled:opacity-40" disabled={disabled} onChange={(event) => onChange(event.target.value)} type={type} value={value} /></label>; }
+function FilterInput({ label, value, placeholder, onChange }: { label: string; value: string; placeholder: string; onChange: (value: string) => void }) { return <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</span><input aria-label={label} className="control" maxLength={100} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type="search" value={value} /></label>; }
+function DateInput({ label, value, type, onChange }: { label: string; value: string; type: 'date' | 'time'; onChange: (value: string) => void }) { return <label><span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</span><input aria-label={label} className="control" onChange={(event) => onChange(event.target.value)} type={type} value={value} /></label>; }
 function Pagination({ page, totalItems, totalPages, onPage }: { page: number; totalItems: number; totalPages: number; onPage: (page: number) => void }) { const first = (page - 1) * 6 + 1; const last = Math.min(page * 6, totalItems); return <nav aria-label="Report pages" className="mt-8 flex flex-col items-center gap-3"><p className="text-sm font-semibold text-ink/65">Showing {first}–{last} of {totalItems} reports</p><div className="flex flex-wrap items-center justify-center gap-2"><button className="action" disabled={page <= 1} onClick={() => onPage(page - 1)} type="button">Previous</button>{Array.from({ length: totalPages }, (_, index) => index + 1).map((value) => <button aria-current={value === page ? 'page' : undefined} aria-label={`Page ${value}`} className={`grid h-9 min-w-9 place-items-center rounded-full text-sm font-semibold ${value === page ? 'bg-ink text-white' : 'border border-ink/10 bg-white'}`} key={value} onClick={() => onPage(value)} type="button">{value}</button>)}<button className="action" disabled={page >= totalPages} onClick={() => onPage(page + 1)} type="button">Next</button></div></nav>; }
 function LibrarySkeleton() { return <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="status"><span className="sr-only">Loading reports</span>{[1, 2, 3, 4, 5, 6].map((value) => <div className="animate-pulse overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white" key={value}><div className="aspect-video bg-ink/10" /><div className="space-y-3 p-5"><div className="h-5 w-2/3 rounded bg-ink/10" /><div className="h-4 rounded bg-ink/10" /><div className="h-4 w-4/5 rounded bg-ink/10" /></div></div>)}</div>; }

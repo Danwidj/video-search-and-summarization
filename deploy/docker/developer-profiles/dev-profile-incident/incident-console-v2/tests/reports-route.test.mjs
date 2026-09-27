@@ -42,7 +42,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-test('report library requests one six-item summary page without video URLs', async () => {
+test('report library requests one filtered six-item summary page without video URLs', async () => {
   let rpcBody;
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), 'https://supabase.test/rest/v1/rpc/list_incident_report_summaries');
@@ -54,16 +54,34 @@ test('report library requests one six-item summary page without video URLs', asy
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
 
-  const response = await GET(new Request('http://localhost/api/reports?page=2&severity=high&sort=newest'));
+  const response = await GET(new Request('http://localhost/api/reports?page=2&severity=high&entity=person&entity=red%20jacket&instrument=knife&asset=door&after=2026-09-01T00%3A00%3A00&before=2026-09-27T23%3A59%3A59.999&fromTime=08%3A00&toTime=17%3A30&day=1&sort=newest'));
   const payload = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(rpcBody.p_page, 2);
   assert.equal(rpcBody.p_page_size, 6);
   assert.equal(rpcBody.p_severity, 'high');
+  assert.deepEqual(rpcBody.p_entities, ['person', 'red jacket']);
+  assert.deepEqual(rpcBody.p_instruments, ['knife']);
+  assert.deepEqual(rpcBody.p_assets, ['door']);
+  assert.equal(rpcBody.p_generated_after, '2026-09-01T00:00:00');
+  assert.equal(rpcBody.p_generated_before, '2026-09-27T23:59:59.999');
+  assert.equal(rpcBody.p_time_from, '08:00');
+  assert.equal(rpcBody.p_time_to, '17:30');
+  assert.equal(rpcBody.p_day_of_week, 1);
   assert.deepEqual(payload.pagination, { page: 2, pageSize: 6, totalItems: 13, totalPages: 3 });
   assert.equal('playbackUrl' in payload.reports[0], false);
   assert.equal(payload.reports[0].thumbnailUrl, 'https://signed.r2.test/thumbnails/uploads/sensor-1/video.mp4.webp');
+});
+
+test('report library rejects excessive evidence filters before calling Supabase', async () => {
+  let called = false;
+  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  const params = new URLSearchParams();
+  for (let index = 0; index < 11; index += 1) params.append('entity', `entity-${index}`);
+  const response = await GET(new Request(`http://localhost/api/reports?${params}`));
+  assert.equal(response.status, 400);
+  assert.equal(called, false);
 });
 
 test('report library rejects a severity that could make the RPC cast fail', async () => {
@@ -71,6 +89,21 @@ test('report library rejects a severity that could make the RPC cast fail', asyn
   globalThis.fetch = async () => { called = true; return new Response('{}'); };
   const response = await GET(new Request('http://localhost/api/reports?severity=urgent'));
   assert.equal(response.status, 400);
+  assert.equal(called, false);
+});
+
+test('report library accepts severity bands and rejects an invalid weekday', async () => {
+  let rpcBody;
+  globalThis.fetch = async (_url, init) => {
+    rpcBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] }), { status: 200 });
+  };
+  assert.equal((await GET(new Request('http://localhost/api/reports?severity=medium&day=6'))).status, 200);
+  assert.equal(rpcBody.p_severity, 'medium');
+  assert.equal(rpcBody.p_day_of_week, 6);
+  let called = false;
+  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  assert.equal((await GET(new Request('http://localhost/api/reports?day=7'))).status, 400);
   assert.equal(called, false);
 });
 

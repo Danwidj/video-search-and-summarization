@@ -32,6 +32,24 @@ service-role-only `list_incident_report_summaries` RPC used by the Next.js
 report library for filtered six-item pages. It joins existing tables and does
 not create or maintain a summary table.
 
+`migrations/20260927120000_filter_report_evidence.sql` extends that RPC with
+people/entity, instrument, and asset filters and creates the service-role-only
+`replace_incident_evidence` RPC used to synchronize reviewer edits with the
+normalized evidence tables.
+
+`migrations/20260927130000_dashboard_analytics.sql` creates the service-role-only
+`get_incident_dashboard` RPC for dashboard trends, distributions, evidence
+drill-downs, cross-filters, and previous-period KPI counts.
+
+`migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql`
+adds weekday and low/medium severity filtering to the report summary RPC and
+adds `apply_incident_report_patch`, which atomically applies changed report
+fields while preserving untouched values and evidence categories. This
+migration was applied to shared Supabase on 2026-09-27 and PostgREST's schema
+cache was reloaded. The Supabase management connector recorded it as version
+`20260927075044` (its UTC application timestamp), while the checked-in migration
+filename retains the repository's ordered migration timestamp.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

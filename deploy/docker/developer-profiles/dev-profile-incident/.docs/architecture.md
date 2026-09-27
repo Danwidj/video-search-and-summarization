@@ -67,6 +67,7 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST /rpc/insert_incident| Supabase
+    UI -->|/rpc/apply_incident_report_patch| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -213,8 +214,8 @@ sequenceDiagram
     participant DB as Supabase RPC
     participant R2 as Cloudflare R2
 
-    User->>UI: Open library or change page/filter
-    UI->>API: GET summaries (page size 6)
+    User->>UI: Open library or change metadata/evidence filter
+    UI->>API: GET summaries (page size 6; entity/instrument/asset terms)
     API->>DB: list_incident_report_summaries(...)
     DB-->>API: 6 summaries + total count
     API->>R2: Sign up to 6 derived thumbnail keys
@@ -227,13 +228,28 @@ sequenceDiagram
     API-->>UI: Full report + playback URL
 ```
 
+Date inputs are directly editable: entering either boundary activates the custom range automatically. Preset
+selection clears stale custom boundaries, and the date/time row has an explicit reset that clears both date and
+time constraints. The API forwards inclusive day boundaries and optional time-of-day bounds to the summary RPC.
+
+### Dashboard analytics and cross-filtering
+
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC rather than downloading up to 1,000
+report summaries. The RPC aggregates daily trends, review and severity distributions, confidence buckets,
+weekday/hour activity, evidence leaders, per-type drill-downs, and previous-period KPIs. Clicking a severity or
+heatmap cell reissues this single aggregate request with cross-filters. Evidence items and "View all" links carry
+the type plus entity, instrument, asset, hour, status, or supported severity filter into `/reports`.
+
 ### Inline report editing
 
 The individual report view keeps editing in context with the evidence: `Edit report` opens a workspace with the
 original AI result and editable copy side by side. It covers title, incident type, summary, severity, confidence,
 time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties.
-`PATCH /api/reports/[videoId]/edit` stores the editable copy under `incidentConsoleV2.editedReport` in
-`model_runs.notes` and updates searchable incident fields. The original `incidentConsoleV2.report` remains intact.
+`PATCH /api/reports/[videoId]/edit` computes a patch containing only changed report fields and calls
+`apply_incident_report_patch`. The service-role RPC locks the model run and incident, preserves untouched values,
+updates only affected normalized evidence categories, and stores the edit in `model_runs.notes` in one transaction.
+An error rolls back the entire edit. Those normalized rows drive the report-library evidence filters. The original
+`incidentConsoleV2.report` remains intact.
 After saving, the editor closes and the normal report view renders the updated human copy, including its title,
 summary, timeline, and evidence sections. Video playback and follow-up/evaluation tools stay on the report page.
 
