@@ -1,6 +1,6 @@
 # Unified Prompt & Structured-Output Contract Plan
 
-> **PROPOSED - AWAITING TEAM REVIEW.** Phase 0 is built (`contracts/`, `eval/contract.py`, `eval/scripts/probe_structured_output.py`) and is waiting for a live run with the Switchyard key.
+> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. Phases 2-5 have not started.
 > **Date:** 2026-09-27
 > **Scope:** `eval/`, `incident-console-v2/`, `services/agent/` (incident path), `supabase/migrations/`
 
@@ -115,8 +115,8 @@ RP1  POST {gateway}/v1/chat/completions
 
 | Phase | Work | Gate |
 |---|---|---|
-| **0. Pre-flight check** | Add `contracts/`. Add `eval/scripts/probe_structured_output.py`, which runs P1 with `json_schema` and a signed URL against every model in use: the 3 eval models, the console default `cosmos-3-nano-reasoner`, and the agent's `cosmos-3-super-reasoner`. It reports two things per model: whether the schema is enforced, and whether the model fetched the URL. | **Stop and review.** A model that fails either check is dropped; no lenient fallback is added. Only structured output on `nemotron-3-ultra` (a text LLM) is verified today. |
-| 1. eval | Remove the few-shot block. Replace base64 with a signed URL. Swap `extract_json` for strict validation. Map ground truth to the new contract (it already uses the 5 labels). Re-run the benchmark, and mark `eval/docs/vlm_benchmark_results.md` as superseded. | `uv run pytest tests/` passes; smoke run OK |
+| **0. Pre-flight check (done; probe script removed after the runs)** | Add `contracts/`. Add `eval/scripts/probe_structured_output.py`, which runs P1 with `json_schema` and a signed URL against every model in use: the 3 eval models, the console default `cosmos-3-nano-reasoner`, and the agent's `cosmos-3-super-reasoner`. It reports two things per model: whether the schema is enforced, and whether the model fetched the URL. | **Stop and review.** A model that fails either check is dropped; no lenient fallback is added. Only structured output on `nemotron-3-ultra` (a text LLM) is verified today. |
+| 1. eval, **implemented** | Few-shot removed (`eval_few_shot.py`, `prompts.py` deleted). Signed URL replaces base64 (`resolve_and_sign`). Strict `contract.parse_report` replaces `extract_json`; contract failures are scored as misses, listed as `contract_failures`, and RP1 is skipped for them. Fixed P1 config: `max_tokens 16384`, `num_frames 64`. The ground truth already uses the 5 labels. `vlm_benchmark_results.md` is marked superseded. **Outstanding:** a smoke run, then the full benchmark. | `uv run pytest tests/` passes (93) |
 | 2. console | New `lib/analysis/contract.ts` (Ajv + generated types). Rewrite `app/api/analysis/route.ts` to the P1 → RP1 chain with no repair retry. Rename `persons` to `entities` across components and the report editor. Make `confidence` nullable in the UI. Keep a read-only adapter for legacy `model_runs.notes`. | `npm run typecheck && npm test` pass |
 | 3. agent | Replace the VLM-markdown → LLM-extract steps in `incident_report_gen` with the direct P1 call. Accept `video_url` on `/analyze`. Update `IncidentReport` and add the parity test. | `ruff`, `mypy` and `pytest` pass per `services/agent/AGENTS.md` |
 | 4. database | Migration mapping `incidents.type` fighting → assault and animal → animal attack; `entities.type` person → human. Dry run first, then apply only after approval. | [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) rules |

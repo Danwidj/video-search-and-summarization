@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""GT filename -> R2 object -> local cached file, for the P1 multi-model eval.
+"""GT filename -> R2 object -> short-lived signed URL, for the P1 multi-model eval.
 
 Exact-basename resolution only. Never falls back to ``r2_videos.py``'s
 category-alias matching (``category_matches``/``map_incidents_to_video_keys``)
@@ -24,15 +24,15 @@ a real ground-truth row.
 Three resolution outcomes, no others:
 - zero matches for a basename  -> ResolutionError (missing video)
 - multiple matches for a basename -> ResolutionError (ambiguous)
-- exactly one match -> proceeds to download/cache
+- exactly one match -> a presigned GET URL the model server fetches itself
 
-Downloaded videos are cached under ``eval_data/video_cache/`` (gitignored)
-so repeated runs (spike, then per-model batch runs) don't refetch the same
-file.
+The video is never downloaded locally: the contract sends every model the same
+signed R2 URL the console uses (.docs/prompt-contract-plan.md, D9).
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -42,7 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import r2_videos  # noqa: E402
 
 EVAL_DATA_DIR = Path(__file__).resolve().parents[1] / "eval_data"
-VIDEO_CACHE_DIR = EVAL_DATA_DIR / "video_cache"
+# Signed per video immediately before its P1 call, so 1 h comfortably covers
+# the call (240 s client timeout) even on a long batch run.
+SIGNED_URL_TTL_SECONDS = 3600
 
 
 class ResolutionError(Exception):
@@ -75,38 +77,29 @@ def resolve_filename(filename: str, basename_index: dict[str, list[str]]) -> str
     return matches[0]
 
 
-def download_and_cache(object_key: str, filename: str) -> Path:
-    """Download ``object_key`` into the local video cache, skipping if already present.
-
-    Returns the local path. Raises ``ResolutionError`` if the download fails
-    (R2 not configured, or the object could not be fetched).
-    """
-    VIDEO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    dest = VIDEO_CACHE_DIR / filename
-    if dest.exists() and dest.stat().st_size > 0:
-        return dest
-    video_bytes = r2_videos.download_video_bytes(object_key)
-    if video_bytes is None:
-        raise ResolutionError(f"failed to download R2 object {object_key!r} (R2 not configured, or object missing)")
-    dest.write_bytes(video_bytes)
-    return dest
+def signed_url(object_key: str) -> str:
+    """A presigned GET URL for ``object_key``. Raises ``ResolutionError`` if R2 is not configured."""
+    if not r2_videos.configured():
+        raise ResolutionError("R2 is not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET)")
+    return r2_videos.client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": os.environ["R2_BUCKET"], "Key": object_key, "ResponseContentDisposition": "inline"},
+        ExpiresIn=SIGNED_URL_TTL_SECONDS,
+    )
 
 
-def resolve_and_cache(filename: str, basename_index: dict[str, list[str]]) -> tuple[str, Path]:
-    """Resolve one GT filename and ensure it is downloaded locally.
+def resolve_and_sign(filename: str, basename_index: dict[str, list[str]]) -> tuple[str, str]:
+    """Resolve one GT filename to its single R2 object and sign it.
 
-    Returns ``(r2_object_key, local_path)``. This is the one entry point the
-    split-manifest generator and the batch evaluation runner should both use.
+    Returns ``(r2_object_key, signed_url)``. The batch evaluation runner's one
+    entry point for turning a GT filename into model input.
     """
     object_key = resolve_filename(filename, basename_index)
-    local_path = download_and_cache(object_key, filename)
-    return object_key, local_path
+    return object_key, signed_url(object_key)
 
 
 if __name__ == "__main__":
-    # Manual smoke check: resolve+cache one filename per category.
-    import json
-
+    # Manual smoke check: resolve and sign one filename per category.
     keys = r2_videos.list_video_keys()
     index = build_basename_index(keys)
     print(f"bucket listing: {len(keys)} video objects, {len(index)} distinct basenames")
@@ -124,8 +117,7 @@ if __name__ == "__main__":
         if filename is None:
             continue
         try:
-            object_key, local_path = resolve_and_cache(filename, index)
-            size = local_path.stat().st_size
-            print(f"{category}: {filename} -> {object_key} -> {local_path} ({size} bytes)")
+            object_key, _ = resolve_and_sign(filename, index)
+            print(f"{category}: {filename} -> {object_key} (signed)")
         except ResolutionError as exc:
             print(f"{category}: {filename} -> ERROR: {exc}")

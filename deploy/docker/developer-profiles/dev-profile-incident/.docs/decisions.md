@@ -4,6 +4,27 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-27: Eval moved onto the incident contract (phase 1); contract probe removed
+- **Decision:**
+  - `eval_run.py` sends a signed R2 URL, then the contract prompt, with the schema enforced, and parses strictly with `contract.parse_report`.
+  - The fixed P1 config is `temperature 0`, `max_tokens 16384`, `media_io_kwargs {"video": {"num_frames": 64}}`, identical for all models.
+  - A contract failure is scored as an empty prediction (a miss), listed under `contract_failures`, and its RP1 is skipped rather than counted as an RP1 failure.
+  - The split manifests are unchanged, so the former few-shot demonstration videos stay excluded and results stay comparable video-for-video.
+  - Deleted: `eval/prompts.py`, `eval/scripts/eval_few_shot.py`, `extract_json`, base64 video and the local video cache, and, at the captain's request, the phase 0 probe script and its tests.
+  - `eval/tests/test_contract.py` stays: it covers `contract.py`, which the runner now depends on.
+- **Why:** Phase 0 evidence (plan §5a):
+  - schema enforcement works on all three models;
+  - URL and base64 give identical results;
+  - Nemotron needs 16k tokens;
+  - the gateway samples only ~24 frames by default.
+
+  Scoring failures as misses keeps strict parsing honest in the numbers instead of hiding failures.
+- **Alternatives rejected:**
+  - Per-model configs (this breaks the one-variable comparison).
+  - Excluding failed videos from the scores (this inflates accuracy).
+  - Keeping the probe as a maintained tool (the captain asked for its removal; its results are recorded).
+- **Links:** [`../eval/README.md`](../eval/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
 ### 2026-09-27: Strict timeline bounds; `duration` derived in code (`incident-contract-v2`)
 - **Decision:**
   - Keep the cross-field rule that every timeline event falls within `[start_timestamp, end_timestamp]`; a lead-up event is a contract violation (HTTP 422).
@@ -22,7 +43,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Alternatives rejected:**
   - Pydantic as the Python source (eval and agent are separate packages, so the file is the only neutral source; the agent will keep Pydantic with a parity test in phase 3).
   - Probing with the P1 call alone (cannot tell enforcement from compliance, or a fetch from a hallucination).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../eval/scripts/probe_structured_output.py`](../eval/scripts/probe_structured_output.py); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); `eval/scripts/probe_structured_output.py` (removed); [`prompt-contract-plan.md`](prompt-contract-plan.md).
 
 ### 2026-09-27: Unified prompt and structured-output contract planned, awaiting review
 - **Decision:** Plan one shared contract for eval P1, console gateway mode and agent mode: the eval P1 prompt as the base (with title, severity_reason, location, timeline and uncertainties added), a nested snake_case JSON Schema enforced through `response_format: json_schema`, strict parsing that returns 422 instead of repairing, and the same call chain everywhere (P1 video to JSON, then RP1 JSON to prose). Other choices: no few-shot, eval's 5-label taxonomy (road accident, burglary, explosion, assault, animal attack), signed R2 URLs for video input, and `confidence_score` null unless the API gives a native score. Agent mode is in scope. No code changes yet; a per-model structured-output and URL-fetch check (phase 0) gates everything else.
@@ -33,7 +54,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
   - Base64 video (payload size, and the console would have to stream whole clips).
   - Keeping agent mode on its flat contract (leaves two shapes).
   - A prompted JSON template with tolerant parsing (the status quo).
-- **Links:** [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`eval/prompts.py`](../eval/prompts.py); [`eval/scripts/eval_few_shot.py`](../eval/scripts/eval_few_shot.py); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py).
+- **Links:** [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); `eval/prompts.py` (removed); `eval/scripts/eval_few_shot.py` (removed); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py).
 
 ### 2026-09-27: Edit the full report beside the original AI result
 - **Decision:** Replace the individual report's `Start review` action with `Edit report`. Editing opens the original AI structured result beside an editable copy. Title, incident type, summary, severity, confidence, time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties are editable. Store the editable copy as `incidentConsoleV2.editedReport` in `model_runs.notes`, update searchable incident fields, and leave the original `incidentConsoleV2.report` intact. Remove the separate bottom-page structured editor.

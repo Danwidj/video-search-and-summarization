@@ -17,24 +17,27 @@
 OpenAI-compatible ``/v1/chat/completions`` (the gateway itself, or directly
 against its upstream switchyard endpoint - same contract either way).
 
-Deliberately not ``services/alert/vlm/vlm_client.py``: this evaluation sends
-full local videos as base64 data URIs in a single-video, single-turn request
-(confirmed the only reliable shape across all three models - see the plan's
-Step 3 spike results), not that client's frame-sampling/``extra_body`` path,
-which is built for a differently-deployed local NIM.
+P1 follows the shared incident contract (``dev-profile-incident/contracts/``,
+``.docs/prompt-contract-plan.md``): one video as a signed R2 URL, placed before
+the contract's extraction prompt, with the contract schema enforced through
+``response_format`` - the same request shape the console and agent use. No
+few-shot examples, no base64 inlining, no JSON extraction heuristics; the
+response is parsed strictly by ``contract.parse_report``.
 """
 
 from __future__ import annotations
 
-import base64
 import json
-import mimetypes
 import os
-import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import contract  # noqa: E402
 
 # Resolves to this eval project's own root (dev-profile-incident/eval/.env.local,
 # a symlink to the shared ../.env.local - see eval/README.md), matching
@@ -47,15 +50,19 @@ import requests
 ENV_LOCAL = Path(__file__).resolve().parents[1] / ".env.local"
 DEFAULT_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com/v1"
 
-# The one fixed inference configuration, identical across all three models and
-# every request - per the confirmed experimental design, this is never varied
-# per model. temperature=0.0 for determinism/reproducibility (matches this
-# codebase's existing convention for extraction tasks elsewhere);
-# max_tokens=4096 matches the vss-agent's own existing default. No num_frames/
-# pixel-bound params here - those are services/alert/vlm/vlm_client.py's
-# locally-hosted-NIM frame-sampling knobs, not applicable to the full-video,
-# single-request shape this evaluation sends through the gateway.
+# Base configuration merged into every call (P1, RP1 and anything else that
+# goes through chat_completion). temperature=0.0 for reproducibility.
 FIXED_INFERENCE_CONFIG = {"temperature": 0.0, "max_tokens": 4096}
+
+# The fixed P1 configuration, identical for every model and every video - never
+# varied per model (see .docs/prompt-contract-plan.md §5a for the evidence):
+# - max_tokens 16384: nemotron-3-nano-omni's reasoning exhausts 4096 before it
+#   emits any JSON (finish_reason=length).
+# - media_io_kwargs num_frames 64: the gateway otherwise samples ~24 frames per
+#   video whatever its length. cosmos-3-super-reasoner ignores the setting and
+#   stays at ~24; the other two honour it.
+# response_format (the contract schema, strict) is added per call.
+P1_INFERENCE_CONFIG = {"max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
 
 MODELS = [
     "nvidia/cosmos-3-nano-reasoner",
@@ -79,13 +86,6 @@ def gateway_credentials() -> tuple[str, str]:
     api_key = _get_env("VLM_GATEWAY_API_KEY") or os.getenv("VLM_GATEWAY_API_KEY", "")
     base_url = _get_env("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_GATEWAY_BASE_URL", "")
     return (base_url or DEFAULT_BASE_URL), api_key
-
-
-def video_to_data_url(path: Path) -> str:
-    mime_type, _ = mimetypes.guess_type(str(path))
-    mime_type = mime_type or "video/mp4"
-    b64 = base64.b64encode(Path(path).read_bytes()).decode()
-    return f"data:{mime_type};base64,{b64}"
 
 
 @dataclass
@@ -149,56 +149,23 @@ def chat_completion(
     )
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)
-_BARE_OBJECT = re.compile(r"(\{[\s\S]*\})")
+def p1_request_config() -> dict:
+    """Everything sent with a P1 call beyond model/messages (recorded in results)."""
+    return {**FIXED_INFERENCE_CONFIG, **P1_INFERENCE_CONFIG, "response_format": contract.response_format()}
 
 
-def extract_json(text: str | None) -> dict | None:
-    """Best-effort JSON object extraction from a model response.
-
-    Tries the raw text first (P1 asks for JSON-only output), then a fenced
-    code block, then the largest brace-delimited substring - mirroring
-    ``eval_gt._extract_score``'s fenced/bare-JSON fallback shape.
-    """
-    if not text:
-        return None
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    for pattern in (_JSON_BLOCK, _BARE_OBJECT):
-        match = pattern.search(text)
-        if not match:
-            continue
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            continue
-    return None
-
-
-def analyze_video_with_p1(
-    model: str,
-    video_path: Path,
-    p1_prompt: str,
-    *,
-    few_shot_block: str | None = None,
-    inference_config: dict | None = None,
-) -> ChatResult:
-    """One P1 call: optional text-exemplar block + one video, single turn."""
-    user_text = p1_prompt if not few_shot_block else f"{few_shot_block}\n\n{p1_prompt}"
+def analyze_video_with_p1(model: str, video_url: str) -> ChatResult:
+    """One P1 call: the video (signed URL) first, then the contract prompt; schema enforced."""
     content = [
-        {"type": "video_url", "video_url": {"url": video_to_data_url(video_path)}},
-        {"type": "text", "text": user_text},
+        {"type": "video_url", "video_url": {"url": video_url}},
+        {"type": "text", "text": contract.extraction_prompt()},
     ]
     messages = [{"role": "user", "content": content}]
-    return chat_completion(model, messages, inference_config=inference_config)
+    return chat_completion(model, messages, inference_config=p1_request_config())
 
 
-def generate_report_with_rp1(model: str, rp1_prompt_template: str, structured_json: dict, *,
-                              inference_config: dict | None = None) -> ChatResult:
-    """One RP1 call: text-only, P1's structured JSON as the sole input."""
-    prompt = rp1_prompt_template.format(structured_incident_json=json.dumps(structured_json, indent=2))
+def generate_report_with_rp1(model: str, structured_json: dict, *, inference_config: dict | None = None) -> ChatResult:
+    """One RP1 call: text-only, the validated (derived) P1 JSON as the sole input."""
+    prompt = contract.report_prompt_template().format(structured_incident_json=json.dumps(structured_json, indent=2))
     messages = [{"role": "user", "content": prompt}]
     return chat_completion(model, messages, inference_config=inference_config)

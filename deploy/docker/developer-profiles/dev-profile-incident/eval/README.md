@@ -6,8 +6,9 @@ separate Python process with its own virtual environment and shares no code or r
 this profile beyond the copied modules below.
 
 It evaluates structured incident extraction ("P1") across three VLMs on held-out video, and generates ("RP1", never
-scored) a human-readable report per prediction. Full methodology and the three-model benchmark results are in
-[`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md).
+scored) a human-readable report per prediction. The recorded benchmark in
+[`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md) predates the incident contract (it used P1-v1 with
+few-shot and base64 video), so it is superseded until the contract run is recorded.
 
 ## Why it needs incident-console's modules
 
@@ -35,7 +36,7 @@ Required environment variables (read from `.env.local`, a symlink to `../.env.lo
 | Variable | Purpose |
 |---|---|
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST access to the ground-truth/incidents tables (used when direct Postgres, `INCIDENT_DB_DSN`, is unreachable) |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | Video resolution/caching from Cloudflare R2 |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | Video resolution and signed URLs from Cloudflare R2 |
 | `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`, same value) | P1/RP1 inference calls through `vlm-gateway` |
 | `INCIDENT_LLM_BASE_URL` | Chat-completions endpoint (the switchyard gateway URL, not the mock) |
 | `INCIDENT_JUDGE_MODEL` | LLM-judge model for the `description` field's semantic score |
@@ -44,22 +45,18 @@ Required environment variables (read from `.env.local`, a symlink to `../.env.lo
 None of `INCIDENT_LLM_API_KEY`, `INCIDENT_JUDGE_MODEL`, or a real `INCIDENT_EMBEDDING_BASE_URL` value ship in the
 committed `.env` placeholder - if they're missing from `.env.local`, add them before running anything live.
 
-## Contract probe (phase 0 of `.docs/prompt-contract-plan.md`)
+## What P1 sends (incident contract)
 
-Checks, per model, whether the gateway enforces `response_format: json_schema`, whether the model reads a signed R2 URL (with a missing-object negative control), and whether a real P1 call returns a response that passes [`../contracts/`](../contracts/README.md) strictly. That is 4 calls per model, 2 of them with video.
+P1 follows the shared [incident contract](../contracts/README.md) (`incident-contract-v2`), which is the same prompt, schema and request shape the console and agent move to in phases 2 and 3 of [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md):
 
-```bash
-uv run python scripts/probe_structured_output.py --video-key anomaly/<category>/<clip>.mp4   # all models in MODELS
-uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner      # one model
-```
+- one video as a **signed R2 URL** (never downloaded or base64-inlined), placed before the contract's extraction prompt;
+- the schema enforced with `response_format: json_schema` (strict);
+- the fixed configuration `temperature 0`, `max_tokens 16384` and `media_io_kwargs {"video": {"num_frames": 64}}`, identical for every model (`eval_vlm_client.P1_INFERENCE_CONFIG`);
+- **no few-shot examples.** The earlier category-specific block leaked the label.
 
-Optional flags, which are informational and do not change the verdict:
-- `--compare-base64`: URL vs inline video;
-- `--max-tokens N`: a larger budget for every call, for reasoning models (alias `--p1-max-tokens`);
-- `--fps F` / `--num-frames N`: frame sampling via `media_io_kwargs`;
-- `--sampling-tests`: whether `media_io_kwargs` reaches the model server and changes the answer.
+The response is parsed strictly by [`contract.py`](contract.py): the raw content must be one JSON document, pass the schema and pass the cross-field rules. `incident.duration` is then derived as `end - start`. A failure is recorded in `p1_raw.contract_ok` / `contract_error`, scored as an empty prediction (a miss) and listed under `contract_failures` in the aggregate. RP1 is skipped for that video. Nothing is repaired or extracted from surrounding text.
 
-Results are printed as a table and written to `eval_data/probe/probe_<UTC>.json`. The file is rewritten after every model, so an interrupted run keeps what finished, and presigned-URL credentials are redacted so it is safe to share. The exit code is 1 if any model fails.
+The split manifests are unchanged, so results stay comparable video-for-video with the earlier run. The 5 former few-shot demonstration videos per category are still excluded from evaluation.
 
 ## Running
 

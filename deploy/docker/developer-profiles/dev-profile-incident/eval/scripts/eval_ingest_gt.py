@@ -16,7 +16,7 @@
 """Import the real (not demo) GT workbook into gt_incidents/gt_entities/gt_instruments/gt_assets.
 
 Source: ``eval_data/ground_truth_labelling.xlsx`` (gitignored, real data - see
-``prompts.py`` and ``scripts/eval_video_resolution.py`` for the rest of the
+``../contracts/`` and ``scripts/eval_video_resolution.py`` for the rest of the
 P1/RP1 multi-model evaluation this feeds). Mirrors the layout
 ``fixtures/data/*.csv`` / ``scripts/seed_data.py`` already use for the demo
 seed, but reads the real workbook's own sheets directly rather than going
