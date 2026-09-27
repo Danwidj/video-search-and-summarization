@@ -187,3 +187,57 @@ def test_valid_p1_stores_full_report(monkeypatch):
     monkeypatch.setattr(probe, "chat_completion", fake)
     check = probe.probe_model("m", GOOD, MISSING).checks["p1_contract"]
     assert check.report == _valid_report()
+
+
+def _sampling_gateway(*, validates=True, frames_matter=True):
+    base, calls = _fake_gateway()
+
+    def fake(model, messages, *, inference_config=None, timeout=240.0):
+        media = (inference_config or {}).get("media_io_kwargs")
+        video = (media or {}).get("video", {})
+        if media is not None and "response_format" not in (inference_config or {}):
+            calls.append({"model": model, "messages": messages, "inference_config": inference_config})
+            if validates and (("fps" in video and "num_frames" in video) or video.get("fps", 0) > 60):
+                return ChatResult(ok=False, error="400 invalid media_io_kwargs", status_code=400)
+            if "num_frames" in video and frames_matter:
+                return ChatResult(ok=True, content=f"seen with {video['num_frames']} frames", status_code=200)
+            return ChatResult(ok=True, content="A person walks.", status_code=200)
+        return base(model, messages, inference_config=inference_config)
+
+    return fake, calls
+
+
+def test_sampling_tests_detect_forwarding_and_effect(monkeypatch):
+    fake, _ = _sampling_gateway()
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    result = probe.probe_model("m", GOOD, MISSING, sampling_tests=True)
+    assert result.checks["sampling_conflict"].passed
+    assert result.checks["sampling_overlimit"].passed
+    assert "takes effect" in result.checks["sampling_frames_8"].detail
+    assert result.passed  # informational checks never change the verdict
+
+
+def test_sampling_tests_detect_dropped_or_ignored_field(monkeypatch):
+    fake, _ = _sampling_gateway(validates=False, frames_matter=False)
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    result = probe.probe_model("m", GOOD, MISSING, sampling_tests=True)
+    assert not result.checks["sampling_conflict"].passed
+    assert "dropped" in result.checks["sampling_overlimit"].detail
+    assert "may be ignored" in result.checks["sampling_frames_64"].detail
+    assert result.passed
+
+
+def test_media_io_kwargs_sent_only_with_real_video(monkeypatch):
+    fake, calls = _fake_gateway()
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    media = {"video": {"fps": 4.0}}
+    probe.probe_model("m", GOOD, MISSING, base64_url="data:video/mp4;base64,AA", media_io_kwargs=media)
+    by_url = [
+        (c["messages"][0]["content"][0]["video_url"]["url"] if isinstance(c["messages"][0]["content"], list) else None,
+         (c["inference_config"] or {}).get("media_io_kwargs"))
+        for c in calls
+    ]
+    assert by_url[0] == (None, None)  # enforcement probe: no video
+    assert (MISSING, None) in by_url  # negative control stays untouched
+    assert [m for u, m in by_url if u == GOOD] == [media, media]  # url_fetch + p1
+    assert by_url[-1] == ("data:video/mp4;base64,AA", media)

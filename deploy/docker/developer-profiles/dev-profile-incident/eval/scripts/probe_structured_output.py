@@ -42,11 +42,18 @@ Optional, not part of the verdict:
   from model effects.
 - ``--p1-max-tokens N`` raises the P1 token budget, to test whether a reasoning
   model runs out of tokens before emitting the JSON.
+- ``--fps F`` / ``--num-frames N`` send ``media_io_kwargs`` with every call that
+  carries the real video (frame sampling; the server default is unknown).
+- ``--sampling-tests`` adds four calls: fps+num_frames together and an
+  impossible fps (a rejection proves ``media_io_kwargs`` reaches a validating
+  server), and the same question at 8 and 64 frames (different answers prove
+  ``num_frames`` takes effect).
 
 Usage (from ``eval/``):
     uv run python scripts/probe_structured_output.py --video-key anomaly/assault/<clip>.mp4
     uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner
     uv run python scripts/probe_structured_output.py --video-key <key> --compare-base64 --p1-max-tokens 16384
+    uv run python scripts/probe_structured_output.py --video-key <key> --sampling-tests --num-frames 32
 """
 
 from __future__ import annotations
@@ -98,7 +105,19 @@ URL_FETCH_PROMPT = "In one sentence, describe what happens in this video."
 GATE_CHECKS = ["schema_enforced", "url_fetch", "url_negative_control", "p1_contract"]
 # Reported but excluded from the verdict: the same P1 call with the video inlined
 # as base64 (the pre-contract eval input), to separate URL effects from model effects.
-INFORMATIONAL_CHECKS = {"p1_contract_base64"}
+INFORMATIONAL_CHECKS = {
+    "p1_contract_base64",
+    "sampling_conflict",
+    "sampling_overlimit",
+    "sampling_frames_8",
+    "sampling_frames_64",
+}
+# ``--sampling-tests`` probes whether frame-sampling controls reach the model
+# server. A NIM validates ``media_io_kwargs`` (fps and num_frames together, or an
+# fps above the video's own, are HTTP 400); a gateway that drops the field, or a
+# server that ignores it, answers 200. See .docs/prompt-contract-plan.md §5a.
+SAMPLING_CONFLICT = {"video": {"fps": 4.0, "num_frames": 8}}
+SAMPLING_OVERLIMIT = {"video": {"fps": 1000.0}}
 
 
 @dataclass
@@ -197,6 +216,29 @@ def check_p1_contract(result: ChatResult) -> Check:
     )
 
 
+def check_sampling_rejected(result: ChatResult) -> Check:
+    """Invalid media_io_kwargs: a rejection proves the field reaches a validating server."""
+    if not result.ok:
+        return Check(
+            True,
+            "rejected: media_io_kwargs reaches the model server and is validated",
+            result.status_code,
+            _preview(result.error),
+        )
+    return Check(
+        False,
+        "accepted: media_io_kwargs is dropped by the gateway or not validated by the server",
+        result.status_code,
+        _preview(result.content),
+    )
+
+
+def check_sampling_answer(result: ChatResult) -> Check:
+    if not result.ok:
+        return Check(False, f"request failed: {result.error}", result.status_code)
+    return Check(True, "answered", result.status_code, _preview(result.content))
+
+
 def with_diagnostics(check: Check, result: ChatResult) -> Check:
     check.finish_reason = result.finish_reason
     check.usage = (result.raw or {}).get("usage") or {}
@@ -211,33 +253,66 @@ def probe_model(
     *,
     base64_url: str | None = None,
     p1_max_tokens: int | None = None,
+    media_io_kwargs: dict | None = None,
+    sampling_tests: bool = False,
 ) -> ModelResult:
+    """``media_io_kwargs`` (e.g. ``{"video": {"fps": 4}}``) is sent with every call
+    that carries the real video; ``sampling_tests`` adds the informational
+    sampling checks, which always use their own fixed ``media_io_kwargs``."""
     result = ModelResult(model)
 
-    def run(check_fn, messages, response_format=None, max_tokens=None):
+    def run(check_fn, messages, response_format=None, max_tokens=None, media=None):
         overrides = {}
         if response_format is not None:
             overrides["response_format"] = response_format
         if max_tokens is not None:
             overrides["max_tokens"] = max_tokens
+        if media is not None:
+            overrides["media_io_kwargs"] = media
         response = chat_completion(model, messages, inference_config=overrides or None)
         return with_diagnostics(check_fn(response), response)
 
     result.checks["schema_enforced"] = run(
         check_schema_enforced, [{"role": "user", "content": ENFORCEMENT_PROMPT}], ENFORCEMENT_RESPONSE_FORMAT
     )
-    result.checks["url_fetch"] = run(check_url_fetch, _video_messages(video_url, URL_FETCH_PROMPT))
+    result.checks["url_fetch"] = run(
+        check_url_fetch, _video_messages(video_url, URL_FETCH_PROMPT), media=media_io_kwargs
+    )
     result.checks["url_negative_control"] = run(
         check_url_negative_control, _video_messages(missing_url, URL_FETCH_PROMPT)
     )
     p1_prompt = contract.extraction_prompt()
     result.checks["p1_contract"] = run(
-        check_p1_contract, _video_messages(video_url, p1_prompt), contract.response_format(), p1_max_tokens
+        check_p1_contract,
+        _video_messages(video_url, p1_prompt),
+        contract.response_format(),
+        p1_max_tokens,
+        media_io_kwargs,
     )
     if base64_url is not None:
         result.checks["p1_contract_base64"] = run(
-            check_p1_contract, _video_messages(base64_url, p1_prompt), contract.response_format(), p1_max_tokens
+            check_p1_contract,
+            _video_messages(base64_url, p1_prompt),
+            contract.response_format(),
+            p1_max_tokens,
+            media_io_kwargs,
         )
+    if sampling_tests:
+        messages = _video_messages(video_url, URL_FETCH_PROMPT)
+        result.checks["sampling_conflict"] = run(check_sampling_rejected, messages, media=SAMPLING_CONFLICT)
+        result.checks["sampling_overlimit"] = run(check_sampling_rejected, messages, media=SAMPLING_OVERLIMIT)
+        few = run(check_sampling_answer, messages, media={"video": {"num_frames": 8}})
+        many = run(check_sampling_answer, messages, media={"video": {"num_frames": 64}})
+        if few.passed and many.passed:
+            same = few.content_preview.strip() == many.content_preview.strip()
+            note = (
+                "identical answers at 8 and 64 frames - num_frames may be ignored"
+                if same
+                else "answers differ between 8 and 64 frames - num_frames takes effect"
+            )
+            few.detail = many.detail = note
+        result.checks["sampling_frames_8"] = few
+        result.checks["sampling_frames_64"] = many
     return result
 
 
@@ -295,12 +370,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--p1-max-tokens", type=int, help="override max_tokens for the P1 calls only (default: the fixed 4096)"
     )
+    sampling = parser.add_mutually_exclusive_group()
+    sampling.add_argument("--fps", type=float, help="send media_io_kwargs video fps with every real-video call")
+    sampling.add_argument(
+        "--num-frames", type=int, help="send media_io_kwargs video num_frames with every real-video call"
+    )
+    parser.add_argument(
+        "--sampling-tests",
+        action="store_true",
+        help="add informational checks: does media_io_kwargs reach the server, and does num_frames change the answer",
+    )
     args = parser.parse_args(argv)
 
     client = _r2_client()
     video_key = args.video_key or first_video_key(client, args.prefix)
     video_url = signed_url(client, video_key)
     missing_url = signed_url(client, f"probe-missing/{uuid.uuid4()}.mp4")
+    media_io_kwargs = None
+    if args.fps is not None:
+        media_io_kwargs = {"video": {"fps": args.fps}}
+    elif args.num_frames is not None:
+        media_io_kwargs = {"video": {"num_frames": args.num_frames}}
     base64_url = None
     if args.compare_base64:
         response = client.get_object(Bucket=os.environ["R2_BUCKET"], Key=video_key)
@@ -316,14 +406,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"probing {model} ...", flush=True)
         try:
             results.append(
-                probe_model(model, video_url, missing_url, base64_url=base64_url, p1_max_tokens=args.p1_max_tokens)
+                probe_model(
+                    model,
+                    video_url,
+                    missing_url,
+                    base64_url=base64_url,
+                    p1_max_tokens=args.p1_max_tokens,
+                    media_io_kwargs=media_io_kwargs,
+                    sampling_tests=args.sampling_tests,
+                )
             )
         except Exception as exc:  # keep probing the other models; record why this one stopped
             failed = ModelResult(model)
             failed.checks["probe_error"] = Check(False, f"{type(exc).__name__}: {exc}")
             results.append(failed)
         # Saved after every model so an interrupted run keeps what finished.
-        write_results(out_path, video_key, stamp, results, args.p1_max_tokens)
+        write_results(out_path, video_key, stamp, results, args.p1_max_tokens, media_io_kwargs)
     print_table(results)
     print(f"\nwrote {out_path}")
     return 0 if all(r.passed for r in results) else 1
@@ -338,13 +436,19 @@ def redact(text: str) -> str:
 
 
 def write_results(
-    out_path: Path, video_key: str, stamp: str, results: list[ModelResult], p1_max_tokens: int | None = None
+    out_path: Path,
+    video_key: str,
+    stamp: str,
+    results: list[ModelResult],
+    p1_max_tokens: int | None = None,
+    media_io_kwargs: dict | None = None,
 ) -> None:
     payload = {
         "contract_version": contract.contract_version(),
         "video_key": video_key,
         "run_at": stamp,
         "p1_max_tokens": p1_max_tokens,
+        "media_io_kwargs": media_io_kwargs,
         "results": [
             {"model": r.model, "passed": r.passed, "checks": {k: asdict(v) for k, v in r.checks.items()}}
             for r in results
