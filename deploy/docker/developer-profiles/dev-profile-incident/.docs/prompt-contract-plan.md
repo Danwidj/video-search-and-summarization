@@ -1,6 +1,6 @@
 # Unified Prompt & Structured-Output Contract Plan
 
-> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. Phases 2-5 have not started.
+> **IN PROGRESS.** Phase 0 is done (results in §5a; the probe script has been removed). Phase 1 (eval) is on `main`, waiting for a live benchmark run. Phases 2 (console), 3 (agent) and 5 (docs) are implemented on branch `claude/sweet-clarke-g3etx6`, not yet merged or deployed. Phase 4 (database) has not started.
 > **Date:** 2026-09-27
 > **Scope:** `eval/`, `incident-console-v2/`, `services/agent/` (incident path), `supabase/migrations/`
 
@@ -87,8 +87,8 @@ uncertainties[]       string                                                    
 | Language | Consumer | Request | Validation |
 |---|---|---|---|
 | Python | `eval/` | `response_format={"type": "json_schema", "json_schema": {"name": "incident_report", "schema": <file>, "strict": True}}` | `jsonschema.validate` + cross-field checks |
-| Python | `services/agent` | same (plain OpenAI-compatible client, not `with_structured_output` over markdown) | Pydantic `IncidentReport` (`extra="forbid"`, no defaults), with a parity test that `IncidentReport.model_json_schema()` matches the file |
-| TypeScript | `incident-console-v2` | same `response_format` via `lib/gateway/client.ts` | Ajv compiled from the file. Types generated with `json-schema-to-typescript`. The hand-written Zod contract and `normalizeIncidentAliases` are removed. |
+| Python | `services/agent` | same, over `httpx` (not `with_structured_output` over markdown) | Strict Pydantic `ContractReport` (`strict=True`, `extra="forbid"`, no defaults) in `vss_agents/incident_contract/`, with a test that its fields, enums and bounds mirror the schema file. `jsonschema` is not used because the agent lock cannot be regenerated here (see `decisions.md`). |
+| TypeScript | `incident-console-v2` | same `response_format` via `lib/gateway/client.ts` | Ajv (draft 2020-12) compiled from the file at runtime, server only (`lib/analysis/contract.ts`). Types are hand-written in `lib/analysis/contract-types.ts` and checked against the file by `tests/contract.test.mjs`, rather than generated (no extra dev dependency). The Zod contract, `normalizeIncidentAliases` and the repair retry are removed. |
 
 The agent keeps a vendored copy of `contracts/`, because it is deployed from `services/agent`. A test fails when the copy differs from the profile copy.
 
@@ -99,11 +99,11 @@ P1   POST {gateway}/v1/chat/completions
      model            configured VLM
      messages         [ user: [ {video_url: <signed R2 URL>}, {text: incident_extraction_prompt} ] ]
      response_format  json_schema (strict)
-     temperature 0, max_tokens 4096
+     p1_request.json: temperature 0, max_tokens 16384, media_io_kwargs {video: {num_frames: 64}}
      → parse JSON → schema + cross-field validation → 422 on failure
 
 RP1  POST {gateway}/v1/chat/completions
-     model            RP1 model
+     rp1_request.json: nvidia/nemotron-3-nano-30b-a3b, temperature 0, max_tokens 4096, thinking off
      messages         [ user: report_generation_prompt with the P1 JSON ]
      → prose report (text)
 ```
@@ -117,10 +117,10 @@ RP1  POST {gateway}/v1/chat/completions
 |---|---|---|
 | **0. Pre-flight check (done; probe script removed after the runs)** | Add `contracts/`. Add `eval/scripts/probe_structured_output.py`, which runs P1 with `json_schema` and a signed URL against every model in use: the 3 eval models, the console default `cosmos-3-nano-reasoner`, and the agent's `cosmos-3-super-reasoner`. It reports two things per model: whether the schema is enforced, and whether the model fetched the URL. | **Stop and review.** A model that fails either check is dropped; no lenient fallback is added. Only structured output on `nemotron-3-ultra` (a text LLM) is verified today. |
 | 1. eval, **implemented** | Few-shot removed (`eval_few_shot.py`, `prompts.py` deleted). Signed URL replaces base64 (`resolve_and_sign`). Strict `contract.parse_report` replaces `extract_json`; contract failures are scored as misses, listed as `contract_failures`, and RP1 is skipped for them. Fixed P1 config: `max_tokens 16384`, `num_frames 64`. The ground truth already uses the 5 labels. `vlm_benchmark_results.md` is marked superseded. **Outstanding:** a smoke run, then the full benchmark. | `uv run pytest tests/` passes (93) |
-| 2. console | New `lib/analysis/contract.ts` (Ajv + generated types). Rewrite `app/api/analysis/route.ts` to the P1 → RP1 chain with no repair retry. Rename `persons` to `entities` across components and the report editor. Make `confidence` nullable in the UI. Keep a read-only adapter for legacy `model_runs.notes`. | `npm run typecheck && npm test` pass |
-| 3. agent | Replace the VLM-markdown → LLM-extract steps in `incident_report_gen` with the direct P1 call. Accept `video_url` on `/analyze`. Update `IncidentReport` and add the parity test. | `ruff`, `mypy` and `pytest` pass per `services/agent/AGENTS.md` |
+| 2. console, **implemented (branch)** | `lib/analysis/contract.ts` (Ajv) + `contract-types.ts`. `app/api/analysis/route.ts` runs P1 → RP1 in gateway mode; a violation is 422 and nothing is persisted. Agent mode sends `{model_run_id, video_url}` and re-validates the returned report. Report editor, dashboard, library and comparison views use the contract shape; `confidence` is nullable. The edit route validates edits against the contract (400). Read-only `legacyToContract` adapter for old notes. Migration `20260927120000_contract_report_summaries.sql` (library titles, null confidence) is written but **not applied**. `vlm-gateway` upstream timeout 60 s → 300 s. | `npm run typecheck && npm test && npm run build` pass (63 tests) |
+| 3. agent, **implemented (branch)** | `incident_report_gen` makes the direct P1 then RP1 calls over `httpx`; the VLM-markdown → LLM-extract steps and `data_models/incident_report.py` are removed. `/analyze` takes `{video_url, model_run_id?}` and returns 422 on a contract violation. The agent no longer writes `videos`. Vendored contract + parity tests. **Not redeployed on the VM.** | `ruff`, `ruff format`, `mypy` and `pytest` pass (57 tests, run against stubbed `nat`/`supabase` because `pypi.nvidia.com` is blocked in the cloud session) |
 | 4. database | Migration mapping `incidents.type` fighting → assault and animal → animal attack; `entities.type` person → human. Dry run first, then apply only after approval. | [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) rules |
-| 5. docs | Rewrite `analysis-schema.md`. Update `architecture.md` (sequences A and B), `data.md`, `status.md` and `decisions.md`, plus the `incident-analyze-video` and `incident-run-eval` skills. | Standing docs rule |
+| 5. docs, **done (branch)** | `analysis-schema.md` rewritten; `architecture.md`, `data.md`, `status.md`, `decisions.md`, `incident-profile-operations.md`, component READMEs and the `incident-analyze-video`, `incident-manage-database` and `incident-operate-vm` skills updated. | Standing docs rule |
 
 ## 5a. Phase 0 results
 
@@ -200,6 +200,8 @@ Decide the phase 1 model list and sampling settings from those results.
 
 ## 7. Open items
 
-- The RP1 model for console and agent: the same as the P1 VLM, or a text LLM (`nemotron-3-ultra`)?
-- Whether `title`, `severity_reason`, `location`, `timeline` and `uncertainties` get relational columns now or wait for Option B.
+- **Resolved:** the RP1 model is fixed by `contracts/rp1_request.json` (`nvidia/nemotron-3-nano-30b-a3b`, eval's RP1 config) for eval, console and agent alike.
+- **Resolved:** `title`, `severity_reason`, `location`, `timeline` and `uncertainties` stay in `model_runs.notes` until Option B.
+- **Open:** which VLM the VM agent uses. Cosmos Super ignores `num_frames` and failed D11 on the road-accident clip; phase 1 results should decide.
+- **Open:** phase 4 migration of live rows to the 5-label taxonomy.
 

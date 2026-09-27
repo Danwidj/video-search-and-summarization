@@ -30,7 +30,9 @@ The report library reads filtered, paginated metadata through the service-role-o
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
 - **Cascades are real.** Deleting a `videos` or `model_runs` row, or re-running `insert_incident` under the same `model_run_id`, cascades through the evidence, review, notification and match tables. Callers must re-insert evidence after the RPC.
 - **Changing a function signature:** drop the old signature in the same migration. PostgREST rejects ambiguous overloads that share parameter names.
-- **Never** print or commit the service-role key or DSN. Backend code uses the service role server-side only. RLS is currently disabled (see known issue 6, "RLS Disabled on Public Tables", in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
+- **Never** print or commit the service-role key or DSN. Backend code uses the service role server-side only. RLS is currently disabled (see known issue 7, "RLS Disabled on Public Tables", in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
+- **Pending migration:** `20260927120000_contract_report_summaries.sql` (report library reads contract titles, keeps null confidence, sorts nulls last) ships with the contract branch and is **not applied**. Apply it, after a dry run and approval, before or with the console deploy, or contract reports show no title in the library.
+- **Taxonomy:** the contract uses `road accident`, `burglary`, `explosion`, `assault`, `animal attack` and entity types `human`/`animal`/`unknown`. Live rows still hold the old values (`fighting`, `animal`, `person`) until the phase 4 migration ([`prompt-contract-plan.md`](../../.docs/prompt-contract-plan.md)).
 - Planned schema change (Option B: `r2_key`/`stream_url` split, `incident_timeline`, dropping legacy tables) is described in [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md). Check whether it has been approved before touching those areas.
 
 ## Instructions

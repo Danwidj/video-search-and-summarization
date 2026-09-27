@@ -32,6 +32,12 @@ service-role-only `list_incident_report_summaries` RPC used by the Next.js
 report library for filtered six-item pages. It joins existing tables and does
 not create or maintain a summary table.
 
+`migrations/20260927120000_contract_report_summaries.sql` replaces `list_incident_report_summaries` (same signature and grants) for `incident-contract-v2`:
+- report-library titles come from `incidentConsoleV2.{editedReport,report}.incident.title`, with the older paths as fallbacks;
+- a null `confidence_score` is returned as null and sorted last.
+
+It is safe to apply before or after the console change, because the old paths remain as fallbacks. It still needs a dry run and the captain's approval.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

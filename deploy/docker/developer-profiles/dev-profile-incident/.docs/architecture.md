@@ -277,25 +277,23 @@ sequenceDiagram
     UI->>R2: HeadObject (object must exist and be nonempty)
     UI->>UI: Sign 1-hour R2 GET URL locally (no R2 call)
     
-    UI->>Gateway: POST /v1/chat/completions (Prompt + Video URL)
-    Gateway->>Brev: Forward with Bearer Auth Header
+    UI->>Gateway: P1 POST /v1/chat/completions (video URL first, contract prompt, strict response_format, p1_request.json)
+    Gateway->>Brev: Forward body verbatim with Bearer Auth Header
     Brev->>R2: GET video via presigned URL
-    Brev-->>Gateway: VLM Completion (JSON / text)
+    Brev-->>Gateway: Schema-constrained JSON
     Gateway-->>UI: Raw Completion
 
-    UI->>UI: Validate & parse with incidentAnalysisSchema (Zod)
+    UI->>UI: Strict parse: JSON.parse + Ajv schema + cross-field rules, derive duration
+    Note over UI: Violation -> HTTP 422, nothing persisted, no repair call
 
-    opt parse/schema validation fails
-        UI->>Gateway: Retry repair prompt with raw content
-        Gateway->>Brev: Forward repair request
-        Brev-->>Gateway: Corrected JSON response
-        Gateway-->>UI: Raw repaired completion
-        UI->>UI: Re-validate & parse repaired JSON with schema
-    end
-    
+    UI->>Gateway: RP1 POST /v1/chat/completions (derived JSON -> prose, rp1_request.json)
+    Gateway->>Brev: Forward
+    Brev-->>Gateway: Report text
+    Gateway-->>UI: Report text (a failure keeps the P1 report, records reportTextError)
+
     %% Persistence
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
-    UI->>DB: Upsert model_runs (id, notes=full JSON report)
+    UI->>DB: Upsert model_runs (id, prompt_version=contract version, notes={report, rawModelOutput, reportText})
     UI->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
     UI->>DB: Upsert entities, instruments, assets
     UI->>DB: Upsert reports (id, incident_id, model_run_id)
@@ -346,28 +344,27 @@ sequenceDiagram
     UI->>R2: HeadObject (object must exist and be nonempty)
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
 
-    UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze
-    Tunnel->>Agent: Forward analyze request (model_run_id)
+    UI->>UI: Sign 1-hour R2 GET URL
+    UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url}
+    Tunnel->>Agent: Forward analyze request
 
-    Agent->>DB: GET videos (resolve sensor_id from videos.source)
-    Agent->>VIOS: Fetch video from VST_INTERNAL_URL (http://10.131.1.5:30888, vss-vios-ingress → streamprocessing :10000)
-    VIOS-->>Agent: Video stream bytes
-    
-    Agent->>Brev: VLM & LLM Inference (nemotron-3-ultra / cosmos-3-super)
-    Brev-->>Agent: Structured output
-    
-    Agent->>Agent: Parse into IncidentReport (Pydantic, LLM structured output)
-    Agent->>DB: Upsert videos (filepath = VST URL — overwritten later by UI)
-    Agent->>DB: Upsert model_runs (agent model_name)
+    Agent->>Brev: P1 (video URL first, contract prompt, strict response_format) - same call as gateway mode
+    Brev->>R2: GET video via presigned URL
+    Brev-->>Agent: Schema-constrained JSON
+    Agent->>Agent: Strict parse (Pydantic strict + cross-field rules), derive duration; violation -> 422
+    Agent->>Brev: RP1 (derived JSON -> prose)
+    Brev-->>Agent: Report text
+    Agent->>DB: Upsert model_runs (VLM name, contract version)
     Agent->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
-    Agent->>DB: Delete+insert entities, instruments, assets (best-effort, failures only logged)
+    Agent->>DB: Delete+insert entities, instruments, assets (contract ids; best-effort)
+    Note over Agent,DB: The agent never writes videos - the console owns the R2 key
 
-    Agent-->>Tunnel: Return IncidentReport JSON
+    Agent-->>Tunnel: {report, report_text, model, contract_version, raw_output}
     Tunnel-->>UI: Forward agent response
 
-    UI->>UI: Parse & validate snake_case agent response directly with incidentAnalysisSchema (Zod)
-    UI->>DB: Upsert model_runs (id, notes=full JSON report)
-    UI->>DB: Re-upsert videos (RESTORING durable R2 filepath!)
+    UI->>UI: Validate report against the contract again (Ajv + cross-field)
+    UI->>DB: Upsert model_runs (notes={report, rawModelOutput, reportText})
+    UI->>DB: Upsert videos (R2 key)
     UI->>DB: Upsert reports (id, incident_id, model_run_id)
     UI->>DB: Read back videos, model_runs, incidents, reports
     Note over UI,DB: Success requires all four rows and videos.filepath == submitted R2 key
