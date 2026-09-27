@@ -127,9 +127,17 @@ def chat_completion(
         return ChatResult(ok=False, status_code=resp.status_code, error=f"non-JSON response: {resp.text[:500]}")
 
     if resp.status_code >= 400:
-        return ChatResult(ok=False, status_code=resp.status_code, error=json.dumps(body)[:1000], raw=body)
+        raw = body if isinstance(body, dict) else {}
+        return ChatResult(ok=False, status_code=resp.status_code, error=json.dumps(body)[:1000], raw=raw)
 
-    choice = (body.get("choices") or [{}])[0]
+    # A 2xx whose body is not a completion (e.g. JSON ``null``, seen from the
+    # gateway for an unfetchable video URL) is a failed call, not an empty answer.
+    if not isinstance(body, dict) or not body.get("choices"):
+        return ChatResult(
+            ok=False, status_code=resp.status_code, error=f"no completion in response body: {json.dumps(body)[:500]}"
+        )
+
+    choice = body["choices"][0]
     message = choice.get("message", {})
     return ChatResult(
         ok=True,

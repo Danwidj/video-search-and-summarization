@@ -22,7 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from eval_vlm_client import FIXED_INFERENCE_CONFIG, extract_json  # noqa: E402
+import eval_vlm_client  # noqa: E402
+import pytest  # noqa: E402
+from eval_vlm_client import FIXED_INFERENCE_CONFIG, chat_completion, extract_json  # noqa: E402
 
 
 def test_extract_json_plain_object():
@@ -51,3 +53,34 @@ def test_fixed_inference_config_is_the_only_variable_across_models():
     # A guard against accidental per-model drift: this dict must never be
     # mutated per model/category/video by any caller - it's read, not built.
     assert FIXED_INFERENCE_CONFIG == {"temperature": 0.0, "max_tokens": 4096}
+
+
+class _FakeResponse:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+        self.text = str(body)
+
+    def json(self):
+        return self._body
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [(200, None), (200, []), (200, {}), (200, {"choices": []}), (400, None), (500, "oops")],
+)
+def test_chat_completion_non_completion_body_fails_soft(monkeypatch, status, body):
+    monkeypatch.setattr(eval_vlm_client, "gateway_credentials", lambda: ("https://gw.example/v1", "key"))
+    monkeypatch.setattr(eval_vlm_client.requests, "post", lambda *a, **k: _FakeResponse(status, body))
+    result = chat_completion("m", [{"role": "user", "content": "hi"}])
+    assert result.ok is False
+    assert result.status_code == status
+    assert result.error
+
+
+def test_chat_completion_success(monkeypatch):
+    body = {"choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]}
+    monkeypatch.setattr(eval_vlm_client, "gateway_credentials", lambda: ("https://gw.example/v1", "key"))
+    monkeypatch.setattr(eval_vlm_client.requests, "post", lambda *a, **k: _FakeResponse(200, body))
+    result = chat_completion("m", [{"role": "user", "content": "hi"}])
+    assert result.ok and result.content == "hello" and result.finish_reason == "stop"
