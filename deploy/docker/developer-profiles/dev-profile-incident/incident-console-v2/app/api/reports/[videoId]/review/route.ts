@@ -27,7 +27,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     ]);
     if (!incident) return NextResponse.json({ error: 'Incident not found' }, { status: 404 });
     if (currentReview?.status === input.status) {
-      return NextResponse.json({ status: input.status, reviewedBy, notified: false });
+      return NextResponse.json({ status: input.status, reviewedBy });
     }
     const now = new Date().toISOString();
     await db.upsert('review_status', {
@@ -39,16 +39,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       verified_by: input.status === 'verified' ? reviewedBy : null,
       verified_at: input.status === 'verified' ? now : null,
     }, 'incident_id,model_run_id');
-    const severity = typeof incident.severity_level === 'number' ? incident.severity_level : null;
-    const notified = input.status === 'verified' && severity !== null && severity >= 4;
-    if (notified) await db.upsert('notifications', {
-      incident_id: videoId,
-      model_run_id: input.modelRunId,
-      severity,
-      created_at: now,
-      acknowledged: false,
-    });
-    return NextResponse.json({ status: input.status, reviewedBy, reviewedAt: now, notified });
+    return NextResponse.json({ status: input.status, reviewedBy, reviewedAt: now });
   } catch (error) {
     return errorResponse(error, 'Could not update review status');
   }

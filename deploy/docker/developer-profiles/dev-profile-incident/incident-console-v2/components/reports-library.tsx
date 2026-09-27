@@ -192,10 +192,9 @@ export function ReportsLibrary() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modelRunId: item.modelRunId, status: nextStatus, reviewedBy: reviewer }),
       });
-      const payload = (await response.json()) as { error?: string; notified?: boolean };
+      const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Review update failed');
       setReports((current) => current.map((report) => report.reportId === item.reportId ? { ...report, status: nextStatus, editedBy: reviewer, verifiedBy: nextStatus === 'verified' ? reviewer : undefined } : report));
-      if (payload.notified) window.alert('Verified. A high-severity notification was created.');
     } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'Review update failed'); }
     finally { setBusy(''); }
   }

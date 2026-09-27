@@ -342,7 +342,8 @@ Carries the reviewer verification state independently of the AI report.
 | `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of last edit |
 
 ##### `notifications`
-Alert queue: one row is written when a reviewer moves an incident to `'verified'` and its `severity_level >= threshold` (console: `INCIDENT_SEVERITY_NOTIFY_THRESHOLD`, default 4; v2: hard-coded 4). Detection alone never notifies.
+Legacy alert queue retained for compatibility with the retired Streamlit console and evaluation tooling. The active
+`incident-console-v2` application neither reads nor writes this table.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|

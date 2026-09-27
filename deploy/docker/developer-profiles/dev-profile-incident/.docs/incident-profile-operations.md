@@ -195,7 +195,7 @@ Verify deployment health against this checklist before declaring a build ready:
 - [ ] **Pipeline Error Handling:** Induce an invalid video or disconnect the tunnel; verify that the frontend surfaces
       descriptive error messaging without crashing.
 - [ ] **Human Review & Verification:** Transition report review status (`unreviewed` -> `under review` -> `verified`).
-      Verify that reports with severity >= 4 generate a notification entry in `notifications`.
+      Verify that reviewer attribution and timestamps persist.
 - [ ] **Filtering & Dashboard:** Filter report library by incident type, severity, and date range. Confirm that
       counts match database records and clearing filters restores the full catalog.
 - [ ] **Ground-Truth Evaluation:** Open the evaluation interface for an incident with ground truth (`gt_incidents`).
