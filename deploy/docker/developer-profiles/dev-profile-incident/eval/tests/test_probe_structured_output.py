@@ -153,7 +153,7 @@ def test_base64_check_is_informational_and_sent_inline(monkeypatch):
     fake, calls = _fake_gateway()
     monkeypatch.setattr(probe, "chat_completion", fake)
     b64 = "data:video/mp4;base64,AAAA"
-    result = probe.probe_model("m", GOOD, MISSING, base64_url=b64, p1_max_tokens=16384)
+    result = probe.probe_model("m", GOOD, MISSING, base64_url=b64, max_tokens=16384)
     assert result.checks["p1_contract_base64"].passed
     assert calls[-1]["messages"][0]["content"][0]["video_url"]["url"] == b64
     assert calls[-1]["inference_config"]["max_tokens"] == 16384
@@ -241,3 +241,11 @@ def test_media_io_kwargs_sent_only_with_real_video(monkeypatch):
     assert (MISSING, None) in by_url  # negative control stays untouched
     assert [m for u, m in by_url if u == GOOD] == [media, media]  # url_fetch + p1
     assert by_url[-1] == ("data:video/mp4;base64,AA", media)
+
+
+def test_max_tokens_applies_to_every_call(monkeypatch):
+    fake, calls = _fake_gateway()
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    probe.probe_model("m", GOOD, MISSING, max_tokens=16384)
+    assert len(calls) == 4
+    assert all((c["inference_config"] or {}).get("max_tokens") == 16384 for c in calls)

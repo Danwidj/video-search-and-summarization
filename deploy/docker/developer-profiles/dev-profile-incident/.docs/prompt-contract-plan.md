@@ -162,6 +162,17 @@ RP1  POST {gateway}/v1/chat/completions
 - **Cosmos Super cannot be tuned through this gateway.**
 - **Nemotron P1 ended with `finish_reason=length` after 14,805 reasoning characters,** which confirms that the 4096 budget is too small.
 
+**Run 2, road-accident clip** (`--compare-base64 --p1-max-tokens 16384 --num-frames 64`):
+
+| Model | P1 (URL) | P1 (base64) | Notes |
+|---|---|---|---|
+| `cosmos-3-nano-reasoner` | valid: `road accident`, severity 3 | identical to URL | URL input does not change the result |
+| `cosmos-3-super-reasoner` | **rejected by a cross-field rule**: timeline events at 0 s and 2 s fall outside the incident window [3, 7] | same | Valid JSON. The model included lead-up events, which the prompt asks it to exclude. |
+| `nemotron-3-nano-omni-30b-a3b-reasoning` | valid: `road accident`, severity 3 | identical to URL | 16k budget fixes P1. `url_fetch` failed only because the override did not reach that call (`finish_reason=length`); now fixed, as `--max-tokens` applies to every call. |
+
+- There is no general `assault` bias. The explosion miss is clip-specific, most likely due to sparse sampling of a long clip.
+- **Open decision:** keep, relax or drop the timeline-bounds rule, and whether derived fields such as `duration` should be computed by code rather than by the model (see §7).
+
 **Next (run 2).** The probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It also adds:
 - `--compare-base64`: URL vs inline A/B;
 - `--p1-max-tokens`;
@@ -188,3 +199,4 @@ Decide the phase 1 model list and sampling settings from those results.
 
 - The RP1 model for console and agent: the same as the P1 VLM, or a text LLM (`nemotron-3-ultra`)?
 - Whether `title`, `severity_reason`, `location`, `timeline` and `uncertainties` get relational columns now or wait for Option B.
+- The cross-field timeline rule: keep it strict (events within the incident window), relax it (events within `[0, end_timestamp]`, allowing lead-up), or drop it. Also whether derived fields (`duration`) should be computed by code instead of requested from the model.

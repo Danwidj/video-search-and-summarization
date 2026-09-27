@@ -40,8 +40,8 @@ Optional, not part of the verdict:
 - ``--compare-base64`` adds ``p1_contract_base64``: the same P1 call with the
   video inlined as base64 (the pre-contract eval input), to tell URL effects
   from model effects.
-- ``--p1-max-tokens N`` raises the P1 token budget, to test whether a reasoning
-  model runs out of tokens before emitting the JSON.
+- ``--max-tokens N`` (alias ``--p1-max-tokens``) raises the token budget of
+  every call, so a reasoning model does not run out of tokens before answering.
 - ``--fps F`` / ``--num-frames N`` send ``media_io_kwargs`` with every call that
   carries the real video (frame sampling; the server default is unknown).
 - ``--sampling-tests`` adds four calls: fps+num_frames together and an
@@ -52,7 +52,7 @@ Optional, not part of the verdict:
 Usage (from ``eval/``):
     uv run python scripts/probe_structured_output.py --video-key anomaly/assault/<clip>.mp4
     uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner
-    uv run python scripts/probe_structured_output.py --video-key <key> --compare-base64 --p1-max-tokens 16384
+    uv run python scripts/probe_structured_output.py --video-key <key> --compare-base64 --max-tokens 16384
     uv run python scripts/probe_structured_output.py --video-key <key> --sampling-tests --num-frames 32
 """
 
@@ -252,7 +252,7 @@ def probe_model(
     missing_url: str,
     *,
     base64_url: str | None = None,
-    p1_max_tokens: int | None = None,
+    max_tokens: int | None = None,
     media_io_kwargs: dict | None = None,
     sampling_tests: bool = False,
 ) -> ModelResult:
@@ -261,7 +261,7 @@ def probe_model(
     sampling checks, which always use their own fixed ``media_io_kwargs``."""
     result = ModelResult(model)
 
-    def run(check_fn, messages, response_format=None, max_tokens=None, media=None):
+    def run(check_fn, messages, response_format=None, media=None):
         overrides = {}
         if response_format is not None:
             overrides["response_format"] = response_format
@@ -286,7 +286,6 @@ def probe_model(
         check_p1_contract,
         _video_messages(video_url, p1_prompt),
         contract.response_format(),
-        p1_max_tokens,
         media_io_kwargs,
     )
     if base64_url is not None:
@@ -294,7 +293,6 @@ def probe_model(
             check_p1_contract,
             _video_messages(base64_url, p1_prompt),
             contract.response_format(),
-            p1_max_tokens,
             media_io_kwargs,
         )
     if sampling_tests:
@@ -368,7 +366,11 @@ def main(argv: list[str] | None = None) -> int:
         help="also run P1 with the video inlined as base64 (informational, not part of the verdict)",
     )
     parser.add_argument(
-        "--p1-max-tokens", type=int, help="override max_tokens for the P1 calls only (default: the fixed 4096)"
+        "--max-tokens",
+        "--p1-max-tokens",
+        dest="max_tokens",
+        type=int,
+        help="override max_tokens for every call (default: the fixed 4096); reasoning models need about 16384",
     )
     sampling = parser.add_mutually_exclusive_group()
     sampling.add_argument("--fps", type=float, help="send media_io_kwargs video fps with every real-video call")
@@ -411,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
                     video_url,
                     missing_url,
                     base64_url=base64_url,
-                    p1_max_tokens=args.p1_max_tokens,
+                    max_tokens=args.max_tokens,
                     media_io_kwargs=media_io_kwargs,
                     sampling_tests=args.sampling_tests,
                 )
@@ -421,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
             failed.checks["probe_error"] = Check(False, f"{type(exc).__name__}: {exc}")
             results.append(failed)
         # Saved after every model so an interrupted run keeps what finished.
-        write_results(out_path, video_key, stamp, results, args.p1_max_tokens, media_io_kwargs)
+        write_results(out_path, video_key, stamp, results, args.max_tokens, media_io_kwargs)
     print_table(results)
     print(f"\nwrote {out_path}")
     return 0 if all(r.passed for r in results) else 1
@@ -440,14 +442,14 @@ def write_results(
     video_key: str,
     stamp: str,
     results: list[ModelResult],
-    p1_max_tokens: int | None = None,
+    max_tokens: int | None = None,
     media_io_kwargs: dict | None = None,
 ) -> None:
     payload = {
         "contract_version": contract.contract_version(),
         "video_key": video_key,
         "run_at": stamp,
-        "p1_max_tokens": p1_max_tokens,
+        "max_tokens": max_tokens,
         "media_io_kwargs": media_io_kwargs,
         "results": [
             {"model": r.model, "passed": r.passed, "checks": {k: asdict(v) for k, v in r.checks.items()}}
