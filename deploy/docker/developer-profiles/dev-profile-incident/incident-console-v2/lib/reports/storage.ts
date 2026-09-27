@@ -124,4 +124,6 @@ export interface ReportLibraryItem {
   sensorId?: string;
   /** How the report's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */
   outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy';
+  /** The video's explicitly selected official report (D6). */
+  isOfficial?: boolean;
 }

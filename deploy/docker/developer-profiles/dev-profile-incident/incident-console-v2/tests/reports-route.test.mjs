@@ -44,21 +44,13 @@ afterEach(() => {
 
 test('report library requests one filtered six-item summary page without video URLs', async () => {
   let rpcBody;
-  let outcomeQuery;
   globalThis.fetch = async (url, init) => {
-    if (String(url).startsWith('https://supabase.test/rest/v1/model_runs?')) {
-      outcomeQuery = new URL(String(url)).searchParams;
-      return new Response(JSON.stringify([
-        { id: 'm1', notes: JSON.stringify({ incidentConsoleV2: { contractVersion: 'incident-contract-v2', status: 'valid_after_structural_repair' } }) },
-        { id: 'm2', notes: 'legacy text notes' },
-      ]), { status: 200 });
-    }
     assert.equal(String(url), 'https://supabase.test/rest/v1/rpc/list_incident_report_summaries');
     rpcBody = JSON.parse(String(init?.body));
     return new Response(JSON.stringify({
       reports: [
-        { reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road Accident report', r2Key: 'uploads/sensor-1/video.mp4' },
-        { reportId: 'r2', videoId: 'v2', modelRunId: 'm2', title: 'Older report', r2Key: 'uploads/sensor-2/video.mp4' },
+        { reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road Accident report', r2Key: 'uploads/sensor-1/video.mp4', outcome: 'valid_after_structural_repair', isOfficial: true },
+        { reportId: 'r2', videoId: 'v2', modelRunId: 'm2', title: 'Older report', r2Key: 'uploads/sensor-2/video.mp4', outcome: 'legacy', isOfficial: false },
       ],
       totalItems: 13,
       incidentTypes: ['road accident'],
@@ -83,8 +75,11 @@ test('report library requests one filtered six-item summary page without video U
   assert.deepEqual(payload.pagination, { page: 2, pageSize: 6, totalItems: 13, totalPages: 3 });
   assert.equal('playbackUrl' in payload.reports[0], false);
   assert.equal(payload.reports[0].thumbnailUrl, 'https://signed.r2.test/thumbnails/uploads/sensor-1/video.mp4.webp');
-  assert.equal(outcomeQuery.get('id'), 'in.("m1","m2")');
+  assert.equal(rpcBody.p_scope, 'all', 'the library default stays every successful report');
+  assert.equal(rpcBody.p_evidence_match, 'contains');
+  assert.equal(rpcBody.p_entity_types, null);
   assert.equal(payload.reports[0].outcome, 'valid_after_structural_repair', 'repaired reports carry the marker');
+  assert.equal(payload.reports[0].isOfficial, true);
   assert.equal(payload.reports[1].outcome, 'legacy', 'pre-outcome runs are shown as earlier analyses, not failures');
 });
 
@@ -139,4 +134,19 @@ test('thumbnail capture samples exactly one quarter into the video', () => {
   assert.equal(thumbnailCaptureTime(5), 1.25);
   assert.equal(thumbnailCaptureTime(0), 0);
   assert.equal(thumbnailCaptureTime(Number.NaN), 0);
+});
+
+test('dashboard links: official scope, exact evidence names and entity types reach the RPC; invalid values are refused', async () => {
+  let rpcBody;
+  globalThis.fetch = async (_url, init) => { rpcBody = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] })); };
+  const ok = await GET(new Request('http://localhost/api/reports?scope=official&type=burglary&entityType=human&entityType=Animal&instrument=knife&match=exact&after=2026-09-01T00%3A00%3A00&before=2026-09-28T00%3A00%3A00'));
+  assert.equal(ok.status, 200);
+  assert.equal(rpcBody.p_scope, 'official');
+  assert.equal(rpcBody.p_type, 'burglary');
+  assert.deepEqual(rpcBody.p_entity_types, ['human', 'animal']);
+  assert.deepEqual(rpcBody.p_instruments, ['knife']);
+  assert.equal(rpcBody.p_evidence_match, 'exact');
+  for (const bad of ['scope=latest', 'match=fuzzy', 'entityType=person']) {
+    assert.equal((await GET(new Request(`http://localhost/api/reports?${bad}`))).status, 400, bad);
+  }
 });

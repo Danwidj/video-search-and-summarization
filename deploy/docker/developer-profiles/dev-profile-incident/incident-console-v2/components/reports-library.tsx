@@ -13,6 +13,9 @@ import { formatTimestamp } from '@/lib/time';
 type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
 
+const SORT_VALUES: Sort[] = ['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low'];
+const FILTER_KEYS = ['search', 'type', 'severity', 'status', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page'];
+
 function severityClass(level: number) {
   if (level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
   if (level === 3) return 'bg-[#fff1c7] text-[#765300]';
@@ -40,6 +43,9 @@ export function ReportsLibrary() {
   const [entity, setEntity] = useState('');
   const [instrument, setInstrument] = useState('');
   const [asset, setAsset] = useState('');
+  const [scope, setScope] = useState<'all' | 'official'>('all');
+  const [entityType, setEntityType] = useState('');
+  const [match, setMatch] = useState<'contains' | 'exact'>('contains');
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -97,7 +103,9 @@ export function ReportsLibrary() {
         throw new Error('From date must be on or before To date');
       }
       const params = new URLSearchParams({ page: String(page), sort });
-      if (query.get('dashboard') === '1') { params.set('dashboard', '1'); params.set('period', query.get('period') || 'all'); }
+      if (scope === 'official') params.set('scope', 'official');
+      if (entityType) params.set('entityType', entityType);
+      if (match === 'exact') params.set('match', 'exact');
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
       if (type !== 'all') params.set('type', type);
       if (severity !== 'all') params.set('severity', severity);
@@ -132,28 +140,32 @@ export function ReportsLibrary() {
   }
 
   useEffect(() => {
-    if (query.get('clearFilters') === '1') {
+    // The URL is the filter state: when it carries any filter (dashboard links,
+    // shared links, refresh, back/forward) it is applied alone. The remembered
+    // state is only used for a bare /reports (e.g. "Back to all reports").
+    if (FILTER_KEYS.some((key) => query.has(key))) {
       const after = query.get('after') || '';
       const before = query.get('before') || '';
-      const period = query.get('period') || 'all';
       setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all');
       setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || '');
-      setRangeAfter(after); setRangeBefore(before); setDatePreset(period === 'all' ? 'all' : 'custom');
-      setFromDate(after.slice(0, 10)); setToDate(before.slice(0, 10)); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setSort('newest'); setPage(1); setReady(true);
+      setScope(query.get('scope') === 'official' ? 'official' : 'all'); setEntityType(query.get('entityType') || ''); setMatch(query.get('match') === 'exact' ? 'exact' : 'contains');
+      setRangeAfter(after); setRangeBefore(before); setDatePreset(after || before ? 'custom' : 'all');
+      setFromDate(after.slice(0, 10)); setToDate(before.slice(0, 10)); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || '');
+      setSort((SORT_VALUES.includes(query.get('sort') as Sort) ? query.get('sort') : 'newest') as Sort); setPage(Math.max(1, Number(query.get('page') || '1') || 1));
+      setReady(true);
       return;
     }
-    const saved = window.sessionStorage.getItem('report-library-state');
-    if (saved) {
-      try {
-        const state = JSON.parse(saved) as Record<string, string | number>;
-        setSearch(String(state.search || '')); setType(query.get('type') || String(state.type || 'all'));
-        setSeverity(query.get('severity') || String(state.severity || 'all')); setStatus(query.get('status') || String(state.status || 'all'));
-        setEntity(query.get('entity') || String(state.entity || '')); setInstrument(query.get('instrument') || String(state.instrument || '')); setAsset(query.get('asset') || String(state.asset || ''));
+    try {
+      const state = JSON.parse(window.sessionStorage.getItem('report-library-state') || 'null') as Record<string, string | number> | null;
+      if (state) {
+        setSearch(String(state.search || '')); setType(String(state.type || 'all')); setSeverity(String(state.severity || 'all')); setStatus(String(state.status || 'all'));
+        setEntity(String(state.entity || '')); setInstrument(String(state.instrument || '')); setAsset(String(state.asset || ''));
+        setScope(state.scope === 'official' ? 'official' : 'all'); setEntityType(String(state.entityType || '')); setMatch(state.match === 'exact' ? 'exact' : 'contains');
         setDatePreset((state.datePreset || 'all') as DatePreset); setFromDate(String(state.fromDate || '')); setToDate(String(state.toDate || ''));
         setFromTime(String(state.fromTime || '')); setToTime(String(state.toTime || '')); setDay(String(state.day || '')); setRangeAfter(String(state.rangeAfter || '')); setRangeBefore(String(state.rangeBefore || '')); setSort((state.sort || 'newest') as Sort);
-        setPage(Number(query.get('page') || state.page || 1));
-      } catch { /* ignore stale state */ }
-    } else { setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all'); setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || ''); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setPage(Number(query.get('page') || 1)); }
+        setPage(Number(state.page || 1));
+      }
+    } catch { /* ignore stale state */ }
     setReady(true);
   }, []);
 
@@ -167,7 +179,7 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
+  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -179,7 +191,7 @@ export function ReportsLibrary() {
   }, [loading]);
 
   function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
+    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
   }
 
   async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
@@ -238,13 +250,18 @@ export function ReportsLibrary() {
           <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime && !day && !rangeAfter && !rangeBefore} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
         </div>
         <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">
+          <Select label="Report scope" onChange={(value) => { setScope(value === 'official' ? 'official' : 'all'); setPage(1); }} value={scope} options={[['all', 'All successful reports'], ['official', 'Official reports only']]} />
+          <Select label="Entity type" onChange={(value) => { setEntityType(value === 'all' ? '' : value); setPage(1); }} value={entityType || 'all'} options={[['all', 'Any entity type'], ['human', 'Human'], ['animal', 'Animal'], ['unknown', 'Unknown']]} />
+          <div className="flex items-center text-xs text-ink/55">{match === 'exact' ? <span data-testid="exact-match">Exact instrument / asset names · <button className="font-semibold text-moss" onClick={() => { setMatch('contains'); setPage(1); }} type="button">match partial text instead</button></span> : <span>Instrument and asset filters match partial text.</span>}</div>
+        </div>
+        <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">
           <FilterInput label="People and entities" onChange={(value) => { setEntity(value); setPage(1); }} placeholder="e.g. person, red jacket" value={entity} />
           <FilterInput label="Instruments" onChange={(value) => { setInstrument(value); setPage(1); }} placeholder="e.g. knife, vehicle" value={instrument} />
           <FilterInput label="Assets" onChange={(value) => { setAsset(value); setPage(1); }} placeholder="e.g. door, cash register" value={asset} />
         </div>
       </section>
 
-      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
+      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || scope !== 'all' || entityType || match !== 'contains' || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setScope('all'); setEntityType(''); setMatch('contains'); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
       {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
     </div>
   );
@@ -255,7 +272,7 @@ function ReportCard({ item, busy, onStatus, onDelete, onOpen }: { item: ReportLi
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.reportId}`} tabIndex={-1}>
     <ReportThumbnail failed={thumbnailFailed} onError={() => setThumbnailFailed(true)} severity={item.severity} status={item.status} thumbnailUrl={item.thumbnailUrl} />
-    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {formatTimestamp(item.generatedAt)}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>{item.outcome === 'valid_after_structural_repair' && <p className="mt-2 inline-block rounded-full bg-[#fff1c7] px-2.5 py-0.5 text-[11px] font-bold text-[#765300]" data-testid="library-repair-marker">Contract repair applied (IDs only)</p>}
+    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {formatTimestamp(item.generatedAt)}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>{item.isOfficial && <p className="mr-2 mt-2 inline-block rounded-full bg-moss px-2.5 py-0.5 text-[11px] font-bold text-white" data-testid="library-official-marker">Official report</p>}{item.outcome === 'valid_after_structural_repair' && <p className="mt-2 inline-block rounded-full bg-[#fff1c7] px-2.5 py-0.5 text-[11px] font-bold text-[#765300]" data-testid="library-repair-marker">Contract repair applied (IDs only)</p>}
       <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><Link className="action" href={`/videos/${encodeURIComponent(item.videoId)}`} onClick={() => onOpen(item)}>Re-analyze / history</Link><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
     </div>
   </article>;
