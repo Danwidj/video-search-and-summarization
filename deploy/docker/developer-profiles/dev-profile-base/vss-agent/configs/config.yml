@@ -160,10 +160,13 @@ functions:
     # No Video Analytics MCP tools configured = Video(uploaded) Report mode
     video_report_tool: video_report_gen
 
+  # Incident profile /analyze: shared incident contract P1 (VLM, signed video URL) -> RP1.
+  # Prompts, schema and request settings come from vss_agents/incident_contract, not here.
   incident_report_gen:
     _type: incident_report_gen
-    llm_name: ${LLM_MODEL_TYPE:-nim}_llm
-    video_report_tool: video_report_gen
+    vlm_base_url: ${VLM_BASE_URL}
+    vlm_model_name: ${VLM_NAME}
+    rp1_base_url: ${LLM_BASE_URL}
 
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
