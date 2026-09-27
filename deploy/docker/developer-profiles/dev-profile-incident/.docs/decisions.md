@@ -2,6 +2,13 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-09-27: Persist reviewer edits as atomic field-level patches
+- **Decision:** Compute changed top-level report fields in the edit API and apply them through a single `apply_incident_report_patch` transaction. The function locks the target model run and incident, merges only the supplied patch into the latest stored report, updates only corresponding incident projections/evidence categories, preserves the original AI report, and advances `edited_at`. Report-library filters now include weekday and low/medium severity bands; dashboard navigation carries exact period bounds and must ignore stale session filters on entry.
+- **Why:** Independent PostgREST writes can leave report JSON, incidents, evidence, and edit metadata disagreeing after a partial failure. Replacing the entire client-submitted report also risks overwriting concurrent edits or losing omitted fields. The database transaction makes a failed edit all-or-nothing and untouched fields remain unchanged.
+- **Alternatives rejected:** Multiple client REST writes (not transactional); replacing all fields from the client payload (can restore stale values); rewriting all evidence collections when one category changes (unnecessary mutation and partial-data risk).
+- **Migration status:** `20260927140000_atomic_report_edits_and_exact_dashboard_links.sql` is authored but not applied to shared Supabase; live application requires the normal dry-run and explicit approval.
+- **Links:** [`../supabase/migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql`](../supabase/migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql); [`../incident-console-v2/app/api/reports/[videoId]/edit/route.ts`](../incident-console-v2/app/api/reports/[videoId]/edit/route.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx); [`.docs/data.md`](data.md).
+
 ---
 
 ### 2026-09-27: Aggregate dashboard intelligence in one service-only RPC

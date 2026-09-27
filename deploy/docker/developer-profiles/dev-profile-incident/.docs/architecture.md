@@ -67,6 +67,7 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST /rpc/insert_incident| Supabase
+    UI -->|/rpc/apply_incident_report_patch| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -244,10 +245,11 @@ the type plus entity, instrument, asset, hour, status, or supported severity fil
 The individual report view keeps editing in context with the evidence: `Edit report` opens a workspace with the
 original AI result and editable copy side by side. It covers title, incident type, summary, severity, confidence,
 time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties.
-`PATCH /api/reports/[videoId]/edit` stores the editable copy under `incidentConsoleV2.editedReport` in
-`model_runs.notes`, updates searchable incident fields, and calls `replace_incident_evidence` to atomically replace
-the normalized people/entities, instruments, and assets for that model run. Those normalized rows drive the dedicated
-report-library evidence filters. The original `incidentConsoleV2.report` remains intact.
+`PATCH /api/reports/[videoId]/edit` computes a patch containing only changed report fields and calls
+`apply_incident_report_patch`. The service-role RPC locks the model run and incident, preserves untouched values,
+updates only affected normalized evidence categories, and stores the edit in `model_runs.notes` in one transaction.
+An error rolls back the entire edit. Those normalized rows drive the report-library evidence filters. The original
+`incidentConsoleV2.report` remains intact.
 After saving, the editor closes and the normal report view renders the updated human copy, including its title,
 summary, timeline, and evidence sections. Video playback and follow-up/evaluation tools stay on the report page.
 

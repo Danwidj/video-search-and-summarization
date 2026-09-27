@@ -45,6 +45,9 @@ export function ReportsLibrary() {
   const [toDate, setToDate] = useState('');
   const [fromTime, setFromTime] = useState('');
   const [toTime, setToTime] = useState('');
+  const [day, setDay] = useState('');
+  const [rangeAfter, setRangeAfter] = useState('');
+  const [rangeBefore, setRangeBefore] = useState('');
   const [sort, setSort] = useState<Sort>('newest');
   const [busy, setBusy] = useState('');
   const [ready, setReady] = useState(false);
@@ -54,6 +57,7 @@ export function ReportsLibrary() {
 
   function changeDatePreset(value: DatePreset) {
     setDatePreset(value);
+    setRangeAfter(''); setRangeBefore('');
     if (value !== 'custom') {
       setFromDate('');
       setToDate('');
@@ -62,12 +66,14 @@ export function ReportsLibrary() {
   }
 
   function changeFromDate(value: string) {
+    setRangeAfter(''); setRangeBefore('');
     setFromDate(value);
     setDatePreset(value || toDate ? 'custom' : 'all');
     setPage(1);
   }
 
   function changeToDate(value: string) {
+    setRangeAfter(''); setRangeBefore('');
     setToDate(value);
     setDatePreset(value || fromDate ? 'custom' : 'all');
     setPage(1);
@@ -79,6 +85,7 @@ export function ReportsLibrary() {
     setToDate('');
     setFromTime('');
     setToTime('');
+    setDay(''); setRangeAfter(''); setRangeBefore('');
     setPage(1);
   }
 
@@ -90,6 +97,7 @@ export function ReportsLibrary() {
         throw new Error('From date must be on or before To date');
       }
       const params = new URLSearchParams({ page: String(page), sort });
+      if (query.get('dashboard') === '1') { params.set('dashboard', '1'); params.set('period', query.get('period') || 'all'); }
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
       if (type !== 'all') params.set('type', type);
       if (severity !== 'all') params.set('severity', severity);
@@ -99,15 +107,18 @@ export function ReportsLibrary() {
       if (asset.trim()) params.append('asset', asset.trim());
       const today = new Date();
       const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      if (datePreset === 'today') params.set('after', `${localDate(today)}T00:00:00`);
+      if (rangeAfter) params.set('after', rangeAfter);
+      else if (datePreset === 'today') params.set('after', `${localDate(today)}T00:00:00`);
       if (datePreset === '7d' || datePreset === '30d') {
         const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (datePreset === '7d' ? 6 : 29));
         params.set('after', `${localDate(start)}T00:00:00`);
       }
-      if (datePreset === 'custom' && fromDate) params.set('after', `${fromDate}T00:00:00`);
-      if (datePreset === 'custom' && toDate) params.set('before', `${toDate}T23:59:59.999`);
+      if (!rangeAfter && datePreset === 'custom' && fromDate) params.set('after', `${fromDate}T00:00:00`);
+      if (rangeBefore) params.set('before', rangeBefore);
+      else if (datePreset === 'custom' && toDate) params.set('before', `${toDate}T23:59:59.999`);
       if (fromTime) params.set('fromTime', fromTime);
       if (toTime) params.set('toTime', toTime);
+      if (day) params.set('day', day);
       const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
       const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
@@ -121,6 +132,16 @@ export function ReportsLibrary() {
   }
 
   useEffect(() => {
+    if (query.get('clearFilters') === '1') {
+      const after = query.get('after') || '';
+      const before = query.get('before') || '';
+      const period = query.get('period') || 'all';
+      setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all');
+      setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || '');
+      setRangeAfter(after); setRangeBefore(before); setDatePreset(period === 'all' ? 'all' : 'custom');
+      setFromDate(after.slice(0, 10)); setToDate(before.slice(0, 10)); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setSort('newest'); setPage(1); setReady(true);
+      return;
+    }
     const saved = window.sessionStorage.getItem('report-library-state');
     if (saved) {
       try {
@@ -129,10 +150,10 @@ export function ReportsLibrary() {
         setSeverity(query.get('severity') || String(state.severity || 'all')); setStatus(query.get('status') || String(state.status || 'all'));
         setEntity(query.get('entity') || String(state.entity || '')); setInstrument(query.get('instrument') || String(state.instrument || '')); setAsset(query.get('asset') || String(state.asset || ''));
         setDatePreset((state.datePreset || 'all') as DatePreset); setFromDate(String(state.fromDate || '')); setToDate(String(state.toDate || ''));
-        setFromTime(String(state.fromTime || '')); setToTime(String(state.toTime || '')); setSort((state.sort || 'newest') as Sort);
+        setFromTime(String(state.fromTime || '')); setToTime(String(state.toTime || '')); setDay(String(state.day || '')); setRangeAfter(String(state.rangeAfter || '')); setRangeBefore(String(state.rangeBefore || '')); setSort((state.sort || 'newest') as Sort);
         setPage(Number(query.get('page') || state.page || 1));
       } catch { /* ignore stale state */ }
-    } else { setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all'); setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || ''); setPage(Number(query.get('page') || 1)); }
+    } else { setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all'); setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || ''); setFromTime(query.get('fromTime') || ''); setToTime(query.get('toTime') || ''); setDay(query.get('day') || ''); setPage(Number(query.get('page') || 1)); }
     setReady(true);
   }, []);
 
@@ -146,7 +167,7 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, sort]);
+  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -158,7 +179,7 @@ export function ReportsLibrary() {
   }, [loading]);
 
   function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
+    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
   }
 
   async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
@@ -216,7 +237,7 @@ export function ReportsLibrary() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <label className="xl:col-span-2"><span className="sr-only">Search reports</span><input className="control" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search reports and evidence…" type="search" value={search} /></label>
           <Select label="Incident type" onChange={(value) => { setType(value); setPage(1); }} value={type} options={[['all', 'All incident types'], ...incidentTypes.map((value) => [value, value])]} />
-          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={[['all', 'All severities'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])]} />
+          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={ [['all', 'All severities'], ['low', 'Low (1–2)'], ['medium', 'Medium (3)'], ['high', 'High (4–5)'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])] } />
           <Select label="Review status" onChange={(value) => { setStatus(value); setPage(1); }} value={status} options={[['all', 'All review states'], ['unreviewed', 'Unreviewed'], ['under review', 'Under review'], ['verified', 'Verified']]} />
           <Select label="Sort reports" onChange={(value) => { setSort(value as Sort); setPage(1); }} value={sort} options={[['newest', 'Newest first'], ['oldest', 'Oldest first'], ['severity-high', 'Highest severity'], ['severity-low', 'Lowest severity'], ['confidence-high', 'Highest confidence'], ['confidence-low', 'Lowest confidence']]} />
         </div>
@@ -226,7 +247,7 @@ export function ReportsLibrary() {
           <DateInput label="To date" onChange={changeToDate} type="date" value={toDate} />
           <DateInput label="From time" onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
           <DateInput label="To time" onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
-          <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
+          <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime && !day && !rangeAfter && !rangeBefore} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
         </div>
         <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">
           <FilterInput label="People and entities" onChange={(value) => { setEntity(value); setPage(1); }} placeholder="e.g. person, red jacket" value={entity} />
@@ -235,7 +256,7 @@ export function ReportsLibrary() {
         </div>
       </section>
 
-      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || datePreset !== 'all' || fromTime || toTime) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setPage(1); }} type="button">Clear filters</button>}</div>
+      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
       {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onReanalyze={reanalyze} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
     </div>
   );

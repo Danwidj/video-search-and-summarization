@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 6;
 const SORTS = new Set(['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
-const SEVERITIES = new Set(['all', 'high', '1', '2', '3', '4', '5']);
+const SEVERITIES = new Set(['all', 'low', 'medium', 'high', '1', '2', '3', '4', '5']);
 
 interface RpcResult {
   reports?: ReportLibraryItem[];
@@ -48,8 +48,11 @@ export async function GET(request: Request) {
     const pageSize = params.get('all') === 'true' ? 1000 : PAGE_SIZE;
     const sort = params.get('sort') || 'newest';
     const severity = params.get('severity') || 'all';
+    const dayRaw = params.get('day');
+    const dayOfWeek = dayRaw === null ? null : Number(dayRaw);
     if (!SORTS.has(sort)) return NextResponse.json({ error: 'Invalid report sort' }, { status: 400 });
     if (!SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid report severity' }, { status: 400 });
+    if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
 
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     const result = await db.rpc('list_incident_report_summaries', {
@@ -66,6 +69,7 @@ export async function GET(request: Request) {
       p_entities: evidenceFilters(params, 'entity'),
       p_instruments: evidenceFilters(params, 'instrument'),
       p_assets: evidenceFilters(params, 'asset'),
+      p_day_of_week: dayOfWeek,
       p_sort: sort,
     }) as RpcResult;
     const summaries = Array.isArray(result?.reports) ? result.reports : [];
