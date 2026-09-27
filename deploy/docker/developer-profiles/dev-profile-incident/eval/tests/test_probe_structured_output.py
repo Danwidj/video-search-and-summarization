@@ -186,7 +186,9 @@ def test_valid_p1_stores_full_report(monkeypatch):
     fake, _ = _fake_gateway()
     monkeypatch.setattr(probe, "chat_completion", fake)
     check = probe.probe_model("m", GOOD, MISSING).checks["p1_contract"]
-    assert check.report == _valid_report()
+    expected = _valid_report()
+    expected["incident"]["duration"] = expected["incident"]["end_timestamp"] - expected["incident"]["start_timestamp"]
+    assert check.report == expected
 
 
 def _sampling_gateway(*, validates=True, frames_matter=True):

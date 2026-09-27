@@ -1,4 +1,4 @@
-REPORT GENERATION PROMPT - RP1 (incident-contract-v1)
+REPORT GENERATION PROMPT - RP1 (incident-contract-v2)
 
 Generate a concise, objective incident report using ONLY the structured
 incident information provided below.

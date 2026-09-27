@@ -4,6 +4,18 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-27: Strict timeline bounds; `duration` derived in code (`incident-contract-v2`)
+- **Decision:**
+  - Keep the cross-field rule that every timeline event falls within `[start_timestamp, end_timestamp]`; a lead-up event is a contract violation (HTTP 422).
+  - Remove `incident.duration` from the schema and the P1 prompt. Consumers compute it as `end_timestamp - start_timestamp` after validation (`with_derived_fields`).
+  - Bump the contract to `incident-contract-v2`.
+- **Why:** Probe run 2 showed `cosmos-3-super-reasoner` returning valid JSON with lead-up events before the incident window. The captain chose strictness over leniency for the timeline. Asking a model for a value that code can compute exactly only adds a failure mode.
+- **Alternatives rejected:**
+  - Relaxing the timeline to `[0, end_timestamp]`.
+  - Dropping the timeline rule.
+  - Keeping `duration` in the schema with a strict equality check.
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md) §2 and §5a.
+
 ### 2026-09-27: Contract files in profile `contracts/`, validated with `jsonschema`; phase 0 probe with controls
 - **Decision:** Put the shared schema, the P1/RP1 prompts and `VERSION` in `dev-profile-incident/contracts/`. Validate in Python with `jsonschema` (Draft 2020-12, new `eval` dependency) plus explicit cross-field checks in `eval/contract.py`. Gate the rollout on `eval/scripts/probe_structured_output.py`, which proves schema enforcement with a contradictory-prompt control (the schema allows only `{"answer_code": "schema-enforced"}` while the prompt asks for prose) and proves URL fetching with a missing-object negative control.
 - **Why:** One location every consumer can read or vendor. `jsonschema` validates against the same file the model is sent, with no hand-written mirror. The controls stop a model that happens to emit JSON, or that answers without reading the video, from passing.

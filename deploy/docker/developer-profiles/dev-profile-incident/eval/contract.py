@@ -18,7 +18,8 @@
 The JSON Schema file is the single source of truth. This module loads it, builds
 the ``response_format`` payload sent to the model, and validates a response
 strictly: ``json.loads`` of the raw content, JSON Schema validation, then the
-cross-field rules the schema cannot express. There is no fence stripping, brace
+cross-field rules the schema cannot express. Derived fields (``incident.duration``)
+are computed here, not requested from the model. There is no fence stripping, brace
 extraction, alias mapping or default filling - a response either conforms or
 raises ``ContractError``. See ``.docs/prompt-contract-plan.md``.
 """
@@ -88,8 +89,6 @@ def cross_field_errors(report: dict[str, Any]) -> list[str]:
     start, end = incident["start_timestamp"], incident["end_timestamp"]
     if end < start:
         errors.append(f"end_timestamp {end} is before start_timestamp {start}")
-    if incident["duration"] != end - start:
-        errors.append(f"duration {incident['duration']} != end_timestamp - start_timestamp ({end - start})")
 
     for prefix, key, items in (
         ("E", "entity_id", report["entities"]),
@@ -132,12 +131,18 @@ def validate_report(report: Any) -> dict[str, Any]:
     return report
 
 
+def with_derived_fields(report: dict[str, Any]) -> dict[str, Any]:
+    """Add fields computed by code, never requested from the model (``incident.duration``)."""
+    incident = report["incident"]
+    return {**report, "incident": {**incident, "duration": incident["end_timestamp"] - incident["start_timestamp"]}}
+
+
 def parse_report(content: str | None) -> dict[str, Any]:
-    """Strictly decode and validate a model's message content."""
+    """Strictly decode and validate a model's message content, then add derived fields."""
     if not content:
         raise ContractError("empty response content")
     try:
         decoded = json.loads(content)
     except json.JSONDecodeError as exc:
         raise ContractError(f"content is not a single JSON document: {exc}") from exc
-    return validate_report(decoded)
+    return with_derived_fields(validate_report(decoded))
