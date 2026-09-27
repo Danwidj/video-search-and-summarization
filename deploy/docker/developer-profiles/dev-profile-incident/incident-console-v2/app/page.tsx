@@ -19,7 +19,7 @@ export default function HomePage() {
             From footage to facts
           </p>
           <h1 className="text-balance text-5xl font-semibold leading-[0.98] tracking-[-0.055em] sm:text-6xl xl:text-7xl">
-            Understand the incident, not the interface.
+            Understand the incident.
           </h1>
           <p className="mt-7 max-w-lg text-lg leading-8 text-ink/65">
             Drop in a video. Incident Studio will identify the critical sequence, organize the evidence, and prepare a
