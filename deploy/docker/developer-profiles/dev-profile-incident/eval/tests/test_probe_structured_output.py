@@ -147,3 +147,43 @@ def test_redact_strips_presigned_credentials():
     out = probe.redact(f"failed to fetch {url}")
     assert "abc123" not in out and "AKIA" not in out
     assert "X-Amz-Signature=REDACTED" in out and "X-Amz-Expires=3600" in out
+
+
+def test_base64_check_is_informational_and_sent_inline(monkeypatch):
+    fake, calls = _fake_gateway()
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    b64 = "data:video/mp4;base64,AAAA"
+    result = probe.probe_model("m", GOOD, MISSING, base64_url=b64, p1_max_tokens=16384)
+    assert result.checks["p1_contract_base64"].passed
+    assert calls[-1]["messages"][0]["content"][0]["video_url"]["url"] == b64
+    assert calls[-1]["inference_config"]["max_tokens"] == 16384
+    result.checks["p1_contract_base64"].passed = False
+    assert result.passed  # base64 A/B never changes the verdict
+
+
+def test_diagnostics_record_token_exhaustion(monkeypatch):
+    def fake(model, messages, *, inference_config=None, timeout=240.0):
+        if (inference_config or {}).get("response_format", {}).get("json_schema", {}).get("name") == "incident_report":
+            return ChatResult(
+                ok=True,
+                content="",
+                reasoning_content="x" * 9000,
+                finish_reason="length",
+                raw={"usage": {"completion_tokens": 4096}},
+                status_code=200,
+            )
+        return _fake_gateway()[0](model, messages, inference_config=inference_config)
+
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    check = probe.probe_model("m", GOOD, MISSING).checks["p1_contract"]
+    assert not check.passed
+    assert check.finish_reason == "length"
+    assert check.reasoning_chars == 9000
+    assert check.usage == {"completion_tokens": 4096}
+
+
+def test_valid_p1_stores_full_report(monkeypatch):
+    fake, _ = _fake_gateway()
+    monkeypatch.setattr(probe, "chat_completion", fake)
+    check = probe.probe_model("m", GOOD, MISSING).checks["p1_contract"]
+    assert check.report == _valid_report()
