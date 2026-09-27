@@ -34,7 +34,6 @@ def _valid_report() -> dict:
             "title": "Person strikes another person with a bottle",
             "start_timestamp": 3,
             "end_timestamp": 11,
-            "duration": 8,
             "description": "E1 approaches E2 and strikes E2 with a bottle.",
             "severity_level": 3,
             "severity_reason": "Repeated strikes with an improvised weapon.",
@@ -94,7 +93,7 @@ def test_response_format_strips_document_keys():
 
 
 def test_version_file():
-    assert contract.contract_version() == "incident-contract-v1"
+    assert contract.contract_version() == "incident-contract-v2"
 
 
 def test_extraction_prompt_has_no_output_template_or_few_shot():
@@ -118,9 +117,19 @@ def test_report_prompt_has_single_placeholder():
     template.format(structured_incident_json="{}")
 
 
-def test_valid_report_parses():
+def test_valid_report_parses_and_duration_is_derived():
     report = _valid_report()
-    assert parse_report(json.dumps(report)) == report
+    parsed = parse_report(json.dumps(report))
+    assert parsed["incident"]["duration"] == 8  # 11 - 3, computed by code
+    assert {k: v for k, v in parsed["incident"].items() if k != "duration"} == report["incident"]
+    assert "duration" not in report["incident"]  # the input is not mutated
+
+
+def test_model_supplied_duration_is_rejected():
+    report = _valid_report()
+    report["incident"]["duration"] = 8
+    with pytest.raises(ContractError, match="schema violation"):
+        validate_report(report)
 
 
 @pytest.mark.parametrize(
@@ -154,8 +163,7 @@ def test_schema_violations_are_rejected(mutate):
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda r: r["incident"].update(duration=7), "duration"),
-        (lambda r: r["incident"].update(end_timestamp=2, duration=0), "before start_timestamp"),
+        (lambda r: r["incident"].update(end_timestamp=2), "before start_timestamp"),
         (lambda r: r["entities"][1].update(entity_id="E3"), "not sequential"),
         (lambda r: r["instruments"][0].update(entity_id="E9"), "unknown entity_id"),
         (lambda r: r["timeline"][1].update(start_seconds=12), "outside"),

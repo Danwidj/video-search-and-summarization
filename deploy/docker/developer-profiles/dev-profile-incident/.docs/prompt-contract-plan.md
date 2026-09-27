@@ -38,6 +38,8 @@ Incident extraction runs through three paths that do not share a prompt, schema,
 | D8 | Taxonomy is **eval's 5 labels**: road accident, burglary, explosion, assault, animal attack. | Matches the ground truth. A 7-label superset was rejected because `fighting`/`assault` and `animal`/`animal attack` overlap, and the ground truth cannot score `fighting` or `animal`. |
 | D9 | The video reaches the model as a **signed R2 URL** (1 h) in every path. | eval stops downloading and base64-encoding clips. |
 | D10 | `confidence_score` is `null` unless the API gives a native score. | The UI must render "no confidence" and sort nulls last. |
+| D11 | Timeline events must fall within `[start_timestamp, end_timestamp]`. Lead-up events are a contract violation (422). | Chosen over relaxing to `[0, end]`. |
+| D12 | Derived fields are computed by code: `incident.duration = end_timestamp - start_timestamp`. The model is never asked for them. | Removes a class of arithmetic failures. Eval scoring gets the same value. |
 
 ## 3. Target contract
 
@@ -48,7 +50,7 @@ Incident extraction runs through three paths that do not share a prompt, schema,
 | `incident_report.schema.json` | JSON Schema (draft 2020-12), strict-mode compatible (see below) |
 | `incident_extraction_prompt.md` | P1 text: sections 1-6 kept, few-shot removed, section 7 "OUTPUT FORMAT" removed, and rules added for the extra fields |
 | `report_generation_prompt.md` | RP1 text (`RP1-v1`, unchanged apart from the input shape) |
-| `VERSION` | One contract version, for example `incident-contract-v1`, stored as `prompt_version` on every model run |
+| `VERSION` | One contract version (now `incident-contract-v2`), stored as `prompt_version` on every model run |
 
 **Strict-mode rules:**
 - `additionalProperties: false` on every object.
@@ -62,7 +64,6 @@ incident
   title               string                        (*added*)
   start_timestamp     integer (s)
   end_timestamp       integer (s)
-  duration            integer (s)  = end - start
   description         string
   severity_level      integer 1-5
   severity_reason     string                        (*added*)
@@ -78,8 +79,7 @@ uncertainties[]       string                                                    
 - Console `persons[{description, actions}]` becomes `entities`. Actions go into `description`, as the P1 rules already require.
 - `incident_start_confirmed` is dropped. The P1 rules already say to base `start_timestamp` on observable evidence only.
 - Cross-field rules that JSON Schema cannot express are checked after parsing, and a failure also returns 422:
-  - `duration == end - start`
-  - every `instruments[].entity_id` exists in `entities`
+    - every `instruments[].entity_id` exists in `entities`
   - `timeline` falls within `[start, end]`
 
 **One validator per language, both reading the same file:**
@@ -171,7 +171,10 @@ RP1  POST {gateway}/v1/chat/completions
 | `nemotron-3-nano-omni-30b-a3b-reasoning` | valid: `road accident`, severity 3 | identical to URL | 16k budget fixes P1. `url_fetch` failed only because the override did not reach that call (`finish_reason=length`); now fixed, as `--max-tokens` applies to every call. |
 
 - There is no general `assault` bias. The explosion miss is clip-specific, most likely due to sparse sampling of a long clip.
-- **Open decision:** keep, relax or drop the timeline-bounds rule, and whether derived fields such as `duration` should be computed by code rather than by the model (see §7).
+- **Decided (captain, 2026-09-27):**
+  - D11: the timeline rule **stays strict** (events within `[start_timestamp, end_timestamp]`). A model that includes lead-up events fails with 422.
+  - D12: `duration` is **computed by code** (`end - start`) and removed from the schema (`incident-contract-v2`).
+  - Super failed D11 on this clip. It stays under observation until phase 1 shows its failure rate across the ground-truth set, and is dropped if the rate is material.
 
 **Next (run 2).** The probe now records `finish_reason`, token usage, reasoning length and the full P1 report. It also adds:
 - `--compare-base64`: URL vs inline A/B;
@@ -199,4 +202,4 @@ Decide the phase 1 model list and sampling settings from those results.
 
 - The RP1 model for console and agent: the same as the P1 VLM, or a text LLM (`nemotron-3-ultra`)?
 - Whether `title`, `severity_reason`, `location`, `timeline` and `uncertainties` get relational columns now or wait for Option B.
-- The cross-field timeline rule: keep it strict (events within the incident window), relax it (events within `[0, end_timestamp]`, allowing lead-up), or drop it. Also whether derived fields (`duration`) should be computed by code instead of requested from the model.
+

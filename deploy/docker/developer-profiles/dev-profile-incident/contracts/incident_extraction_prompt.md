@@ -1,4 +1,4 @@
-UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v1)
+UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v2)
 
 You are analysing a surveillance video for structured incident extraction.
 
@@ -64,11 +64,6 @@ END_TIMESTAMP
 - If the incident is still visibly ongoing when the video ends, use the
   final observable second of the video as End_Timestamp.
 - Do not infer when an incident ends beyond the available video.
-
-DURATION
-- Duration of the observable incident in seconds.
-- Calculate as:
-  End_Timestamp - Start_Timestamp
 
 TITLE
 - A short, neutral headline for the incident, normally 4-10 words.
@@ -495,7 +490,7 @@ unsupported classification.
 For example:
 - an Instrument.Entity_ID must correspond to an Entity_ID returned in
   the Entities array;
-- Duration must equal End_Timestamp - Start_Timestamp;
+- End_Timestamp must not be earlier than Start_Timestamp;
 - every timeline event must lie within Start_Timestamp and
   End_Timestamp;
 - descriptions must not contradict the structured fields;
