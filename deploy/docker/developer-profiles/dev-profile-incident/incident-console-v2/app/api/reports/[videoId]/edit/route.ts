@@ -20,42 +20,19 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     const config = getServiceConfiguration();
     if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    const run = await db.selectOne('model_runs', { id: input.modelRunId });
-    if (!run) throw new Error('Model run not found');
-    const incident = await db.selectOne('incidents', { incident_id: videoId, model_run_id: input.modelRunId });
-    if (!incident) throw new Error('Report not found for this video and model run');
     const original = incidentAnalysisSchema.parse(input.originalReport);
     const edited = incidentAnalysisSchema.parse(input.editedReport);
-    let notes: Record<string, unknown> = {};
-    try {
-      const parsed = typeof run.notes === 'string' ? JSON.parse(run.notes) as Record<string, unknown> : {};
-      notes = parsed && typeof parsed === 'object' ? parsed : {};
-    } catch { /* Replace malformed notes with a valid wrapper while retaining the source report below. */ }
-    const existing = notes.incidentConsoleV2 && typeof notes.incidentConsoleV2 === 'object'
-      ? notes.incidentConsoleV2 as Record<string, unknown>
-      : {};
-    const originalStored = existing.report && typeof existing.report === 'object' ? existing.report : original;
-    await db.updateWhere('model_runs', { id: input.modelRunId }, {
-      notes: JSON.stringify({
-        ...notes,
-        incidentConsoleV2: { ...existing, report: originalStored, editedReport: edited },
-      }),
-    });
-    await db.updateWhere(
-      'incidents',
-      { incident_id: videoId, model_run_id: input.modelRunId },
-      {
-        type: edited.incident_type,
-        description: edited.description,
-        start_timestamp: edited.incident_start,
-        end_timestamp: edited.incident_end,
-        duration: edited.duration_seconds,
-        severity_level: edited.severity,
-        confidence_score: edited.confidence,
-      },
+    const patch = Object.fromEntries(
+      Object.entries(edited).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(original[key as keyof typeof original])),
     );
-    await db.updateWhere('review_status', { incident_id: videoId, model_run_id: input.modelRunId }, { edited_at: new Date().toISOString() });
-    return NextResponse.json({ saved: true });
+    if (Object.keys(patch).length === 0) return NextResponse.json({ saved: true, unchanged: true });
+    const saved = await db.rpc('apply_incident_report_patch', {
+      p_incident_id: videoId,
+      p_model_run_id: input.modelRunId,
+      p_original_report: original,
+      p_report_patch: patch,
+    });
+    return NextResponse.json({ saved: true, report: saved });
   } catch (error) {
     return errorResponse(error, 'Could not edit report');
   }
