@@ -44,6 +44,21 @@ def _get_base_url() -> str:
     return url.rstrip("/")
 
 
+# Upstream read timeout. VLM reasoning with a 16k-token budget can run for
+# minutes, so this must exceed the slowest per-model timeout the console uses
+# (contracts/inference.json timeout_seconds).
+DEFAULT_TIMEOUT_SECONDS = 330.0
+
+
+def _get_timeout_seconds() -> float:
+    raw = os.getenv("VLM_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_TIMEOUT_SECONDS
+    except ValueError:
+        return DEFAULT_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_TIMEOUT_SECONDS
+
+
 def _get_api_key() -> str | None:
     key = os.getenv("VLM_GATEWAY_API_KEY")
     return key if key else None
@@ -82,7 +97,7 @@ async def chat_completions(request: Request) -> Response:
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=_get_timeout_seconds()) as client:
         try:
             upstream_resp = await client.post(
                 upstream_url,

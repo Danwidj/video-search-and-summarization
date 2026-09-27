@@ -1,0 +1,11 @@
+{
+  "description": "Recorded nvidia/cosmos-3-nano-reasoner response for Burglary005 from the incident-contract-v2 eval smoke run.",
+  "video_duration_seconds": 258.077,
+  "content": "{\"assets\": [{\"asset_id\": \"A1\", \"description\": \"A black doormat placed on the concrete walkway near the door.\", \"name\": \"doormat\"}, {\"asset_id\": \"A2\", \"description\": \"A small patch of gravel or decorative stones in front of the door.\", \"name\": \"gravel patch\"}], \"entities\": [{\"description\": \"A person wearing a white shirt and dark pants, standing on the porch.\", \"entity_id\": \"E1\", \"type\": \"human\"}, {\"description\": \"A person wearing a white shirt and dark pants, standing on the porch.\", \"entity_id\": \"E2\", \"type\": \"human\"}, {\"description\": \"A person wearing a white shirt and dark pants, standing on the porch.\", \"entity_id\": \"E3\", \"type\": \"human\"}], \"incident\": {\"confidence_score\": null, \"description\": \"A person stands on the porch, interacts with the door, and then leaves.\", \"end_timestamp\": 198, \"location\": \"front porch of a house\", \"severity_level\": 1, \"severity_reason\": \"The person stands on the porch, interacts with the door, and then leaves. There is no visible harm or damage.\", \"start_timestamp\": 0, \"title\": \"Person standing on porch and leaving\", \"type\": \"assault\"} , \"instruments\": [{\"description\": \"A small object held by the person, possibly a phone or remote.\", \"entity_id\": \"E1\", \"instrument_id\": \"I1\", \"name\": \"small object\", \"threat_level\": 1}], \"timeline\": [{\"description\": \"A person stands on the porch, interacts with the door, and then leaves.\", \"end_seconds\": 198, \"start_seconds\": 0} ], \"uncertainties\": []}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}

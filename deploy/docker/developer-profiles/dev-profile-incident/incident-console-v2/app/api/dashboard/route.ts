@@ -6,6 +6,7 @@ import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import type { DashboardAnalytics } from '@/lib/dashboard/types';
+import { parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,9 @@ export async function GET(request: Request) {
     if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
     const requestedStart = params.get('after');
     const requestedEnd = params.get('before');
-    const periodEnd = period === 'all' ? null : requestedEnd ? new Date(requestedEnd) : new Date();
-    const periodStart = periodEnd ? requestedStart ? new Date(requestedStart) : new Date(periodEnd.getTime() - Number(period) * 86_400_000) : null;
+    // after/before are zoneless UTC (like every stored timestamp); read them as UTC, never as server-local time.
+    const periodEnd = period === 'all' ? null : requestedEnd ? parseStoredTimestamp(requestedEnd) ?? new Date(NaN) : new Date();
+    const periodStart = periodEnd ? requestedStart ? parseStoredTimestamp(requestedStart) ?? new Date(NaN) : new Date(periodEnd.getTime() - Number(period) * 86_400_000) : null;
     if ((periodStart && Number.isNaN(periodStart.getTime())) || (periodEnd && Number.isNaN(periodEnd.getTime())) || (periodStart && periodEnd && periodStart >= periodEnd)) {
       return NextResponse.json({ error: 'Invalid dashboard date range' }, { status: 400 });
     }

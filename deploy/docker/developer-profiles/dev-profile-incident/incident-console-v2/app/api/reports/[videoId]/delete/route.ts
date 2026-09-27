@@ -7,6 +7,7 @@ import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { deleteR2Video } from '@/lib/r2/config';
 import { thumbnailKeyForVideo } from '@/lib/r2/key';
+import { explicitVideoId } from '@/lib/reports/run-notes';
 
 export async function DELETE(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -25,6 +26,9 @@ export async function DELETE(request: Request, context: { params: Promise<{ vide
         deleteR2Video(config, thumbnailKeyForVideo(video.filepath)),
       ]);
       await db.deleteWhere('videos', { id: videoId });
+      // incidents, evidence, review status and reports cascade from the video;
+      // then remove the run records that still name this video.
+      await deleteVideoRunRecords(db, videoId);
     } else {
       await db.deleteWhere('incidents', { incident_id: videoId, model_run_id: modelRunId });
     }
@@ -33,3 +37,22 @@ export async function DELETE(request: Request, context: { params: Promise<{ vide
     return errorResponse(error, 'Could not delete report');
   }
 }
+
+/**
+ * After a video is deleted, remove the model_runs records that explicitly name
+ * that exact videoId in their notes (failed attempts, and successful console
+ * runs whose report rows were removed with the video) and have no incident
+ * left. The notes text search is only a pre-filter: each candidate is
+ * confirmed from its parsed notes. Batch eval/seed runs have no such notes and
+ * are shared with other videos, so they are never touched here.
+ */
+async function deleteVideoRunRecords(db: PostgrestClient, videoId: string): Promise<void> {
+  const candidates = await db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,notes');
+  for (const candidate of candidates) {
+    if (typeof candidate.id !== 'string' || explicitVideoId(candidate.notes) !== videoId) continue;
+    const incident = await db.selectOne('incidents', { model_run_id: candidate.id }, 'incident_id');
+    if (incident) continue;
+    await db.deleteWhere('model_runs', { id: candidate.id });
+  }
+}
+

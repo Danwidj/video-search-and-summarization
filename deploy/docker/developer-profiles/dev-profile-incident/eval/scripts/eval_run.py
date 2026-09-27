@@ -23,17 +23,24 @@ For each (category, model, evaluation video):
   1. Resolve the video to its single R2 object and sign a URL
      (``eval_video_resolution``, exact-basename only).
   2. Call P1: signed URL + contract prompt, schema enforced via response_format.
-  3. Parse strictly (``contract.parse_report``). A contract failure is recorded
-     as such and scored as an empty prediction (a miss), never repaired.
+  3. Judge the raw response under validation policy core-scored-v1
+     (``contract.evaluate_policy``), with the video's real length read from its
+     MP4 header (``video_duration``). Full incident-contract validity is
+     recorded as ``contract_ok``; the prediction is scored when its
+     database-backed fields are valid (``core_ok``) and is otherwise an empty
+     prediction (a miss). A failure confined to the unscored enrichment fields
+     (title, severity_reason, location, timeline, uncertainties) never empties
+     it. Nothing is repaired.
   4. Persist the prediction to the DB under this model's own ``model_run_id``.
   5. Score it against GT (``eval_gt.run_evaluation`` - reuses ``matching.py``
      unchanged; entity/instrument/asset matches will be empty until a real
      embeddings endpoint is configured, see ``config.embedding_base_url()``).
   6. Call RP1 (one fixed report-generation model/config, same for every P1
-     model) on a valid prediction; report is persisted, never scored. Skipped
-     when P1 failed.
+     model) on a fully contract-valid prediction; report is persisted, never
+     scored. Skipped otherwise.
   7. Accumulate the Step 7 per-video result; write one JSON file per
-     (category, model) once that pair's videos are done.
+     (category, model) once that pair's videos are done, plus an immutable copy
+     under ``results/runs/<run start>/`` (``write_results``).
 
 Usage::
 
@@ -75,6 +82,7 @@ from eval_run_lib import (  # noqa: E402
 from eval_vlm_client import MODELS, analyze_video_with_p1, generate_report_with_rp1, p1_request_config  # noqa: E402
 from eval_video_resolution import ResolutionError, build_basename_index, resolve_and_sign  # noqa: E402
 import r2_videos  # noqa: E402
+from video_duration import r2_video_duration_seconds  # noqa: E402
 
 RESULTS_DIR = EVAL_DATA_DIR / "results"
 EMPTY_PREDICTION = {"incident": {}, "entities": [], "instruments": [], "assets": []}
@@ -188,9 +196,17 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
 
 def run_one_video(
     db, *, model: str, category: str, filename: str, incident_id: str, r2_object_key: str, video_url: str,
-    gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str,
+    gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str, video_duration_seconds: float | None = None,
 ) -> dict:
     """Steps 2-7 for one (model, video) pair. Returns the Step 7 per-video result dict.
+
+    Validity follows validation policy core-scored-v1 (``contract.evaluate_policy``):
+    the prediction is scored and persisted when its database-backed fields are
+    valid (``core_ok``); a failure confined to the unscored enrichment fields
+    (e.g. a timeline outside the incident window) does not empty it. The window is
+    also checked against ``video_duration_seconds`` when that is known.
+    ``p1_raw.contract_ok`` keeps its original meaning, full incident-contract
+    validity, and gates RP1 as before.
 
     Raises ``EvaluatorDependencyError`` (aborting the whole run) if the
     embedding server or LLM judge is unavailable or invalid for this video -
@@ -202,14 +218,18 @@ def run_one_video(
     contract_error = ""
     if not p1_result.ok:
         contract_error = f"P1 call failed: {p1_result.error}"
-        prediction = dict(EMPTY_PREDICTION)
+        policy = {"validation_policy": contract.POLICY_ID, "full_contract_ok": False, "core_ok": False,
+                  "core": [], "enrichment": [], "video_bounds_checked": False, "report": None}
     else:
-        try:
-            prediction = contract.parse_report(p1_result.content)
-        except contract.ContractError as exc:
-            contract_error = str(exc)
-            prediction = dict(EMPTY_PREDICTION)
-    contract_ok = not contract_error
+        policy = contract.evaluate_policy(p1_result.content, video_duration_seconds)
+        if not policy["full_contract_ok"]:
+            try:
+                contract.parse_report(p1_result.content)
+            except contract.ContractError as exc:
+                contract_error = str(exc)
+    contract_ok = p1_result.ok and policy["full_contract_ok"]
+    core_ok = p1_result.ok and policy["core_ok"]
+    prediction = policy["report"] if core_ok else dict(EMPTY_PREDICTION)
 
     persist_prediction(db, incident_id, model_run_id, prediction)
 
@@ -222,7 +242,7 @@ def run_one_video(
         rp1_report = {
             "text": "", "model_id": RP1_MODEL, "prompt_version": contract.contract_version(),
             "inference_config": RP1_INFERENCE_CONFIG, "ok": False, "skipped": True,
-            "error": "skipped: P1 did not produce a valid contract report", "attempts": 0,
+            "error": "skipped: RP1 runs only on a fully contract-valid P1 report", "attempts": 0,
         }
 
     return {
@@ -237,10 +257,22 @@ def run_one_video(
         "r2_object_key": r2_object_key,
         "ground_truth": gt_p1_shaped,
         "prediction": prediction,
+        # contract_ok = full incident-contract validity (unchanged meaning);
+        # core_ok = core-scored-v1 validity, which decides scoring (see "validation").
         "p1_raw": {"content": p1_result.content, "reasoning_content": p1_result.reasoning_content,
                    "finish_reason": p1_result.finish_reason, "ok": p1_result.ok, "error": p1_result.error,
                    "usage": (p1_result.raw or {}).get("usage") or {},
-                   "contract_ok": contract_ok, "contract_error": contract_error},
+                   "contract_ok": contract_ok, "contract_error": contract_error, "core_ok": core_ok},
+        "validation": {
+            "contract_version": contract.contract_version(),
+            "validation_policy": contract.POLICY_ID,
+            "full_contract_ok": contract_ok,
+            "core_ok": core_ok,
+            "core_violations": policy["core"],
+            "enrichment_violations": policy["enrichment"],
+            "video_duration_seconds": video_duration_seconds,
+            "video_bounds_checked": policy["video_bounds_checked"],
+        },
         "rp1_report": rp1_report,
         "incident_field_scores": eval_result.fields,
         "entities": score_matches_summary(eval_result, "entities"),
@@ -257,6 +289,7 @@ def recorded_p1_config() -> dict:
 
 
 def run(*, models: list[str], categories: list[str] | None, limit: int | None) -> None:
+    run_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     # Fail fast, before burning any P1/RP1 calls, if either evaluator
     # dependency isn't already healthy at the frozen configuration.
     check_embedding_server_healthy(FROZEN_EMBEDDING_BASE_URL, expected_model=FROZEN_EMBEDDING_MODEL)
@@ -305,26 +338,49 @@ def run(*, models: list[str], categories: list[str] | None, limit: int | None) -
                     r2_object_key=r2_object_key, video_url=video_url,
                     gt_p1_shaped=gt_index["by_incident_id"][incident_id]["p1_shaped"],
                     model_run_id=model_run_id, split_manifest_ref=str(manifest_path),
+                    video_duration_seconds=r2_video_duration_seconds(r2_object_key),
                 )
                 results.append(result)
                 print(f"P1 ok={result['p1_raw']['ok']} contract_ok={result['p1_raw']['contract_ok']} "
-                      f"finish={result['p1_raw']['finish_reason']} "
+                      f"core_ok={result['p1_raw']['core_ok']} finish={result['p1_raw']['finish_reason']} "
                       f"type_pass={result['incident_field_scores'].get('type', {}).get('pass')} "
                       f"RP1 ok={result['rp1_report']['ok']}")
 
-            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-            out_path = RESULTS_DIR / f"{category.lower().replace(' ', '_')}__{safe_model_id(model)}.json"
-            out_path.write_text(json.dumps({
+            out_path, archive_path = write_results({
                 "category": category,
                 "model_id": model,
                 "prompt_version": contract.contract_version(),
+                "validation_policy": contract.POLICY_ID,
                 "inference_config": recorded_p1_config(),
                 "split_manifest_ref": str(manifest_path),
                 "run_id": model_run_id,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "videos": results,
-            }, indent=2))
-            print(f"  -> wrote {out_path} ({len(results)} videos)")
+            }, run_started_at=run_started_at)
+            print(f"  -> wrote {out_path} ({len(results)} videos); immutable copy {archive_path}")
+
+
+def write_results(payload: dict, *, run_started_at: str, results_dir: Path = RESULTS_DIR) -> tuple[Path, Path]:
+    """Write one (category, model) results file, plus a never-overwritten copy.
+
+    The top-level ``<category>__<model>.json`` is the current file that
+    eval_aggregate / eval_regenerate_rp1 read, and a later run replaces it. The
+    copy under ``runs/<run start>/`` is created exclusively, so each run's raw
+    model responses, contract version, validation policy, validation
+    diagnostics and inference settings stay available for re-scoring without
+    another VLM call.
+    """
+    name = f"{payload['category'].lower().replace(' ', '_')}__{safe_model_id(payload['model_id'])}.json"
+    text = json.dumps(payload, indent=2)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out_path = results_dir / name
+    out_path.write_text(text)
+    archive_dir = results_dir / "runs" / run_started_at.replace(":", "-")
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / name
+    with archive_path.open("x") as handle:  # never overwrite a past run's record
+        handle.write(text)
+    return out_path, archive_path
 
 
 def gt_index_lookup(gt_index: dict, filename: str) -> str:

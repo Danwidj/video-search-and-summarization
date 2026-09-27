@@ -3,18 +3,48 @@
 export interface GatewayCompletionRequest {
   model: string;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: unknown }>;
-  stream: false;
+  stream?: false;
   temperature?: number;
   max_tokens?: number;
+  // OpenAI-compatible extras forwarded verbatim by vlm-gateway (e.g.
+  // response_format, media_io_kwargs, chat_template_kwargs).
+  [extra: string]: unknown;
 }
 
 export interface GatewayCompletionResponse {
-  choices: Array<{ message: { role: string; content: string } }>;
+  choices: Array<{
+    message: { role: string; content: string | null; reasoning_content?: string | null };
+    finish_reason?: string | null;
+  }>;
   model?: string;
+  usage?: Record<string, unknown>;
+}
+
+export type GatewayFailureCode =
+  | 'GATEWAY_UNREACHABLE'
+  | 'GATEWAY_TIMEOUT'
+  | 'GATEWAY_HTTP_ERROR'
+  | 'UPSTREAM_NON_JSON'
+  | 'UPSTREAM_NO_COMPLETION';
+
+/** A call that produced no usable completion, with whatever the gateway actually returned. */
+export class GatewayError extends Error {
+  code: GatewayFailureCode;
+  httpStatus?: number;
+  errorBody?: string;
+
+  constructor(code: GatewayFailureCode, message: string, details: { httpStatus?: number; errorBody?: string } = {}) {
+    super(message);
+    this.name = 'GatewayError';
+    this.code = code;
+    if (details.httpStatus !== undefined) this.httpStatus = details.httpStatus;
+    if (details.errorBody !== undefined) this.errorBody = details.errorBody;
+  }
 }
 
 function networkErrorDetail(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
+  if (error.name === 'TimeoutError') return 'the request timed out';
   const cause = (error as Error & { cause?: unknown }).cause;
   if (!cause) return error.message;
   if (cause instanceof Error) {
@@ -51,13 +81,32 @@ export class GatewayClient {
         signal,
       });
     } catch (error) {
-      throw new Error(`Could not reach the VLM gateway: ${networkErrorDetail(error)}`);
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      throw new GatewayError(timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE', `Could not reach the VLM gateway: ${networkErrorDetail(error)}`);
     }
 
     if (!response.ok) {
-      const detail = (await response.text()).slice(0, 1000);
-      throw new Error(`VLM gateway returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      const detail = (await response.text().catch(() => '')).slice(0, 1000);
+      throw new GatewayError('GATEWAY_HTTP_ERROR', `VLM gateway returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`, { httpStatus: response.status, errorBody: detail });
     }
-    return (await response.json()) as GatewayCompletionResponse;
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      throw new GatewayError(timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE', `Reading the VLM gateway response failed: ${networkErrorDetail(error)}`, { httpStatus: response.status });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new GatewayError('UPSTREAM_NON_JSON', 'VLM gateway returned a non-JSON response', { httpStatus: response.status, errorBody: text.slice(0, 1000) });
+    }
+    // A 2xx whose body is not a completion (e.g. JSON null, seen from the gateway
+    // for an unfetchable video URL) is a failed call, not an empty answer.
+    if (!body || typeof body !== 'object' || !Array.isArray((body as GatewayCompletionResponse).choices) || !(body as GatewayCompletionResponse).choices.length) {
+      throw new GatewayError('UPSTREAM_NO_COMPLETION', `VLM gateway returned no completion: ${JSON.stringify(body).slice(0, 500)}`, { httpStatus: response.status, errorBody: JSON.stringify(body).slice(0, 1000) });
+    }
+    return body as GatewayCompletionResponse;
   }
 }

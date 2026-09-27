@@ -4,6 +4,7 @@ import type { Readable } from 'node:stream';
 
 import type { ServiceConfiguration } from '@/lib/env';
 import { isValidR2Key } from '@/lib/r2/key';
+import { mp4DurationSeconds } from '@/lib/video/mp4-duration';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -102,4 +103,30 @@ export async function deleteR2Video(config: ServiceConfiguration, key: string): 
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
   await client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: key }));
+}
+
+/**
+ * The video's length in seconds from its MP4 header, read with ranged GETs
+ * (lib/video/mp4-duration.ts). null when it cannot be read: validation then
+ * records the video-length rule as not checked, never as passed.
+ */
+export async function readR2VideoDurationSeconds(config: ServiceConfiguration, key: string, contentLength: number): Promise<number | null> {
+  const r2 = createR2Configuration(config);
+  if (!r2 || !isValidR2Key(key)) return null;
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: r2.endpoint,
+    credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
+  });
+  const readRange = async (offset: number, length: number): Promise<Uint8Array> => {
+    const end = Math.min(offset + length, contentLength) - 1;
+    if (end < offset) return new Uint8Array(0);
+    const result = await client.send(new GetObjectCommand({ Bucket: r2.bucket, Key: key, Range: `bytes=${offset}-${end}` }));
+    return result.Body ? await result.Body.transformToByteArray() : new Uint8Array(0);
+  };
+  try {
+    return await mp4DurationSeconds(readRange, contentLength);
+  } catch {
+    return null;
+  }
 }

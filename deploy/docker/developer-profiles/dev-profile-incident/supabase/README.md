@@ -50,6 +50,44 @@ cache was reloaded. The Supabase management connector recorded it as version
 `20260927075044` (its UTC application timestamp), while the checked-in migration
 filename retains the repository's ordered migration timestamp.
 
+`migrations/20260927150000_report_summaries_contract_v2_title.sql` replaces
+`list_incident_report_summaries` (same signature) so incident-contract-v2 runs
+show and search their model-generated title from
+`model_runs.notes` `incidentConsoleV2.report.incident.title`, returns a null
+confidence as null instead of 0, and sorts null confidences last. Applied to
+shared Supabase on 2026-09-27 after a transactional dry run (and recorded in
+`supabase_migrations.schema_migrations`).
+
+`migrations/20260927160000_apply_structured_report_edit.sql` adds the
+service-role-only `apply_structured_report_edit` RPC used by the console's
+structured (Class A) reviewer editor. In one transaction it replaces a run's
+`incidents` values (type, integer-second start/end, recomputed duration,
+description, severity level) and its `entities` / `instruments` /
+`assets`, and sets `review_status.edited_by` / `edited_at`. It never touches
+`model_runs.notes`, and it rejects any edit that breaks the contract's types,
+ranges, sequential IDs or instrument-holder references (no rules stricter
+than incident-contract-v2). Applied to shared Supabase on 2026-09-27
+after a transactional dry run and approval; live-tested through the UI. `apply_incident_report_patch` is left in place but is no longer
+called by the console.
+
+`migrations/20260927170000_official_report_selection.sql` adds
+`videos.selected_model_run_id/selected_by/selected_at` (composite FK to the
+video's own incidents, `ON DELETE SET NULL (selected_model_run_id)`) and the
+`select_official_report` / `clear_official_report` RPCs for explicit official
+report selection (D6). Additive; applied 2026-09-27. Because `videos` and
+`incidents` now have two relationships, PostgREST embeds between them must name
+`incidents_incident_id_fkey`.
+
+`migrations/20260927180000_official_dashboard_and_library_filters.sql` adds the
+`canonical_incident_type`, `canonical_entity_type`, `normalized_name` and
+`run_outcome` helpers, replaces `list_incident_report_summaries` (adds
+`p_scope`, `p_entity_types`, `p_evidence_match`; returns `outcome` and
+`isOfficial`) and `get_incident_dashboard` (official incidents only). Applied
+2026-09-27 after a dry run with 40 dashboard/library parity checks per period.
+
+All four 2026-09-27 migrations were applied with a single-transaction script
+that also records the version in `supabase_migrations.schema_migrations`.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

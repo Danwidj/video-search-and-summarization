@@ -7,12 +7,12 @@ import { useEffect, useState } from 'react';
 
 import { IncidentReport } from '@/components/incident-report';
 import { AdvancedReportTools } from '@/components/advanced-report-tools';
-import type { AnalysisReport } from '@/lib/analysis/schema';
+import type { ReportView } from '@/lib/reports/report-view';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; report: AnalysisReport & { originalReport?: AnalysisReport } };
+  | { status: 'ready'; report: ReportView };
 
 export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRunId: string }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -26,7 +26,7 @@ export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRu
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as { report?: AnalysisReport & { originalReport?: AnalysisReport }; error?: string };
+        const payload = (await response.json()) as { report?: ReportView; error?: string };
         if (!response.ok || !payload.report) throw new Error(payload.error || `Report request failed with HTTP ${response.status}`);
         setState({ status: 'ready', report: payload.report });
       })
@@ -71,7 +71,7 @@ export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRu
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12">
-      <IncidentReport onNewAnalysis={() => { window.location.href = '/'; }} report={state.report} />
+      <IncidentReport key={`${state.report.modelRunId}-${state.report.review.editedAt ?? ''}`} onEdited={() => setAttempt((value) => value + 1)} onNewAnalysis={() => { window.location.href = '/'; }} report={state.report} />
       <AdvancedReportTools report={state.report} />
     </div>
   );

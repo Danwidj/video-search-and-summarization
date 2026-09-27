@@ -2,20 +2,45 @@
 
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
 let headContentLength = 1024;
+// The stored video's bytes for ranged reads (the MP4 length reader); null = unreadable.
+let videoBytes = null;
+
+/** A minimal MP4 (ftyp, mdat, then moov/mvhd) whose header says `seconds` long. */
+function mp4Bytes(seconds, mdatBytes = 1000) {
+  const box = (type, body) => {
+    const out = Buffer.alloc(8 + body.length);
+    out.writeUInt32BE(8 + body.length, 0);
+    out.write(type, 4, 'latin1');
+    body.copy(out, 8);
+    return out;
+  };
+  const mvhdBody = Buffer.alloc(4 + 8 + 8 + 80);
+  mvhdBody.writeUInt32BE(1000, 12);
+  mvhdBody.writeUInt32BE(Math.round(seconds * 1000), 16);
+  return Buffer.concat([box('ftyp', Buffer.alloc(8)), box('mdat', Buffer.alloc(mdatBytes)), box('moov', box('mvhd', mvhdBody))]);
+}
 
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
-        return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: headContentLength } : {});
+        if (command.constructor.name === 'HeadObjectCommand') return Promise.resolve({ ContentLength: videoBytes ? videoBytes.length : headContentLength });
+        if (command.constructor.name === 'GetObjectCommand' && command.input?.Range && videoBytes) {
+          const [, from, to] = /bytes=(\d+)-(\d+)/.exec(command.input.Range);
+          const slice = new Uint8Array(videoBytes.subarray(Number(from), Number(to) + 1));
+          return Promise.resolve({ Body: { transformToByteArray: async () => slice } });
+        }
+        return Promise.resolve({});
       }
     },
-    GetObjectCommand: class {
+    GetObjectCommand: class GetObjectCommand {
       constructor(input) {
         this.input = input;
       }
@@ -88,6 +113,7 @@ function successfulPostgrestResponse(url, expectedR2Key) {
 beforeEach(() => {
   setBaseEnv();
   headContentLength = 1024;
+  videoBytes = null;
 });
 
 afterEach(() => {
@@ -322,98 +348,355 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
   assert.match(report.reportId, /^r[0-9a-f]{19}$/);
 });
 
-test('gateway mode: calls VLM gateway with snake_case prompt and persists to Supabase', async () => {
-  process.env.ANALYSIS_MODE = 'gateway';
+const { compactId } = await import('../lib/ids.ts');
+const compactVideoId = (sensorId) => compactId('v', sensorId);
 
-  const recordedCalls = [];
-  globalThis.fetch = async (url, options = {}) => {
+const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');
+const validContractReport = () => JSON.parse(contractFixture('valid/full-report.json'));
+
+function completion(content, extra = {}) {
+  return new Response(JSON.stringify({
+    choices: [{ message: { role: 'assistant', content, reasoning_content: 'model reasoning' }, finish_reason: 'stop' }],
+    model: 'nvidia/cosmos-3-super-reasoner',
+    usage: { prompt_tokens: 100, completion_tokens: 50 },
+    ...extra,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+function gatewayFetch(recordedCalls, content, r2Key) {
+  return async (url, options = {}) => {
     const urlStr = String(url);
     recordedCalls.push({ url: urlStr, options });
-    if (urlStr.includes('/v1/chat/completions')) {
-      const vlmResponse = {
-        choices: [
-          {
-            message: {
-              role: 'assistant',
-              content: JSON.stringify({
-                title: 'Warehouse Trespassing',
-                incident_type: 'burglary',
-                description: 'Unauthorized entry detected after hours.',
-                incident_start: '00:00:10',
-                incident_end: '00:00:50',
-                incident_start_confirmed: true,
-                duration_seconds: 40,
-                severity: 3,
-                severity_reason: 'Unauthorized presence in restricted area.',
-                confidence: 0.9,
-                timeline: [{ start_seconds: 10, end_seconds: 50, description: 'Subject climbed fence' }],
-                persons: [{ description: 'Intruder in dark jacket', actions: 'climbed fence' }],
-                instruments: [{ name: 'Flashlight', description: 'Handheld beam', threat_level: null }],
-                assets: [{ name: 'Perimeter fence', description: 'Cut section' }],
-                uncertainties: ['Entry point details'],
-                location: 'Warehouse Perimeter',
-              }),
-            },
-          },
-        ],
-        model: 'nvidia/cosmos-3-nano-reasoner',
-      };
-      return new Response(JSON.stringify(vlmResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    return successfulPostgrestResponse(url, 'uploads/sensor-cam-02/night.mp4');
+    if (urlStr.includes('/v1/chat/completions')) return completion(content);
+    return successfulPostgrestResponse(url, r2Key);
   };
+}
 
-  const response = await POST(
-    jsonRequest({
-      sensorId: 'sensor-cam-02',
-      filepath: 'uploads/sensor-cam-02/night.mp4',
-      filename: 'night.mp4',
-    }),
-  );
+function supabaseWrites(recordedCalls) {
+  return recordedCalls
+    .filter((c) => c.url.includes('supabase.test') && c.options.method === 'POST')
+    .map((c) => ({ table: new URL(c.url).pathname.replace('/rest/v1/', ''), body: JSON.parse(c.options.body) }));
+}
+
+test('gateway mode: sends the shared contract P1 request for the selected model and persists a contract run', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  videoBytes = mp4Bytes(60);
+  const recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/sensor-cam-02/night.mp4');
+
+  const response = await POST(jsonRequest({
+    sensorId: 'sensor-cam-02',
+    filepath: 'uploads/sensor-cam-02/night.mp4',
+    filename: 'night.mp4',
+    model: 'nvidia/cosmos-3-super-reasoner',
+  }));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
-  assert.ok(payload.report);
-  assert.equal(payload.report.title, 'Warehouse Trespassing');
-  assert.equal(payload.report.incident_type, 'burglary');
-  assert.equal(payload.report.description, 'Unauthorized entry detected after hours.');
-  assert.equal(payload.report.severity, 3);
-  assert.equal(payload.report.confidence, 0.9);
-  assert.deepEqual(payload.report.persons, [{ description: 'Intruder in dark jacket', actions: 'climbed fence' }]);
-  assert.deepEqual(payload.report.instruments, [{ name: 'Flashlight', description: 'Handheld beam', threat_level: null }]);
+  const { report } = await response.json();
 
   const gatewayCalls = recordedCalls.filter((c) => c.url.includes('/v1/chat/completions'));
-  assert.equal(gatewayCalls.length, 1);
-  const gatewayBody = JSON.parse(gatewayCalls[0].options.body);
-  const promptText = gatewayBody.messages[0].content[0].text;
-  assert.ok(promptText.includes('incident_type'));
-  assert.ok(promptText.includes('threat_level'));
-  assert.ok(promptText.includes('duration_seconds'));
+  assert.equal(gatewayCalls.length, 1, 'exactly one model call: no repair retry');
+  const body = JSON.parse(gatewayCalls[0].options.body);
+  assert.equal(body.model, 'nvidia/cosmos-3-super-reasoner');
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'media_io_kwargs', 'messages', 'model', 'response_format', 'temperature']);
+  assert.equal(body.temperature, 0);
+  assert.equal(body.max_tokens, 16384);
+  assert.deepEqual(body.media_io_kwargs, { video: { num_frames: 64 } });
+  assert.deepEqual(body.response_format, JSON.parse(contractFixture('response_format.json')));
+  assert.equal(body.messages.length, 1);
+  const [videoPart, promptPart, ...rest] = body.messages[0].content;
+  assert.deepEqual(videoPart, { type: 'video_url', video_url: { url: 'https://signed.r2.test/uploads/sensor-1/video.mp4' } });
+  assert.equal(promptPart.text, readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.md'), 'utf8'));
+  assert.deepEqual(rest, [], 'no additional instruction part unless one is given');
 
-  const supabaseCalls = recordedCalls.filter((c) => c.url.includes('supabase.test'));
-  assert.ok(supabaseCalls.length > 0, 'gateway mode must persist to Supabase');
+  const writes = supabaseWrites(recordedCalls);
+  const modelRun = writes.find((w) => w.table === 'model_runs').body;
+  assert.equal(modelRun.id, report.modelRunId);
+  assert.equal(modelRun.model_name, 'nvidia/cosmos-3-super-reasoner');
+  assert.equal(modelRun.prompt_version, 'incident-contract-v2');
+  const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
+  assert.equal(notes.recordType, 'analysis_attempt');
+  assert.equal(notes.status, 'valid_first_pass');
+  assert.deepEqual(notes.validation, { firstPass: [], policy: 'core-scored-v1', fullContractValid: true, coreValid: true, videoBoundsChecked: true });
+  assert.equal(notes.request.videoDurationSeconds, 60, 'the video length is read from the stored MP4 header');
+  assert.equal(notes.repair, null);
+  assert.equal(notes.contractVersion, 'incident-contract-v2');
+  assert.deepEqual(notes.report, { ...validContractReport(), incident: { ...validContractReport().incident, duration: 8 } });
+  assert.equal(notes.request.model, 'nvidia/cosmos-3-super-reasoner');
+  assert.equal(notes.request.additionalInstruction, null);
+  assert.deepEqual(notes.request.inferenceConfig, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
+  assert.match(notes.request.promptSha256, /^[0-9a-f]{64}$/);
+  assert.match(notes.request.schemaSha256, /^[0-9a-f]{64}$/);
+  assert.equal(notes.response.content, JSON.stringify(validContractReport()));
+  assert.equal(notes.response.reasoningContent, 'model reasoning');
+  assert.equal(notes.response.finishReason, 'stop');
+  assert.deepEqual(notes.response.usage, { prompt_tokens: 100, completion_tokens: 50 });
 
-  // Verify RPC insert call has snake_case mappings
-  const rpcCall = supabaseCalls.find((c) => c.url.includes('/rpc/insert_incident'));
-  assert.ok(rpcCall, 'insert_incident RPC must be called');
-  const rpcBody = JSON.parse(rpcCall.options.body);
-  assert.equal(rpcBody.p_type, 'burglary');
-  assert.equal(rpcBody.p_description, 'Unauthorized entry detected after hours.');
-  assert.equal(rpcBody.p_severity_level, 3);
-  assert.equal(rpcBody.p_confidence_score, 0.9);
-  assert.equal(rpcBody.p_start_timestamp, '00:00:10');
-  assert.equal(rpcBody.p_end_timestamp, '00:00:50');
-  assert.equal(rpcBody.p_duration, 40);
+  const incident = writes.find((w) => w.table === 'rpc/insert_incident').body;
+  assert.deepEqual(incident, {
+    p_incident_id: report.videoId,
+    p_model_run_id: report.modelRunId,
+    p_type: 'assault',
+    p_start_timestamp: '3',
+    p_end_timestamp: '11',
+    p_duration: 8,
+    p_description: 'E1 approaches E2 and strikes E2 with a bottle.',
+    p_severity_level: 3,
+    p_confidence_score: null,
+  });
+  assert.deepEqual(writes.find((w) => w.table === 'entities').body.map((row) => [row.entity_id, row.type]), [['E1', 'human'], ['E2', 'human']]);
+  assert.deepEqual(writes.find((w) => w.table === 'instruments').body.map((row) => [row.instrument_id, row.entity_id, row.threat_level]), [['I1', 'E1', 3]]);
+  assert.deepEqual(writes.find((w) => w.table === 'assets').body.map((row) => row.asset_id), ['A1']);
+  const videoCall = recordedCalls.find((c) => c.url.includes('/rest/v1/videos') && c.options.method === 'POST');
+  assert.match(videoCall.options.headers.Prefer, /resolution=ignore-duplicates/, 'an existing video row is never updated (upload time preserved)');
+  const video = writes.find((w) => w.table === 'videos').body;
+  assert.equal(video.filepath, 'uploads/sensor-cam-02/night.mp4');
+  assert.equal(video.source, 'sensor-cam-02');
+  assert.ok(!('duration' in video), 'the incident duration is not the video duration');
+  assert.ok(writes.find((w) => w.table === 'reports'));
 
-  // Verify entities written from persons
-  const entityCall = supabaseCalls.find((c) => c.url.includes('/entities') && c.options.method === 'POST');
-  assert.ok(entityCall, 'entities table must be written');
-  const entityBody = JSON.parse(entityCall.options.body);
-  assert.equal(entityBody[0].type, 'person');
-  assert.equal(entityBody[0].description, 'Intruder in dark jacket climbed fence');
+  // The upload flow only needs the run's identity to open its report page.
+  assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'reportId', 'videoId']);
+  assert.equal(report.outcome, 'valid_first_pass');
+  assert.equal(report.model, 'nvidia/cosmos-3-super-reasoner');
+  assert.equal(report.promptVersion, 'incident-contract-v2');
+});
+
+test('gateway mode: defaults to the configured VLM_MODEL when no model is sent', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  process.env.VLM_MODEL = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+  const recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/s-d/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-d', filepath: 'uploads/s-d/clip.mp4', filename: 'clip.mp4' }));
+
+  assert.equal(response.status, 200);
+  const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/v1/chat/completions')).options.body);
+  assert.equal(body.model, 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning');
+});
+
+test('gateway mode: rejects a model outside the allowlist before calling anything', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, '{}', 'uploads/s-x/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-x', filepath: 'uploads/s-x/clip.mp4', filename: 'clip.mp4', model: 'some/other-model' }));
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Unsupported model/);
+  assert.equal(recordedCalls.length, 0);
+});
+
+const REPORT_TABLES = ['rpc/insert_incident', 'incidents', 'entities', 'instruments', 'assets', 'reports', 'review_status'];
+
+function attemptNotesFrom(recordedCalls) {
+  const runs = supabaseWrites(recordedCalls).filter((w) => w.table === 'model_runs');
+  assert.equal(runs.length, 1, 'exactly one model_runs attempt record');
+  return { row: runs[0].body, notes: JSON.parse(runs[0].body.notes).incidentConsoleV2 };
+}
+
+test('gateway mode: a contract failure is a 422 with no model repair call; only the video and the attempt record are written', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  // [content, the core codes that decide the failure, every first-pass code recorded]
+  const cases = [
+    ['```json\n' + JSON.stringify(validContractReport()) + '\n```', ['INVALID_JSON'], ['INVALID_JSON']],
+    [contractFixture('invalid/cross-unknown-instrument-holder.json'), ['INSTRUMENT_HOLDER_UNKNOWN'], ['INSTRUMENT_HOLDER_UNKNOWN']],
+    [contractFixture('invalid/schema-legacy-incident-type.json'), ['SCHEMA_VIOLATION'], ['SCHEMA_VIOLATION']],
+    [contractFixture('invalid/cross-end-before-start.json'), ['WINDOW_END_BEFORE_START'], ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']],
+  ];
+  for (const [content, codes, firstPassCodes] of cases) {
+    const recordedCalls = [];
+    globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-bad/clip.mp4');
+
+    const response = await POST(jsonRequest({ sensorId: 's-bad', filepath: 'uploads/s-bad/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+
+    assert.equal(response.status, 422);
+    const payload = await response.json();
+    assert.match(payload.error, /did not satisfy the incident contract/);
+    assert.equal(payload.outcome, 'contract_failed');
+    assert.deepEqual(payload.codes, codes);
+    assert.equal(payload.rawContent, content);
+    assert.equal(payload.attemptRecorded, true);
+    assert.equal(recordedCalls.filter((c) => c.url.includes('/v1/chat/completions')).length, 1, 'no second model call');
+
+    const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+    for (const table of REPORT_TABLES) assert.ok(!tables.includes(table), `contract_failed must not write ${table}`);
+    assert.ok(tables.includes('videos'), 'the uploaded video is recorded even though analysis failed');
+    const { row, notes } = attemptNotesFrom(recordedCalls);
+    assert.equal(row.id, payload.attemptId);
+    assert.equal(row.model_name, 'nvidia/cosmos-3-nano-reasoner');
+    assert.equal(row.prompt_version, 'incident-contract-v2');
+    assert.equal(notes.status, 'contract_failed');
+    assert.equal(notes.stage, 'contract_validation');
+    assert.equal(notes.videoId, compactVideoId('s-bad'));
+    assert.equal(notes.response.content, content, 'the original response is stored unaltered');
+    assert.deepEqual(notes.validation.firstPass.map((v) => v.code), firstPassCodes);
+    assert.equal(notes.validation.coreValid, false);
+    assert.equal(notes.repair.eligible, false);
+    assert.ok(!('report' in notes));
+  }
+});
+
+test('gateway mode: a timeline outside the incident window is recorded, not fatal; the report is saved unaltered', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  videoBytes = mp4Bytes(60);
+  for (const [fixture, code] of [['invalid/cross-timeline-outside-incident.json', 'TIMELINE_END_OUTSIDE_WINDOW'], ['invalid/cross-timeline-not-chronological.json', 'TIMELINE_NOT_CHRONOLOGICAL']]) {
+    const content = contractFixture(fixture);
+    const recordedCalls = [];
+    globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-tl/clip.mp4');
+
+    const response = await POST(jsonRequest({ sensorId: 's-tl', filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+
+    assert.equal(response.status, 200, fixture);
+    const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+    for (const table of ['rpc/insert_incident', 'reports']) assert.ok(tables.includes(table), `${fixture}: the database-backed fields are persisted (${table})`);
+    const { notes } = attemptNotesFrom(recordedCalls);
+    assert.equal(notes.status, 'valid_first_pass');
+    assert.equal(notes.response.content, content, 'the original response is stored unaltered');
+    const original = JSON.parse(content);
+    assert.deepEqual(notes.report.timeline, original.timeline, 'the timeline is neither repaired, clipped nor removed');
+    assert.equal(notes.validation.policy, 'core-scored-v1');
+    assert.equal(notes.validation.fullContractValid, false);
+    assert.equal(notes.validation.coreValid, true);
+    assert.ok(notes.validation.firstPass.length > 0);
+    assert.ok(notes.validation.firstPass.every((v) => v.scope === 'enrichment' && v.code === code), fixture);
+    assert.equal(notes.repair, null, 'no repair is attempted for an unscored field');
+  }
+});
+
+test('gateway mode: an incident window outside the video is a core failure (422); an unreadable length is not checked', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const report = validContractReport();
+  const content = JSON.stringify(report);
+  const end = report.incident.end_timestamp;
+
+  videoBytes = mp4Bytes(end - 1.5);
+  let recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
+  let response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  assert.equal(response.status, 422);
+  const payload = await response.json();
+  assert.ok(payload.codes.includes('WINDOW_BEYOND_VIDEO'));
+  let { notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(notes.status, 'contract_failed');
+  assert.equal(notes.validation.fullContractValid, true, 'the video rule never changes full contract validity');
+  assert.equal(notes.validation.videoBoundsChecked, true);
+  for (const table of REPORT_TABLES) assert.ok(!supabaseWrites(recordedCalls).map((w) => w.table).includes(table));
+
+  videoBytes = null;
+  recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
+  response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  assert.equal(response.status, 200);
+  ({ notes } = attemptNotesFrom(recordedCalls));
+  assert.equal(notes.request.videoDurationSeconds, null);
+  assert.equal(notes.validation.videoBoundsChecked, false);
+});
+
+test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and saved as valid_after_structural_repair', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const { rawContent } = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'nemotron-3-omni-malformed-ids.json'), 'utf8'));
+  const recordedCalls = [];
+  globalThis.fetch = gatewayFetch(recordedCalls, rawContent, 'uploads/s-rep/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-rep', filepath: 'uploads/s-rep/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+
+  assert.equal(response.status, 200);
+  const { report } = await response.json();
+  assert.equal(report.outcome, 'valid_after_structural_repair');
+  assert.equal(recordedCalls.filter((c) => c.url.includes('/v1/chat/completions')).length, 1, 'no second model call');
+  const { notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(notes.status, 'valid_after_structural_repair');
+  assert.equal(notes.response.content, rawContent, 'the original response is stored unaltered');
+  assert.deepEqual(notes.validation.firstPass.map((v) => v.code).sort(), ['ID_NOT_SEQUENTIAL_ENTITY', 'ID_NOT_SEQUENTIAL_INSTRUMENT']);
+  assert.equal(notes.repair.ruleSet, 'id-normalization-v1');
+  assert.deepEqual(notes.repair.revalidation, []);
+  assert.equal(notes.repair.operations.length, 2);
+  assert.deepEqual(notes.report.entities.map((e) => e.entity_id), ['E1', 'E2']);
+  const writes = supabaseWrites(recordedCalls);
+  assert.deepEqual(writes.find((w) => w.table === 'entities').body.map((row) => row.entity_id), ['E1', 'E2']);
+  assert.deepEqual(writes.find((w) => w.table === 'instruments').body.map((row) => [row.instrument_id, row.entity_id, row.name]), [['I1', 'E1', 'bag'], ['I2', null, 'white van']]);
+  assert.ok(writes.find((w) => w.table === 'rpc/insert_incident'));
+});
+
+test('gateway mode: request failures are recorded as request_failed with only the provenance that exists', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const scenarios = [
+    {
+      name: 'gateway HTTP error', status: 502, code: 'GATEWAY_HTTP_ERROR', stage: 'gateway',
+      reply: () => new Response('upstream exploded', { status: 500 }),
+      response: { httpStatus: 500, errorBody: 'upstream exploded' },
+    },
+    {
+      name: 'timeout', status: 504, code: 'GATEWAY_TIMEOUT', stage: 'gateway',
+      reply: () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); },
+      response: null,
+    },
+    {
+      name: 'no completion', status: 502, code: 'UPSTREAM_NO_COMPLETION', stage: 'gateway',
+      reply: () => new Response('null', { status: 200 }),
+      response: { httpStatus: 200, errorBody: 'null' },
+    },
+    {
+      name: 'token budget exhausted', status: 502, code: 'FINISH_LENGTH', stage: 'upstream_response',
+      reply: () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '{"incident": {' }, finish_reason: 'length' }], usage: { completion_tokens: 16384 } }), { status: 200 }),
+      response: { content: '{"incident": {', finishReason: 'length', usage: { completion_tokens: 16384 } },
+    },
+    {
+      name: 'empty content', status: 502, code: 'UPSTREAM_EMPTY_CONTENT', stage: 'upstream_response',
+      reply: () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'stop' }] }), { status: 200 }),
+      response: { content: '', finishReason: 'stop' },
+    },
+  ];
+  for (const scenario of scenarios) {
+    const recordedCalls = [];
+    globalThis.fetch = async (url, options = {}) => {
+      recordedCalls.push({ url: String(url), options });
+      if (String(url).includes('/v1/chat/completions')) return scenario.reply();
+      return successfulPostgrestResponse(url, 'uploads/s-req/clip.mp4');
+    };
+
+    const response = await POST(jsonRequest({ sensorId: 's-req', filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+
+    assert.equal(response.status, scenario.status, scenario.name);
+    const payload = await response.json();
+    assert.equal(payload.outcome, 'request_failed', scenario.name);
+    assert.equal(payload.code, scenario.code, scenario.name);
+    const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+    for (const table of REPORT_TABLES) assert.ok(!tables.includes(table), `${scenario.name}: request_failed must not write ${table}`);
+    const { notes } = attemptNotesFrom(recordedCalls);
+    assert.equal(notes.status, 'request_failed', scenario.name);
+    assert.equal(notes.stage, scenario.stage, scenario.name);
+    assert.equal(notes.failure.code, scenario.code, scenario.name);
+    assert.deepEqual(notes.response, scenario.response, `${scenario.name}: no invented response fields`);
+    assert.equal(notes.request.model, 'nvidia/cosmos-3-nano-reasoner');
+    assert.match(notes.request.promptSha256, /^[0-9a-f]{64}$/);
+  }
+});
+
+test('gateway mode: every analysis of the same video creates a new model run', async () => {
+  process.env.ANALYSIS_MODE = 'gateway';
+  const runIds = new Set();
+  for (let index = 0; index < 2; index += 1) {
+    const recordedCalls = [];
+    globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/s-same/clip.mp4');
+    const response = await POST(jsonRequest({ sensorId: 's-same', filepath: 'uploads/s-same/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+    assert.equal(response.status, 200);
+    runIds.add((await response.json()).report.modelRunId);
+  }
+  assert.equal(runIds.size, 2);
+});
+
+test('agent mode: rejects a model other than the configured one (agent keeps its own contract)', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  process.env.VLM_MODEL = 'nvidia/cosmos-3-nano-reasoner';
+  let called = false;
+  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+
+  const response = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s-1/v.mp4', filename: 'v.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+
+  assert.equal(response.status, 409);
+  assert.equal(called, false);
 });
 
 test('agent mode: keeps the agent-reported duration_seconds of 0 even with a positive timeline span', async () => {
@@ -441,58 +724,11 @@ test('agent mode: keeps the agent-reported duration_seconds of 0 even with a pos
   assert.equal(payload.report.duration_seconds, 0);
 });
 
-test('gateway mode: derives duration_seconds from the timeline span when the VLM reports 0', async () => {
-  process.env.ANALYSIS_MODE = 'gateway';
-
-  const recordedCalls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const urlStr = String(url);
-    recordedCalls.push({ url: urlStr, options });
-    if (urlStr.includes('/v1/chat/completions')) {
-      return new Response(JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: JSON.stringify({
-                  title: 'Short clip',
-                  incident_type: 'other',
-                  duration_seconds: 0,
-                  timeline: [
-                    { start_seconds: 2.6, end_seconds: 5.0, description: 'Later event' },
-                    { start_seconds: 0.0, end_seconds: 0.3, description: 'Earlier event' },
-                  ],
-                }),
-              },
-            },
-          ],
-          model: 'nvidia/cosmos-3-nano-reasoner',
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-    return successfulPostgrestResponse(url, 'uploads/sensor-cam-04/clip.mp4');
-  };
-
-  const response = await POST(
-    jsonRequest({ sensorId: 'sensor-cam-04', filepath: 'uploads/sensor-cam-04/clip.mp4', filename: 'clip.mp4' }),
-  );
-
-  assert.equal(response.status, 200);
-  const payload = await response.json();
-  assert.equal(payload.report.duration_seconds, 5);
-  const rpcCall = recordedCalls.find((c) => c.url.includes('/rpc/insert_incident'));
-  assert.equal(JSON.parse(rpcCall.options.body).p_duration, 5);
-});
-
 test('gateway mode: does not report success when persistence read-back is incomplete', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
 
   globalThis.fetch = async (url) => {
-    if (String(url).includes('/v1/chat/completions')) {
-      return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ title: 'Test report', incident_type: 'other' }) } }],
-        model: 'nvidia/cosmos-3-nano-reasoner',
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+    if (String(url).includes('/v1/chat/completions')) return completion(JSON.stringify(validContractReport()));
     if (String(url).includes('select=')) {
       return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
     }

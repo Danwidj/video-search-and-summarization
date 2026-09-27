@@ -1,0 +1,13 @@
+{
+  "description": "Recorded nvidia/cosmos-3-nano-reasoner response for Animal003 (timeline-wording pilot, prompt arm A; arm A is the canonical v2 prompt), temperature 0.",
+  "video_duration_seconds": 22.8333,
+  "content": "{\"assets\": [], \"entities\": [{\"description\": \"A young child wearing a blue shirt and light-colored shorts, walking along a paved path.\", \"entity_id\": \"E1\", \"type\": \"human\"}, {\"description\": \"A young child wearing a white shirt and light-colored shorts, walking along a paved path.\", \"entity_id\": \"E2\", \"type\": \"human\"}, {\"description\": \"A dark-colored animal, possibly a monkey or small dog, running along the paved path.\", \"entity_id\": \"E3\", \"type\": \"animal\"}, {\"description\": \"A second dark-colored animal, similar to E3, running along the paved path.\", \"entity_id\": \"E4\", \"type\": \"animal\"}], \"incident\": {\"confidence_score\": null, \"description\": \"A child in a white shirt runs along a paved path and is suddenly attacked by two dark-colored animals. The child falls to the ground as the animals continue to approach.\", \"end_timestamp\": 22, \"location\": \"A paved path in a residential area with buildings and vegetation on either side.\", \"severity_level\": 4, \"severity_reason\": \"The child is physically attacked by animals and falls to the ground, indicating a severe and dangerous incident.\", \"start_timestamp\": 16, \"title\": \"Child attacked by animals on a paved path.\",\"type\": \"animal attack\"},\"instruments\": [], \"timeline\": [{\"description\": \"The child in the blue shirt walks along the path and exits the frame.\", \"end_seconds\": 4, \"start_seconds\": 0}, {\"description\": \"The child in the white shirt walks along the path.\", \"end_seconds\": 11, \"start_seconds\": 0}, {\"description\": \"Two dark-colored animals run along the path.\", \"end_seconds\": 11, \"start_seconds\": 0}, {\"description\": \"The child in the white shirt is attacked by the animals and falls to the ground.\", \"end_seconds\": 22, \"start_seconds\": 16}], \"uncertainties\": [\"The exact nature of the animals is unclear, but they appear to be monkeys or small dogs.\", \"The child's injuries are not visible in the video.\"]}",
+  "expected": {
+    "full_contract_ok": false,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": [
+      "TIMELINE_START_OUTSIDE_WINDOW"
+    ]
+  }
+}

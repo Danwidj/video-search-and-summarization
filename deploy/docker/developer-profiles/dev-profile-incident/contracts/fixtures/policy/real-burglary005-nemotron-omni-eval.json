@@ -1,0 +1,11 @@
+{
+  "description": "Recorded nvidia/nemotron-3-nano-omni-30b-a3b-reasoning response for Burglary005 from the incident-contract-v2 eval smoke run.",
+  "video_duration_seconds": 258.077,
+  "content": "{\"assets\":[],\"entities\":[{\"description\":\"Individual in red cap and white shirt who ran up the steps and fled.\",\"entity_id\":\"E1\",\"type\":\"human\"},{\"description\":\"Individual with dreadlocks near the door who fled upon the first individual's approach.\",\"entity_id\":\"E2\",\"type\":\"human\"}],\"incident\":{\"confidence_score\":null,\"description\":\"A person wearing a red cap and white shirt runs along the sidewalk, leaps onto the front porch steps, and immediately turns to run away. A second individual near the door also runs away in the same direction.\", \"end_timestamp\":180, \"location\":\"Front porch of a residential home.\", \"severity_level\":3, \"severity_reason\":\"The individual exhibited aggressive behavior (running up steps) indicative of a forced entry attempt, posing a risk of injury and property damage.\", \"start_timestamp\":120, \"title\":\"Attempted burglary at front door\" ,\"type\":\"burglary\"},\"instruments\":[],\"timeline\":[{\"description\":\"Individual in red cap approaches the house.\", \"end_seconds\":null, \"start_seconds\":120}, {\"description\":\"Individual jumps onto the front steps.\", \"end_seconds\":165, \"start_seconds\":160}, {\"description\":\"Individual flees the scene.\", \"end_seconds\":170, \"start_seconds\":165}, {\"description\":\"Second individual flees the scene.\", \"end_seconds\":180, \"start_seconds\":175}],\"uncertainties\":[]}",
+  "expected": {
+    "full_contract_ok": true,
+    "core_ok": true,
+    "core_codes": [],
+    "enrichment_codes": []
+  }
+}
