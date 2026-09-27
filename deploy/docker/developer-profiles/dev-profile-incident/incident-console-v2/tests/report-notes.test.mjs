@@ -1,75 +1,90 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { reportFromNotes } = await import('../lib/reports/storage.ts');
+const { reportsFromNotes, legacyToContract, toSeconds } = await import('../lib/reports/storage.ts');
 
-test('reportFromNotes normalizes legacy camelCase notes to snake_case', () => {
+const CONTRACT = {
+  incident: {
+    type: 'road accident', title: 'Two cars collide', start_timestamp: 2, end_timestamp: 9, duration: 7,
+    description: 'Car E1 hits car E2.', severity_level: 3, severity_reason: 'Visible damage.', confidence_score: null, location: null,
+  },
+  entities: [{ entity_id: 'E1', type: 'human', description: 'Driver.' }],
+  instruments: [],
+  assets: [{ asset_id: 'A1', name: 'car', description: 'Damaged car.' }],
+  timeline: [{ start_seconds: 2, end_seconds: 4, description: 'Impact.' }],
+  uncertainties: [],
+};
+
+test('contract notes are validated strictly and keep report text and raw output', () => {
+  const notes = JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v1', modelRunId: 'r1', model: 'm', ...CONTRACT }, rawModelOutput: '{...}', reportText: 'Prose.' } });
+  const { original, edited } = reportsFromNotes(notes);
+  assert.equal(original.legacy, undefined);
+  assert.equal(original.incident.duration, 7);
+  assert.equal(original.reportText, 'Prose.');
+  assert.equal(original.rawModelOutput, '{...}');
+  assert.equal(edited, null);
+});
+
+test('the reviewer-edited copy is returned alongside the untouched original', () => {
+  const editedContract = { ...CONTRACT, incident: { ...CONTRACT.incident, title: 'Edited title', end_timestamp: 10 } };
+  const notes = JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v1', ...CONTRACT }, editedReport: editedContract } });
+  const { original, edited } = reportsFromNotes(notes);
+  assert.equal(original.incident.title, 'Two cars collide');
+  assert.equal(edited.incident.title, 'Edited title');
+  assert.equal(edited.incident.duration, 8);
+});
+
+test('pre-contract camelCase notes are converted read-only and flagged legacy', () => {
   const notes = JSON.stringify({
     incidentConsoleV2: {
       report: {
-        videoId: 'video-1',
-        modelRunId: 'run-1',
-        title: 'Legacy Title',
-        incidentType: 'burglary',
-        summary: 'Legacy summary text',
-        startTimestamp: '01:15',
-        endTimestamp: '01:45',
-        durationSeconds: 30,
-        severityLevel: 'high',
-        severityReason: 'High risk detected',
-        confidenceScore: 90,
-        timeline: [{ startSeconds: 15, endSeconds: 45, description: 'Event' }],
-        entities: [{ type: 'human', description: 'Intruder' }, { type: 'animal', description: 'Guard dog' }],
-        instruments: [{ name: 'Crowbar', description: 'Tool', threatLevel: 4 }],
-        assets: [{ name: 'Door', description: 'Pried' }],
-        uncertainties: ['Unknown suspect identity'],
+        videoId: 'video-1', modelRunId: 'run-1', title: 'Legacy Title', incidentType: 'fighting', summary: 'Legacy summary',
+        startTimestamp: '01:15', endTimestamp: '01:45', durationSeconds: 30, severityLevel: 4, confidenceScore: 0.8,
+        entities: [{ description: 'A person' }], timeline: [{ startSeconds: 75, description: 'Start' }],
       },
     },
   });
-
-  const report = reportFromNotes(notes);
-  assert.ok(report);
-  assert.equal(report.videoId, 'video-1');
-  assert.equal(report.title, 'Legacy Title');
-  assert.equal(report.incident_type, 'burglary');
-  assert.equal(report.description, 'Legacy summary text');
-  assert.equal(report.incident_start, '01:15');
-  assert.equal(report.incident_end, '01:45');
-  assert.equal(report.duration_seconds, 30);
-  assert.equal(report.severity, 4);
-  assert.equal(report.severity_reason, 'High risk detected');
-  assert.equal(report.confidence, 0.9);
-  assert.deepEqual(report.timeline, [{ start_seconds: 15, end_seconds: 45, description: 'Event' }]);
-  assert.deepEqual(report.persons, [{ description: 'Intruder', actions: '' }, { description: 'Guard dog', actions: '' }]);
-  assert.deepEqual(report.instruments, [{ name: 'Crowbar', description: 'Tool', threat_level: 4 }]);
-  assert.deepEqual(report.assets, [{ name: 'Door', description: 'Pried' }]);
-  assert.deepEqual(report.uncertainties, ['Unknown suspect identity']);
+  const { original } = reportsFromNotes(notes);
+  assert.equal(original.legacy, true);
+  assert.equal(original.incident.type, 'assault');
+  assert.equal(original.incident.start_timestamp, 75);
+  assert.equal(original.incident.end_timestamp, 105);
+  assert.equal(original.incident.duration, 30);
+  assert.equal(original.incident.confidence_score, 0.8);
+  assert.deepEqual(original.entities, [{ entity_id: 'E1', type: 'human', description: 'A person' }]);
+  assert.deepEqual(original.timeline, [{ start_seconds: 75, end_seconds: null, description: 'Start' }]);
 });
 
-test('reportFromNotes keeps snake_case notes unchanged', () => {
-  const notes = JSON.stringify({
-    incidentConsoleV2: {
-      videoId: 'video-2',
-      incident_type: 'fighting',
-      description: 'Two people fight.',
-      severity: 3,
-      confidence: 0.7,
-      persons: [{ description: 'Person A', actions: 'punching' }],
-      timeline: [{ start_seconds: 2, end_seconds: null, description: 'Fight starts' }],
-      instruments: [{ name: 'Bottle', description: 'Swung', threat_level: 2 }],
-    },
+test('pre-contract flat snake_case notes with persons are converted', () => {
+  const report = legacyToContract({
+    title: 'Old', incident_type: 'animal', severity: 2, confidence: 0.5, incident_start: '0:05', incident_end: '0:09',
+    duration_seconds: null, description: 'Dog bites.', persons: [{ description: 'Walker', actions: 'runs away' }],
+    instruments: [{ name: 'leash', description: 'held', threat_level: null }], assets: [], timeline: [], uncertainties: ['x'], location: '',
   });
+  assert.equal(report.incident.type, 'animal attack');
+  assert.equal(report.incident.duration, 4);
+  assert.equal(report.incident.location, null);
+  assert.equal(report.entities[0].description, 'Walker runs away');
+  assert.equal(report.instruments[0].threat_level, 1);
+  assert.deepEqual(report.uncertainties, ['x']);
+});
 
-  const report = reportFromNotes(notes);
-  assert.ok(report);
-  assert.equal(report.incident_type, 'fighting');
-  assert.equal(report.description, 'Two people fight.');
-  assert.equal(report.severity, 3);
-  assert.equal(report.confidence, 0.7);
-  assert.deepEqual(report.persons, [{ description: 'Person A', actions: 'punching' }]);
-  assert.deepEqual(report.timeline, [{ start_seconds: 2, end_seconds: null, description: 'Fight starts' }]);
-  assert.deepEqual(report.instruments, [{ name: 'Bottle', description: 'Swung', threat_level: 2 }]);
+test('unreadable notes return null', () => {
+  assert.equal(reportsFromNotes(null), null);
+  assert.equal(reportsFromNotes('not json'), null);
+  assert.equal(reportsFromNotes(JSON.stringify({ other: {} })), null);
+});
+
+test('toSeconds accepts bare seconds and clock strings', () => {
+  assert.equal(toSeconds('21'), 21);
+  assert.equal(toSeconds('15.6'), 15);
+  assert.equal(toSeconds('1:05'), 65);
+  assert.equal(toSeconds('1:00:05'), 3605);
+  assert.equal(toSeconds('garbage'), 0);
+  assert.equal(toSeconds(null), 0);
 });

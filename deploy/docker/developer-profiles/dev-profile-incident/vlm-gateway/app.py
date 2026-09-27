@@ -82,7 +82,8 @@ async def chat_completions(request: Request) -> Response:
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # P1 with 64 frames or a reasoning model can take minutes (see contracts/p1_request.json).
+    async with httpx.AsyncClient(timeout=300.0) as client:
         try:
             upstream_resp = await client.post(
                 upstream_url,

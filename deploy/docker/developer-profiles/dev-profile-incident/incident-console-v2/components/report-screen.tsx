@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { IncidentReport } from '@/components/incident-report';
 import { AdvancedReportTools } from '@/components/advanced-report-tools';
-import type { AnalysisReport } from '@/lib/analysis/schema';
+import type { AnalysisReport } from '@/lib/analysis/contract-types';
 
 type LoadState =
   | { status: 'loading' }
