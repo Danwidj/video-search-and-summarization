@@ -107,4 +107,5 @@ Stale docs are a defect, not a follow-up. Any change in this directory updates, 
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/restructure-plan.md`](.docs/restructure-plan.md) | Option B (proposed, not approved) |
+| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (proposed, not approved) |
 | [`.docs/archive/`](.docs/archive/) | Historical plans only. Not current truth. |

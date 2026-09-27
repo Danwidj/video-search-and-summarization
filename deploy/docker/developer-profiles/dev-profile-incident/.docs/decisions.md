@@ -4,6 +4,17 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-27: Unified prompt and structured-output contract planned, awaiting review
+- **Decision:** Plan one shared contract for eval P1, console gateway mode and agent mode: the eval P1 prompt as the base (with title, severity_reason, location, timeline and uncertainties added), a nested snake_case JSON Schema enforced through `response_format: json_schema`, strict parsing that returns 422 instead of repairing, and the same call chain everywhere (P1 video to JSON, then RP1 JSON to prose). Other choices: no few-shot, eval's 5-label taxonomy (road accident, burglary, explosion, assault, animal attack), signed R2 URLs for video input, and `confidence_score` null unless the API gives a native score. Agent mode is in scope. No code changes yet; a per-model structured-output and URL-fetch check (phase 0) gates everything else.
+- **Why:** The three paths differ in prompt, schema, taxonomy, video encoding, few-shot and parsing, so the benchmark does not measure production behaviour. Eval's category-specific few-shot block also leaks the label into the prompt. Lenient parsing hides model failures.
+- **Alternatives rejected:**
+  - A 7-label superset taxonomy (overlapping labels, and the ground truth cannot score `fighting` or `animal`).
+  - A fixed mixed-category few-shot set (the captain chose none).
+  - Base64 video (payload size, and the console would have to stream whole clips).
+  - Keeping agent mode on its flat contract (leaves two shapes).
+  - A prompted JSON template with tolerant parsing (the status quo).
+- **Links:** [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`eval/prompts.py`](../eval/prompts.py); [`eval/scripts/eval_few_shot.py`](../eval/scripts/eval_few_shot.py); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py).
+
 ### 2026-09-27: Edit the full report beside the original AI result
 - **Decision:** Replace the individual report's `Start review` action with `Edit report`. Editing opens the original AI structured result beside an editable copy. Title, incident type, summary, severity, confidence, time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties are editable. Store the editable copy as `incidentConsoleV2.editedReport` in `model_runs.notes`, update searchable incident fields, and leave the original `incidentConsoleV2.report` intact. Remove the separate bottom-page structured editor.
 - **Why:** Reviewers need to correct the full structured report while the source result and video evidence remain in view.
