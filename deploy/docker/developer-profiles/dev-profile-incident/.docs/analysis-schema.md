@@ -1,161 +1,124 @@
 # Incident Analysis Schema & Output Alignment
 
-This document defines the unified schema for automated incident analysis reports and provides the
-contract specification shared between the reference agent model (`services/agent/`) and the console /
-gateway implementation (`incident-console-v2/`).
+This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> As of 2026-09-25, the analysis contract across Gateway Mode (local) and Agent Mode (VM) is unified
-> on the native `snake_case` schema defined by `vss-agent` and validated by `incident-console-v2`.
+> **As of 2026-09-27**, gateway-mode analysis in `incident-console-v2` uses the shared **`incident-contract-v2`** in [`../contracts/`](../contracts/README.md), the same prompt, schema and P1 settings as `eval/`. Agent mode (`ANALYSIS_MODE=agent`) still uses the agent's older snake_case `IncidentReport` until prompt-contract plan phase 3. See §6.
 
 ---
 
-## 1. Reference Incident Report Schema
+## 1. Principle
 
-The authoritative reference format is defined in Python using Pydantic in
-`services/agent/src/vss_agents/data_models/incident_report.py`. All fields adhere to standard
-Python `snake_case` naming conventions.
+1. **`contracts/` defines the complete model output.** `incident_report.schema.json` (JSON Schema draft 2020-12), `incident_extraction_prompt.md` and `VERSION` are the source of truth for what the VLM must return and what counts as a valid response.
+2. **`model_runs.notes` stores the complete validated report and its provenance, immutably.** Nothing ever edits it.
+3. **Relational tables are a query-optimised projection** (`incidents`, `entities`, `instruments`, `assets`). A field gets a column when it must be queried, filtered, aggregated, joined, edited, matched or charted.
+4. **What the report page shows follows reviewer usefulness**, drawing from both the projection and the notes.
 
-### Sub-Models
+## 2. The analysis request (identical to eval P1)
 
-#### `Person`
-Represents an individual person or actor observed during the incident footage.
+`incident-console-v2/lib/analysis/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `description` | `str` | Text | `""` | Visual appearance, clothing, identifiers, or physical traits |
-| `actions` | `str` | Text | `""` | Specific actions, movement, or behaviors exhibited |
+- **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+- **`messages`:** one user message:
+  1. the signed R2 video URL;
+  2. the canonical extraction prompt, verbatim;
+  3. only when a reviewer gave one, an **additional instruction** as a separate, fenced, lower-priority text part. It never edits the canonical prompt and cannot change the enforced schema; max 1,000 characters, control characters stripped.
+- **Settings:** `temperature 0`, `max_tokens 16384`, `media_io_kwargs.video.num_frames 64` (Cosmos Super ignores `num_frames`).
+- **`response_format`:** the contract schema, strict (`$schema`/`$id` removed), equal to `eval/contract.py:response_format()`.
 
-#### `Instrument`
-Represents an object, tool, or weapon observed in connection with the incident.
+## 3. Validation, ID-only repair and outcomes
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `name` | `str` | Text | `""` | Identifier or category (e.g. `crowbar`, `knife`, `lighter`) |
-| `description` | `str` | Text | `""` | Contextual usage or handling description |
-| `threat_level` | `int | None` | Integer 1–5 or `None`; before-validator rounds numeric input, maps <1 / bool / non-numeric to None, clamps >5 to 5 | `None` | Assessed threat rating |
+`lib/contract/validate.ts` is a strict port of `eval/contract.py`:
+- `JSON.parse` of the raw content, with no fence stripping, brace extraction, aliasing or defaults;
+- Ajv validation against the shared schema file;
+- the cross-field rules;
+- derived `incident.duration = end_timestamp - start_timestamp`.
 
-#### `Asset`
-Represents physical property, infrastructure, equipment, or vehicles impacted by or involved in the incident.
+Every violation carries a machine-readable code: `EMPTY_CONTENT`, `INVALID_JSON`, `SCHEMA_VIOLATION`, `WINDOW_END_BEFORE_START`, `ID_NOT_SEQUENTIAL_{ENTITY,INSTRUMENT,ASSET}`, `INSTRUMENT_HOLDER_UNKNOWN`, `TIMELINE_{START,END}_OUTSIDE_WINDOW`, `TIMELINE_NOT_CHRONOLOGICAL`. Shared fixtures in `contracts/fixtures/` are checked by both the Python and the TypeScript validator.
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `name` | `str` | Text | `""` | Identifier (e.g. `front entrance glass`, `cash register`, `silver sedan`) |
-| `description` | `str` | Text | `""` | Observed damage, state, or location context |
+**`id-normalization-v1`** (`lib/contract/repair.ts`) is the only repair the application applies:
+- **When it runs:** only when *every* first-pass violation is `ID_NOT_SEQUENTIAL_*`, or an `INSTRUMENT_HOLDER_UNKNOWN` that renumbering resolves, and the response passed the schema.
+- **What it may change:** identifiers, `instruments[].entity_id` references and list order. Nothing else.
+  - Well-formed IDs keep their number, and lists are reordered.
+  - Malformed or out-of-range IDs get the free numbers.
+- **When it refuses:**
+  - a renamed ID, or its new value, appears in any free text (free text is never edited);
+  - duplicate IDs;
+  - an unresolvable holder.
+- **Checks:** an invariance check proves only IDs and order changed. The full strict validator then runs again.
+- **Eval:** eval never uses this and scores the original first response only.
 
-#### `TimelineItem`
-Represents a discrete chronological event or phase within the incident.
+Every attempt that reaches the model has one outcome:
 
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `start_seconds` | `float` | `float, unconstrained (expected >= 0)` | `0.0` | Offset in seconds from video start when the event begins |
-| `end_seconds` | `float | None` | `float or None, unconstrained` | `None` | Offset in seconds when the event concludes |
-| `description` | `str` | Text | `""` | Concise description of the event occurring during this window |
-
----
-
-### Root Model: `IncidentReport`
-
-| Field | Type | Constraints / Range | Default | Description |
-|---|---|---|---|---|
-| `title` | `str` | Text, max 160 characters | `""` | Short descriptive title of the incident |
-| `incident_type` | `str` | `str`; taxonomy (`road accident`, `burglary`, `explosion`, `fighting`, `animal`) requested by prompt | `"road accident"` | Classification |
-| `severity` | `int` | Integer, `1 <= severity <= 5` | `1` | Overall incident severity score |
-| `severity_reason` | `str` | Text | `""` | Justification and visible evidence supporting the severity score |
-| `confidence` | `float` | Float, `0.0 <= confidence <= 1.0` | `0.0` | Model confidence in the classification and report |
-| `incident_start` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking onset |
-| `incident_end` | `str` | Timestamp string (`"M:SS"` or `"H:MM:SS"`) | `"0:00"` | Timestamp marking resolution |
-| `incident_start_confirmed` | `bool` | Boolean | `False` | Whether onset time is conclusively identified in footage |
-| `duration_seconds` | `int | None` | `int or None, unconstrained (>= 0)` | `None` | Calculated or estimated incident duration |
-| `description` | `str` | Text | `""` | Comprehensive narrative description of the incident |
-| `persons` | `list[Person]` | List of `Person` objects | `[]` | Identified persons and actors (empty list valid) |
-| `instruments` | `list[Instrument]` | List of `Instrument` objects | `[]` | Tools, weapons, and objects observed |
-| `assets` | `list[Asset]` | List of `Asset` objects | `[]` | Impacted or involved property, vehicles, or structures |
-| `timeline` | `list[TimelineItem]` | List of `TimelineItem` objects | `[]` | Chronological sequence of event milestones |
-| `uncertainties` | `list[str]` | List of strings | `[]` | Explicit ambiguities, blind spots, or occluded details |
-| `location` | `str` | Text | `""` | Inferred or observed setting (e.g. `indoor warehouse`, `parking lot`) |
-
----
-
-## 2. Unified Analysis Contract & Frontend Alignment
-
-### Single Contract Across Both Analysis Modes
-
-`incident-console-v2` uses the agent's native `snake_case` `IncidentReport` shape as its single analysis contract in **both** modes:
-
-1. **Gateway Mode (`ANALYSIS_MODE=gateway`):**
-   - Prompt (`incident-console-v2/lib/analysis/prompt.ts`, version `incident-v2-snake`) incorporates the agent's extraction rules and requests the exact 16-field `snake_case` JSON shape.
-   - Output from the VLM gateway goes through `parseIncidentAnalysis` (`incident-console-v2/lib/analysis/parse.ts`), which validates it with `incidentAnalysisSchema` (`incident-console-v2/lib/analysis/schema.ts`) and then applies the gateway-only duration fallback (see Tolerant Parsing Behaviors).
-2. **Agent Mode (`ANALYSIS_MODE=agent`):**
-   - The console invokes `POST /api/v1/incidents/{incident_id}/analyze` on `vss-agent`.
-   - The native `snake_case` JSON response is parsed directly with `incidentAnalysisSchema`. At this ingestion boundary, legacy/common VLM aliases (`incidentType`, `summary`, `severityLevel`, `confidenceScore`, timestamp/duration camelCase fields, `entities`, nested `threatLevel`, and camelCase timeline offsets) are normalized into the same canonical snake-case object before validation and persistence.
-   - Full native report is saved to `model_runs.notes` and returned in the HTTP response.
-
-### Checked-in Contract Artifact & Drift Prevention
-
-The authoritative JSON contract field specification is checked in at:
-`incident-console-v2/lib/analysis/incident-report-contract.json`. It holds only the field set, types, and defaults; the prompt text has one source per runtime (`_EXTRACTION_SYSTEM_PROMPT` in the agent, `INCIDENT_ANALYSIS_PROMPT` in `lib/analysis/prompt.ts`).
-
-Automated drift-prevention tests guarantee continuous parity across both environments:
-- **TypeScript / Next.js Test (`incident-console-v2/tests/contract-parity.test.mjs`):** Asserts that the contract defines exactly the 16 fields, that its defaults parse through `incidentAnalysisSchema`, that `INCIDENT_ANALYSIS_PROMPT` has exactly one `Rules:` line per contract field, and that the prompt's "Use exactly this shape" JSON (top-level and nested keys) matches the contract and survives schema parsing, and that the example uses `null` (not `0` / `"0:00"`) placeholders for `duration_seconds`, `incident_start` and `incident_end`.
-- **Python / Agent Test (`services/agent/tests/unit_test/tools/test_incident_report_gen.py`):** Asserts that `IncidentReport.model_fields.keys()` matches `contract.fields.keys()`, that the `incident_type` enum matches `INCIDENT_TYPES`, and that `_EXTRACTION_SYSTEM_PROMPT` has exactly one rule per model field except `incident_start` / `incident_end` / `incident_start_confirmed`, which the agent derives rather than asks the model for.
-
-### Tolerant Parsing Behaviors
-
-The Zod schema (`incident-console-v2/lib/analysis/schema.ts`) mirrors the Pydantic model's constraints while retaining the resilient parsing behavior established in PR #92:
-- **Threat Level Normalization:** Strings (`"3"`), words (`"high"` -> 4, `"critical"` -> 5), and floating-point values are converted to integers; values > 5 are clamped to 5; values < 1 or unparseable are coerced to `null`.
-- **Severity Clamping:** Words (`"medium"` -> 3, `"critical"` -> 5) and out-of-range numbers are clamped to the 1–5 range.
-- **Confidence Normalization:** Decimal percentages (e.g. `85` -> 0.85) are normalized and clamped to `0.0 <= confidence <= 1.0`.
-- **String Bounds:** `title` is clamped to 160 characters; `incident_type` is trimmed to 32 characters.
-- **Duration Fallback (gateway only):** `parseIncidentAnalysis` (`lib/analysis/parse.ts`, used only by gateway mode) applies this after schema parsing; `incidentAnalysisSchema` itself leaves `duration_seconds` untouched, so agent-mode responses and stored reports keep their value. When `duration_seconds` is `null` or `0` and the timeline span is positive, it is derived as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. This deliberately goes beyond the agent, which only fills a `null` duration, because `nvidia/cosmos-3-nano-reasoner` emits `0` even when its timeline shows a real span.
-- **Pass-through Unknowns:** Unrecognized fields in model responses are preserved via `.passthrough()` rather than rejecting the payload.
-
-### Legacy DB Read-Compatibility (`model_runs.notes`)
-
-Historical incident runs created before contract unification stored `camelCase` JSON objects in `model_runs.notes`. To maintain full backward compatibility:
-- **Reader (`reportFromNotes` in `incident-console-v2/lib/reports/storage.ts`):** Maps legacy `camelCase` notes before validating with `incidentAnalysisSchema`.
-- **Ingestion parser:** `lib/analysis/schema.ts` keeps snake_case canonical but accepts common camelCase/entity aliases so a semantically valid VLM reply is not silently replaced with defaults.
-- **Writer:** All new writes through PostgREST and Next.js routes write strictly `snake_case` payloads.
-
----
-
-## 3. Database Persistence Mapping
-
-### Primary Incident Record (`incidents` table)
-
-When persisting an `IncidentReport` to the Supabase PostgreSQL database, both `services/agent/src/vss_agents/tools/incident_report_gen.py`
-and `incident-console-v2/app/api/analysis/route.ts` map the extraction-facing fields to the SQL column names expected by `insert_incident`
-per `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`:
-
-| Unified Model Field (`IncidentReport`) | Database Column (`incidents` table) | Stored Format / Notes |
+| Outcome | Meaning | Rows written |
 |---|---|---|
-| `incident_type` | `type` | `VARCHAR(32)` (free text, unconstrained) |
-| `incident_start` | `start_timestamp` | `VARCHAR(32)` (`"M:SS"` or `"H:MM:SS"`) |
-| `incident_end` | `end_timestamp` | `VARCHAR(32)` (`"M:SS"` or `"H:MM:SS"`) |
-| `duration_seconds` | `duration` | `INTEGER` |
-| `description` | `description` | `TEXT` |
-| `severity` | `severity_level` | `INTEGER` |
-| `confidence` | `confidence_score` | `DOUBLE PRECISION` (column always double precision; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL`) |
+| `valid_first_pass` | the first response satisfied the contract | report rows + notes |
+| `valid_after_structural_repair` | valid after `id-normalization-v1`; UI badge "Contract repair applied (IDs only)" | report rows + notes |
+| `contract_failed` | invalid; repair ineligible or re-validation failed | `model_runs` notes only |
+| `request_failed` | no usable answer: gateway error or timeout, non-JSON or missing completion, empty content, or `finish_reason` other than `stop` (e.g. `FINISH_LENGTH`) | `model_runs` notes only |
 
-### Child Evidence Persistence Mapping
+Failed attempts never create incident, report, review or evidence rows, and never appear as reports.
 
-Observed actors, tools, and impacted property are persisted into their respective relational tables:
+## 4. Storage
 
-| Model Sub-List | Target Table | Primary Key (`*_id`) Generation | Stored Attributes / Notes |
+### Immutable notes (`model_runs.notes`)
+
+```json
+{"incidentConsoleV2": {
+  "recordType": "analysis_attempt",
+  "status": "valid_first_pass | valid_after_structural_repair | contract_failed | request_failed",
+  "stage": null,
+  "failure": null,
+  "contractVersion": "incident-contract-v2",
+  "videoId": "…", "r2Key": "…", "modelRunId": "…", "attemptedAt": "…Z",
+  "request": { "model": "…", "inferenceConfig": {}, "additionalInstruction": null, "promptSha256": "…", "schemaSha256": "…" },
+  "response": { "content": "<original raw response, unaltered>", "reasoningContent": "…", "finishReason": "stop", "usage": {} },
+  "validation": { "firstPass": [ { "code": "…", "path": "…", "message": "…" } ] },
+  "repair": null,
+  "report": {},
+  "reportId": "…", "generatedAt": "…"
+}}
+```
+
+Field notes:
+- `stage`: `null` for successful attempts; otherwise `gateway`, `upstream_response`, `contract_validation` or `structural_repair`.
+- `failure`: `null` for successful attempts; otherwise `{ "code": "…", "message": "…" }`.
+- `repair`: `null`, or `{ eligible: false, reason, blockingCodes }`, or `{ eligible: true, ruleSet, operations, revalidation }`.
+- `report`: the final validated contract report plus derived duration. Valid outcomes only.
+- `reportId` and `generatedAt`: valid outcomes only.
+- `response`: holds only the fields the gateway actually returned.
+
+Stage-1 records (before 2026-09-27 12:00) lack `status`; they are shown as `valid_first_pass` (inferred). Pre-contract console records are "earlier analyses", never failures.
+
+### Three classes of report fields
+
+| Class | Fields | Source | Editable |
 |---|---|---|---|
-| `persons` | `entities` | `'e' + sha256(f"{incident_id}:{idx}")[:19]` | `type = 'person'` (VARCHAR(16)), `description = f"{person.description} {person.actions}".strip()`. `image` is NULL. |
-| `instruments` | `instruments` | `'i' + sha256(f"{incident_id}:{idx}")[:19]` | `name`, `description`, `threat_level` (INTEGER 1–5 or NULL). `image` is NULL. |
-| `assets` | `assets` | `'a' + sha256(f"{incident_id}:{idx}")[:19]` | `name`, `description`. `image` is NULL. |
+| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`) | `incidents`, `entities`, `instruments`, `assets` | Yes, except duration (recomputed) and confidence |
+| **B: model output** | title, severity rationale, location, timeline, uncertainties | the report in notes | No (read-only) |
+| **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
-### Unpersisted Fields
+**Reviewer edits** (`apply_structured_report_edit`) change Class A only:
+- the edit is validated against the contract's own sub-schemas and the ID/holder/window rules, and applied in one transaction;
+- it sets `review_status.edited_by/edited_at`;
+- it never touches notes.
 
-The following fields in `IncidentReport` have **no corresponding database columns** in PostgreSQL:
+The report page:
+- shows "Model severity rationale";
+- when a reviewer changed the severity, adds "Model assessed N/5; reviewer set M/5";
+- marks every other reviewer-changed structured field ("Reviewer-edited after generation").
 
-- `title`
-- `severity_reason`
-- `timeline`
-- `uncertainties`
-- `location`
-- `incident_start_confirmed`
+## 5. Legacy data
 
-**Storage behavior:** In both Gateway Mode and Agent Mode, these fields are durably stored within `model_runs.notes` JSON. Displays and report review in `incident-console-v2` hydrate these fields directly from `model_runs.notes`.
+Older rows are shown in contract form for display and querying only; stored rows are never rewritten:
+- `fighting` → `assault`, `animal` → `animal attack`;
+- entity `person` → `human`;
+- `M:SS` / `H:MM:SS` → seconds.
+
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes v2-form values for that run; its historical notes are untouched.
+
+## 6. Agent mode (unchanged)
+
+`ANALYSIS_MODE=agent` still posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze`. The agent validates against its older snake_case `IncidentReport`, and the console parses that with `lib/analysis/schema.ts`, guarded by `lib/analysis/incident-report-contract.json`, `tests/contract-parity.test.mjs` and the agent's `test_incident_report_gen.py`.
+
+Model selection and re-analysis are gateway-only (HTTP 409 in agent mode). Moving the agent onto `incident-contract-v2` is plan phase 3.
