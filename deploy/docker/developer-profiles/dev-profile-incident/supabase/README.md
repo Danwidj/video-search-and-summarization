@@ -32,6 +32,15 @@ service-role-only `list_incident_report_summaries` RPC used by the Next.js
 report library for filtered six-item pages. It joins existing tables and does
 not create or maintain a summary table.
 
+`migrations/20260927120000_filter_report_evidence.sql` extends that RPC with
+people/entity, instrument, and asset filters and creates the service-role-only
+`replace_incident_evidence` RPC used to synchronize reviewer edits with the
+normalized evidence tables.
+
+`migrations/20260927130000_dashboard_analytics.sql` creates the service-role-only
+`get_incident_dashboard` RPC for dashboard trends, distributions, evidence
+drill-downs, cross-filters, and previous-period KPI counts.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

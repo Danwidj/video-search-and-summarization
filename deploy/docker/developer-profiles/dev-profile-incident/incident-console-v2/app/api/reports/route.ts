@@ -21,9 +21,20 @@ interface RpcResult {
   incidentTypes?: string[];
 }
 
+const MAX_EVIDENCE_FILTERS = 10;
+const MAX_EVIDENCE_FILTER_LENGTH = 100;
+
 function optional(params: URLSearchParams, key: string): string | null {
   const value = params.get(key)?.trim();
   return value && value !== 'all' ? value : null;
+}
+
+function evidenceFilters(params: URLSearchParams, key: string): string[] | null {
+  const values = [...new Set(params.getAll(key).map((value) => value.trim()).filter(Boolean))];
+  if (values.length > MAX_EVIDENCE_FILTERS || values.some((value) => value.length > MAX_EVIDENCE_FILTER_LENGTH)) {
+    throw new RangeError(`Invalid ${key} filter`);
+  }
+  return values.length ? values : null;
 }
 
 export async function GET(request: Request) {
@@ -52,6 +63,9 @@ export async function GET(request: Request) {
       p_generated_before: optional(params, 'before'),
       p_time_from: optional(params, 'fromTime'),
       p_time_to: optional(params, 'toTime'),
+      p_entities: evidenceFilters(params, 'entity'),
+      p_instruments: evidenceFilters(params, 'instrument'),
+      p_assets: evidenceFilters(params, 'asset'),
       p_sort: sort,
     }) as RpcResult;
     const summaries = Array.isArray(result?.reports) ? result.reports : [];
@@ -76,6 +90,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: error.message }, { status: 400 });
     return errorResponse(error, 'Could not load reports');
   }
 }

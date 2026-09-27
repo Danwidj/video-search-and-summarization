@@ -22,7 +22,8 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (ERD, table specs, `inse
 | Laptop tooling, `supabase` CLI, v1 console | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
 All PostgREST writers must use `/rpc/insert_incident` for the `incidents` + `review_status` pair. PostgREST has no client-held transactions.
-The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; it does not read or sign video on the library path.
+The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; its `p_entities`, `p_instruments`, and `p_assets` arrays filter the normalized evidence tables by `(incident_id, model_run_id)`. Reviewer edits synchronize those tables through `/rpc/replace_incident_evidence`. The library path does not read or sign video.
+The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`; it never downloads full report notes or evidence rows.
 
 ## Rules
 
