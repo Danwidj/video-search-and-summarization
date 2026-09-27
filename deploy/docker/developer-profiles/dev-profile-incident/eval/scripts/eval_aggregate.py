@@ -63,10 +63,16 @@ def aggregate_one(category_model: dict) -> dict:
     p1_failures = []
     rp1_failures = []
 
+    contract_failures = []
     for v in videos:
-        if not v["p1_raw"]["ok"]:
+        # A P1 failure is a failed call or (incident-contract results) a response
+        # that failed strict contract validation; both are scored as a miss.
+        if not v["p1_raw"]["ok"] or not v["p1_raw"].get("contract_ok", True):
             p1_failures.append(v["filename"])
-        if not v["rp1_report"]["ok"]:
+        if v["p1_raw"]["ok"] and not v["p1_raw"].get("contract_ok", True):
+            contract_failures.append(v["filename"])
+        # RP1 is skipped, not failed, when P1 produced nothing valid to report on.
+        if not v["rp1_report"]["ok"] and not v["rp1_report"].get("skipped"):
             rp1_failures.append(v["filename"])
 
         fs = v["incident_field_scores"]
@@ -105,6 +111,7 @@ def aggregate_one(category_model: dict) -> dict:
     return {
         "num_videos": n,
         "p1_failures": p1_failures,
+        "contract_failures": contract_failures,
         "rp1_failures": rp1_failures,
         "incident_field_accuracy": {
             "type": _pct(sum(field_pass["type"]), len(field_pass["type"])),
@@ -124,6 +131,7 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
     """Pool several (category, model) aggregate blocks into one (micro-average)."""
     n = sum(a["num_videos"] for a in aggregates)
     p1_failures = [f for a in aggregates for f in a["p1_failures"]]
+    contract_failures = [f for a in aggregates for f in a.get("contract_failures", [])]
     rp1_failures = [f for a in aggregates for f in a["rp1_failures"]]
 
     def pool_field(name, sub=None):
@@ -178,6 +186,7 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
     return {
         "num_videos": n,
         "p1_failures": p1_failures,
+        "contract_failures": contract_failures,
         "rp1_failures": rp1_failures,
         "incident_field_accuracy": {
             "type": pool_field("type"),

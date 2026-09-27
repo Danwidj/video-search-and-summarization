@@ -22,6 +22,15 @@ Canonical facts:
 2. `eval/.env.local` is a symlink to `../.env.local`. Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
 3. The ground-truth workbook and all working data stay under `eval/eval_data/`, which `eval/.gitignore` excludes. Never commit it.
 
+## What a run sends
+
+P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v2`):
+- a signed R2 URL, then the contract prompt, with the schema enforced via `response_format`;
+- no few-shot examples;
+- a fixed `max_tokens 16384` and `num_frames 64`.
+
+Responses are parsed strictly. A contract failure is scored as a miss and listed under `contract_failures`, and its RP1 is skipped. **Never loosen the parser to raise a score.** A model with many contract failures is a finding, not a bug to paper over. Details: [`eval/README.md`](../../eval/README.md).
+
 ## Instructions
 
 ```bash

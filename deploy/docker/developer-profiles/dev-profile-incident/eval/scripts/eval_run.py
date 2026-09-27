@@ -14,20 +14,24 @@
 # limitations under the License.
 
 """Batch runner: P1 -> GT scoring -> RP1, for every held-out video x every
-model, with everything except ``model`` held fixed (same P1 prompt, same 5
-few-shot demonstrations per category in the same serialization/order, same
-fixed inference config, same held-out split, same evaluator).
+model, with everything except ``model`` held fixed (same contract prompt and
+schema, same fixed inference config, same held-out split, same evaluator).
+No few-shot examples: the earlier category-specific few-shot block leaked the
+answer (see .docs/prompt-contract-plan.md).
 
 For each (category, model, evaluation video):
-  1. Resolve + cache the video (``eval_video_resolution``, exact-basename only).
-  2. Call P1 with the category's fixed few-shot block (``eval_few_shot``).
-  3. Parse the JSON prediction (``eval_vlm_client.extract_json``).
+  1. Resolve the video to its single R2 object and sign a URL
+     (``eval_video_resolution``, exact-basename only).
+  2. Call P1: signed URL + contract prompt, schema enforced via response_format.
+  3. Parse strictly (``contract.parse_report``). A contract failure is recorded
+     as such and scored as an empty prediction (a miss), never repaired.
   4. Persist the prediction to the DB under this model's own ``model_run_id``.
   5. Score it against GT (``eval_gt.run_evaluation`` - reuses ``matching.py``
      unchanged; entity/instrument/asset matches will be empty until a real
      embeddings endpoint is configured, see ``config.embedding_base_url()``).
   6. Call RP1 (one fixed report-generation model/config, same for every P1
-     model) on the prediction; report is persisted, never scored.
+     model) on a valid prediction; report is persisted, never scored. Skipped
+     when P1 failed.
   7. Accumulate the Step 7 per-video result; write one JSON file per
      (category, model) once that pair's videos are done.
 
@@ -50,11 +54,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import config  # noqa: F401,E402
+import contract  # noqa: E402
 import db as db_module  # noqa: E402
 from db_postgrest import PostgrestIncidentDB  # noqa: E402
 from db_postgrest import configured as postgrest_configured  # noqa: E402
 import eval_gt  # noqa: E402
-from eval_few_shot import build_few_shot_block  # noqa: E402
 from eval_gt_schema import load_gt_index  # noqa: E402
 from eval_ingest_gt import EVAL_DATA_DIR  # noqa: E402
 from eval_run_lib import (  # noqa: E402
@@ -68,12 +72,12 @@ from eval_run_lib import (  # noqa: E402
     safe_model_id,
     score_matches_summary,
 )
-from eval_vlm_client import MODELS, analyze_video_with_p1, extract_json, generate_report_with_rp1  # noqa: E402
-from eval_video_resolution import ResolutionError, build_basename_index, resolve_and_cache  # noqa: E402
-from prompts import P1_INCIDENT_EXTRACTION_PROMPT, P1_PROMPT_VERSION, RP1_PROMPT_VERSION, RP1_REPORT_GENERATION_PROMPT  # noqa: E402
+from eval_vlm_client import MODELS, analyze_video_with_p1, generate_report_with_rp1, p1_request_config  # noqa: E402
+from eval_video_resolution import ResolutionError, build_basename_index, resolve_and_sign  # noqa: E402
 import r2_videos  # noqa: E402
 
 RESULTS_DIR = EVAL_DATA_DIR / "results"
+EMPTY_PREDICTION = {"incident": {}, "entities": [], "instruments": [], "assets": []}
 
 # Frozen for the entire benchmark, per explicit confirmation - never changed
 # based on results observed during the run. Checked, not just assumed: the
@@ -151,14 +155,14 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
     last_result = None
     while attempts <= max_retries:
         attempts += 1
-        rp1_result = generate_report_with_rp1(RP1_MODEL, RP1_REPORT_GENERATION_PROMPT, prediction, inference_config=RP1_INFERENCE_CONFIG)
+        rp1_result = generate_report_with_rp1(RP1_MODEL, prediction, inference_config=RP1_INFERENCE_CONFIG)
         last_result = rp1_result
         content = (rp1_result.content or "").strip()
         if rp1_result.ok and content:
             return {
                 "text": content,
                 "model_id": RP1_MODEL,
-                "prompt_version": RP1_PROMPT_VERSION,
+                "prompt_version": contract.contract_version(),
                 "inference_config": RP1_INFERENCE_CONFIG,
                 "ok": True,
                 "error": "",
@@ -174,7 +178,7 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
     return {
         "text": "",
         "model_id": RP1_MODEL,
-        "prompt_version": RP1_PROMPT_VERSION,
+        "prompt_version": contract.contract_version(),
         "inference_config": RP1_INFERENCE_CONFIG,
         "ok": False,
         "error": error,
@@ -183,8 +187,8 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
 
 
 def run_one_video(
-    db, *, model: str, category: str, filename: str, incident_id: str, r2_object_key: str, local_video_path: Path,
-    few_shot_block: str, gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str,
+    db, *, model: str, category: str, filename: str, incident_id: str, r2_object_key: str, video_url: str,
+    gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str,
 ) -> dict:
     """Steps 2-7 for one (model, video) pair. Returns the Step 7 per-video result dict.
 
@@ -194,34 +198,49 @@ def run_one_video(
     """
     check_embedding_server_healthy(FROZEN_EMBEDDING_BASE_URL, expected_model=FROZEN_EMBEDDING_MODEL)
 
-    p1_result = analyze_video_with_p1(model, local_video_path, P1_INCIDENT_EXTRACTION_PROMPT, few_shot_block=few_shot_block)
-    prediction = extract_json(p1_result.content) or extract_json(p1_result.reasoning_content) or {}
-    prediction.setdefault("incident", {})
-    prediction.setdefault("entities", [])
-    prediction.setdefault("instruments", [])
-    prediction.setdefault("assets", [])
+    p1_result = analyze_video_with_p1(model, video_url)
+    contract_error = ""
+    if not p1_result.ok:
+        contract_error = f"P1 call failed: {p1_result.error}"
+        prediction = dict(EMPTY_PREDICTION)
+    else:
+        try:
+            prediction = contract.parse_report(p1_result.content)
+        except contract.ContractError as exc:
+            contract_error = str(exc)
+            prediction = dict(EMPTY_PREDICTION)
+    contract_ok = not contract_error
 
     persist_prediction(db, incident_id, model_run_id, prediction)
 
     eval_result = eval_gt.run_evaluation(db, incident_id, model_run_id)
     check_judge_ok(eval_result)
 
-    rp1_report = generate_rp1_report(prediction)
+    if contract_ok:
+        rp1_report = generate_rp1_report(prediction)
+    else:
+        rp1_report = {
+            "text": "", "model_id": RP1_MODEL, "prompt_version": contract.contract_version(),
+            "inference_config": RP1_INFERENCE_CONFIG, "ok": False, "skipped": True,
+            "error": "skipped: P1 did not produce a valid contract report", "attempts": 0,
+        }
 
     return {
         "filename": filename,
         "incident_id": incident_id,
         "category": category,
         "model_id": model,
-        "prompt_version": P1_PROMPT_VERSION,
-        "inference_config": eval_vlm_client_fixed_config(),
+        "prompt_version": contract.contract_version(),
+        "inference_config": recorded_p1_config(),
         "split_manifest_ref": split_manifest_ref,
         "run_id": model_run_id,
         "r2_object_key": r2_object_key,
         "ground_truth": gt_p1_shaped,
         "prediction": prediction,
         "p1_raw": {"content": p1_result.content, "reasoning_content": p1_result.reasoning_content,
-                   "finish_reason": p1_result.finish_reason, "ok": p1_result.ok, "error": p1_result.error},
+                   "finish_reason": p1_result.finish_reason, "ok": p1_result.ok, "error": p1_result.error,
+                   "usage": (p1_result.raw or {}).get("usage") or {},
+                   "contract_ok": contract_ok, "contract_error": contract_error},
         "rp1_report": rp1_report,
         "incident_field_scores": eval_result.fields,
         "entities": score_matches_summary(eval_result, "entities"),
@@ -230,10 +249,11 @@ def run_one_video(
     }
 
 
-def eval_vlm_client_fixed_config() -> dict:
-    from eval_vlm_client import FIXED_INFERENCE_CONFIG
-
-    return dict(FIXED_INFERENCE_CONFIG)
+def recorded_p1_config() -> dict:
+    """The P1 config as stored in results: the schema is named by contract version, not inlined."""
+    recorded = dict(p1_request_config())
+    recorded["response_format"] = f"json_schema:incident_report ({contract.contract_version()}, strict)"
+    return recorded
 
 
 def run(*, models: list[str], categories: list[str] | None, limit: int | None) -> None:
@@ -256,7 +276,7 @@ def run(*, models: list[str], categories: list[str] | None, limit: int | None) -
 
     for model in models:
         model_run_id = model_run_id_for(model)
-        db.insert_model_run(model_run_id, model_name=model, prompt_version=P1_PROMPT_VERSION)
+        db.insert_model_run(model_run_id, model_name=model, prompt_version=contract.contract_version())
 
         for category in target_categories:
             manifest_path = EVAL_DATA_DIR / f"split_{category.lower().replace(' ', '_')}.json"
@@ -265,32 +285,30 @@ def run(*, models: list[str], categories: list[str] | None, limit: int | None) -
                 continue
             manifest = json.loads(manifest_path.read_text())
 
-            few_shot_examples = [
-                gt_index["by_incident_id"][gt_index_lookup(gt_index, fn)]["p1_shaped"]
-                for fn in manifest["few_shot_demo_videos"]
-            ]
-            few_shot_block = build_few_shot_block(few_shot_examples)
-
             eval_filenames = manifest["evaluation_videos"][:limit] if limit else manifest["evaluation_videos"]
             results = []
             for filename in eval_filenames:
                 incident_id = gt_index_lookup(gt_index, filename)
                 r2_object_key = manifest["evaluation_videos_r2_keys"][filename]
                 try:
-                    _, local_path = resolve_and_cache(filename, basename_index)
+                    resolved_key, video_url = resolve_and_sign(filename, basename_index)
                 except ResolutionError as exc:
                     print(f"  {model} / {category} / {filename}: SKIP, {exc}")
                     continue
 
                 print(f"  {model} / {category} / {filename} ...", end=" ", flush=True)
+                if resolved_key != r2_object_key:
+                    print(f"  {model} / {category} / {filename}: SKIP, R2 key {resolved_key!r} differs from manifest {r2_object_key!r}")
+                    continue
                 result = run_one_video(
                     db, model=model, category=category, filename=filename, incident_id=incident_id,
-                    r2_object_key=r2_object_key, local_video_path=local_path, few_shot_block=few_shot_block,
+                    r2_object_key=r2_object_key, video_url=video_url,
                     gt_p1_shaped=gt_index["by_incident_id"][incident_id]["p1_shaped"],
                     model_run_id=model_run_id, split_manifest_ref=str(manifest_path),
                 )
                 results.append(result)
-                print(f"P1 ok={result['p1_raw']['ok']} finish={result['p1_raw']['finish_reason']} "
+                print(f"P1 ok={result['p1_raw']['ok']} contract_ok={result['p1_raw']['contract_ok']} "
+                      f"finish={result['p1_raw']['finish_reason']} "
                       f"type_pass={result['incident_field_scores'].get('type', {}).get('pass')} "
                       f"RP1 ok={result['rp1_report']['ok']}")
 
@@ -299,12 +317,11 @@ def run(*, models: list[str], categories: list[str] | None, limit: int | None) -
             out_path.write_text(json.dumps({
                 "category": category,
                 "model_id": model,
-                "prompt_version": P1_PROMPT_VERSION,
-                "inference_config": eval_vlm_client_fixed_config(),
+                "prompt_version": contract.contract_version(),
+                "inference_config": recorded_p1_config(),
                 "split_manifest_ref": str(manifest_path),
                 "run_id": model_run_id,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "few_shot_demo_videos": manifest["few_shot_demo_videos"],
                 "videos": results,
             }, indent=2))
             print(f"  -> wrote {out_path} ({len(results)} videos)")

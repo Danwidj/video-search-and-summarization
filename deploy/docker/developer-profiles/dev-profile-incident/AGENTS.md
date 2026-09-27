@@ -17,6 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
+| `contracts/` | JSON Schema, Markdown | Shared P1/RP1 prompts and incident output schema (`incident-contract-v2`) | Phase 1: eval uses it; console and agent pending ([plan](.docs/prompt-contract-plan.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -107,4 +108,5 @@ Stale docs are a defect, not a follow-up. Any change in this directory updates, 
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/restructure-plan.md`](.docs/restructure-plan.md) | Option B (proposed, not approved) |
+| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (proposed, not approved) |
 | [`.docs/archive/`](.docs/archive/) | Historical plans only. Not current truth. |
