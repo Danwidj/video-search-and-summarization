@@ -41,6 +41,12 @@ normalized evidence tables.
 `get_incident_dashboard` RPC for dashboard trends, distributions, evidence
 drill-downs, cross-filters, and previous-period KPI counts.
 
+`migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql`
+adds weekday and low/medium severity filtering to the report summary RPC and
+adds `apply_incident_report_patch`, which atomically applies changed report
+fields while preserving untouched values and evidence categories. This
+migration is pending application to the shared Supabase project.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

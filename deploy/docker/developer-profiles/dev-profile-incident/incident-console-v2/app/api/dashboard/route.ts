@@ -30,8 +30,13 @@ export async function GET(request: Request) {
 
     const config = getServiceConfiguration();
     if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
-    const periodEnd = period === 'all' ? null : new Date();
-    const periodStart = periodEnd ? new Date(periodEnd.getTime() - Number(period) * 86_400_000) : null;
+    const requestedStart = params.get('after');
+    const requestedEnd = params.get('before');
+    const periodEnd = period === 'all' ? null : requestedEnd ? new Date(requestedEnd) : new Date();
+    const periodStart = periodEnd ? requestedStart ? new Date(requestedStart) : new Date(periodEnd.getTime() - Number(period) * 86_400_000) : null;
+    if ((periodStart && Number.isNaN(periodStart.getTime())) || (periodEnd && Number.isNaN(periodEnd.getTime())) || (periodStart && periodEnd && periodStart >= periodEnd)) {
+      return NextResponse.json({ error: 'Invalid dashboard date range' }, { status: 400 });
+    }
     const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
     const analytics = await db.rpc('get_incident_dashboard', {
       p_period_start: periodStart?.toISOString().replace('Z', '') ?? null,
