@@ -30,6 +30,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [VLM gateway](vlm-gateway/README.md)
 - [Mock backends](mock-backend/README.md)
 - [Evaluation pipeline](eval/README.md)
+- [Incident contract (prompt + schema)](contracts/README.md)
 - [Supabase migrations](supabase/README.md)
 - [Lifecycle scripts](.scripts/README.md)
 - [VM dotfiles](.dotfiles/README.md)

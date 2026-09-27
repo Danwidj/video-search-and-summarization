@@ -4,6 +4,14 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-27: Contract files in profile `contracts/`, validated with `jsonschema`; phase 0 probe with controls
+- **Decision:** Put the shared schema, the P1/RP1 prompts and `VERSION` in `dev-profile-incident/contracts/`. Validate in Python with `jsonschema` (Draft 2020-12, new `eval` dependency) plus explicit cross-field checks in `eval/contract.py`. Gate the rollout on `eval/scripts/probe_structured_output.py`, which proves schema enforcement with a contradictory-prompt control (the schema allows only `{"answer_code": "schema-enforced"}` while the prompt asks for prose) and proves URL fetching with a missing-object negative control.
+- **Why:** One location every consumer can read or vendor. `jsonschema` validates against the same file the model is sent, with no hand-written mirror. The controls stop a model that happens to emit JSON, or that answers without reading the video, from passing.
+- **Alternatives rejected:**
+  - Pydantic as the Python source (eval and agent are separate packages, so the file is the only neutral source; the agent will keep Pydantic with a parity test in phase 3).
+  - Probing with the P1 call alone (cannot tell enforcement from compliance, or a fetch from a hallucination).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../eval/scripts/probe_structured_output.py`](../eval/scripts/probe_structured_output.py); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
 ### 2026-09-27: Unified prompt and structured-output contract planned, awaiting review
 - **Decision:** Plan one shared contract for eval P1, console gateway mode and agent mode: the eval P1 prompt as the base (with title, severity_reason, location, timeline and uncertainties added), a nested snake_case JSON Schema enforced through `response_format: json_schema`, strict parsing that returns 422 instead of repairing, and the same call chain everywhere (P1 video to JSON, then RP1 JSON to prose). Other choices: no few-shot, eval's 5-label taxonomy (road accident, burglary, explosion, assault, animal attack), signed R2 URLs for video input, and `confidence_score` null unless the API gives a native score. Agent mode is in scope. No code changes yet; a per-model structured-output and URL-fetch check (phase 0) gates everything else.
 - **Why:** The three paths differ in prompt, schema, taxonomy, video encoding, few-shot and parsing, so the benchmark does not measure production behaviour. Eval's category-specific few-shot block also leaks the label into the prompt. Lenient parsing hides model failures.

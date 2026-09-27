@@ -1,6 +1,6 @@
 # Unified Prompt & Structured-Output Contract Plan
 
-> **PROPOSED - AWAITING TEAM REVIEW**
+> **PROPOSED - AWAITING TEAM REVIEW.** Phase 0 is built (`contracts/`, `eval/contract.py`, `eval/scripts/probe_structured_output.py`) and is waiting for a live run with the Switchyard key.
 > **Date:** 2026-09-27
 > **Scope:** `eval/`, `incident-console-v2/`, `services/agent/` (incident path), `supabase/migrations/`
 

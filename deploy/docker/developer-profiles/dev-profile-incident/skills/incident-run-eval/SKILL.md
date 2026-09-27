@@ -22,6 +22,16 @@ Canonical facts:
 2. `eval/.env.local` is a symlink to `../.env.local`. Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
 3. The ground-truth workbook and all working data stay under `eval/eval_data/`, which `eval/.gitignore` excludes. Never commit it.
 
+## Contract probe (run before changing prompts or models)
+
+The phase 0 gate of [`.docs/prompt-contract-plan.md`](../../.docs/prompt-contract-plan.md) checks each model against the shared [`contracts/`](../../contracts/README.md): whether the schema is enforced, whether the model reads the signed URL (with a negative control), and whether a strict P1 response parses. A model that fails is dropped. Never loosen the parser to make it pass.
+
+```bash
+uv run python scripts/probe_structured_output.py --video-key anomaly/<category>/<clip>.mp4
+```
+
+Output goes to `eval_data/probe/probe_<UTC>.json`, and the exit code is 1 on any failure.
+
 ## Instructions
 
 ```bash

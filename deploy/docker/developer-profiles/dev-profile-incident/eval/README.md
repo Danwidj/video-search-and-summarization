@@ -44,6 +44,17 @@ Required environment variables (read from `.env.local`, a symlink to `../.env.lo
 None of `INCIDENT_LLM_API_KEY`, `INCIDENT_JUDGE_MODEL`, or a real `INCIDENT_EMBEDDING_BASE_URL` value ship in the
 committed `.env` placeholder - if they're missing from `.env.local`, add them before running anything live.
 
+## Contract probe (phase 0 of `.docs/prompt-contract-plan.md`)
+
+Checks, per model, whether the gateway enforces `response_format: json_schema`, whether the model reads a signed R2 URL (with a missing-object negative control), and whether a real P1 call returns a response that passes [`../contracts/`](../contracts/README.md) strictly. That is 4 calls per model, 2 of them with video.
+
+```bash
+uv run python scripts/probe_structured_output.py --video-key anomaly/<category>/<clip>.mp4   # all models in MODELS
+uv run python scripts/probe_structured_output.py --models nvidia/cosmos-3-nano-reasoner      # one model
+```
+
+Results are printed as a table and written to `eval_data/probe/probe_<UTC>.json`; the exit code is 1 if any model fails.
+
 ## Running
 
 ```bash
