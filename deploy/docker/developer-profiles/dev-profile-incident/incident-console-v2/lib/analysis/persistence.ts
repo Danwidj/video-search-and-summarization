@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { contractPart, type AnalysisReport } from '@/lib/analysis/contract-types';
+import type { AnalysisReport, IncidentContractReport } from '@/lib/analysis/contract-types';
 import { PostgrestClient } from '@/lib/postgrest/client';
 
 interface VideoReference {
@@ -72,8 +72,8 @@ export async function verifySavedReport(db: PostgrestClient, report: AnalysisRep
 }
 
 /** incidents-table columns for a contract report (timestamps stored as bare seconds, like eval). */
-export function incidentColumns(report: AnalysisReport) {
-  const { incident } = contractPart(report);
+export function incidentColumns(report: IncidentContractReport) {
+  const { incident } = report;
   return {
     type: incident.type,
     start_timestamp: String(incident.start_timestamp),
