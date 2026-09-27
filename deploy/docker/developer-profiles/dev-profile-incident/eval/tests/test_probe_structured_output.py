@@ -115,3 +115,35 @@ def test_invalid_p1_json_fails_with_contract_error(monkeypatch):
     monkeypatch.setattr(probe, "chat_completion", fake)
     check = probe.probe_model("m", GOOD, MISSING).checks["p1_contract"]
     assert not check.passed and "schema violation" in check.detail
+
+
+def test_main_saves_after_each_model_and_survives_a_crash(monkeypatch, tmp_path):
+    fake, _ = _fake_gateway()
+
+    def crashing(model, *args, **kwargs):
+        if model == "boom":
+            raise RuntimeError("gateway exploded")
+        return fake(model, *args, **kwargs)
+
+    class _Client:
+        def generate_presigned_url(self, *_args, Params, **_kwargs):
+            return MISSING if Params["Key"].startswith("probe-missing/") else GOOD
+
+    monkeypatch.setenv("R2_BUCKET", "bucket")
+    monkeypatch.setattr(probe, "chat_completion", crashing)
+    monkeypatch.setattr(probe, "_r2_client", lambda: _Client())
+    monkeypatch.setattr(probe, "PROBE_DIR", tmp_path)
+
+    assert probe.main(["--models", "good", "boom", "--video-key", "anomaly/x.mp4"]) == 1
+    [out] = tmp_path.glob("probe_*.json")
+    saved = json.loads(out.read_text())
+    assert [r["model"] for r in saved["results"]] == ["good", "boom"]
+    assert saved["results"][0]["passed"] is True
+    assert "gateway exploded" in saved["results"][1]["checks"]["probe_error"]["detail"]
+
+
+def test_redact_strips_presigned_credentials():
+    url = "https://x.r2.dev/k.mp4?X-Amz-Algorithm=AWS4&X-Amz-Credential=AKIA%2F1&X-Amz-Signature=abc123&X-Amz-Expires=3600"
+    out = probe.redact(f"failed to fetch {url}")
+    assert "abc123" not in out and "AKIA" not in out
+    assert "X-Amz-Signature=REDACTED" in out and "X-Amz-Expires=3600" in out
