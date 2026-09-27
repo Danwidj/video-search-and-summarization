@@ -353,7 +353,7 @@ def print_table(results: list[ModelResult]) -> None:
             extra = f" (finish_reason={check.finish_reason}, reasoning_chars={check.reasoning_chars})"
             if not check.passed:
                 print(f"  {r.model} / {name}: {check.detail}{extra}")
-            elif check.report is not None:
+            elif check.report is not None or name.startswith("sampling_frames"):
                 print(f"  {r.model} / {name}: {check.detail}")
 
 
