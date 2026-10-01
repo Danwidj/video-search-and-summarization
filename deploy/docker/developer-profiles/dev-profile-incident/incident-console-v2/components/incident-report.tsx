@@ -38,7 +38,6 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const windowEdited = differences.fields.includes('incident window');
   const original = modelOutput?.original;
-  const holderLabel = new Map(structured.entities.map((entity) => [entity.entityId, `${entity.entityId} (${entity.type})`]));
 
   function seek(seconds: number) {
     if (!videoRef.current) return;
@@ -227,6 +226,8 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
           </section>
 
           <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            {/* Presentation view: keep entity, instrument, and asset details out of the midterm report. */}
+            {/*
             <EvidenceGroup
               title="Entities"
               empty="None identified"
@@ -246,6 +247,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
               empty="None identified"
               items={structured.assets.map((asset) => ({ id: asset.assetId, text: `${asset.name}: ${asset.description}` }))}
             />
+            */}
             {modelOutput && modelOutput.uncertainties.length > 0 && (
               <ModelSection compact title="Model-reported uncertainties" source={modelOutput.source}>
                 <ul className="space-y-2 text-sm leading-5 text-ink/65">
