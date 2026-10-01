@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
+import { PRESENTATION_REVIEWER } from '@/lib/presentation-reviewer';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
 import { formatTimestamp } from '@/lib/time';
 
@@ -14,6 +15,7 @@ type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
 
 const SORT_VALUES: Sort[] = ['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low'];
+const INCIDENT_TYPES = ['animal attack', 'assault', 'burglary', 'explosion', 'road accident'] as const;
 const FILTER_KEYS = ['search', 'type', 'severity', 'status', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page'];
 
 function severityClass(level: number) {
@@ -30,7 +32,6 @@ export function ReportsLibrary() {
   const query = useSearchParams();
   const router = useRouter();
   const [reports, setReports] = useState<ReportLibraryItem[]>([]);
-  const [incidentTypes, setIncidentTypes] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -128,10 +129,9 @@ export function ReportsLibrary() {
       if (toTime) params.set('toTime', toTime);
       if (day) params.set('day', day);
       const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
-      const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
+      const payload = (await response.json()) as { reports?: ReportLibraryItem[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
       setReports(payload.reports);
-      setIncidentTypes(payload.incidentTypes || []);
       setTotalItems(payload.pagination?.totalItems || 0);
       setTotalPages(payload.pagination?.totalPages || 0);
       router.replace(`/reports?${params}`, { scroll: false });
@@ -195,8 +195,7 @@ export function ReportsLibrary() {
   }
 
   async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
-    const reviewer = window.prompt(`Your name is required to mark this report ${statusLabel(nextStatus).toLowerCase()}.`);
-    if (!reviewer?.trim()) return;
+    const reviewer = PRESENTATION_REVIEWER;
     if (nextStatus === 'verified' && !window.confirm('Verify this report as reviewed and accurate?')) return;
     setBusy(item.reportId);
     try {
@@ -212,12 +211,10 @@ export function ReportsLibrary() {
   }
 
   async function deleteReport(item: ReportLibraryItem) {
-    const deleteVideo = window.confirm('Delete the stored R2 video too?\n\nOK deletes the video and every report for it. Cancel keeps the video and deletes only this report.');
-    const message = deleteVideo ? 'Permanently delete this video and all of its reports?' : 'Delete only this report? The R2 video will be kept.';
-    if (!window.confirm(message)) return;
+    if (!window.confirm(`Delete only this report?\n\n“${item.title}” will be removed. The video and all other reports for it will be kept.`)) return;
     setBusy(item.reportId);
     try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete?run=${encodeURIComponent(item.modelRunId)}&deleteVideo=${deleteVideo}`, { method: 'DELETE' });
+      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete?run=${encodeURIComponent(item.modelRunId)}`, { method: 'DELETE' });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Delete failed');
       if (reports.length === 1 && page > 1) setPage((current) => current - 1);
@@ -236,8 +233,8 @@ export function ReportsLibrary() {
       <section className="mt-9 rounded-[1.5rem] border border-ink/10 bg-white p-4 shadow-panel" aria-label="Report filters">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <label className="xl:col-span-2"><span className="sr-only">Search reports</span><input className="control" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search reports and evidence…" type="search" value={search} /></label>
-          <Select label="Incident type" onChange={(value) => { setType(value); setPage(1); }} value={type} options={[['all', 'All incident types'], ...incidentTypes.map((value) => [value, value])]} />
-          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={ [['all', 'All severities'], ['low', 'Low (1–2)'], ['medium', 'Medium (3)'], ['high', 'High (4–5)'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])] } />
+          <Select label="Incident type" onChange={(value) => { setType(value); setPage(1); }} value={type} options={[['all', 'All incident types'], ...INCIDENT_TYPES.map((value) => [value, value])]} />
+          <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={ [['all', 'All severities'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])] } />
           <Select label="Review status" onChange={(value) => { setStatus(value); setPage(1); }} value={status} options={[['all', 'All review states'], ['unreviewed', 'Unreviewed'], ['under review', 'Under review'], ['verified', 'Verified']]} />
           <Select label="Sort reports" onChange={(value) => { setSort(value as Sort); setPage(1); }} value={sort} options={[['newest', 'Newest first'], ['oldest', 'Oldest first'], ['severity-high', 'Highest severity'], ['severity-low', 'Lowest severity'], ['confidence-high', 'Highest confidence'], ['confidence-low', 'Lowest confidence']]} />
         </div>

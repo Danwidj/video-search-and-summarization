@@ -11,6 +11,7 @@ import type { ReviewStatus } from '@/lib/reports/storage';
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
 import { formatTimestamp } from '@/lib/time';
+import { PRESENTATION_REVIEWER } from '@/lib/presentation-reviewer';
 
 function severityStyle(level: number | null): string {
   if (level !== null && level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
@@ -52,15 +53,13 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
   }
 
   async function changeReviewStatus(status: ReviewStatus) {
-    const reviewer = window.prompt(`Your name is required to mark this report ${status}.`);
-    if (!reviewer?.trim()) return;
     if (status === 'verified' && !window.confirm('Verify this report as reviewed and accurate?')) return;
     setReviewBusy(true);
     try {
       const response = await fetch(`/api/reports/${encodeURIComponent(report.videoId)}/review`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelRunId: report.modelRunId, status, reviewedBy: reviewer }),
+        body: JSON.stringify({ modelRunId: report.modelRunId, status, reviewedBy: PRESENTATION_REVIEWER }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Review update failed');

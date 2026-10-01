@@ -48,7 +48,6 @@ function AnalysisHistoryCard({ report }: { report: ReportView }) {
         {history ? <div className="mt-2"><RunHistoryList compact currentRunId={report.modelRunId} history={history} /></div> : !error && <p className="mt-2 text-xs text-ink/45">Loading…</p>}
         <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold">
           <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}`}>Full analysis history →</Link>
-          <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}/ground-truth?run=${encodeURIComponent(report.modelRunId)}`}>Ground truth for this video →</Link>
         </div>
       </div>
     </section>

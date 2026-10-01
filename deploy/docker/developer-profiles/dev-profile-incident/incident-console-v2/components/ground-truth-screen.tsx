@@ -10,6 +10,7 @@ import { EDITABLE_INCIDENT_TYPES } from '@/lib/reports/edit-draft';
 import { formatClock, parseTimestamp } from '@/lib/reports/normalize';
 import type { ReportView } from '@/lib/reports/report-view';
 import { formatTimestamp } from '@/lib/time';
+import { PRESENTATION_REVIEWER } from '@/lib/presentation-reviewer';
 
 interface GroundTruthForm { type: string; description: string; start: string; end: string; severityLevel: string }
 
@@ -69,8 +70,7 @@ export function GroundTruthScreen({ videoId, runId }: { videoId: string; runId?:
 
   async function save() {
     if (problems.length) return;
-    const labelledBy = window.prompt('Evaluator name');
-    if (!labelledBy?.trim()) return;
+    const labelledBy = PRESENTATION_REVIEWER;
     const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/ground-truth`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

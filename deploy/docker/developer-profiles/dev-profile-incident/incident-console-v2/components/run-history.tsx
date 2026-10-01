@@ -45,8 +45,14 @@ export function OutcomeBadge({ outcome, inferred = false }: { outcome: RunOutcom
 
 /** A video's analysis history. Failed attempts are listed with their reason and never as reports. */
 export function RunHistoryList({ history, currentRunId, compact = false, onChanged }: { history: VideoRunHistory; currentRunId?: string; compact?: boolean; onChanged?: () => void }) {
-  const runs = compact ? history.runs.slice(0, 6) : history.runs;
-  const { counts } = history;
+  const retainedRuns = history.runs.filter((run) => !run.reportRemoved);
+  const runs = compact ? retainedRuns.slice(0, 6) : retainedRuns;
+  const counts = retainedRuns.reduce((summary, run) => {
+    summary.attempts += 1;
+    summary[run.outcome] += 1;
+    if (run.report) summary.withReport += 1;
+    return summary;
+  }, { attempts: 0, withReport: 0, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 0, request_failed: 0, legacy: 0 });
   return (
     <div data-testid="run-history">
       <p className="text-xs text-ink/50">
@@ -59,7 +65,7 @@ export function RunHistoryList({ history, currentRunId, compact = false, onChang
       <ol className="mt-3 space-y-2">
         {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} hasOfficial={Boolean(history.officialRunId)} key={run.modelRunId} onChanged={onChanged} run={run} videoId={history.video.videoId} />)}
       </ol>
-      {compact && history.runs.length > runs.length && <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>}
+      {compact && retainedRuns.length > runs.length && <p className="mt-2 text-xs text-ink/45">{retainedRuns.length - runs.length} more in the full history.</p>}
     </div>
   );
 }
