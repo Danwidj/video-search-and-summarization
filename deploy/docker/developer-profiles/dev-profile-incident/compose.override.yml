@@ -58,12 +58,6 @@ services:
   kafka:
     restart: unless-stopped
 
-  nvstreamer-2d-fusion:
-    restart: unless-stopped
-    deploy:
-      restart_policy:
-        condition: unless-stopped
-
   phoenix:
     restart: unless-stopped
 
