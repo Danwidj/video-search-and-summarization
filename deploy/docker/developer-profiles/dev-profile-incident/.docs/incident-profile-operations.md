@@ -159,6 +159,8 @@ Forwarded ports:
    Even in remote mode, cold startup requires time for VIOS, NvStreamer, and PostgreSQL to initialize. An HTTP 503
    during the first 60–90 seconds is normal readiness latency. Verify with `.scripts/health.sh` before modifying
    configuration.
+5. **Permanent `unless-stopped` Restart Policy:**
+   Upstream compose files configure several core appliances (`redis`, `vss-haproxy-ingress`, `centralizedb`, `vst-ingress`, `vss-ui`, `elasticsearch`, `logstash`, `kibana`) with `restart: always`. `streamprocessing-ms` has upstream `restart: unless-stopped`, but its `deploy.restart_policy.condition: always` takes precedence over `restart`. Both cause Docker to resurrect them on every host reboot even after a deliberate stop. In `dev-profile-incident/compose.override.yml`, the persistent appliances and stack services are set to `restart: unless-stopped`, and `streamprocessing-ms` also gets `deploy.restart_policy.condition: unless-stopped`. `nvstreamer-2d-fusion` keeps its upstream `on-failure` deploy policy, which already leaves it stopped after a reboot. When the stack is deliberately stopped (via `./.scripts/down.sh` or `docker compose -p mdx stop`), containers stay stopped across VM reboots.
 
 ---
 
@@ -231,4 +233,4 @@ When troubleshooting unexpected failures:
 4. **Handle Partial Deploys:**
    If `start.sh` reports a partial deployment, let its self-healing logic attempt to bring up missing services,
    or inspect the missing service output and restart it manually with `.scripts/native-services.sh restart <svc>`
-   or `docker compose up -d <service>`. Do not force-redeploy blindly over inconsistent state.
+   or `.scripts/rebuild-svc.sh <service>` (which layers `compose.override.yml`). Do not force-redeploy blindly over inconsistent state.
