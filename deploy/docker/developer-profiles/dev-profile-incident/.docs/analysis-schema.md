@@ -3,7 +3,7 @@
 This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> **As of 2026-09-27**, gateway-mode analysis in `incident-console-v2` uses the shared **`incident-contract-v2`** in [`../contracts/`](../contracts/README.md), the same prompt, schema and P1 settings as `eval/`. Agent mode (`ANALYSIS_MODE=agent`) still uses the agent's older snake_case `IncidentReport` until prompt-contract plan phase 3. See §6.
+> **As of 2026-09-27**, gateway-mode analysis in `incident-console-v2` uses the shared **`incident-contract-v3`** in [`../contracts/`](../contracts/README.md), the same prompt, schema and P1 settings as `eval/`. Agent mode (`ANALYSIS_MODE=agent`) still uses the agent's older snake_case `IncidentReport` until prompt-contract plan phase 3. See §6.
 
 ---
 
@@ -84,7 +84,7 @@ Failed attempts never create incident, report, review or evidence rows, and neve
   "status": "valid_first_pass | valid_after_structural_repair | contract_failed | request_failed",
   "stage": null,
   "failure": null,
-  "contractVersion": "incident-contract-v2",
+  "contractVersion": "incident-contract-v3",
   "videoId": "…", "r2Key": "…", "modelRunId": "…", "attemptedAt": "…Z",
   "request": { "model": "…", "inferenceConfig": {}, "additionalInstruction": null, "promptSha256": "…", "schemaSha256": "…" },
   "response": { "content": "<original raw response, unaltered>", "reasoningContent": "…", "finishReason": "stop", "usage": {} },
@@ -136,4 +136,4 @@ Their notes are parsed best-effort for the read-only Class B fields. Saving an e
 
 `ANALYSIS_MODE=agent` still posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze`. The agent validates against its older snake_case `IncidentReport`, and the console parses that with `lib/analysis/schema.ts`, guarded by `lib/analysis/incident-report-contract.json`, `tests/contract-parity.test.mjs` and the agent's `test_incident_report_gen.py`.
 
-Model selection and re-analysis are gateway-only (HTTP 409 in agent mode). Moving the agent onto `incident-contract-v2` is plan phase 3.
+Model selection and re-analysis are gateway-only (HTTP 409 in agent mode). Moving the agent onto `incident-contract-v3` is plan phase 3.

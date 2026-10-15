@@ -50,7 +50,7 @@ Incident extraction runs through three paths that do not share a prompt, schema,
 | `incident_report.schema.json` | JSON Schema (draft 2020-12), strict-mode compatible (see below) |
 | `incident_extraction_prompt.md` | P1 text: sections 1-6 kept, few-shot removed, section 7 "OUTPUT FORMAT" removed, and rules added for the extra fields |
 | `report_generation_prompt.md` | RP1 text (`RP1-v1`, unchanged apart from the input shape) |
-| `VERSION` | One contract version (now `incident-contract-v2`), stored as `prompt_version` on every model run |
+| `VERSION` | One contract version (now `incident-contract-v3`), stored as `prompt_version` on every model run |
 
 **Strict-mode rules:**
 - `additionalProperties: false` on every object.

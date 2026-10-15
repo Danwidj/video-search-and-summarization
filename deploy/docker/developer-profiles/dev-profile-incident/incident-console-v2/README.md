@@ -56,7 +56,7 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Analysis contract
 
-Gateway mode analyses with the shared **`incident-contract-v2`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
+Gateway mode analyses with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
 - strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
 - ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);

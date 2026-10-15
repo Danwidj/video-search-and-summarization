@@ -6,7 +6,7 @@ import { incidentAnalysisSchema } from '../lib/analysis/schema.ts';
 
 // Agent-mode parity only: vss-agent still returns this legacy IncidentReport
 // shape (services/agent tests read the same JSON file). Gateway analysis uses
-// the shared incident-contract-v2 in ../contracts (tests/contract-validate.test.mjs).
+// the shared incident-contract-v3 in ../contracts (tests/contract-validate.test.mjs).
 const contractPath = join(process.cwd(), 'lib/analysis/incident-report-contract.json');
 const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
 
