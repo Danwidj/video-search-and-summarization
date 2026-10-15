@@ -37,23 +37,16 @@ export function getViewerTimeZone(): string {
   }
 }
 
-/** Validates whether a given string is a valid IANA time zone identifier recognized by Intl. */
+/**
+ * Validates an IANA time zone name (e.g. 'Asia/Singapore') recognised by Intl.
+ * Offset strings such as '+05:00' are rejected: Postgres reads them as POSIX zones with the sign reversed.
+ */
 export function isValidTimeZone(tz: unknown): tz is string {
-  if (typeof tz !== 'string' || !tz.trim()) return false;
+  if (typeof tz !== 'string' || !/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(tz)) return false;
   try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz.trim() });
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
     return true;
   } catch {
     return false;
-  }
-}
-
-/** Localized short abbreviation or offset for a timezone (e.g. 'EDT', 'SGT', 'UTC', 'GMT+8'). */
-export function getTimeZoneAbbreviation(timeZone: string, date: Date = new Date()): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
-    return parts.find((p) => p.type === 'timeZoneName')?.value ?? timeZone;
-  } catch {
-    return timeZone;
   }
 }

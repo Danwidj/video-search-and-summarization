@@ -10,7 +10,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { buildRunHistory } = await import('../lib/runs/history.ts');
 const { describeCode } = await import('../lib/runs/labels.ts');
-const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone, getTimeZoneAbbreviation } = await import('../lib/time.ts');
+const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone } = await import('../lib/time.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));
 const repaired = fixture('contract-v2-repaired-run.json');
@@ -95,13 +95,7 @@ test('isValidTimeZone validates valid and invalid IANA timezones', () => {
   assert.equal(isValidTimeZone(''), false);
   assert.equal(isValidTimeZone(null), false);
   assert.equal(isValidTimeZone(123), false);
-});
-
-test('getTimeZoneAbbreviation formats short timezone abbreviation or identifier', () => {
-  assert.equal(getTimeZoneAbbreviation('UTC'), 'UTC');
-  const sgAbbr = getTimeZoneAbbreviation('Asia/Singapore', new Date('2026-06-01T12:00:00Z'));
-  assert.ok(sgAbbr === 'SGT' || sgAbbr === 'GMT+8' || typeof sgAbbr === 'string');
-  const nyAbbr = getTimeZoneAbbreviation('America/New_York', new Date('2026-01-01T12:00:00Z'));
-  assert.ok(nyAbbr === 'EST' || nyAbbr === 'GMT-5' || typeof nyAbbr === 'string');
-  assert.equal(getTimeZoneAbbreviation('Invalid/Timezone'), 'Invalid/Timezone');
+  assert.equal(isValidTimeZone(' UTC'), false, 'untrimmed names would reach Postgres unchanged');
+  assert.equal(isValidTimeZone('+05:00'), false, 'Postgres reads offsets as POSIX zones with the sign reversed');
+  assert.equal(isValidTimeZone('Etc/GMT+5'), true);
 });
