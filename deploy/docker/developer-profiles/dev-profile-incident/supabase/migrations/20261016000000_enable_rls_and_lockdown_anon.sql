@@ -7,8 +7,11 @@
 -- 1. Revokes execute privilege on insert_incident from PUBLIC, anon, and authenticated.
 -- 2. Enables Row-Level Security on all 18 operational/eval tables and 4 legacy tables.
 -- 3. Revokes all table and sequence permissions in schema public from anon and authenticated.
--- 4. Updates default privileges so future objects do not auto-grant permissions to anon.
--- 5. Preserves complete, unhindered access for service_role and postgres via BYPASSRLS.
+-- 4. Updates default privileges for objects later created by the migrating role (postgres):
+--    no table, sequence or function grants to anon/authenticated in schema public, and no
+--    EXECUTE for PUBLIC on new functions in any schema. Objects created by other roles are
+--    not covered, so each new function still carries its own explicit REVOKE.
+-- 5. Leaves service_role and postgres unrestricted by RLS through their BYPASSRLS attribute.
 
 -- 1. Close insert_incident RPC privilege loophole
 REVOKE ALL ON FUNCTION public.insert_incident(TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, INTEGER, DOUBLE PRECISION)
@@ -53,7 +56,8 @@ ALTER TABLE public.incident_assets ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
 
--- 4. Adjust default privileges for future objects created in schema public
+-- 4. Adjust default privileges for future objects created by the migrating role
+ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;

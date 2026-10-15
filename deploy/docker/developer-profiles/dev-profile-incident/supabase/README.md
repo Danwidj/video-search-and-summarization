@@ -90,8 +90,12 @@ Row-Level Security on all 22 public tables (18 operational/eval tables and
 4 legacy pre-v1 tables), revokes table and sequence privileges in schema
 `public` from `anon` and `authenticated`, revokes `EXECUTE` on `insert_incident`
 from `PUBLIC, anon, authenticated` (restricted to `service_role`), and adjusts
-default privileges for future objects created in schema `public` so no privileges
-are auto-granted to `anon` or `authenticated`. Services authenticate using
+default privileges for objects later created by the migrating role (`postgres`):
+no table, sequence or function grants to `anon` or `authenticated` in schema
+`public`, and no `EXECUTE` for `PUBLIC` on new functions in any schema. Objects
+created by other roles are not covered, so each new function should still carry
+its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and
+`GRANT EXECUTE ... TO service_role`, as earlier migrations do. Services authenticate using
 `service_role` (PostgREST) or connect directly as `postgres`, both having
 `BYPASSRLS`.
 

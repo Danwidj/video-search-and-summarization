@@ -32,6 +32,7 @@ The operations dashboard reads bounded aggregates through the service-role-only 
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
 - **Cascades are real.** Deleting a `videos` or `model_runs` row, or re-running `insert_incident` under the same `model_run_id`, cascades through the evidence, review, notification and match tables. Callers must re-insert evidence after the RPC.
 - **Changing a function signature:** drop the old signature in the same migration. PostgREST rejects ambiguous overloads that share parameter names.
+- **New functions:** add `REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role` in the same migration. Default privileges only cover objects created by `postgres`.
 - **Never** print or commit the service-role key or DSN. Backend code uses the service role server-side only. RLS is enabled on all 22 public tables with default-deny for anon and authenticated roles; service-role and direct postgres bypass RLS (see [`.docs/data.md`](../../.docs/data.md) and [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
 - Planned schema change (Option B: `r2_key`/`stream_url` split, `incident_timeline`, dropping legacy tables) is described in [`.docs/restructure-plan.md`](../../.docs/restructure-plan.md). Check whether it has been approved before touching those areas.
 
