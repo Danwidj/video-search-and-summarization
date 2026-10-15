@@ -178,7 +178,7 @@ async function recordFailure(db: PostgrestClient, attempt: AnalysisAttemptRecord
 }
 
 export async function runContractAnalysis(input: ContractAnalysisInput, config: ServiceConfiguration): Promise<ContractAnalysisResult> {
-  const model = resolveAllowedModel(input.model);
+  let model = resolveAllowedModel(input.model);
   let additionalInstruction: string | null;
   try {
     additionalInstruction = normalizeAdditionalInstruction(input.additionalInstruction);
@@ -248,7 +248,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
 
       // A 422 is the agent rejecting the model output under core-scored-v1; its detail
       // carries the raw output, which is validated and recorded here like a success.
-      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown };
+      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
         agentP1 = (await agentResponse.json()) as AgentP1;
@@ -270,7 +270,33 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       }
 
       // P1 ran on the agent's own VLM, so its model is the one recorded.
-      if (typeof agentP1.model === 'string' && agentP1.model) base.request.model = agentP1.model;
+      if (typeof agentP1.model === 'string' && agentP1.model) {
+        base.request.model = agentP1.model;
+        model = { ...model, id: agentP1.model };
+      }
+
+      // Verify contract version parity
+      if (typeof agentP1.contract_version === 'string' && agentP1.contract_version && agentP1.contract_version !== contractVersion()) {
+        const message = `Agent contract version (${agentP1.contract_version}) does not match console (${contractVersion()})`;
+        const attempt: AnalysisAttemptRecord = {
+          ...base,
+          status: 'request_failed',
+          stage: 'gateway',
+          failure: { code: 'CONTRACT_VERSION_MISMATCH', message },
+          response: { httpStatus: agentResponse.status, errorBody: message },
+          validation: { firstPass: [] },
+          repair: null,
+        };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(502, message, {
+          outcome: 'request_failed',
+          code: 'CONTRACT_VERSION_MISMATCH',
+          model: model.id,
+          attemptId: modelRunId,
+          attemptRecorded: recorded,
+        });
+      }
+
       response = { content: typeof agentP1.raw_output === 'string' ? agentP1.raw_output : null };
       if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
     } else {

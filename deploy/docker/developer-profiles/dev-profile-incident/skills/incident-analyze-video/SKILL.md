@@ -68,7 +68,7 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-to-end-verification-checklist). Minimum checks after one analysis:
 
 - The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
-- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (known issue 3, fixed in prompt-contract phase 3; see [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
+- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (see [`.docs/decisions.md`](../../.docs/decisions.md) 2026-10-16).
 - There is a new `model_runs` row, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 

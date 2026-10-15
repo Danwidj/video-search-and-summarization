@@ -26,17 +26,11 @@ export interface LegacyAnalysisReport {
   description: string;
   severity: number;
   severity_reason: string;
-  confidence: number;
   incident_start: string;
   incident_end: string;
-  incident_start_confirmed?: boolean;
-  duration_seconds: number | null;
   location?: string | null;
   timeline: LegacyTimelineItem[];
   uncertainties: string[];
-  persons?: Array<{ description: string; actions: string }>;
-  instruments?: Array<{ name: string; description: string; threat_level?: number | null }>;
-  assets?: Array<{ name: string; description: string }>;
 }
 
 interface StoredNotes {
@@ -52,43 +46,13 @@ const LEGACY_KEYS: Record<string, string> = {
   summary: 'description',
   severityLevel: 'severity',
   severityReason: 'severity_reason',
-  confidenceScore: 'confidence',
   startTimestamp: 'incident_start',
   endTimestamp: 'incident_end',
-  durationSeconds: 'duration_seconds',
 };
 
 function text(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value).trim();
-}
-
-function nullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const num = Number(value.trim());
-    if (Number.isFinite(num)) return num;
-  }
-  return null;
-}
-
-function coerceConfidence(value: unknown): number {
-  if (value === null || value === undefined) return 0.0;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    let num = value;
-    if (num > 1) num = num / 100;
-    return Math.max(0, Math.min(1, num));
-  }
-  if (typeof value === 'string') {
-    const num = Number(value.trim());
-    if (Number.isFinite(num)) {
-      let n = num;
-      if (n > 1) n = n / 100;
-      return Math.max(0, Math.min(1, n));
-    }
-  }
-  return 0.0;
 }
 
 function mapSeverity(value: unknown): number {
@@ -130,23 +94,12 @@ function legacyToSnake(report: Record<string, unknown>): Record<string, unknown>
   for (const [legacy, current] of Object.entries(LEGACY_KEYS)) {
     if (result[current] === undefined && report[legacy] !== undefined) result[current] = report[legacy];
   }
-  const entities = records(report.entities);
-  if (result.persons === undefined && entities) {
-    result.persons = entities.map((item) => ({ description: item.description, actions: '' }));
-  }
   const timeline = records(report.timeline);
   if (timeline) {
     result.timeline = timeline.map(({ startSeconds, endSeconds, ...item }) => ({
       ...item,
       start_seconds: item.start_seconds ?? startSeconds,
       end_seconds: item.end_seconds ?? endSeconds,
-    }));
-  }
-  const instruments = records(report.instruments);
-  if (instruments) {
-    result.instruments = instruments.map(({ threatLevel, ...item }) => ({
-      ...item,
-      threat_level: item.threat_level ?? threatLevel,
     }));
   }
   return result;
@@ -176,16 +129,14 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
     }
 
     const raw = legacyToSnake(baseReport);
-    const incidentType = text(raw.incident_type) || 'other';
+    const incidentType = text(raw.incident_type) || 'road accident';
     const title = text(raw.title);
     const description = text(raw.description);
     const severity = mapSeverity(raw.severity);
     const severityReason = text(raw.severity_reason);
-    const confidence = coerceConfidence(raw.confidence);
     const incidentStart = text(raw.incident_start) || '0:00';
     const incidentEnd = text(raw.incident_end) || '0:00';
-    const durationSeconds = nullableNumber(raw.duration_seconds);
-    const location = raw.location !== undefined && raw.location !== null ? text(raw.location) : null;
+    const location = text(raw.location) || null;
     const timelineRaw = Array.isArray(raw.timeline) ? raw.timeline : [];
     const timeline: LegacyTimelineItem[] = timelineRaw
       .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
@@ -195,19 +146,6 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
         description: text(item.description),
       }));
     const uncertainties = Array.isArray(raw.uncertainties) ? raw.uncertainties.map(text).filter(Boolean) : [];
-    const persons = Array.isArray(raw.persons)
-      ? raw.persons.map((p) => ({ description: text(p?.description), actions: text(p?.actions) }))
-      : undefined;
-    const instruments = Array.isArray(raw.instruments)
-      ? raw.instruments.map((i) => ({
-          name: text(i?.name),
-          description: text(i?.description),
-          threat_level: nullableNumber(i?.threat_level),
-        }))
-      : undefined;
-    const assets = Array.isArray(raw.assets)
-      ? raw.assets.map((a) => ({ name: text(a?.name), description: text(a?.description) }))
-      : undefined;
 
     return {
       videoId: typeof baseReport.videoId === 'string' ? baseReport.videoId : '',
@@ -229,17 +167,11 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
       description,
       severity,
       severity_reason: severityReason,
-      confidence,
       incident_start: incidentStart,
       incident_end: incidentEnd,
-      incident_start_confirmed: typeof raw.incident_start_confirmed === 'boolean' ? raw.incident_start_confirmed : undefined,
-      duration_seconds: durationSeconds,
       location,
       timeline,
       uncertainties,
-      ...(persons ? { persons } : {}),
-      ...(instruments ? { instruments } : {}),
-      ...(assets ? { assets } : {}),
     };
   } catch {
     return null;

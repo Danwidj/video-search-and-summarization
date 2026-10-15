@@ -42,6 +42,7 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.incident_contract import contract_version
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -107,6 +108,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                     "raw_output": exc.raw_output,
                     "finish_reason": exc.finish_reason,
                     "model": exc.model,
+                    "contract_version": contract_version(),
                 },
             ) from exc
         except TimeoutError as exc:

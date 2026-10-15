@@ -86,6 +86,7 @@ def test_contract_violation_is_422_with_the_raw_output():
     assert detail["raw_output"] == '{"incident": 1}'
     assert detail["finish_reason"] == "stop"
     assert detail["model"] == "vlm"
+    assert detail["contract_version"] == "incident-contract-v2"
 
 
 def test_timeout_is_504():
