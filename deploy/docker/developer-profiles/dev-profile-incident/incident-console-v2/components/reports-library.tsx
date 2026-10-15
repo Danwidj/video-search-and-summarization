@@ -10,11 +10,13 @@ import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
 import { formatTimestamp } from '@/lib/time';
 
+import { getTimeZoneAbbreviation, getViewerTimeZone, isValidTimeZone } from '@/lib/time';
+
 type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
 
 const SORT_VALUES: Sort[] = ['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low'];
-const FILTER_KEYS = ['search', 'type', 'severity', 'status', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page'];
+const FILTER_KEYS = ['search', 'type', 'severity', 'status', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page', 'timezone'];
 
 function severityClass(level: number) {
   if (level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
@@ -54,6 +56,7 @@ export function ReportsLibrary() {
   const [day, setDay] = useState('');
   const [rangeAfter, setRangeAfter] = useState('');
   const [rangeBefore, setRangeBefore] = useState('');
+  const [timeZone, setTimeZone] = useState('UTC');
   const [sort, setSort] = useState<Sort>('newest');
   const [busy, setBusy] = useState('');
   const [ready, setReady] = useState(false);
@@ -127,6 +130,7 @@ export function ReportsLibrary() {
       if (fromTime) params.set('fromTime', fromTime);
       if (toTime) params.set('toTime', toTime);
       if (day) params.set('day', day);
+      if (timeZone) params.set('timezone', timeZone);
       const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
       const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
@@ -146,6 +150,9 @@ export function ReportsLibrary() {
     if (FILTER_KEYS.some((key) => query.has(key))) {
       const after = query.get('after') || '';
       const before = query.get('before') || '';
+      const tzInQuery = query.get('timezone');
+      const resolvedTz = tzInQuery && isValidTimeZone(tzInQuery) ? tzInQuery : getViewerTimeZone();
+      setTimeZone(resolvedTz);
       setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all');
       setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || '');
       setScope(query.get('scope') === 'official' ? 'official' : 'all'); setEntityType(query.get('entityType') || ''); setMatch(query.get('match') === 'exact' ? 'exact' : 'contains');
@@ -155,9 +162,12 @@ export function ReportsLibrary() {
       setReady(true);
       return;
     }
+    const detectedTz = getViewerTimeZone();
+    setTimeZone(detectedTz);
     try {
       const state = JSON.parse(window.sessionStorage.getItem('report-library-state') || 'null') as Record<string, string | number> | null;
       if (state) {
+        if (state.timezone && isValidTimeZone(state.timezone)) setTimeZone(String(state.timezone));
         setSearch(String(state.search || '')); setType(String(state.type || 'all')); setSeverity(String(state.severity || 'all')); setStatus(String(state.status || 'all'));
         setEntity(String(state.entity || '')); setInstrument(String(state.instrument || '')); setAsset(String(state.asset || ''));
         setScope(state.scope === 'official' ? 'official' : 'all'); setEntityType(String(state.entityType || '')); setMatch(state.match === 'exact' ? 'exact' : 'contains');
@@ -179,7 +189,7 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
+  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, timeZone]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -191,7 +201,7 @@ export function ReportsLibrary() {
   }, [loading]);
 
   function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
+    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, timezone: timeZone, scrollY: window.scrollY, reportId: item.reportId }));
   }
 
   async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
@@ -245,8 +255,8 @@ export function ReportsLibrary() {
           <Select label="Generated date" onChange={(value) => changeDatePreset(value as DatePreset)} value={datePreset} options={[['all', 'Any date'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom range']]} />
           <DateInput label="From date" onChange={changeFromDate} type="date" value={fromDate} />
           <DateInput label="To date" onChange={changeToDate} type="date" value={toDate} />
-          <DateInput label="From time" onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
-          <DateInput label="To time" onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
+          <DateInput label={`From time (${getTimeZoneAbbreviation(timeZone)})`} onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
+          <DateInput label={`To time (${getTimeZoneAbbreviation(timeZone)})`} onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
           <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime && !day && !rangeAfter && !rangeBefore} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
         </div>
         <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">

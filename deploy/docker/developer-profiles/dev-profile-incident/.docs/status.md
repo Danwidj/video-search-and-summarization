@@ -43,7 +43,7 @@ Current delivery status verified against the codebase:
 4. **Pre-existing orphaned runs.** 20 legacy console `model_runs` rows name videos that no longer exist (left by earlier deletions). They are not shown anywhere and were not deleted (a destructive production-data change); new deletions clean up explicitly associated run records.
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values are folded at query time only.** `fighting`/`animal` types and `person` entities remain stored; one legacy report has the non-contract type `other`. A data migration (prompt-contract phase 4) would need approval.
-7. **Heatmap and time-of-day filters use UTC hours.** Labelled as UTC; not localised.
+7. **Heatmap and time-of-day filters use local time.** Resolved in migration `20260928000000_local_time_heatmap_and_time_filters.sql` (adds `p_timezone` to `get_incident_dashboard` and `list_incident_report_summaries`) and `incident-console-v2` (`lib/time.ts` viewer timezone detection, dashboard heatmap and hour filter local time rendering, reports library local time-of-day filters).
 8. **Legacy tables and RLS.** The four pre-v1 tables remain; RLS is disabled on public tables (service role only in code).
 9. **`selected_by/selected_at` can outlive a selection** cleared by the FK when the official incident is deleted; the UI treats a NULL `selected_model_run_id` as no official report.
 

@@ -43,7 +43,7 @@ It re-checks the contract's types, ranges, sequential IDs and holder references,
 - analysis never selects;
 - selection is independent of review status.
 
-**Dashboard.** `get_incident_dashboard` (latest: `20260927180000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (UTC). It returns:
+**Dashboard.** `get_incident_dashboard` (latest: `20260928000000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (in the target timezone specified by `p_timezone`, defaulting to UTC). It returns:
 - `total`;
 - all-time `videos` counts: `uploaded`, `withOfficial`, `awaitingSelection` (has reports, none official) and `withoutReport` (no incident);
 - severity, review funnel, types with per-type evidence, daily trend and heatmap;

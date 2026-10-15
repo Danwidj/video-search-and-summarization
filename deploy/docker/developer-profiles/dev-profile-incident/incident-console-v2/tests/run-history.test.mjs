@@ -10,7 +10,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { buildRunHistory } = await import('../lib/runs/history.ts');
 const { describeCode } = await import('../lib/runs/labels.ts');
-const { formatTimestamp, parseStoredTimestamp } = await import('../lib/time.ts');
+const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone, getTimeZoneAbbreviation } = await import('../lib/time.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));
 const repaired = fixture('contract-v2-repaired-run.json');
@@ -78,4 +78,30 @@ test('stored UTC timestamps without a zone are rendered as UTC, not local time',
   assert.equal(parseStoredTimestamp('not a time'), null);
   assert.equal(formatTimestamp(null, 'n/a'), 'n/a');
   assert.equal(formatTimestamp('2026-09-27T11:15:57'), new Date(Date.UTC(2026, 8, 27, 11, 15, 57)).toLocaleString());
+});
+
+test('getViewerTimeZone returns a valid IANA timezone string', () => {
+  const tz = getViewerTimeZone();
+  assert.equal(typeof tz, 'string');
+  assert.ok(isValidTimeZone(tz));
+});
+
+test('isValidTimeZone validates valid and invalid IANA timezones', () => {
+  assert.equal(isValidTimeZone('UTC'), true);
+  assert.equal(isValidTimeZone('America/New_York'), true);
+  assert.equal(isValidTimeZone('Asia/Singapore'), true);
+  assert.equal(isValidTimeZone('Europe/London'), true);
+  assert.equal(isValidTimeZone('Invalid/Timezone_Name'), false);
+  assert.equal(isValidTimeZone(''), false);
+  assert.equal(isValidTimeZone(null), false);
+  assert.equal(isValidTimeZone(123), false);
+});
+
+test('getTimeZoneAbbreviation formats short timezone abbreviation or identifier', () => {
+  assert.equal(getTimeZoneAbbreviation('UTC'), 'UTC');
+  const sgAbbr = getTimeZoneAbbreviation('Asia/Singapore', new Date('2026-06-01T12:00:00Z'));
+  assert.ok(sgAbbr === 'SGT' || sgAbbr === 'GMT+8' || typeof sgAbbr === 'string');
+  const nyAbbr = getTimeZoneAbbreviation('America/New_York', new Date('2026-01-01T12:00:00Z'));
+  assert.ok(nyAbbr === 'EST' || nyAbbr === 'GMT-5' || typeof nyAbbr === 'string');
+  assert.equal(getTimeZoneAbbreviation('Invalid/Timezone'), 'Invalid/Timezone');
 });

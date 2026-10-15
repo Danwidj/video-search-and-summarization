@@ -15,7 +15,7 @@ test('dashboard numbers link to the reports page with official scope and exact f
   assert.match(dashboard, /href="\/videos\?filter=awaiting-selection"/);
   assert.match(dashboard, /href="\/videos\?filter=without-report"/);
   const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
-  for (const key of ['scope', 'entityType', 'match', 'type', 'instrument', 'asset', 'after', 'before']) {
+  for (const key of ['scope', 'entityType', 'match', 'type', 'instrument', 'asset', 'after', 'before', 'timezone']) {
     assert.match(library, new RegExp(`FILTER_KEYS = \\[[^\\]]*'${key}'`), key);
   }
   assert.match(library, /if \(FILTER_KEYS\.some\(\(key\) => query\.has\(key\)\)\)/, 'URL filters are applied alone, never mixed with remembered state');

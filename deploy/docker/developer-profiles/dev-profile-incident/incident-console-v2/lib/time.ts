@@ -27,3 +27,33 @@ export function formatDate(value: unknown, fallback = 'Unknown'): string {
   const date = parseStoredTimestamp(value);
   return date ? date.toLocaleDateString() : fallback;
 }
+
+/** Viewer's configured or detected IANA timezone identifier (e.g. 'Asia/Singapore', 'America/New_York'). */
+export function getViewerTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** Validates whether a given string is a valid IANA time zone identifier recognized by Intl. */
+export function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || !tz.trim()) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz.trim() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Localized short abbreviation or offset for a timezone (e.g. 'EDT', 'SGT', 'UTC', 'GMT+8'). */
+export function getTimeZoneAbbreviation(timeZone: string, date: Date = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? timeZone;
+  } catch {
+    return timeZone;
+  }
+}

@@ -72,6 +72,7 @@ test('report library requests one filtered six-item summary page without video U
   assert.equal(rpcBody.p_time_from, '08:00');
   assert.equal(rpcBody.p_time_to, '17:30');
   assert.equal(rpcBody.p_day_of_week, 1);
+  assert.equal(rpcBody.p_timezone, 'UTC');
   assert.deepEqual(payload.pagination, { page: 2, pageSize: 6, totalItems: 13, totalPages: 3 });
   assert.equal('playbackUrl' in payload.reports[0], false);
   assert.equal(payload.reports[0].thumbnailUrl, 'https://signed.r2.test/thumbnails/uploads/sensor-1/video.mp4.webp');
@@ -81,6 +82,23 @@ test('report library requests one filtered six-item summary page without video U
   assert.equal(payload.reports[0].outcome, 'valid_after_structural_repair', 'repaired reports carry the marker');
   assert.equal(payload.reports[0].isOfficial, true);
   assert.equal(payload.reports[1].outcome, 'legacy', 'pre-outcome runs are shown as earlier analyses, not failures');
+});
+
+test('report library accepts timezone parameter and rejects invalid timezone', async () => {
+  let rpcBody;
+  globalThis.fetch = async (_url, init) => {
+    rpcBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] }), { status: 200 });
+  };
+  const response = await GET(new Request('http://localhost/api/reports?timezone=Asia%2FSingapore'));
+  assert.equal(response.status, 200);
+  assert.equal(rpcBody.p_timezone, 'Asia/Singapore');
+
+  let called = false;
+  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  const badTz = await GET(new Request('http://localhost/api/reports?timezone=Invalid%2FTimezone'));
+  assert.equal(badTz.status, 400);
+  assert.equal(called, false);
 });
 
 test('report library rejects excessive evidence filters before calling Supabase', async () => {

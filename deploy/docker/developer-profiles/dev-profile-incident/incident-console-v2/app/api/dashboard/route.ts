@@ -6,7 +6,7 @@ import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import type { DashboardAnalytics } from '@/lib/dashboard/types';
-import { parseStoredTimestamp } from '@/lib/time';
+import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +26,9 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const period = params.get('days') || '30';
     const severity = params.get('severity');
+    const tzParam = params.get('timezone');
+    if (tzParam !== null && !isValidTimeZone(tzParam)) return NextResponse.json({ error: 'Invalid dashboard timezone' }, { status: 400 });
+    const timezone = tzParam || 'UTC';
     if (!PERIODS.has(period)) return NextResponse.json({ error: 'Invalid dashboard period' }, { status: 400 });
     if (severity && !SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid severity filter' }, { status: 400 });
 
@@ -47,6 +50,7 @@ export async function GET(request: Request) {
       p_severity: severity || null,
       p_day_of_week: integerParameter(params, 'day', 0, 6),
       p_hour: integerParameter(params, 'hour', 0, 23),
+      p_timezone: timezone,
     }) as DashboardAnalytics;
     return NextResponse.json({ analytics });
   } catch (error) {

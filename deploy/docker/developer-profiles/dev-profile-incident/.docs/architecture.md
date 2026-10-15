@@ -240,6 +240,7 @@ time constraints. The API forwards inclusive day boundaries and optional time-of
 - Model coverage counts every analysis attempt in the period by outcome.
 - Every other number links to `/reports?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
+- The heatmap and weekday/hour cross-filters support local time: `GET /api/dashboard` forwards the viewer's `timezone` (e.g. `America/New_York`) to `p_timezone` in Supabase, which groups and filters `generated_datetime` by the target timezone, and heatmap drill-down links include `timezone` so `/reports` time-of-day filters match.
 
 ### Structured (Class A) report editing
 
