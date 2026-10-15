@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { afterEach, beforeEach, mock, test } from 'node:test';
+import { href } from '../lib/dashboard/links.ts';
 import { reportThumbnailView, thumbnailCaptureTime } from '../lib/reports/thumbnail.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
@@ -99,6 +100,23 @@ test('report library accepts timezone parameter and rejects invalid timezone', a
   const badTz = await GET(new Request('http://localhost/api/reports?timezone=Invalid%2FTimezone'));
   assert.equal(badTz.status, 400);
   assert.equal(called, false);
+});
+
+test('a dashboard heatmap link filters the reports RPC by the same weekday and whole local hour', async () => {
+  let rpcBody;
+  globalThis.fetch = async (_url, init) => {
+    rpcBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] }), { status: 200 });
+  };
+  const link = new URL(href({ day: '2', hour: '9' }, null), 'http://localhost');
+  link.searchParams.set('timezone', 'America/New_York');
+  const response = await GET(new Request(`http://localhost/api/reports?${link.searchParams}`));
+  assert.equal(response.status, 200);
+  assert.equal(rpcBody.p_scope, 'official');
+  assert.equal(rpcBody.p_day_of_week, 2);
+  assert.equal(rpcBody.p_time_from, '09:00');
+  assert.equal(rpcBody.p_time_to, '09:59:59.999');
+  assert.equal(rpcBody.p_timezone, 'America/New_York');
 });
 
 test('report library rejects excessive evidence filters before calling Supabase', async () => {

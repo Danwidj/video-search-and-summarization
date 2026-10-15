@@ -128,8 +128,7 @@ export function ReportsLibrary() {
       if (fromTime) params.set('fromTime', fromTime);
       if (toTime) params.set('toTime', toTime);
       if (day) params.set('day', day);
-      if (timeZone) params.set('timezone', timeZone);
-      const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
+      const response = await fetch(`/api/reports?${new URLSearchParams([...params, ['timezone', timeZone]])}`, { cache: 'no-store', signal });
       const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
       setReports(payload.reports);

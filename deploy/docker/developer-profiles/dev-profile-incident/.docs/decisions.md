@@ -18,7 +18,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Alternatives rejected:**
   - Client-side heatmap re-bucketing: would require downloading all individual incident timestamps, defeating the bounded aggregate RPC design.
   - Converting `reports.generated_datetime` column to `TIMESTAMP WITH TIME ZONE`: requires schema data migration across all existing rows and tables; timezone conversion in the RPC view is lightweight, backwards-compatible, and respects user-selected timezones.
-- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx).
+- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`../incident-console-v2/lib/dashboard/links.ts`](../incident-console-v2/lib/dashboard/links.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx).
 
 ---
 

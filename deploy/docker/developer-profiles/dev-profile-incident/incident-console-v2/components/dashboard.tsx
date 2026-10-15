@@ -3,10 +3,9 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';
+import { href, type Filters, type LinkFilters, type Range } from '@/lib/dashboard/links';
 import { getViewerTimeZone } from '@/lib/time';
 
-type Filters = { type: string; severity: string; day: string; hour: string };
-type Range = { after: string; before: string } | null;
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const EMPTY: DashboardAnalytics = { total: 0, videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 }, previous: null, averageConfidence: null, confidenceNotProvided: 0, severity: { low: 0, medium: 0, high: 0 }, reviews: { unreviewed: 0, under_review: 0, verified: 0 }, types: [], trend: [], heatmap: [], confidence: [], entityTypes: [], topInstruments: [], topAssets: [], threatLevels: [], modelCoverage: [] };
@@ -37,9 +36,6 @@ export function Dashboard() {
   </div>;
 }
 
-type LinkFilters = Partial<Filters> & { status?: string; entityType?: string; instrument?: string; asset?: string };
-/** The reports-page URL whose total equals the clicked number: official scope, the same period and filters, exact names. */
-export function href(f: LinkFilters, range: Range) { const p = new URLSearchParams({ scope: 'official' }); if (range) { p.set('after', range.after); p.set('before', range.before); } if (f.type) p.set('type', f.type); if (f.severity) p.set('severity', f.severity); if (f.status) p.set('status', f.status); if (f.day) p.set('day', f.day); if (f.entityType) p.set('entityType', f.entityType); if (f.instrument) p.set('instrument', f.instrument); if (f.asset) p.set('asset', f.asset); if (f.instrument || f.asset) p.set('match', 'exact'); if (f.hour) { p.set('fromTime', `${f.hour.padStart(2, '0')}:00`); p.set('toTime', `${f.hour.padStart(2, '0')}:59:59.999`); } return `/reports?${p}`; }
 function delta(now: number, before?: number) { if (before === undefined) return null; return before ? Math.round((now - before) / before * 100) : now ? 100 : 0; }
 function Metric({ label, value, href: url, change = null, note }: { label: string; value: number | string; href: string; change?: number | null; note?: string }) { return <Link className="rounded-2xl border border-ink/10 bg-white p-5 hover:shadow-panel" href={url}><p className="text-sm text-ink/50">{label}</p><p className="mt-2 text-4xl font-semibold">{value}</p>{note && <p className="mt-1 text-[11px] text-ink/40">{note}</p>}{change !== null && <p className="mt-2 text-xs text-ink/45">{change > 0 ? '+' : ''}{change}% vs. previous</p>}</Link>; }
 function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) { return <section className="rounded-3xl border border-ink/10 bg-white p-6"><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 text-xs text-ink/45">{subtitle}</p><div className="mt-5">{children}</div></section>; }
