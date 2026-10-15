@@ -29,7 +29,7 @@ P1 uses the shared [incident contract](../../contracts/README.md) (`incident-con
 - no few-shot examples;
 - a fixed `max_tokens 16384` and `num_frames 64`.
 
-Responses are parsed strictly. A contract failure is scored as a miss and listed under `contract_failures`, and its RP1 is skipped. **Never loosen the parser to raise a score.** A model with many contract failures is a finding, not a bug to paper over. Details: [`eval/README.md`](../../eval/README.md).
+Responses are judged under validation policy `core-scored-v1`. A core failure is scored as a miss and listed under `core_failures`, and its RP1 is skipped. When core fields are valid (`core_ok`), RP1 runs on the unchanged prediction with timeline context. **Never loosen the parser to raise a score.** A model with many contract or core failures is a finding, not a bug to paper over. Details: [`eval/README.md`](../../eval/README.md).
 
 ## Instructions
 

@@ -175,7 +175,8 @@ def test_timeline_only_failure_is_scored_not_emptied():
     assert validation["contract_version"] == "incident-contract-v2"
     assert [v["code"] for v in validation["enrichment_violations"]] == ["TIMELINE_START_OUTSIDE_WINDOW"]
     assert validation["core_violations"] == [] and validation["video_bounds_checked"] is True
-    assert rp1.call_count == 0 and result["rp1_report"]["skipped"] is True  # RP1 gating unchanged
+    assert rp1.call_count == 1 and result["rp1_report"]["ok"] is True  # RP1 runs when core_ok
+    assert rp1.call_args[0][1]["timeline"] == report["timeline"]  # receives unchanged timeline
 
 
 def test_window_beyond_the_video_is_a_miss():
@@ -201,7 +202,7 @@ def test_aggregate_scores_core_valid_and_reports_diagnostics_separately():
             "filename": name,
             "p1_raw": {"ok": ok, "contract_ok": contract_ok, "core_ok": core_ok},
             "validation": {"enrichment_violations": [{"code": code} for code in enrichment]},
-            "rp1_report": {"ok": contract_ok, "skipped": not contract_ok},
+            "rp1_report": {"ok": core_ok, "skipped": not core_ok},
             "incident_field_scores": {},
             **{k: {"counts": {}, "matches": []} for k in ("entities", "instruments", "assets")},
         }

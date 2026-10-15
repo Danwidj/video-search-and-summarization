@@ -2,6 +2,26 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Run RP1 when core_ok with unchanged input; timeline context in RP1 prompt
+- **Decision:**
+  - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
+  - Pass the unchanged prediction (with derived fields) to RP1, preserving timeline events outside the incident window.
+  - Add one line to `contracts/report_generation_prompt.md` under `INCIDENT DETAILS`: `Timeline events outside the incident time are context.`
+  - Keep `contracts/VERSION` as `incident-contract-v2`.
+- **Why:**
+  - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
+  - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
+  - A small pilot on Animal003 and Assault018 confirmed that with the timeline context instruction, RP1 generates high-quality prose reports where lead-up and aftermath events provide chronological narrative context without distorting the incident window or duration.
+- **Versioning:**
+  - `contracts/VERSION` stays `incident-contract-v2` because the P1 extraction prompt (`incident_extraction_prompt.md`) and the output schema (`incident_report.schema.json`) are byte-identical.
+  - `incident-console-v2` only runs P1 extraction and is unaffected; `reportPrompt` and its hash are exposed in `lib/contract/load.ts` and tested alongside P1 contract assets. Contract v3 remains reserved for schema-level changes (such as ID patterns).
+- **Alternatives rejected:**
+  - Bumping `contracts/VERSION` to `incident-contract-v3` (rejected: P1 prompt and schema are byte-identical; bumping would falsely signal changes to extraction inputs/schema to consumers like `incident-console-v2` and `vss-agent`).
+  - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
+- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py); [`../incident-console-v2/lib/contract/load.ts`](../incident-console-v2/lib/contract/load.ts).
+
+---
+
 ### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
 - **Decision:**
   - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).

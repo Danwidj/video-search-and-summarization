@@ -62,7 +62,7 @@ The response is judged by [`contract.py`](contract.py) `evaluate_policy` under v
 - **Video length:** read from each clip's MP4 header ([`video_duration.py`](video_duration.py), ranged R2 reads). An incident window outside the video is a core failure. An unreadable length means the rule is not applied (`video_bounds_checked: false`).
 - **`validation` block, per video:** contract version, policy, both validities, core and enrichment violations (with codes), video length.
 - **Aggregate:** `p1_failures` are the misses. `contract_failures`, `core_failures` and `enrichment_violation_videos` are diagnostics, outside every quality score.
-- **RP1:** still runs only on fully contract-valid responses.
+- **RP1:** runs on core-valid responses (`core_ok`) with unchanged input, so lead-up and aftermath timeline context is preserved in the report.
 - **Files:** each run also writes a never-overwritten copy of every results file under `eval_data/results/runs/<run start>/`, so the raw responses, versions, diagnostics and inference settings of past runs stay available for re-scoring without another VLM call. Results written before `core-scored-v1` were scored by full contract validity; the summary lists each model's `validation_policies`.
 
 The split manifests are unchanged, so results stay comparable video-for-video with the earlier run. The 5 former few-shot demonstration videos per category are still excluded from evaluation.
