@@ -218,36 +218,103 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       },
     };
 
-    operation = `calling the VLM gateway (${model.id})`;
-    let completion: GatewayCompletionResponse;
-    try {
-      completion = await new GatewayClient(config.gatewayUrl!).complete(
-        buildP1Request(model.id, playbackUrl, additionalInstruction),
-        AbortSignal.timeout(model.timeout_seconds * 1000),
-      );
-    } catch (error) {
-      if (!(error instanceof GatewayError)) throw error;
-      const response: AnalysisAttemptRecord['response'] = error.httpStatus !== undefined || error.errorBody !== undefined
-        ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
-        : null;
-      const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response, validation: { firstPass: [] }, repair: null };
-      const recorded = await recordFailure(db, attempt);
-      throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
-        outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
-      });
-    }
+    let content = '';
+    let response: NonNullable<AnalysisAttemptRecord['response']>;
+    let finishReason: string | null = null;
 
-    const response = completionResponse(completion);
-    const content = response.content ?? '';
-    const finishReason = response.finishReason;
-    if ((finishReason !== undefined && finishReason !== null && finishReason !== 'stop') || !content) {
-      const code = content ? `FINISH_${String(finishReason).toUpperCase()}` : 'UPSTREAM_EMPTY_CONTENT';
-      const message = content
-        ? `The model stopped with finish_reason "${finishReason}" before a usable response`
-        : 'The model returned no response content';
-      const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code, message }, response, validation: { firstPass: [] }, repair: null };
-      const recorded = await recordFailure(db, attempt);
-      throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: model.id, finishReason: finishReason ?? null, attemptId: modelRunId, attemptRecorded: recorded });
+    if (config.analysisMode === 'agent') {
+      operation = 'calling the incident agent';
+      if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+      const endpoint = `${config.agentUrl.replace(/\/$/, '')}/api/v1/incidents/${input.videoId}/analyze`;
+      let agentResponse: Response;
+      try {
+        agentResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_url: playbackUrl, model_run_id: modelRunId }),
+          signal: AbortSignal.timeout(model.timeout_seconds * 1000),
+        });
+      } catch (error) {
+        const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
+        const code = isTimeout ? 'AGENT_TIMEOUT' : 'AGENT_FETCH_FAILED';
+        const message = error instanceof Error ? error.message : String(error);
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code, message }, response: null, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(isTimeout ? 504 : 502, `The agent request failed (${code}): ${message}`, {
+          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      if (agentResponse.status === 422) {
+        const payload = (await agentResponse.json().catch(() => ({}))) as { detail?: unknown };
+        const detail = String(payload.detail ?? 'contract violation');
+        const attempt: AnalysisAttemptRecord = {
+          ...base, status: 'contract_failed', stage: 'contract_validation', failure: { code: 'CONTRACT_VIOLATION', message: detail },
+          response: { httpStatus: 422, errorBody: detail }, validation: { firstPass: [] }, repair: null,
+        };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(422, `The agent rejected the model output: ${detail}`, {
+          outcome: 'contract_failed', codes: ['CONTRACT_VIOLATION'], model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      if (!agentResponse.ok) {
+        const errorText = await agentResponse.text().catch(() => '');
+        const code = agentResponse.status === 504 ? 'AGENT_TIMEOUT' : `AGENT_HTTP_${agentResponse.status}`;
+        const attempt: AnalysisAttemptRecord = {
+          ...base, status: 'request_failed', stage: 'gateway', failure: { code, message: errorText || agentResponse.statusText },
+          response: { httpStatus: agentResponse.status, errorBody: errorText }, validation: { firstPass: [] }, repair: null,
+        };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(agentResponse.status === 504 ? 504 : 502, `The agent returned HTTP ${agentResponse.status}: ${errorText}`, {
+          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      const agentPayload = (await agentResponse.json()) as { report?: unknown; raw_output?: unknown };
+      content = typeof agentPayload.raw_output === 'string' && agentPayload.raw_output
+        ? agentPayload.raw_output
+        : (agentPayload.report ? JSON.stringify(agentPayload.report) : '');
+      finishReason = 'stop';
+      response = { content, finishReason: 'stop' };
+      if (!content) {
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code: 'UPSTREAM_EMPTY_CONTENT', message: 'The agent returned no content' }, response, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(502, 'The agent returned no content (UPSTREAM_EMPTY_CONTENT).', { outcome: 'request_failed', code: 'UPSTREAM_EMPTY_CONTENT', model: model.id, attemptId: modelRunId, attemptRecorded: recorded });
+      }
+    } else {
+      operation = `calling the VLM gateway (${model.id})`;
+      if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
+      let completion: GatewayCompletionResponse;
+      try {
+        completion = await new GatewayClient(config.gatewayUrl).complete(
+          buildP1Request(model.id, playbackUrl, additionalInstruction),
+          AbortSignal.timeout(model.timeout_seconds * 1000),
+        );
+      } catch (error) {
+        if (!(error instanceof GatewayError)) throw error;
+        const resp: AnalysisAttemptRecord['response'] = error.httpStatus !== undefined || error.errorBody !== undefined
+          ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
+          : null;
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response: resp, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
+          outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      response = completionResponse(completion);
+      content = response.content ?? '';
+      finishReason = response.finishReason ?? null;
+      if ((finishReason !== undefined && finishReason !== null && finishReason !== 'stop') || !content) {
+        const code = content ? `FINISH_${String(finishReason).toUpperCase()}` : 'UPSTREAM_EMPTY_CONTENT';
+        const message = content
+          ? `The model stopped with finish_reason "${finishReason}" before a usable response`
+          : 'The model returned no response content';
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code, message }, response, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: model.id, finishReason: finishReason ?? null, attemptId: modelRunId, attemptRecorded: recorded });
+      }
     }
 
     operation = 'validating the VLM response against the incident contract';

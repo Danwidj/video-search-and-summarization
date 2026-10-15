@@ -2,6 +2,26 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v2 and retire legacy console contract files
+- **Decision:**
+  - Move `vss-agent` (`services/agent`) onto `incident-contract-v2`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
+  - `incident_report_gen` executes the contract P1 (direct VLM OpenAI chat completion with JSON Schema response format) -> RP1 (prose report) calls. The markdown-then-extract chain and `data_models/incident_report.py` are removed.
+  - `POST /api/v1/incidents/{incident_id}/analyze` accepts `{ video_url, model_run_id? }` (signed R2 URL from the console). Returns 422 on contract violation, 504 on timeout, 501 when `incident_report_gen` is unconfigured.
+  - `incident_report_gen` persists best-effort to PostgREST with contract IDs (`E1`, `I1`, `A1`); it never touches `videos` (the console owns `videos.filepath` and the durable R2 key).
+  - `dev-profile-base` config: `incident_report_gen` uses `VLM_BASE_URL`, `VLM_NAME`, `LLM_BASE_URL`.
+  - Console agent mode aligns with gateway mode: both run through `runContractAnalysis`, both enforce validation policy `core-scored-v1` (including ID-only `id-normalization-v1` repair and recorded outcomes in `model_runs.notes`), and both persist via `persistContractRun`. If main's `core-scored-v1` policy and PR 109's never-repair rule conflict, main's policy is followed.
+  - Retire legacy agent-mode contract files: delete `incident-console-v2/lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`. Decouple `storage.ts` and `run-notes.ts` by defining an inlined legacy report interface for decoding pre-contract notes.
+- **Why:**
+  - Completes prompt-contract phase 3 (unified contract across eval, gateway, and agent).
+  - Eliminates the two-step markdown extraction chain, brittle regex timestamp parsing, and duplicate video writes in agent mode.
+  - Ensures consistent behaviour, validation, and attempt recording across console gateway and agent modes.
+- **Alternatives rejected:**
+  - Maintaining separate agent and gateway validation policies (would cause mode-dependent outcomes).
+  - Keeping legacy `schema.ts` alongside contract types (unnecessary maintenance burden; legacy notes are adequately decoded with an inlined interface).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`services/agent/src/vss_agents/incident_contract/`](../../../../services/agent/src/vss_agents/incident_contract/); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../services/agent/src/vss_agents/tools/incident_report_gen.py); [`incident-console-v2/lib/analysis/run-contract-analysis.ts`](../incident-console-v2/lib/analysis/run-contract-analysis.ts).
+
+---
+
 ### 2026-10-16: Prompt-contract phase 4 legacy taxonomy migration and orphaned run clean-up
 - **Decision:**
   - Migrate stored legacy incident types in `incidents.type`: `fighting` -> `assault` (13 rows), `animal` -> `animal attack` (20 rows).

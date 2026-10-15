@@ -209,39 +209,29 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
 
-test('agent mode: calls agent analyze endpoint, keeps native snake_case report, writes only report bookkeeping', async () => {
+const { compactId } = await import('../lib/ids.ts');
+const compactVideoId = (sensorId) => compactId('v', sensorId);
+
+const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');
+const validContractReport = () => JSON.parse(contractFixture('valid/full-report.json'));
+
+test('agent mode: calls agent analyze endpoint with video_url and model_run_id, validates and records contract run', async () => {
   process.env.ANALYSIS_MODE = 'agent';
   delete process.env.VLM_GATEWAY_URL;
+  videoBytes = mp4Bytes(30);
 
+  const rawContract = validContractReport();
   const recordedCalls = [];
   globalThis.fetch = async (url, options = {}) => {
     recordedCalls.push({ url: String(url), options });
     if (String(url).includes('/api/v1/incidents/')) {
       const mockAgentResponse = {
-        title: 'Vehicle Collision at Intersection',
-        incident_type: 'road accident',
-        severity: 4,
-        confidence: 0.95,
-        incident_start: '00:01:15',
-        incident_end: '00:01:45',
-        incident_start_confirmed: true,
-        description: 'Two vehicles collided at the intersection.',
-        persons: [
-          { description: 'Driver of sedan', actions: 'exited vehicle' }
-        ],
-        severity_reason: 'High impact collision with lane obstruction.',
-        timeline: [
-          { start_seconds: 75.5, end_seconds: 105.0, description: 'Sedan enters intersection and collides' }
-        ],
-        instruments: [
-          { name: 'Sedan', description: 'Blue four-door passenger car', threat_level: 3 }
-        ],
-        assets: [
-          { name: 'Traffic signal', description: 'Damaged post on southwest corner' }
-        ],
-        uncertainties: ['Exact speed prior to braking'],
-        location: 'Intersection Cam 4',
-        duration_seconds: 30,
+        report: rawContract,
+        report_text: 'PROSE REPORT',
+        report_text_error: null,
+        model: 'nvidia/cosmos-3-nano-reasoner',
+        contract_version: 'incident-contract-v2',
+        raw_output: JSON.stringify(rawContract),
       };
       return new Response(JSON.stringify(mockAgentResponse), {
         status: 200,
@@ -256,8 +246,6 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
       sensorId: 'sensor-camera-01',
       filepath: 'uploads/sensor-camera-01/clip.mp4',
       filename: 'clip.mp4',
-      reasoning: true,
-      promptOverride: 'focus on vehicle movement',
     }),
   );
 
@@ -265,6 +253,9 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
   const payload = await response.json();
   assert.ok(payload.report);
   const { report } = payload;
+  assert.equal(report.outcome, 'valid_first_pass');
+  assert.equal(report.model, 'nvidia/cosmos-3-nano-reasoner');
+  assert.equal(report.promptVersion, 'incident-contract-v2');
 
   // Agent call verification
   const agentCalls = recordedCalls.filter((c) => c.url.includes('/api/v1/incidents/'));
@@ -274,85 +265,20 @@ test('agent mode: calls agent analyze endpoint, keeps native snake_case report, 
   assert.equal(agentCall.options.method, 'POST');
   const agentBody = JSON.parse(agentCall.options.body);
   assert.equal(agentBody.model_run_id, report.modelRunId);
-  assert.equal(agentBody.reasoning, true);
-  assert.equal(agentBody.prompt_override, 'focus on vehicle movement');
+  assert.equal(agentBody.video_url, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
 
-  const agentIndex = recordedCalls.findIndex((c) => c.url.includes('/api/v1/incidents/'));
+  // Database persistence verification: records via persistContractRun
   const supabaseWrites = recordedCalls
-    .map((c, index) => ({ ...c, index }))
     .filter((c) => c.url.includes('supabase.test') && c.options.method === 'POST')
     .map((c) => ({
-      index: c.index,
       table: new URL(c.url).pathname.replace('/rest/v1/', ''),
       body: JSON.parse(c.options.body),
     }));
   const writtenTables = new Set(supabaseWrites.map((w) => w.table));
-  assert.deepEqual([...writtenTables].sort(), ['model_runs', 'reports', 'videos']);
-  for (const table of ['incidents', 'review_status', 'entities', 'instruments', 'assets', 'rpc/insert_incident']) {
-    assert.ok(!writtenTables.has(table), `agent mode must not write ${table}`);
-  }
-
-  const videoWrites = supabaseWrites.filter((w) => w.table === 'videos');
-  assert.ok(videoWrites.some((w) => w.index < agentIndex), 'videos row must be upserted before the agent call');
-  for (const write of videoWrites) {
-    assert.equal(write.body.id, report.videoId);
-    assert.equal(write.body.source, 'sensor-camera-01');
-    assert.equal(write.body.filepath, 'uploads/sensor-camera-01/clip.mp4');
-  }
-  const lastVideoWrite = videoWrites.at(-1);
-  assert.ok(lastVideoWrite.index > agentIndex, 'videos.filepath must be restored after the agent call');
-  assert.equal(lastVideoWrite.body.filepath, 'uploads/sensor-camera-01/clip.mp4');
-
-  const modelRunWrite = supabaseWrites.find((w) => w.table === 'model_runs');
-  assert.ok(modelRunWrite.index > agentIndex);
-  assert.equal(modelRunWrite.body.id, report.modelRunId);
-  const notes = JSON.parse(modelRunWrite.body.notes);
-  assert.deepEqual(notes.incidentConsoleV2.report, report);
-  assert.equal(notes.incidentConsoleV2.rawModelOutput, report.rawModelOutput);
-
-  const reportWrite = supabaseWrites.find((w) => w.table === 'reports');
-  assert.ok(reportWrite.index > modelRunWrite.index);
-  assert.equal(reportWrite.body.id, report.reportId);
-  assert.equal(reportWrite.body.incident_id, report.videoId);
-  assert.equal(reportWrite.body.model_run_id, report.modelRunId);
-
-  // Schema & mapping verification (unified snake_case matching agent Pydantic model)
-  assert.equal(report.title, 'Vehicle Collision at Intersection');
-  assert.equal(report.incident_type, 'road accident');
-  assert.equal(report.description, 'Two vehicles collided at the intersection.');
-  assert.equal(report.incident_start, '00:01:15');
-  assert.equal(report.incident_end, '00:01:45');
-  assert.equal(report.incident_start_confirmed, true);
-  assert.equal(report.duration_seconds, 30);
-  assert.equal(report.severity, 4);
-  assert.equal(report.severity_reason, 'High impact collision with lane obstruction.');
-  assert.equal(report.confidence, 0.95);
-  assert.deepEqual(report.timeline, [
-    { start_seconds: 75.5, end_seconds: 105.0, description: 'Sedan enters intersection and collides' },
-  ]);
-  assert.deepEqual(report.persons, [
-    { description: 'Driver of sedan', actions: 'exited vehicle' },
-  ]);
-  assert.deepEqual(report.instruments, [
-    { name: 'Sedan', description: 'Blue four-door passenger car', threat_level: 3 },
-  ]);
-  assert.deepEqual(report.assets, [
-    { name: 'Traffic signal', description: 'Damaged post on southwest corner' },
-  ]);
-  assert.deepEqual(report.uncertainties, ['Exact speed prior to braking']);
-  assert.equal(report.location, 'Intersection Cam 4');
-  assert.equal(report.playbackUrl, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
-  assert.equal(report.model, 'vss-agent');
-  assert.match(report.videoId, /^v[0-9a-f]{19}$/);
-  assert.match(report.modelRunId, /^m[0-9a-f]{19}$/);
-  assert.match(report.reportId, /^r[0-9a-f]{19}$/);
+  assert.ok(writtenTables.has('model_runs'));
+  assert.ok(writtenTables.has('rpc/insert_incident'));
+  assert.ok(writtenTables.has('reports'));
 });
-
-const { compactId } = await import('../lib/ids.ts');
-const compactVideoId = (sensorId) => compactId('v', sensorId);
-
-const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');
-const validContractReport = () => JSON.parse(contractFixture('valid/full-report.json'));
 
 function completion(content, extra = {}) {
   return new Response(JSON.stringify({
@@ -699,18 +625,18 @@ test('agent mode: rejects a model other than the configured one (agent keeps its
   assert.equal(called, false);
 });
 
-test('agent mode: keeps the agent-reported duration_seconds of 0 even with a positive timeline span', async () => {
+test('agent mode: records contract_failed and returns 422 when agent rejects model output', async () => {
   process.env.ANALYSIS_MODE = 'agent';
   delete process.env.VLM_GATEWAY_URL;
 
-  globalThis.fetch = async (url) => {
+  const recordedCalls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    recordedCalls.push({ url: String(url), options });
     if (String(url).includes('/api/v1/incidents/')) {
-      return new Response(JSON.stringify({
-          title: 'Short clip',
-          incident_type: 'other',
-          duration_seconds: 0,
-          timeline: [{ start_seconds: 0, end_seconds: 5, description: 'Event' }],
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ detail: 'schema violation: incident/type' }), {
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     return successfulPostgrestResponse(url, 'uploads/sensor-cam-03/clip.mp4');
   };
@@ -719,9 +645,10 @@ test('agent mode: keeps the agent-reported duration_seconds of 0 even with a pos
     jsonRequest({ sensorId: 'sensor-cam-03', filepath: 'uploads/sensor-cam-03/clip.mp4', filename: 'clip.mp4' }),
   );
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 422);
   const payload = await response.json();
-  assert.equal(payload.report.duration_seconds, 0);
+  assert.equal(payload.outcome, 'contract_failed');
+  assert.match(payload.error, /schema violation/);
 });
 
 test('gateway mode: does not report success when persistence read-back is incomplete', async () => {

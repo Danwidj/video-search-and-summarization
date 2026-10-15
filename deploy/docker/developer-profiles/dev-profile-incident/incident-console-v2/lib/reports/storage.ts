@@ -1,10 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
+export interface LegacyTimelineItem {
+  start_seconds: number;
+  end_seconds: number | null;
+  description: string;
+}
+
+export interface LegacyAnalysisReport {
+  videoId: string;
+  modelRunId: string;
+  reportId: string;
+  filename: string;
+  playbackUrl: string;
+  model: string;
+  generatedAt: string;
+  promptVersion?: string;
+  rawModelOutput?: string;
+  normalizedModelOutput?: string;
+  reviewStatus?: 'unreviewed' | 'under review' | 'verified';
+  verifiedBy?: string;
+  verifiedAt?: string;
+
+  incident_type: string;
+  title: string;
+  description: string;
+  severity: number;
+  severity_reason: string;
+  confidence: number;
+  incident_start: string;
+  incident_end: string;
+  incident_start_confirmed?: boolean;
+  duration_seconds: number | null;
+  location?: string | null;
+  timeline: LegacyTimelineItem[];
+  uncertainties: string[];
+  persons?: Array<{ description: string; actions: string }>;
+  instruments?: Array<{ name: string; description: string; threat_level?: number | null }>;
+  assets?: Array<{ name: string; description: string }>;
+}
 
 interface StoredNotes {
-  incidentConsoleV2?: AnalysisReport | Record<string, unknown> | {
-    report?: AnalysisReport | Record<string, unknown>;
+  incidentConsoleV2?: LegacyAnalysisReport | Record<string, unknown> | {
+    report?: LegacyAnalysisReport | Record<string, unknown>;
     rawModelOutput?: string;
     normalizedModelOutput?: string;
   };
@@ -20,6 +57,69 @@ const LEGACY_KEYS: Record<string, string> = {
   endTimestamp: 'incident_end',
   durationSeconds: 'duration_seconds',
 };
+
+function text(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const num = Number(value.trim());
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
+
+function coerceConfidence(value: unknown): number {
+  if (value === null || value === undefined) return 0.0;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    let num = value;
+    if (num > 1) num = num / 100;
+    return Math.max(0, Math.min(1, num));
+  }
+  if (typeof value === 'string') {
+    const num = Number(value.trim());
+    if (Number.isFinite(num)) {
+      let n = num;
+      if (n > 1) n = n / 100;
+      return Math.max(0, Math.min(1, n));
+    }
+  }
+  return 0.0;
+}
+
+function mapSeverity(value: unknown): number {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(1, Math.min(5, Math.floor(value)));
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'critical' || normalized === 'severe') return 5;
+    if (normalized === 'high') return 4;
+    if (normalized === 'medium' || normalized === 'moderate') return 3;
+    if (normalized === 'low') return 2;
+    if (normalized === 'none' || normalized === 'minimal') return 1;
+    const num = Number(normalized);
+    if (Number.isFinite(num)) return Math.max(1, Math.min(5, Math.floor(num)));
+  }
+  return 1;
+}
+
+function toSeconds(val: unknown): number {
+  if (typeof val === 'number' && Number.isFinite(val)) return Math.max(0, Math.floor(val));
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    const parts = trimmed.split(':').map((p) => Number(p));
+    if (parts.length === 2 && parts.every((p) => Number.isFinite(p))) return Math.max(0, Math.floor(parts[0] * 60 + parts[1]));
+    if (parts.length === 3 && parts.every((p) => Number.isFinite(p))) return Math.max(0, Math.floor(parts[0] * 3600 + parts[1] * 60 + parts[2]));
+    const num = Number(trimmed);
+    if (Number.isFinite(num)) return Math.max(0, Math.floor(num));
+  }
+  return 0;
+}
 
 function records(value: unknown): Record<string, unknown>[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : undefined;
@@ -52,7 +152,7 @@ function legacyToSnake(report: Record<string, unknown>): Record<string, unknown>
   return result;
 }
 
-export function reportFromNotes(notes: unknown): AnalysisReport | null {
+export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
   if (typeof notes !== 'string') return null;
   try {
     const parsed = JSON.parse(notes) as StoredNotes;
@@ -75,10 +175,41 @@ export function reportFromNotes(notes: unknown): AnalysisReport | null {
       return null;
     }
 
-    const validated = incidentAnalysisSchema.parse(legacyToSnake(baseReport));
+    const raw = legacyToSnake(baseReport);
+    const incidentType = text(raw.incident_type) || 'other';
+    const title = text(raw.title);
+    const description = text(raw.description);
+    const severity = mapSeverity(raw.severity);
+    const severityReason = text(raw.severity_reason);
+    const confidence = coerceConfidence(raw.confidence);
+    const incidentStart = text(raw.incident_start) || '0:00';
+    const incidentEnd = text(raw.incident_end) || '0:00';
+    const durationSeconds = nullableNumber(raw.duration_seconds);
+    const location = raw.location !== undefined && raw.location !== null ? text(raw.location) : null;
+    const timelineRaw = Array.isArray(raw.timeline) ? raw.timeline : [];
+    const timeline: LegacyTimelineItem[] = timelineRaw
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map((item) => ({
+        start_seconds: toSeconds(item.start_seconds),
+        end_seconds: item.end_seconds === null || item.end_seconds === undefined || item.end_seconds === '' ? null : toSeconds(item.end_seconds),
+        description: text(item.description),
+      }));
+    const uncertainties = Array.isArray(raw.uncertainties) ? raw.uncertainties.map(text).filter(Boolean) : [];
+    const persons = Array.isArray(raw.persons)
+      ? raw.persons.map((p) => ({ description: text(p?.description), actions: text(p?.actions) }))
+      : undefined;
+    const instruments = Array.isArray(raw.instruments)
+      ? raw.instruments.map((i) => ({
+          name: text(i?.name),
+          description: text(i?.description),
+          threat_level: nullableNumber(i?.threat_level),
+        }))
+      : undefined;
+    const assets = Array.isArray(raw.assets)
+      ? raw.assets.map((a) => ({ name: text(a?.name), description: text(a?.description) }))
+      : undefined;
 
     return {
-      ...validated,
       videoId: typeof baseReport.videoId === 'string' ? baseReport.videoId : '',
       modelRunId: typeof baseReport.modelRunId === 'string' ? baseReport.modelRunId : '',
       reportId: typeof baseReport.reportId === 'string' ? baseReport.reportId : '',
@@ -92,6 +223,23 @@ export function reportFromNotes(notes: unknown): AnalysisReport | null {
       reviewStatus: typeof baseReport.reviewStatus === 'string' ? (baseReport.reviewStatus as 'unreviewed' | 'under review' | 'verified') : undefined,
       verifiedBy: typeof baseReport.verifiedBy === 'string' ? baseReport.verifiedBy : undefined,
       verifiedAt: typeof baseReport.verifiedAt === 'string' ? baseReport.verifiedAt : undefined,
+
+      incident_type: incidentType,
+      title,
+      description,
+      severity,
+      severity_reason: severityReason,
+      confidence,
+      incident_start: incidentStart,
+      incident_end: incidentEnd,
+      incident_start_confirmed: typeof raw.incident_start_confirmed === 'boolean' ? raw.incident_start_confirmed : undefined,
+      duration_seconds: durationSeconds,
+      location,
+      timeline,
+      uncertainties,
+      ...(persons ? { persons } : {}),
+      ...(instruments ? { instruments } : {}),
+      ...(assets ? { assets } : {}),
     };
   } catch {
     return null;

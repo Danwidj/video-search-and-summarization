@@ -3,7 +3,7 @@
 This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> **As of 2026-09-27**, gateway-mode analysis in `incident-console-v2` uses the shared **`incident-contract-v2`** in [`../contracts/`](../contracts/README.md), the same prompt, schema and P1 settings as `eval/`. Agent mode (`ANALYSIS_MODE=agent`) still uses the agent's older snake_case `IncidentReport` until prompt-contract plan phase 3. See §6.
+> Since `incident-contract-v2`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Background and decisions: [`prompt-contract-plan.md`](prompt-contract-plan.md).
 
 ---
 
@@ -132,8 +132,11 @@ Older rows are shown in contract form for display and querying. Migration `20261
 
 Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes v2-form values for that run; its historical notes are untouched.
 
-## 6. Agent mode (unchanged)
+## 6. Agent mode
 
-`ANALYSIS_MODE=agent` still posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze`. The agent validates against its older snake_case `IncidentReport`, and the console parses that with `lib/analysis/schema.ts`, guarded by `lib/analysis/incident-report-contract.json`, `tests/contract-parity.test.mjs` and the agent's `test_incident_report_gen.py`.
-
-Model selection and re-analysis are gateway-only (HTTP 409 in agent mode). Moving the agent onto `incident-contract-v2` is plan phase 3.
+`ANALYSIS_MODE=agent` posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze` with `{ video_url, model_run_id? }`.
+- `vss-agent` uses its vendored `incident-contract-v2` (`vss_agents/incident_contract/`) to run P1 (direct VLM call with JSON Schema response format) and RP1 (prose report generation).
+- The agent strictly validates P1 against the contract via Pydantic models and cross-field rules, returning 422 if invalid, and derives `incident.duration`.
+- The agent persists best-effort rows in PostgREST (`model_runs`, `incidents`, `entities`, `instruments`, `assets`) without modifying `videos`.
+- In `incident-console-v2`, `runContractAnalysis` routes the agent's returned contract report through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, saving provenance notes and sync-upserts into PostgREST.
+- Legacy agent-mode contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`) have been retired.

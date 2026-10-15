@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v2`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Eval (phase 1) and console gateway mode (phase 2) use it; agent pending ([plan](.docs/prompt-contract-plan.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v2`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([plan](.docs/prompt-contract-plan.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -54,7 +54,7 @@ uv sync && uv run pytest tests/
     - Never add a repair step that changes semantic content.
     - Never let application-side repair affect eval results.
     - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-  - **Agent mode still uses the agent's older `snake_case` `IncidentReport`** (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change that contract in both places together until the agent moves to `incident-contract-v2`.
+  - **Agent mode uses `incident-contract-v2`** vendored in `services/agent/src/vss_agents/incident_contract/` for P1 and RP1, and `incident-console-v2` routes the response through the same `core-scored-v1` validation policy and attempt recording as gateway mode. The agent never writes `videos`.
   - **Reviewer edits change only the relational projection** (`apply_structured_report_edit`).
   - **Official reports are explicit** (`select_official_report`); never infer "latest run wins".
   - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only and never reports. Count runs by outcome, never raw `model_runs` rows.

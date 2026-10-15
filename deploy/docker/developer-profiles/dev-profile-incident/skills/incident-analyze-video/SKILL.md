@@ -25,7 +25,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
 | `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
-| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev | Agent writes `incidents` and evidence. Console writes `videos` before and after, `model_runs.notes` and `reports`. |
+| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 on the agent's `VLM_NAME`, RP1 on `contracts/rp1_request.json` | Agent writes `model_runs`, `incidents` and evidence. Console writes `videos` (before the call), `model_runs.notes` and `reports`. |
 
 ## Instructions
 
@@ -47,14 +47,14 @@ Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploa
 ```bash
 curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -H 'Content-Type: application/json' \
-  -d '{"model_run_id": "<=20 chars, optional>", "reasoning": false}'
+  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>"}'
 ```
 
-The agent looks up the sensor id from `videos.source`, so the `videos` row must already exist. It returns an `IncidentReport` in snake_case.
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output}`, where `report` is the contract shape with the derived `incident.duration`.
 
 | Status | Meaning |
 |---|---|
-| 422 | The VLM/LLM output failed `IncidentReport` validation. Nothing default is persisted. |
+| 422 | P1 output broke the contract (schema or cross-field rule), or P1 hit `max_tokens` with no content. Nothing is persisted. |
 | 504 | Analysis timed out |
 | 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
 | 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |
@@ -68,11 +68,11 @@ The agent looks up the sensor id from `videos.source`, so the `videos` row must 
 Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-to-end-verification-checklist). Minimum checks after one analysis:
 
 - The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
-- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. In agent mode, the agent overwrites it and the console restores it. See known issue 3 in [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt).
+- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (known issue 3, fixed in prompt-contract phase 3; see [`.docs/status.md`](../../.docs/status.md#2-known-issues--technical-debt)).
 - There is a new `model_runs` row, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 
 ## Known quirks
 
-- Gateway mode uses `incident-contract-v2` (the same request as eval) and records every attempt immutably in `model_runs.notes` with its outcome. Agent mode still uses the older snake_case `IncidentReport` (`lib/analysis/incident-report-contract.json`). See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- Both gateway and agent modes use `incident-contract-v2` and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

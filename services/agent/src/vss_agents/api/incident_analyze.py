@@ -15,18 +15,15 @@
 
 """``POST /api/v1/incidents/{incident_id}/analyze`` - the incident-console AI trigger.
 
-The console's ``agent_client.py::analyze_incident`` calls this route to turn
-an uploaded video into a persisted, structured incident report. Per the
-incident-console schema's identity rule (1 video = 1 incident,
-``incidents.incident_id`` == ``videos.id``, see
-``deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py``'s
-module docstring), ``incident_id`` here is the console's ``videos.id`` /
-``incidents.incident_id`` - *not* necessarily the raw VST sensor id. The
-console's own upload flow (``catalog_actions.derive_video_id()``) hashes the
-raw sensor id into a 20-char id to fit the ``videos.id`` column, since real
-sensor ids/filenames can run up to 128 chars. This route resolves the real
-sensor id via ``incident_db`` before invoking ``incident_report_gen``, and
-passes both ids through so persistence still keys off ``incident_id``.
+``incident-console-v2`` (agent mode) calls this route with the console's ``videos.id`` as
+``incident_id`` and a signed R2 URL for the uploaded video. The route runs the
+``incident_report_gen`` tool - the shared incident contract's P1 -> RP1 calls - and returns
+the validated contract report. The agent needs no R2 credentials and no VST lookup: the
+console owns the ``videos`` row and signs the URL.
+
+Status codes: 422 when the model output violates the contract (nothing is persisted),
+504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
+500 for anything else.
 """
 
 from __future__ import annotations
@@ -42,9 +39,7 @@ from nat.builder.framework_enum import LLMFrameworkEnum
 from pydantic import BaseModel
 from pydantic import Field
 
-from vss_agents.data_models.incident_report import IncidentExtractionError
-from vss_agents.data_models.incident_report import IncidentReport
-from vss_agents.utils import incident_db
+from vss_agents.incident_contract import IncidentExtractionError
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -52,38 +47,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _resolve_sensor_id(incident_id: str) -> str:
-    """Resolve the real VST sensor id for a console ``incident_id``.
-
-    The console stores the raw sensor id in ``videos.source`` (see
-    ``catalog_actions.upload_and_record``). Falls back to ``incident_id``
-    itself whenever the DB is unconfigured/unreachable, no row is found, or
-    the row has no recorded source - never fails the request over this
-    lookup, since callers that pass an already-real sensor id (e.g. a
-    chat-driven flow with no console record) must keep working unchanged.
-    """
-    try:
-        if not incident_db.is_configured():
-            return incident_id
-        db = await incident_db.get_db()
-        if db is None:
-            return incident_id
-        video = await db.get_video(incident_id)
-        if not video or not video.get("source"):
-            return incident_id
-        return str(video["source"])
-    except Exception as exc:
-        logger.warning("incident_analyze: failed to resolve sensor_id for %s: %s", incident_id, exc)
-        return incident_id
-
-
 class AnalyzeIncidentRequest(BaseModel):
     """Body for ``POST /api/v1/incidents/{incident_id}/analyze``."""
 
-    reasoning: bool | None = Field(default=None, description="Enable VLM reasoning mode for video analysis.")
-    prompt_override: str | None = Field(
-        default=None, description="Optional override for the analysis prompt sent to video_report_gen."
-    )
+    video_url: str = Field(..., min_length=1, description="Signed R2 URL of the uploaded video.")
     model_run_id: str | None = Field(
         default=None,
         min_length=1,
@@ -96,25 +63,16 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
     """Build the ``POST /api/v1/incidents/{incident_id}/analyze`` router.
 
     ``builder`` is captured once at router-build time and used to resolve the
-    ``incident_report_gen`` tool per request (mirrors how other custom routes
-    resolve their tools; see ``api/video_ingest.py``'s ``create_*_router``
-    factories for the shape).
+    ``incident_report_gen`` tool per request.
     """
     router = APIRouter()
 
     @router.post(
         "/api/v1/incidents/{incident_id}/analyze",
-        response_model=IncidentReport,
-        summary="Analyze an uploaded video and produce a structured incident report",
-        description=(
-            "Runs video_report_gen over the uploaded video identified by incident_id (the console's "
-            "videos.id/incidents.incident_id, resolved to the real VST sensor id via the incident DB when "
-            "configured), extracts a structured IncidentReport, persists it to the incident DB when "
-            "configured, and returns the IncidentReport."
-        ),
+        summary="Extract a contract incident report from an uploaded video (P1) and write a prose report (RP1)",
         tags=["Incident Analyze"],
     )
-    async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest | None = None) -> IncidentReport:
+    async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest) -> dict[str, Any]:
         try:
             incident_report_gen_tool = await builder.get_tool(
                 "incident_report_gen", wrapper_type=LLMFrameworkEnum.LANGCHAIN
@@ -125,29 +83,22 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                 status_code=501, detail="incident_report_gen tool is not configured on this profile"
             ) from exc
 
-        sensor_id = await _resolve_sensor_id(incident_id)
-        tool_input: dict[str, Any] = {"sensor_id": sensor_id, "incident_id": incident_id, "skip_hitl": True}
-        if body is not None:
-            if body.reasoning is not None:
-                tool_input["vlm_reasoning"] = body.reasoning
-            if body.prompt_override:
-                tool_input["prompt_override"] = body.prompt_override
-            if body.model_run_id:
-                tool_input["model_run_id"] = body.model_run_id
+        tool_input: dict[str, Any] = {"incident_id": incident_id, "video_url": body.video_url}
+        if body.model_run_id:
+            tool_input["model_run_id"] = body.model_run_id
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
         except IncidentExtractionError as exc:
-            logger.error("/analyze validation failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
-            raise HTTPException(status_code=422, detail=f"Incident report validation failed: {exc}") from exc
+            logger.error("/analyze contract violation for incident_id=%s: %s", incident_id, exc)
+            raise HTTPException(status_code=422, detail=f"Incident contract violation: {exc}") from exc
         except TimeoutError as exc:
-            logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc, exc_info=True)
+            logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc
         except Exception as exc:
             logger.error("/analyze failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
             raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
-
-        return IncidentReport.model_validate(result.structured_report)
+        return result.model_dump() if hasattr(result, "model_dump") else dict(result)
 
     return router
 
