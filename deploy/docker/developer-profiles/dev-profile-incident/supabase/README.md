@@ -85,6 +85,15 @@ report selection (D6). Additive; applied 2026-09-27. Because `videos` and
 `isOfficial`) and `get_incident_dashboard` (official incidents only). Applied
 2026-09-27 after a dry run with 40 dashboard/library parity checks per period.
 
+`migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` implements
+prompt-contract phase 4 data migration (`incidents.type`: `fighting` ->
+`assault`, `animal` -> `animal attack`; `entities.type`: `person` -> `human`)
+and removes the 20 pre-existing orphaned legacy console `model_runs` rows naming
+videos that no longer exist (status.md known issue 4). Relational `incidents.type`
+has 0 rows with `other`, and `model_runs.notes` remains immutable. Query-time
+folding is retained in application code until this migration is applied to the
+shared Supabase database.
+
 All four 2026-09-27 migrations were applied with a single-transaction script
 that also records the version in `supabase_migrations.schema_migrations`.
 

@@ -2,6 +2,24 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Prompt-contract phase 4 legacy taxonomy migration and orphaned run clean-up
+- **Decision:**
+  - Migrate stored legacy incident types in `incidents.type`: `fighting` -> `assault` (13 rows), `animal` -> `animal attack` (20 rows).
+  - Migrate stored legacy entity types in `entities.type`: `person` -> `human` (6 rows).
+  - Clean up the 20 pre-existing orphaned legacy console `model_runs` rows that explicitly name videos that no longer exist and have no incident rows.
+  - Relational `incidents.type` currently contains 0 rows with `other`. In accordance with Firstmate directive (Option 1), no relational mapping for `other` is added, and `model_runs.notes` remains immutable per architecture contract (`m5629b0938e679c9873d` is an un-incidented test pattern run).
+  - Query-time folding (`canonicalIncidentType`, `canonicalEntityType`) is retained in application code and SQL helper functions until the migration is applied to the live database, as dropping it beforehand would cause UI regressions on un-migrated data, while keeping it is idempotent and safe in both states.
+- **Why:**
+  - Completes prompt-contract phase 4 taxonomy consolidation to match eval ground truth and `incident-contract-v2`.
+  - Removes 20 dangling attempt rows from deleted videos without cascading to any other table.
+- **Alternatives rejected:**
+  - Dropping query-time folding before migration application (unsafe across unmigrated database states).
+  - Modifying `model_runs.notes` for `other` (violates the core rule that attempt notes are immutable).
+  - Mapping test-pattern video run `m5629b0938e679c9873d` to a contract incident type (it contains no incident).
+- **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql); [`status.md`](status.md); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
+---
+
 ### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
 - **Decision:**
   - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).
