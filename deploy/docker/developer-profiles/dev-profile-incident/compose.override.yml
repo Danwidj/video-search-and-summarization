@@ -33,3 +33,48 @@ services:
     scale: 0
   sdr-controller:
     scale: 0
+
+  # Restart policy overrides: set unless-stopped for all persistent appliance
+  # and profile services so a deliberate 'docker compose stop' stays stopped
+  # across system reboots.
+  redis:
+    restart: unless-stopped
+
+  vss-haproxy-ingress:
+    restart: unless-stopped
+
+  centralizedb:
+    restart: unless-stopped
+
+  vst-ingress:
+    restart: unless-stopped
+
+  streamprocessing-ms:
+    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+
+  kafka:
+    restart: unless-stopped
+
+  phoenix:
+    restart: unless-stopped
+
+  vss-ui:
+    restart: unless-stopped
+
+  elasticsearch:
+    restart: unless-stopped
+
+  logstash:
+    restart: unless-stopped
+
+  kibana:
+    restart: unless-stopped
+
+  vss-video-analytics-api-fusion:
+    restart: unless-stopped
+
+  vss-search-analytics-2d-fusion:
+    restart: unless-stopped
