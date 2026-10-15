@@ -36,8 +36,8 @@ For each (category, model, evaluation video):
      unchanged; entity/instrument/asset matches will be empty until a real
      embeddings endpoint is configured, see ``config.embedding_base_url()``).
   6. Call RP1 (one fixed report-generation model/config, same for every P1
-     model) on a fully contract-valid prediction; report is persisted, never
-     scored. Skipped otherwise.
+     model) on a core-valid (core_ok) prediction with unchanged input; report is
+     persisted, never scored. Skipped otherwise.
   7. Accumulate the Step 7 per-video result; write one JSON file per
      (category, model) once that pair's videos are done, plus an immutable copy
      under ``results/runs/<run start>/`` (``write_results``).

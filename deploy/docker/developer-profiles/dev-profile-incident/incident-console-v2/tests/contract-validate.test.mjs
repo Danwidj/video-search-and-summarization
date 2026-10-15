@@ -9,7 +9,7 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { ContractError, parseReport, validateReport, withDerivedFields } = await import('../lib/contract/validate.ts');
-const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256, reportPrompt, reportPromptSha256 } = await import('../lib/contract/load.ts');
+const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256 } = await import('../lib/contract/load.ts');
 
 const fixturesDir = join(process.cwd(), '..', 'contracts', 'fixtures');
 const fixtures = (kind) => readdirSync(join(fixturesDir, kind)).filter((name) => name.endsWith('.json')).sort();
@@ -62,9 +62,6 @@ test('contract version, hashes and inference settings load from contracts/', () 
   assert.equal(contractVersion(), readFileSync(join(process.cwd(), '..', 'contracts', 'VERSION'), 'utf8').trim());
   assert.match(promptSha256(), /^[0-9a-f]{64}$/);
   assert.match(schemaSha256(), /^[0-9a-f]{64}$/);
-  assert.match(reportPromptSha256(), /^[0-9a-f]{64}$/);
-  assert.match(reportPrompt(), /Timeline events outside the incident time are context\./);
-  assert.equal(reportPrompt().split('{structured_incident_json}').length, 2);
   assert.deepEqual(allowedModels().map((model) => model.id), [
     'nvidia/cosmos-3-nano-reasoner',
     'nvidia/cosmos-3-super-reasoner',
