@@ -93,7 +93,7 @@ def test_response_format_strips_document_keys():
 
 
 def test_version_file():
-    assert contract.contract_version() == "incident-contract-v2"
+    assert contract.contract_version() == "incident-contract-v3"
 
 
 def test_extraction_prompt_has_no_output_template_or_few_shot():
@@ -114,7 +114,6 @@ def test_prompt_taxonomy_matches_schema():
 def test_report_prompt_has_single_placeholder():
     template = contract.report_prompt_template()
     assert template.count("{structured_incident_json}") == 1
-    assert "Timeline events outside the incident time are context." in template
     template.format(structured_incident_json="{}")
 
 

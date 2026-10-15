@@ -7,16 +7,16 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
   - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
   - Pass the unchanged prediction (with derived fields) to RP1, preserving timeline events outside the incident window.
   - Add one line to `contracts/report_generation_prompt.md` under `INCIDENT DETAILS`: `Timeline events outside the incident time are context.`
-  - Keep `contracts/VERSION` as `incident-contract-v2`.
+  - Bump `contracts/VERSION` to `incident-contract-v3`.
 - **Why:**
   - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
   - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
   - A small pilot on Animal003 and Assault018 confirmed that with the timeline context instruction, RP1 generates high-quality prose reports where lead-up and aftermath events provide chronological narrative context without distorting the incident window or duration.
 - **Versioning:**
-  - `contracts/VERSION` stays `incident-contract-v2` because the P1 extraction prompt (`incident_extraction_prompt.md`) and the output schema (`incident_report.schema.json`) are byte-identical.
-  - `incident-console-v2` only runs P1 extraction and is unaffected; `reportPrompt` and its hash are exposed in `lib/contract/load.ts` and tested alongside P1 contract assets. Contract v3 remains reserved for schema-level changes (such as ID patterns).
+  - `contracts/VERSION` is bumped to `incident-contract-v3` because `report_generation_prompt.md` changed, following the profile rule in `dev-profile-incident/AGENTS.md` ("Contract changes bump contracts/VERSION and update eval and the console together").
+  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The vendored contract copy in `services/agent` must be re-synced after this lands.
 - **Alternatives rejected:**
-  - Bumping `contracts/VERSION` to `incident-contract-v3` (rejected: P1 prompt and schema are byte-identical; bumping would falsely signal changes to extraction inputs/schema to consumers like `incident-console-v2` and `vss-agent`).
+  - Retaining `incident-contract-v2` with report-prompt hashes or sub-versions in recorded results (rejected: extends the recorded result shape, violating provenance consistency; following the profile rule of a version bump is cleaner and respects the existing result schema).
   - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
 - **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py); [`../incident-console-v2/lib/contract/load.ts`](../incident-console-v2/lib/contract/load.ts).
 
