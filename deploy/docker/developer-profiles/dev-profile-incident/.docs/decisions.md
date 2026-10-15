@@ -7,13 +7,13 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
   - Migrate stored legacy incident types in `incidents.type`: `fighting` -> `assault` (13 rows), `animal` -> `animal attack` (20 rows).
   - Migrate stored legacy entity types in `entities.type`: `person` -> `human` (6 rows).
   - Clean up the 20 pre-existing orphaned legacy console `model_runs` rows that explicitly name videos that no longer exist and have no incident rows.
-  - Relational `incidents.type` currently contains 0 rows with `other`. In accordance with Firstmate directive (Option 1), no relational mapping for `other` is added, and `model_runs.notes` remains immutable per architecture contract (`m5629b0938e679c9873d` is an un-incidented test pattern run).
-  - Query-time folding (`canonicalIncidentType`, `canonicalEntityType`) is retained in application code and SQL helper functions until the migration is applied to the live database, as dropping it beforehand would cause UI regressions on un-migrated data, while keeping it is idempotent and safe in both states.
+  - Relational `incidents.type` currently contains 0 rows with `other`. No relational mapping for `other` is added. The only `other` value is inside the notes of test-pattern run `m5629b0938e679c9873d` (no incidents row) and stays there, because the profile [`AGENTS.md`](../AGENTS.md) rule says never to modify `model_runs.notes` after an attempt is written. The supervisor confirmed this as the accepted resolution of the `other` case (2026-10-16).
+  - Query-time folding (`canonicalIncidentType`, `canonicalEntityType`) is retained in application code and SQL helper functions until the migration is applied to the live database **and** prompt-contract phase 3 moves agent mode onto the contract. The migration is a one-time clean-up: agent mode (`ANALYSIS_MODE=agent`) still writes `fighting`/`animal` types and `person` entities, so dropping folding earlier would cause UI and filter regressions. Keeping it is idempotent and safe in every state.
 - **Why:**
   - Completes prompt-contract phase 4 taxonomy consolidation to match eval ground truth and `incident-contract-v2`.
   - Removes 20 dangling attempt rows from deleted videos without cascading to any other table.
 - **Alternatives rejected:**
-  - Dropping query-time folding before migration application (unsafe across unmigrated database states).
+  - Dropping query-time folding once the migration is applied (unsafe on unmigrated databases and on rows agent mode writes before phase 3).
   - Modifying `model_runs.notes` for `other` (violates the core rule that attempt notes are immutable).
   - Mapping test-pattern video run `m5629b0938e679c9873d` to a contract incident type (it contains no incident).
 - **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql); [`status.md`](status.md); [`prompt-contract-plan.md`](prompt-contract-plan.md).

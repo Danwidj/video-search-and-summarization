@@ -90,9 +90,12 @@ prompt-contract phase 4 data migration (`incidents.type`: `fighting` ->
 `assault`, `animal` -> `animal attack`; `entities.type`: `person` -> `human`)
 and removes the 20 pre-existing orphaned legacy console `model_runs` rows naming
 videos that no longer exist (status.md known issue 4). Relational `incidents.type`
-has 0 rows with `other`, and `model_runs.notes` remains immutable. Query-time
-folding is retained in application code until this migration is applied to the
-shared Supabase database.
+has 0 rows with `other`; the one `other` value stays in the immutable
+`model_runs.notes` of run `m5629b0938e679c9873d`. This is a one-time clean-up:
+agent mode still writes legacy values until prompt-contract phase 3, so
+query-time folding (`canonical_incident_type`, `canonical_entity_type` and the
+console's `canonicalIncidentType`) must stay until this migration is applied
+**and** phase 3 is done.
 
 All four 2026-09-27 migrations were applied with a single-transaction script
 that also records the version in `supabase_migrations.schema_migrations`.

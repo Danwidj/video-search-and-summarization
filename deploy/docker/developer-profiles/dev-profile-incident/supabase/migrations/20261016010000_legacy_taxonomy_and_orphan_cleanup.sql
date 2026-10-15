@@ -6,9 +6,11 @@
 --    - incidents.type: 'fighting' -> 'assault' (13 rows: 12 MR-SEED rows + run m37883594f65802c8a31)
 --    - incidents.type: 'animal' -> 'animal attack' (20 rows: 19 MR-SEED rows + run mab7125d03c705e67b20)
 --    - entities.type: 'person' -> 'human' (6 rows: runs mab7125d03c705e67b20, m37883594f65802c8a31, mbf6b0f0bb944b497d4d)
---    Note: incidents.type currently has 0 rows with 'other'. Per Firstmate decision (Option 1),
---    no relational migration is needed for 'other', and model_runs.notes remains immutable by design
---    (the lone test-pattern run m5629b0938e679c9873d has no incidents row).
+--    Note: incidents.type currently has 0 rows with 'other', so no relational migration is needed for it.
+--    The only 'other' value is in the notes of test-pattern run m5629b0938e679c9873d (no incidents row);
+--    it stays because the profile AGENTS.md forbids modifying model_runs.notes after an attempt is written.
+--    This is a one-time clean-up: agent mode still writes legacy values until prompt-contract phase 3,
+--    so query-time folding must stay.
 -- 2. Remove the 20 pre-existing orphaned legacy console model_runs rows that name videos
 --    that no longer exist (status.md known issue 4). None of these rows have incident or report rows.
 
