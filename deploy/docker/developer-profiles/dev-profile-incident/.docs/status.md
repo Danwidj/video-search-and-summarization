@@ -44,7 +44,7 @@ Current delivery status verified against the codebase:
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values are folded at query time only.** `fighting`/`animal` types and `person` entities remain stored; one legacy report has the non-contract type `other`. A data migration (prompt-contract phase 4) would need approval.
 7. **Heatmap and time-of-day filters use UTC hours.** Labelled as UTC; not localised.
-8. **Legacy tables and RLS.** The four pre-v1 tables remain; RLS is disabled on public tables (service role only in code).
+8. **Legacy tables and RLS.** The four pre-v1 tables remain protected under RLS; RLS is enabled on all 22 public tables with anon/authenticated access revoked and default privileges secured (migration `20261016000000_enable_rls_and_lockdown_anon.sql`). All application services use `service_role` (BYPASSRLS).
 9. **`selected_by/selected_at` can outlive a selection** cleared by the FK when the official incident is deleted; the UI treats a NULL `selected_model_run_id` as no official report.
 
 ---
@@ -59,7 +59,7 @@ Current delivery status verified against the codebase:
 2a. **RP1 and inconsistent timelines (proposal):** run RP1 when `core_ok` with unchanged input, and add one RP1 prompt line that timeline events outside the incident time are context. This is a prompt change, not made.
 3. **Possible contract v3:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
 4. **Legacy type/entity data migration** (phase 4) and legacy table cleanup: approval needed.
-5. **RLS policies** and **writer consolidation (Option B).**
+5. **Tiered client-side RLS policies** (if direct browser client auth is introduced) and **writer consolidation (Option B).**
 
 ---
 

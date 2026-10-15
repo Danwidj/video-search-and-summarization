@@ -502,6 +502,15 @@ Database access is split across two client implementations according to operatio
      (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` (see [`../supabase/README.md`](../supabase/README.md)
      for how to apply it via `supabase db push`).
 
+### Row-Level Security (RLS) & Access Control
+
+Row-Level Security is enabled on all 22 public schema tables (`relrowsecurity = true`) via migration `20261016000000_enable_rls_and_lockdown_anon.sql` to close known issue 8:
+- **Default-deny:** With RLS enabled and no permissive policies defined, anonymous (`anon`) and standard authenticated (`authenticated`) roles cannot read, insert, update, or delete rows in any table.
+- **Revoked grants:** All table and sequence privileges in schema `public` are explicitly revoked from `anon` and `authenticated`.
+- **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`) were already restricted to `service_role`.
+- **Default privileges:** Default privileges for objects created in schema `public` (`ALTER DEFAULT PRIVILEGES IN SCHEMA public`) revoke table, sequence, and function access from `anon` and `authenticated`, granting all to `service_role`.
+- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold PostgreSQL's `BYPASSRLS` attribute (`rolbypassrls = true`), preserving full access without regression. `FORCE ROW LEVEL SECURITY` is deliberately omitted so service roles are never constrained by table policies.
+
 ### Fixture CSV Seed Data Quirk
 
 Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
