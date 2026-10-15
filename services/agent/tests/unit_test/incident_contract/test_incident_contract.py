@@ -135,14 +135,75 @@ def test_no_extraction_heuristics(content):
         (lambda r: r["incident"].update(end_timestamp=2), "before start_timestamp"),
         (lambda r: r["entities"][1].update(entity_id="E3"), "not sequential"),
         (lambda r: r["instruments"][0].update(entity_id="E9"), "unknown entity_id"),
-        (lambda r: r["timeline"][0].update(start_seconds=0), "outside"),
-        (lambda r: r["timeline"].reverse(), "chronological"),
     ],
 )
 def test_contract_violations(mutate, message):
     report = _valid()
     mutate(report)
     with pytest.raises(IncidentExtractionError, match=message):
+        incident_contract.validate_report(report)
+
+
+ID_CODES = {"ID_NOT_SEQUENTIAL_ENTITY", "ID_NOT_SEQUENTIAL_INSTRUMENT", "ID_NOT_SEQUENTIAL_ASSET"}
+POLICY_FIXTURES = sorted(
+    path
+    for path in (PROFILE_CONTRACTS / "fixtures" / "policy").glob("*.json")
+    if not ID_CODES & set(json.loads(path.read_text(encoding="utf-8"))["expected"]["core_codes"])
+)
+
+
+@pytest.mark.parametrize("path", POLICY_FIXTURES, ids=lambda path: path.stem)
+def test_core_scored_v1_matches_the_shared_policy_fixtures(path):
+    """Accepted iff core-scored-v1 finds no core violation; the video-length rule is left to the console."""
+    fixture = json.loads(path.read_text(encoding="utf-8"))
+    accepted = not set(fixture["expected"]["core_codes"]) - {"WINDOW_BEYOND_VIDEO"}
+    if accepted:
+        report = incident_contract.parse_report(fixture["content"])
+        original = json.loads(fixture["content"])
+        assert report["timeline"] == original["timeline"], "enrichment violations are recorded, never repaired"
+    else:
+        with pytest.raises(IncidentExtractionError):
+            incident_contract.parse_report(fixture["content"])
+
+
+def test_id_only_violation_is_repaired_by_id_normalization():
+    """The console's recorded malformed-ID response, repaired as its gateway-mode test expects."""
+    fixture = json.loads(
+        (
+            PROFILE_CONTRACTS.parent
+            / "incident-console-v2/tests/fixtures/contract-failures/nemotron-3-omni-malformed-ids.json"
+        ).read_text(encoding="utf-8")
+    )
+    report = incident_contract.parse_report(fixture["rawContent"])
+    assert [entity["entity_id"] for entity in report["entities"]] == ["E1", "E2"]
+    assert [(i["instrument_id"], i["entity_id"], i["name"]) for i in report["instruments"]] == [
+        ("I1", "E1", "bag"),
+        ("I2", None, "white van"),
+    ]
+
+
+def test_renamed_ids_remap_instrument_holders():
+    report = _valid()
+    for entity, text in zip(report["entities"], ("Attacker.", "Victim."), strict=True):
+        entity["description"] = text
+    report["incident"]["description"] = "The attacker strikes the victim with a bottle."
+    report["timeline"][1]["description"] = "The attacker strikes the victim."
+    report["timeline"][0]["description"] = "The attacker approaches."
+    report["uncertainties"] = []
+    report["entities"][0]["entity_id"], report["entities"][1]["entity_id"] = "E7", "E5"
+    report["instruments"][0]["entity_id"] = "E5"
+    repaired = incident_contract.validate_report(report)
+    assert [(e["entity_id"], e["description"]) for e in repaired["entities"]] == [
+        ("E1", "Attacker."),
+        ("E2", "Victim."),
+    ]
+    assert repaired["instruments"][0]["entity_id"] == "E2"
+
+
+def test_id_repair_is_refused_when_free_text_mentions_a_renamed_id():
+    report = _valid()
+    report["entities"][1]["entity_id"] = "E3"
+    with pytest.raises(IncidentExtractionError, match="not sequential"):
         incident_contract.validate_report(report)
 
 

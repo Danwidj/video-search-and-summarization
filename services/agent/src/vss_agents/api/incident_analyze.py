@@ -21,7 +21,9 @@
 the validated contract report. The agent needs no R2 credentials and no VST lookup: the
 console owns the ``videos`` row and signs the URL.
 
-Status codes: 422 when the model output violates the contract (nothing is persisted),
+Status codes: 422 when the model output fails ``core-scored-v1`` (nothing is persisted; the
+detail carries ``message``, ``raw_output``, ``finish_reason`` and ``model`` so the caller can
+record the attempt),
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
 500 for anything else.
 """
@@ -55,7 +57,7 @@ class AnalyzeIncidentRequest(BaseModel):
         default=None,
         min_length=1,
         max_length=20,
-        description="Optional model_runs.id to persist the analysis under.",
+        description="The caller's model_runs.id; when given, the caller records the run and the agent persists nothing.",
     )
 
 
@@ -91,7 +93,15 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             result = await incident_report_gen_tool.ainvoke(tool_input)
         except IncidentExtractionError as exc:
             logger.error("/analyze contract violation for incident_id=%s: %s", incident_id, exc)
-            raise HTTPException(status_code=422, detail=f"Incident contract violation: {exc}") from exc
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": f"Incident contract violation: {exc}",
+                    "raw_output": exc.raw_output,
+                    "finish_reason": exc.finish_reason,
+                    "model": exc.model,
+                },
+            ) from exc
         except TimeoutError as exc:
             logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc

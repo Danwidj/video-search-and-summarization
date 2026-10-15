@@ -358,15 +358,12 @@ sequenceDiagram
     Agent->>Brev: P1 (video URL first, contract prompt, strict response_format) - same call as gateway mode
     Brev->>R2: GET video via presigned URL
     Brev-->>Agent: Schema-constrained JSON
-    Agent->>Agent: Strict parse (Pydantic strict + cross-field rules), derive duration; violation -> 422
+    Agent->>Agent: Strict parse under core-scored-v1 (+ id-normalization-v1), derive duration; core violation -> 422 with raw_output
     Agent->>Brev: RP1 (derived JSON -> prose)
     Brev-->>Agent: Report text
-    Agent->>DB: Upsert model_runs (VLM name, contract version)
-    Agent->>DB: Call /rpc/insert_incident (atomic delete/insert + reset review_status)
-    Agent->>DB: Delete+insert entities, instruments, assets (contract IDs; best-effort)
-    Note over Agent,DB: The agent never writes videos - the console owns the R2 key
+    Note over Agent,DB: With model_run_id the agent writes nothing - the console records the run
 
-    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output}
+    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason}
     Tunnel-->>UI: Forward agent response
 
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed

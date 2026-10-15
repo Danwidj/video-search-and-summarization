@@ -34,7 +34,7 @@ Current delivery status verified against the codebase:
 
 ## 2. Known Issues & Technical Debt
 
-1. **Two writers in agent mode.** In gateway mode the console writes all rows; in agent mode the agent writes `incidents`/evidence and the console writes `model_runs`/`videos`/`reports`. Agent mode now uses `incident-contract-v2` and no longer writes `videos` (so `videos.filepath` is never overwritten with a VST URL). Consolidation (Option B) is not started.
+1. **Agent persistence only for standalone calls.** In both modes the console writes all rows (`videos`, `model_runs`, `incidents`, evidence, `reports`). The agent persists only when `/analyze` is called without `model_run_id` (standalone use), and never writes `videos`. Consolidation (Option B) is not started.
 2. **Model output lives in `model_runs.notes` (TEXT).** It is intentional: an immutable per-attempt record. It is queried through `try_parse_jsonb` in RPCs and a `like` pre-filter plus parsing in the app. Scale is small today (57 runs); a JSONB column or index would be needed at volume.
 3. **The Cosmos models often break the timeline rule.** They include lead-up/aftermath events outside their own incident window (Super on Animal003, Assault018, Burglary005 and the phase-0 road clip; Nano on Animal003).
    - Clarified prompt wording did not change this in a 12-call pilot.

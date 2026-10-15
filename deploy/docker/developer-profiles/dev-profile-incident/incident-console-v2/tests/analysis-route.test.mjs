@@ -229,9 +229,10 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         report: rawContract,
         report_text: 'PROSE REPORT',
         report_text_error: null,
-        model: 'nvidia/cosmos-3-nano-reasoner',
+        model: 'agent/vlm-on-the-vm',
         contract_version: 'incident-contract-v2',
         raw_output: JSON.stringify(rawContract),
+        finish_reason: 'stop',
       };
       return new Response(JSON.stringify(mockAgentResponse), {
         status: 200,
@@ -254,7 +255,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.ok(payload.report);
   const { report } = payload;
   assert.equal(report.outcome, 'valid_first_pass');
-  assert.equal(report.model, 'nvidia/cosmos-3-nano-reasoner');
+  assert.equal(report.model, 'agent/vlm-on-the-vm', 'P1 ran on the agent model, so that model is recorded');
   assert.equal(report.promptVersion, 'incident-contract-v2');
 
   // Agent call verification
@@ -278,6 +279,54 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.ok(writtenTables.has('model_runs'));
   assert.ok(writtenTables.has('rpc/insert_incident'));
   assert.ok(writtenTables.has('reports'));
+  const modelRun = supabaseWrites.find((w) => w.table === 'model_runs').body;
+  assert.equal(modelRun.model_name, 'agent/vlm-on-the-vm');
+  const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
+  assert.deepEqual(notes.response, { content: JSON.stringify(rawContract), finishReason: 'stop' }, 'only what the agent returned');
+});
+
+function agentFetch(recordedCalls, reply, r2Key) {
+  return async (url, options = {}) => {
+    recordedCalls.push({ url: String(url), options });
+    if (String(url).includes('/api/v1/incidents/')) return reply();
+    return successfulPostgrestResponse(url, r2Key);
+  };
+}
+
+test('agent mode: a 422 carrying the raw output is validated and recorded like gateway mode', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  const content = contractFixture('invalid/cross-end-before-start.json');
+  const recordedCalls = [];
+  globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
+    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm' },
+  }), { status: 422, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-a422/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-a422', filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
+
+  assert.equal(response.status, 422);
+  const payload = await response.json();
+  assert.equal(payload.outcome, 'contract_failed');
+  assert.deepEqual(payload.codes, ['WINDOW_END_BEFORE_START']);
+  assert.equal(payload.model, 'agent/vlm-on-the-vm');
+  const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+  for (const table of REPORT_TABLES) assert.ok(!tables.includes(table), `contract_failed must not write ${table}`);
+  const { row, notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(row.model_name, 'agent/vlm-on-the-vm');
+  assert.equal(notes.status, 'contract_failed');
+  assert.equal(notes.response.content, content, 'the original response is stored unaltered');
+  assert.deepEqual(notes.validation.firstPass.map((v) => v.code), ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+});
+
+test('agent mode: a non-empty additional instruction is rejected before anything is called', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  const recordedCalls = [];
+  globalThis.fetch = agentFetch(recordedCalls, () => new Response('{}', { status: 200 }), 'uploads/s-ai/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4', additionalInstruction: 'Focus on the van.' }));
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /only available in gateway analysis mode/);
+  assert.equal(recordedCalls.length, 0);
 });
 
 function completion(content, extra = {}) {
@@ -623,32 +672,6 @@ test('agent mode: rejects a model other than the configured one (agent keeps its
 
   assert.equal(response.status, 409);
   assert.equal(called, false);
-});
-
-test('agent mode: records contract_failed and returns 422 when agent rejects model output', async () => {
-  process.env.ANALYSIS_MODE = 'agent';
-  delete process.env.VLM_GATEWAY_URL;
-
-  const recordedCalls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    recordedCalls.push({ url: String(url), options });
-    if (String(url).includes('/api/v1/incidents/')) {
-      return new Response(JSON.stringify({ detail: 'schema violation: incident/type' }), {
-        status: 422,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    return successfulPostgrestResponse(url, 'uploads/sensor-cam-03/clip.mp4');
-  };
-
-  const response = await POST(
-    jsonRequest({ sensorId: 'sensor-cam-03', filepath: 'uploads/sensor-cam-03/clip.mp4', filename: 'clip.mp4' }),
-  );
-
-  assert.equal(response.status, 422);
-  const payload = await response.json();
-  assert.equal(payload.outcome, 'contract_failed');
-  assert.match(payload.error, /schema violation/);
 });
 
 test('gateway mode: does not report success when persistence read-back is incomplete', async () => {

@@ -25,7 +25,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
 | `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
-| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 on the agent's `VLM_NAME`, RP1 on `contracts/rp1_request.json` | Agent writes `model_runs`, `incidents` and evidence. Console writes `videos` (before the call), `model_runs.notes` and `reports`. |
+| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 on the agent's `VLM_NAME`, RP1 on the model hardcoded in `incident_contract.rp1_request()`. The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
 
 ## Instructions
 
@@ -50,11 +50,11 @@ curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>"}'
 ```
 
-The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output}`, where `report` is the contract shape with the derived `incident.duration`.
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent persists the run itself (under its configured `model_run_id`); with one, it persists nothing and the caller records the run. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair.
 
 | Status | Meaning |
 |---|---|
-| 422 | P1 output broke the contract (schema or cross-field rule), or P1 hit `max_tokens` with no content. Nothing is persisted. |
+| 422 | P1 output failed `core-scored-v1` (a schema or core cross-field violation that `id-normalization-v1` cannot repair), or P1 hit `max_tokens` with no content. The agent persists nothing; `detail` carries `message`, `raw_output`, `finish_reason` and `model`, and the console records a `contract_failed` (or `request_failed`) attempt in `model_runs.notes`. Timeline-only violations are not a 422. |
 | 504 | Analysis timed out |
 | 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
 | 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |

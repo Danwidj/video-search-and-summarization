@@ -89,8 +89,8 @@ Selecting a video immediately starts the three-step nvstreamer upload. If that u
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
 for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to Cosmos through the gateway, normalizes common VLM aliases into the canonical snake-case contract, validates the structured result, persists it
-through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent analyzes
-and persists the incident instead of the gateway; see the variable list above). Start with short clips while inference remains
+through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1 and RP1
+instead of the gateway and the console still validates and persists the run; see the variable list above). Start with short clips while inference remains
 synchronous.
 
 ### Real-VST R2 upload fallback

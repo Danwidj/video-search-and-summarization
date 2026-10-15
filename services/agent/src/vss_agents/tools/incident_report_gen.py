@@ -20,14 +20,19 @@ Runs the same two calls as ``incident-console-v2`` (gateway mode) and the ``eval
 
 1. **P1** - the video as a signed R2 URL first, then the contract extraction prompt, with the
    contract JSON Schema enforced through ``response_format`` and the fixed settings from
-   ``inference.json``. The response is parsed strictly (``incident_contract.parse_report``);
-   a violation raises :class:`IncidentExtractionError` and nothing is persisted.
+   ``inference.json``. The response is validated under ``core-scored-v1`` with the
+   ``id-normalization-v1`` recovery (``incident_contract.parse_report``), like the console;
+   a core or schema violation raises :class:`IncidentExtractionError` carrying the raw output,
+   and nothing is persisted.
 2. **RP1** - a text-only prose report from the validated P1 JSON. A
    failed RP1 never discards a valid P1 report; the error is returned instead.
 
-The validated report is persisted best-effort through ``incident_db`` (``incidents``,
-``entities``, ``instruments``, ``assets`` - contract ids ``E1``/``I1``/``A1``). The ``videos``
-row belongs to the console, which owns the durable R2 key, so this tool never writes it.
+When the caller passes a ``model_run_id`` (``incident-console-v2`` agent mode), this tool
+persists nothing: the console validates the raw output and records the attempt itself.
+Without one (a standalone call) the validated report is persisted best-effort through
+``incident_db`` (``model_runs``, ``incidents``, ``entities``, ``instruments``, ``assets``).
+The ``videos`` row belongs to the console, which owns the durable R2 key, so this tool
+never writes it.
 """
 
 from collections.abc import AsyncGenerator
@@ -70,7 +75,7 @@ class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
     request_timeout_seconds: float = Field(default=DEFAULT_REQUEST_TIMEOUT_SECONDS, gt=0)
     model_run_id: str = Field(
         default="incident_report_gen",
-        description="model_runs.id used when the caller does not pass one.",
+        description="model_runs.id a standalone call (no caller model_run_id) persists under.",
     )
 
 
@@ -79,7 +84,12 @@ class IncidentReportGenInput(BaseModel):
     video_url: str = Field(
         ..., min_length=1, description="Signed R2 URL of the uploaded video, created by the console."
     )
-    model_run_id: str | None = Field(default=None, min_length=1, max_length=20)
+    model_run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        description="The caller's model_runs.id; when given, the caller records the run and nothing is persisted here.",
+    )
 
 
 class IncidentReportGenOutput(BaseModel):
@@ -91,6 +101,7 @@ class IncidentReportGenOutput(BaseModel):
     model: str
     contract_version: str
     raw_output: str
+    finish_reason: str | None = None
 
 
 def _chat_completions_url(base_url: str) -> str:
@@ -136,17 +147,24 @@ def _message_content(body: Any) -> tuple[str, str | None]:
 
 async def run_p1(
     client: httpx.AsyncClient, config: IncidentReportGenConfig, video_url: str
-) -> tuple[dict[str, Any], str]:
-    """One P1 call parsed strictly. Returns ``(report, raw_content)``."""
+) -> tuple[dict[str, Any], str, str | None]:
+    """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``."""
     response = await client.post(
         _chat_completions_url(config.vlm_base_url), json=p1_request_body(config.vlm_model_name, video_url)
     )
     if response.status_code >= 400:
         raise RuntimeError(f"P1 call returned HTTP {response.status_code}: {response.text[:500]}")
     content, finish_reason = _message_content(response.json())
-    if not content and finish_reason == "length":
-        raise IncidentExtractionError("the VLM ran out of tokens before returning the report (finish_reason=length)")
-    return incident_contract.parse_report(content), content
+    try:
+        if not content and finish_reason == "length":
+            raise IncidentExtractionError(
+                "the VLM ran out of tokens before returning the report (finish_reason=length)"
+            )
+        return incident_contract.parse_report(content), content, finish_reason
+    except IncidentExtractionError as exc:
+        raise IncidentExtractionError(
+            str(exc), raw_output=content, finish_reason=finish_reason, model=config.vlm_model_name
+        ) from exc
 
 
 async def run_rp1(
@@ -227,24 +245,25 @@ async def persist_report(*, incident_id: str, model_run_id: str, model_name: str
 
 @register_function(config_type=IncidentReportGenConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
 async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:  # noqa: ARG001
-    """Contract P1 -> RP1 over one uploaded video, persisted best-effort."""
+    """Contract P1 -> RP1 over one uploaded video, persisted best-effort when called standalone."""
 
     async def _incident_report_gen(tool_input: IncidentReportGenInput) -> IncidentReportGenOutput:
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         async with httpx.AsyncClient(timeout=config.request_timeout_seconds, headers=headers) as client:
             try:
-                report, raw_output = await run_p1(client, config, tool_input.video_url)
+                report, raw_output, finish_reason = await run_p1(client, config, tool_input.video_url)
             except httpx.TimeoutException as exc:
                 raise TimeoutError(f"P1 call timed out after {config.request_timeout_seconds}s") from exc
             report_text, report_text_error = await run_rp1(client, config, report)
 
-        await persist_report(
-            incident_id=tool_input.incident_id,
-            model_run_id=tool_input.model_run_id or config.model_run_id,
-            model_name=config.vlm_model_name,
-            report=report,
-        )
+        if tool_input.model_run_id is None:
+            await persist_report(
+                incident_id=tool_input.incident_id,
+                model_run_id=config.model_run_id,
+                model_name=config.vlm_model_name,
+                report=report,
+            )
         return IncidentReportGenOutput(
             report=report,
             report_text=report_text,
@@ -252,13 +271,15 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             model=config.vlm_model_name,
             contract_version=incident_contract.contract_version(),
             raw_output=raw_output,
+            finish_reason=finish_reason,
         )
 
     yield FunctionInfo.create(
         single_fn=_incident_report_gen,
         description=(
             "Extract a structured incident report (incident-contract) from an uploaded video given its signed URL, "
-            "then write a prose report. Persists to the incident DB when configured (best-effort)."
+            "then write a prose report. Without a caller model_run_id, persists to the incident DB when configured "
+            "(best-effort)."
         ),
         input_schema=IncidentReportGenInput,
         single_output_schema=IncidentReportGenOutput,

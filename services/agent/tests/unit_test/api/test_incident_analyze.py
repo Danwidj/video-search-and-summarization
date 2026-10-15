@@ -70,11 +70,18 @@ def test_old_body_fields_are_not_accepted_in_place_of_video_url():
     assert response.status_code == 422
 
 
-def test_contract_violation_is_422():
-    client, _ = _client(side_effect=IncidentExtractionError("schema violation: incident/type"))
+def test_contract_violation_is_422_with_the_raw_output():
+    error = IncidentExtractionError(
+        "schema violation: incident/type", raw_output='{"incident": 1}', finish_reason="stop", model="vlm"
+    )
+    client, _ = _client(side_effect=error)
     response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
     assert response.status_code == 422
-    assert "schema violation" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "schema violation" in detail["message"]
+    assert detail["raw_output"] == '{"incident": 1}'
+    assert detail["finish_reason"] == "stop"
+    assert detail["model"] == "vlm"
 
 
 def test_timeout_is_504():

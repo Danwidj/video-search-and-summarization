@@ -106,10 +106,11 @@ class TestRunP1:
             return _completion(json.dumps(MODEL_OUTPUT))
 
         async with _client(handler) as client:
-            report, raw = await run_p1(client, _config(), VIDEO_URL)
+            report, raw, finish_reason = await run_p1(client, _config(), VIDEO_URL)
         assert seen["url"] == "https://switchyard.example/v1/chat/completions"
         assert report["incident"]["duration"] == 5
         assert raw == json.dumps(MODEL_OUTPUT)
+        assert finish_reason == "stop"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -128,9 +129,12 @@ class TestRunP1:
             return _completion(content)
 
         async with _client(handler) as client:
-            with pytest.raises(IncidentExtractionError):
+            with pytest.raises(IncidentExtractionError) as excinfo:
                 await run_p1(client, _config(), VIDEO_URL)
         assert len(calls) == 1
+        assert excinfo.value.raw_output == content
+        assert excinfo.value.finish_reason == "stop"
+        assert excinfo.value.model == "nvidia/cosmos-3-nano-reasoner"
 
     @pytest.mark.asyncio
     async def test_token_exhaustion_is_reported(self):
@@ -241,7 +245,7 @@ class TestEndToEnd:
         return result, persist
 
     @pytest.mark.asyncio
-    async def test_p1_then_rp1_then_persist(self):
+    async def test_p1_then_rp1_without_persisting_for_a_caller_run_id(self):
         requests = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -256,14 +260,39 @@ class TestEndToEnd:
         assert result.report_text == "INCIDENT REPORT"
         assert result.contract_version == "incident-contract-v2"
         assert result.model == "nvidia/cosmos-3-nano-reasoner"
-        persist.assert_awaited_once()
-        assert persist.await_args.kwargs["model_run_id"] == "run1"
+        assert result.finish_reason == "stop"
+        persist.assert_not_awaited()  # the caller passed model_run_id, so it records the run
 
     @pytest.mark.asyncio
-    async def test_contract_violation_persists_nothing(self):
-        bad = {**MODEL_OUTPUT, "timeline": [{"start_seconds": 0, "end_seconds": None, "description": "lead-up"}]}
-        with pytest.raises(IncidentExtractionError, match="outside"):
-            await self._run(lambda _request: _completion(json.dumps(bad)))
+    async def test_standalone_call_persists_under_the_configured_run_id(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
+
+        _, persist = await self._run(handler, tool_input=IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL))
+        persist.assert_awaited_once()
+        assert persist.await_args.kwargs["model_run_id"] == "incident_report_gen"
+
+    @pytest.mark.asyncio
+    async def test_timeline_outside_the_window_is_not_fatal(self):
+        content = json.dumps(
+            {**MODEL_OUTPUT, "timeline": [{"start_seconds": 0, "end_seconds": None, "description": "lead-up"}]}
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            return _completion(content if "response_format" in body else "INCIDENT REPORT")
+
+        result, _ = await self._run(handler)
+        assert result.raw_output == content
+        assert result.report["timeline"] == [{"start_seconds": 0, "end_seconds": None, "description": "lead-up"}]
+
+    @pytest.mark.asyncio
+    async def test_core_violation_is_rejected_with_the_raw_output(self):
+        content = json.dumps({**MODEL_OUTPUT, "incident": {**MODEL_OUTPUT["incident"], "end_timestamp": 0}})
+        with pytest.raises(IncidentExtractionError, match="before start_timestamp") as excinfo:
+            await self._run(lambda _request: _completion(content))
+        assert excinfo.value.raw_output == content
 
     @pytest.mark.asyncio
     async def test_timeout_is_a_timeout_error(self):
@@ -279,6 +308,6 @@ class TestEndToEnd:
             body = json.loads(request.content)
             return _completion(json.dumps(MODEL_OUTPUT)) if "response_format" in body else httpx.Response(500, text="x")
 
-        result, persist = await self._run(handler)
+        result, _ = await self._run(handler)
         assert result.report_text is None and "HTTP 500" in result.report_text_error
-        persist.assert_awaited_once()
+        assert result.report["incident"]["duration"] == 5
