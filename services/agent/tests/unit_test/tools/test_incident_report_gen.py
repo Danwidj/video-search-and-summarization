@@ -264,6 +264,24 @@ class TestEndToEnd:
         persist.assert_not_awaited()  # the caller passed model_run_id, so it records the run
 
     @pytest.mark.asyncio
+    async def test_skip_rp1_makes_only_the_p1_call(self):
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            return _completion(json.dumps(MODEL_OUTPUT))
+
+        result, _ = await self._run(
+            handler,
+            tool_input=IncidentReportGenInput(
+                incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", skip_rp1=True
+            ),
+        )
+        assert len(requests) == 1 and "response_format" in requests[0]
+        assert result.report_text is None and result.report_text_error is None
+        assert result.report["incident"]["duration"] == 5
+
+    @pytest.mark.asyncio
     async def test_standalone_call_persists_under_the_configured_run_id(self):
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)

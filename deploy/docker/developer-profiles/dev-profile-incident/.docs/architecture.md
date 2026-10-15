@@ -352,15 +352,14 @@ sequenceDiagram
     UI->>DB: Upsert videos (id, filepath=R2 key, source=sensorId)
     UI->>UI: Sign 1-hour R2 GET URL locally
 
-    UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url}
+    UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url, skip_rp1: true}
     Tunnel->>Agent: Forward analyze request
 
     Agent->>Brev: P1 (video URL first, contract prompt, strict response_format) - same call as gateway mode
     Brev->>R2: GET video via presigned URL
     Brev-->>Agent: Schema-constrained JSON
     Agent->>Agent: Strict parse under core-scored-v1 (+ id-normalization-v1), derive duration; core violation -> 422 with raw_output
-    Agent->>Brev: RP1 (derived JSON -> prose)
-    Brev-->>Agent: Report text
+    Note over Agent,Brev: skip_rp1 - no RP1 call, like gateway mode (standalone calls run RP1)
     Note over Agent,DB: With model_run_id the agent writes nothing - the console records the run
 
     Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason}

@@ -266,6 +266,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.equal(agentCall.options.method, 'POST');
   const agentBody = JSON.parse(agentCall.options.body);
   assert.equal(agentBody.model_run_id, report.modelRunId);
+  assert.equal(agentBody.skip_rp1, true, 'agent mode runs P1 only, like gateway mode');
   assert.equal(agentBody.video_url, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
 
   // Database persistence verification: records via persistContractRun

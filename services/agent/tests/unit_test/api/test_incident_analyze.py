@@ -52,9 +52,13 @@ def _client(*, result=None, side_effect=None, tool_missing=False) -> tuple[TestC
 
 def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
     client, tool = _client(result=OUTPUT)
-    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model_run_id": "run1"})
+    response = client.post(
+        "/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
+    )
     assert response.status_code == 200
-    tool.ainvoke.assert_awaited_once_with({"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1"})
+    tool.ainvoke.assert_awaited_once_with(
+        {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
+    )
     assert response.json() == OUTPUT.model_dump()
 
 

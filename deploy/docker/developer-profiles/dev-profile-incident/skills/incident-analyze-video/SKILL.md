@@ -25,7 +25,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
 | `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
-| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 on the agent's `VLM_NAME`, RP1 on the model hardcoded in `incident_contract.rp1_request()`. The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
+| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
 
 ## Instructions
 
@@ -47,10 +47,10 @@ Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploa
 ```bash
 curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -H 'Content-Type: application/json' \
-  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>"}'
+  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>", "skip_rp1": false}'
 ```
 
-The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent persists the run itself (under its configured `model_run_id`); with one, it persists nothing and the caller records the run. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair.
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent persists the run itself (under its configured `model_run_id`); with one, it persists nothing and the caller records the run. `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair.
 
 | Status | Meaning |
 |---|---|

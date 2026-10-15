@@ -59,6 +59,9 @@ class AnalyzeIncidentRequest(BaseModel):
         max_length=20,
         description="The caller's model_runs.id; when given, the caller records the run and the agent persists nothing.",
     )
+    skip_rp1: bool = Field(
+        default=False, description="Run P1 only (incident-console-v2 agent mode); report_text stays null."
+    )
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
@@ -85,7 +88,11 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                 status_code=501, detail="incident_report_gen tool is not configured on this profile"
             ) from exc
 
-        tool_input: dict[str, Any] = {"incident_id": incident_id, "video_url": body.video_url}
+        tool_input: dict[str, Any] = {
+            "incident_id": incident_id,
+            "video_url": body.video_url,
+            "skip_rp1": body.skip_rp1,
+        }
         if body.model_run_id:
             tool_input["model_run_id"] = body.model_run_id
 

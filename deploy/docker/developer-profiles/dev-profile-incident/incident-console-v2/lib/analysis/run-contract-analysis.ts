@@ -232,9 +232,8 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         agentResponse = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video_url: playbackUrl, model_run_id: modelRunId }),
-          // The agent runs P1 and then RP1, each bounded by its own per-call timeout.
-          signal: AbortSignal.timeout(2 * model.timeout_seconds * 1000),
+          body: JSON.stringify({ video_url: playbackUrl, model_run_id: modelRunId, skip_rp1: true }),
+          signal: AbortSignal.timeout(model.timeout_seconds * 1000),
         });
       } catch (error) {
         const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';

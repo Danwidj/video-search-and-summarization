@@ -15,7 +15,7 @@
 
 """Incident extraction for the incident-console ``/analyze`` path, on the shared incident contract.
 
-Runs the same two calls as ``incident-console-v2`` (gateway mode) and the ``eval/`` benchmark
+Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the ``eval/`` benchmark
 (see ``.docs/prompt-contract-plan.md`` in the incident profile):
 
 1. **P1** - the video as a signed R2 URL first, then the contract extraction prompt, with the
@@ -25,7 +25,8 @@ Runs the same two calls as ``incident-console-v2`` (gateway mode) and the ``eval
    a core or schema violation raises :class:`IncidentExtractionError` carrying the raw output,
    and nothing is persisted.
 2. **RP1** - a text-only prose report from the validated P1 JSON. A
-   failed RP1 never discards a valid P1 report; the error is returned instead.
+   failed RP1 never discards a valid P1 report; the error is returned instead. ``skip_rp1``
+   leaves it out (``incident-console-v2`` agent mode, which, like gateway mode, uses P1 only).
 
 When the caller passes a ``model_run_id`` (``incident-console-v2`` agent mode), this tool
 persists nothing: the console validates the raw output and records the attempt itself.
@@ -90,6 +91,7 @@ class IncidentReportGenInput(BaseModel):
         max_length=20,
         description="The caller's model_runs.id; when given, the caller records the run and nothing is persisted here.",
     )
+    skip_rp1: bool = Field(default=False, description="Run P1 only; report_text stays null.")
 
 
 class IncidentReportGenOutput(BaseModel):
@@ -255,7 +257,9 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 report, raw_output, finish_reason = await run_p1(client, config, tool_input.video_url)
             except httpx.TimeoutException as exc:
                 raise TimeoutError(f"P1 call timed out after {config.request_timeout_seconds}s") from exc
-            report_text, report_text_error = await run_rp1(client, config, report)
+            report_text, report_text_error = (
+                (None, None) if tool_input.skip_rp1 else await run_rp1(client, config, report)
+            )
 
         if tool_input.model_run_id is None:
             await persist_report(

@@ -7,9 +7,8 @@ import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
 import { compactId } from '@/lib/ids';
 
-// Twice the slowest allowlisted model's timeout (contracts/inference.json): agent
-// mode waits for P1 and RP1. Plus persistence.
-export const maxDuration = 660;
+// The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
+export const maxDuration = 360;
 
 interface AnalysisRequest {
   sensorId?: string;

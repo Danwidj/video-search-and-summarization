@@ -72,7 +72,7 @@ Next.js loads them from `.env.local` in this directory, which is a symlink to th
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
 
-- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the console sends `{video_url, model_run_id}`, the agent runs P1 and RP1, and both modes run through the shared `core-scored-v1` validation policy and attempt recording. The console manages the `videos` row; the agent never writes `videos`.
+- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the console sends `{video_url, model_run_id, skip_rp1: true}`, the agent runs P1 only (as gateway mode does), and both modes run through the shared `core-scored-v1` validation policy and attempt recording. The console manages the `videos` row; the agent never writes `videos`.
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
 - `VLM_MODEL` — optional default selection in the model picker; must be one of the models in `contracts/inference.json` (defaults to `nvidia/cosmos-3-nano-reasoner`).
 - `CONTRACTS_DIR` — optional path to the shared `contracts/` directory (default `../contracts`).
@@ -89,7 +89,7 @@ Selecting a video immediately starts the three-step nvstreamer upload. If that u
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
 for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to Cosmos through the gateway, normalizes common VLM aliases into the canonical snake-case contract, validates the structured result, persists it
-through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1 and RP1
+through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
 instead of the gateway and the console still validates and persists the run; see the variable list above). Start with short clips while inference remains
 synchronous.
 
