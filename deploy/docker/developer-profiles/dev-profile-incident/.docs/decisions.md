@@ -11,14 +11,14 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Why:**
   - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
   - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
-  - A small pilot on Animal003 and Assault018 confirmed that with the timeline context instruction, RP1 generates high-quality prose reports where lead-up and aftermath events provide chronological narrative context without distorting the incident window or duration.
+  - A 2-clip pilot (Animal003 and Assault018) compared RP1 output from the baseline prompt with output from the prompt carrying the new timeline context line. With the new line, the prose described lead-up and aftermath events as chronological context and kept the reported incident window and duration. Pilot outputs are not stored in the repo.
 - **Versioning:**
   - `contracts/VERSION` is bumped to `incident-contract-v3` because `report_generation_prompt.md` changed, following the profile rule in `dev-profile-incident/AGENTS.md` ("Contract changes bump contracts/VERSION and update eval and the console together").
-  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The separate in-flight branch `fm/vss-agent-contract-v2`, which vendors `contracts/` into `services/agent`, re-syncs with v3 when it lands.
+  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The separate in-flight branch `fm/vss-agent-contract-v2`, which vendors `contracts/` into `services/agent`, re-syncs with v3 as part of phase 3.
 - **Alternatives rejected:**
   - Retaining `incident-contract-v2` with report-prompt hashes or sub-versions in recorded results (rejected: extends the recorded result shape, violating provenance consistency; following the profile rule of a version bump is cleaner and respects the existing result schema).
   - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
-- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py); [`../incident-console-v2/lib/contract/load.ts`](../incident-console-v2/lib/contract/load.ts).
+- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py).
 
 ---
 
