@@ -206,7 +206,7 @@ def run_one_video(
     (e.g. a timeline outside the incident window) does not empty it. The window is
     also checked against ``video_duration_seconds`` when that is known.
     ``p1_raw.contract_ok`` keeps its original meaning, full incident-contract
-    validity, and gates RP1 as before.
+    validity. RP1 runs when ``core_ok`` with unchanged input.
 
     Raises ``EvaluatorDependencyError`` (aborting the whole run) if the
     embedding server or LLM judge is unavailable or invalid for this video -
@@ -236,13 +236,13 @@ def run_one_video(
     eval_result = eval_gt.run_evaluation(db, incident_id, model_run_id)
     check_judge_ok(eval_result)
 
-    if contract_ok:
+    if core_ok:
         rp1_report = generate_rp1_report(prediction)
     else:
         rp1_report = {
             "text": "", "model_id": RP1_MODEL, "prompt_version": contract.contract_version(),
             "inference_config": RP1_INFERENCE_CONFIG, "ok": False, "skipped": True,
-            "error": "skipped: RP1 runs only on a fully contract-valid P1 report", "attempts": 0,
+            "error": "skipped: RP1 runs only on a core-valid P1 report", "attempts": 0,
         }
 
     return {

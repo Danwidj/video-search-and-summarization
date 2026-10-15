@@ -50,6 +50,10 @@ export function extractionPrompt(): string {
   return readContractFile('incident_extraction_prompt.md');
 }
 
+export function reportPrompt(): string {
+  return readContractFile('report_generation_prompt.md');
+}
+
 export function schemaText(): string {
   return readContractFile('incident_report.schema.json');
 }
@@ -82,4 +86,8 @@ export function promptSha256(): string {
 
 export function schemaSha256(): string {
   return sha256(schemaText());
+}
+
+export function reportPromptSha256(): string {
+  return sha256(reportPrompt());
 }

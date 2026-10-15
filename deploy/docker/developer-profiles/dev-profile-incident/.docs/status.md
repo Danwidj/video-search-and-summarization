@@ -39,7 +39,7 @@ Current delivery status verified against the codebase:
 3. **The Cosmos models often break the timeline rule.** They include lead-up/aftermath events outside their own incident window (Super on Animal003, Assault018, Burglary005 and the phase-0 road clip; Nano on Animal003).
    - Clarified prompt wording did not change this in a 12-call pilot.
    - Since validation policy `core-scored-v1` it is an unscored-field issue: recorded and flagged on the report page, no longer a rejection.
-   - Whether the timeline should become a whole-video context timeline is an open decision.
+   - As of 2026-10-16, RP1 runs whenever `core_ok` is true with unchanged input and an RP1 prompt instruction that timeline events outside the incident time are context, preserving lead-up/aftermath context in generated reports.
 4. **Pre-existing orphaned runs.** 20 legacy console `model_runs` rows name videos that no longer exist (left by earlier deletions). They are not shown anywhere and were not deleted (a destructive production-data change); new deletions clean up explicitly associated run records.
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values are folded at query time only.** `fighting`/`animal` types and `person` entities remain stored; one legacy report has the non-contract type `other`. A data migration (prompt-contract phase 4) would need approval.
@@ -56,7 +56,7 @@ Current delivery status verified against the codebase:
    - The raw answers of the earlier full run were not retained.
    - Runs now keep an immutable copy per run.
    - Fixed P1 run ids still overwrite the benchmark rows in the DB.
-2a. **RP1 and inconsistent timelines (proposal):** run RP1 when `core_ok` with unchanged input, and add one RP1 prompt line that timeline events outside the incident time are context. This is a prompt change, not made.
+2a. **RP1 and inconsistent timelines:** Done (2026-10-16). RP1 runs when `core_ok` with unchanged input, and `contracts/report_generation_prompt.md` includes the timeline context instruction.
 3. **Possible contract v3:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
 4. **Legacy type/entity data migration** (phase 4) and legacy table cleanup: approval needed.
 5. **RLS policies** and **writer consolidation (Option B).**

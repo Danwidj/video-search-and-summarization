@@ -114,6 +114,7 @@ def test_prompt_taxonomy_matches_schema():
 def test_report_prompt_has_single_placeholder():
     template = contract.report_prompt_template()
     assert template.count("{structured_incident_json}") == 1
+    assert "Timeline events outside the incident time are context." in template
     template.format(structured_incident_json="{}")
 
 
