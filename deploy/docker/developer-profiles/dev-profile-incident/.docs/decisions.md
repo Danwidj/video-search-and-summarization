@@ -56,6 +56,18 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** altering the legacy `entities` / `instruments` / `assets` tables; unscoped search; public-only URLs (private buckets need presigning); an external embedding service for now.
 - **Links:** [`../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](data.md); [`mvp2/README.md`](mvp2/README.md).
 
+### 2026-10-16: Hexagonal architecture for incident-console-v2 and removal of zero-VM constraint for MVP2 data workstream
+- **Decision:**
+  - Adopt hexagonal architecture (ports and adapters) for `incident-console-v2`: application UI routes (`app/api/*`) and components depend on domain ports (`lib/ports/`), with database access implemented via secondary adapters (`lib/adapters/supabase/`), decoupling UI from direct PostgREST transport and table schemas.
+  - Remove the zero-VM constraint from the MVP2 data and search layer workstream (PR #120): include explicit verification that `vss-agent` on the `kwanz-ws` GPU VM persists incident reports to Supabase end to end over Zheng's tailnet.
+- **Why:**
+  - Hexagonal architecture isolates Next.js UI route handlers from database implementation details, eliminating hard-coded PostgREST client calls across routes and enabling clean plug-in points for MVP2 tables (`evidence_crops`, `query_results`). Other architectural rationale: ask captain.
+  - The zero-VM constraint was removed because the deployment VM (`kwanz-ws`) cannot reach PostgreSQL on port 5432 due to campus firewall DPI restrictions and must persist via Supabase PostgREST (`incident_db.py`, `INCIDENT_SUPABASE_*`); verifying real agent persistence on `kwanz-ws` ensures live schema compatibility and proves the RLS lockdown does not break the VM agent. Other reasons: ask captain.
+- **Alternatives rejected:**
+  - Ad-hoc helper module `lib/db/` without refactoring existing API routes (rejected: leaves routes coupled to raw PostgREST client and creates inconsistent data-access paradigms).
+  - Retaining zero-VM constraint for MVP2 database workstream (rejected: risks silent persistence failures on `kwanz-ws` if agent PostgREST calls fail against migrated tables or functions).
+- **Links:** [PR #120](https://github.com/Danwidj/video-search-and-summarization/pull/120); [`.docs/mvp2/db-migration.md`](mvp2/db-migration.md); [`incident-console-v2`](../incident-console-v2/); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../../services/agent/src/vss_agents/utils/incident_db.py).
+
 ### 2026-10-16: MVP2 search route, chat route, crop service, backfill and launcher
 - **Decision:**
   - `POST /api/v1/incidents/search` (`search-contract-v1`) and `POST /api/v1/incidents/chat` (`chat-contract-v1`) in `vss-agent`, mounted unconditionally, behind hexagonal ports (`SearchStore`, `QueryEmbedder`, `SearchClient`) with in-memory adapters; mock routes on :7777 and :7778 serve the frontend without a GPU.
