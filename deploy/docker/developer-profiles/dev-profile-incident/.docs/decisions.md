@@ -2,6 +2,20 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Removal of zero-VM constraint for MVP2 data and search layer workstream
+- **Decision:**
+  - Remove the zero-VM constraint from the MVP2 data and search layer workstream: include explicit verification that `vss-agent` on the `kwanz-ws` GPU VM persists incident reports to Supabase end to end over Zheng's tailnet.
+  - Split the MVP2 reorganisation into two independent workstreams: PR #120 covers the UI/frontend restructure with hexagonal architecture, while this separate PR covers the database migration and VM persistence.
+- **Why:**
+  - The zero-VM constraint was removed because the deployment VM (`kwanz-ws`) cannot reach PostgreSQL on port 5432 due to campus firewall DPI restrictions and must persist via Supabase PostgREST (`incident_db.py`, `INCIDENT_SUPABASE_*`); verifying real agent persistence on `kwanz-ws` ensures live schema compatibility and proves the RLS lockdown does not break the VM agent. Other reasons: ask captain.
+  - Splitting UI decoupling from database migration allows each workstream to be reviewed, tested, and rolled back independently.
+- **Alternatives rejected:**
+  - Retaining zero-VM constraint for MVP2 database workstream (rejected: risks silent persistence failures on `kwanz-ws` if agent PostgREST calls fail against migrated tables or functions).
+  - Monolithic PR combining UI hexagonal refactor with live database migration (rejected: harder to review and roll back independently).
+- **Links:** [`.docs/mvp2/db-migration.md`](mvp2/db-migration.md); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../../services/agent/src/vss_agents/utils/incident_db.py).
+
+---
+
 ### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v3 and retire legacy console contract files
 - **Decision:**
   - Move `vss-agent` (`services/agent`) onto `incident-contract-v3`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
