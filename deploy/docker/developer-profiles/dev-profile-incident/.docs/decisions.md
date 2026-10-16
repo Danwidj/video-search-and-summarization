@@ -2,6 +2,20 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Hexagonal architecture for incident-console-v2 and removal of zero-VM constraint for MVP2 data workstream
+- **Decision:**
+  - Adopt hexagonal architecture (ports and adapters) for `incident-console-v2`: application UI routes (`app/api/*`) and components depend on domain ports (`lib/ports/`), with database access implemented via secondary adapters (`lib/adapters/supabase/`), decoupling UI from direct PostgREST transport and table schemas.
+  - Remove the zero-VM constraint from the MVP2 data and search layer workstream (PR #120): include explicit verification that `vss-agent` on the `kwanz-ws` GPU VM persists incident reports to Supabase end to end over Zheng's tailnet.
+- **Why:**
+  - Hexagonal architecture isolates Next.js UI route handlers from database implementation details, eliminating hard-coded PostgREST client calls across routes and enabling clean plug-in points for MVP2 tables (`evidence_crops`, `query_results`). Other architectural rationale: ask captain.
+  - The zero-VM constraint was removed because the deployment VM (`kwanz-ws`) cannot reach PostgreSQL on port 5432 due to campus firewall DPI restrictions and must persist via Supabase PostgREST (`incident_db.py`, `INCIDENT_SUPABASE_*`); verifying real agent persistence on `kwanz-ws` ensures live schema compatibility and proves the RLS lockdown does not break the VM agent. Other reasons: ask captain.
+- **Alternatives rejected:**
+  - Ad-hoc helper module `lib/db/` without refactoring existing API routes (rejected: leaves routes coupled to raw PostgREST client and creates inconsistent data-access paradigms).
+  - Retaining zero-VM constraint for MVP2 database workstream (rejected: risks silent persistence failures on `kwanz-ws` if agent PostgREST calls fail against migrated tables or functions).
+- **Links:** [PR #120](https://github.com/Danwidj/video-search-and-summarization/pull/120); [`.docs/mvp2/db-migration.md`](mvp2/db-migration.md); [`incident-console-v2`](../incident-console-v2/); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../../services/agent/src/vss_agents/utils/incident_db.py).
+
+---
+
 ### 2026-10-16: MVP2 chat backend endpoint and chat-contract-v1
 - **Decision:**
   - Define `chat-contract-v1` in `contracts/chat-contract-v1/` specifying request (`chat_request.schema.json`) and response (`chat_response.schema.json`) JSON schemas with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
