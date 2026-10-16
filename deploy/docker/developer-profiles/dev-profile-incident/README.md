@@ -23,6 +23,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Decision log](.docs/decisions.md)
 - [Option B architecture restructure plan](.docs/restructure-plan.md) (proposed)
 - [Unified prompt & structured-output contract plan](.docs/prompt-contract-plan.md) (proposed)
+- [MVP2 natural-language search overview](.docs/mvp2/README.md)
 - [Archive / retired plans](.docs/archive/)
 
 **Components**

@@ -32,7 +32,7 @@ Surveillance Video
        |
 Keyframe @ timestamp_seconds  ──────────────────▶  Open-Vocabulary Detector (Grounding DINO / OWLv2)
        |                                                   |
-       |   Bounding box [ymin,xmin,ymax,xmax] normalized 0-1000
+       |   Bounding box [ymin,xmin,ymax,xmax] normalised 0-1000
        V                                                   V
  Cropped JPEG (evidence image)                        High-precision box
        |                                                   |
@@ -117,13 +117,13 @@ Search & Retrieval
 
 ## 4. Workstream Dependencies & Order
 
-The three PR workstreams and the VM backend steps form a chain of dependencies. Each waits for the previous step's contract/schema to be finalized.
+The three PR workstreams and the VM backend steps form a chain of dependencies. Each waits for the previous step's contract/schema to be finalised.
 
 ### VM Backend Steps (built separately, outside this repo):
 
 | Step | Deliverable | Depends On |
 |---|---|---|
-| **Step 1** (in progress) | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | — |
+| **Step 1** (in progress) | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - |
 | **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 |
 | **Step 3** | Crop service: open-vocabulary detector (Grounding DINO/OWLv2) on extracted keyframes, text embedding model, R2 upload, `evidence_crops` metadata population | Step 2 |
 | **Step 4** | `search_evidence_items` RPC with pgvector HNSW, `POST /api/v1/incidents/search` REST route, critic always-on, `query_results` persistence | Step 3 |
@@ -183,7 +183,7 @@ The three PR task docs assume the following conventions and environment setup. T
 
 ## 6. Per-Workstream Context
 
-### PR 118 — Frontend (search, chat, theming)
+### PR 118 - Frontend (search, chat, theming)
 
 **File:** `.docs/mvp2/frontend.md` (to be created by PR assignee)
 
@@ -201,7 +201,7 @@ The three PR task docs assume the following conventions and environment setup. T
 - Display ranked results with image, timestamp, critic verdict
 - `POST /api/v1/incidents/chat` sends conversation history and follow-up query text to the chat route
 
-### PR 119 — Eval (system vs one-shot baseline, retrieval)
+### PR 119 - Eval (system vs one-shot baseline, retrieval)
 
 **File:** `.docs/mvp2/eval.md` (to be created by PR assignee)
 
@@ -219,7 +219,7 @@ The three PR task docs assume the following conventions and environment setup. T
 - Critic accuracy: % of hits confirmed by the VLM critic
 - One-shot vs system baseline delta (critic rejection rate, ranking shift)
 
-### PR 120 — Data and Search Layer, Zero-VM
+### PR 120 - Data and Search Layer, Zero-VM
 
 **File:** `.docs/mvp2/db-migration.md` (to be created by PR assignee)
 
@@ -251,7 +251,7 @@ The three PR task docs assume the following conventions and environment setup. T
 
 Mark the following as planned, not final, since the VM backend contracts are still being built:
 
-- **Bounding box format** in `evidence_crops.bounding_box`: `[ymin, xmin, ymax, xmax]` normalized integers 0-1000. *Source: incident-contract-v3 decision after box-accuracy pilot; open-vocabulary detector stage.*
+- **Bounding box format** in `evidence_crops.bounding_box`: `[ymin, xmin, ymax, xmax]` normalised integers 0-1000. *Source: incident-contract-v3 decision after box-accuracy pilot; open-vocabulary detector stage.*
 - **Critic model and endpoint**: Which VLM critic model (`nvidia/cosmos-3-nano-reasoner` etc.) and the exact `/v1/chat/completions` prompt format. *These are VM backend decisions.*
 - **pgvector dimension**: `vector(1024)` dimension. *Confirmed by current schema, but may change with model switch.*
 - **RPC parameter defaults**: `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`. *May be tuned after eval PR 119 runs benchmarks.*
