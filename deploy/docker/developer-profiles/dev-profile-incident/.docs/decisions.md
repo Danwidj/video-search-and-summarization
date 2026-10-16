@@ -2,6 +2,25 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: MVP2 vss-agent search route with always-on critic and hexagonal SearchStore port
+- **Decision:**
+  - Build `services/agent/src/vss_agents/api/incident_search.py` implementing `POST /api/v1/incidents/search` matching `search-contract-v1` with an always-on VLM critic.
+  - Implement a hexagonal architecture using `SearchStore` and `QueryEmbedder` ports. Provide `InMemorySearchStore` (canned candidates matching `base_profile_mock`, in-memory audit store) for zero-VM testing and local fallback, and stub `PostgrestSearchStore` with explicit TODOs owned by PR #120 for live Supabase RPC `search_evidence_items` and table persistence (`queries`, `query_results`).
+  - Implement `VlmCriticEvaluator` using Brev Switchyard OpenAI-compatible chat completions endpoint (`DEFAULT_VLM_BASE_URL`, `DEFAULT_VLM_MODEL`), evaluating retrieved crops and item descriptions against queries.
+  - Critic degradation: On any VLM evaluation failure, network error, or timeout, never drop hits; degrade gracefully to `verdict="unverified"` with `confidence=None` and rationale explaining the failure.
+  - Wire route registration unconditionally in `CustomFastApiFrontEndWorker` (`services/agent/src/vss_agents/api/custom_fastapi_worker.py`), making incident search always-on with no feature flag.
+- **Why:**
+  - Implements MVP2 VM backend Step 4. Provides natural-language evidence search per `search-contract-v1`.
+  - Decouples vss-agent search route development from PR #120's database migration and PR #119's embedding benchmarks via hexagonal ports.
+  - Ensures robust reliability by degrading critic errors to "unverified" rather than failing the search query or dropping evidence candidates.
+- **Alternatives rejected:**
+  - Dropping candidate hits when the critic call fails (rejected: critical evidence could be silently lost due to transient network or VLM issues).
+  - Feature-flagging the search route behind an optional profile knob (rejected: per MVP2 spec, search is an always-on core capability).
+  - Waiting for PR #120's database migration to land before implementing the agent search endpoint (rejected: hexagonal port allows independent development and comprehensive unit testing).
+- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
+
+---
+
 ### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v3 and retire legacy console contract files
 - **Decision:**
   - Move `vss-agent` (`services/agent`) onto `incident-contract-v3`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
