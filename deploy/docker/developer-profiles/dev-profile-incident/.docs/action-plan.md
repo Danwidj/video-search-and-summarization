@@ -126,6 +126,7 @@ Following the box-accuracy pilot (where VLM bounding boxes scored 0% well-framed
 - **PR 119:** System vs one-shot baseline benchmarking, retrieval evaluation suite, critic utility ablation, and detector selection.
 - **PR 120:** Data and search layer, hexagonal decoupling of `incident-console-v2`, Supabase migrations (`evidence_crops`, `query_results`), RLS lockdown, connection verification, VM `vss-agent` persistence verification, and RPC search function.
 - **Contracts (`fm/vss-mvp2-contracts`):** `search-contract-v1` REST schema and mock backend search routes on port 7778.
+- **Backfill (`fm/vss-mvp2-backfill-timestamps`):** Targeted timestamp and detector label backfill script over existing official reports (`scripts/backfill_official_timestamps.py`).
 
 See [`mvp2/README.md`](mvp2/README.md) for full technical specifications, dependencies, and TODO stand-in indices.
 

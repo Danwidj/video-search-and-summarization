@@ -2,6 +2,21 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Targeted timestamp and detector label backfill over existing official incident reports
+- **Decision:**
+  - Build `scripts/backfill_official_timestamps.py` (and test suite `scripts/tests/test_backfill_official_timestamps.py`) to execute an automated, targeted temporal grounding and detector label pass over existing official incident reports (`videos.selected_model_run_id IS NOT NULL`).
+  - Architecture adheres strictly to hexagonal ports: `VideoReportSource` (fetching official reports without mutating existing text, IDs, or human reviews), `VLMClient` (querying VLM for `timestamp_seconds` and short detector `label`), `CropClient` (`FakeCropClient` stand-in; production adapter owned by crop-service task), and `EvidenceStore` (`InMemoryEvidenceStore` with JSON lines `--output-file` export and rerun resumption; production database loading owned by PR 120 loader).
+  - Guarantees: fully idempotent and resumable (skips items already present in the evidence store or loaded from `--output-file`), bounded concurrency (`--concurrency`, default 4), validated positive batch size (`--batch-size`), non-destructive `--dry-run` planning mode, and isolated per-item error handling without aborting the batch.
+- **Why:**
+  - Official reports carry human review and edits that must not be overwritten or discarded. Re-running entire incident analysis from scratch would erase manual reviewer corrections and historical IDs.
+  - VLM bounding box pilot showed 0% well-framed spatial boxes from VLMs but >95% temporal accuracy; the targeted pass queries the VLM solely for whole-second timestamps and detector labels, letting the open-vocabulary crop detector generate precise bounding boxes. Other architectural rationale: ask captain.
+- **Alternatives rejected:**
+  - Automated full re-analysis of all videos under contract-v3 (rejected: destroys human reviewer edits, creates duplicate run histories, and re-triggers full extraction latency).
+  - VLM spatial bounding box backfill (rejected: pilot proved VLM spatial coordinates degenerate completely).
+- **Links:** [`scripts/backfill_official_timestamps.py`](../../../../../scripts/backfill_official_timestamps.py); [`scripts/tests/test_backfill_official_timestamps.py`](../../../../../scripts/tests/test_backfill_official_timestamps.py); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/data.md`](data.md).
+
+---
+
 ### 2026-10-16: MVP2 crop evidence service with detector and storage ports (VM Step 3)
 - **Decision:**
   - Build `services/agent/src/vss_agents/utils/crop_evidence.py` implementing `CropEvidenceService`, exposing canonical `crop_evidence_item(video_ref, timestamp_seconds, label, detector)` returning `CropResult` (`image_bytes`, `normalized_box`, `score`, `frame_size`) or `None`, and `evidence_key(video_id, model_run_id, collection, item_id)` generating canonical R2 layout keys `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg`.
