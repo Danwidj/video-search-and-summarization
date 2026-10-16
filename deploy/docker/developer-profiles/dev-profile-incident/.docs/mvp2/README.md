@@ -249,7 +249,7 @@ The three PR task docs assume the following conventions and environment setup. T
 - RPC execution permission lockdown: `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`
 - pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 - Hexagonal decoupling of `incident-console-v2`, connection verification, and verifying VM `vss-agent` persists reports to Supabase end to end
-- The `start.sh` zero-VM launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference
+- The `start.sh` launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference (this launcher change belongs to VM backend Step 6 `start.sh` search task, not to PR 120's scope)
 - Dependency on VM backend Step 1 (`incident-contract-v3`) and Step 2 (mock backend)
 
 **Migration checklist:**
