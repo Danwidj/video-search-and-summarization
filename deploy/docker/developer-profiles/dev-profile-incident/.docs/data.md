@@ -484,9 +484,8 @@ and resets review status to `'unreviewed'` in a single database transaction.
 
 Database access is split across two client implementations according to operational requirements:
 
-1. **Console & Tooling (Direct Postgres):**
-   `incident-console/db.py` uses direct Postgres via SQLAlchemy Core and `psycopg2`. Configuration is `INCIDENT_DB_DSN`.
-   The console is database-backed only; there is no offline CSV-preview UI mode.
+1. **Tooling & Retired v1 Console (Direct Postgres):**
+   The retired v1 console (`incident-console/db.py`) historically used direct Postgres via SQLAlchemy Core and `psycopg2` (`INCIDENT_DB_DSN`). Active UI development in `incident-console-v2` uses Supabase PostgREST (`lib/postgrest/client.ts`). The console is database-backed only; there is no offline CSV-preview UI mode.
 
 2. **Agent Side & Service Writers (Supabase PostgREST):**
    `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase

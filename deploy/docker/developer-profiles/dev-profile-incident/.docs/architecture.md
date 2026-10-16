@@ -380,44 +380,9 @@ sequenceDiagram
 
 ---
 
-### Sequence C: Natural Language Video Search (Planned MVP2)
+### Sequence C: Natural Language Video Search (MVP2)
 
-*Multi-subagent search workflow querying indexed Elasticsearch video embeddings.*
+*Authoritative specification, sequence, and data flow: [`mvp2/README.md`](mvp2/README.md) (PR 122).*
 
 > [!NOTE]
-> The search route `/api/v1/incidents/search` and the UI `/search` view are planned for MVP2. In `dev-profile-search`, search components (`search_agent`, `embed_search`, `attribute_search`, and `/api/v1/embed_search`) exist, but the VM incident profile currently loads `dev-profile-base`'s configuration which does not register them.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Investigator (Browser)
-    participant UI as incident-console-v2 (/search)
-    participant Tunnel as SSH Tunnel (:8000)
-    participant Agent as vss-agent (Workflow Router)
-    participant SearchSub as search_agent / embed_search
-    participant ES as Elasticsearch (Vector Index)
-    participant R2 as Cloudflare R2 Store
-
-    %% Background Ingestion Phase (continuous)
-    Note over Agent,ES: Background: RT-CV & RT-Embed index video frames into ES via Kafka
-
-    %% Search Query Phase
-    User->>UI: Enter query: "Person in black hoodie forcing back door"
-    UI->>Tunnel: POST localhost:8000/api/v1/incidents/search
-    Tunnel->>Agent: Forward search query
-    
-    Agent->>Agent: Route via config.yml prompt to search_agent
-    Agent->>SearchSub: Dispatch text query
-    
-    SearchSub->>SearchSub: Generate query embedding
-    SearchSub->>ES: Vector kNN + BM25 attribute search
-    ES-->>SearchSub: Ranked matching video segments (sensorId, timestamps, scores)
-    
-    SearchSub->>Agent: Synthesize search results with temporal windows
-    Agent-->>Tunnel: Return ranked results array
-    Tunnel-->>UI: Forward search response
-
-    UI->>R2: Request presigned playback URLs for matching intervals
-    R2-->>UI: Presigned video URLs
-    UI-->>User: Display interactive video results with timestamp seek
-```
+> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), and an always-on VLM critic (`query_results`). Active workstreams are tracked in PR 118, PR 119, and PR 120. See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
