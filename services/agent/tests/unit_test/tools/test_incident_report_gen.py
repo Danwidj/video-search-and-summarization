@@ -52,11 +52,29 @@ MODEL_OUTPUT = {
         "confidence_score": None,
         "location": None,
     },
-    "entities": [{"entity_id": "E1", "type": "human", "description": "Person in a hood.", "timestamp_seconds": 2, "label": "person"}],
-    "instruments": [
-        {"instrument_id": "I1", "entity_id": "E1", "name": "crowbar", "description": "Used on A1.", "threat_level": 3, "timestamp_seconds": 3, "label": "crowbar"}
+    "entities": [
+        {
+            "entity_id": "E1",
+            "type": "human",
+            "description": "Person in a hood.",
+            "timestamp_seconds": 2,
+            "label": "person",
+        }
     ],
-    "assets": [{"asset_id": "A1", "name": "door", "description": "Forced open.", "timestamp_seconds": 2, "label": "door"}],
+    "instruments": [
+        {
+            "instrument_id": "I1",
+            "entity_id": "E1",
+            "name": "crowbar",
+            "description": "Used on A1.",
+            "threat_level": 3,
+            "timestamp_seconds": 3,
+            "label": "crowbar",
+        }
+    ],
+    "assets": [
+        {"asset_id": "A1", "name": "door", "description": "Forced open.", "timestamp_seconds": 2, "label": "door"}
+    ],
     "timeline": [{"start_seconds": 1, "end_seconds": 6, "description": "E1 forces A1 with I1."}],
     "uncertainties": [],
 }
