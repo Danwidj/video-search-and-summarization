@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv/dist/2020.js';
 
-const contractsDir = '/Users/danielwidjaja/.config/treehouse/pool/.treehouse/video-search-and-summarization-85c4f2/4/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/contracts';
+const contractsDir = path.dirname(fileURLToPath(import.meta.url));
 
 function load(filename) {
   return JSON.parse(fs.readFileSync(path.join(contractsDir, filename), 'utf8'));
@@ -78,7 +79,7 @@ for (const hit of fullResponse.hits) {
   assert.ok(typeof item.label === 'string', 'label must be string');
   assert.ok(typeof item.crop_image_url === 'string', 'crop_image_url must be string');
   assert.ok(
-    hit.crit.verdict === 'confirmed' || hit.crit.verdict === 'rejected' || hit.crit.verdict === 'unverified',
+    hit.critic.verdict === 'confirmed' || hit.critic.verdict === 'rejected' || hit.critic.verdict === 'unverified',
     'critic verdict must be enum'
   );
   // bounding_box optional: null or 4-int array
@@ -90,7 +91,7 @@ console.log('  PASS: all pilot constraints satisfied');
 
 // Incident contract v3: schema has required fields
 console.log('=== Incident contract v3 schema ===');
-const incidentSchema = load('incident-contract-v3/incident_report.schema.json');
+const incidentSchema = load('incident_report.schema.json');
 
 // Check entities have timestamp_seconds and label
 const entityProps = incidentSchema.properties.entities.items.properties;
@@ -121,7 +122,7 @@ console.log('  PASS: incident-contract-v3 schema has required fields, no boundin
 
 // VERSION file
 console.log('=== VERSION file ===');
-const version = fs.readFileSync(path.join(contractsDir, 'incident-contract-v3', 'VERSION'), 'utf8').trim();
+const version = fs.readFileSync(path.join(contractsDir, 'VERSION'), 'utf8').trim();
 assert.strictEqual(version, 'incident-contract-v3', 'VERSION must be incident-contract-v3');
 console.log('  PASS: VERSION = incident-contract-v3');
 

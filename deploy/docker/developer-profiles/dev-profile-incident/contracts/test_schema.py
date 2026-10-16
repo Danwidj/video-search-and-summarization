@@ -95,19 +95,19 @@ def test_incident_contract_v3_schema_has_required_fields():
     schema = _load("incident_report.schema.json")
 
     # Check entities have timestamp_seconds and label
-    entity_schema = schema["properties"]["entities"]["items"]
+    entity_schema = schema["properties"]["entities"]["items"]["properties"]
     assert "timestamp_seconds" in entity_schema, "entities must have timestamp_seconds"
     assert "label" in entity_schema, "entities must have label"
     assert entity_schema["timestamp_seconds"]["minimum"] == 0, "timestamp_seconds min must be 0"
 
     # Check instruments have timestamp_seconds and label
-    instrument_schema = schema["properties"]["instruments"]["items"]
+    instrument_schema = schema["properties"]["instruments"]["items"]["properties"]
     assert "timestamp_seconds" in instrument_schema, "instruments must have timestamp_seconds"
     assert "label" in instrument_schema, "instruments must have label"
     assert instrument_schema["timestamp_seconds"]["minimum"] == 0
 
     # Check assets have timestamp_seconds and label
-    asset_schema = schema["properties"]["assets"]["items"]
+    asset_schema = schema["properties"]["assets"]["items"]["properties"]
     assert "timestamp_seconds" in asset_schema, "assets must have timestamp_seconds"
     assert "label" in asset_schema, "assets must have label"
     assert asset_schema["timestamp_seconds"]["minimum"] == 0
@@ -121,7 +121,7 @@ def test_incident_contract_v3_schema_has_required_fields():
 
 def test_incident_contract_v3_version():
     """VERSION file matches incident-contract-v3."""
-    version = (CONTRACTS_DIR / "incident-contract-v3" / "VERSION").read_text().strip()
+    version = (CONTRACTS_DIR / "VERSION").read_text().strip()
     assert version == "incident-contract-v3", f"Expected incident-contract-v3, got {version}"
 
 
