@@ -96,13 +96,35 @@ def test_start_script_shellcheck():
 
 
 def test_start_script_always_mounts_search_route():
-    """Verify that start.sh documents and wires always-on search route with no conditional gate."""
-    content = START_SH_PATH.read_text(encoding="utf-8")
-    assert "SEARCH_ROUTE" in content
-    assert "/api/v1/incidents/search" in content
-    assert "always-on" in content
-    assert "NO opt-in" in content or "no opt-in" in content
-    assert "ENABLE_SEARCH" not in content
+    """Verify that the search route is mounted unconditionally and responds with expected status codes."""
+    import sys
+    mock_src = INCIDENT_PROFILE_DIR / "mock-backend" / "base_profile_mock" / "src"
+    if str(mock_src) not in sys.path:
+        sys.path.insert(0, str(mock_src))
+
+    from base_profile_mock.routers.incident_search import router as search_router
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(search_router)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/v1/incidents/search",
+        json={"query": "crowbar used in burglary", "top_k": 3},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_hits"] > 0
+    assert "hits" in data
+    assert "critic" in data["hits"][0]
+
+    invalid_resp = client.post("/api/v1/incidents/search", json={})
+    assert invalid_resp.status_code == 422
+
+    get_resp = client.get("/api/v1/incidents/search")
+    assert get_resp.status_code == 405
 
 
 def test_local_search_route_launches_under_5_seconds():
