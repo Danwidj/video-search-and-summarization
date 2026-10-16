@@ -63,22 +63,6 @@ class CropResult:
     score: float
     frame_size: tuple[int, int]  # (width, height)
 
-    @property
-    def image(self) -> bytes:
-        return self.image_bytes
-
-    @property
-    def box(self) -> list[int]:
-        return self.normalized_box
-
-    @property
-    def width(self) -> int:
-        return self.frame_size[0]
-
-    @property
-    def height(self) -> int:
-        return self.frame_size[1]
-
 
 def evidence_key(video_id: str, model_run_id: str, collection: str, item_id: str) -> str:
     """Return the canonical R2 storage key for an evidence crop image.
