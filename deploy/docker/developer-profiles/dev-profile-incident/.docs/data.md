@@ -14,12 +14,14 @@ the same video, a parallel ground-truth evaluation structure, and human review w
 
 ### Report-library summary RPC
 
-`list_incident_report_summaries` (latest: migration `20260927180000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
+`list_incident_report_summaries` (latest: migration `20260928000000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
 - **Inputs:** it joins `reports`, `incidents`, `model_runs`, `videos` and `review_status` and applies search, filter, sort and pagination in Postgres. Beyond the earlier type, severity, status, date/time/weekday and evidence-substring filters it takes:
   - `p_scope`: `'all'` (default: every successful report) or `'official'` (only each video's selected official report);
   - `p_entity_types`: exact canonical entity type;
-  - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality).
+  - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality);
+  - `p_timezone`: IANA zone for the weekday and time-of-day filters (default `'UTC'`).
 - **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. Migration `20261016010000` rewrites the stored values once, but folding stays until prompt-contract phase 3, because agent mode still writes legacy values.
+
 - **Per-report outputs:**
   - the analysis `outcome`, from `run_outcome(notes)`;
   - `isOfficial`;
@@ -43,7 +45,7 @@ It re-checks the contract's types, ranges, sequential IDs and holder references,
 - analysis never selects;
 - selection is independent of review status.
 
-**Dashboard.** `get_incident_dashboard` (latest: `20260927180000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (UTC). It returns:
+**Dashboard.** `get_incident_dashboard` (latest: `20260928000000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (in the target timezone specified by `p_timezone`, defaulting to UTC). It returns:
 - `total`;
 - all-time `videos` counts: `uploaded`, `withOfficial`, `awaitingSelection` (has reports, none official) and `withoutReport` (no incident);
 - severity, review funnel, types with per-type evidence, daily trend and heatmap;
