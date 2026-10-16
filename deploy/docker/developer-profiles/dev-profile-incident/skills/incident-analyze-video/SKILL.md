@@ -24,7 +24,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
+| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
 | `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev | Agent writes `incidents` and evidence. Console writes `videos` before and after, `model_runs.notes` and `reports`. |
 
 ## Instructions
@@ -74,5 +74,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- Gateway mode uses `incident-contract-v2` (the same request as eval) and records every attempt immutably in `model_runs.notes` with its outcome. Agent mode still uses the older snake_case `IncidentReport` (`lib/analysis/incident-report-contract.json`). See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- Gateway mode uses `incident-contract-v3` (the same request as eval) and records every attempt immutably in `model_runs.notes` with its outcome. Agent mode still uses the older snake_case `IncidentReport` (`lib/analysis/incident-report-contract.json`). See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

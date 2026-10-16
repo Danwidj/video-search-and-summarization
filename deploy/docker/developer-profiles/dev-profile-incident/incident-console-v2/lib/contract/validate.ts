@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Strict validator for incident-contract-v2, equivalent to eval/contract.py:
+// Strict validator for incident-contract-v3, equivalent to eval/contract.py:
 // JSON.parse of the raw content (no fence stripping, brace extraction, alias
 // mapping or default filling), JSON Schema validation against the shared
 // schema file, then the cross-field rules the schema cannot express. Derived

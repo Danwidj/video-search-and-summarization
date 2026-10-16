@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TypeScript view of contracts/incident_report.schema.json (incident-contract-v2).
+// TypeScript view of contracts/incident_report.schema.json (incident-contract-v3).
 // The JSON Schema file is the source of truth; tests/contract-validate.test.mjs
 // checks that these keys match it.
 

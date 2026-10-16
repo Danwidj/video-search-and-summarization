@@ -101,7 +101,7 @@ and reporting loop; MVP2 adds natural-language semantic video search.
   - Tier 1 evaluation pipeline successfully computes comparative metric scores against ground truth.
 
 - **MVP1 extension delivered 2026-09-27 (console on the shared contract):**
-  - Upload or re-analyse with any of the three evaluated VLMs, using the same `incident-contract-v2` request as eval, with strict validation and ID-only recovery.
+  - Upload or re-analyse with any of the three evaluated VLMs, using the same `incident-contract-v3` request as eval, with strict validation and ID-only recovery.
   - Every attempt is recorded, with failures kept in a per-video analysis history.
   - Structured reviewer editing that leaves model output immutable.
   - Explicit official report per video.

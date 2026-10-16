@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v2`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Eval (phase 1) and console gateway mode (phase 2) use it; agent pending ([plan](.docs/prompt-contract-plan.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Eval (phase 1) and console gateway mode (phase 2) use it; agent pending ([plan](.docs/prompt-contract-plan.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -49,12 +49,12 @@ uv sync && uv run pytest tests/
 - **Two analysis modes:**
   - `ANALYSIS_MODE=gateway`: the console calls `vlm-gateway` and writes Supabase itself.
   - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent`, which writes `incidents` and evidence.
-  - **Gateway mode uses `incident-contract-v2`** from `contracts/`, sending the same request as eval. It validates strictly and applies only the ID-only `id-normalization-v1` recovery. Every attempt is recorded immutably in `model_runs.notes` with its outcome. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
+  - **Gateway mode uses `incident-contract-v3`** from `contracts/`, sending the same request as eval. It validates strictly and applies only the ID-only `id-normalization-v1` recovery. Every attempt is recorded immutably in `model_runs.notes` with its outcome. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
     - Never modify `model_runs.notes` after an attempt is written.
     - Never add a repair step that changes semantic content.
     - Never let application-side repair affect eval results.
     - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-  - **Agent mode still uses the agent's older `snake_case` `IncidentReport`** (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change that contract in both places together until the agent moves to `incident-contract-v2`.
+  - **Agent mode still uses the agent's older `snake_case` `IncidentReport`** (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change that contract in both places together until the agent moves to `incident-contract-v3`.
   - **Reviewer edits change only the relational projection** (`apply_structured_report_edit`).
   - **Official reports are explicit** (`select_official_report`); never infer "latest run wins".
   - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only and never reports. Count runs by outcome, never raw `model_runs` rows.
