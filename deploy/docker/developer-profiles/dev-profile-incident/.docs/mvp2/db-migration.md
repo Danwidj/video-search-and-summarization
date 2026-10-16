@@ -58,16 +58,7 @@ Key objectives:
 
 ## 3. Workstream Areas & Task Checklist
 
-### Area 1: Live RLS Lockdown Application (Prerequisite Baseline)
-- [ ] Apply merged RLS lockdown migration `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` to the live Supabase database instance.
-- [ ] Run RLS verification test suite proving:
-  - `anon` and `authenticated` roles are blocked from direct table access and RPC execution across all schemas.
-  - `incident-console-v2` continues to function normally using `SUPABASE_SERVICE_ROLE_KEY`.
-  - `vss-agent` continues to ingest and read data using service-role credentials.
-  - Evaluation workflows (`eval/`) continue to read ground truth and reports without permission errors.
-  - Mock backend (`mock-backend/base_profile_mock/`) operations remain unaffected.
-
-### Area 2: Hexagonal Decoupling for `incident-console-v2` (Ports & Adapters)
+### Area 1: Hexagonal Decoupling for `incident-console-v2` (Ports & Adapters)
 - [ ] Define domain ports in `incident-console-v2/lib/ports/`:
   - `IncidentRepository` (`lib/ports/incidents.ts`): get incident details, list report summaries, update review status, edit report drafts, delete incident records.
   - `DashboardRepository` (`lib/ports/dashboard.ts`): fetch aggregate dashboard metrics and analytics.
@@ -84,7 +75,8 @@ Key objectives:
 - [ ] Refactor API route handlers in `app/api/*` to use domain ports via the adapter factory instead of directly constructing PostgREST queries or instantiating `PostgrestClient`.
 - [ ] Ensure existing unit tests pass and add unit tests verifying adapters correctly satisfy port interfaces.
 
-### Area 3: Supabase MVP2 Schema & RLS Migration
+### Area 2: Live RLS Lockdown & Supabase MVP2 Schema Migration
+- [ ] Apply merged RLS lockdown migration `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` to the live Supabase database instance.
 - [ ] Create Supabase migration `supabase/migrations/<timestamp>_mvp2_data_and_search_layer.sql` enabling the `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`).
 - [ ] Create unified `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchors, detector bounding boxes, R2 image keys, item descriptions, and pgvector embeddings.
 - [ ] Create `query_results` table for recording item-level search hits, ranks, similarity scores, and critic audit trail.
@@ -92,7 +84,7 @@ Key objectives:
 - [ ] Revoke all permissions on `evidence_crops` and `query_results` from `anon` and `authenticated`; grant all permissions strictly to `service_role`.
 - [ ] Wire `SupabaseEvidenceSearchAdapter` to query `evidence_crops` and `query_results` using the service-role client.
 
-### Area 4: Connection & Security Verification
+### Area 3: Connection & Security Verification
 - [ ] Verify console adapters reach Supabase cleanly through the `service_role` path:
   - Test health check endpoint (`/api/health`).
   - Query dashboard analytics, videos, and incident reports via the new adapters.
@@ -103,7 +95,7 @@ Key objectives:
 - [ ] Verify new MVP2 tables (`evidence_crops`, `query_results`) and RPC functions are queryable via `service_role`.
 - [ ] Record verification evidence (commands executed, HTTP status codes, output snippets) into PR 120 description or comment.
 
-### Area 5: VM `vss-agent` End-to-End Supabase Verification
+### Area 4: VM `vss-agent` End-to-End Supabase Verification
 - [ ] Confirm VM access to `kwanz-ws` over Zheng's tailnet (ask captain if access is not configured).
 - [ ] Inspect VM environment variables and verify `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` are active in `vss-agent` container.
 - [ ] Trigger an incident analysis run on `kwanz-ws` (or execute test analysis via `incident_db.py`).
@@ -113,7 +105,7 @@ Key objectives:
 - [ ] Observe non-destructive rules: do NOT execute `docker compose down -v` or `dev-profile.sh down`; use `docker compose -p mdx stop/start` only if container restart is required.
 - [ ] Record verification evidence in PR 120.
 
-### Area 6: Hybrid Search Engine & Ranking Tuning
+### Area 5: Hybrid Search Engine & Ranking Tuning
 - [ ] Implement `search_evidence_items` RPC function in PostgreSQL supporting hybrid search:
   - Vector cosine similarity via pgvector `<=>` operator.
   - Full-text keyword search via PostgreSQL `tsvector` / `tsquery` over item name and description.
@@ -123,7 +115,7 @@ Key objectives:
 - [ ] Revoke execute on `search_evidence_items` from `PUBLIC, anon, authenticated`; grant execute strictly to `service_role`.
 - [ ] Tune ranking weights (`alpha`) and similarity thresholds against retrieval benchmark queries in coordination with the eval engineer.
 
-### Area 7: Embedding Pipeline & Benchmark Selection
+### Area 6: Embedding Pipeline & Benchmark Selection
 - [ ] Benchmark candidate embedding models using evidence texts (names + descriptions + threat levels):
   - Option A: NVIDIA NeMo Retriever NIM (`nvidia/llama-3.2-nv-embedqa-1b-v2`, 1024 dims).
   - Option B: OpenAI `text-embedding-3-small` (1536 dims).
@@ -131,7 +123,7 @@ Key objectives:
 - [ ] Document empirical trade-offs (retrieval quality, dimension size, latency, cost) and select final model.
 - [ ] Implement standalone embedding utility script to generate and batch-upload embeddings into `evidence_crops.embedding`.
 
-### Area 8: Ingestion Loader for Re-Analysis Output
+### Area 7: Ingestion Loader for Re-Analysis Output
 - [ ] Define standardized ingestion payload format matching Captain's re-analysis output.
 - [ ] Implement idempotent ingestion loader script (`scripts/ingest_reanalysis_output.py`):
   - Parses re-analysis output batches.
@@ -139,14 +131,14 @@ Key objectives:
   - Generates text embeddings for newly ingested items.
   - Validates foreign keys against parent `incidents` and `videos`.
 
-### Area 9: Cloudflare R2 Evidence Crop Storage Management
+### Area 8: Cloudflare R2 Evidence Crop Storage Management
 - [ ] Establish canonical R2 object key layout:
   `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` (where collection is `entities`, `instruments`, or `assets`).
 - [ ] Implement helper module for generating time-limited presigned GET URLs for frontend console viewing.
 - [ ] Implement orphan cleanup utility to purge R2 crop objects when parent incidents or model runs are deleted.
 - [ ] Validate direct S3/R2 client compatibility with standard credentials (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`).
 
-### Area 10: Performance, HNSW Index Tuning & Verification
+### Area 9: Performance, HNSW Index Tuning & Verification
 - [ ] Benchmark HNSW index parameters (`m`, `ef_construction`, `ef_search`) on pgvector for target dataset size.
 - [ ] Test query execution plans (`EXPLAIN ANALYZE`) on `search_evidence_items` to ensure index scans rather than sequential scans.
 
