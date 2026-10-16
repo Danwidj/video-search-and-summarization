@@ -41,7 +41,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Upload a clip and generate, re-run, review or check an incident report | [`incident-analyze-video`](incident-analyze-video/SKILL.md) |
 | Change or inspect the Supabase schema, apply a migration, find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
 | Ingest ground truth, run the P1/RP1 VLM benchmark, aggregate results | [`incident-run-eval`](incident-run-eval/SKILL.md) |
-| Natural-language video search (MVP2) | Overview in [`.docs/mvp2/README.md`](../.docs/mvp2/README.md); delivery status in [`.docs/status.md`](../.docs/status.md); always-on search route launched via [`start.sh`](../start.sh) in both local and VM modes. Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
+| Natural-language video search & chat (MVP2) | Overview in [`.docs/mvp2/README.md`](../.docs/mvp2/README.md); delivery status in [`.docs/status.md`](../.docs/status.md); `search-contract-v1`, `chat-contract-v1`, mock backend, always-on search route launched via [`start.sh`](../start.sh) in both local and VM modes, and `vss-agent` search and chat routes delivered; workstreams in progress (PR 118, PR 119, PR 120). Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
 
 **Easy to confuse:**
 
