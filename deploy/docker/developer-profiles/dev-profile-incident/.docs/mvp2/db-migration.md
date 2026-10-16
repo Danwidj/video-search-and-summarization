@@ -2,7 +2,7 @@
 
 - **Assignee / Role:** Database & Search Engineer
 - **Status:** Ready for implementation (build on this PR branch)
-- **Workstream Scope:** Extended data and search layer operating entirely without VM access — Supabase schema migration, strict RLS lockdown and policy testing, HNSW vector index tuning, hybrid search RPC (vector + keyword + relational filters), embedding evaluation and generation pipeline, re-analysis output ingestion loader, Cloudflare R2 evidence crop storage management (presigned URLs and lifecycle cleanup), and SQLAlchemy Core synchronization.
+- **Workstream Scope:** Extended data and search layer operating entirely without VM access — applying the merged RLS lockdown migration to live Supabase, comprehensive RLS test verification, Supabase MVP2 schema migration (`evidence_crops` and `query_results`), HNSW vector index tuning, hybrid search RPC, embedding evaluation and generation pipeline, re-analysis output ingestion loader, Cloudflare R2 evidence crop storage management, and a new typed data module `incident-console-v2/lib/db/` for the new MVP2 tables.
 
 ---
 
@@ -14,11 +14,22 @@ All components in this workstream run locally on macOS or directly against remot
 
 ---
 
-## 2. Dependencies and Constraints
+## 2. Dependencies, Ownership, and Constraints
+
+### Ownership Boundary
+- **Database Engineer Owns:**
+  - `supabase/` (migrations, RLS policies, indexing, search RPC `search_evidence_items`).
+  - `incident-console-v2/lib/db/`: a new, dedicated typed data access module providing helper functions for the new MVP2 tables (e.g. `saveFeedback`, `getQueryHistory`, `getEvidenceCrops`).
+- **Frontend Engineer Owns:**
+  - `incident-console-v2/` page routes (`app/`), UI components (`components/`), and theme styling. Frontend reads and writes the new MVP2 tables exclusively through `incident-console-v2/lib/db/` functions.
+- **Existing Codebase Rule:**
+  - Existing API routes (`app/api/*/route.ts`) and existing Supabase client code in `incident-console-v2/` are **not** refactored. The new `lib/db/` module is strictly for the new MVP2 tables and features.
+  - Retired `incident-console/` (v1) and `incident-console/db.py` are obsolete and out of scope; do not update or mirror schemas to v1.
 
 ### Upstream Dependencies
 1. **Database Lockdown Migration (PR #116):**
-   - Must build on top of `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` ([PR #116](https://github.com/Danwidj/video-search-and-summarization/pull/116)).
+   - Migration file `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` is merged into `main` but **not yet applied to the live database**.
+   - Applying this lockdown migration to live Supabase and verifying it with automated tests is the **FIRST task** of this workstream.
    - All public tables default to deny access for `anon` and `authenticated`.
    - All new functions must explicitly execute `REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`.
 2. **Search Contract (`contracts/search-contract-v1/`):**
@@ -35,25 +46,40 @@ All components in this workstream run locally on macOS or directly against remot
 - **Scope Boundaries (What NOT to Touch):**
   - Do NOT implement VM inference pipelines or `vss-agent` routes on the VM.
   - Do NOT run video re-analysis (owned by the Captain).
-  - Do NOT edit Next.js frontend UI components in `incident-console-v2/` (owned by Frontend engineer).
+  - Do NOT edit Next.js frontend UI pages or visual components in `incident-console-v2/` (owned by Frontend engineer).
   - Do NOT edit or bump shared contract files in `contracts/` (owned by Captain).
   - Do NOT drop or alter legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`).
   - Do NOT mutate existing relational tables `entities`, `instruments`, or `assets` (all MVP2 crops, boxes, and embeddings live in `evidence_crops`).
-- **Live Database Rule:** Never apply migrations to the shared live Supabase instance without a verified dry-run and explicit approval.
+  - Do NOT edit or mirror schemas to `incident-console/` (v1 is obsolete).
 
 ---
 
 ## 3. Workstream Areas & Task Checklist
 
-### Area 1: Supabase Schema, RLS, and Search RPC
+### Area 1: Live RLS Lockdown Application & Verification (FIRST TASK)
+- [ ] Apply merged RLS lockdown migration `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` to the live Supabase database instance.
+- [ ] Run RLS verification test suite proving:
+  - `anon` and `authenticated` roles are blocked from direct table access and RPC execution across all schemas.
+  - `incident-console-v2` continues to function normally using `SUPABASE_SERVICE_ROLE_KEY`.
+  - `vss-agent` continues to ingest and read data using service-role credentials.
+  - Evaluation workflows (`eval/`) continue to read ground truth and reports without permission errors.
+  - Mock backend (`mock-backend/base_profile_mock/`) operations remain unaffected.
+
+### Area 2: Supabase MVP2 Schema, RLS, and Search RPC
 - [ ] Create Supabase migration `supabase/migrations/<timestamp>_mvp2_data_and_search_layer.sql` enabling the `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`).
 - [ ] Create unified `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchors, detector bounding boxes, R2 image keys, item descriptions, and pgvector embeddings.
 - [ ] Create `query_results` table for recording item-level search hits, ranks, similarity scores, and critic audit trail.
 - [ ] Enable Row-Level Security (RLS) on both `evidence_crops` and `query_results`.
 - [ ] Revoke all permissions on `evidence_crops` and `query_results` from `anon` and `authenticated`; grant all permissions strictly to `service_role`.
-- [ ] Mirror `evidence_crops` and `query_results` table schemas in `incident-console/db.py` using SQLAlchemy Core definitions.
 
-### Area 2: Hybrid Search Engine & Ranking Tuning
+### Area 3: Typed Data Module for MVP2 Tables (`incident-console-v2/lib/db/`)
+- [ ] Create `incident-console-v2/lib/db/` module providing typed data access functions for the new MVP2 tables using the service-role client.
+- [ ] Implement `saveFeedback({ resultId, queryId, feedback, notes })` to persist relevance feedback into `query_results`.
+- [ ] Implement `getQueryHistory({ limit })` to retrieve historical search queries and results from `queries` / `query_results`.
+- [ ] Implement `getEvidenceCrops({ incidentId, modelRunId })` to fetch all evidence crops for an incident.
+- [ ] Keep existing API routes intact without refactoring existing database code.
+
+### Area 4: Hybrid Search Engine & Ranking Tuning
 - [ ] Implement `search_evidence_items` RPC function in PostgreSQL supporting hybrid search:
   - Vector cosine similarity via pgvector `<=>` operator.
   - Full-text keyword search via PostgreSQL `tsvector` / `tsquery` over item name and description.
@@ -63,7 +89,7 @@ All components in this workstream run locally on macOS or directly against remot
 - [ ] Revoke execute on `search_evidence_items` from `PUBLIC, anon, authenticated`; grant execute strictly to `service_role`.
 - [ ] Tune ranking weights (`alpha`) and similarity thresholds against retrieval benchmark queries in coordination with the eval engineer.
 
-### Area 3: Embedding Pipeline & Benchmark Selection
+### Area 5: Embedding Pipeline & Benchmark Selection
 - [ ] Benchmark candidate embedding models using evidence texts (names + descriptions + threat levels):
   - Option A: NVIDIA NeMo Retriever NIM (`nvidia/llama-3.2-nv-embedqa-1b-v2`, 1024 dims).
   - Option B: OpenAI `text-embedding-3-small` (1536 dims).
@@ -71,7 +97,7 @@ All components in this workstream run locally on macOS or directly against remot
 - [ ] Document empirical trade-offs (retrieval quality, dimension size, latency, cost) and select final model.
 - [ ] Implement standalone embedding utility script to generate and batch-upload embeddings into `evidence_crops.embedding`.
 
-### Area 4: Ingestion Loader for Re-Analysis Output
+### Area 6: Ingestion Loader for Re-Analysis Output
 - [ ] Define standardized ingestion payload format matching Captain's re-analysis output.
 - [ ] Implement idempotent ingestion loader script (`scripts/ingest_reanalysis_output.py`):
   - Parses re-analysis output batches.
@@ -79,14 +105,14 @@ All components in this workstream run locally on macOS or directly against remot
   - Generates text embeddings for newly ingested items.
   - Validates foreign keys against parent `incidents` and `videos`.
 
-### Area 5: Cloudflare R2 Evidence Crop Storage Management
+### Area 7: Cloudflare R2 Evidence Crop Storage Management
 - [ ] Establish canonical R2 object key layout:
   `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` (where collection is `entities`, `instruments`, or `assets`).
 - [ ] Implement helper module for generating time-limited presigned GET URLs for frontend console viewing.
 - [ ] Implement orphan cleanup utility to purge R2 crop objects when parent incidents or model runs are deleted.
 - [ ] Validate direct S3/R2 client compatibility with standard credentials (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`).
 
-### Area 6: Security Testing, Performance & Index Tuning
+### Area 8: Security Testing, Performance & Index Tuning
 - [ ] Build automated RLS test suite:
   - Verify `anon` role is rejected (HTTP 401/403 or 0 rows) across direct PostgREST table queries and RPC endpoints.
   - Verify `authenticated` role is denied access.
@@ -254,11 +280,12 @@ GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;
 
 ## 5. Definition of Done
 
-- [ ] Supabase migration applied and validated on a local/test PostgreSQL instance with pgvector.
-- [ ] RLS lockdown tests pass: `anon` and `authenticated` roles receive HTTP 401/403 or empty responses; `service_role` executes queries and RPCs without error.
+- [ ] Merged RLS lockdown migration applied to live Supabase and automated test suite passes: `anon` and `authenticated` roles receive HTTP 401/403 or empty responses; `service_role` executes queries and RPCs without error; console, vss-agent, eval, and mock operate cleanly.
+- [ ] Supabase MVP2 migration applied and validated on a local/test PostgreSQL instance with pgvector.
+- [ ] Dedicated typed data module `incident-console-v2/lib/db/` created for new MVP2 tables (`saveFeedback`, `getQueryHistory`, `getEvidenceCrops`) without refactoring existing database code.
 - [ ] Hybrid search RPC produces accurate rankings across combined vector and text queries.
 - [ ] Embedding generation script processes evidence items and populates pgvector embeddings.
 - [ ] Re-analysis ingestion loader successfully loads batch output into `evidence_crops` and matches official report IDs.
 - [ ] R2 helper generates working presigned URLs and cleanup logic correctly identifies orphaned crop keys.
-- [ ] SQLAlchemy Core models in `incident-console/db.py` match migration schemas.
 - [ ] Documentation updated in `.docs/data.md` and `.docs/decisions.md`.
+
