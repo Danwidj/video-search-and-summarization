@@ -125,7 +125,7 @@ The report page:
 
 ## 5. Legacy data
 
-Older rows are shown in contract form for display and querying only; stored rows are never rewritten:
+Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until phase 3 because agent mode still writes legacy values. Notes and timestamps are never rewritten:
 - `fighting` → `assault`, `animal` → `animal attack`;
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
