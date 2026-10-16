@@ -19,7 +19,7 @@ the same video, a parallel ground-truth evaluation structure, and human review w
   - `p_scope`: `'all'` (default: every successful report) or `'official'` (only each video's selected official report);
   - `p_entity_types`: exact canonical entity type;
   - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality).
-- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display.
+- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. Migration `20261016010000` rewrites the stored values once, but folding stays until prompt-contract phase 3, because agent mode still writes legacy values.
 - **Per-report outputs:**
   - the analysis `outcome`, from `run_outcome(notes)`;
   - `isOfficial`;
@@ -300,7 +300,7 @@ AI-extracted incident intelligence for a specific model run over a video.
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `videos.id` ON DELETE CASCADE | Associated video/incident identifier |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `model_runs.id` ON DELETE CASCADE | Model run identifier |
-| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); intended taxonomy `road accident`, `burglary`, `explosion`, `fighting`, `animal` is prompt-level only, not enforced by DB CHECK constraint or application validator — live data also holds `assault`, `animal attack`, `other`, NULL, etc. |
+| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); contract taxonomy `road accident`, `burglary`, `explosion`, `assault`, `animal attack` (`incident-contract-v2`) is not enforced by a DB CHECK constraint. Migration `20261016010000` (awaiting approval to apply) rewrites stored `fighting` → `assault` and `animal` → `animal attack`; 0 rows hold `other`. Agent mode still writes `fighting`/`animal` until prompt-contract phase 3, so consumers fold them at query time. NULL is allowed. |
 | `start_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `end_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `duration` | `INTEGER` | NULLABLE | Incident duration in seconds |
@@ -328,7 +328,7 @@ Observed actors or persons extracted by the model during a specific run.
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
 | `entity_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `E1`/`E2` (seed/eval), `e01`/`e02` (console-v2 gateway), `e` + 19 hex sha256 (agent), `p...` (mock). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
-| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): both the agent and console-v2 gateway mode write `"person"`; legacy seed/v1 rows may hold `human` / `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
+| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): console-v2 gateway mode writes contract entity types (`human`, ...); agent mode still writes `"person"` until prompt-contract phase 3, so `canonical_entity_type` folds `person` → `human` at query time. Migration `20261016010000` (awaiting approval to apply) rewrites the stored `person` rows to `human` once; legacy seed/v1 rows may also hold `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
 | `description` | `TEXT` | NULLABLE | Visual description and observed actions |
 | `image` | `VARCHAR(1024)` | NULLABLE | R2 object key for cropped evidence screenshot (schema-only, always NULL today) |
 
