@@ -56,7 +56,7 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Analysis contract
 
-Both gateway and agent modes analyze with the shared **`incident-contract-v2`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
+Both gateway and agent modes analyse with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
 - strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
 - ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);
@@ -153,5 +153,5 @@ provenance.
   - structured fields (editable through the structured editor);
   - read-only model output (title, "Model severity rationale", timeline, uncertainties);
   - a "Run & model output details" panel.
-- **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`).
+- **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.
 

@@ -93,7 +93,7 @@ def test_response_format_strips_document_keys():
 
 
 def test_version_file():
-    assert contract.contract_version() == "incident-contract-v2"
+    assert contract.contract_version() == "incident-contract-v3"
 
 
 def test_extraction_prompt_has_no_output_template_or_few_shot():

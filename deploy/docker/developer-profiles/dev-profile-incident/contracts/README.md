@@ -1,4 +1,4 @@
-# Incident contract (`incident-contract-v2`)
+# Incident contract (`incident-contract-v3`)
 
 This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Background and phasing are in [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md).
 
@@ -36,6 +36,7 @@ This directory is the single source of truth for incident extraction: one prompt
   - **Still fatal:** every schema violation (isolating a valid core from a schema-invalid document would need partial parsing, so it is out of scope) and every other cross-field rule.
   - **Contextual rule** (runtime input, not the schema): when the video's length is known (read from its MP4 header), every whole-second incident timestamp T must satisfy `0 <= T < duration + 1`. A moment in the last partial second may be written as the next whole second, nothing later (`WINDOW_BEYOND_VIDEO`, core). Timeline times are checked the same way (`TIMELINE_BEYOND_VIDEO`, enrichment). An unknown length is recorded as not checked, never as passed. The contextual rules never change full contract validity.
   - The policy id is recorded next to the contract version in console attempt records and eval results. The prompt and schema are unchanged by it; it was introduced without a `VERSION` bump because nothing sent to or returned by the model changed. Only the consequence of the existing rules and one contextual check did (decision 2026-09-27 in `../.docs/decisions.md`).
+- **RP1 execution under `core-scored-v1`:** RP1 report generation runs on `core_ok` (rather than requiring `full_contract_ok`), receiving the derived JSON with its unchanged prediction (including lead-up or aftermath timeline events). `report_generation_prompt.md` includes the explicit rule that timeline events outside the incident time are context. Since `report_generation_prompt.md` changed, `VERSION` is bumped to `incident-contract-v3` per the profile contract versioning rule (decision 2026-10-16 in `../.docs/decisions.md`).
 - **Changing anything here** means bumping `VERSION`, updating every consumer in the same PR, and updating [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md) once the contract is live. Taxonomy changes also need a database migration.
 
 ## Model evidence

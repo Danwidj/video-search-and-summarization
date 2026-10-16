@@ -1,4 +1,4 @@
-REPORT GENERATION PROMPT - RP1 (incident-contract-v2)
+REPORT GENERATION PROMPT - RP1 (incident-contract-v3)
 
 Generate a concise, objective incident report using ONLY the structured
 incident information provided below.
@@ -41,6 +41,7 @@ Provide an objective, chronological account of the incident based on the
 supplied structured data.
 
 Focus on the sequence of important observable events and interactions.
+Timeline events outside the incident time are context.
 Mention relevant instruments and assets where they contribute to
 understanding what occurred.
 

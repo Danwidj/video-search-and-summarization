@@ -230,7 +230,7 @@ sequenceDiagram
 
 Date inputs are directly editable: entering either boundary activates the custom range automatically. Preset
 selection clears stale custom boundaries, and the date/time row has an explicit reset that clears both date and
-time constraints. The API forwards inclusive day boundaries and optional time-of-day bounds to the summary RPC.
+time constraints. The API forwards inclusive day boundaries, optional time-of-day bounds, and the viewer's detected timezone to the summary RPC.
 
 ### Dashboard analytics and cross-filtering
 
@@ -240,6 +240,7 @@ time constraints. The API forwards inclusive day boundaries and optional time-of
 - Model coverage counts every analysis attempt in the period by outcome.
 - Every other number links to `/reports?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
+- The heatmap and weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/reports` detects the same zone itself, so drill-down links carry no timezone and the totals still match.
 
 ### Structured (Class A) report editing
 
@@ -269,7 +270,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
-*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v2`.*
+*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v3`.*
 
 ```mermaid
 sequenceDiagram

@@ -71,6 +71,7 @@ mock.module('@aws-sdk/s3-request-presigner', {
 
 const { POST } = await import('../app/api/analysis/route.ts');
 const { getServiceConfiguration } = await import('../lib/env.ts');
+const { contractVersion } = await import('../lib/contract/load.ts');
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -230,7 +231,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         report_text: 'PROSE REPORT',
         report_text_error: null,
         model: 'agent/vlm-on-the-vm',
-        contract_version: 'incident-contract-v2',
+        contract_version: contractVersion(),
         raw_output: JSON.stringify(rawContract),
         finish_reason: 'stop',
       };
@@ -256,7 +257,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   const { report } = payload;
   assert.equal(report.outcome, 'valid_first_pass');
   assert.equal(report.model, 'agent/vlm-on-the-vm', 'P1 ran on the agent model, so that model is recorded');
-  assert.equal(report.promptVersion, 'incident-contract-v2');
+  assert.equal(report.promptVersion, contractVersion());
 
   // Agent call verification
   const agentCalls = recordedCalls.filter((c) => c.url.includes('/api/v1/incidents/'));
@@ -299,7 +300,7 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
   const content = contractFixture('invalid/cross-end-before-start.json');
   const recordedCalls = [];
   globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
-    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm', contract_version: 'incident-contract-v2' },
+    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm', contract_version: contractVersion() },
   }), { status: 422, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-a422/clip.mp4');
 
   const response = await POST(jsonRequest({ sensorId: 's-a422', filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
@@ -414,14 +415,14 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   const modelRun = writes.find((w) => w.table === 'model_runs').body;
   assert.equal(modelRun.id, report.modelRunId);
   assert.equal(modelRun.model_name, 'nvidia/cosmos-3-super-reasoner');
-  assert.equal(modelRun.prompt_version, 'incident-contract-v2');
+  assert.equal(modelRun.prompt_version, 'incident-contract-v3');
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
   assert.equal(notes.recordType, 'analysis_attempt');
   assert.equal(notes.status, 'valid_first_pass');
   assert.deepEqual(notes.validation, { firstPass: [], policy: 'core-scored-v1', fullContractValid: true, coreValid: true, videoBoundsChecked: true });
   assert.equal(notes.request.videoDurationSeconds, 60, 'the video length is read from the stored MP4 header');
   assert.equal(notes.repair, null);
-  assert.equal(notes.contractVersion, 'incident-contract-v2');
+  assert.equal(notes.contractVersion, 'incident-contract-v3');
   assert.deepEqual(notes.report, { ...validContractReport(), incident: { ...validContractReport().incident, duration: 8 } });
   assert.equal(notes.request.model, 'nvidia/cosmos-3-super-reasoner');
   assert.equal(notes.request.additionalInstruction, null);
@@ -460,7 +461,7 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'reportId', 'videoId']);
   assert.equal(report.outcome, 'valid_first_pass');
   assert.equal(report.model, 'nvidia/cosmos-3-super-reasoner');
-  assert.equal(report.promptVersion, 'incident-contract-v2');
+  assert.equal(report.promptVersion, 'incident-contract-v3');
 });
 
 test('gateway mode: defaults to the configured VLM_MODEL when no model is sent', async () => {
@@ -526,7 +527,7 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     const { row, notes } = attemptNotesFrom(recordedCalls);
     assert.equal(row.id, payload.attemptId);
     assert.equal(row.model_name, 'nvidia/cosmos-3-nano-reasoner');
-    assert.equal(row.prompt_version, 'incident-contract-v2');
+    assert.equal(row.prompt_version, 'incident-contract-v3');
     assert.equal(notes.status, 'contract_failed');
     assert.equal(notes.stage, 'contract_validation');
     assert.equal(notes.videoId, compactVideoId('s-bad'));

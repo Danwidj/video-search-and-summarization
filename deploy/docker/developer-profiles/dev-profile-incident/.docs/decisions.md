@@ -2,9 +2,9 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
-### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v2 and retire legacy console contract files
+### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v3 and retire legacy console contract files
 - **Decision:**
-  - Move `vss-agent` (`services/agent`) onto `incident-contract-v2`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
+  - Move `vss-agent` (`services/agent`) onto `incident-contract-v3`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
   - `incident_report_gen` executes the contract P1 (direct VLM OpenAI chat completion with JSON Schema response format) -> RP1 (prose report) calls. The markdown-then-extract chain and `data_models/incident_report.py` are removed.
   - `POST /api/v1/incidents/{incident_id}/analyze` accepts `{ video_url, model_run_id?, skip_rp1? }` (signed R2 URL from the console). `skip_rp1: true` runs P1 only; console agent mode always sends it, because gateway mode runs P1 only and the console has nowhere to store RP1 prose, so its agent timeout covers P1 only. Standalone calls default to P1 + RP1. Returns 422 on contract violation, 504 on timeout, 501 when `incident_report_gen` is unconfigured.
   - `incident_report_gen` validates under `core-scored-v1` with `id-normalization-v1`, like the console; a 422 carries the raw output so the console records the attempt. It persists best-effort to PostgREST with contract IDs (`E1`, `I1`, `A1`) only when called without `model_run_id`; when the console passes one, the console is the only writer. It never touches `videos` (the console owns `videos.filepath` and the durable R2 key).
@@ -19,6 +19,26 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
   - Maintaining separate agent and gateway validation policies (would cause mode-dependent outcomes).
   - Keeping legacy `schema.ts` alongside contract types (unnecessary maintenance burden; legacy notes are adequately decoded with an inlined interface).
 - **Links:** [`../contracts/README.md`](../contracts/README.md); [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`services/agent/src/vss_agents/incident_contract/`](../../../../../services/agent/src/vss_agents/incident_contract/); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py); [`incident-console-v2/lib/analysis/run-contract-analysis.ts`](../incident-console-v2/lib/analysis/run-contract-analysis.ts).
+
+---
+
+### 2026-10-16: Run RP1 when core_ok with unchanged input; timeline context in RP1 prompt
+- **Decision:**
+  - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
+  - Pass the unchanged prediction (with derived fields) to RP1, preserving timeline events outside the incident window.
+  - Add one line to `contracts/report_generation_prompt.md` under `INCIDENT DETAILS`: `Timeline events outside the incident time are context.`
+  - Bump `contracts/VERSION` to `incident-contract-v3`.
+- **Why:**
+  - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
+  - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
+  - A 2-clip pilot (Animal003 and Assault018) compared RP1 output from the baseline prompt with output from the prompt carrying the new timeline context line. With the new line, the prose described lead-up and aftermath events as chronological context and kept the reported incident window and duration. Pilot outputs are not stored in the repo.
+- **Versioning:**
+  - `contracts/VERSION` is bumped to `incident-contract-v3` because `report_generation_prompt.md` changed, following the profile rule in `dev-profile-incident/AGENTS.md` ("Contract changes bump contracts/VERSION and update eval and the console together").
+  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The separate in-flight branch `fm/vss-agent-contract-v2`, which vendors `contracts/` into `services/agent`, re-syncs with v3 as part of phase 3.
+- **Alternatives rejected:**
+  - Retaining `incident-contract-v2` with report-prompt hashes or sub-versions in recorded results (rejected: extends the recorded result shape, violating provenance consistency; following the profile rule of a version bump is cleaner and respects the existing result schema).
+  - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
+- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py).
 
 ---
 
@@ -37,6 +57,27 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
   - Modifying `model_runs.notes` for `other` (violates the core rule that attempt notes are immutable).
   - Mapping test-pattern video run `m5629b0938e679c9873d` to a contract incident type (it contains no incident).
 - **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql); [`status.md`](status.md); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
+---
+
+### 2026-09-28: Dashboard heatmap and time-of-day filters use local time with viewer timezone detection
+- **Decision:**
+  - `get_incident_dashboard` and `list_incident_report_summaries` accept an optional `p_timezone TEXT DEFAULT 'UTC'` parameter.
+  - When aggregating day of week and hour of day in `get_incident_dashboard`, and when filtering by weekday or time-of-day in both RPCs, `reports.generated_datetime` (stored as naive UTC) is converted to the target timezone via `(r.generated_datetime AT TIME ZONE 'utc' AT TIME ZONE params.target_tz)`.
+  - Next.js API routes (`/api/dashboard` and `/api/reports`) accept an optional `timezone` query parameter, accepting only IANA names recognised by `Intl.DateTimeFormat` (offsets such as `+05:00` are rejected, as Postgres reads them with the sign reversed) before forwarding `p_timezone` to Supabase.
+  - The client dashboard and reports library detect the viewer's local timezone on mount via `Intl.DateTimeFormat().resolvedOptions().timeZone` (avoiding SSR hydration mismatch) and pass it in API requests.
+  - Heatmap labels, active filter badges and the reports time-of-day inputs show local hours with the IANA zone name (e.g. `America/New_York`), not a current-date abbreviation, which would be wrong for rows on the other side of a DST change.
+  - The viewer's detected zone is the only timezone source: there is no `timezone` URL parameter or remembered override on `/reports`. Dashboard and reports detect the same zone, so drill-down links keep count parity.
+- **Why:**
+  - Security and operations operators analyse incident trends by local shift and time of day, whereas UTC hour buckets obscured local peak times.
+  - Preserves backwards compatibility: omitting `p_timezone` defaults cleanly to `'UTC'`.
+  - Maintains strict parity: clicking a dashboard cell at local hour H and weekday W navigates to `/reports` filtered by that exact local weekday and hour in the viewer's timezone.
+  - Deploy order: the console always sends `p_timezone`, so the migration must be applied before or with the console deploy.
+- **Alternatives rejected:**
+  - Client-side heatmap re-bucketing: would require downloading all individual incident timestamps, defeating the bounded aggregate RPC design.
+  - Converting `reports.generated_datetime` column to `TIMESTAMP WITH TIME ZONE`: requires schema data migration across all existing rows and tables; timezone conversion in the RPC view is lightweight, backwards-compatible, and respects user-selected timezones.
+- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`../incident-console-v2/lib/dashboard/links.ts`](../incident-console-v2/lib/dashboard/links.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx).
+
 
 ---
 

@@ -188,7 +188,9 @@ class TestPersistReport:
             patch("vss_agents.tools.incident_report_gen.incident_db.get_db", new_callable=AsyncMock, return_value=db),
         ):
             await persist_report(incident_id="v1", model_run_id="run1", model_name="vlm", report=self.REPORT)
-        db.insert_model_run.assert_awaited_once_with("run1", model_name="vlm", prompt_version="incident-contract-v2")
+        db.insert_model_run.assert_awaited_once_with(
+            "run1", model_name="vlm", prompt_version=incident_contract.contract_version()
+        )
         fields = db.insert_incident.await_args.kwargs["fields"]
         assert fields == {
             "type": "burglary",
@@ -258,7 +260,7 @@ class TestEndToEnd:
         assert all(r.headers["authorization"] == "Bearer secret" for r in requests)
         assert result.report["incident"]["duration"] == 5
         assert result.report_text == "INCIDENT REPORT"
-        assert result.contract_version == "incident-contract-v2"
+        assert result.contract_version == incident_contract.contract_version()
         assert result.model == "nvidia/cosmos-3-nano-reasoner"
         assert result.finish_reason == "stop"
         persist.assert_not_awaited()  # the caller passed model_run_id, so it records the run

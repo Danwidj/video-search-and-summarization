@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from vss_agents import incident_contract
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
@@ -33,7 +34,7 @@ OUTPUT = IncidentReportGenOutput(
     report_text="INCIDENT REPORT",
     report_text_error=None,
     model="nvidia/cosmos-3-nano-reasoner",
-    contract_version="incident-contract-v2",
+    contract_version=incident_contract.contract_version(),
     raw_output="{}",
 )
 
@@ -86,7 +87,7 @@ def test_contract_violation_is_422_with_the_raw_output():
     assert detail["raw_output"] == '{"incident": 1}'
     assert detail["finish_reason"] == "stop"
     assert detail["model"] == "vlm"
-    assert detail["contract_version"] == "incident-contract-v2"
+    assert detail["contract_version"] == incident_contract.contract_version()
 
 
 def test_timeout_is_504():

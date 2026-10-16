@@ -24,8 +24,8 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode local` | console → `vlm-gateway` :8600 → Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v2` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
-| `agent` | `start.sh --mode vm` | console → `vss-agent` `POST /api/v1/incidents/{id}/analyze` → Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
+| `gateway` | `start.sh --mode local` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
+| `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
 
 ## Instructions
 
@@ -74,5 +74,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- Both gateway and agent modes use `incident-contract-v2` and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- Both gateway and agent modes use `incident-contract-v3` and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.
