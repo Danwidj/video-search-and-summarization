@@ -15,10 +15,11 @@
 
 """``IncidentReport`` schema plus pure helper logic shared across the app.
 
-This mirrors the ``IncidentReport`` Pydantic schema the plan puts server-side in
-``services/agent/src/vss_agents/data_models/incident_report.py`` (out of scope
-for this PR). The console keeps its own copy so it can parse AI-trigger
-responses and render the report form without importing the agent package.
+This mirrors the legacy ``IncidentReport`` Pydantic schema that used to live in
+``services/agent/src/vss_agents/data_models/incident_report.py`` (now retired;
+the agent uses ``services/agent/src/vss_agents/incident_contract/``). The
+console keeps its own copy so it can parse AI-trigger responses and render the
+report form without importing the agent package.
 """
 
 from __future__ import annotations

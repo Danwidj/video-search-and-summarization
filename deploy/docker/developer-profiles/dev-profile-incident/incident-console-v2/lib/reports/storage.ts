@@ -1,10 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { incidentAnalysisSchema, type AnalysisReport } from '@/lib/analysis/schema';
+export interface LegacyTimelineItem {
+  start_seconds: number;
+  end_seconds: number | null;
+  description: string;
+}
+
+export interface LegacyAnalysisReport {
+  videoId: string;
+  modelRunId: string;
+  reportId: string;
+  filename: string;
+  playbackUrl: string;
+  model: string;
+  generatedAt: string;
+  promptVersion?: string;
+  rawModelOutput?: string;
+  normalizedModelOutput?: string;
+  reviewStatus?: 'unreviewed' | 'under review' | 'verified';
+  verifiedBy?: string;
+  verifiedAt?: string;
+
+  incident_type: string;
+  title: string;
+  description: string;
+  severity: number;
+  severity_reason: string;
+  incident_start: string;
+  incident_end: string;
+  location?: string | null;
+  timeline: LegacyTimelineItem[];
+  uncertainties: string[];
+}
 
 interface StoredNotes {
-  incidentConsoleV2?: AnalysisReport | Record<string, unknown> | {
-    report?: AnalysisReport | Record<string, unknown>;
+  incidentConsoleV2?: LegacyAnalysisReport | Record<string, unknown> | {
+    report?: LegacyAnalysisReport | Record<string, unknown>;
     rawModelOutput?: string;
     normalizedModelOutput?: string;
   };
@@ -15,11 +46,35 @@ const LEGACY_KEYS: Record<string, string> = {
   summary: 'description',
   severityLevel: 'severity',
   severityReason: 'severity_reason',
-  confidenceScore: 'confidence',
   startTimestamp: 'incident_start',
   endTimestamp: 'incident_end',
-  durationSeconds: 'duration_seconds',
 };
+
+function text(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function mapSeverity(value: unknown): number {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(1, Math.min(5, Math.floor(value)));
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'critical' || normalized === 'severe') return 5;
+    if (normalized === 'high') return 4;
+    if (normalized === 'medium' || normalized === 'moderate') return 3;
+    if (normalized === 'low') return 2;
+    if (normalized === 'none' || normalized === 'minimal') return 1;
+    const num = Number(normalized);
+    if (Number.isFinite(num)) return Math.max(1, Math.min(5, Math.floor(num)));
+  }
+  return 1;
+}
+
+function seconds(val: unknown): number | null {
+  const num = typeof val === 'string' ? Number(val.trim()) : val;
+  return typeof num === 'number' && Number.isFinite(num) ? num : null;
+}
 
 function records(value: unknown): Record<string, unknown>[] | undefined {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object') : undefined;
@@ -30,10 +85,6 @@ function legacyToSnake(report: Record<string, unknown>): Record<string, unknown>
   for (const [legacy, current] of Object.entries(LEGACY_KEYS)) {
     if (result[current] === undefined && report[legacy] !== undefined) result[current] = report[legacy];
   }
-  const entities = records(report.entities);
-  if (result.persons === undefined && entities) {
-    result.persons = entities.map((item) => ({ description: item.description, actions: '' }));
-  }
   const timeline = records(report.timeline);
   if (timeline) {
     result.timeline = timeline.map(({ startSeconds, endSeconds, ...item }) => ({
@@ -42,17 +93,10 @@ function legacyToSnake(report: Record<string, unknown>): Record<string, unknown>
       end_seconds: item.end_seconds ?? endSeconds,
     }));
   }
-  const instruments = records(report.instruments);
-  if (instruments) {
-    result.instruments = instruments.map(({ threatLevel, ...item }) => ({
-      ...item,
-      threat_level: item.threat_level ?? threatLevel,
-    }));
-  }
   return result;
 }
 
-export function reportFromNotes(notes: unknown): AnalysisReport | null {
+export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
   if (typeof notes !== 'string') return null;
   try {
     const parsed = JSON.parse(notes) as StoredNotes;
@@ -75,10 +119,26 @@ export function reportFromNotes(notes: unknown): AnalysisReport | null {
       return null;
     }
 
-    const validated = incidentAnalysisSchema.parse(legacyToSnake(baseReport));
+    const raw = legacyToSnake(baseReport);
+    const incidentType = text(raw.incident_type) || 'road accident';
+    const title = text(raw.title);
+    const description = text(raw.description);
+    const severity = mapSeverity(raw.severity);
+    const severityReason = text(raw.severity_reason);
+    const incidentStart = text(raw.incident_start) || '0:00';
+    const incidentEnd = text(raw.incident_end) || '0:00';
+    const location = text(raw.location) || null;
+    const timelineRaw = Array.isArray(raw.timeline) ? raw.timeline : [];
+    const timeline: LegacyTimelineItem[] = timelineRaw
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map((item) => ({
+        start_seconds: Math.max(seconds(item.start_seconds) ?? 0, 0),
+        end_seconds: seconds(item.end_seconds),
+        description: text(item.description),
+      }));
+    const uncertainties = Array.isArray(raw.uncertainties) ? raw.uncertainties.map(text).filter(Boolean) : [];
 
     return {
-      ...validated,
       videoId: typeof baseReport.videoId === 'string' ? baseReport.videoId : '',
       modelRunId: typeof baseReport.modelRunId === 'string' ? baseReport.modelRunId : '',
       reportId: typeof baseReport.reportId === 'string' ? baseReport.reportId : '',
@@ -92,6 +152,17 @@ export function reportFromNotes(notes: unknown): AnalysisReport | null {
       reviewStatus: typeof baseReport.reviewStatus === 'string' ? (baseReport.reviewStatus as 'unreviewed' | 'under review' | 'verified') : undefined,
       verifiedBy: typeof baseReport.verifiedBy === 'string' ? baseReport.verifiedBy : undefined,
       verifiedAt: typeof baseReport.verifiedAt === 'string' ? baseReport.verifiedAt : undefined,
+
+      incident_type: incidentType,
+      title,
+      description,
+      severity,
+      severity_reason: severityReason,
+      incident_start: incidentStart,
+      incident_end: incidentEnd,
+      location,
+      timeline,
+      uncertainties,
     };
   } catch {
     return null;

@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Eval (phase 1) and console gateway mode (phase 2) use it; agent pending ([plan](.docs/prompt-contract-plan.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([plan](.docs/prompt-contract-plan.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -48,13 +48,13 @@ uv sync && uv run pytest tests/
 - **1 video = 1 incident:** `videos.id` == `incidents.incident_id`, with no separate `video_id`. Every analysis gets its own `model_run_id`, and evidence tables key on `(incident_id, model_run_id)`.
 - **Two analysis modes:**
   - `ANALYSIS_MODE=gateway`: the console calls `vlm-gateway` and writes Supabase itself.
-  - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent`, which writes `incidents` and evidence.
+  - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent` for P1 only (`skip_rp1`) and writes Supabase itself; the agent persists nothing when the console passes `model_run_id`.
   - **Gateway mode uses `incident-contract-v3`** from `contracts/`, sending the same request as eval. It validates strictly and applies only the ID-only `id-normalization-v1` recovery. Every attempt is recorded immutably in `model_runs.notes` with its outcome. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
     - Never modify `model_runs.notes` after an attempt is written.
     - Never add a repair step that changes semantic content.
     - Never let application-side repair affect eval results.
     - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-  - **Agent mode still uses the agent's older `snake_case` `IncidentReport`** (`incident-console-v2/lib/analysis/incident-report-contract.json`, guarded by parity tests in v2 and the agent). Change that contract in both places together until the agent moves to `incident-contract-v3`.
+  - **Agent mode uses `incident-contract-v3`** vendored in `services/agent/src/vss_agents/incident_contract/` (P1, plus RP1 for standalone calls), and `incident-console-v2` routes the response through the same `core-scored-v1` validation policy and attempt recording as gateway mode. The agent never writes `videos`.
   - **Reviewer edits change only the relational projection** (`apply_structured_report_edit`).
   - **Official reports are explicit** (`select_official_report`); never infer "latest run wins".
   - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only and never reports. Count runs by outcome, never raw `model_runs` rows.
