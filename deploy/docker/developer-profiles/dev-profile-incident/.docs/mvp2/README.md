@@ -136,7 +136,7 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 |---|---|---|---|
 | **PR 118** (frontend) | Search box, results display, chat endpoint, theming | VM backend Step 4 (search REST route), Step 5 (chat REST route) | Cannot display search results or chat without REST API routes |
 | **PR 119** (eval) | System vs one-shot baseline, retrieval benchmarks, critic verdicts | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
-| **PR 120** (data & search layer, zero-VM) | `evidence_crops` migration, pgvector setup, RLS & RPC lockdown, `start.sh` zero-VM compatibility | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot migrate schema or run search without the contract and mock backend |
+| **PR 120** (data & search layer) | Hexagonal decoupling, `evidence_crops` migration, pgvector setup, RLS & RPC lockdown, connection & VM persistence verification | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot migrate schema or run search without the contract and mock backend |
 
 **Order of operations:**
 1. VM backend Step 1: `incident-contract-v3` lands → PR 120 can start data/migration work
@@ -231,14 +231,14 @@ The three PR task docs assume the following conventions and environment setup. T
 - Critic accuracy: % of hits confirmed by the VLM critic
 - One-shot vs system baseline delta (critic rejection rate, ranking shift)
 
-### PR 120 - Data and Search Layer, Zero-VM
+### PR 120 - Data and Search Layer
 
 **File:** `.docs/mvp2/db-migration.md` (to be created by PR assignee)
 
 > [!IMPORTANT]
-> **TODO [PR 120]: MVP2 Data and Search Layer (Zero-VM Architecture)**
+> **TODO [PR 120]: MVP2 Data and Search Layer**
 > - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), Supabase MVP2 migration enabling `vector` extension and creating `evidence_crops` and `query_results` tables with RLS and HNSW index, PostgreSQL hybrid search RPC `search_evidence_items` with service_role permissions, standalone crop embedding generator, batch re-analysis ingestion loader, Cloudflare R2 evidence crop storage management, and typed data module `incident-console-v2/lib/db/`.
-> - **Owner:** PR 120 (`docs(dev-profile-incident): MVP2 data and search layer (zero-VM) workstream tasks`)
+> - **Owner:** PR 120 (`docs(dev-profile-incident): MVP2 data and search layer workstream tasks`)
 > - **Stand-in Placeholder:** Table definitions in §2 and DDL checklist in §6.3; typed module stub `incident-console-v2/lib/db/index.ts`.
 
 **What PR 120 needs from this overview:**
@@ -248,8 +248,8 @@ The three PR task docs assume the following conventions and environment setup. T
 - RLS policy: `ENABLE ROW LEVEL SECURITY`, `REVOKE ALL FROM anon, authenticated`, `GRANT ALL TO service_role`
 - RPC execution permission lockdown: `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`
 - pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-- Zero-VM compatibility: migration must run against `mock-backend` Postgres-compatible setup, no GPU requirements
-- The `start.sh` zero-VM launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference
+- Hexagonal decoupling of `incident-console-v2`, connection verification, and verifying VM `vss-agent` persists reports to Supabase end to end
+- The `start.sh` launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference (this launcher change belongs to VM backend Step 6 `start.sh` search task, not to PR 120's scope)
 - Dependency on VM backend Step 1 (`incident-contract-v3`) and Step 2 (mock backend)
 
 **Migration checklist:**
