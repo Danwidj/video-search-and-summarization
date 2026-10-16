@@ -5,7 +5,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 ### 2026-10-16: MVP2 vss-agent search route with always-on critic and hexagonal SearchStore port
 - **Decision:**
   - Build `services/agent/src/vss_agents/api/incident_search.py` implementing `POST /api/v1/incidents/search` matching `search-contract-v1` with an always-on VLM critic.
-  - Implement a hexagonal architecture using `SearchStore` and `QueryEmbedder` ports. Provide `InMemorySearchStore` (canned candidates matching `base_profile_mock`, in-memory audit store) for zero-VM testing and local fallback, and stub `PostgrestSearchStore` with explicit TODOs owned by PR #120 for live Supabase RPC `search_evidence_items` and table persistence (`queries`, `query_results`).
+  - Implement a hexagonal architecture using `SearchStore` and `QueryEmbedder` ports. Provide `InMemorySearchStore` (canned candidates matching `base_profile_mock`, in-memory audit store) for zero-VM testing and local fallback, leaving the live PostgREST adapter owned by PR #120 for Supabase RPC `search_evidence_items` and table persistence (`queries`, `query_results`).
   - Implement `VlmCriticEvaluator` using Brev Switchyard OpenAI-compatible chat completions endpoint (`DEFAULT_VLM_BASE_URL`, `DEFAULT_VLM_MODEL`), evaluating retrieved crops and item descriptions against queries.
   - Critic degradation: On any VLM evaluation failure, network error, or timeout, never drop hits; degrade gracefully to `verdict="unverified"` with `confidence=None` and rationale explaining the failure.
   - Wire route registration unconditionally in `CustomFastApiFrontEndWorker` (`services/agent/src/vss_agents/api/custom_fastapi_worker.py`), making incident search always-on with no feature flag.

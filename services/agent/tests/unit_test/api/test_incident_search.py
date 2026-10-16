@@ -36,7 +36,6 @@ from vss_agents.api.incident_search import EvidenceCandidate
 from vss_agents.api.incident_search import IncidentHit
 from vss_agents.api.incident_search import InMemorySearchStore
 from vss_agents.api.incident_search import ItemHit
-from vss_agents.api.incident_search import PostgrestSearchStore
 from vss_agents.api.incident_search import SearchRequest
 from vss_agents.api.incident_search import SearchResponse
 from vss_agents.api.incident_search import VlmCriticEvaluator
@@ -279,9 +278,27 @@ class TestCriticVerdictHandling:
 
     @pytest.mark.asyncio
     async def test_critic_confirmed_verdict(self) -> None:
-        critic = MockCriticEvaluator(
-            verdict="confirmed", confidence=0.98, rationale="Weapon clearly visible in subject hand"
-        )
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "verdict": "confirmed",
+                                "confidence": 0.98,
+                                "rationale": "Weapon clearly visible in subject hand",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        mock_client.post.return_value = mock_response
+
+        critic = VlmCriticEvaluator(http_client=mock_client)
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
@@ -307,9 +324,27 @@ class TestCriticVerdictHandling:
 
     @pytest.mark.asyncio
     async def test_critic_rejected_verdict(self) -> None:
-        critic = MockCriticEvaluator(
-            verdict="rejected", confidence=0.85, rationale="Candidate is a smartphone, not a weapon"
-        )
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "verdict": "rejected",
+                                "confidence": 0.85,
+                                "rationale": "Candidate is a smartphone, not a weapon",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        mock_client.post.return_value = mock_response
+
+        critic = VlmCriticEvaluator(http_client=mock_client)
         item = ItemHit(
             item_type="instrument",
             item_id="I2",
@@ -332,6 +367,51 @@ class TestCriticVerdictHandling:
         assert verdict.verdict == "rejected"
         assert verdict.confidence == 0.85
         assert "smartphone" in verdict.rationale
+
+    @pytest.mark.asyncio
+    async def test_vlm_critic_boolean_confidence_degrades_to_none(self) -> None:
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "verdict": "confirmed",
+                                "confidence": True,
+                                "rationale": "Match found but confidence is boolean flag",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        mock_client.post.return_value = mock_response
+
+        critic = VlmCriticEvaluator(http_client=mock_client)
+        item = ItemHit(
+            item_type="instrument",
+            item_id="I1",
+            name="knife",
+            label="knife",
+            description="hunting knife",
+            crop_image_url="https://pub-r2.example.com/i1.jpg",
+            timestamp_seconds=10,
+        )
+        incident = IncidentHit(
+            incident_id="inc-1",
+            model_run_id="run-1",
+            incident_type="assault",
+            severity_level=4,
+            description="Knife attack",
+            playback_url="https://pub-r2.example.com/vid.mp4",
+            incident_window=[5.0, 15.0],
+        )
+        verdict = await critic.evaluate_candidate("knife attack", item, incident)
+        assert verdict.verdict == "confirmed"
+        assert verdict.confidence is None
 
     @pytest.mark.asyncio
     async def test_vlm_critic_degrades_to_unverified_on_http_error(self) -> None:
@@ -590,12 +670,3 @@ class TestSearchStores:
         hits = await store.search_evidence_items(query_embedding=[], top_k=10, min_similarity=0.2)
         assert len(hits) > 0
         assert hits[0].similarity_score >= hits[-1].similarity_score
-
-    @pytest.mark.asyncio
-    async def test_postgrest_search_store_fallback(self) -> None:
-        mock_fallback = InMemorySearchStore()
-        store = PostgrestSearchStore(fallback_store=mock_fallback)
-        hits = await store.search_evidence_items(query_embedding=[], top_k=5, min_similarity=0.2)
-        assert len(hits) > 0
-        await store.persist_query("q-test", "query test")
-        assert "q-test" in mock_fallback.queries

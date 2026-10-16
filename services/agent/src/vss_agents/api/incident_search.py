@@ -384,50 +384,11 @@ class InMemorySearchStore(SearchStore):
             self.query_results.append({"query_id": query_id, **row})
 
 
-class PostgrestSearchStore(SearchStore):
-    """PostgREST / Supabase RPC adapter for search_evidence_items and query audit persistence.
 
-    TODO(PR-120): Owned by PR #120 (MVP2 data and search layer workstream).
-    Once the migration 20261016120000_mvp2_evidence_search_and_crops.sql lands,
-    wire this adapter to Supabase RPC 'search_evidence_items' and tables
-    'queries' and 'query_results' using the service_role key.
-    """
-
-    def __init__(self, fallback_store: SearchStore | None = None) -> None:
-        self._fallback_store = fallback_store or InMemorySearchStore()
-
-    async def search_evidence_items(
-        self,
-        query_embedding: list[float],
-        top_k: int = 10,
-        min_similarity: float = 0.2,
-        item_types: list[str] | None = None,
-        incident_types: list[str] | None = None,
-        min_severity: int | None = None,
-        max_severity: int | None = None,
-    ) -> list[EvidenceCandidate]:
-        # TODO(PR-120): Replace fallback with Supabase PostgREST RPC call:
-        # client = (await incident_db.get_db()).client
-        # resp = await client.rpc("search_evidence_items", {...}).execute()
-        return await self._fallback_store.search_evidence_items(
-            query_embedding,
-            top_k=top_k,
-            min_similarity=min_similarity,
-            item_types=item_types,
-            incident_types=incident_types,
-            min_severity=min_severity,
-            max_severity=max_severity,
-        )
-
-    async def persist_query(self, query_id: str, query: str) -> None:
-        # TODO(PR-120): Replace with:
-        # await client.table("queries").insert({"id": query_id, "query_text": query}).execute()
-        await self._fallback_store.persist_query(query_id, query)
-
-    async def persist_query_results(self, query_id: str, results: list[dict[str, Any]]) -> None:
-        # TODO(PR-120): Replace with:
-        # await client.table("query_results").insert(results).execute()
-        await self._fallback_store.persist_query_results(query_id, results)
+# TODO(PR-120): Real PostgREST adapter for SearchStore is owned by PR #120
+# (MVP2 data and search layer workstream). PR #120 will wire Supabase RPC
+# 'search_evidence_items' and tables 'queries' and 'query_results' once migration
+# 20261016120000_mvp2_evidence_search_and_crops.sql lands.
 
 
 # =============================================================================
@@ -598,7 +559,11 @@ class VlmCriticEvaluator(CriticEvaluator):
             else:
                 verdict = "unverified"
             raw_conf = data.get("confidence")
-            confidence = float(raw_conf) if isinstance(raw_conf, (int, float)) and 0.0 <= raw_conf <= 1.0 else None
+            confidence = (
+                float(raw_conf)
+                if isinstance(raw_conf, (int, float)) and not isinstance(raw_conf, bool) and 0.0 <= raw_conf <= 1.0
+                else None
+            )
             rationale = str(data.get("rationale") or f"Model returned verdict {verdict}").strip()
 
             return CriticVerdict(verdict=verdict, confidence=confidence, rationale=rationale)
