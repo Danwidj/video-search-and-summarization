@@ -26,7 +26,6 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     top_k: int = Field(default=10, ge=1, le=50)
     min_similarity: float = Field(default=0.2, ge=0.0, le=1.0)
-    item_types: list[str] = Field(default=["entity", "instrument", "asset"])
     filters: SearchFilters | None = None
 
 
@@ -137,7 +136,7 @@ _CANNED_HITS: list[dict[str, Any]] = [
         "incident": {
             "incident_id": "RoadAccidents010_x264",
             "model_run_id": "m42c8d119e34418602a8",
-            "incident_type": "road_accident",
+            "incident_type": "road accident",
             "severity_level": 2,
             "title": "Vehicle collision at suburban intersection",
             "description": "A silver vehicle fails to yield and collides with another car.",
@@ -188,10 +187,7 @@ _CANNED_HITS: list[dict[str, Any]] = [
 async def search_incidents(req: SearchRequest) -> dict[str, Any]:
     t0 = time.perf_counter()
 
-    allowed_item_types = set(req.item_types)
-    if req.filters and req.filters.item_types:
-        allowed_item_types &= set(req.filters.item_types)
-
+    item_types = set(req.filters.item_types) if req.filters and req.filters.item_types else None
     incident_types = set(req.filters.incident_types) if req.filters and req.filters.incident_types else None
     min_sev = req.filters.min_severity if req.filters else None
     max_sev = req.filters.max_severity if req.filters else None
@@ -204,7 +200,7 @@ async def search_incidents(req: SearchRequest) -> dict[str, Any]:
 
         if sim < req.min_similarity:
             continue
-        if item["item_type"] not in allowed_item_types:
+        if item_types and item["item_type"] not in item_types:
             continue
         if incident_types and incident["incident_type"] not in incident_types:
             continue

@@ -25,15 +25,6 @@
       "default": 0.2,
       "description": "Minimum vector cosine similarity threshold (1.0 - cosine_distance)."
     },
-    "item_types": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": ["entity", "instrument", "asset"]
-      },
-      "default": ["entity", "instrument", "asset"],
-      "description": "Item types to retrieve (entities, instruments, assets)."
-    },
     "filters": {
       "type": "object",
       "additionalProperties": false,
@@ -61,7 +52,7 @@
             "type": "string",
             "enum": ["entity", "instrument", "asset"]
           },
-          "description": "Filter by item types inside filters object."
+          "description": "Filter by item types (entities, instruments, assets)."
         }
       }
     }

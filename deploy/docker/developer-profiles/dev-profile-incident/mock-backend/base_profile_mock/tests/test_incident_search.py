@@ -28,7 +28,7 @@ def test_search_minimal_request_returns_200():
 
 def test_search_filters_by_item_type():
     client = TestClient(create_app())
-    resp = client.post("/api/v1/incidents/search", json={"query": "vehicle", "item_types": ["asset"]})
+    resp = client.post("/api/v1/incidents/search", json={"query": "vehicle", "filters": {"item_types": ["asset"]}})
     assert resp.status_code == 200
     data = resp.json()
     for hit in data["hits"]:
@@ -45,6 +45,18 @@ def test_search_filters_by_incident_type():
     data = resp.json()
     for hit in data["hits"]:
         assert hit["incident"]["incident_type"] == "burglary"
+
+
+def test_search_filters_by_road_accident_taxonomy():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/v1/incidents/search",
+        json={"query": "collision", "filters": {"incident_types": ["road accident"]}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_hits"] == 1
+    assert data["hits"][0]["incident"]["incident_type"] == "road accident"
 
 
 def test_search_respects_top_k():

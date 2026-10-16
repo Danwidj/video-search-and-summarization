@@ -23,7 +23,7 @@ The contract aligns the mock backend (`mock-backend/base_profile_mock`), the nat
 
 - `fixtures/valid/`:
   - `minimal-request.json`: Only the required `query` field.
-  - `full-request.json`: All request fields including `top_k`, `min_similarity`, `item_types`, and `filters`.
+  - `full-request.json`: All request fields including `top_k`, `min_similarity`, and `filters` (including `item_types`).
   - `empty-response.json`: Valid response with zero hits.
   - `full-response.json`: Populated response with multiple hits (entities, instruments, assets), crop image URLs, critic verdicts, and parent incident metadata.
 - `fixtures/invalid/`:
