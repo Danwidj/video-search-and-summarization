@@ -504,6 +504,15 @@ Database access is split across two client implementations according to operatio
      (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` (see [`../supabase/README.md`](../supabase/README.md)
      for how to apply it via `supabase db push`).
 
+### Row-Level Security (RLS) & Access Control
+
+**Pending:** migration `20261016000000_enable_rls_and_lockdown_anon.sql` has not been applied to the live database yet. Until it is, RLS stays disabled and `anon`/`authenticated` keep full access. Once applied, it enables Row-Level Security on all 22 public schema tables (`relrowsecurity = true`) to close known issue 8, with this effect:
+- **Default-deny:** With RLS enabled and no permissive policies defined, anonymous (`anon`) and standard authenticated (`authenticated`) roles cannot read, insert, update, or delete rows in any table.
+- **Revoked grants:** All table and sequence privileges in schema `public` are explicitly revoked from `anon` and `authenticated`.
+- **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`) were already restricted to `service_role`.
+- **Default privileges:** These apply only to objects later created by the migrating role (`postgres`). In schema `public` they grant no table, sequence or function privileges to `anon` or `authenticated` and grant all to `service_role`. Globally, new functions get no `EXECUTE` for `PUBLIC` (`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`), so `anon` and `authenticated` cannot inherit it. Objects created by other roles are not covered, so each new function should still carry its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`, as earlier migrations do.
+- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold PostgreSQL's `BYPASSRLS` attribute (`rolbypassrls = true`), preserving full access without regression. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it, so it would change nothing.
+
 ### Fixture CSV Seed Data Quirk
 
 Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`

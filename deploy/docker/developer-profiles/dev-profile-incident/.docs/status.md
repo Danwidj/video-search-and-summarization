@@ -43,8 +43,7 @@ Current delivery status verified against the codebase:
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values migrated once; still folded at query time until the migration is applied.** `fighting`/`animal` types and `person` entities are migrated by `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` (`fighting` -> `assault`, `animal` -> `animal attack`, `person` -> `human`). Relational `incidents.type` has 0 rows with `other`; the only `other` value is inside the notes of test-pattern run `m5629b0938e679c9873d` (no incidents row), and it stays there because the profile [`AGENTS.md`](../AGENTS.md) forbids modifying `model_runs.notes` after an attempt is written. This is the accepted resolution of the `other` case. The migration is a one-time clean-up: agent mode now writes contract values (phase 3 done), but query-time folding (`canonicalIncidentType`, `canonicalEntityType`, SQL `canonical_incident_type` / `canonical_entity_type`) must stay until the migration is applied.
 7. **Heatmap and time-of-day filters use UTC hours until migration `20260928000000` is applied.** The fix is pending: the console now sends the viewer's timezone as `p_timezone` to `get_incident_dashboard` and `list_incident_report_summaries`, which only migration `20260928000000_local_time_heatmap_and_time_filters.sql` (unapplied) accepts. Apply the migration before or with the console deploy; until then `/api/dashboard` and `/api/reports` fail.
-
-8. **Legacy tables and RLS.** The four pre-v1 tables remain; RLS is disabled on public tables (service role only in code).
+8. **Legacy tables and RLS.** The four pre-v1 tables remain. RLS is still disabled and `anon`/`authenticated` still have full access on the live database: the lockdown migration `20261016000000_enable_rls_and_lockdown_anon.sql` (RLS on all 22 public tables, `anon`/`authenticated` access revoked, default privileges secured) is pending until it is applied. All application services use `service_role` (BYPASSRLS), so applying it should break nothing.
 9. **`selected_by/selected_at` can outlive a selection** cleared by the FK when the official incident is deleted; the UI treats a NULL `selected_model_run_id` as no official report.
 
 ---
@@ -59,7 +58,7 @@ Current delivery status verified against the codebase:
 2a. **RP1 and inconsistent timelines:** Done (2026-10-16). RP1 runs when `core_ok` with unchanged input, `contracts/report_generation_prompt.md` includes the timeline context instruction, and `contracts/VERSION` bumped to `incident-contract-v3`.
 3. **Possible contract v4:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
 4. **Apply legacy type/entity and orphan cleanup migration** (phase 4: `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`) to shared Supabase once approved; legacy table cleanup remains separate. Query-time folding can be dropped once it is applied (phase 3 is now done).
-5. **RLS policies** and **writer consolidation (Option B).**
+5. **Apply RLS lockdown migration** (`20261016000000_enable_rls_and_lockdown_anon.sql`) to shared Supabase once approved; **tiered client-side RLS policies** (if direct browser client auth is introduced) and **writer consolidation (Option B).**
 
 ---
 

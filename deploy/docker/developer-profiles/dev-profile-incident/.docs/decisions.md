@@ -22,6 +22,27 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-10-16: Row-Level Security (RLS) and public schema lockdown for anon and authenticated roles
+- **Decision:**
+  - Enable Row-Level Security (`ENABLE ROW LEVEL SECURITY`) on all 22 public tables (18 operational/eval tables and 4 legacy pre-v1 tables).
+  - Revoke `EXECUTE` on `insert_incident` from `PUBLIC`, `anon`, and `authenticated`, granting exclusively to `service_role`.
+  - Revoke all privileges on all tables and sequences in schema `public` from `anon` and `authenticated`.
+  - Update default privileges for objects later created by the migrating role (`postgres`): in schema `public`, no table, sequence or function grants to `anon` or `authenticated`, and all to `service_role`; globally, no `EXECUTE` for `PUBLIC` on new functions (`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`). Without the global rule `anon` and `authenticated` would still inherit `EXECUTE` through `PUBLIC`. Defaults do not cover objects created by other roles, so each new function still carries its own explicit `REVOKE ... FROM PUBLIC, anon, authenticated`, as earlier migrations do.
+  - Retain the 4 pre-v1 legacy tables under RLS protection pending a formal drop approval.
+  - Do not apply `FORCE ROW LEVEL SECURITY`. `service_role` and `postgres` bypass RLS through `BYPASSRLS` either way.
+- **Why:**
+  - Closes known issue 8 and follow-up 5: public tables had RLS disabled and granted `ALL PRIVILEGES` to `anon` and `authenticated` by default.
+  - Exposure of the `anon` key would allow cascading deletes (e.g. `DELETE FROM videos` wiping all incidents, evidence, and ground truth via `ON DELETE CASCADE`) or arbitrary incident overwrite via `insert_incident`.
+  - All existing readers and writers (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via `service_role` key over HTTPS PostgREST or direct TCP as `postgres`.
+  - Zero regression risk to active services because `service_role` and `postgres` possess `rolbypassrls = true`.
+- **Alternatives rejected:**
+  - Dropping legacy tables in the same migration (separated per scope; legacy table drop is deferred).
+  - Defining tiered client-side RLS policies for `anon` / `authenticated` (unnecessary complexity since all clients run server-side with `service_role` or direct `postgres`, which on Supabase is not a superuser but has `BYPASSRLS`).
+  - Applying `FORCE ROW LEVEL SECURITY` (it only subjects the table owner to RLS, and only when the owner lacks `BYPASSRLS`; the owner here is `postgres`, which has `BYPASSRLS`, so it would add nothing).
+- **Links:** [`../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql`](../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql); [`.docs/data.md`](data.md); [`.docs/status.md`](status.md).
+
+---
+
 ### 2026-10-16: Run RP1 when core_ok with unchanged input; timeline context in RP1 prompt
 - **Decision:**
   - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
