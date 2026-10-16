@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+import time
 from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -29,6 +31,8 @@ import httpx
 from pydantic import ValidationError
 import pytest
 
+from vss_agents.api.incident_search import CRITIC_DELAY_ENV_VAR
+from vss_agents.api.incident_search import DEFAULT_CRITIC_DELAY_SECONDS
 from vss_agents.api.incident_search import CriticEvaluator
 from vss_agents.api.incident_search import CriticVerdict
 from vss_agents.api.incident_search import DefaultQueryEmbedder
@@ -39,6 +43,7 @@ from vss_agents.api.incident_search import ItemHit
 from vss_agents.api.incident_search import SearchRequest
 from vss_agents.api.incident_search import SearchResponse
 from vss_agents.api.incident_search import VlmCriticEvaluator
+from vss_agents.api.incident_search import _get_critic_delay_seconds
 from vss_agents.api.incident_search import create_incident_search_router
 from vss_agents.api.incident_search import register_incident_search_routes
 
@@ -670,3 +675,241 @@ class TestSearchStores:
         hits = await store.search_evidence_items(query_embedding=[], top_k=10, min_similarity=0.2)
         assert len(hits) > 0
         assert hits[0].similarity_score >= hits[-1].similarity_score
+
+
+# =============================================================================
+# 5. Critic Call Delay Spacing Tests
+# =============================================================================
+
+
+class TimingCriticEvaluator(CriticEvaluator):
+    """Fake critic evaluator that records call timestamps and candidate item IDs."""
+
+    def __init__(
+        self,
+        verdict: str = "confirmed",
+        confidence: float | None = 0.95,
+        rationale: str = "Timing test passed",
+        raise_on_item_id: str | None = None,
+        simulated_work_seconds: float = 0.0,
+    ) -> None:
+        self.verdict = verdict
+        self.confidence = confidence
+        self.rationale = rationale
+        self.raise_on_item_id = raise_on_item_id
+        self.simulated_work_seconds = simulated_work_seconds
+        self.call_records: list[dict[str, Any]] = []
+
+    async def evaluate_candidate(
+        self,
+        query: str,
+        item: ItemHit,
+        incident: IncidentHit,
+    ) -> CriticVerdict:
+        call_time = time.perf_counter()
+        self.call_records.append(
+            {
+                "item_id": item.item_id,
+                "timestamp": call_time,
+                "rank_hint": len(self.call_records) + 1,
+            }
+        )
+        if self.simulated_work_seconds > 0:
+            await asyncio.sleep(self.simulated_work_seconds)
+        if self.raise_on_item_id and item.item_id == self.raise_on_item_id:
+            raise RuntimeError(f"Simulated critic failure for {item.item_id}")
+        return CriticVerdict(
+            verdict=self.verdict,  # type: ignore[arg-type]
+            confidence=self.confidence,
+            rationale=self.rationale,
+        )
+
+
+class TestCriticDelaySpacing:
+    """Unit tests verifying configurable delay spacing between critic calls."""
+
+    def test_critic_delay_applied_between_calls(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        """Verify that critic calls start spaced by the configured delay."""
+        store = InMemorySearchStore(candidates=sample_candidates)
+        critic = TimingCriticEvaluator()
+        configured_delay = 0.08
+
+        app = FastAPI()
+        router = create_incident_search_router(
+            store=store,
+            critic=critic,
+            critic_delay_seconds=configured_delay,
+        )
+        app.include_router(router)
+
+        client = TestClient(app)
+        resp = client.post("/api/v1/incidents/search", json={"query": "weapon search", "top_k": 3})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_hits"] == 3
+        assert len(critic.call_records) == 3
+
+        # Call timestamps should be separated by at least ~configured_delay
+        t0 = critic.call_records[0]["timestamp"]
+        t1 = critic.call_records[1]["timestamp"]
+        t2 = critic.call_records[2]["timestamp"]
+
+        assert t1 - t0 >= configured_delay * 0.8
+        assert t2 - t1 >= configured_delay * 0.8
+
+        # Rank order must strictly match candidate order
+        for idx, hit in enumerate(data["hits"], start=1):
+            assert hit["rank"] == idx
+            assert hit["item"]["item_id"] == sample_candidates[idx - 1].item_id
+            assert hit["critic"]["verdict"] == "confirmed"
+
+    def test_critic_delay_zero_disables_spacing(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        """Verify that delay=0 restores concurrent execution without delay spacing."""
+        store = InMemorySearchStore(candidates=sample_candidates)
+        critic = TimingCriticEvaluator()
+
+        app = FastAPI()
+        router = create_incident_search_router(
+            store=store,
+            critic=critic,
+            critic_delay_seconds=0.0,
+        )
+        app.include_router(router)
+
+        client = TestClient(app)
+        t_start = time.perf_counter()
+        resp = client.post("/api/v1/incidents/search", json={"query": "weapon search", "top_k": 3})
+        t_total = time.perf_counter() - t_start
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_hits"] == 3
+        assert len(critic.call_records) == 3
+
+        # Calls should launch almost instantaneously with no 1s sleeps
+        t0 = critic.call_records[0]["timestamp"]
+        t2 = critic.call_records[2]["timestamp"]
+        assert t2 - t0 < 0.05
+        assert t_total < 0.2
+
+        # Rank order preserved
+        for idx, hit in enumerate(data["hits"], start=1):
+            assert hit["rank"] == idx
+            assert hit["item"]["item_id"] == sample_candidates[idx - 1].item_id
+
+    def test_order_preserved_when_critic_calls_take_varying_durations(
+        self, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        """Verify rank order is strictly preserved even when earlier calls take longer than later ones."""
+        store = InMemorySearchStore(candidates=sample_candidates)
+
+        class VariableDurationCritic(CriticEvaluator):
+            async def evaluate_candidate(self, query: str, item: ItemHit, incident: IncidentHit) -> CriticVerdict:
+                # Rank 1 sleeps longer than rank 2 and 3
+                if item.item_id == sample_candidates[0].item_id:
+                    await asyncio.sleep(0.06)
+                return CriticVerdict(verdict="confirmed", confidence=0.9, rationale="ok")
+
+        app = FastAPI()
+        router = create_incident_search_router(
+            store=store,
+            critic=VariableDurationCritic(),
+            critic_delay_seconds=0.01,
+        )
+        app.include_router(router)
+
+        client = TestClient(app)
+        resp = client.post("/api/v1/incidents/search", json={"query": "weapon search", "top_k": 3})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [h["rank"] for h in data["hits"]] == [1, 2, 3]
+        assert [h["item"]["item_id"] for h in data["hits"]] == [
+            sample_candidates[0].item_id,
+            sample_candidates[1].item_id,
+            sample_candidates[2].item_id,
+        ]
+
+    def test_critic_failure_degrades_to_unverified_with_delay(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        """Verify that critic failures degrade gracefully to unverified and hits are never dropped."""
+        store = InMemorySearchStore(candidates=sample_candidates)
+        # Item E1 fails; I1 succeeds
+        failing_item_id = sample_candidates[1].item_id
+        critic = TimingCriticEvaluator(raise_on_item_id=failing_item_id)
+
+        app = FastAPI()
+        router = create_incident_search_router(
+            store=store,
+            critic=critic,
+            critic_delay_seconds=0.02,
+        )
+        app.include_router(router)
+
+        client = TestClient(app)
+        resp = client.post("/api/v1/incidents/search", json={"query": "weapon search", "top_k": 3})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_hits"] == 3
+        # Hits are in rank order
+        assert [h["rank"] for h in data["hits"]] == [1, 2, 3]
+        # Item 0 passed
+        assert data["hits"][0]["critic"]["verdict"] == "confirmed"
+        # Item 1 degraded to unverified
+        assert data["hits"][1]["critic"]["verdict"] == "unverified"
+        assert data["hits"][1]["critic"]["confidence"] is None
+        assert "Simulated critic failure" in data["hits"][1]["critic"]["rationale"]
+        # Item 2 passed
+        assert data["hits"][2]["critic"]["verdict"] == "confirmed"
+
+    def test_critic_delay_environment_variable(
+        self, monkeypatch: pytest.MonkeyPatch, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        """Verify helper and router resolution of INCIDENT_SEARCH_CRITIC_DELAY_SECONDS."""
+        # Unset defaults to 1.0
+        monkeypatch.delenv(CRITIC_DELAY_ENV_VAR, raising=False)
+        assert _get_critic_delay_seconds() == DEFAULT_CRITIC_DELAY_SECONDS
+        assert DEFAULT_CRITIC_DELAY_SECONDS == 1.0
+
+        # Custom float string
+        monkeypatch.setenv(CRITIC_DELAY_ENV_VAR, "0.05")
+        assert _get_critic_delay_seconds() == 0.05
+
+        # 0 disables delay
+        monkeypatch.setenv(CRITIC_DELAY_ENV_VAR, "0")
+        assert _get_critic_delay_seconds() == 0.0
+
+        # Negative value clamped to 0.0
+        monkeypatch.setenv(CRITIC_DELAY_ENV_VAR, "-2.5")
+        assert _get_critic_delay_seconds() == 0.0
+
+        # Invalid string falls back to default
+        monkeypatch.setenv(CRITIC_DELAY_ENV_VAR, "invalid_num")
+        assert _get_critic_delay_seconds() == DEFAULT_CRITIC_DELAY_SECONDS
+
+        # Explicit parameter override takes precedence over env var
+        assert _get_critic_delay_seconds(configured_delay=0.25) == 0.25
+        assert _get_critic_delay_seconds(configured_delay=0.0) == 0.0
+
+    def test_route_uses_env_var_dynamically(
+        self, monkeypatch: pytest.MonkeyPatch, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        """Verify that route reads INCIDENT_SEARCH_CRITIC_DELAY_SECONDS if not overridden."""
+        monkeypatch.setenv(CRITIC_DELAY_ENV_VAR, "0.05")
+        store = InMemorySearchStore(candidates=sample_candidates)
+        critic = TimingCriticEvaluator()
+
+        app = FastAPI()
+        # No critic_delay_seconds passed: resolves from env var
+        router = create_incident_search_router(store=store, critic=critic)
+        app.include_router(router)
+
+        client = TestClient(app)
+        resp = client.post("/api/v1/incidents/search", json={"query": "test query", "top_k": 2})
+
+        assert resp.status_code == 200
+        assert len(critic.call_records) == 2
+        t0 = critic.call_records[0]["timestamp"]
+        t1 = critic.call_records[1]["timestamp"]
+        assert t1 - t0 >= 0.05 * 0.8
