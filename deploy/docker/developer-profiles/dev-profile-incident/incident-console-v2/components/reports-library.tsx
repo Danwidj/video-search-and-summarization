@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
-import { formatTimestamp } from '@/lib/time';
+import { formatTimestamp, getViewerTimeZone } from '@/lib/time';
 
 type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
@@ -54,6 +54,7 @@ export function ReportsLibrary() {
   const [day, setDay] = useState('');
   const [rangeAfter, setRangeAfter] = useState('');
   const [rangeBefore, setRangeBefore] = useState('');
+  const [timeZone, setTimeZone] = useState('UTC');
   const [sort, setSort] = useState<Sort>('newest');
   const [busy, setBusy] = useState('');
   const [ready, setReady] = useState(false);
@@ -127,7 +128,7 @@ export function ReportsLibrary() {
       if (fromTime) params.set('fromTime', fromTime);
       if (toTime) params.set('toTime', toTime);
       if (day) params.set('day', day);
-      const response = await fetch(`/api/reports?${params}`, { cache: 'no-store', signal });
+      const response = await fetch(`/api/reports?${new URLSearchParams([...params, ['timezone', timeZone]])}`, { cache: 'no-store', signal });
       const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load reports');
       setReports(payload.reports);
@@ -143,6 +144,7 @@ export function ReportsLibrary() {
     // The URL is the filter state: when it carries any filter (dashboard links,
     // shared links, refresh, back/forward) it is applied alone. The remembered
     // state is only used for a bare /reports (e.g. "Back to all reports").
+    setTimeZone(getViewerTimeZone());
     if (FILTER_KEYS.some((key) => query.has(key))) {
       const after = query.get('after') || '';
       const before = query.get('before') || '';
@@ -179,7 +181,7 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort]);
+  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, timeZone]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -245,8 +247,8 @@ export function ReportsLibrary() {
           <Select label="Generated date" onChange={(value) => changeDatePreset(value as DatePreset)} value={datePreset} options={[['all', 'Any date'], ['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom range']]} />
           <DateInput label="From date" onChange={changeFromDate} type="date" value={fromDate} />
           <DateInput label="To date" onChange={changeToDate} type="date" value={toDate} />
-          <DateInput label="From time" onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
-          <DateInput label="To time" onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
+          <DateInput label={`From time (${timeZone})`} onChange={(value) => { setFromTime(value); setPage(1); }} type="time" value={fromTime} />
+          <DateInput label={`To time (${timeZone})`} onChange={(value) => { setToTime(value); setPage(1); }} type="time" value={toTime} />
           <button className="action self-end disabled:cursor-not-allowed disabled:opacity-40" disabled={datePreset === 'all' && !fromDate && !toDate && !fromTime && !toTime && !day && !rangeAfter && !rangeBefore} onClick={resetDateAndTime} type="button">Reset date &amp; time</button>
         </div>
         <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 md:grid-cols-3">

@@ -8,6 +8,7 @@ import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import type { ReportLibraryItem } from '@/lib/reports/storage';
+import { isValidTimeZone } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,9 @@ export async function GET(request: Request) {
     const severity = params.get('severity') || 'all';
     const dayRaw = params.get('day');
     const dayOfWeek = dayRaw === null ? null : Number(dayRaw);
+    const tzParam = params.get('timezone');
+    if (tzParam !== null && !isValidTimeZone(tzParam)) return NextResponse.json({ error: 'Invalid report timezone' }, { status: 400 });
+    const timezone = tzParam || 'UTC';
     const scope = params.get('scope') || 'all';
     const match = params.get('match') || 'contains';
     const entityTypes = [...new Set(params.getAll('entityType').map((value) => value.trim().toLowerCase()).filter(Boolean))];
@@ -83,6 +87,7 @@ export async function GET(request: Request) {
       p_scope: scope,
       p_entity_types: entityTypes.length ? entityTypes : null,
       p_evidence_match: match,
+      p_timezone: timezone,
     }) as RpcResult;
     // The summary RPC returns each report's analysis outcome (from the run's
     // immutable notes, e.g. IDs repaired) and whether it is the video's

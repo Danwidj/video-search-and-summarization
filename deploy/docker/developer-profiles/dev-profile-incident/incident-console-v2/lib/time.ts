@@ -27,3 +27,26 @@ export function formatDate(value: unknown, fallback = 'Unknown'): string {
   const date = parseStoredTimestamp(value);
   return date ? date.toLocaleDateString() : fallback;
 }
+
+/** Viewer's configured or detected IANA timezone identifier (e.g. 'Asia/Singapore', 'America/New_York'). */
+export function getViewerTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * Validates an IANA time zone name (e.g. 'Asia/Singapore') recognised by Intl.
+ * Offset strings such as '+05:00' are rejected: Postgres reads them as POSIX zones with the sign reversed.
+ */
+export function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || !/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(tz)) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
