@@ -121,14 +121,14 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 
 ### VM Backend Steps (built separately, outside this repo):
 
-| Step | Deliverable | Depends On |
-|---|---|---|
-| **Step 1** (in progress) | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - |
-| **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 |
-| **Step 3** | Crop service: open-vocabulary detector (Grounding DINO/OWLv2) on extracted keyframes, text embedding model, R2 upload, `evidence_crops` metadata population | Step 2 |
-| **Step 4** | `search_evidence_items` RPC with pgvector HNSW, `POST /api/v1/incidents/search` REST route, critic always-on, `query_results` persistence | Step 3 |
-| **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 |
-| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 |
+| Step | Deliverable | Depends On | Status |
+|---|---|---|---|
+| **Step 1** | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - | Delivered |
+| **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 | Delivered |
+| **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
+| **Step 4** | `search_evidence_items` RPC with pgvector HNSW, `POST /api/v1/incidents/search` REST route, critic always-on, `query_results` persistence | Step 3 | Pending |
+| **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Pending |
+| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Pending |
 
 ### PR Workstreams (in this repo, building docs + UI/code):
 
@@ -318,7 +318,7 @@ The following specifications are planned, not final, pending completion of the o
 | 5 | Baseline vs Full System Benchmark | PR 119 | One-shot VLM baseline evaluation harness |
 | 6 | Retrieval Benchmark Suite (50+ queries) | PR 119 | `eval/scripts/eval_retrieval.py` |
 | 7 | Always-On Critic Ablation Study | PR 119 | Precision vs latency false-positive report |
-| 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report |
+| 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report (detector port & CropEvidenceService implemented in services/agent) |
 | 9 | Embedding Model Comparison | PR 119 / PR 120 | NeMo vs OpenAI vs MiniLM benchmark |
 | 10 | Live DB RLS Lockdown Verification | PR 120 | Verification test suite on migration `20261016000000` |
 | 11 | `evidence_crops` & `query_results` Migration | PR 120 | Migration DDL with `vector(1024)` and HNSW index |
