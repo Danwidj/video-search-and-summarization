@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://developer.nvidia.com/vss/contracts/chat-contract-v1/chat_response.schema.json",
+  "title": "ChatResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Session identifier corresponding to the request or freshly created."
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["assistant"],
+          "description": "Role of the responder."
+        },
+        "content": {
+          "type": "string",
+          "description": "Grounded assistant answer addressing the user's inquiry."
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "incident_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Identifier of the incident containing the cited evidence."
+              },
+              "item_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Identifier of the specific evidence item (e.g. I1, E1)."
+              },
+              "item_type": {
+                "type": "string",
+                "enum": ["entity", "instrument", "asset"],
+                "description": "Taxonomic type of the cited item."
+              },
+              "timestamp_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Timestamp in seconds where the item appears in the incident video for jump-to-clip."
+              },
+              "crop_image_url": {
+                "type": "string",
+                "description": "URL or Cloudflare R2 presigned URL referencing the evidence crop screenshot."
+              }
+            },
+            "required": [
+              "incident_id",
+              "item_id",
+              "item_type",
+              "timestamp_seconds",
+              "crop_image_url"
+            ]
+          },
+          "description": "Evidence item citations grounding the assistant response."
+        }
+      },
+      "required": ["role", "content", "citations"]
+    }
+  },
+  "required": ["session_id", "message"]
+}

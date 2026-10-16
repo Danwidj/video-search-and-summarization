@@ -16,8 +16,17 @@
 from . import front_end_config
 from . import health_endpoint
 from . import incident_analyze
+from . import incident_chat
 from . import incident_search
 from . import rtsp_delete
 from . import rtsp_ingest
 
-__all__ = ["front_end_config", "health_endpoint", "incident_analyze", "incident_search", "rtsp_delete", "rtsp_ingest"]
+__all__ = [
+    "front_end_config",
+    "health_endpoint",
+    "incident_analyze",
+    "incident_chat",
+    "incident_search",
+    "rtsp_delete",
+    "rtsp_ingest",
+]

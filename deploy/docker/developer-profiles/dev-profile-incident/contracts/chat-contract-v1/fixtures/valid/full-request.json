@@ -1,0 +1,14 @@
+{
+  "session_id": "session_xyz123",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What weapons were found across all assault incidents?"
+    }
+  ],
+  "context": {
+    "scope": "global",
+    "incident_id": "Assault007",
+    "evidence_crop_ids": ["I1", "I2"]
+  }
+}

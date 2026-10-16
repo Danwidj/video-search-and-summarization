@@ -92,6 +92,8 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
   automatically by the console's upload flow.
 - `POST /api/v1/incidents/search` - natural-language evidence search conforming to
   `search-contract-v1` with canned hits, crop URLs, and critic verdicts.
+- `POST /api/v1/incidents/chat` - conversational evidence Q&A conforming to
+  `chat-contract-v1` with multi-turn support and grounded evidence citations.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,
