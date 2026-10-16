@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.backfill_official_timestamps import (  # noqa: E402
+from scripts.backfill_official_timestamps import (
     BackfillOptions,
     BackfillRunner,
     EvidenceCropRecord,
@@ -105,10 +105,18 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
         self.report_source = InMemoryReportSource(self.reports)
         self.vlm_client = FakeVLMClient(
             responses={
-                ("entity", "E1"): GroundingResult(timestamp_seconds=6, label="child in yellow"),
-                ("entity", "E2"): GroundingResult(timestamp_seconds=12, label="brown dog"),
-                ("instrument", "I1"): GroundingResult(timestamp_seconds=18, label="stick"),
-                ("asset", "A1"): GroundingResult(timestamp_seconds=15, label="glass doors"),
+                ("entity", "E1"): GroundingResult(
+                    timestamp_seconds=6, label="child in yellow"
+                ),
+                ("entity", "E2"): GroundingResult(
+                    timestamp_seconds=12, label="brown dog"
+                ),
+                ("instrument", "I1"): GroundingResult(
+                    timestamp_seconds=18, label="stick"
+                ),
+                ("asset", "A1"): GroundingResult(
+                    timestamp_seconds=15, label="glass doors"
+                ),
             },
             default_result=GroundingResult(timestamp_seconds=22, label="crowbar tool"),
         )
@@ -158,18 +166,28 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(stored), 5)
 
         # Verify key mapping and fields for Animal003 E2
-        e2_crop = next(r for r in stored if r.incident_id == "Animal003" and r.item_id == "E2")
+        e2_crop = next(
+            r for r in stored if r.incident_id == "Animal003" and r.item_id == "E2"
+        )
         self.assertEqual(e2_crop.timestamp_seconds, 12)
         self.assertEqual(e2_crop.label, "brown dog")
         self.assertEqual(e2_crop.bounding_box, [100, 150, 700, 850])
-        self.assertEqual(e2_crop.image, "evidence/Animal003/mr_official_01/entities/E2.jpg")
-        self.assertEqual(e2_crop.description, "Medium-sized brown dog rushing toward fence")
+        self.assertEqual(
+            e2_crop.image, "evidence/Animal003/mr_official_01/entities/E2.jpg"
+        )
+        self.assertEqual(
+            e2_crop.description, "Medium-sized brown dog rushing toward fence"
+        )
 
         # Verify instrument I1 fields
-        i1_crop = next(r for r in stored if r.incident_id == "Animal003" and r.item_id == "I1")
+        i1_crop = next(
+            r for r in stored if r.incident_id == "Animal003" and r.item_id == "I1"
+        )
         self.assertEqual(i1_crop.threat_level, 2)
         self.assertEqual(i1_crop.holder_entity_id, "E1")
-        self.assertEqual(i1_crop.image, "evidence/Animal003/mr_official_01/instruments/I1.jpg")
+        self.assertEqual(
+            i1_crop.image, "evidence/Animal003/mr_official_01/instruments/I1.jpg"
+        )
 
     async def test_idempotent_and_resumable(self) -> None:
         # Pre-seed one record into evidence_store
@@ -287,7 +305,19 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
             temp_path.unlink()
 
     def test_cli_parse_args(self) -> None:
-        args = parse_args(["--dry-run", "--batch-size", "10", "--concurrency", "8", "--video-id", "Animal003", "--output-file", "crops.jsonl"])
+        args = parse_args(
+            [
+                "--dry-run",
+                "--batch-size",
+                "10",
+                "--concurrency",
+                "8",
+                "--video-id",
+                "Animal003",
+                "--output-file",
+                "crops.jsonl",
+            ]
+        )
         self.assertTrue(args.dry_run)
         self.assertEqual(args.batch_size, 10)
         self.assertEqual(args.concurrency, 8)
@@ -322,7 +352,11 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
             dump_evidence_records(crops1, temp_path)
 
             # Assert observable JSON lines file contents
-            lines = [line.strip() for line in temp_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            lines = [
+                line.strip()
+                for line in temp_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
             self.assertEqual(len(lines), 2)
             loaded_data = [json.loads(line) for line in lines]
             self.assertEqual({d["item_id"] for d in loaded_data}, {"E1", "E2"})

@@ -20,9 +20,9 @@ entity, instrument, and asset item, this script sends the video (or clip window)
 plus the item's existing description to the VLM to obtain timestamp_seconds and
 a concise detector label (incident-contract-v3 fields).
 
-Crucial invariants:
+- Crucial invariants:
 - Never changes the report's text, IDs, severity, or human edits.
-- Idempotent and resumable: skips items already present in the EvidenceStore.
+- Idempotent and resumable: skips items already present in the EvidenceStore or pre-loaded from --output-file (JSON lines format).
 - Bounded concurrency and batch size flags.
 - Safe dry-run mode (--dry-run) that inspects records and prints the plan without calls.
 - Per-item failure isolation: errors on individual items are logged without aborting the batch.
@@ -46,12 +46,14 @@ try:
 except ImportError:
     UTC = timezone.utc  # type: ignore[attr-defined]
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 # Add workspace search paths for module imports
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_SRC = REPO_ROOT / "services" / "agent" / "src"
-PROFILE_DIR = REPO_ROOT / "deploy" / "docker" / "developer-profiles" / "dev-profile-incident"
+PROFILE_DIR = (
+    REPO_ROOT / "deploy" / "docker" / "developer-profiles" / "dev-profile-incident"
+)
 
 for path in (REPO_ROOT, AGENT_SRC, PROFILE_DIR):
     if str(path) not in sys.path:
@@ -192,8 +194,7 @@ class BackfillSummary:
 class VideoReportSource(Protocol):
     """Port for fetching official incident reports from database or fixture."""
 
-    async def get_official_reports(self) -> list[OfficialReport]:
-        ...
+    async def get_official_reports(self) -> list[OfficialReport]: ...
 
 
 @runtime_checkable
@@ -207,8 +208,7 @@ class VLMClient(Protocol):
         *,
         clip_window: tuple[int, int] | None = None,
         incident_context: dict[str, Any] | None = None,
-    ) -> GroundingResult:
-        ...
+    ) -> GroundingResult: ...
 
 
 @runtime_checkable
@@ -226,8 +226,7 @@ class CropClient(Protocol):
         collection: str,
         item_id: str,
         detector: str = "grounding_dino",
-    ) -> CropResult:
-        ...
+    ) -> CropResult: ...
 
     def get_evidence_key(
         self,
@@ -235,8 +234,7 @@ class CropClient(Protocol):
         model_run_id: str,
         collection: str,
         item_id: str,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 @runtime_checkable
@@ -249,18 +247,15 @@ class EvidenceStore(Protocol):
         model_run_id: str,
         item_type: str,
         item_id: str,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
-    async def save_crop(self, record: EvidenceCropRecord) -> None:
-        ...
+    async def save_crop(self, record: EvidenceCropRecord) -> None: ...
 
     async def list_crops(
         self,
         incident_id: str | None = None,
         model_run_id: str | None = None,
-    ) -> list[EvidenceCropRecord]:
-        ...
+    ) -> list[EvidenceCropRecord]: ...
 
 
 # =============================================================================
@@ -308,7 +303,9 @@ class FileReportSource:
                 OfficialReport(
                     video_id=entry["video_id"],
                     model_run_id=entry["model_run_id"],
-                    video_filepath=entry.get("video_filepath", f"videos/{entry['video_id']}.mp4"),
+                    video_filepath=entry.get(
+                        "video_filepath", f"videos/{entry['video_id']}.mp4"
+                    ),
                     incident_data=entry.get("incident_data", {}),
                     items=items,
                 )
@@ -344,7 +341,9 @@ class SupabaseReportSource:
                 continue
 
             entities = await self.db.list_incident_entities(video_id, model_run_id)
-            instruments = await self.db.list_incident_instruments(video_id, model_run_id)
+            instruments = await self.db.list_incident_instruments(
+                video_id, model_run_id
+            )
             assets = await self.db.list_incident_assets(video_id, model_run_id)
 
             items: list[EvidenceItem] = []
@@ -407,7 +406,9 @@ class FakeVLMClient:
         failure_keys: set[tuple[str, str]] | None = None,
     ):
         self.responses = responses or {}
-        self.default_result = default_result or GroundingResult(timestamp_seconds=10, label="target object")
+        self.default_result = default_result or GroundingResult(
+            timestamp_seconds=10, label="target object"
+        )
         self.failure_keys = failure_keys or set()
         self.call_log: list[dict[str, Any]] = []
 
@@ -420,22 +421,26 @@ class FakeVLMClient:
         incident_context: dict[str, Any] | None = None,
     ) -> GroundingResult:
         key = (item.item_type, item.item_id)
-        self.call_log.append({
-            "video_ref": video_ref,
-            "item_type": item.item_type,
-            "item_id": item.item_id,
-            "description": item.description,
-            "clip_window": clip_window,
-        })
+        self.call_log.append(
+            {
+                "video_ref": video_ref,
+                "item_type": item.item_type,
+                "item_id": item.item_id,
+                "description": item.description,
+                "clip_window": clip_window,
+            }
+        )
         if key in self.failure_keys:
-            raise RuntimeError(f"VLM grounding simulated failure for {item.item_type} {item.item_id}")
+            raise RuntimeError(
+                f"VLM grounding simulated failure for {item.item_type} {item.item_id}"
+            )
         return self.responses.get(key, self.default_result)
 
 
 class RemoteVLMClient:
     """Async VLM client calling Brev Switchyard or vlm-gateway chat completions endpoint."""
 
-    GROUNDING_SCHEMA = {
+    GROUNDING_SCHEMA: ClassVar[dict[str, Any]] = {
         "type": "object",
         "additionalProperties": False,
         "properties": {
@@ -459,7 +464,11 @@ class RemoteVLMClient:
         model: str = "nvidia/cosmos-3-nano-reasoner",
         timeout: float = 240.0,
     ):
-        self.base_url = (base_url or os.getenv("VLM_GATEWAY_BASE_URL") or "https://switchyard-13doh4lsz.brevlab.com/v1").rstrip("/")
+        self.base_url = (
+            base_url
+            or os.getenv("VLM_GATEWAY_BASE_URL")
+            or "https://switchyard-13doh4lsz.brevlab.com/v1"
+        ).rstrip("/")
         self.api_key = api_key or os.getenv("VLM_GATEWAY_API_KEY", "")
         self.model = model
         self.timeout = timeout
@@ -518,7 +527,9 @@ class RemoteVLMClient:
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            resp = await client.post(
+                f"{self.base_url}/chat/completions", json=payload, headers=headers
+            )
             resp.raise_for_status()
             data = resp.json()
 
@@ -532,7 +543,9 @@ class RemoteVLMClient:
         ts = int(parsed["timestamp_seconds"])
         label = str(parsed["label"]).strip()
         if ts < 0 or not label:
-            raise ValueError(f"Invalid grounding fields returned: ts={ts}, label={label}")
+            raise ValueError(
+                f"Invalid grounding fields returned: ts={ts}, label={label}"
+            )
 
         return GroundingResult(timestamp_seconds=ts, label=label)
 
@@ -566,17 +579,19 @@ class FakeCropClient:
         detector: str = "grounding_dino",
     ) -> CropResult:
         key = self.get_evidence_key(video_id, model_run_id, collection, item_id)
-        self.crop_calls.append({
-            "video_ref": video_ref,
-            "timestamp_seconds": timestamp_seconds,
-            "label": label,
-            "video_id": video_id,
-            "model_run_id": model_run_id,
-            "collection": collection,
-            "item_id": item_id,
-            "detector": detector,
-            "image_key": key,
-        })
+        self.crop_calls.append(
+            {
+                "video_ref": video_ref,
+                "timestamp_seconds": timestamp_seconds,
+                "label": label,
+                "video_id": video_id,
+                "model_run_id": model_run_id,
+                "collection": collection,
+                "item_id": item_id,
+                "detector": detector,
+                "image_key": key,
+            }
+        )
         return CropResult(
             bounding_box=list(self.default_box),
             image_key=key,
@@ -609,7 +624,12 @@ class InMemoryEvidenceStore:
         return (incident_id, model_run_id, item_type, item_id) in self.records
 
     async def save_crop(self, record: EvidenceCropRecord) -> None:
-        key = (record.incident_id, record.model_run_id, record.item_type, record.item_id)
+        key = (
+            record.incident_id,
+            record.model_run_id,
+            record.item_type,
+            record.item_id,
+        )
         self.records[key] = record
 
     async def list_crops(
@@ -748,7 +768,7 @@ class BackfillRunner:
                         crop_result.bounding_box,
                     )
 
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - isolate per-item errors without aborting batch
                     summary.failed_count += 1
                     failure = ItemFailure(
                         video_id=report.video_id,
@@ -768,7 +788,9 @@ class BackfillRunner:
 
         # Process all tasks with concurrency
         if tasks_to_process:
-            await asyncio.gather(*[_process_task(rep, itm) for rep, itm in tasks_to_process])
+            await asyncio.gather(
+                *[_process_task(rep, itm) for rep, itm in tasks_to_process]
+            )
 
         summary.elapsed_seconds = time.monotonic() - start_time
         self._print_summary(summary)
@@ -783,29 +805,41 @@ class BackfillRunner:
     ) -> None:
         print("\n=== Official Report Timestamp Backfill Plan (DRY RUN) ===")
         print(f"Videos inspected: {summary.total_videos}")
-        print(f"Total evidence items: {summary.total_items} "
-              f"({summary.entities_count} entities, {summary.instruments_count} instruments, {summary.assets_count} assets)")
+        print(
+            f"Total evidence items: {summary.total_items} "
+            f"({summary.entities_count} entities, {summary.instruments_count} instruments, {summary.assets_count} assets)"
+        )
         print(f"Already backfilled (will skip): {summary.skipped_count}")
         print(f"Pending backfill: {len(tasks_to_process)}")
         if options.batch_size is not None and options.batch_size > 0:
-            print(f"Batch size limit: {options.batch_size} "
-                  f"(will process up to {min(len(tasks_to_process), options.batch_size)} items)")
+            print(
+                f"Batch size limit: {options.batch_size} "
+                f"(will process up to {min(len(tasks_to_process), options.batch_size)} items)"
+            )
         print(f"Concurrency: {options.concurrency}")
         print(f"VLM Model: {options.model}")
         print(f"Detector: {options.detector}")
 
         print("\nPlanned Items:")
         for rep, itm in tasks_to_process:
-            desc_snippet = (itm.description[:60] + "...") if len(itm.description) > 60 else itm.description
-            print(f"  - [{rep.video_id} / {rep.model_run_id}] {itm.item_type.upper()} {itm.item_id}: {desc_snippet}")
+            desc_snippet = (
+                (itm.description[:60] + "...")
+                if len(itm.description) > 60
+                else itm.description
+            )
+            print(
+                f"  - [{rep.video_id} / {rep.model_run_id}] {itm.item_type.upper()} {itm.item_id}: {desc_snippet}"
+            )
 
         print("\n(DRY RUN completed: no VLM or storage calls made)\n")
 
     def _print_summary(self, summary: BackfillSummary) -> None:
         print("\n=== Official Report Timestamp Backfill Summary ===")
         print(f"Videos inspected: {summary.total_videos}")
-        print(f"Total items inspected: {summary.total_items} "
-              f"({summary.entities_count} entities, {summary.instruments_count} instruments, {summary.assets_count} assets)")
+        print(
+            f"Total items inspected: {summary.total_items} "
+            f"({summary.entities_count} entities, {summary.instruments_count} instruments, {summary.assets_count} assets)"
+        )
         print(f"Items skipped (already present): {summary.skipped_count}")
         print(f"Items processed successfully: {summary.processed_count}")
         print(f"Items failed: {summary.failed_count}")
@@ -850,8 +884,7 @@ def load_evidence_records(path: Path) -> list[EvidenceCropRecord]:
 def dump_evidence_records(records: list[EvidenceCropRecord], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        for rec in records:
-            f.write(json.dumps(asdict(rec)) + "\n")
+        f.writelines(json.dumps(asdict(rec)) + "\n" for rec in records)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -916,7 +949,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def async_main(args: argparse.Namespace) -> int:
     log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=log_level, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
 
     options = BackfillOptions(
         batch_size=args.batch_size,
@@ -945,10 +980,14 @@ async def async_main(args: argparse.Namespace) -> int:
                 else:
                     report_source = InMemoryReportSource([])
             else:
-                logger.warning("Supabase credentials not configured; using empty InMemoryReportSource.")
+                logger.warning(
+                    "Supabase credentials not configured; using empty InMemoryReportSource."
+                )
                 report_source = InMemoryReportSource([])
         except ImportError:
-            logger.warning("vss_agents.utils.incident_db not available; using empty InMemoryReportSource.")
+            logger.warning(
+                "vss_agents.utils.incident_db not available; using empty InMemoryReportSource."
+            )
             report_source = InMemoryReportSource([])
 
     # Resolve VLM client
@@ -989,7 +1028,9 @@ async def async_main(args: argparse.Namespace) -> int:
     if options.output_file and not options.dry_run:
         records = await evidence_store.list_crops()
         dump_evidence_records(records, options.output_file)
-        logger.info("Wrote %d evidence records to %s", len(records), options.output_file)
+        logger.info(
+            "Wrote %d evidence records to %s", len(records), options.output_file
+        )
 
     return 0 if summary.failed_count == 0 else 1
 

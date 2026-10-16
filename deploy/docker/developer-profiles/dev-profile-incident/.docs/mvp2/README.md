@@ -309,7 +309,7 @@ The following specifications are planned, not final, pending completion of the o
 > **TODO [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass**
 > - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
 > - **Owner:** `fm/vss-mvp2-backfill-timestamps`
-> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore`, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`.
+> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore` with JSON lines `--output-file` persistence/resumption, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`. Production database loading is owned by PR 120 loader; production crop extraction by crop-service.
 
 ---
 
