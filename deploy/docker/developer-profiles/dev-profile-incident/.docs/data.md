@@ -14,11 +14,12 @@ the same video, a parallel ground-truth evaluation structure, and human review w
 
 ### Report-library summary RPC
 
-`list_incident_report_summaries` (latest: migration `20260927180000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
+`list_incident_report_summaries` (latest: migration `20260928000000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
 - **Inputs:** it joins `reports`, `incidents`, `model_runs`, `videos` and `review_status` and applies search, filter, sort and pagination in Postgres. Beyond the earlier type, severity, status, date/time/weekday and evidence-substring filters it takes:
   - `p_scope`: `'all'` (default: every successful report) or `'official'` (only each video's selected official report);
   - `p_entity_types`: exact canonical entity type;
-  - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality).
+  - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality);
+  - `p_timezone`: IANA zone for the weekday and time-of-day filters (default `'UTC'`).
 - **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display.
 - **Per-report outputs:**
   - the analysis `outcome`, from `run_outcome(notes)`;
