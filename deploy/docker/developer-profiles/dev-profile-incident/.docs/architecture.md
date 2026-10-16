@@ -270,7 +270,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
-*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v2`.*
+*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v3`.*
 
 ```mermaid
 sequenceDiagram

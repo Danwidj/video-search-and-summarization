@@ -4,7 +4,7 @@
     "name": "incident_report",
     "schema": {
       "title": "incident_report",
-      "description": "incident-contract-v2: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
+      "description": "incident-contract-v3: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
