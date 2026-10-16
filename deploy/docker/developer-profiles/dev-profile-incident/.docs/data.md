@@ -7,10 +7,12 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 ## 1. Supabase PostgreSQL Schema
 
-The database schema is defined authoritatively by `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`
-using SQLAlchemy Core (`metadata.create_all(checkfirst=True)`) and `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`
-(applied via `supabase db push`, see [`../supabase/README.md`](../supabase/README.md)). It supports multi-model runs over
-the same video, a parallel ground-truth evaluation structure, and human review workflows.
+The database schema is defined authoritatively by versioned SQL migrations under
+[`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`](../supabase/README.md)
+(applied via `supabase db push`). Schema authority moved completely out of the retired Streamlit
+v1 console's `incident-console/db.py`. It supports multi-model runs over the same video, a parallel
+ground-truth evaluation structure, human review workflows, and the MVP2 vector search extension
+(`evidence_crops`, `query_results`; see [`mvp2/README.md`](mvp2/README.md)).
 
 ### Report-library summary RPC
 

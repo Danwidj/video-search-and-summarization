@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP1 (reporting) is done. MVP2 (natural-language search) is not started.
+Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP1 (reporting) is done. MVP2 (natural-language search) overview is merged ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)); workstreams are in progress under PR 118, PR 119, and PR 120.
 
 - **Operate the profile** (launch, VM ops, analyse, migrate, evaluate): use the skills in [`skills/README.md`](skills/README.md).
 - **Understand it:** [`.docs/`](#docs-map). Start with [`.docs/status.md`](.docs/status.md) for what is true today.
@@ -116,5 +116,5 @@ Stale docs are a defect, not a follow-up. Any change in this directory updates, 
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/restructure-plan.md`](.docs/restructure-plan.md) | Option B (proposed, not approved) |
-| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (proposed, not approved) |
+| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (phases 1-3 delivered) |
 | [`.docs/archive/`](.docs/archive/) | Historical plans only. Not current truth. |

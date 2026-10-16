@@ -6,10 +6,10 @@ Thin proxy service for NVIDIA-hosted OpenAI-compatible LLM/VLM inference.
 
 Holds the single real API credential server-side so that browser-facing consumers
 (the `incident-console-v2` Next.js app, via its `VLM_GATEWAY_URL`) can call LLM/VLM
-inference without exposing the key client-side. The v1 Streamlit app does not call
-the gateway; only its P1 evaluation scripts use the same upstream
-`VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY`, directly
-(`../incident-console/scripts/eval_vlm_client.py`).
+inference without exposing the key client-side. The retired v1 Streamlit app does not call
+the gateway; the standalone evaluation pipeline uses the same upstream
+`VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` directly
+(`../eval/scripts/eval_vlm_client.py`).
 
 ## Contract
 
