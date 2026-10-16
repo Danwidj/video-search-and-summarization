@@ -64,3 +64,24 @@ test('reportFromNotes keeps snake_case notes unchanged', () => {
   assert.equal(report.location, 'Main street');
   assert.deepEqual(report.timeline, [{ start_seconds: 2, end_seconds: null, description: 'Fight starts' }]);
 });
+
+test('reportFromNotes coerces legacy timeline seconds like the retired schema.ts: numeric strings only', () => {
+  const notes = JSON.stringify({
+    incidentConsoleV2: {
+      videoId: 'video-3',
+      timeline: [
+        { start_seconds: ' 7.5 ', end_seconds: '12', description: 'Numeric strings' },
+        { start_seconds: '1:15', end_seconds: '1:45', description: 'Clock strings are not numbers' },
+        { start_seconds: -3, description: 'Negative start, missing end' },
+      ],
+    },
+  });
+
+  const report = reportFromNotes(notes);
+  assert.ok(report);
+  assert.deepEqual(report.timeline, [
+    { start_seconds: 7.5, end_seconds: 12, description: 'Numeric strings' },
+    { start_seconds: 0, end_seconds: null, description: 'Clock strings are not numbers' },
+    { start_seconds: 0, end_seconds: null, description: 'Negative start, missing end' },
+  ]);
+});

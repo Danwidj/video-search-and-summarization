@@ -71,18 +71,9 @@ function mapSeverity(value: unknown): number {
   return 1;
 }
 
-function toSeconds(val: unknown): number {
-  if (typeof val === 'number' && Number.isFinite(val)) return Math.max(0, Math.floor(val));
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (!trimmed) return 0;
-    const parts = trimmed.split(':').map((p) => Number(p));
-    if (parts.length === 2 && parts.every((p) => Number.isFinite(p))) return Math.max(0, Math.floor(parts[0] * 60 + parts[1]));
-    if (parts.length === 3 && parts.every((p) => Number.isFinite(p))) return Math.max(0, Math.floor(parts[0] * 3600 + parts[1] * 60 + parts[2]));
-    const num = Number(trimmed);
-    if (Number.isFinite(num)) return Math.max(0, Math.floor(num));
-  }
-  return 0;
+function seconds(val: unknown): number | null {
+  const num = typeof val === 'string' ? Number(val.trim()) : val;
+  return typeof num === 'number' && Number.isFinite(num) ? num : null;
 }
 
 function records(value: unknown): Record<string, unknown>[] | undefined {
@@ -141,8 +132,8 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
     const timeline: LegacyTimelineItem[] = timelineRaw
       .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
       .map((item) => ({
-        start_seconds: toSeconds(item.start_seconds),
-        end_seconds: item.end_seconds === null || item.end_seconds === undefined || item.end_seconds === '' ? null : toSeconds(item.end_seconds),
+        start_seconds: Math.max(seconds(item.start_seconds) ?? 0, 0),
+        end_seconds: seconds(item.end_seconds),
         description: text(item.description),
       }));
     const uncertainties = Array.isArray(raw.uncertainties) ? raw.uncertainties.map(text).filter(Boolean) : [];
