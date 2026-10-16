@@ -1,142 +1,264 @@
-# Workstream Task: MVP2 Database Migration (Evidence Crops & Query Results)
+# Workstream Task: MVP2 Data and Search Layer (Zero-VM Architecture)
 
-- **Assignee / Role:** Database Engineer
+- **Assignee / Role:** Database & Search Engineer
 - **Status:** Ready for implementation (build on this PR branch)
-- **Workstream Scope:** Supabase schema migration, pgvector extension, table schemas with RLS lockdown, RPC functions, and SQLAlchemy Core mirroring in `incident-console/db.py`.
+- **Workstream Scope:** Extended data and search layer operating entirely without VM access — Supabase schema migration, strict RLS lockdown and policy testing, HNSW vector index tuning, hybrid search RPC (vector + keyword + relational filters), embedding evaluation and generation pipeline, re-analysis output ingestion loader, Cloudflare R2 evidence crop storage management (presigned URLs and lifecycle cleanup), and SQLAlchemy Core synchronization.
 
 ---
 
 ## 1. Goal
 
-Implement the database schema and storage foundation for MVP2 natural-language evidence search with object crops. This workstream delivers the migration script creating the `evidence_crops` and `query_results` tables in Supabase PostgreSQL, enables the `vector` extension, configures Row-Level Security (RLS) under the strict lockdown policy (revoking access from `anon`/`authenticated` and granting exclusively to `service_role`), provisions the `search_evidence_items` RPC, and mirrors the schema in `incident-console/db.py`.
+Build and deliver the complete, self-contained data and search layer for MVP2 natural-language evidence search with object crops. This workstream delivers everything required to store, embed, ingest, index, secure, and retrieve multi-modal evidence items without touching or requiring the GPU virtual machine (`kwanz-ws`).
+
+All components in this workstream run locally on macOS or directly against remote managed services (Supabase PostgreSQL, Cloudflare R2, and remote embedding APIs).
 
 ---
 
 ## 2. Dependencies and Constraints
 
-### Upstream Dependencies (In Progress / External)
+### Upstream Dependencies
 1. **Database Lockdown Migration (PR #116):**
-   - Migration `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` from [PR #116](https://github.com/Danwidj/video-search-and-summarization/pull/116).
-   - This MVP2 migration **must build on top of PR #116**.
-   - Under PR #116's lockdown policy, all public tables enable RLS and default-deny access for `anon` and `authenticated`.
-   - Any new functions must explicitly execute `REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`.
-2. **Search API Contract (`contracts/search-contract-v1/`):**
-   - Owned by the Captain; defines the search request/response schema.
-   - Specifically shapes the data fields joined and returned by `search_evidence_items` RPC.
-3. **Report Contract Bump (`incident-contract-v3`):**
-   - Owned by the Captain; adds per-item `timestamp_seconds` and a short label for a detector stage.
-   - Note: Per pilot findings, bounding boxes do not come from the VLM report; they are produced by a downstream open-vocabulary detector stage and stored alongside crops in `evidence_crops`.
+   - Must build on top of `supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql` ([PR #116](https://github.com/Danwidj/video-search-and-summarization/pull/116)).
+   - All public tables default to deny access for `anon` and `authenticated`.
+   - All new functions must explicitly execute `REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`.
+2. **Search Contract (`contracts/search-contract-v1/`):**
+   - Owned by the Captain. Defines query input filters (`incident_types`, `min_severity`, `max_severity`, `item_types`), ranking requirements, and output schemas.
+3. **Re-Analysis Output Format (from Captain):**
+   - The Captain executes batch re-analysis on the VM.
+   - The Captain delivers structured output JSON containing validated `incident-contract-v3` reports (`timestamp_seconds`, detector bounding boxes, and crop images).
+   - This workstream ingests that output via a standalone loader into Supabase and R2.
+4. **Embedding Model Selection (measured with Eval Workstream):**
+   - Evaluated against benchmark queries alongside the eval engineer.
 
-### Scope Boundaries (What NOT to Touch)
-- **No Contract Files:** Do not edit or create files in `contracts/`.
-- **No VM or Agent Implementation:** Do not implement `vss-agent` search routes or background tasks (`services/agent/`).
-- **No Cropping Service:** Do not implement frame extraction or image cropping logic.
-- **No Frontend Console Changes:** Do not touch `incident-console-v2/` UI components or routes.
-- **No Live DB Execution Without Approval:** Per repository rules, dry-run first and ask before applying migrations to the shared live Supabase instance.
-- **Do Not Touch Legacy Pre-v1 Tables:** Do not drop or alter `incident_reports`, `incident_entities`, `incident_instruments`, or `incident_assets`.
-- **Do Not Alter Existing Evidence Tables:** Do not modify `entities`, `instruments`, or `assets` columns. All crop, bbox, and embedding data is consolidated into the dedicated `evidence_crops` table.
+### Operating Constraints (Zero-VM Requirement)
+- **No VM Access Required:** Everything in this workstream runs locally or directly against Supabase and R2 APIs. No SSH to `kwanz-ws`, no Docker Compose on VM, and no GPU dependencies.
+- **Scope Boundaries (What NOT to Touch):**
+  - Do NOT implement VM inference pipelines or `vss-agent` routes on the VM.
+  - Do NOT run video re-analysis (owned by the Captain).
+  - Do NOT edit Next.js frontend UI components in `incident-console-v2/` (owned by Frontend engineer).
+  - Do NOT edit or bump shared contract files in `contracts/` (owned by Captain).
+  - Do NOT drop or alter legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`).
+  - Do NOT mutate existing relational tables `entities`, `instruments`, or `assets` (all MVP2 crops, boxes, and embeddings live in `evidence_crops`).
+- **Live Database Rule:** Never apply migrations to the shared live Supabase instance without a verified dry-run and explicit approval.
 
 ---
 
-## 3. Tasks / Checklist
+## 3. Workstream Areas & Task Checklist
 
-- [ ] Enable `vector` PostgreSQL extension via `CREATE EXTENSION IF NOT EXISTS vector;` in a new Supabase migration.
-- [ ] Create `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchor, detector bounding box, R2 image key, and vector embedding column.
-- [ ] Create HNSW vector index on `evidence_crops(embedding vector_cosine_ops)` with `(m = 16, ef_construction = 64)` and composite lookup index on `(incident_id, model_run_id)`.
+### Area 1: Supabase Schema, RLS, and Search RPC
+- [ ] Create Supabase migration `supabase/migrations/<timestamp>_mvp2_data_and_search_layer.sql` enabling the `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`).
+- [ ] Create unified `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchors, detector bounding boxes, R2 image keys, item descriptions, and pgvector embeddings.
 - [ ] Create `query_results` table for recording item-level search hits, ranks, similarity scores, and critic audit trail.
-- [ ] Create indexes on `query_results (query_id, rank)` and `query_results (incident_id, model_run_id, item_type, item_id)`.
 - [ ] Enable Row-Level Security (RLS) on both `evidence_crops` and `query_results`.
 - [ ] Revoke all permissions on `evidence_crops` and `query_results` from `anon` and `authenticated`; grant all permissions strictly to `service_role`.
-- [ ] Create `search_evidence_items` RPC function restricted to `service_role` that performs cosine similarity search over official reports (`videos.selected_model_run_id = incidents.model_run_id`).
-- [ ] Explicitly revoke execute privileges on `search_evidence_items` from `PUBLIC`, `anon`, and `authenticated`, granting execute strictly to `service_role`.
 - [ ] Mirror `evidence_crops` and `query_results` table schemas in `incident-console/db.py` using SQLAlchemy Core definitions.
-- [ ] Document the new tables, RPC function, and R2 image key layout in `.docs/data.md` and `.docs/decisions.md`.
+
+### Area 2: Hybrid Search Engine & Ranking Tuning
+- [ ] Implement `search_evidence_items` RPC function in PostgreSQL supporting hybrid search:
+  - Vector cosine similarity via pgvector `<=>` operator.
+  - Full-text keyword search via PostgreSQL `tsvector` / `tsquery` over item name and description.
+  - Combined hybrid scoring formula: `alpha * vector_similarity + (1 - alpha) * keyword_rank`.
+  - Relational filtering by `incident_types`, severity range (`min_severity` to `max_severity`), and `item_types`.
+  - Strict scoping to official reports: `videos.selected_model_run_id = incidents.model_run_id`.
+- [ ] Revoke execute on `search_evidence_items` from `PUBLIC, anon, authenticated`; grant execute strictly to `service_role`.
+- [ ] Tune ranking weights (`alpha`) and similarity thresholds against retrieval benchmark queries in coordination with the eval engineer.
+
+### Area 3: Embedding Pipeline & Benchmark Selection
+- [ ] Benchmark candidate embedding models using evidence texts (names + descriptions + threat levels):
+  - Option A: NVIDIA NeMo Retriever NIM (`nvidia/llama-3.2-nv-embedqa-1b-v2`, 1024 dims).
+  - Option B: OpenAI `text-embedding-3-small` (1536 dims).
+  - Option C: Local CPU sentence-transformers (`all-MiniLM-L6-v2`, 384 dims).
+- [ ] Document empirical trade-offs (retrieval quality, dimension size, latency, cost) and select final model.
+- [ ] Implement standalone embedding utility script to generate and batch-upload embeddings into `evidence_crops.embedding`.
+
+### Area 4: Ingestion Loader for Re-Analysis Output
+- [ ] Define standardized ingestion payload format matching Captain's re-analysis output.
+- [ ] Implement idempotent ingestion loader script (`scripts/ingest_reanalysis_output.py`):
+  - Parses re-analysis output batches.
+  - Inserts/updates `evidence_crops` rows with detector bounding boxes, timestamps, and metadata.
+  - Generates text embeddings for newly ingested items.
+  - Validates foreign keys against parent `incidents` and `videos`.
+
+### Area 5: Cloudflare R2 Evidence Crop Storage Management
+- [ ] Establish canonical R2 object key layout:
+  `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` (where collection is `entities`, `instruments`, or `assets`).
+- [ ] Implement helper module for generating time-limited presigned GET URLs for frontend console viewing.
+- [ ] Implement orphan cleanup utility to purge R2 crop objects when parent incidents or model runs are deleted.
+- [ ] Validate direct S3/R2 client compatibility with standard credentials (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`).
+
+### Area 6: Security Testing, Performance & Index Tuning
+- [ ] Build automated RLS test suite:
+  - Verify `anon` role is rejected (HTTP 401/403 or 0 rows) across direct PostgREST table queries and RPC endpoints.
+  - Verify `authenticated` role is denied access.
+  - Verify `service_role` has full read/write access and bypasses RLS.
+- [ ] Benchmark HNSW index parameters (`m`, `ef_construction`, `ef_search`) on pgvector for target dataset size.
+- [ ] Test query execution plans (`EXPLAIN ANALYZE`) on `search_evidence_items` to ensure index scans rather than sequential scans.
 
 ---
 
-## 4. Technical Specifications & Interfaces
+## 4. Technical Specifications & Reference Schemas
 
-### 4.1 Findings from Spatial Grounding Pilot
-A box-accuracy pilot across 166 evaluated items established that VLMs cannot reliably predict spatial bounding boxes (0.0% well-framed, 99.4% degenerate or complete misses). However, temporal grounding is highly accurate (>95% of predicted timestamps land on the exact frame showing the item).
-- Consequently, `incident-contract-v3` adds only `timestamp_seconds` and item labels.
-- The spatial bounding box `bounding_box INT[4]` (normalized `[ymin, xmin, ymax, xmax]` in range 0–1000) is generated by a separate open-vocabulary detector stage (e.g. Grounding DINO / OWLv2) on the extracted frame and persisted directly in `evidence_crops`.
+### 4.1 Schema DDL Specification
 
-### 4.2 Supabase Schema Migration Details
-Location: `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/<timestamp>_mvp2_evidence_search_and_crops.sql`
+```sql
+-- 1. Enable pgvector
+CREATE EXTENSION IF NOT EXISTS vector;
 
-#### `evidence_crops` Table
-Consolidates crops across all evidence item types (`entity`, `instrument`, `asset`):
-- `incident_id VARCHAR(20) NOT NULL`
-- `model_run_id VARCHAR(20) NOT NULL`
-- `item_type VARCHAR(16) NOT NULL CHECK (item_type IN ('entity', 'instrument', 'asset'))`
-- `item_id VARCHAR(20) NOT NULL` (sequential IDs: `E1..`, `I1..`, `A1..`)
-- `item_name VARCHAR(256) NOT NULL`
-- `description TEXT NOT NULL`
-- `threat_level INTEGER` (nullable; 1–5 for instruments)
-- `holder_entity_id VARCHAR(20)` (nullable; holder reference)
-- `timestamp_seconds INTEGER NOT NULL`
-- `bounding_box INTEGER[4] NOT NULL` (from detector stage: `[ymin, xmin, ymax, xmax]` normalized 0–1000)
-- `image VARCHAR(1024) NOT NULL` (R2 key: `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg`)
-- `embedding vector(<DIM>)` (semantic text embedding; dimension depends on model decision)
-- `created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (now() AT TIME ZONE 'utc')`
-- **Primary Key:** `(incident_id, model_run_id, item_type, item_id)`
-- **Foreign Key:** `(incident_id, model_run_id) REFERENCES incidents(incident_id, model_run_id) ON DELETE CASCADE`
+-- 2. Unified evidence_crops table
+CREATE TABLE IF NOT EXISTS evidence_crops (
+    incident_id VARCHAR(20) NOT NULL,
+    model_run_id VARCHAR(20) NOT NULL,
+    item_type VARCHAR(16) NOT NULL CHECK (item_type IN ('entity', 'instrument', 'asset')),
+    item_id VARCHAR(20) NOT NULL,
+    item_name VARCHAR(256) NOT NULL,
+    description TEXT NOT NULL,
+    threat_level INTEGER, -- Nullable for entities/assets, 1-5 for instruments
+    holder_entity_id VARCHAR(20), -- Nullable, for instruments held by an entity
+    timestamp_seconds INTEGER NOT NULL,
+    bounding_box INTEGER[4] NOT NULL, -- [ymin, xmin, ymax, xmax] normalized 0-1000 from detector
+    image VARCHAR(1024) NOT NULL, -- R2 key: evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg
+    embedding vector(1024), -- Dimension tuned to chosen embedding model
+    search_vector tsvector GENERATED ALWAYS AS (
+        to_tsvector('english', coalesce(item_name, '') || ' ' || coalesce(description, ''))
+    ) STORED,
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    PRIMARY KEY (incident_id, model_run_id, item_type, item_id),
+    FOREIGN KEY (incident_id, model_run_id) REFERENCES incidents(incident_id, model_run_id) ON DELETE CASCADE
+);
 
-#### `query_results` Table
-Records multi-item search rankings and critic audit verdicts per query:
-- `id VARCHAR(36) PRIMARY KEY` (UUID or string ID)
-- `query_id VARCHAR(20) NOT NULL REFERENCES queries(id) ON DELETE CASCADE`
-- `incident_id VARCHAR(20) NOT NULL`
-- `model_run_id VARCHAR(20) NOT NULL`
-- `item_type VARCHAR(16) NOT NULL CHECK (item_type IN ('entity', 'instrument', 'asset'))`
-- `item_id VARCHAR(20) NOT NULL`
-- `rank INTEGER NOT NULL`
-- `similarity_score DOUBLE PRECISION NOT NULL`
-- `critic_verdict VARCHAR(16) NOT NULL CHECK (critic_verdict IN ('confirmed', 'rejected', 'unverified'))`
-- `critic_rationale TEXT`
-- `retrieved_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (now() AT TIME ZONE 'utc')`
-- **Foreign Key:** `(incident_id, model_run_id) REFERENCES incidents(incident_id, model_run_id) ON DELETE CASCADE`
+-- Indexing
+CREATE INDEX IF NOT EXISTS evidence_crops_embedding_hnsw_idx 
+    ON evidence_crops USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
-#### `search_evidence_items` RPC
-- Signature:
-  - `p_query_embedding vector(<DIM>)`
-  - `p_top_k INTEGER DEFAULT 10`
-  - `p_min_similarity DOUBLE PRECISION DEFAULT 0.2`
-  - `p_item_types TEXT[] DEFAULT ARRAY['entity', 'instrument', 'asset']`
-  - `p_incident_types TEXT[] DEFAULT NULL`
-  - `p_min_severity INTEGER DEFAULT NULL`
-  - `p_max_severity INTEGER DEFAULT NULL`
-- Behavior:
-  - Must join `evidence_crops` with `videos` and `incidents`.
-  - Must scope strictly to official reports: `v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id` and `inc.incident_id = ec.incident_id AND inc.model_run_id = ec.model_run_id`.
-  - Computes similarity score as `(1.0 - (ec.embedding <=> p_query_embedding))`.
-  - Orders by `ec.embedding <=> p_query_embedding ASC` with `LIMIT p_top_k`.
-  - Execution permissions: `SECURITY INVOKER`, `STABLE`, revoked from `PUBLIC, anon, authenticated`, granted exclusively to `service_role`.
+CREATE INDEX IF NOT EXISTS evidence_crops_fts_idx 
+    ON evidence_crops USING gin (search_vector);
 
-### 4.3 SQLAlchemy Core Schema Mirroring
-File: `deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py`
-- Add `evidence_crops` and `query_results` table definitions to `metadata`.
-- Match data types, foreign keys, and cascading rules. Note: pgvector column in SQLAlchemy can use `pgvector.sqlalchemy.Vector` or fallback to custom/array representation if client does not load the vector package.
+CREATE INDEX IF NOT EXISTS evidence_crops_lookup_idx 
+    ON evidence_crops (incident_id, model_run_id);
+
+-- 3. Dedicated query_results table
+CREATE TABLE IF NOT EXISTS query_results (
+    id VARCHAR(36) PRIMARY KEY,
+    query_id VARCHAR(20) NOT NULL REFERENCES queries(id) ON DELETE CASCADE,
+    incident_id VARCHAR(20) NOT NULL,
+    model_run_id VARCHAR(20) NOT NULL,
+    item_type VARCHAR(16) NOT NULL CHECK (item_type IN ('entity', 'instrument', 'asset')),
+    item_id VARCHAR(20) NOT NULL,
+    rank INTEGER NOT NULL,
+    similarity_score DOUBLE PRECISION NOT NULL,
+    critic_verdict VARCHAR(16) NOT NULL CHECK (critic_verdict IN ('confirmed', 'rejected', 'unverified')),
+    critic_rationale TEXT,
+    retrieved_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    FOREIGN KEY (incident_id, model_run_id) REFERENCES incidents(incident_id, model_run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS query_results_query_rank_idx ON query_results (query_id, rank);
+
+-- 4. RLS Policy Lockdown
+ALTER TABLE evidence_crops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE query_results ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON evidence_crops FROM anon, authenticated;
+REVOKE ALL ON query_results FROM anon, authenticated;
+
+GRANT ALL ON evidence_crops TO service_role;
+GRANT ALL ON query_results TO service_role;
+```
+
+### 4.2 Hybrid Search Function Specification
+
+```sql
+CREATE OR REPLACE FUNCTION search_evidence_items(
+    p_query_embedding vector(1024),
+    p_query_text TEXT DEFAULT NULL,
+    p_top_k INTEGER DEFAULT 10,
+    p_min_similarity DOUBLE PRECISION DEFAULT 0.2,
+    p_alpha DOUBLE PRECISION DEFAULT 0.7, -- Weight for vector similarity vs text rank
+    p_item_types TEXT[] DEFAULT ARRAY['entity', 'instrument', 'asset'],
+    p_incident_types TEXT[] DEFAULT NULL,
+    p_min_severity INTEGER DEFAULT NULL,
+    p_max_severity INTEGER DEFAULT NULL
+)
+RETURNS TABLE (
+    incident_id VARCHAR(20),
+    model_run_id VARCHAR(20),
+    video_filepath VARCHAR(1024),
+    incident_type VARCHAR(32),
+    severity_level INTEGER,
+    incident_description TEXT,
+    incident_start_timestamp VARCHAR(32),
+    incident_end_timestamp VARCHAR(32),
+    item_type VARCHAR(16),
+    item_id VARCHAR(20),
+    item_name VARCHAR(256),
+    item_description TEXT,
+    threat_level INTEGER,
+    holder_entity_id VARCHAR(20),
+    image VARCHAR(1024),
+    timestamp_seconds INTEGER,
+    bounding_box INTEGER[4],
+    similarity_score DOUBLE PRECISION
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+STABLE
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        ec.incident_id,
+        ec.model_run_id,
+        v.filepath AS video_filepath,
+        inc.type AS incident_type,
+        inc.severity_level,
+        inc.description AS incident_description,
+        inc.start_timestamp AS incident_start_timestamp,
+        inc.end_timestamp AS incident_end_timestamp,
+        ec.item_type,
+        ec.item_id,
+        ec.item_name,
+        ec.description AS item_description,
+        ec.threat_level,
+        ec.holder_entity_id,
+        ec.image,
+        ec.timestamp_seconds,
+        ec.bounding_box,
+        (
+            CASE 
+                WHEN p_query_text IS NOT NULL AND ec.search_vector @@ plainto_tsquery('english', p_query_text)
+                THEN (p_alpha * (1.0 - (ec.embedding <=> p_query_embedding))) + 
+                     ((1.0 - p_alpha) * ts_rank_cd(ec.search_vector, plainto_tsquery('english', p_query_text)))
+                ELSE (1.0 - (ec.embedding <=> p_query_embedding))
+            END
+        ) AS similarity_score
+    FROM evidence_crops ec
+    JOIN videos v ON v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id
+    JOIN incidents inc ON inc.incident_id = ec.incident_id AND inc.model_run_id = ec.model_run_id
+    WHERE ec.item_type = ANY(p_item_types)
+      AND ec.embedding IS NOT NULL
+      AND (1.0 - (ec.embedding <=> p_query_embedding)) >= p_min_similarity
+      AND (p_incident_types IS NULL OR inc.type = ANY(p_incident_types))
+      AND (p_min_severity IS NULL OR inc.severity_level >= p_min_severity)
+      AND (p_max_severity IS NULL OR inc.severity_level <= p_max_severity)
+    ORDER BY similarity_score DESC
+    LIMIT p_top_k;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION search_evidence_items FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;
+```
 
 ---
 
-## 5. Open Questions & Decisions
+## 5. Definition of Done
 
-1. **Embedding Model Selection & Vector Dimension (`<DIM>`):**
-   - The choice of text embedding model is currently an open Captain decision:
-     - **Option A (Recommended):** NVIDIA NeMo Retriever NIM (`nvidia/llama-3.2-nv-embedqa-1b-v2`) via Brev/NGC (1024 dimensions).
-     - **Option B:** OpenAI `text-embedding-3-small` (1536 dimensions).
-     - **Option C:** Local CPU sentence-transformers (`all-MiniLM-L6-v2`, 384 dimensions).
-   - *Action for Assignee:* Confirm the final embedding model with the Captain before hardcoding the `vector(<DIM>)` length in the migration DDL and HNSW index.
-2. **PR #116 Merge Status:**
-   - Verify that PR #116 is merged or base this migration timestamp after `20261016000000` to maintain clean migration sequencing.
-
----
-
-## 6. Definition of Done
-
-- [ ] Supabase migration SQL file is created under `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/` and passes SQL syntax verification.
-- [ ] Migration applies cleanly in a transaction, sets up RLS and privileges as specified, and notifies PostgREST schema cache reload.
-- [ ] SQLAlchemy Core definitions in `incident-console/db.py` are updated and pass Python linting/type checks.
-- [ ] Documentation updates to `.docs/data.md` and `.docs/decisions.md` are included.
-- [ ] Live migration dry-run plan is prepared for execution approval.
+- [ ] Supabase migration applied and validated on a local/test PostgreSQL instance with pgvector.
+- [ ] RLS lockdown tests pass: `anon` and `authenticated` roles receive HTTP 401/403 or empty responses; `service_role` executes queries and RPCs without error.
+- [ ] Hybrid search RPC produces accurate rankings across combined vector and text queries.
+- [ ] Embedding generation script processes evidence items and populates pgvector embeddings.
+- [ ] Re-analysis ingestion loader successfully loads batch output into `evidence_crops` and matches official report IDs.
+- [ ] R2 helper generates working presigned URLs and cleanup logic correctly identifies orphaned crop keys.
+- [ ] SQLAlchemy Core models in `incident-console/db.py` match migration schemas.
+- [ ] Documentation updated in `.docs/data.md` and `.docs/decisions.md`.
