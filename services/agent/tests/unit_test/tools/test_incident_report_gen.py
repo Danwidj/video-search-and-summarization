@@ -35,6 +35,10 @@ from vss_agents.tools.incident_report_gen import persist_report
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
+from vss_agents.utils.crop_evidence import CropEvidenceService
+from vss_agents.utils.crop_evidence import FakeDetector
+from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
+from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
 MODEL_OUTPUT = {
     "incident": {
@@ -48,11 +52,29 @@ MODEL_OUTPUT = {
         "confidence_score": None,
         "location": None,
     },
-    "entities": [{"entity_id": "E1", "type": "human", "description": "Person in a hood."}],
-    "instruments": [
-        {"instrument_id": "I1", "entity_id": "E1", "name": "crowbar", "description": "Used on A1.", "threat_level": 3}
+    "entities": [
+        {
+            "entity_id": "E1",
+            "type": "human",
+            "description": "Person in a hood.",
+            "timestamp_seconds": 2,
+            "label": "person",
+        }
     ],
-    "assets": [{"asset_id": "A1", "name": "door", "description": "Forced open."}],
+    "instruments": [
+        {
+            "instrument_id": "I1",
+            "entity_id": "E1",
+            "name": "crowbar",
+            "description": "Used on A1.",
+            "threat_level": 3,
+            "timestamp_seconds": 3,
+            "label": "crowbar",
+        }
+    ],
+    "assets": [
+        {"asset_id": "A1", "name": "door", "description": "Forced open.", "timestamp_seconds": 2, "label": "door"}
+    ],
     "timeline": [{"start_seconds": 1, "end_seconds": 6, "description": "E1 forces A1 with I1."}],
     "uncertainties": [],
 }
@@ -331,3 +353,21 @@ class TestEndToEnd:
         result, _ = await self._run(handler)
         assert result.report_text is None and "HTTP 500" in result.report_text_error
         assert result.report["incident"]["duration"] == 5
+
+    @pytest.mark.asyncio
+    async def test_crop_service_called_when_detector_available(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
+
+        detector = FakeDetector()
+        store = InMemoryEvidenceStore()
+        service = CropEvidenceService(detector=detector, store=store)
+        set_crop_evidence_service(service)
+        try:
+            with patch.object(service, "process_incident_report", new_callable=AsyncMock) as mock_process:
+                result, _ = await self._run(handler)
+                assert result.report["incident"]["title"] == "Break-in at a shop"
+                mock_process.assert_awaited_once()
+        finally:
+            set_crop_evidence_service(None)

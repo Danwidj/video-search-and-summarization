@@ -2,6 +2,24 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: MVP2 crop evidence service with detector and storage ports (VM Step 3)
+- **Decision:**
+  - Build `services/agent/src/vss_agents/utils/crop_evidence.py` implementing `CropEvidenceService`, exposing canonical `crop_evidence_item(video_ref, timestamp_seconds, label, detector)` returning `CropResult` (`image_bytes`, `normalized_box`, `score`, `frame_size`) or `None`, and `evidence_key(video_id, model_run_id, collection, item_id)` generating canonical R2 layout keys `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg`.
+  - Bounding boxes are derived from an open-vocabulary detector port (`OpenVocabularyDetector` / `DefaultDetector`) evaluating on keyframes at `timestamp_seconds` using item labels as queries, with 5% margin padding clamped to the frame boundaries and JPEG quality 85 encoding.
+  - Image and metadata storage are abstracted behind the `EvidenceStore` port with an in-memory adapter (`InMemoryEvidenceStore`) for hermetic zero-GPU testing; `R2EvidenceStore` and `SupabaseEvidenceStore` adapters are scaffolded as TODOs owned by PR 120.
+  - Hook crop extraction into report generation (`services/agent/src/vss_agents/tools/incident_report_gen.py`) behind the detector port, preserving existing report generation behavior when the detector is unavailable.
+- **Why:**
+  - Satisfies MVP2 VM backend step 3.
+  - Aligns with the VLM Bounding Box Accuracy Pilot findings: VLMs provide accurate temporal grounding (`timestamp_seconds`) but 0% well-framed bounding boxes, so spatial bounding boxes are provided by specialized 2D open-vocabulary detectors on extracted keyframes.
+  - Decouples detector model evaluation (PR 119) and Supabase/R2 storage migration (PR 120) behind hexagonal ports so workers build in parallel without circular dependencies.
+- **Alternatives rejected:**
+  - Direct VLM bounding box extraction (0% well-framed in pilot).
+  - Hardcoding a heavy detector model (e.g. Grounding DINO weights) into base agents before eval PR 119 selects the optimal detector.
+  - Direct R2/Postgres writes without ports (breaks zero-GPU local mock and unit tests).
+- **Links:** [`../mvp2/README.md`](mvp2/README.md); [`../../../../../services/agent/src/vss_agents/utils/crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py); [`../../../../../services/agent/tests/unit_test/utils/test_crop_evidence.py`](../../../../../services/agent/tests/unit_test/utils/test_crop_evidence.py).
+
+---
+
 ### 2026-10-16: MVP2 vss-agent search route with always-on critic and hexagonal SearchStore port
 - **Decision:**
   - Build `services/agent/src/vss_agents/api/incident_search.py` implementing `POST /api/v1/incidents/search` matching `search-contract-v1` with an always-on VLM critic.
