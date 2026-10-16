@@ -29,51 +29,53 @@ All development occurs on a zero-GPU local workstation, building against server-
   - [ ] Support expandable audit drawer or toggle for inspecting rejected candidate hits.
 - [ ] **Interactive Jump-to-Clip:**
   - [ ] Clicking a hit opens the video player and seeks to the item's `timestamp_seconds`.
-- [ ] **Server-Side Data Route for Post-RLS Lockdown:**
-  - [ ] Implement server-side Next.js route handler (`/api/search`) using `SUPABASE_SERVICE_ROLE_KEY` / `vss-agent` proxy, preventing direct client-side Supabase PostgREST queries that fail under RLS lockdown.
 - [ ] **Relevance Feedback on Search Hits:**
   - [ ] Provide user feedback controls (thumbs up / thumbs down / rating) on search hit cards.
-  - [ ] Persist relevance feedback back to Supabase `query_results` via a server-side route (`POST /api/search/feedback`).
+  - [ ] Persist relevance feedback to `query_results` using the typed functions from `incident-console-v2/lib/db/`.
 - [ ] **Evidence Timeline & Scrubber Anchors on Incident Page:**
   - [ ] Render timeline markers on the video scrubber at each item's `timestamp_seconds`.
   - [ ] Crop gallery drawer/strip linking each visual crop directly to its scrubber timestamp anchor.
 - [ ] **Search History & Saved Searches:**
-  - [ ] Saved queries drawer / recent searches list fetching recent user queries from the `queries` audit trail.
+  - [ ] Saved queries drawer / recent searches list fetching recent user queries from the `queries` / `query_results` audit trail using `incident-console-v2/lib/db/` functions.
   - [ ] One-click re-execution of historical or bookmarked queries.
 - [ ] **Themeable UI via External Style Guide:**
   - [ ] Implement design-token theme loader supporting external JSON design token definitions (file-based or remote URL).
   - [ ] Map external tokens to CSS custom variables controlling brand palette, typography, radii, and shadows across all console screens.
 - [ ] **Working Conversational Q&A (Incident & Evidence Chat):**
   - [ ] Multi-turn conversational Q&A panel over incidents and retrieved evidence items.
-  - [ ] Server-side proxy and frontend client adhering to the chat contract specification, functioning against a local mock until the backend endpoint lands.
+  - [ ] Frontend chat client and contract proxy adhering to the chat contract specification, functioning against a local mock until the backend endpoint lands.
 - [ ] **Mock Backend Alignment:**
   - [ ] Build and verify all features against local mock backend endpoints (`mock-backend/base_profile_mock` :7777 / `search_profile_mock` :7778) and contract fixtures before backend integration.
 
 ---
 
-## Boundaries & Non-Goals (What This Must NOT Touch)
-- **Do not edit contract files directly:** The Captain owns `contracts/search-contract-v1/` and `contracts/incident-contract-v3`. Build against their schemas; do not change repository contracts.
-- **Do not touch database migrations or Supabase DDL:** Database schema changes (`evidence_crops`, `query_results`, pgvector RPCs) are owned by the database migration workstream.
-- **Do not edit backend routes or Python services:** Native `vss-agent` routes (`/api/v1/incidents/search`), cropping service, and Brev Switchyard critic calls are owned by the Captain.
-- **Do not touch eval benchmark suites:** Standalone benchmark scripts in `eval/` are owned by the eval workstream.
-- **Do not touch retired `incident-console/`:** All frontend feature work belongs exclusively in `incident-console-v2/`.
-- **Ignore E2E test suites:** Do not build or run end-to-end browser automation suites (e.g. Playwright / Cypress). Unit and typecheck tests (`npm run typecheck`, `npm test`) remain standard.
+## Ownership Boundaries & Non-Goals
+
+### Ownership Boundary
+- **Frontend Engineer Owns:**
+  - `incident-console-v2/` page routes (`app/`), visual components (`components/`), and theme styling.
+  - Interaction with the new MVP2 tables (`evidence_crops`, `query_results`) is done **strictly through typed functions** in `incident-console-v2/lib/db/` (provided by the Database Engineer).
+  - Search and chat execution come from `vss-agent` via the shared contracts (`contracts/search-contract-v1` and chat contract).
+- **Database Engineer Owns:**
+  - `supabase/` migrations, RLS policies, PostgreSQL search RPC functions, and the `incident-console-v2/lib/db/` module.
+- **Existing Codebase Rule:**
+  - Existing API routes (`app/api/*/route.ts`) already create their own server-side PostgREST client with `SUPABASE_SERVICE_ROLE_KEY`, so the browser never queries Supabase directly. There is no need for new intermediate server-side data routes for RLS compliance, and existing API routes must **not** be refactored.
+- **Scope Boundaries (What This Must NOT Touch):**
+  - **Do not edit contract files directly:** The Captain owns `contracts/search-contract-v1/` and `contracts/incident-contract-v3`. Build against their schemas; do not change repository contracts.
+  - **Do not touch database migrations or Supabase DDL:** Database schema changes (`evidence_crops`, `query_results`, pgvector RPCs) are owned by the database migration workstream.
+  - **Do not implement database queries directly:** Use the typed helpers provided in `incident-console-v2/lib/db/`.
+  - **Do not edit backend routes or Python services:** Native `vss-agent` routes (`/api/v1/incidents/search`), cropping service, and Brev Switchyard critic calls are owned by the Captain.
+  - **Do not touch eval benchmark suites:** Standalone benchmark scripts in `eval/` are owned by the eval workstream.
+  - **Do not touch retired `incident-console/`:** All frontend feature work belongs exclusively in `incident-console-v2/`.
+  - **Ignore E2E test suites:** Do not build or run end-to-end browser automation suites (e.g. Playwright / Cypress). Unit and typecheck tests (`npm run typecheck`, `npm test`) remain standard.
 
 ---
 
 ## Technical Specifications & Interfaces
 
-### 1. Server-Side Data Routes (RLS Lockdown Compliance)
-Following the database RLS lockdown, client browsers cannot query Supabase tables directly (`anon` and `authenticated` roles have `REVOKE ALL`). All search and feedback operations must flow through server-side Next.js route handlers executing with `SUPABASE_SERVICE_ROLE_KEY` or proxying to `vss-agent`.
-
-- **`POST /api/search`**:
-  - Accepts search query, top_k, min_similarity, and filter parameters.
-  - When running against VM: forwards to `vss-agent` (`POST /api/v1/incidents/search`).
-  - When running against local mock: queries `mock-backend` on port 7777/7778.
-  - Returns sanitized `SearchResponse`.
-- **`POST /api/search/feedback`**:
-  - Request body: `{ result_id: string, query_id: string, feedback: "relevant" | "irrelevant" | "flagged", notes?: string }`.
-  - Updates `query_results` table in Supabase via server-side service role client.
+### 1. Data Access & Contracts
+- **Search & Chat Execution:** Calls `vss-agent` search and chat endpoints directly or via mock backend according to `contracts/search-contract-v1` and the chat contract specification.
+- **MVP2 Tables Data Access:** Reads and writes to `query_results` and `evidence_crops` use typed helper functions imported from `incident-console-v2/lib/db/` (e.g., `saveFeedback()`, `getQueryHistory()`, `getEvidenceCrops()`), ensuring clear boundary separation between frontend and database code.
 
 ### 2. Search API Contract (`contracts/search-contract-v1`)
 
@@ -239,9 +241,9 @@ The console currently has a rudimentary report chat route (`app/api/chat/route.t
 ## Definition of Done
 1. **Search & Exploration:** `/search` page is functional with query input, filter chips, loading states, and hit cards rendering crops, parent incident metadata, and critic verification status.
 2. **Jump-to-Clip & Scrubber:** Clicking hits seeks player to `timestamp_seconds`; timeline markers display on incident video scrubbers with crop gallery linkage.
-3. **Security Compliance:** All database operations execute through server-side route handlers adhering to RLS lockdown policies.
-4. **Relevance Feedback:** Users can submit relevance feedback on search hits with persistence to `query_results`.
-5. **Search History:** Query history and saved searches are visible and re-executable.
+3. **Data Access & Boundaries:** Reads and writes to MVP2 tables are isolated strictly through `incident-console-v2/lib/db/` functions, leaving existing API routes unrefactored.
+4. **Relevance Feedback:** Users can submit relevance feedback on search hits with persistence to `query_results` via `lib/db/`.
+5. **Search History:** Query history and saved searches are visible and re-executable via `lib/db/`.
 6. **Theming Engine:** Style guide JSON tokens dynamically load and apply across console components.
 7. **Conversational Q&A:** Chat panel functions with streaming/multi-turn responses and clickable evidence citations.
 8. **Code Quality:** All TypeScript checks (`npm run typecheck`) and component tests (`npm test`) pass cleanly in `incident-console-v2`.
