@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AnalysisReport } from '@/lib/analysis/schema';
 import type { RepairOperation, RepairIneligibility } from '@/lib/contract/repair';
 import type { DerivedContractReport } from '@/lib/contract/types';
 import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/lib/contract/validate';
@@ -11,54 +10,6 @@ interface VideoReference {
   sensorId: string;
   uploadedAt: string;
   duration?: number | null;
-}
-
-/**
- * Agent mode: create the video row once (keeping its original upload time),
- * then make sure filepath/source hold the R2 key. The upsert deliberately
- * omits uploaded_datetime so a re-analysis never resets it.
- */
-async function saveVideo(db: PostgrestClient, report: { videoId: string }, video: VideoReference): Promise<void> {
-  await recordUploadedVideo(db, report.videoId, video);
-  const row: Record<string, unknown> = { id: report.videoId, filepath: video.r2Key, source: video.sensorId };
-  if (video.duration !== undefined) row.duration = video.duration;
-  await db.upsert('videos', row, 'id');
-}
-
-async function saveModelRun(db: PostgrestClient, report: AnalysisReport): Promise<void> {
-  await db.upsert(
-    'model_runs',
-    {
-      id: report.modelRunId,
-      model_name: report.model,
-      model_version: null,
-      prompt_version: report.promptVersion ?? null,
-      run_datetime: report.generatedAt,
-      notes: JSON.stringify({
-        incidentConsoleV2: {
-          report,
-          rawModelOutput: report.rawModelOutput,
-          normalizedModelOutput: report.normalizedModelOutput,
-        },
-      }),
-    },
-    'id',
-  );
-}
-
-async function saveReport(db: PostgrestClient, report: AnalysisReport): Promise<void> {
-  await db.upsert(
-    'reports',
-    {
-      id: report.reportId,
-      incident_id: report.videoId,
-      query_id: null,
-      model_run_id: report.modelRunId,
-      filepath: null,
-      generated_datetime: report.generatedAt,
-    },
-    'id',
-  );
 }
 
 export async function verifySavedReport(
@@ -83,30 +34,6 @@ export async function verifySavedReport(
   if (video?.filepath !== expectedR2Key) {
     throw new Error('persistence verification found an unexpected videos.filepath value');
   }
-}
-
-export async function persistAgentBookkeeping(
-  db: PostgrestClient,
-  report: AnalysisReport,
-  video: VideoReference,
-  setOperation: (operation: string) => void,
-): Promise<void> {
-  setOperation('saving the model run to PostgREST');
-  await saveModelRun(db, report);
-  setOperation('restoring the video R2 key in PostgREST');
-  await saveVideo(db, report, video);
-  setOperation('saving report metadata to PostgREST');
-  await saveReport(db, report);
-  setOperation('verifying the persisted report in PostgREST');
-  await verifySavedReport(db, report, video.r2Key);
-}
-
-export async function prepareAgentVideo(
-  db: PostgrestClient,
-  report: { videoId: string },
-  video: VideoReference,
-): Promise<void> {
-  await saveVideo(db, report, video);
 }
 
 /** The four analysis outcomes. Only the two valid ones ever produce report rows. */

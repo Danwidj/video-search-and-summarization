@@ -38,14 +38,9 @@ test('reportFromNotes normalizes legacy camelCase notes to snake_case', () => {
   assert.equal(report.description, 'Legacy summary text');
   assert.equal(report.incident_start, '01:15');
   assert.equal(report.incident_end, '01:45');
-  assert.equal(report.duration_seconds, 30);
   assert.equal(report.severity, 4);
   assert.equal(report.severity_reason, 'High risk detected');
-  assert.equal(report.confidence, 0.9);
   assert.deepEqual(report.timeline, [{ start_seconds: 15, end_seconds: 45, description: 'Event' }]);
-  assert.deepEqual(report.persons, [{ description: 'Intruder', actions: '' }, { description: 'Guard dog', actions: '' }]);
-  assert.deepEqual(report.instruments, [{ name: 'Crowbar', description: 'Tool', threat_level: 4 }]);
-  assert.deepEqual(report.assets, [{ name: 'Door', description: 'Pried' }]);
   assert.deepEqual(report.uncertainties, ['Unknown suspect identity']);
 });
 
@@ -56,10 +51,8 @@ test('reportFromNotes keeps snake_case notes unchanged', () => {
       incident_type: 'fighting',
       description: 'Two people fight.',
       severity: 3,
-      confidence: 0.7,
-      persons: [{ description: 'Person A', actions: 'punching' }],
+      location: 'Main street',
       timeline: [{ start_seconds: 2, end_seconds: null, description: 'Fight starts' }],
-      instruments: [{ name: 'Bottle', description: 'Swung', threat_level: 2 }],
     },
   });
 
@@ -68,8 +61,27 @@ test('reportFromNotes keeps snake_case notes unchanged', () => {
   assert.equal(report.incident_type, 'fighting');
   assert.equal(report.description, 'Two people fight.');
   assert.equal(report.severity, 3);
-  assert.equal(report.confidence, 0.7);
-  assert.deepEqual(report.persons, [{ description: 'Person A', actions: 'punching' }]);
+  assert.equal(report.location, 'Main street');
   assert.deepEqual(report.timeline, [{ start_seconds: 2, end_seconds: null, description: 'Fight starts' }]);
-  assert.deepEqual(report.instruments, [{ name: 'Bottle', description: 'Swung', threat_level: 2 }]);
+});
+
+test('reportFromNotes coerces legacy timeline seconds like the retired schema.ts: numeric strings only', () => {
+  const notes = JSON.stringify({
+    incidentConsoleV2: {
+      videoId: 'video-3',
+      timeline: [
+        { start_seconds: ' 7.5 ', end_seconds: '12', description: 'Numeric strings' },
+        { start_seconds: '1:15', end_seconds: '1:45', description: 'Clock strings are not numbers' },
+        { start_seconds: -3, description: 'Negative start, missing end' },
+      ],
+    },
+  });
+
+  const report = reportFromNotes(notes);
+  assert.ok(report);
+  assert.deepEqual(report.timeline, [
+    { start_seconds: 7.5, end_seconds: 12, description: 'Numeric strings' },
+    { start_seconds: 0, end_seconds: null, description: 'Clock strings are not numbers' },
+    { start_seconds: 0, end_seconds: null, description: 'Negative start, missing end' },
+  ]);
 });

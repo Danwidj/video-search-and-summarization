@@ -178,12 +178,15 @@ async function recordFailure(db: PostgrestClient, attempt: AnalysisAttemptRecord
 }
 
 export async function runContractAnalysis(input: ContractAnalysisInput, config: ServiceConfiguration): Promise<ContractAnalysisResult> {
-  const model = resolveAllowedModel(input.model);
+  let model = resolveAllowedModel(input.model);
   let additionalInstruction: string | null;
   try {
     additionalInstruction = normalizeAdditionalInstruction(input.additionalInstruction);
   } catch (error) {
     throw new AnalysisRequestError(400, error instanceof Error ? error.message : String(error));
+  }
+  if (config.analysisMode === 'agent' && additionalInstruction) {
+    throw new AnalysisRequestError(400, 'An additional instruction is only available in gateway analysis mode');
   }
 
   const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
@@ -218,36 +221,116 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       },
     };
 
-    operation = `calling the VLM gateway (${model.id})`;
-    let completion: GatewayCompletionResponse;
-    try {
-      completion = await new GatewayClient(config.gatewayUrl!).complete(
-        buildP1Request(model.id, playbackUrl, additionalInstruction),
-        AbortSignal.timeout(model.timeout_seconds * 1000),
-      );
-    } catch (error) {
-      if (!(error instanceof GatewayError)) throw error;
-      const response: AnalysisAttemptRecord['response'] = error.httpStatus !== undefined || error.errorBody !== undefined
-        ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
-        : null;
-      const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response, validation: { firstPass: [] }, repair: null };
-      const recorded = await recordFailure(db, attempt);
-      throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
-        outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
-      });
+    let response: NonNullable<AnalysisAttemptRecord['response']>;
+
+    if (config.analysisMode === 'agent') {
+      operation = 'calling the incident agent';
+      if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+      const endpoint = `${config.agentUrl.replace(/\/$/, '')}/api/v1/incidents/${input.videoId}/analyze`;
+      let agentResponse: Response;
+      try {
+        agentResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_url: playbackUrl, model_run_id: modelRunId, skip_rp1: true }),
+          signal: AbortSignal.timeout(model.timeout_seconds * 1000),
+        });
+      } catch (error) {
+        const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
+        const code = isTimeout ? 'AGENT_TIMEOUT' : 'AGENT_FETCH_FAILED';
+        const message = error instanceof Error ? error.message : String(error);
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code, message }, response: null, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(isTimeout ? 504 : 502, `The agent request failed (${code}): ${message}`, {
+          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      // A 422 is the agent rejecting the model output under core-scored-v1; its detail
+      // carries the raw output, which is validated and recorded here like a success.
+      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown };
+      let agentP1: AgentP1 | null = null;
+      if (agentResponse.ok) {
+        agentP1 = (await agentResponse.json()) as AgentP1;
+      } else if (agentResponse.status === 422) {
+        const detail = ((await agentResponse.clone().json().catch(() => ({}))) as { detail?: unknown }).detail;
+        if (detail && typeof detail === 'object' && typeof (detail as AgentP1).raw_output === 'string') agentP1 = detail as AgentP1;
+      }
+      if (!agentP1) {
+        const errorText = await agentResponse.text().catch(() => '');
+        const code = agentResponse.status === 504 ? 'AGENT_TIMEOUT' : `AGENT_HTTP_${agentResponse.status}`;
+        const attempt: AnalysisAttemptRecord = {
+          ...base, status: 'request_failed', stage: 'gateway', failure: { code, message: errorText || agentResponse.statusText },
+          response: { httpStatus: agentResponse.status, errorBody: errorText }, validation: { firstPass: [] }, repair: null,
+        };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(agentResponse.status === 504 ? 504 : 502, `The agent returned HTTP ${agentResponse.status}: ${errorText}`, {
+          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+
+      // P1 ran on the agent's own VLM, so its model is the one recorded.
+      if (typeof agentP1.model === 'string' && agentP1.model) {
+        base.request.model = agentP1.model;
+        model = { ...model, id: agentP1.model };
+      }
+
+      response = { content: typeof agentP1.raw_output === 'string' ? agentP1.raw_output : null };
+      if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
+
+      if (agentP1.contract_version !== contractVersion()) {
+        const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${contractVersion()})`;
+        const attempt: AnalysisAttemptRecord = {
+          ...base,
+          status: 'request_failed',
+          stage: 'gateway',
+          failure: { code: 'CONTRACT_VERSION_MISMATCH', message },
+          response: { httpStatus: agentResponse.status, ...response },
+          validation: { firstPass: [] },
+          repair: null,
+        };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(502, message, {
+          outcome: 'request_failed',
+          code: 'CONTRACT_VERSION_MISMATCH',
+          model: model.id,
+          attemptId: modelRunId,
+          attemptRecorded: recorded,
+        });
+      }
+    } else {
+      operation = `calling the VLM gateway (${model.id})`;
+      if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
+      let completion: GatewayCompletionResponse;
+      try {
+        completion = await new GatewayClient(config.gatewayUrl).complete(
+          buildP1Request(model.id, playbackUrl, additionalInstruction),
+          AbortSignal.timeout(model.timeout_seconds * 1000),
+        );
+      } catch (error) {
+        if (!(error instanceof GatewayError)) throw error;
+        const resp: AnalysisAttemptRecord['response'] = error.httpStatus !== undefined || error.errorBody !== undefined
+          ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
+          : null;
+        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response: resp, validation: { firstPass: [] }, repair: null };
+        const recorded = await recordFailure(db, attempt);
+        throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
+          outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+        });
+      }
+      response = completionResponse(completion);
     }
 
-    const response = completionResponse(completion);
     const content = response.content ?? '';
-    const finishReason = response.finishReason;
-    if ((finishReason !== undefined && finishReason !== null && finishReason !== 'stop') || !content) {
+    const finishReason = response.finishReason ?? null;
+    if ((finishReason !== null && finishReason !== 'stop') || !content) {
       const code = content ? `FINISH_${String(finishReason).toUpperCase()}` : 'UPSTREAM_EMPTY_CONTENT';
       const message = content
         ? `The model stopped with finish_reason "${finishReason}" before a usable response`
         : 'The model returned no response content';
       const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code, message }, response, validation: { firstPass: [] }, repair: null };
       const recorded = await recordFailure(db, attempt);
-      throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: model.id, finishReason: finishReason ?? null, attemptId: modelRunId, attemptRecorded: recorded });
+      throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: base.request.model, finishReason, attemptId: modelRunId, attemptRecorded: recorded });
     }
 
     operation = 'validating the VLM response against the incident contract';
@@ -263,7 +346,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       };
       const recorded = await recordFailure(db, attempt);
       throw new AnalysisRequestError(422, `The model's response did not satisfy the incident contract: ${outcome.message}`, {
-        outcome: 'contract_failed', codes, model: model.id, finishReason: finishReason ?? null, rawContent: content.slice(0, 20000), attemptId: modelRunId, attemptRecorded: recorded,
+        outcome: 'contract_failed', codes, model: base.request.model, finishReason, rawContent: content.slice(0, 20000), attemptId: modelRunId, attemptRecorded: recorded,
       });
     }
 

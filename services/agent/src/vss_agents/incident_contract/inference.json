@@ -1,0 +1,26 @@
+{
+  "description": "Shared P1 (incident extraction) inference settings and the allowlist of VLMs the console may call. eval/ keeps its own constants in eval/scripts/eval_vlm_client.py; eval/tests/test_contract_fixtures.py asserts they match this file.",
+  "p1": {
+    "temperature": 0.0,
+    "max_tokens": 16384,
+    "media_io_kwargs": { "video": { "num_frames": 64 } }
+  },
+  "models": [
+    {
+      "id": "nvidia/cosmos-3-nano-reasoner",
+      "label": "Cosmos 3 Nano Reasoner",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "nvidia/cosmos-3-super-reasoner",
+      "label": "Cosmos 3 Super Reasoner",
+      "timeout_seconds": 300,
+      "notes": "Ignores media_io_kwargs.video.num_frames and samples about 24 frames (see .docs/prompt-contract-plan.md 5a)."
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "label": "Nemotron 3 Nano Omni Reasoning",
+      "timeout_seconds": 300
+    }
+  ]
+}

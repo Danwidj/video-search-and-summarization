@@ -3,7 +3,7 @@
 This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> **As of 2026-09-27**, gateway-mode analysis in `incident-console-v2` uses the shared **`incident-contract-v3`** in [`../contracts/`](../contracts/README.md), the same prompt, schema and P1 settings as `eval/`. Agent mode (`ANALYSIS_MODE=agent`) still uses the agent's older snake_case `IncidentReport` until prompt-contract plan phase 3. See §6.
+> Since `incident-contract-v3`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Background and decisions: [`prompt-contract-plan.md`](prompt-contract-plan.md).
 
 ---
 
@@ -125,15 +125,19 @@ The report page:
 
 ## 5. Legacy data
 
-Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until phase 3 because agent mode still writes legacy values. Notes and timestamps are never rewritten:
+Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until the migration is applied (agent mode now writes contract values, as phase 3 is complete). Notes and timestamps are never rewritten:
 - `fighting` → `assault`, `animal` → `animal attack`;
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
 
-Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes v2-form values for that run; its historical notes are untouched.
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes contract-form values for that run; its historical notes are untouched.
 
-## 6. Agent mode (unchanged)
+## 6. Agent mode
 
-`ANALYSIS_MODE=agent` still posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze`. The agent validates against its older snake_case `IncidentReport`, and the console parses that with `lib/analysis/schema.ts`, guarded by `lib/analysis/incident-report-contract.json`, `tests/contract-parity.test.mjs` and the agent's `test_incident_report_gen.py`.
+`ANALYSIS_MODE=agent` posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze` with `{ video_url, model_run_id? }`.
+- `vss-agent` uses its vendored `incident-contract-v3` (`vss_agents/incident_contract/`) to run P1 (direct VLM call with JSON Schema response format) and RP1 (prose report generation). The request's `skip_rp1` flag runs P1 only; the console always sets it, because gateway mode runs P1 only too.
+- The agent validates P1 with strict Pydantic models under the same `core-scored-v1` policy and `id-normalization-v1` repair as the console (timeline-only violations are not fatal), derives `incident.duration` and, unless `skip_rp1`, runs RP1 on the result. Only a schema or unrepairable core violation is a 422, whose `detail` carries `raw_output`, `finish_reason`, `model` and `contract_version`. The video-length rules are left to the console, which reads the video length.
+- With `model_run_id` (console agent mode) the agent persists nothing. Without it (a standalone call) it persists best-effort rows in PostgREST (`model_runs`, `incidents`, `entities`, `instruments`, `assets`) under its configured run id. It never writes `videos`.
+- In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason in `model_runs.notes`, and writes every row itself through `persistContractRun`. Its timeout is the model's, as in gateway mode, since only P1 runs. A non-empty `additionalInstruction` is a 400 in agent mode, because the agent does not take one. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
+- Legacy agent-mode contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`) have been retired.
 
-Model selection and re-analysis are gateway-only (HTTP 409 in agent mode). Moving the agent onto `incident-contract-v3` is plan phase 3.

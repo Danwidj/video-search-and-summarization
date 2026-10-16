@@ -41,6 +41,7 @@ src/vss_agents/
 ├── data_models/       # Pydantic models shared across modules
 ├── embed/             # Embedding and vector-search utilities
 ├── evaluators/        # LLM-judge evaluators (trajectory, QA, report quality)
+├── incident_contract/ # Vendored incident contract v3 and strict Pydantic models
 ├── tools/             # NAT tools: video_understanding, report_gen, geolocation, …
 │   ├── vst/           # Video Storage Toolkit tools (clip, snapshot, video_list)
 │   └── code_executor/ # Sandboxed code execution (Docker backend)

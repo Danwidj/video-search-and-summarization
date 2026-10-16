@@ -2,7 +2,7 @@
 
 This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Background and phasing are in [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md).
 
-**Status:** phases 1 (eval) and 2 (console gateway mode) done. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` gateway-mode analysis uses it too (`lib/contract/`, `lib/analysis/build-request.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). The agent keeps its own contract until phase 3.
+**Status:** phases 1 (eval), 2 (console gateway mode) and 3 (vss-agent and console agent mode) done. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` (gateway and agent mode) uses it too (`lib/contract/`, `lib/analysis/build-request.ts`, `lib/analysis/run-contract-analysis.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). `vss-agent` vendors the contract under `services/agent/src/vss_agents/incident_contract/` and executes P1/RP1 directly.
 
 | File | Purpose |
 |---|---|

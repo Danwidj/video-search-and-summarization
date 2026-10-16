@@ -4,10 +4,9 @@
 // attempt record (lib/analysis/persistence.ts attemptNotes) or a legacy console
 // report. Nothing here writes notes.
 
-import type { AnalysisReport } from '@/lib/analysis/schema';
 import type { DerivedContractReport } from '@/lib/contract/types';
 import { validateCore, type ContractViolation } from '@/lib/contract/validate';
-import { reportFromNotes } from '@/lib/reports/storage';
+import { reportFromNotes, type LegacyAnalysisReport } from '@/lib/reports/storage';
 
 export interface ContractRunRequest {
   model?: string;
@@ -51,7 +50,7 @@ export type RunNotes =
     enrichment: ContractViolation[] } & AttemptAudit)
   | ({ kind: 'failed-attempt'; status: FailedStatus; contractVersion: string; videoId: string | null; attemptedAt: string | null; stage: string | null; failure: { code: string; message: string } | null; request: ContractRunRequest; response: ContractRunResponse | null } & AttemptAudit)
   | { kind: 'invalid-contract'; contractVersion: string; error: string; request: ContractRunRequest; response: ContractRunResponse }
-  | { kind: 'legacy'; report: AnalysisReport; rawModelOutput?: string; legacyReviewerEdits?: Record<string, unknown> }
+  | { kind: 'legacy'; report: LegacyAnalysisReport; rawModelOutput?: string; legacyReviewerEdits?: Record<string, unknown> }
   | { kind: 'none' };
 
 function asObject(value: unknown): Record<string, unknown> | undefined {

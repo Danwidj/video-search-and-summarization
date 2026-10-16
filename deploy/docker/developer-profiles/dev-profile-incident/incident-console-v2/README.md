@@ -56,13 +56,13 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Analysis contract
 
-Gateway mode analyses with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
+Both gateway and agent modes analyse with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
 - strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
 - ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);
 - every attempt recorded immutably in `model_runs.notes` with outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`.
 
-See [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md). Agent mode still uses the older snake_case contract (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`).
+See [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md).
 
 **Tests.** They need a Node.js with TypeScript type stripping (official Node 22+ builds). Some distro builds lack it (`ERR_NO_TYPESCRIPT`); run `npx -y node@22 --experimental-strip-types --experimental-test-module-mocks --test tests/*.test.mjs` there.
 
@@ -72,7 +72,7 @@ Next.js loads them from `.env.local` in this directory, which is a symlink to th
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
 
-- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the agent persists the incident and its evidence; v2 only upserts the `videos` row (before the call, so the agent can resolve the sensor id, and again after it to keep `filepath` as the R2 key), the `model_runs` notes and the `reports` row.
+- `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the console sends `{video_url, model_run_id, skip_rp1: true}`, the agent runs P1 only (as gateway mode does), and both modes run through the shared `core-scored-v1` validation policy and attempt recording. The console manages the `videos` row; the agent never writes `videos`.
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
 - `VLM_MODEL` — optional default selection in the model picker; must be one of the models in `contracts/inference.json` (defaults to `nvidia/cosmos-3-nano-reasoner`).
 - `CONTRACTS_DIR` — optional path to the shared `contracts/` directory (default `../contracts`).
@@ -89,8 +89,8 @@ Selecting a video immediately starts the three-step nvstreamer upload. If that u
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
 for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to Cosmos through the gateway, normalizes common VLM aliases into the canonical snake-case contract, validates the structured result, persists it
-through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent analyzes
-and persists the incident instead of the gateway; see the variable list above). Start with short clips while inference remains
+through `lib/analysis/persistence.ts`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
+instead of the gateway and the console still validates and persists the run; see the variable list above). Start with short clips while inference remains
 synchronous.
 
 ### Real-VST R2 upload fallback

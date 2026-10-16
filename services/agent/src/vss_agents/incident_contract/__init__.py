@@ -1,0 +1,346 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The shared incident contract (``dev-profile-incident/contracts/``) for the agent.
+
+The files next to this module are a vendored copy of the profile's ``contracts/``
+directory (the agent is deployed from ``services/agent``); a unit test fails when
+the two copies differ. The JSON Schema file is what the model is sent as
+``response_format``. Responses are validated strictly with the Pydantic models below
+(``strict=True``, ``extra="forbid"``), which mirror that schema - another unit test
+checks the two agree - then with the cross-field rules the schema cannot express,
+under validation policy ``core-scored-v1`` with the ``id-normalization-v1`` recovery,
+exactly as ``incident-console-v2`` applies them (``lib/contract/validate.ts`` and
+``lib/contract/repair.ts``): a cross-field failure confined to the timeline is not
+fatal, and ID-only failures are renumbered. The video-length rules need the video's
+length, which only the console reads, so the console applies them.
+
+There is no fence stripping, brace extraction, alias mapping, coercion or any other
+repair: a response either passes the policy or raises :class:`IncidentExtractionError`.
+See ``.docs/prompt-contract-plan.md`` in the incident profile.
+"""
+
+from __future__ import annotations
+
+from functools import cache
+import json
+from pathlib import Path
+import re
+from typing import Any
+from typing import Literal
+
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import ValidationError
+
+CONTRACT_DIR = Path(__file__).resolve().parent
+
+IncidentType = Literal["road accident", "burglary", "explosion", "assault", "animal attack"]
+EntityType = Literal["human", "animal", "unknown"]
+
+_STRICT = ConfigDict(strict=True, extra="forbid")
+
+
+class IncidentExtractionError(ValueError):
+    """A model response does not conform to the incident contract (HTTP 422 on ``/analyze``).
+
+    ``raw_output``, ``finish_reason`` and ``model`` describe the rejected response, so the
+    caller can record it unaltered.
+    """
+
+    def __init__(
+        self, message: str, *, raw_output: str = "", finish_reason: str | None = None, model: str | None = None
+    ) -> None:
+        super().__init__(message)
+        self.raw_output = raw_output
+        self.finish_reason = finish_reason
+        self.model = model
+
+
+class ContractIncident(BaseModel):
+    """``incident`` as the model returns it; ``duration`` is derived afterwards, never requested."""
+
+    model_config = _STRICT
+
+    type: IncidentType
+    title: str
+    start_timestamp: int = Field(ge=0)
+    end_timestamp: int = Field(ge=0)
+    description: str
+    # Strict int with bounds rather than Literal[1..5]: Literal compares by equality, so it would
+    # accept true and 3.0, which the JSON Schema enum rejects.
+    severity_level: int = Field(ge=1, le=5)
+    severity_reason: str
+    confidence_score: float | None = Field(ge=0, le=1)
+    location: str | None
+
+
+class ContractEntity(BaseModel):
+    model_config = _STRICT
+
+    entity_id: str
+    type: EntityType
+    description: str
+
+
+class ContractInstrument(BaseModel):
+    model_config = _STRICT
+
+    instrument_id: str
+    entity_id: str | None
+    name: str
+    description: str
+    threat_level: int = Field(ge=1, le=5)
+
+
+class ContractAsset(BaseModel):
+    model_config = _STRICT
+
+    asset_id: str
+    name: str
+    description: str
+
+
+class ContractTimelineEvent(BaseModel):
+    model_config = _STRICT
+
+    start_seconds: int = Field(ge=0)
+    end_seconds: int | None = Field(ge=0)
+    description: str
+
+
+class ContractReport(BaseModel):
+    """The P1 output exactly as the contract schema defines it (no derived fields)."""
+
+    model_config = _STRICT
+
+    incident: ContractIncident
+    entities: list[ContractEntity]
+    instruments: list[ContractInstrument]
+    assets: list[ContractAsset]
+    timeline: list[ContractTimelineEvent]
+    uncertainties: list[str]
+
+
+def _read(name: str) -> str:
+    return (CONTRACT_DIR / name).read_text(encoding="utf-8")
+
+
+def _read_json(name: str) -> dict[str, Any]:
+    data: dict[str, Any] = json.loads(_read(name))
+    return data
+
+
+@cache
+def load_schema() -> dict[str, Any]:
+    return _read_json("incident_report.schema.json")
+
+
+@cache
+def contract_version() -> str:
+    return _read("VERSION").strip()
+
+
+@cache
+def extraction_prompt() -> str:
+    return _read("incident_extraction_prompt.md")
+
+
+@cache
+def report_prompt_template() -> str:
+    return _read("report_generation_prompt.md")
+
+
+def p1_request() -> dict[str, Any]:
+    """Fixed P1 request settings shared with eval and the console (temperature, max_tokens, media_io_kwargs)."""
+    p1: dict[str, Any] = _read_json("inference.json")["p1"]
+    return p1
+
+
+def rp1_request() -> dict[str, Any]:
+    """Fixed RP1 request: ``model`` plus its inference settings, shared with eval."""
+    return {
+        "model": "nvidia/nemotron-3-nano-30b-a3b",
+        "temperature": 0.0,
+        "max_tokens": 4096,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
+def response_format() -> dict[str, Any]:
+    """OpenAI-compatible ``response_format`` enforcing the contract schema file (strict mode)."""
+    schema = {key: value for key, value in load_schema().items() if key not in ("$schema", "$id")}
+    return {"type": "json_schema", "json_schema": {"name": "incident_report", "schema": schema, "strict": True}}
+
+
+ENRICHMENT_CODES = frozenset(
+    {"TIMELINE_START_OUTSIDE_WINDOW", "TIMELINE_END_OUTSIDE_WINDOW", "TIMELINE_NOT_CHRONOLOGICAL"}
+)
+REPAIRABLE_CODES = frozenset({"ID_NOT_SEQUENTIAL_ENTITY", "ID_NOT_SEQUENTIAL_INSTRUMENT", "ID_NOT_SEQUENTIAL_ASSET"})
+_ID_COLLECTIONS = (
+    ("ID_NOT_SEQUENTIAL_ENTITY", "E", "entity_id", "entities"),
+    ("ID_NOT_SEQUENTIAL_INSTRUMENT", "I", "instrument_id", "instruments"),
+    ("ID_NOT_SEQUENTIAL_ASSET", "A", "asset_id", "assets"),
+)
+
+
+def cross_field_violations(report: ContractReport) -> list[tuple[str, str]]:
+    """Rules JSON Schema cannot express as ``(code, message)`` (same codes as eval/contract.py and the console)."""
+    violations: list[tuple[str, str]] = []
+    start, end = report.incident.start_timestamp, report.incident.end_timestamp
+    if end < start:
+        violations.append(("WINDOW_END_BEFORE_START", f"end_timestamp {end} is before start_timestamp {start}"))
+
+    for code, prefix, key, collection in _ID_COLLECTIONS:
+        ids = [getattr(item, key) for item in getattr(report, collection)]
+        expected = [f"{prefix}{n}" for n in range(1, len(ids) + 1)]
+        if ids != expected:
+            violations.append((code, f"{key} values {ids} are not sequential {expected}"))
+
+    entity_ids = {entity.entity_id for entity in report.entities}
+    for instrument in report.instruments:
+        if instrument.entity_id is not None and instrument.entity_id not in entity_ids:
+            violations.append(
+                (
+                    "INSTRUMENT_HOLDER_UNKNOWN",
+                    f"{instrument.instrument_id} references unknown entity_id {instrument.entity_id}",
+                )
+            )
+
+    previous_start: int | None = None
+    for index, event in enumerate(report.timeline):
+        if not start <= event.start_seconds <= end:
+            violations.append(
+                (
+                    "TIMELINE_START_OUTSIDE_WINDOW",
+                    f"timeline[{index}].start_seconds {event.start_seconds} is outside [{start}, {end}]",
+                )
+            )
+        if event.end_seconds is not None and not event.start_seconds <= event.end_seconds <= end:
+            violations.append(
+                (
+                    "TIMELINE_END_OUTSIDE_WINDOW",
+                    f"timeline[{index}].end_seconds {event.end_seconds} is outside [{event.start_seconds}, {end}]",
+                )
+            )
+        if previous_start is not None and event.start_seconds < previous_start:
+            violations.append(("TIMELINE_NOT_CHRONOLOGICAL", f"timeline[{index}] is not in chronological order"))
+        previous_start = event.start_seconds
+    return violations
+
+
+def core_violations(report: ContractReport) -> list[tuple[str, str]]:
+    """The cross-field violations that decide the outcome under core-scored-v1."""
+    return [violation for violation in cross_field_violations(report) if violation[0] not in ENRICHMENT_CODES]
+
+
+def _free_texts(report: ContractReport) -> list[str]:
+    incident = report.incident
+    return [
+        incident.title,
+        incident.description,
+        incident.severity_reason,
+        incident.location or "",
+        *(entity.description for entity in report.entities),
+        *(text for item in report.instruments for text in (item.name, item.description)),
+        *(text for item in report.assets for text in (item.name, item.description)),
+        *(event.description for event in report.timeline),
+        *report.uncertainties,
+    ]
+
+
+def _mentioned(token: str, texts: list[str]) -> bool:
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])")
+    return any(pattern.search(text) for text in texts)
+
+
+def normalize_ids(report: ContractReport, violations: list[tuple[str, str]]) -> ContractReport | None:
+    """id-normalization-v1: renumber E/I/A ids, remap instrument holders and reorder; ``None`` when ineligible.
+
+    Eligible only when every core violation is an ID sequence one, no list has duplicate
+    ids, and no renamed or target id appears in free text. Nothing else is changed.
+    """
+    if not violations or any(code not in REPAIRABLE_CODES for code, _ in violations):
+        return None
+    texts = _free_texts(report)
+    data = report.model_dump(mode="json")
+    entity_mapping: dict[str, str] = {}
+    for _, prefix, key, collection in _ID_COLLECTIONS:
+        items = data[collection]
+        ids = [item[key] for item in items]
+        if len(set(ids)) != len(ids):
+            return None
+        well_formed = re.compile(rf"{prefix}([1-9][0-9]*)")
+        numbers: list[int | None] = []
+        for item_id in ids:
+            match = well_formed.fullmatch(item_id)
+            numbers.append(int(match[1]) if match and int(match[1]) <= len(ids) else None)
+        free = iter(n for n in range(1, len(ids) + 1) if n not in numbers)
+        mapping = {item_id: f"{prefix}{number or next(free)}" for item_id, number in zip(ids, numbers, strict=True)}
+        for old, new in mapping.items():
+            if old != new and ((re.search(r"[A-Za-z0-9]", old) and _mentioned(old, texts)) or _mentioned(new, texts)):
+                return None
+        data[collection] = sorted(({**item, key: mapping[item[key]]} for item in items), key=lambda i: int(i[key][1:]))
+        if collection == "entities":
+            entity_mapping = mapping
+    for instrument in data["instruments"]:
+        if instrument["entity_id"] is not None:
+            instrument["entity_id"] = entity_mapping[instrument["entity_id"]]
+    return ContractReport.model_validate(data)
+
+
+def with_derived_fields(report: ContractReport) -> dict[str, Any]:
+    """The validated report as a plain dict plus fields computed by code (``incident.duration``)."""
+    data = report.model_dump(mode="json")
+    data["incident"]["duration"] = report.incident.end_timestamp - report.incident.start_timestamp
+    return data
+
+
+def validate_report(value: Any) -> dict[str, Any]:
+    """Validate an already-decoded model output under core-scored-v1, applying id-normalization-v1 when eligible.
+
+    Raises :class:`IncidentExtractionError` listing every violation of a schema-invalid or core-invalid report.
+    """
+    try:
+        report = ContractReport.model_validate(value)
+    except ValidationError as exc:
+        details = "; ".join(
+            f"{'/'.join(str(part) for part in error['loc']) or '<root>'}: {error['msg']}" for error in exc.errors()
+        )
+        raise IncidentExtractionError(f"schema violation: {details}") from exc
+    violations = core_violations(report)
+    if not violations:
+        return with_derived_fields(report)
+    repaired = normalize_ids(report, violations)
+    if repaired is not None and not core_violations(repaired):
+        return with_derived_fields(repaired)
+    raise IncidentExtractionError(f"core violation: {'; '.join(message for _, message in violations)}")
+
+
+def parse_report(content: str | None) -> dict[str, Any]:
+    """Strictly decode and validate a model's message content, then add derived fields."""
+    if not content:
+        raise IncidentExtractionError("empty response content")
+    try:
+        decoded = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise IncidentExtractionError(f"content is not a single JSON document: {exc}") from exc
+    return validate_report(decoded)
+
+
+def report_prompt(report: dict[str, Any]) -> str:
+    """The RP1 prompt for a validated (derived) report."""
+    return report_prompt_template().format(structured_incident_json=json.dumps(report, indent=2))
