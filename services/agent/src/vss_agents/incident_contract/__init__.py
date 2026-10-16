@@ -94,6 +94,8 @@ class ContractEntity(BaseModel):
     entity_id: str
     type: EntityType
     description: str
+    timestamp_seconds: int = Field(ge=0)
+    label: str
 
 
 class ContractInstrument(BaseModel):
@@ -104,6 +106,8 @@ class ContractInstrument(BaseModel):
     name: str
     description: str
     threat_level: int = Field(ge=1, le=5)
+    timestamp_seconds: int = Field(ge=0)
+    label: str
 
 
 class ContractAsset(BaseModel):
@@ -112,6 +116,8 @@ class ContractAsset(BaseModel):
     asset_id: str
     name: str
     description: str
+    timestamp_seconds: int = Field(ge=0)
+    label: str
 
 
 class ContractTimelineEvent(BaseModel):

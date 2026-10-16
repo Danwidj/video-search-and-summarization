@@ -211,6 +211,17 @@ DESCRIPTION
 - Do not infer identity, occupation, relationship, motive, or other
   attributes that cannot be visually established.
 
+TIMESTAMP_SECONDS
+- Integer number of seconds from the beginning of the video at which
+  the entity is most clearly and prominently visible.
+- Ground the entity temporally at the moment of peak visibility or active
+  involvement.
+
+LABEL
+- Short concise visual label (1–5 words) that an open-vocabulary object
+  detector can search for on that keyframe (e.g. "person in dark hoodie",
+  "dog", "intruder").
+
 If no qualifying entities are observed, return an empty array.
 
 ==================================================
@@ -330,6 +341,14 @@ Evaluate potential threat, not actual outcome.
 For example, a dangerous weapon does not receive a low threat level
 merely because nobody was visibly injured.
 
+TIMESTAMP_SECONDS
+- Integer number of seconds from the beginning of the video at which
+  the instrument is most clearly and prominently visible in the hand of the entity.
+
+LABEL
+- Short concise visual label (1–5 words) that an open-vocabulary object
+  detector can search for on that keyframe (e.g. "crowbar", "machete", "handgun").
+
 If no qualifying instruments are observed, return an empty array.
 
 ==================================================
@@ -393,6 +412,14 @@ DESCRIPTION
 - Provide a short, objective description explaining the object's
   observable characteristics and/or relevance to the incident.
 - Do not speculate about ownership or other unsupported attributes.
+
+TIMESTAMP_SECONDS
+- Integer number of seconds from the beginning of the video at which
+  the asset is most clearly and prominently visible.
+
+LABEL
+- Short concise visual label (1–5 words) that an open-vocabulary object
+  detector can search for on that keyframe (e.g. "silver hatchback", "cash register", "display case").
 
 If no qualifying assets are observed, return an empty array.
 
@@ -495,3 +522,19 @@ For example:
   End_Timestamp;
 - descriptions must not contradict the structured fields;
 - severity and threat level must follow the supplied rubrics.
+
+==================================================
+9. VISUAL GROUNDING & DETECTOR LABELING (MVP2)
+==================================================
+
+For every identified entity, instrument, and asset, provide:
+1. TIMESTAMP_SECONDS: the exact whole second from video start where the item
+   is most clearly and prominently visible and unobstructed.
+2. LABEL: a concise visual query (1-5 words) describing the item for an
+   open-vocabulary 2D detector (e.g. Grounding DINO, OWLv2) to locate on
+   the extracted keyframe.
+
+Do NOT provide bounding box coordinates or spatial box numbers. Spatial bounding
+boxes are generated downstream by the detector stage on the frame extracted at
+TIMESTAMP_SECONDS, guided by your LABEL.
+
