@@ -85,11 +85,29 @@ report selection (D6). Additive; applied 2026-09-27. Because `videos` and
 `isOfficial`) and `get_incident_dashboard` (official incidents only). Applied
 2026-09-27 after a dry run with 40 dashboard/library parity checks per period.
 
+All four 2026-09-27 migrations were applied with a single-transaction script
+that also records the version in `supabase_migrations.schema_migrations`.
+
 `migrations/20260928000000_local_time_heatmap_and_time_filters.sql` replaces
 `get_incident_dashboard` and `list_incident_report_summaries` (adds
 `p_timezone TEXT DEFAULT 'UTC'`). When computing weekday/hour groupings and
 filters, `generated_datetime` (stored as naive UTC) is converted to
 `p_timezone` via `AT TIME ZONE 'utc' AT TIME ZONE params.target_tz`. Unapplied.
+
+`migrations/20261016000000_enable_rls_and_lockdown_anon.sql` (pending: not yet
+applied to the live database, so RLS stays disabled until it is) enables
+Row-Level Security on all 22 public tables (18 operational/eval tables and
+4 legacy pre-v1 tables), revokes table and sequence privileges in schema
+`public` from `anon` and `authenticated`, revokes `EXECUTE` on `insert_incident`
+from `PUBLIC, anon, authenticated` (restricted to `service_role`), and adjusts
+default privileges for objects later created by the migrating role (`postgres`):
+no table, sequence or function grants to `anon` or `authenticated` in schema
+`public`, and no `EXECUTE` for `PUBLIC` on new functions in any schema. Objects
+created by other roles are not covered, so each new function should still carry
+its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and
+`GRANT EXECUTE ... TO service_role`, as earlier migrations do. Services authenticate using
+`service_role` (PostgREST) or connect directly as `postgres`, both having
+`BYPASSRLS`.
 
 `migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` implements
 prompt-contract phase 4 data migration (`incidents.type`: `fighting` ->
@@ -102,11 +120,6 @@ agent mode still writes legacy values until prompt-contract phase 3, so
 query-time folding (`canonical_incident_type`, `canonical_entity_type` and the
 console's `canonicalIncidentType`) must stay until this migration is applied
 **and** phase 3 is done.
-
-
-All four 2026-09-27 migrations were applied with a single-transaction script
-that also records the version in `supabase_migrations.schema_migrations`.
-
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have
