@@ -1,36 +1,83 @@
-# MVP2 Workstream Task: Frontend Console Search UI
+# MVP2 Workstream Task: Frontend Console Search UI & Interactive Intelligence
 
 ## Goal
-Implement the MVP2 natural-language evidence search and verification UI within `incident-console-v2` (Phase 5 of the MVP2 plan). Reviewers and operators will search surveillance evidence by natural language, view object crops with critic verification status, and interactively jump to the exact moment in the incident video clip.
+Implement the MVP2 frontend user interface in `incident-console-v2` (Phase 5 of the MVP2 plan), expanding it into an end-to-end evidence search, verification, and interactive incident exploration workstation.
 
-The frontend is developed on a zero-GPU local environment, building against the search contract schema and the mock backend until the native `vss-agent` search route lands.
+Reviewers and operators will:
+1. Search surveillance evidence across official incident reports using natural language.
+2. Filter by item type, incident taxonomy, and severity.
+3. Inspect object crops with critic verification status, rationales, and parent incident context.
+4. Interactively jump to the exact moment in video clips via scrubber timestamp anchors.
+5. Explore an evidence timeline and crop gallery on the incident report page.
+6. Submit relevance feedback on search hits saved back to `query_results`.
+7. Review previous searches and saved queries via an audit trail drawer.
+8. Ask conversational questions across incidents and evidence with a working chat interface.
+9. Theme the console dynamically using an external style guide / design token source.
+
+All development occurs on a zero-GPU local workstation, building against server-side Next.js route handlers, mocked backends, and strict schema contracts until native backend and VM services land.
 
 ---
 
-## Tasks
-- [ ] Add `/search` page and header nav link in `incident-console-v2`
-- [ ] Natural-language search input with filter chips (item type, incident taxonomy, severity 1-5)
-- [ ] Search hit cards showing the evidence crop image, item name, description, threat level badge, parent incident details (incident type, severity, video title), and the critic verification badge and rationale
-- [ ] Jump-to-clip, where clicking a hit opens the incident video player and seeks to the item's `timestamp_seconds`
-- [ ] Frontend builds against the search contract and the mock backend until the real `vss-agent` search route exists
+## Tasks Checklist
+- [ ] **Search Route & Navigation:**
+  - [ ] Add `/search` page and primary header nav link in `incident-console-v2` (`components/app-header.tsx`, `app/search/page.tsx`).
+- [ ] **Natural-Language Search & Filtering:**
+  - [ ] Natural-language search input with filter chips (item type: entity/instrument/asset, incident taxonomy: road accident/burglary/explosion/assault/animal attack, severity range 1-5).
+  - [ ] Search state management, loading skeletons, and empty state feedback.
+- [ ] **Search Hit Cards & Evidence Inspection:**
+  - [ ] Search hit cards rendering crop image (`crop_image_url`), item name, description, threat level badge, parent incident details (incident type, severity, video title), and critic verification badge (confirmed/rejected/unverified) with rationale text.
+  - [ ] Support expandable audit drawer or toggle for inspecting rejected candidate hits.
+- [ ] **Interactive Jump-to-Clip:**
+  - [ ] Clicking a hit opens the video player and seeks to the item's `timestamp_seconds`.
+- [ ] **Server-Side Data Route for Post-RLS Lockdown:**
+  - [ ] Implement server-side Next.js route handler (`/api/search`) using `SUPABASE_SERVICE_ROLE_KEY` / `vss-agent` proxy, preventing direct client-side Supabase PostgREST queries that fail under RLS lockdown.
+- [ ] **Relevance Feedback on Search Hits:**
+  - [ ] Provide user feedback controls (thumbs up / thumbs down / rating) on search hit cards.
+  - [ ] Persist relevance feedback back to Supabase `query_results` via a server-side route (`POST /api/search/feedback`).
+- [ ] **Evidence Timeline & Scrubber Anchors on Incident Page:**
+  - [ ] Render timeline markers on the video scrubber at each item's `timestamp_seconds`.
+  - [ ] Crop gallery drawer/strip linking each visual crop directly to its scrubber timestamp anchor.
+- [ ] **Search History & Saved Searches:**
+  - [ ] Saved queries drawer / recent searches list fetching recent user queries from the `queries` audit trail.
+  - [ ] One-click re-execution of historical or bookmarked queries.
+- [ ] **Themeable UI via External Style Guide:**
+  - [ ] Implement design-token theme loader supporting external JSON design token definitions (file-based or remote URL).
+  - [ ] Map external tokens to CSS custom variables controlling brand palette, typography, radii, and shadows across all console screens.
+- [ ] **Working Conversational Q&A (Incident & Evidence Chat):**
+  - [ ] Multi-turn conversational Q&A panel over incidents and retrieved evidence items.
+  - [ ] Server-side proxy and frontend client adhering to the chat contract specification, functioning against a local mock until the backend endpoint lands.
+- [ ] **Mock Backend Alignment:**
+  - [ ] Build and verify all features against local mock backend endpoints (`mock-backend/base_profile_mock` :7777 / `search_profile_mock` :7778) and contract fixtures before backend integration.
 
 ---
 
 ## Boundaries & Non-Goals (What This Must NOT Touch)
-- **Do not edit contract files directly:** The Captain owns `contracts/search-contract-v1/` and `incident-contract-v3`. Build against their schemas; do not change contract definitions.
-- **Do not touch database migrations or Supabase SQL:** Database migration (`evidence_crops`, `query_results`, pgvector RPCs) is owned by the database migration workstream.
-- **Do not edit backend routes or Python services:** `vss-agent` route implementation (`/api/v1/incidents/search`), cropping service, and Brev Switchyard critic calls are owned by the Captain.
-- **Do not touch eval benchmark suites:** The retrieval evaluation suite in `eval/` is owned by the eval workstream.
-- **Do not modify retired `incident-console/`:** All frontend feature work belongs exclusively in `incident-console-v2/`.
+- **Do not edit contract files directly:** The Captain owns `contracts/search-contract-v1/` and `contracts/incident-contract-v3`. Build against their schemas; do not change repository contracts.
+- **Do not touch database migrations or Supabase DDL:** Database schema changes (`evidence_crops`, `query_results`, pgvector RPCs) are owned by the database migration workstream.
+- **Do not edit backend routes or Python services:** Native `vss-agent` routes (`/api/v1/incidents/search`), cropping service, and Brev Switchyard critic calls are owned by the Captain.
+- **Do not touch eval benchmark suites:** Standalone benchmark scripts in `eval/` are owned by the eval workstream.
+- **Do not touch retired `incident-console/`:** All frontend feature work belongs exclusively in `incident-console-v2/`.
+- **Ignore E2E test suites:** Do not build or run end-to-end browser automation suites (e.g. Playwright / Cypress). Unit and typecheck tests (`npm run typecheck`, `npm test`) remain standard.
 
 ---
 
-## Dependencies & Upstream Interfaces
+## Technical Specifications & Interfaces
 
-### 1. `search-contract-v1` API Contract (Owned by Captain)
-Endpoint: `POST /api/v1/incidents/search` (routed via console API handler or direct to `vss-agent` / mock backend).
+### 1. Server-Side Data Routes (RLS Lockdown Compliance)
+Following the database RLS lockdown, client browsers cannot query Supabase tables directly (`anon` and `authenticated` roles have `REVOKE ALL`). All search and feedback operations must flow through server-side Next.js route handlers executing with `SUPABASE_SERVICE_ROLE_KEY` or proxying to `vss-agent`.
 
-#### Request Interface (`SearchRequest`):
+- **`POST /api/search`**:
+  - Accepts search query, top_k, min_similarity, and filter parameters.
+  - When running against VM: forwards to `vss-agent` (`POST /api/v1/incidents/search`).
+  - When running against local mock: queries `mock-backend` on port 7777/7778.
+  - Returns sanitized `SearchResponse`.
+- **`POST /api/search/feedback`**:
+  - Request body: `{ result_id: string, query_id: string, feedback: "relevant" | "irrelevant" | "flagged", notes?: string }`.
+  - Updates `query_results` table in Supabase via server-side service role client.
+
+### 2. Search API Contract (`contracts/search-contract-v1`)
+
+#### Request Schema (`SearchRequest`):
 ```json
 {
   "query": "sharp weapon",
@@ -44,16 +91,8 @@ Endpoint: `POST /api/v1/incidents/search` (routed via console API handler or dir
   }
 }
 ```
-- `query` (string, required): 1 to 500 characters.
-- `top_k` (integer, optional, default: 10): 1 to 50.
-- `min_similarity` (number, optional, default: 0.2): 0.0 to 1.0.
-- `item_types` (array of enum `["entity", "instrument", "asset"]`, default: all three).
-- `filters` (object, optional):
-  - `incident_types` (array of string, matching taxonomy: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`).
-  - `min_severity` (integer, 1-5).
-  - `max_severity` (integer, 1-5).
 
-#### Response Interface (`SearchResponse`):
+#### Response Schema (`SearchResponse`):
 ```json
 {
   "query_id": "qr_abc123",
@@ -72,7 +111,7 @@ Endpoint: `POST /api/v1/incidents/search` (routed via console API handler or dir
         "description": "Large curved metal blade held in subject's right hand",
         "threat_level": 4,
         "holder_entity_id": "E1",
-        "crop_image_url": "https://<presigned-r2-url>/evidence/.../instruments/I1.jpg",
+        "crop_image_url": "https://<presigned-r2-url>/evidence/Assault007/MR001/instruments/I1.jpg",
         "timestamp_seconds": 14,
         "bounding_box": [320, 450, 410, 520]
       },
@@ -94,61 +133,115 @@ Endpoint: `POST /api/v1/incidents/search` (routed via console API handler or dir
 }
 ```
 
-### 2. Temporal Grounding & Bounding Box Context (`incident-contract-v3` & Box Pilot Findings)
-- A box-accuracy pilot across allowlisted VLMs found that raw VLM bounding boxes are 0.0% well-framed, whereas timestamps are >95% accurate.
-- In `incident-contract-v3`, each item provides `timestamp_seconds` (integer seconds from video start). Bounding boxes are generated by an open-vocabulary detector stage stored with the crops, not taken directly from raw VLM guesses.
-- For the frontend, `item.timestamp_seconds` is the authoritative seek target for jump-to-clip.
-- `item.crop_image_url` is a presigned URL displaying the cropped object image.
+### 3. Evidence Timeline & Scrubber Anchors on Incident Report Page
+- On the incident report screen (`components/incident-report.tsx` and `app/reports/[videoId]/page.tsx`):
+  - Enhance video player with an interactive timeline scrubber.
+  - Overlay colored milestone dots/anchors at `item.timestamp_seconds`:
+    - Entity: Blue / Teal marker.
+    - Instrument: Red / Amber marker.
+    - Asset: Gray / Slate marker.
+  - Hovering an anchor previews the crop thumbnail and label.
+  - Clicking an anchor seeks playback directly to that second.
+  - Display an evidence crop gallery grid below or adjacent to the player displaying all cropped items for that incident.
 
-### 3. Local Mock Backend
-- Run local mock backend: `mock-backend/base_profile_mock` (port 7777) or `mock-backend/search_profile_mock` (port 7778).
-- The mock provides contract-compliant `SearchResponse` fixtures for zero-GPU development.
+### 4. Search History & Saved Searches
+- Drawer or sidebar panel listing:
+  - Recent queries executed in the current session (cached locally or fetched from `queries` audit log).
+  - Saved/pinned searches bookmarked by the user.
+- Selecting a search item repopulates filters and triggers immediate execution.
 
----
+### 5. Themeable UI & External Style Guide Integration
+To allow operators and partner teams to customize appearance without code changes, the console must load design tokens from an external configuration (e.g. `public/theme.json` or remote URL specified via environment variable `NEXT_PUBLIC_THEME_URL`):
 
-## Technical Specifications for Frontend Implementation
+#### Token Schema Specification (`theme-tokens.json`):
+```json
+{
+  "name": "NVIDIA Metro Dark",
+  "colors": {
+    "primary": "#76b900",
+    "primaryHover": "#5c9200",
+    "background": "#0b0f0e",
+    "surface": "#131b17",
+    "surfaceBorder": "#1f2d26",
+    "text": "#e0e8e3",
+    "textMuted": "#85998f",
+    "danger": "#e5484d",
+    "warning": "#f5a623",
+    "success": "#30a46c"
+  },
+  "typography": {
+    "fontFamilySans": "Arial, Helvetica, sans-serif",
+    "fontFamilyMono": "SFMono-Regular, Consolas, monospace"
+  },
+  "radii": {
+    "card": "0.75rem",
+    "button": "9999px",
+    "badge": "0.375rem"
+  }
+}
+```
+- **Implementation Mechanism:**
+  - A theme provider (`components/theme-provider.tsx`) loads the JSON token definition on application mount.
+  - Injects CSS custom properties into `:root` (e.g., `--theme-primary`, `--theme-bg`, `--theme-surface`, etc.).
+  - Tailwind configuration (`tailwind.config.js`) maps utility classes (`bg-canvas`, `text-ink`, `bg-signal`) to CSS variables with fallbacks to defaults.
 
-### 1. Navigation & Route Layout
-- **Route:** `deploy/docker/developer-profiles/dev-profile-incident/incident-console-v2/app/search/page.tsx`
-- **Header:** Update `incident-console-v2/components/app-header.tsx` to include `Search` in the primary nav:
-  - Add `'search'` to `active` prop union type (`'analyze' | 'reports' | 'videos' | 'dashboard' | 'search'`).
-  - Add `<Link className={active === 'search' ? 'font-bold text-ink' : 'hover:text-ink'} href="/search">Search</Link>`.
+### 6. Working Conversational Q&A (Incident & Evidence Chat)
+The console currently has a rudimentary report chat route (`app/api/chat/route.ts`). MVP2 requires a full conversational Q&A capability over incidents and retrieved search evidence.
 
-### 2. Search Query Input & Filter Bar
-- Natural language text input with placeholder (e.g. "Search evidence by keyword or description, e.g. 'sharp weapon', 'silver sedan'").
-- Filter chips:
-  - **Item type toggles:** Entity (`entity`), Instrument (`instrument`), Asset (`asset`).
-  - **Incident taxonomy:** Road Accident, Burglary, Explosion, Assault, Animal Attack.
-  - **Severity range:** Minimum and maximum severity (1 to 5).
-- Loading states and empty state indicators.
+#### Required Chat Backend Contract (`POST /api/v1/incidents/chat`):
+```json
+// Request
+{
+  "session_id": "session_xyz",
+  "messages": [
+    { "role": "user", "content": "What weapons were found across all assault incidents?" }
+  ],
+  "context": {
+    "scope": "global", // or "incident"
+    "incident_id": "Assault007", // optional, when scoped to single incident
+    "evidence_crop_ids": ["I1", "I2"] // optional, for grounded evidence visual QA
+  }
+}
 
-### 3. Hit Card UI Components
-Each hit card displays:
-- **Evidence Crop Image:** Display `hit.item.crop_image_url` with fallback for missing/broken images.
-- **Item Summary:** `hit.item.name`, `hit.item.description`, and `threat_level` badge (if non-null, 1-5).
-- **Critic Verification Badge:**
-  - `confirmed`: Green badge with checkmark.
-  - `rejected`: Muted/amber badge with warning indicator.
-  - `unverified`: Neutral badge.
-  - Critic rationale text displayed or expandable on hover/click.
-- **Parent Incident Metadata:**
-  - `incident_type` badge, `severity_level` indicator, parent `incident_id` / video title, and short summary.
-- **Jump-to-Clip Action:**
-  - Button/card click triggers playback modal or routes to video player view.
-  - Passes `hit.incident.playback_url` and seeks player to `hit.item.timestamp_seconds`.
-  - Shows visual timestamp indicator (e.g., `Jump to 0:14`).
+// Response
+{
+  "session_id": "session_xyz",
+  "message": {
+    "role": "assistant",
+    "content": "Across the recorded assault incidents, two primary weapons were identified: a machete (I1) in Assault007, and a blunt wooden club in Assault011.",
+    "citations": [
+      {
+        "incident_id": "Assault007",
+        "item_id": "I1",
+        "item_type": "instrument",
+        "timestamp_seconds": 14,
+        "crop_image_url": "https://<presigned-r2-url>/evidence/.../I1.jpg"
+      }
+    ]
+  }
+}
+```
+- **Frontend Chat Requirements:**
+  - Expand `app/api/chat/route.ts` to support multi-turn dialogue with evidence citations.
+  - Build chat UI drawer/panel accessible from both the search view and the incident view.
+  - Render assistant responses with clickable evidence citation cards that open crop screenshots and trigger jump-to-clip.
+  - The frontend builds against mock chat responses until the native `vss-agent` chat endpoint is deployed.
 
 ---
 
 ## Open Questions & Dependencies
-- **Search contract landing:** The Captain owns `contracts/search-contract-v1/`. In the interim, build against the schema definitions in this document and mock responses.
-- **Critic presentation mode:** Decision on whether `rejected` hits are hidden by default with a toggle ("Show rejected hits"), or displayed inline with distinct styling (inferred default: show confirmed prominently; provide toggle or indicator for rejected items).
+1. **Search & Chat Contracts:** The Captain owns backend route definitions and contract landing. The frontend builds against the JSON schemas provided in this document using local mock handlers.
+2. **Relevance Feedback Persistence:** Needs the `query_results` table created in Supabase (owned by DB workstream) or handled gracefully via mock storage during local testing.
+3. **External Style Guide Source:** Team to determine default URL/path for theme token configuration (inferred fallback: local `public/theme.json` with env override).
 
 ---
 
 ## Definition of Done
-1. `/search` page is accessible with active state in header navigation.
-2. Search input accepts natural language queries and passes filter parameters to the search API.
-3. Hit cards render crop images, item metadata, parent incident info, and critic badges with rationale.
-4. Clicking a hit launches the video player and seeks directly to `hit.item.timestamp_seconds`.
-5. TypeScript type checks (`npm run typecheck`) and component unit tests (`npm test`) pass cleanly in `incident-console-v2`.
+1. **Search & Exploration:** `/search` page is functional with query input, filter chips, loading states, and hit cards rendering crops, parent incident metadata, and critic verification status.
+2. **Jump-to-Clip & Scrubber:** Clicking hits seeks player to `timestamp_seconds`; timeline markers display on incident video scrubbers with crop gallery linkage.
+3. **Security Compliance:** All database operations execute through server-side route handlers adhering to RLS lockdown policies.
+4. **Relevance Feedback:** Users can submit relevance feedback on search hits with persistence to `query_results`.
+5. **Search History:** Query history and saved searches are visible and re-executable.
+6. **Theming Engine:** Style guide JSON tokens dynamically load and apply across console components.
+7. **Conversational Q&A:** Chat panel functions with streaming/multi-turn responses and clickable evidence citations.
+8. **Code Quality:** All TypeScript checks (`npm run typecheck`) and component tests (`npm test`) pass cleanly in `incident-console-v2`.
