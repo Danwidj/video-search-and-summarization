@@ -230,7 +230,7 @@ sequenceDiagram
 
 Date inputs are directly editable: entering either boundary activates the custom range automatically. Preset
 selection clears stale custom boundaries, and the date/time row has an explicit reset that clears both date and
-time constraints. The API forwards inclusive day boundaries and optional time-of-day bounds to the summary RPC.
+time constraints. The API forwards inclusive day boundaries, optional time-of-day bounds, and the viewer's detected timezone to the summary RPC.
 
 ### Dashboard analytics and cross-filtering
 
