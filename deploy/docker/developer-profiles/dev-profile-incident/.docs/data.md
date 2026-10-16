@@ -504,7 +504,7 @@ Database access is split across two client implementations according to operatio
 
 ### Row-Level Security (RLS) & Access Control
 
-Row-Level Security is enabled on all 22 public schema tables (`relrowsecurity = true`) via migration `20261016000000_enable_rls_and_lockdown_anon.sql` to close known issue 8:
+**Pending:** migration `20261016000000_enable_rls_and_lockdown_anon.sql` has not been applied to the live database yet. Until it is, RLS stays disabled and `anon`/`authenticated` keep full access. Once applied, it enables Row-Level Security on all 22 public schema tables (`relrowsecurity = true`) to close known issue 8, with this effect:
 - **Default-deny:** With RLS enabled and no permissive policies defined, anonymous (`anon`) and standard authenticated (`authenticated`) roles cannot read, insert, update, or delete rows in any table.
 - **Revoked grants:** All table and sequence privileges in schema `public` are explicitly revoked from `anon` and `authenticated`.
 - **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`) were already restricted to `service_role`.

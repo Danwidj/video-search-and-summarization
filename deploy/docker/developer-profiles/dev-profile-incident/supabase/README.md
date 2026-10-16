@@ -85,7 +85,8 @@ report selection (D6). Additive; applied 2026-09-27. Because `videos` and
 `isOfficial`) and `get_incident_dashboard` (official incidents only). Applied
 2026-09-27 after a dry run with 40 dashboard/library parity checks per period.
 
-`migrations/20261016000000_enable_rls_and_lockdown_anon.sql` enables
+`migrations/20261016000000_enable_rls_and_lockdown_anon.sql` (pending: not yet
+applied to the live database, so RLS stays disabled until it is) enables
 Row-Level Security on all 22 public tables (18 operational/eval tables and
 4 legacy pre-v1 tables), revokes table and sequence privileges in schema
 `public` from `anon` and `authenticated`, revokes `EXECUTE` on `insert_incident`

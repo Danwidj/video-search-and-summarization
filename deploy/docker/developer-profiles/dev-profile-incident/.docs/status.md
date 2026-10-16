@@ -44,7 +44,7 @@ Current delivery status verified against the codebase:
 5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
 6. **Legacy values are folded at query time only.** `fighting`/`animal` types and `person` entities remain stored; one legacy report has the non-contract type `other`. A data migration (prompt-contract phase 4) would need approval.
 7. **Heatmap and time-of-day filters use UTC hours.** Labelled as UTC; not localised.
-8. **Legacy tables and RLS.** The four pre-v1 tables remain protected under RLS; RLS is enabled on all 22 public tables with anon/authenticated access revoked and default privileges secured (migration `20261016000000_enable_rls_and_lockdown_anon.sql`). All application services use `service_role` (BYPASSRLS).
+8. **Legacy tables and RLS.** The four pre-v1 tables remain. RLS is still disabled and `anon`/`authenticated` still have full access on the live database: the lockdown migration `20261016000000_enable_rls_and_lockdown_anon.sql` (RLS on all 22 public tables, `anon`/`authenticated` access revoked, default privileges secured) is pending until it is applied. All application services use `service_role` (BYPASSRLS), so applying it should break nothing.
 9. **`selected_by/selected_at` can outlive a selection** cleared by the FK when the official incident is deleted; the UI treats a NULL `selected_model_run_id` as no official report.
 
 ---
