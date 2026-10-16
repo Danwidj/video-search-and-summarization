@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://developer.nvidia.com/vss/contracts/search-contract-v1/search_request.schema.json",
+  "title": "SearchRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "Natural language search query describing sought entities, instruments, or assets."
+    },
+    "top_k": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "description": "Maximum number of candidate hits to return."
+    },
+    "min_similarity": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.2,
+      "description": "Minimum vector cosine similarity threshold (1.0 - cosine_distance)."
+    },
+    "item_types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["entity", "instrument", "asset"]
+      },
+      "default": ["entity", "instrument", "asset"],
+      "description": "Item types to retrieve (entities, instruments, assets)."
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "incident_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by parent incident taxonomy classifications."
+        },
+        "min_severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Minimum parent incident severity level (1-5)."
+        },
+        "max_severity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum parent incident severity level (1-5)."
+        },
+        "item_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["entity", "instrument", "asset"]
+          },
+          "description": "Filter by item types inside filters object."
+        }
+      }
+    }
+  },
+  "required": ["query"]
+}

@@ -15,6 +15,9 @@ import { crossFieldViolations, type ContractViolation } from '@/lib/contract/val
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
+export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description'] as const;
+export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level'] as const;
+export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
 
 export class StructuredEditError extends Error {
@@ -35,8 +38,24 @@ let compiled: ValidateFunction | null = null;
 
 function editValidator(): ValidateFunction {
   if (compiled) return compiled;
-  const contract = schema() as { properties: Record<string, { properties?: Record<string, unknown> }> };
-  const incidentProperties = contract.properties.incident.properties!;
+  const contract = schema() as {
+    properties: {
+      incident: { properties: Record<string, unknown> };
+      entities: { items: { properties: Record<string, unknown> } };
+      instruments: { items: { properties: Record<string, unknown> } };
+      assets: { items: { properties: Record<string, unknown> } };
+    };
+  };
+  const incidentProperties = contract.properties.incident.properties;
+  const collectionSchema = (items: { properties: Record<string, unknown> }, fields: readonly string[]) => ({
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: [...fields],
+      properties: Object.fromEntries(fields.map((field) => [field, items.properties[field]])),
+    },
+  });
   const editSchema = {
     type: 'object',
     additionalProperties: false,
@@ -48,9 +67,9 @@ function editValidator(): ValidateFunction {
         required: [...EDITABLE_INCIDENT_FIELDS],
         properties: Object.fromEntries(EDITABLE_INCIDENT_FIELDS.map((field) => [field, incidentProperties[field]])),
       },
-      entities: contract.properties.entities,
-      instruments: contract.properties.instruments,
-      assets: contract.properties.assets,
+      entities: collectionSchema(contract.properties.entities.items, EDITABLE_ENTITY_FIELDS),
+      instruments: collectionSchema(contract.properties.instruments.items, EDITABLE_INSTRUMENT_FIELDS),
+      assets: collectionSchema(contract.properties.assets.items, EDITABLE_ASSET_FIELDS),
     },
   };
   compiled = new Ajv2020({ allErrors: true, strict: false }).compile(editSchema);

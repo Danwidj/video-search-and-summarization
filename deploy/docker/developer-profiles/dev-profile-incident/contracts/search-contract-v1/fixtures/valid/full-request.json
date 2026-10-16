@@ -1,0 +1,12 @@
+{
+  "query": "person holding machete or knife",
+  "top_k": 5,
+  "min_similarity": 0.35,
+  "item_types": ["entity", "instrument"],
+  "filters": {
+    "incident_types": ["assault", "burglary"],
+    "min_severity": 2,
+    "max_severity": 5,
+    "item_types": ["entity", "instrument"]
+  }
+}

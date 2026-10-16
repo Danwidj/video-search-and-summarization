@@ -72,7 +72,10 @@ export function violationScope(code: string): ViolationScope {
 }
 
 /** Runtime context for the contextual rules; an unknown length means they are not applied. */
-export interface ValidationContext { videoDurationSeconds?: number | null }
+export interface ValidationContext {
+  videoDurationSeconds?: number | null;
+  contractVersion?: string;
+}
 
 function formatSeconds(value: number): string {
   return String(Number(value.toPrecision(6)));
@@ -114,16 +117,36 @@ export class ContractError extends Error {
   }
 }
 
-let compiled: ValidateFunction | null = null;
+function v2Schema(): Record<string, unknown> {
+  const base = JSON.parse(JSON.stringify(schema())) as Record<string, any>;
+  for (const collection of ['entities', 'instruments', 'assets']) {
+    const itemSchema = base.properties?.[collection]?.items;
+    if (itemSchema) {
+      if (itemSchema.properties) {
+        delete itemSchema.properties.timestamp_seconds;
+        delete itemSchema.properties.label;
+      }
+      if (Array.isArray(itemSchema.required)) {
+        itemSchema.required = itemSchema.required.filter((r: string) => r !== 'timestamp_seconds' && r !== 'label');
+      }
+    }
+  }
+  return base;
+}
 
-function validator(): ValidateFunction {
-  if (!compiled) {
+const compiledValidators = new Map<string, ValidateFunction>();
+
+export function validator(version = 'incident-contract-v3'): ValidateFunction {
+  let v = compiledValidators.get(version);
+  if (!v) {
     // strict:false only relaxes Ajv's authoring lint (e.g. minimum on a
     // ["number","null"] union); validation semantics are standard draft 2020-12.
     const ajv = new Ajv2020({ allErrors: true, strict: false });
-    compiled = ajv.compile(schema());
+    const targetSchema = version === 'incident-contract-v2' ? v2Schema() : schema();
+    v = ajv.compile(targetSchema);
+    compiledValidators.set(version, v);
   }
-  return compiled;
+  return v;
 }
 
 function schemaViolation(error: ErrorObject): ContractViolation {
@@ -186,8 +209,8 @@ export function crossFieldErrors(report: IncidentContractReport): string[] {
 }
 
 /** Validate an already-decoded report; throws ContractError listing every violation. */
-export function validateReport(report: unknown): IncidentContractReport {
-  const validate = validator();
+export function validateReport(report: unknown, version = 'incident-contract-v3'): IncidentContractReport {
+  const validate = validator(version);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])]
       .sort((a, b) => a.instancePath.localeCompare(b.instancePath))
@@ -217,7 +240,7 @@ export interface CoreValidation {
  * enrichment violations when only those fail.
  */
 export function validateCore(report: unknown, context?: ValidationContext): CoreValidation {
-  const validate = validator();
+  const validate = validator(context?.contractVersion);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])]
       .sort((a, b) => a.instancePath.localeCompare(b.instancePath))

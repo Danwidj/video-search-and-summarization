@@ -74,5 +74,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- Both gateway and agent modes use `incident-contract-v3` and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- Both gateway and agent modes use `incident-contract-v3` (with required `timestamp_seconds` and `label` grounding, the same request as eval) and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

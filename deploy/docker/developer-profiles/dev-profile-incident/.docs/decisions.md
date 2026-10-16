@@ -22,6 +22,23 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-10-16: MVP2 search contract v1 and incident-contract-v3 temporal grounding
+- **Decision:**
+  - Introduce `search-contract-v1` defining request and response JSON schemas for `POST /api/v1/incidents/search` with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
+  - Incorporate findings from the VLM Bounding Box Accuracy Pilot: VLMs are retained strictly for temporal grounding (`timestamp_seconds`) and short detector labels (`label`), while spatial bounding boxes (`bounding_box`) are optional, nullable detector-produced outputs and never requested from or emitted by VLMs.
+  - Bump contract `VERSION` to `incident-contract-v3`, adding required `timestamp_seconds` (integer >= 0) and `label` (string) to `entities`, `instruments`, and `assets` items in `incident_report.schema.json` and section 9 visual grounding to `incident_extraction_prompt.md`.
+  - Maintain compatibility for historical `incident-contract-v2` runs by providing version-aware validation caching in `incident-console-v2/lib/contract/validate.ts`.
+  - Update `mock-backend` (`base_profile_mock` on :7777 and `search_profile_mock` on :7778) to serve `POST /api/v1/incidents/search` returning valid mock hits with canned R2 crop URLs, parent incident details, and always-on critic verdicts.
+- **Why:**
+  - The pilot demonstrated 0% well-framed boxes from VLMs but >95% temporal accuracy. Requiring bounding boxes from VLMs led to severe degeneracies (zero-area points, sliding arithmetic columns, watermark crops).
+  - Unblocks the frontend (PR 118), eval (PR 119), and database (PR 120) workstreams to build against stable, shared schema contracts without GPU or VM dependencies.
+- **Alternatives rejected:**
+  - Direct VLM bounding box extraction (rejected: 0% framing accuracy in pilot).
+  - Breaking historical v2 run compatibility in the console (rejected: prevents viewing and evaluating historical benchmark runs).
+- **Links:** [`../contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`../contracts/incident_report.schema.json`](../contracts/incident_report.schema.json); [`../contracts/incident_extraction_prompt.md`](../contracts/incident_extraction_prompt.md); [`../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_search.py`](../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_search.py); [`analysis-schema.md`](analysis-schema.md); [`status.md`](status.md).
+
+---
+
 ### 2026-10-16: Row-Level Security (RLS) and public schema lockdown for anon and authenticated roles
 - **Decision:**
   - Enable Row-Level Security (`ENABLE ROW LEVEL SECURITY`) on all 22 public tables (18 operational/eval tables and 4 legacy pre-v1 tables).
