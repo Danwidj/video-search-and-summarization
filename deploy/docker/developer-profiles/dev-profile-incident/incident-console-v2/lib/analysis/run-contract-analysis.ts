@@ -275,15 +275,17 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         model = { ...model, id: agentP1.model };
       }
 
-      // Verify contract version parity
-      if (typeof agentP1.contract_version === 'string' && agentP1.contract_version && agentP1.contract_version !== contractVersion()) {
-        const message = `Agent contract version (${agentP1.contract_version}) does not match console (${contractVersion()})`;
+      response = { content: typeof agentP1.raw_output === 'string' ? agentP1.raw_output : null };
+      if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
+
+      if (agentP1.contract_version !== contractVersion()) {
+        const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${contractVersion()})`;
         const attempt: AnalysisAttemptRecord = {
           ...base,
           status: 'request_failed',
           stage: 'gateway',
           failure: { code: 'CONTRACT_VERSION_MISMATCH', message },
-          response: { httpStatus: agentResponse.status, errorBody: message },
+          response: { httpStatus: agentResponse.status, ...response },
           validation: { firstPass: [] },
           repair: null,
         };
@@ -296,9 +298,6 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
           attemptRecorded: recorded,
         });
       }
-
-      response = { content: typeof agentP1.raw_output === 'string' ? agentP1.raw_output : null };
-      if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
     } else {
       operation = `calling the VLM gateway (${model.id})`;
       if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');

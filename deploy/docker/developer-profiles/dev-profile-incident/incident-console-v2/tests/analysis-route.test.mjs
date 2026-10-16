@@ -299,7 +299,7 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
   const content = contractFixture('invalid/cross-end-before-start.json');
   const recordedCalls = [];
   globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
-    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm' },
+    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm', contract_version: 'incident-contract-v2' },
   }), { status: 422, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-a422/clip.mp4');
 
   const response = await POST(jsonRequest({ sensorId: 's-a422', filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
@@ -317,6 +317,31 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
   assert.equal(notes.response.content, content, 'the original response is stored unaltered');
   assert.deepEqual(notes.validation.firstPass.map((v) => v.code), ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
 });
+
+for (const [label, version] of [['an older', 'incident-contract-v1'], ['a missing', undefined]]) {
+  test(`agent mode: ${label} agent contract_version is a request_failed attempt, never a report`, async () => {
+    process.env.ANALYSIS_MODE = 'agent';
+    const content = JSON.stringify(validContractReport());
+    const recordedCalls = [];
+    globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
+      report: JSON.parse(content), model: 'agent/vlm-on-the-vm', contract_version: version, raw_output: content, finish_reason: 'stop',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-cv/clip.mp4');
+
+    const response = await POST(jsonRequest({ sensorId: 's-cv', filepath: 'uploads/s-cv/clip.mp4', filename: 'clip.mp4' }));
+
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.equal(payload.outcome, 'request_failed');
+    assert.equal(payload.code, 'CONTRACT_VERSION_MISMATCH');
+    const tables = supabaseWrites(recordedCalls).map((w) => w.table);
+    for (const table of REPORT_TABLES) assert.ok(!tables.includes(table), `a version mismatch must not write ${table}`);
+    const { notes } = attemptNotesFrom(recordedCalls);
+    assert.equal(notes.status, 'request_failed');
+    assert.equal(notes.failure.code, 'CONTRACT_VERSION_MISMATCH');
+    assert.equal(notes.response.content, content, 'the original response is stored unaltered');
+    assert.equal(notes.response.finishReason, 'stop');
+  });
+}
 
 test('agent mode: a non-empty additional instruction is rejected before anything is called', async () => {
   process.env.ANALYSIS_MODE = 'agent';

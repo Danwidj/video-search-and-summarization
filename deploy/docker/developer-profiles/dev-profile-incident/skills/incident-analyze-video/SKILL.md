@@ -54,7 +54,7 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 
 | Status | Meaning |
 |---|---|
-| 422 | P1 output failed `core-scored-v1` (a schema or core cross-field violation that `id-normalization-v1` cannot repair), or P1 hit `max_tokens` with no content. The agent persists nothing; `detail` carries `message`, `raw_output`, `finish_reason` and `model`, and the console records a `contract_failed` (or `request_failed`) attempt in `model_runs.notes`. Timeline-only violations are not a 422. |
+| 422 | P1 output failed `core-scored-v1` (a schema or core cross-field violation that `id-normalization-v1` cannot repair), or P1 hit `max_tokens` with no content. The agent persists nothing; `detail` carries `message`, `raw_output`, `finish_reason`, `model` and `contract_version`, and the console records a `contract_failed` (or `request_failed`) attempt in `model_runs.notes`. Timeline-only violations are not a 422. |
 | 504 | Analysis timed out |
 | 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
 | 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |

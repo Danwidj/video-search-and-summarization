@@ -22,8 +22,8 @@ the validated contract report. The agent needs no R2 credentials and no VST look
 console owns the ``videos`` row and signs the URL.
 
 Status codes: 422 when the model output fails ``core-scored-v1`` (nothing is persisted; the
-detail carries ``message``, ``raw_output``, ``finish_reason`` and ``model`` so the caller can
-record the attempt),
+detail carries ``message``, ``raw_output``, ``finish_reason``, ``model`` and ``contract_version``
+so the caller can record the attempt),
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
 500 for anything else.
 """

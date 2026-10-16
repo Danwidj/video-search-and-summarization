@@ -18,7 +18,7 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 - **Alternatives rejected:**
   - Maintaining separate agent and gateway validation policies (would cause mode-dependent outcomes).
   - Keeping legacy `schema.ts` alongside contract types (unnecessary maintenance burden; legacy notes are adequately decoded with an inlined interface).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`services/agent/src/vss_agents/incident_contract/`](../../../../services/agent/src/vss_agents/incident_contract/); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../services/agent/src/vss_agents/tools/incident_report_gen.py); [`incident-console-v2/lib/analysis/run-contract-analysis.ts`](../incident-console-v2/lib/analysis/run-contract-analysis.ts).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`services/agent/src/vss_agents/incident_contract/`](../../../../../services/agent/src/vss_agents/incident_contract/); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py); [`incident-console-v2/lib/analysis/run-contract-analysis.ts`](../incident-console-v2/lib/analysis/run-contract-analysis.ts).
 
 ---
 
