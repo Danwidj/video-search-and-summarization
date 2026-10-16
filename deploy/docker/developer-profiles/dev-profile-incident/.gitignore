@@ -2,6 +2,7 @@
 # Shared across incident-console, incident-console-v2, vlm-gateway, and mock-backend.
 .env.local
 **/.env.local
+**/.env.remote
 
 # P1/RP1 multi-model evaluation working data for incident-console: real (not
 # demo) ground-truth Excel, split manifests, cached R2 video downloads, and
