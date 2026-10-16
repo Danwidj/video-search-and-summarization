@@ -12,6 +12,7 @@ This directory is the single source of truth for incident extraction: one prompt
 | [`VERSION`](VERSION) | Contract version, stored as `prompt_version` on model runs |
 | [`inference.json`](inference.json) | Shared P1 inference settings and the allowlist of VLMs the console may call (with per-model timeouts). eval keeps its own constants; `eval/tests/test_contract_fixtures.py` asserts they match this file. |
 | [`fixtures/`](fixtures/) | Valid and invalid example reports, plus the expected `response_format`. Both the Python validator (`eval/tests/test_contract_fixtures.py`) and the console's TypeScript validator (`incident-console-v2/tests/contract-validate.test.mjs`) must agree on every fixture. `fixtures/policy/` holds recorded model responses and boundary cases, each with its video length and its expected verdict under validation policy `core-scored-v1` (below); `incident-console-v2/tests/contract-policy.test.mjs` checks the same set. |
+| [`search-contract-v1/`](search-contract-v1/) | MVP2 search contract defining request/response JSON schemas and fixtures for `POST /api/v1/incidents/search` (jump-to-clip timestamps, labels, crop image references, and always-on critic). |
 
 ## Rules
 
@@ -28,6 +29,7 @@ This directory is the single source of truth for incident extraction: one prompt
   - every `instruments[].entity_id` is `null` or an existing entity;
   - timeline events fall within `[start_timestamp, end_timestamp]` and are in chronological order.
 - **Derived fields are computed by code, never requested from the model.** `incident.duration` is not in the schema. Every consumer sets it to `end_timestamp - start_timestamp` after validation (`eval/contract.py`, `with_derived_fields`), and RP1 receives the derived JSON. A model that sends `duration` fails the schema.
+- **Temporal and visual grounding (`incident-contract-v3`):** `entities`, `instruments`, and `assets` items require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localisation. Per the VLM Bounding Box Accuracy Pilot, spatial bounding boxes are never requested from or emitted by VLMs; they are optional, detector-produced outputs in search hits.
 - **Validation policy `core-scored-v1`** (a layer on top of these rules; `eval/contract.py` `evaluate_policy`, console `lib/contract/validate.ts` `validateCore`). Only the database-backed fields decide whether a response is persisted and how the model scores:
   - incident type, window, description, severity and confidence;
   - entities, instruments and assets.

@@ -26,6 +26,8 @@ export interface ContractEntity {
   entity_id: string;
   type: EntityType;
   description: string;
+  timestamp_seconds: number;
+  label: string;
 }
 
 export interface ContractInstrument {
@@ -34,12 +36,16 @@ export interface ContractInstrument {
   name: string;
   description: string;
   threat_level: number;
+  timestamp_seconds: number;
+  label: string;
 }
 
 export interface ContractAsset {
   asset_id: string;
   name: string;
   description: string;
+  timestamp_seconds: number;
+  label: string;
 }
 
 export interface ContractTimelineEvent {
