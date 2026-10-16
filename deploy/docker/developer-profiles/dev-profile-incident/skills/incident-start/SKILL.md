@@ -63,8 +63,9 @@ Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, 
 |---|---|---|
 | Console readiness: `curl -s localhost:3200/api/health` returns only booleans | yes | yes |
 | Mock backend: `curl -s 127.0.0.1:7777/health` | yes | - |
+| Search route (always-on): `curl -s -X POST 127.0.0.1:7777/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"test","top_k":1}'` | yes | - |
 | Gateway: `curl -s 127.0.0.1:8600/health` returns `{"status":"ok"}` | yes | - |
-| Tunnel and agent: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
+| Tunnel, agent and search: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
 
 In vm mode the console's health check leaves out gateway readiness. HTTP 503 from the VM for the first 60-90 s after a cold start is normal.
 

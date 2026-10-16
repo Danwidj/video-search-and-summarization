@@ -8,10 +8,16 @@
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
 #           tunnel). Exports ANALYSIS_MODE=agent so v2 calls the agent's
-#           /analyze endpoint directly. No local vlm-gateway.
+#           /analyze endpoint directly. No local vlm-gateway. The search route
+#           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
+#           with an always-on VLM critic and persisted ranking/verdicts.
 #   local — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
 #           and vlm-gateway (127.0.0.1:8600) locally. Exports
-#           ANALYSIS_MODE=gateway so v2 calls the local gateway.
+#           ANALYSIS_MODE=gateway so v2 calls the local gateway. The search route
+#           (POST /api/v1/incidents/search) is always mounted on mock-backend (:7777).
+#
+# Both modes start and mount the search route automatically with NO opt-in
+# --search flag (search is always on).
 #
 # Both modes launch incident-console-v2 (Next.js, port 3200). The Streamlit
 # v1 console is no longer started by this script — see local-start.sh or
@@ -189,6 +195,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "--- Native services (managed natively) ---"
+  # shellcheck disable=SC2029
   ssh "$VSS_SSH_TARGET" \
     "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status" 2>&1 || true
 
@@ -279,6 +286,7 @@ EOF
     fi
 
     echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
+    # shellcheck disable=SC2029
     ssh "$VSS_SSH_TARGET" \
       "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
     native_start_rc=$?
@@ -335,6 +343,7 @@ EOF
 
     if [ "${#native_missing[@]}" -gt 0 ]; then
       echo "--- starting missing Native services (${native_missing[*]}) over SSH ---"
+      # shellcheck disable=SC2029
       ssh "$VSS_SSH_TARGET" \
         "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${native_missing[*]}"
       native_start_rc=$?
@@ -372,6 +381,7 @@ EOF
     exit 1
   fi
   echo "  agent ok (localhost:8000 -> ${VSS_VM_IP}:8000)"
+  echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
   export ANALYSIS_MODE="agent"
@@ -394,8 +404,22 @@ elif [ "$VSS_START_MODE" = "local" ]; then
   ) &
   VLM_GATEWAY_PID=$!
 
-  # Give services a moment to start
-  sleep 2
+  # Wait for local mock backend readiness (<5s)
+  echo "  waiting for mock backend and search route (http://127.0.0.1:7777/health)..."
+  mock_ok=""
+  for _i in $(seq 1 10); do
+    if curl -sf --max-time 1 http://127.0.0.1:7777/health 2>/dev/null | grep -q isAlive; then
+      mock_ok=1
+      break
+    fi
+    sleep 0.5
+  done
+  if [ -z "$mock_ok" ]; then
+    echo "start.sh: mock backend failed to start on http://127.0.0.1:7777 within timeout." >&2
+    cleanup
+    exit 1
+  fi
+  echo "  mock backend & search route ok (POST http://127.0.0.1:7777/api/v1/incidents/search)"
 
   export INCIDENT_AGENT_BASE_URL="http://127.0.0.1:7777"
   export VLM_GATEWAY_URL="http://127.0.0.1:8600"
@@ -407,6 +431,7 @@ if [ -n "${VLM_GATEWAY_URL:-}" ]; then
   echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
 fi
 echo "  ANALYSIS_MODE=${ANALYSIS_MODE}"
+echo "  SEARCH_ROUTE=${INCIDENT_AGENT_BASE_URL}/api/v1/incidents/search (always-on)"
 
 echo "=== FINAL STEP — Starting incident-console-v2 ==="
 if ! command -v npm >/dev/null 2>&1; then

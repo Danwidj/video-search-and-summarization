@@ -128,7 +128,7 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 | **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
 | **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic, query persistence, and hexagonal `SearchStore` port (live pgvector RPC integration in PR 120) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
 | **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Pending |
-| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Pending |
+| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both VM and local modes with always-on critic and persisted ranking/verdicts) |
 
 ### PR Workstreams (in this repo, building docs + UI/code):
 
