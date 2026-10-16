@@ -5,10 +5,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -92,12 +92,15 @@ def test_start_script_shellcheck():
         text=True,
         check=False,
     )
-    assert res.returncode == 0, f"shellcheck failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
+    assert res.returncode == 0, (
+        f"shellcheck failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
+    )
 
 
 def test_start_script_always_mounts_search_route():
     """Verify that the search route is mounted unconditionally and responds with expected status codes."""
     import sys
+
     mock_src = INCIDENT_PROFILE_DIR / "mock-backend" / "base_profile_mock" / "src"
     if str(mock_src) not in sys.path:
         sys.path.insert(0, str(mock_src))
@@ -130,6 +133,7 @@ def test_start_script_always_mounts_search_route():
 def test_local_search_route_launches_under_5_seconds():
     """Acceptance check: base_profile_mock search route responds in under 5 seconds."""
     import sys
+
     mock_src = INCIDENT_PROFILE_DIR / "mock-backend" / "base_profile_mock" / "src"
     if str(mock_src) not in sys.path:
         sys.path.insert(0, str(mock_src))
