@@ -126,7 +126,7 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 | **Step 1** (in progress) | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - |
 | **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 |
 | **Step 3** | Crop service: open-vocabulary detector (Grounding DINO/OWLv2) on extracted keyframes, text embedding model, R2 upload, `evidence_crops` metadata population | Step 2 |
-| **Step 4** | `search_evidence_items` RPC with pgvector HNSW, `POST /api/v1/incidents/search` REST route, critic always-on, `query_results` persistence | Step 3 |
+| **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic, query persistence, and hexagonal `SearchStore` port (live pgvector RPC integration in PR 120) | Step 3 |
 | **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 |
 | **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 |
 
@@ -174,7 +174,7 @@ The three PR task docs assume the following conventions and environment setup. T
 ### Definitions (for PR task doc consistency)
 
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
-- **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query) or `rejected` (VLM says it does not), with an objective rationale string.
+- **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
 - **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on).
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.

@@ -26,6 +26,7 @@ from nat.data_models.config import Config
 from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontEndPluginWorker
 
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
+from vss_agents.api.incident_search import register_incident_search_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
 from vss_agents.api.rtsp_ingest import register_rtsp_ingest_routes
 from vss_agents.api.video_delete import register_video_delete_routes
@@ -92,6 +93,8 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
           incident-console AI trigger. Resolves the ``incident_report_gen``
           tool per request rather than self-skipping, so profiles that don't
           configure that tool get a 501 instead of a silent no-op.
+        - ``POST /api/v1/incidents/search`` — natural-language evidence item
+          search with always-on VLM critic (MVP2).
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -125,3 +128,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_rtsp_delete_routes(app, self.config)
         register_video_delete_routes(app, self.config)
         register_incident_analyze_routes(app, self.config, builder)
+        register_incident_search_routes(app, self.config)
