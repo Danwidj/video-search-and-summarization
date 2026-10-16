@@ -1,0 +1,7 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": "Here is the response.",
+    "citations": []
+  }
+}

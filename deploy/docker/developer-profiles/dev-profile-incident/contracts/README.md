@@ -13,6 +13,7 @@ This directory is the single source of truth for incident extraction: one prompt
 | [`inference.json`](inference.json) | Shared P1 inference settings and the allowlist of VLMs the console may call (with per-model timeouts). eval keeps its own constants; `eval/tests/test_contract_fixtures.py` asserts they match this file. |
 | [`fixtures/`](fixtures/) | Valid and invalid example reports, plus the expected `response_format`. Both the Python validator (`eval/tests/test_contract_fixtures.py`) and the console's TypeScript validator (`incident-console-v2/tests/contract-validate.test.mjs`) must agree on every fixture. `fixtures/policy/` holds recorded model responses and boundary cases, each with its video length and its expected verdict under validation policy `core-scored-v1` (below); `incident-console-v2/tests/contract-policy.test.mjs` checks the same set. |
 | [`search-contract-v1/`](search-contract-v1/) | MVP2 search contract defining request/response JSON schemas and fixtures for `POST /api/v1/incidents/search` (jump-to-clip timestamps, labels, crop image references, and always-on critic). |
+| [`chat-contract-v1/`](chat-contract-v1/) | MVP2 chat contract defining request/response JSON schemas and fixtures for `POST /api/v1/incidents/chat` (multi-turn conversational Q&A and grounded evidence citations). |
 
 ## Rules
 

@@ -1,0 +1,12 @@
+{
+  "session_id": "session_xyz123",
+  "message": {
+    "role": "assistant",
+    "content": "Here is the response.",
+    "citations": [
+      {
+        "incident_id": "Assault007"
+      }
+    ]
+  }
+}

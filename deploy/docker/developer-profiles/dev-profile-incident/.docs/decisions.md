@@ -2,6 +2,25 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: MVP2 chat backend endpoint and chat-contract-v1
+- **Decision:**
+  - Define `chat-contract-v1` in `contracts/chat-contract-v1/` specifying request (`chat_request.schema.json`) and response (`chat_response.schema.json`) JSON schemas with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
+  - Request schema specifies `messages` history (each with `role` and `content`), optional `session_id`, and optional `context` (`scope: "global" | "incident"`, `incident_id`, `evidence_crop_ids`).
+  - Response schema specifies assistant response with structured, grounded `citations` referencing `incident_id`, `item_id`, `item_type`, `timestamp_seconds`, and `crop_image_url` for visual evidence inspection and jump-to-clip.
+  - Implement native `POST /api/v1/incidents/chat` in `vss-agent` (`services/agent/src/vss_agents/api/incident_chat.py`) following hexagonal architecture: access evidence retrieval capabilities through a `SearchClient` protocol port with an `InMemorySearchClient` adapter and a clear TODO for wiring to the sibling search route / pgvector RPC once merged.
+  - Implement mock chat route in `mock-backend/base_profile_mock` (`base_profile_mock/routers/incident_chat.py` on port 7777) implementing `chat-contract-v1` against `_CANNED_HITS` so frontend PR 118 can build and test immediately without GPU or VM dependencies.
+  - Handle empty results cleanly by returning an assistant response with `citations: []`. Validate input schemas, returning HTTP 400 for empty or missing user messages and 422 for invalid scopes.
+- **Why:**
+  - Delivers MVP2 VM step 5 for conversational intelligence across incident evidence.
+  - Avoids coupling to parallel workstream code (sibling search route) by using a clean hexagonal port and adapter pattern.
+  - Aligns frontend PR 118, eval PR 119, and the backend on an authoritative, validated contract.
+- **Alternatives rejected:**
+  - Directly importing search route internals (rejected: coupling parallel workstreams during active development).
+  - Unstructured plain text answers without citations (rejected: violates MVP2 requirements for visual crop inspection and jump-to-clip).
+- **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`services/agent/src/vss_agents/api/incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py); [`mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_chat.py`](../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_chat.py); [`.docs/mvp2/README.md`](mvp2/README.md).
+
+---
+
 ### 2026-10-16: MVP2 start.sh always-on search route startup and readiness check (VM Step 6)
 - **Decision:**
   - Update `start.sh` so the natural-language incident search route (`POST /api/v1/incidents/search` with an always-on VLM critic and persisted ranking/verdicts) is always brought up and announced alongside `vss-agent` in both `--mode vm` and `--mode local`.
