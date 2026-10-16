@@ -2,21 +2,6 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
-### 2026-10-16: Option B adopted for MVP2 timestamp pass and official report backfill
-- **Decision:**
-  - Adopt Option B for the MVP2 timestamp and evidence crop workflow: preserve existing official reports in `incidents` and `model_runs` (retaining human reviews and edits); run a targeted VLM pass producing only per-item `timestamp_seconds` and detector labels; generate detector crops via the crop service; and ingest the JSON Lines backfill output into `evidence_crops` via the database loader.
-  - Scope evidence crop ingestion strictly to official reports (`videos.selected_model_run_id IS NOT NULL`).
-  - Schema restructure from PR 99 ('agent owns full report') remains parked.
-- **Why:**
-  - Preserves human reviews, edits, and triage history already recorded on official reports, avoiding destructive re-generation of full reports.
-  - Keeps the database loader cleanly decoupled: it consumes the backfill script's JSON Lines `--output-file` stream and upserts into `evidence_crops`.
-- **Alternatives rejected:**
-  - Option A / full video re-analysis (rejected: overwrites human-reviewed official reports and invalidates existing review status).
-  - PR 99 'agent owns full report' schema restructure (rejected: parked by captain).
-- **Links:** [PR #126](https://github.com/Danwidj/video-search-and-summarization/pull/126); [`.docs/mvp2/db-migration.md`](mvp2/db-migration.md).
-
----
-
 ### 2026-10-16: Removal of zero-VM constraint for MVP2 data and search layer workstream
 - **Decision:**
   - Remove the zero-VM constraint from the MVP2 data and search layer workstream: include explicit verification that `vss-agent` on the `kwanz-ws` GPU VM persists incident reports to Supabase end to end over Zheng's tailnet.

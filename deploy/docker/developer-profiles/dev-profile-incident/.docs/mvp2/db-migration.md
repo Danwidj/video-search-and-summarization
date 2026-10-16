@@ -14,7 +14,7 @@ Key objectives:
 1. **Deploy MVP2 Schema & Security:** Apply the pending RLS lockdown migration and create new MVP2 schema objects (`evidence_crops`, `query_results`, `search_evidence_items` RPC) locked down strictly to `service_role`.
 2. **Verify Connection & RLS Security:** Prove programmatically that the console adapter reaches Supabase via `service_role`, `anon` and `authenticated` roles remain blocked, and new MVP2 tables are reachable. Record concrete evidence in the PR.
 3. **Verify VM `vss-agent` Persistence End to End:** Verify that `vss-agent` running on the `kwanz-ws` GPU VM successfully generates and persists incident reports to live Supabase PostgREST over the campus firewall.
-4. **Implement Hybrid Search & Ingestion Pipeline:** Implement the hybrid search RPC function, benchmark embedding models, build the ingestion loader for Option B backfill JSON Lines output, and establish Cloudflare R2 evidence crop storage handling.
+4. **Implement Hybrid Search & Ingestion Pipeline:** Implement the hybrid search RPC function, benchmark embedding models, build the ingestion loader for Captain's re-analysis output batches, and establish Cloudflare R2 evidence crop storage handling.
 
 ---
 
@@ -37,16 +37,6 @@ Key objectives:
   - Retired `incident-console/` (v1) and `incident-console/db.py` are obsolete and out of scope; do not update or mirror schemas to v1.
   - Do NOT mutate existing relational tables `entities`, `instruments`, or `assets` (all MVP2 crops, boxes, and embeddings live in `evidence_crops`).
   - Do NOT drop or alter legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) without separate approval.
-
-### Option B Scope: Official Report Backfill & Evidence Ingestion
-The captain selected Option B for the MVP2 timestamp pass and evidence crop workflow:
-- **Preserve Official Reports:** Official reports in `incidents` and `model_runs` are kept as they are; they carry human review, triage decisions, and edits that must not be overwritten or regenerated.
-- **Targeted VLM Pass:** The VLM returns only per-item `timestamp_seconds` and a short detector label for existing items.
-- **Detector Crops via Crop Service:** Detector bounding boxes and cropped images are produced by the crop service rather than report generation.
-- **Database Loader Responsibility:** The database loader script (`scripts/ingest_reanalysis_output.py`, owned by this workstream) reads the backfill output and populates `evidence_crops` with temporal anchors, bounding boxes, R2 image keys, and embeddings.
-- **Strict Scope to Official Reports:** Ingestion is scoped strictly to official reports (`videos.selected_model_run_id IS NOT NULL`).
-- **Input Format (JSON Lines):** The backfill process writes item records as JSON Lines to its `--output-file`. The loader must consume this format.
-  - *TODO:* Confirm exact JSON Lines record schema with the backfill PR (`fm/vss-mvp2-backfill-timestamps`).
 
 ### VM Access, Environment & Operating Rules
 - **VM Access is Established:**
@@ -112,11 +102,10 @@ The captain selected Option B for the MVP2 timestamp pass and evidence crop work
 - [ ] Document empirical trade-offs (retrieval quality, dimension size, latency, cost) and select final model.
 - [ ] Implement standalone embedding utility script to generate and batch-upload embeddings into `evidence_crops.embedding`.
 
-### Area 6: Ingestion Loader for Backfill Output (Option B)
-- [ ] Define standardized JSON Lines ingestion schema matching the backfill script's `--output-file` (TODO: confirm exact record schema with backfill PR).
+### Area 6: Ingestion Loader for Re-Analysis Output
+- [ ] Define standardized ingestion payload format matching Captain's re-analysis output.
 - [ ] Implement idempotent ingestion loader script (`scripts/ingest_reanalysis_output.py`):
-  - Streams and parses JSON Lines records from backfill `--output-file`.
-  - Validates that records correspond to official reports (`videos.selected_model_run_id IS NOT NULL`).
+  - Parses re-analysis output batches.
   - Inserts/updates `evidence_crops` rows with detector bounding boxes, timestamps, and metadata.
   - Generates text embeddings for newly ingested items.
   - Validates foreign keys against parent `incidents` and `videos`.
@@ -352,6 +341,6 @@ To verify that the database layer is operational, secure, and correctly configur
 - [ ] VM `vss-agent` report persistence verified end to end on `kwanz-ws` without port 5432 errors or RLS rejections, and evidence recorded in the PR.
 - [ ] Hybrid search RPC produces accurate rankings across combined vector and text queries.
 - [ ] Embedding generation script processes evidence items and populates pgvector embeddings.
-- [ ] Ingestion loader successfully loads Option B JSON Lines backfill output into `evidence_crops`, scoped strictly to official reports (`videos.selected_model_run_id IS NOT NULL`).
+- [ ] Re-analysis ingestion loader successfully loads batch output into `evidence_crops` and matches official report IDs.
 - [ ] R2 helper generates working presigned URLs and cleanup logic correctly identifies orphaned crop keys.
 - [ ] Documentation updated in `.docs/data.md` and `.docs/decisions.md`.
