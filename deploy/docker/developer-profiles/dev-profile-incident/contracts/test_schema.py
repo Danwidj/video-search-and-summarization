@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from jsonschema import validate, ValidationError
+from jsonschema import ValidationError, validate
 
 CONTRACTS_DIR = Path(__file__).resolve().parent
 
@@ -70,7 +70,6 @@ def test_search_response_schema_invalid_fixtures():
 
 def test_search_response_pilot_constraints():
     """Response hits carry pilot-mandated fields: timestamp_seconds, label, critic."""
-    schema = _load("search-contract-v1/search_response.schema.json")
     fixture = _load("search-contract-v1/fixtures/valid/full-response.json")
     for idx, hit in enumerate(fixture["hits"]):
         item = hit["item"]
@@ -129,7 +128,6 @@ def test_incident_contract_v3_version():
 
 def test_search_response_incident_metadata_present():
     """Search hits carry parent incident metadata: incident_id, playback_url, incident_window."""
-    schema = _load("search-contract-v1/search_response.schema.json")
     fixture = _load("search-contract-v1/fixtures/valid/full-response.json")
     for idx, hit in enumerate(fixture["hits"]):
         inc = hit["incident"]

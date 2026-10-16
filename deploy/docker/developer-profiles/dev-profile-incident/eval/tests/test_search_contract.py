@@ -5,12 +5,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
-import jsonschema
 from jsonschema import Draft202012Validator
-import pytest
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[2] / "contracts"
 SEARCH_CONTRACT_DIR = CONTRACTS_DIR / "search-contract-v1"
@@ -85,9 +83,9 @@ def test_mock_backend_response_validates_against_contract():
     mock_src = Path(__file__).resolve().parents[2] / "mock-backend" / "base_profile_mock" / "src"
     sys.path.insert(0, str(mock_src))
 
+    from base_profile_mock.routers.incident_search import router as search_router
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from base_profile_mock.routers.incident_search import router as search_router
 
     app = FastAPI()
     app.include_router(search_router)
