@@ -49,13 +49,14 @@ and reporting loop; MVP2 adds natural-language semantic video search.
 |                       (Natural-Language Search)                             |
 |                                                                             |
 |  +------------------+    +--------------------+    +---------------------+  |
-|  | Perception/Embed | -> |   Elasticsearch    | -> | Multi-Subagent      |  |
-|  | (RT-CV, RT-Embed)|    | Vector & Metadata  |    | Search (/search)    |  |
+|  | Keyframe & Crop  | -> | Supabase pgvector  | -> | Console Search UI   |  |
+|  | (Open-Vocab Det) |    | (evidence_crops)   |    | & Jump-to-Clip      |  |
 |  +------------------+    +--------------------+    +---------------------+  |
 |                                      |                                      |
 |                                      v                                      |
 |                          +-----------------------+                          |
-|                          | Retrieval Eval (P/R/F)|                          |
+|                          | VLM Critic Always-On  |                          |
+|                          | & Retrieval Eval Suite|                          |
 |                          +-----------------------+                          |
 +-----------------------------------------------------------------------------+
 ```
@@ -111,29 +112,22 @@ and reporting loop; MVP2 adds natural-language semantic video search.
 
 ### MVP2: Natural Language Incident Search
 
-*Focus: Multi-modal embedding indexing, vector search, multi-subagent routing, and retrieval evaluation.*
+*Authoritative specification, end goal, and architecture: [`mvp2/README.md`](mvp2/README.md) (PR 122).*
 
-- **Scope:**
-  - **Real-Time Perception & Embeddings:**
-    - Real-Time Computer Vision (RT-CV / `vss-rtvi-cv` DeepStream container) for object and motion detection.
-    - Real-Time Video Embeddings (RT-Embed / `vss-rtvi-embed`) generating vector representations of video segments.
-    - Kafka event bus streaming frame detections and embeddings to Elasticsearch.
-  - **Elasticsearch Storage:** Ingest and index multi-modal video embeddings and detection metadata.
-  - **Multi-Subagent Agent Configuration:**
-    - Wire `search_agent`, `embed_search`, and `attribute_search` alongside `report_agent` in `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml`.
-    - Implement a unified routing prompt allowing `vss-agent` to dispatch natural-language search queries
-      or incident report generation based on incoming requests.
-  - **Search API & Console Search Interface:**
-    - Expose `POST /api/v1/incidents/search` on `vss-agent`.
-    - Add natural language search box in `incident-console-v2` with temporal jump-to-clip capabilities.
-  - **Retrieval Evaluation:**
-    - Benchmark retrieval precision, recall, Mean Reciprocal Rank (MRR), and F1 across a test set of natural
-      language queries paired with ground-truth video segments.
+Following the box-accuracy pilot (where VLM bounding boxes scored 0% well-framed while timestamps were >95% accurate), MVP2 shifted to a **hybrid pipeline**:
+- **VLM Extraction:** Extract structured incident reports with item timestamps (`incident-contract-v3`).
+- **Open-Vocabulary Crop Pipeline:** Extract video frames at item timestamps and run an open-vocabulary detector (Grounding DINO / OWLv2) to crop high-precision bounding boxes uploaded to Cloudflare R2.
+- **Data & Vector Search Layer:** Store metadata and 1024-d text embeddings in the Supabase `evidence_crops` table with an HNSW index, queried via the `search_evidence_items` RPC (restricted to `service_role`).
+- **Always-On VLM Critic:** Evaluates candidate retrieval hits against the user query; records verdicts and rankings into `query_results`.
+- **Frontend & Interaction:** Natural-language search route in `incident-console-v2`, filter chips, candidate hit cards with crop images and critic rationales, jump-to-clip video scrubbing, and conversational Q&A.
 
-- **MVP2 Success Criteria:**
-  - Natural language queries return relevant timestamped video segments within target latency.
-  - Subagent routing dispatches search queries accurately without degrading report generation workflows.
-  - Retrieval benchmark achieves agreed-upon precision and recall targets across standard incident classes.
+**Active MVP2 Workstreams (open PRs):**
+- **PR 118:** Frontend console search UI, evidence timeline, chat, and dynamic style theming.
+- **PR 119:** System vs one-shot baseline benchmarking, retrieval evaluation suite, critic utility ablation, and detector selection.
+- **PR 120:** Data and search layer (zero-VM), Supabase migrations (`evidence_crops`, `query_results`), RLS lockdown, and RPC search function.
+- **Contracts (`fm/vss-mvp2-contracts`):** `search-contract-v1` REST schema and mock backend search routes on port 7778.
+
+See [`mvp2/README.md`](mvp2/README.md) for full technical specifications, dependencies, and TODO stand-in indices.
 
 ---
 

@@ -5,14 +5,17 @@ SPDX-License-Identifier: Apache-2.0
 
 # incident-console
 
-Streamlit console for the VSS incident search & reporting capstone. Front-end
-migrated from the sibling `rise-up` project onto this blueprint fork. See
-[`.docs/`](../.docs/) for the full plan;
-this app implements the frontend half of
+> [!WARNING]
+> **RETIRED / DEPRECATED:** This Streamlit v1 console is obsolete and preserved for historical reference and maintenance fix-only work; active development targets [`incident-console-v2`](../incident-console-v2/README.md). Schema ownership has moved authoritatively to [`supabase/migrations/`](../supabase/README.md). The legacy `rise-up` repository is deprecated.
+
+Streamlit console (v1) for the VSS incident search & reporting capstone, originally
+migrated from the deprecated sibling `rise-up` project onto this blueprint fork. See
+[`.docs/`](../.docs/) for the current plan;
+this legacy app implements the frontend half of
 the shared implementation reference (superseded by [`../.docs/action-plan.md`](../.docs/action-plan.md) and [`../.docs/data.md`](../.docs/data.md); legacy plan preserved under [`../.docs/archive/`](../.docs/archive/)).
 
-This package is **profile-exclusive** — it lives here, not under the shared
-`deploy/docker/services/` tree.
+This package is **profile-exclusive** and retired — active frontend work lives under
+[`incident-console-v2/`](../incident-console-v2/README.md).
 
 ## Local dev loop (no Docker, no GPU)
 
@@ -485,7 +488,7 @@ The Streamlit incident console was retired from active development on 2026-09-24
 
 ### Console Postgres schema & database-backed mode
 
-`deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a 12-table-plus-matches schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module docstring for the full table list and the `review_status` design note; see [`.docs/data.md`](../.docs/data.md) for the documented schema and ERD). `incident-console/db.py` is the authoritative source for this schema. Identity rule: 1 video = 1 incident (`incidents.incident_id` == `videos.id`, no separate `video_id` column). Fixture data in `fixtures/data/*.csv` (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer (`scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the 36 real incidents under one shared `model_run_id`. The console is database-backed only; there is no offline CSV-preview UI mode.
+`deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py` defines a legacy 12-table-plus-matches schema supporting multiple model runs over the same video plus a parallel human ground-truth set (see its module docstring for the full table list and the `review_status` design note; see [`.docs/data.md`](../.docs/data.md) for the documented schema and ERD). Schema authority has moved to [`../supabase/migrations/`](../supabase/README.md); `incident-console/db.py` is no longer the authoritative source. Identity rule: 1 video = 1 incident (`incidents.incident_id` == `videos.id`, no separate `video_id` column). Fixture data in `fixtures/data/*.csv` (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer (`scripts/seed_supabase.py` via `scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the 36 real incidents under one shared `model_run_id`. The console is database-backed only; there is no offline CSV-preview UI mode.
 
 ### Agent upload contract
 

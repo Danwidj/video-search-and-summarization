@@ -16,7 +16,8 @@ script: `services/agent/src/vss_agents/utils/incident_db.py`'s
 to get atomic delete-then-insert semantics across `incidents` +
 `review_status` — PostgREST has no client-held transactions, so this RPC is
 the only way that operation is atomic. The PostgREST writers in
-`incident-console/db_postgrest.py` and `eval/db_postgrest.py` call the same
+`incident-console-v2` (`lib/postgrest/client.ts`), `eval/db_postgrest.py`, and the
+retired `incident-console/db_postgrest.py` call the same
 RPC. Do not delete this file only because nothing in the repo runs
 `supabase db push` automatically; it is the only reason `insert_incident()`
 doesn't corrupt state on every call.

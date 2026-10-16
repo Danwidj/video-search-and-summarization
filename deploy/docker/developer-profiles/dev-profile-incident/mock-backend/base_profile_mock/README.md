@@ -18,17 +18,15 @@ incident-console Postgres database.
 
 When exercising the incident flow, set `INCIDENT_SUPABASE_URL` and
 `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` in the backend environment to the same
-Supabase project used by the console (the console itself keeps using its own
-`INCIDENT_DB_DSN` — the two config surfaces are independently maintained, see
-`services/agent/src/vss_agents/utils/incident_db.py`'s module docstring).
+Supabase project used by the console (`incident-console-v2` uses PostgREST with these
+same keys; the retired v1 console historically used `INCIDENT_DB_DSN`).
 Also load the
 Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
 `R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file (the shared
 `dev-profile-incident/.env.local`, as in the command below). R2 upload
-returns `503` when those settings are unset or unreachable. The console's
-upload flow (Report Review page, `catalog_actions.upload_and_record()`)
-automatically triggers Analyze after the initial video row is committed. The
-response is explicitly marked `mock: true`, and Analyze writes
+returns `503` when those settings are unset or unreachable. In `incident-console-v2`,
+upload and analysis are orchestrated via Next.js route handlers (`app/api/analysis/route.ts`).
+The response is explicitly marked `mock: true`, and Analyze writes
 the model run, incident entity, review status, and report through
 `services/agent/src/vss_agents/utils/incident_db.py`.
 
