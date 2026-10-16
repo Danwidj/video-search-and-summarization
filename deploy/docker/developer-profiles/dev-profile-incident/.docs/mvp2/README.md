@@ -174,7 +174,7 @@ The three PR task docs assume the following conventions and environment setup. T
 ### Definitions (for PR task doc consistency)
 
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
-- **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query) or `rejected` (VLM says it does not), with an objective rationale string.
+- **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
 - **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on).
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.

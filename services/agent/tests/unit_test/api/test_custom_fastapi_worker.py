@@ -14,7 +14,7 @@
 # limitations under the License.
 """Unit tests for the route dispatcher in CustomFastApiFrontEndWorker.
 
-The dispatcher registers seven sets of routes on every profile, with no
+The dispatcher registers eight sets of routes on every profile, with no
 per-profile capability flags:
 
   * ``register_video_upload``               — POST /api/v1/videos
@@ -24,6 +24,7 @@ per-profile capability flags:
   * ``register_rtsp_delete_routes``         — DELETE /api/v1/rtsp-streams/delete/{name}
   * ``register_video_delete_routes``        — DELETE /api/v1/videos/{video_id}
   * ``register_incident_analyze_routes``    — POST /api/v1/incidents/{incident_id}/analyze
+  * ``register_incident_search_routes``     — POST /api/v1/incidents/search
 """
 
 from unittest.mock import MagicMock

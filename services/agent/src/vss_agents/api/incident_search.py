@@ -384,7 +384,6 @@ class InMemorySearchStore(SearchStore):
             self.query_results.append({"query_id": query_id, **row})
 
 
-
 # TODO(PR-120): Real PostgREST adapter for SearchStore is owned by PR #120
 # (MVP2 data and search layer workstream). PR #120 will wire Supabase RPC
 # 'search_evidence_items' and tables 'queries' and 'query_results' once migration

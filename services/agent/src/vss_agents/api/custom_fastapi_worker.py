@@ -93,6 +93,8 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
           incident-console AI trigger. Resolves the ``incident_report_gen``
           tool per request rather than self-skipping, so profiles that don't
           configure that tool get a 501 instead of a silent no-op.
+        - ``POST /api/v1/incidents/search`` — natural-language evidence item
+          search with always-on VLM critic (MVP2).
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
