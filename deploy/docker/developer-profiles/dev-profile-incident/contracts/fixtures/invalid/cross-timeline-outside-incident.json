@@ -14,12 +14,16 @@
     {
       "entity_id": "E1",
       "type": "human",
-      "description": "Person in a dark jacket attacking."
+      "description": "Person in a dark jacket attacking.",
+      "timestamp_seconds": 4,
+      "label": "person in dark jacket"
     },
     {
       "entity_id": "E2",
       "type": "human",
-      "description": "Person at the counter being struck."
+      "description": "Person at the counter being struck.",
+      "timestamp_seconds": 4,
+      "label": "person at counter"
     }
   ],
   "instruments": [
@@ -28,14 +32,18 @@
       "entity_id": "E1",
       "name": "bottle",
       "description": "Glass bottle.",
-      "threat_level": 3
+      "threat_level": 3,
+      "timestamp_seconds": 5,
+      "label": "glass bottle"
     }
   ],
   "assets": [
     {
       "asset_id": "A1",
       "name": "counter",
-      "description": "Shop counter E2 stands at."
+      "description": "Shop counter E2 stands at.",
+      "timestamp_seconds": 3,
+      "label": "shop counter"
     }
   ],
   "timeline": [

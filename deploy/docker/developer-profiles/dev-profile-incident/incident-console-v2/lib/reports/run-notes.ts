@@ -146,7 +146,10 @@ export function parseRunNotes(notes: unknown): RunNotes {
       // timeline outside the incident window are reported, not fatal.
       const { duration, ...modelIncident } = incident;
       const videoDurationSeconds = typeof request.videoDurationSeconds === 'number' ? request.videoDurationSeconds : null;
-      const { report, enrichment } = validateCore({ ...stored, incident: modelIncident }, { videoDurationSeconds });
+      const { report, enrichment } = validateCore(
+        { ...stored, incident: modelIncident },
+        { videoDurationSeconds, contractVersion: wrapper.contractVersion }
+      );
       const expected = report.incident.end_timestamp - report.incident.start_timestamp;
       if (duration !== expected) throw new Error(`stored incident.duration ${String(duration)} is not ${expected}`);
       return { kind: 'contract', status, contractVersion: wrapper.contractVersion, videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null, attemptedAt: typeof wrapper.attemptedAt === 'string' ? wrapper.attemptedAt : typeof wrapper.generatedAt === 'string' ? wrapper.generatedAt : null, report: { ...report, incident: { ...report.incident, duration: expected } }, request, response, enrichment, ...audit };

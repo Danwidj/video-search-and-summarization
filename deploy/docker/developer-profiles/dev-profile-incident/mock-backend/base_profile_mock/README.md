@@ -90,6 +90,8 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
 - `POST /api/v1/incidents/{id}/analyze` - deterministic mock incident report
   generation, persisted through the shared incident DB writer; invoked
   automatically by the console's upload flow.
+- `POST /api/v1/incidents/search` - natural-language evidence search conforming to
+  `search-contract-v1` with canned hits, crop URLs, and critic verdicts.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,
@@ -102,7 +104,7 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
   snapshot/picture request.
 
 Out of scope (base profile disables these tabs, so the UI never calls them):
-search/alerts endpoints, Redis, Phoenix.
+stock VSS search/alerts endpoints (`POST /api/v1/search`), Redis, Phoenix.
 
 ## Layout
 

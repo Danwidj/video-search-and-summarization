@@ -106,12 +106,23 @@
               "description": {
                 "type": "string",
                 "description": "Objective appearance, actions and role."
+              },
+              "timestamp_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Seconds from video start where the entity is most clearly visible."
+              },
+              "label": {
+                "type": "string",
+                "description": "Short label for detector search (e.g. 'person in dark hoodie', 'dog')."
               }
             },
             "required": [
               "entity_id",
               "type",
-              "description"
+              "description",
+              "timestamp_seconds",
+              "label"
             ]
           }
         },
@@ -150,6 +161,15 @@
                   5
                 ],
                 "description": "Potential to cause harm, 1-5."
+              },
+              "timestamp_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Seconds from video start where the instrument is most clearly visible."
+              },
+              "label": {
+                "type": "string",
+                "description": "Short label for detector search (e.g. 'crowbar', 'machete')."
               }
             },
             "required": [
@@ -157,7 +177,9 @@
               "entity_id",
               "name",
               "description",
-              "threat_level"
+              "threat_level",
+              "timestamp_seconds",
+              "label"
             ]
           }
         },
@@ -178,12 +200,23 @@
               "description": {
                 "type": "string",
                 "description": "Objective description and relevance."
+              },
+              "timestamp_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Seconds from video start where the asset is most clearly visible."
+              },
+              "label": {
+                "type": "string",
+                "description": "Short label for detector search (e.g. 'silver hatchback', 'display case')."
               }
             },
             "required": [
               "asset_id",
               "name",
-              "description"
+              "description",
+              "timestamp_seconds",
+              "label"
             ]
           }
         },

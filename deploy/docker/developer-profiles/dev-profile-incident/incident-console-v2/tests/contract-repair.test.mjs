@@ -127,7 +127,7 @@ test('schema violations, invalid JSON and empty content are never repaired', () 
 
 test('an out-of-range well-formed ID is renamed only when neither it nor its target appears in free text', () => {
   const report = withoutIdMentions(validReport());
-  report.assets.push({ asset_id: 'A5', name: 'shelf', description: 'A metal shelf.' });
+  report.assets.push({ asset_id: 'A5', name: 'shelf', description: 'A metal shelf.', timestamp_seconds: 5, label: 'shelf' });
   const repaired = attemptIdNormalization(report, violationsOf(report));
   assert.equal(repaired.eligible, true);
   assert.deepEqual(repaired.operations, [{ op: 'rename-id', collection: 'assets', from: 'A5', to: 'A2' }]);
@@ -185,7 +185,7 @@ test('a lowercase malformed ID that free text mentions is not renamed (free text
 test('duplicate IDs and unresolvable holders are ineligible', () => {
   const duplicate = validReport();
   duplicate.entities[1].entity_id = 'E1';
-  duplicate.entities.push({ entity_id: 'E3', type: 'unknown', description: 'Third.' });
+  duplicate.entities.push({ entity_id: 'E3', type: 'unknown', description: 'Third.', timestamp_seconds: 3, label: 'person' });
   assert.equal(attemptIdNormalization(duplicate, violationsOf(duplicate)).reason, 'DUPLICATE_ID');
 
   const holder = validReport();

@@ -1,0 +1,7 @@
+{
+  "query_id": "q-empty-001",
+  "query": "unmatched query string",
+  "total_hits": 0,
+  "execution_time_ms": 12.4,
+  "hits": []
+}

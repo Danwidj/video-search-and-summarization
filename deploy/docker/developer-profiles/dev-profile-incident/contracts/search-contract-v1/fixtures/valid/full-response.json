@@ -1,0 +1,72 @@
+{
+  "query_id": "q-search-9921",
+  "query": "machete or blade weapon",
+  "total_hits": 2,
+  "execution_time_ms": 48.7,
+  "hits": [
+    {
+      "result_id": "res-001",
+      "rank": 1,
+      "similarity_score": 0.89,
+      "item": {
+        "item_type": "instrument",
+        "item_id": "I1",
+        "name": "machete",
+        "label": "machete",
+        "description": "Long curved blade held by the assailant during the storefront altercation.",
+        "threat_level": 4,
+        "holder_entity_id": "E1",
+        "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+        "timestamp_seconds": 14,
+        "bounding_box": [320, 450, 510, 600]
+      },
+      "incident": {
+        "incident_id": "Assault007_x264",
+        "model_run_id": "m86a5c319e26659804b0",
+        "incident_type": "assault",
+        "severity_level": 4,
+        "title": "Physical altercation with edged weapon in ATM lobby",
+        "description": "An altercation ensues where a perpetrator brandishes a large blade against a victim.",
+        "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
+        "incident_window": [10.0, 28.0]
+      },
+      "critic": {
+        "verdict": "confirmed",
+        "confidence": 0.96,
+        "rationale": "The cropped screenshot clearly shows a machete with a curved metal blade held in the subject's right hand."
+      }
+    },
+    {
+      "result_id": "res-002",
+      "rank": 2,
+      "similarity_score": 0.62,
+      "item": {
+        "item_type": "entity",
+        "item_id": "E1",
+        "name": "attacker",
+        "label": "person",
+        "description": "Adult male wearing dark hooded jacket lunging toward victim.",
+        "threat_level": 5,
+        "holder_entity_id": null,
+        "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/entities/E1.jpg",
+        "timestamp_seconds": 12,
+        "bounding_box": null
+      },
+      "incident": {
+        "incident_id": "Assault007_x264",
+        "model_run_id": "m86a5c319e26659804b0",
+        "incident_type": "assault",
+        "severity_level": 4,
+        "title": "Physical altercation with edged weapon in ATM lobby",
+        "description": "An altercation ensues where a perpetrator brandishes a large blade against a victim.",
+        "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
+        "incident_window": [10.0, 28.0]
+      },
+      "critic": {
+        "verdict": "rejected",
+        "confidence": 0.91,
+        "rationale": "The candidate is the perpetrator person entity, not the weapon or blade requested by the query."
+      }
+    }
+  ]
+}

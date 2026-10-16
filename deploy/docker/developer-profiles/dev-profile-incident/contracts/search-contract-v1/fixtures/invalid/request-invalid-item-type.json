@@ -1,0 +1,6 @@
+{
+  "query": "firearm",
+  "filters": {
+    "item_types": ["weapon"]
+  }
+}

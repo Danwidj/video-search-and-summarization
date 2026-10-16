@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://developer.nvidia.com/vss/contracts/search-contract-v1/search_response.schema.json",
+  "title": "SearchResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "query_id": {
+      "type": "string",
+      "description": "Unique identifier for this search query audit record."
+    },
+    "query": {
+      "type": "string",
+      "description": "The echoed natural language search query."
+    },
+    "total_hits": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of hits returned in this response."
+    },
+    "execution_time_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "End-to-end search processing time in milliseconds."
+    },
+    "hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "result_id": {
+            "type": "string",
+            "description": "Unique identifier for this query result entry."
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based ranking index ordered by similarity and verification."
+          },
+          "similarity_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Vector cosine similarity score between query and crop embedding."
+          },
+          "item": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "item_type": {
+                "type": "string",
+                "enum": ["entity", "instrument", "asset"],
+                "description": "Item category from the structured report."
+              },
+              "item_id": {
+                "type": "string",
+                "description": "Item identifier matching the parent report (e.g. E1, I1, A1)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Descriptive name of the item from the report."
+              },
+              "label": {
+                "type": "string",
+                "description": "Short detector-friendly label (1-3 words) for open-vocabulary detection."
+              },
+              "description": {
+                "type": "string",
+                "description": "Detailed description from the structured report."
+              },
+              "threat_level": {
+                "type": ["integer", "null"],
+                "description": "Optional threat level assessment (e.g. 1-5 or null)."
+              },
+              "holder_entity_id": {
+                "type": ["string", "null"],
+                "description": "For instruments: entity_id holding the instrument, or null."
+              },
+              "crop_image_url": {
+                "type": "string",
+                "format": "uri",
+                "description": "URL or Cloudflare R2 presigned URL referencing the evidence crop image."
+              },
+              "timestamp_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Whole-second offset from video start where item is visible, used for jump-to-clip."
+              },
+              "bounding_box": {
+                "type": ["array", "null"],
+                "items": { "type": "integer" },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "Optional detector-produced coordinates [ymin, xmin, ymax, xmax] normalized to 0-1000, or null if unboxed."
+              }
+            },
+            "required": [
+              "item_type",
+              "item_id",
+              "name",
+              "label",
+              "description",
+              "crop_image_url",
+              "timestamp_seconds"
+            ]
+          },
+          "incident": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "incident_id": {
+                "type": "string",
+                "description": "Parent incident or video identifier."
+              },
+              "model_run_id": {
+                "type": "string",
+                "description": "Model run identifier that produced the official report."
+              },
+              "incident_type": {
+                "type": "string",
+                "description": "Incident taxonomy classification (e.g. assault, burglary)."
+              },
+              "severity_level": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5,
+                "description": "Parent incident severity level from 1 (minor) to 5 (critical)."
+              },
+              "title": {
+                "type": "string",
+                "description": "Title or headline of the parent incident."
+              },
+              "description": {
+                "type": "string",
+                "description": "Parent incident narrative description."
+              },
+              "playback_url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Streaming or playback URL for the parent video clip."
+              },
+              "incident_window": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "[start_seconds, end_seconds] incident window."
+              }
+            },
+            "required": [
+              "incident_id",
+              "model_run_id",
+              "incident_type",
+              "severity_level",
+              "description",
+              "playback_url",
+              "incident_window"
+            ]
+          },
+          "critic": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "verdict": {
+                "type": "string",
+                "enum": ["confirmed", "rejected", "unverified"],
+                "description": "Always-on VLM critic evaluation verdict."
+              },
+              "confidence": {
+                "type": ["number", "null"],
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Confidence score of the critic verification."
+              },
+              "rationale": {
+                "type": "string",
+                "description": "Explanation justifying the critic verdict."
+              }
+            },
+            "required": ["verdict", "rationale"]
+          }
+        },
+        "required": ["result_id", "rank", "similarity_score", "item", "incident", "critic"]
+      }
+    }
+  },
+  "required": ["query_id", "query", "total_hits", "execution_time_ms", "hits"]
+}

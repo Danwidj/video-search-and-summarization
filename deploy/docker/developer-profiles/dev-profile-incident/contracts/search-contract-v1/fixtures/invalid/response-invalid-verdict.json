@@ -1,0 +1,37 @@
+{
+  "query_id": "q-invalid-002",
+  "query": "machete",
+  "total_hits": 1,
+  "execution_time_ms": 25.0,
+  "hits": [
+    {
+      "result_id": "res-001",
+      "rank": 1,
+      "similarity_score": 0.85,
+      "item": {
+        "item_type": "instrument",
+        "item_id": "I1",
+        "name": "machete",
+        "label": "machete",
+        "description": "Edged weapon",
+        "threat_level": 4,
+        "holder_entity_id": "E1",
+        "crop_image_url": "https://pub-r2.example.com/evidence/Assault007/I1.jpg",
+        "timestamp_seconds": 14
+      },
+      "incident": {
+        "incident_id": "Assault007",
+        "model_run_id": "m1",
+        "incident_type": "assault",
+        "severity_level": 4,
+        "description": "Physical altercation",
+        "playback_url": "https://pub-r2.example.com/videos/Assault007.mp4",
+        "incident_window": [10.0, 20.0]
+      },
+      "critic": {
+        "verdict": "maybe",
+        "rationale": "Cannot tell for sure."
+      }
+    }
+  ]
+}

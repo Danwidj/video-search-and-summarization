@@ -41,13 +41,41 @@ def _valid_report() -> dict:
             "location": "shop interior near the counter",
         },
         "entities": [
-            {"entity_id": "E1", "type": "human", "description": "Person in a dark jacket attacking."},
-            {"entity_id": "E2", "type": "human", "description": "Person at the counter being struck."},
+            {
+                "entity_id": "E1",
+                "type": "human",
+                "description": "Person in a dark jacket attacking.",
+                "timestamp_seconds": 4,
+                "label": "person in dark jacket",
+            },
+            {
+                "entity_id": "E2",
+                "type": "human",
+                "description": "Person at the counter being struck.",
+                "timestamp_seconds": 4,
+                "label": "person at counter",
+            },
         ],
         "instruments": [
-            {"instrument_id": "I1", "entity_id": "E1", "name": "bottle", "description": "Glass bottle.", "threat_level": 3}
+            {
+                "instrument_id": "I1",
+                "entity_id": "E1",
+                "name": "bottle",
+                "description": "Glass bottle.",
+                "threat_level": 3,
+                "timestamp_seconds": 5,
+                "label": "glass bottle",
+            }
         ],
-        "assets": [{"asset_id": "A1", "name": "counter", "description": "Shop counter E2 stands at."}],
+        "assets": [
+            {
+                "asset_id": "A1",
+                "name": "counter",
+                "description": "Shop counter E2 stands at.",
+                "timestamp_seconds": 3,
+                "label": "shop counter",
+            }
+        ],
         "timeline": [
             {"start_seconds": 3, "end_seconds": 5, "description": "E1 approaches E2."},
             {"start_seconds": 5, "end_seconds": 11, "description": "E1 strikes E2 with I1."},
@@ -150,6 +178,8 @@ def test_non_json_content_is_rejected_without_extraction(content):
         lambda r: r["incident"].update(severity_level=6),
         lambda r: r["incident"].update(confidence_score=0.9 * 2),
         lambda r: r["entities"][0].update(type="person"),
+        lambda r: r["entities"][0].pop("timestamp_seconds"),
+        lambda r: r["entities"][0].pop("label"),
         lambda r: r.update(persons=[]),
     ],
 )
