@@ -14,7 +14,7 @@
 # limitations under the License.
 """Unit tests for the route dispatcher in CustomFastApiFrontEndWorker.
 
-The dispatcher registers eight sets of routes on every profile, with no
+The dispatcher registers nine sets of routes on every profile, with no
 per-profile capability flags:
 
   * ``register_video_upload``               — POST /api/v1/videos
