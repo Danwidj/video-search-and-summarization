@@ -305,6 +305,12 @@ The following specifications are planned, not final, pending completion of the o
 > - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 120
 > - **Stand-in Placeholder:** Enum values `'entity'`, `'instrument'`, `'asset'`.
 
+> [!IMPORTANT]
+> **TODO [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass**
+> - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
+> - **Owner:** `fm/vss-mvp2-backfill-timestamps`
+> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore`, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`.
+
 ---
 
 ### Master Workstream TODO Index
@@ -327,6 +333,7 @@ The following specifications are planned, not final, pending completion of the o
 | 14 | Typed Data Access Module (`lib/db/`) | PR 120 | `incident-console-v2/lib/db/index.ts` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
 | 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |
+| 17 | Targeted Timestamp Backfill Script | `fm/vss-mvp2-backfill-timestamps` | `scripts/backfill_official_timestamps.py` script & test suite |
 
 ---
 
