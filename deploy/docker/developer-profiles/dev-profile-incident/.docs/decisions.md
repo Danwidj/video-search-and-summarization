@@ -23,6 +23,44 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-10-16: Run RP1 when core_ok with unchanged input; timeline context in RP1 prompt
+- **Decision:**
+  - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
+  - Pass the unchanged prediction (with derived fields) to RP1, preserving timeline events outside the incident window.
+  - Add one line to `contracts/report_generation_prompt.md` under `INCIDENT DETAILS`: `Timeline events outside the incident time are context.`
+  - Bump `contracts/VERSION` to `incident-contract-v3`.
+- **Why:**
+  - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
+  - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
+  - A 2-clip pilot (Animal003 and Assault018) compared RP1 output from the baseline prompt with output from the prompt carrying the new timeline context line. With the new line, the prose described lead-up and aftermath events as chronological context and kept the reported incident window and duration. Pilot outputs are not stored in the repo.
+- **Versioning:**
+  - `contracts/VERSION` is bumped to `incident-contract-v3` because `report_generation_prompt.md` changed, following the profile rule in `dev-profile-incident/AGENTS.md` ("Contract changes bump contracts/VERSION and update eval and the console together").
+  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The separate in-flight branch `fm/vss-agent-contract-v2`, which vendors `contracts/` into `services/agent`, re-syncs with v3 as part of phase 3.
+- **Alternatives rejected:**
+  - Retaining `incident-contract-v2` with report-prompt hashes or sub-versions in recorded results (rejected: extends the recorded result shape, violating provenance consistency; following the profile rule of a version bump is cleaner and respects the existing result schema).
+  - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
+- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py).
+
+---
+
+### 2026-10-16: Prompt-contract phase 4 legacy taxonomy migration and orphaned run clean-up
+- **Decision:**
+  - Migrate stored legacy incident types in `incidents.type`: `fighting` -> `assault` (13 rows), `animal` -> `animal attack` (20 rows).
+  - Migrate stored legacy entity types in `entities.type`: `person` -> `human` (6 rows).
+  - Clean up the 20 pre-existing orphaned legacy console `model_runs` rows that explicitly name videos that no longer exist and have no incident rows.
+  - Relational `incidents.type` currently contains 0 rows with `other`. No relational mapping for `other` is added. The only `other` value is inside the notes of test-pattern run `m5629b0938e679c9873d` (no incidents row) and stays there, because the profile [`AGENTS.md`](../AGENTS.md) rule says never to modify `model_runs.notes` after an attempt is written. The supervisor confirmed this as the accepted resolution of the `other` case (2026-10-16).
+  - Query-time folding (`canonicalIncidentType`, `canonicalEntityType`) is retained in application code and SQL helper functions until the migration is applied to the live database **and** prompt-contract phase 3 moves agent mode onto the contract. The migration is a one-time clean-up: agent mode (`ANALYSIS_MODE=agent`) still writes `fighting`/`animal` types and `person` entities, so dropping folding earlier would cause UI and filter regressions. Keeping it is idempotent and safe in every state.
+- **Why:**
+  - Completes prompt-contract phase 4 taxonomy consolidation to match eval ground truth and `incident-contract-v2`.
+  - Removes 20 dangling attempt rows from deleted videos without cascading to any other table.
+- **Alternatives rejected:**
+  - Dropping query-time folding once the migration is applied (unsafe on unmigrated databases and on rows agent mode writes before phase 3).
+  - Modifying `model_runs.notes` for `other` (violates the core rule that attempt notes are immutable).
+  - Mapping test-pattern video run `m5629b0938e679c9873d` to a contract incident type (it contains no incident).
+- **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql); [`status.md`](status.md); [`prompt-contract-plan.md`](prompt-contract-plan.md).
+
+---
+
 ### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
 - **Decision:**
   - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).

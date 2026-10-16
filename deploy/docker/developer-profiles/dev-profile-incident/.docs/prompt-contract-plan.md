@@ -1,7 +1,7 @@
 # Unified Prompt & Structured-Output Contract Plan
 
-> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. **Phase 2 (console) is implemented and live-verified (2026-09-27)** for gateway mode: shared prompt/schema/settings, strict validation without a repair prompt, `entities` instead of `persons`, nullable confidence, a read-only legacy adapter, plus the ID-only `id-normalization-v1` recovery and recorded outcomes ([analysis-schema.md](analysis-schema.md)). RP1 is not called by the console (no prose report). Phases 3-5 have not started; phase 4's type/entity migration is replaced for now by query-time folding.
-> **Date:** 2026-09-27
+> **IN PROGRESS.** Phase 0 is done: the probe was run, its results are recorded in §5a, and the probe script has since been removed. Phase 1 (eval on the contract) is implemented and waiting for a live benchmark run. **Phase 2 (console) is implemented and live-verified (2026-09-27)** for gateway mode: shared prompt/schema/settings, strict validation without a repair prompt, `entities` instead of `persons`, nullable confidence, a read-only legacy adapter, plus the ID-only `id-normalization-v1` recovery and recorded outcomes ([analysis-schema.md](analysis-schema.md)). RP1 is not called by the console (no prose report). Phase 3 is not started. **Phase 4 (database migration) is delivered** (`supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`), awaiting approval to apply to shared Supabase. It is a one-time clean-up: agent mode still writes legacy values until phase 3, so query-time folding stays until the migration is applied **and** phase 3 is done.
+> **Date:** 2026-09-27 (updated 2026-10-16)
 > **Scope:** `eval/`, `incident-console-v2/`, `services/agent/` (incident path), `supabase/migrations/`
 
 ---
@@ -50,7 +50,7 @@ Incident extraction runs through three paths that do not share a prompt, schema,
 | `incident_report.schema.json` | JSON Schema (draft 2020-12), strict-mode compatible (see below) |
 | `incident_extraction_prompt.md` | P1 text: sections 1-6 kept, few-shot removed, section 7 "OUTPUT FORMAT" removed, and rules added for the extra fields |
 | `report_generation_prompt.md` | RP1 text (`RP1-v1`, unchanged apart from the input shape) |
-| `VERSION` | One contract version (now `incident-contract-v2`), stored as `prompt_version` on every model run |
+| `VERSION` | One contract version (now `incident-contract-v3`), stored as `prompt_version` on every model run |
 
 **Strict-mode rules:**
 - `additionalProperties: false` on every object.
@@ -119,7 +119,7 @@ RP1  POST {gateway}/v1/chat/completions
 | 1. eval, **implemented** | Few-shot removed (`eval_few_shot.py`, `prompts.py` deleted). Signed URL replaces base64 (`resolve_and_sign`). Strict `contract.parse_report` replaces `extract_json`; contract failures are scored as misses, listed as `contract_failures`, and RP1 is skipped for them. Fixed P1 config: `max_tokens 16384`, `num_frames 64`. The ground truth already uses the 5 labels. `vlm_benchmark_results.md` is marked superseded. **Outstanding:** a smoke run, then the full benchmark. | `uv run pytest tests/` passes (93) |
 | 2. console | New `lib/analysis/contract.ts` (Ajv + generated types). Rewrite `app/api/analysis/route.ts` to the P1 → RP1 chain with no repair retry. Rename `persons` to `entities` across components and the report editor. Make `confidence` nullable in the UI. Keep a read-only adapter for legacy `model_runs.notes`. | `npm run typecheck && npm test` pass |
 | 3. agent | Replace the VLM-markdown → LLM-extract steps in `incident_report_gen` with the direct P1 call. Accept `video_url` on `/analyze`. Update `IncidentReport` and add the parity test. | `ruff`, `mypy` and `pytest` pass per `services/agent/AGENTS.md` |
-| 4. database | Migration mapping `incidents.type` fighting → assault and animal → animal attack; `entities.type` person → human. Dry run first, then apply only after approval. | [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) rules |
+| 4. database, **delivered** | Migration mapping `incidents.type` fighting → assault and animal → animal attack; `entities.type` person → human; removes 20 orphaned legacy console runs (`20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`). Dry run verified; apply only after approval. | [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) rules |
 | 5. docs | Rewrite `analysis-schema.md`. Update `architecture.md` (sequences A and B), `data.md`, `status.md` and `decisions.md`, plus the `incident-analyze-video` and `incident-run-eval` skills. | Standing docs rule |
 
 ## 5a. Phase 0 results
