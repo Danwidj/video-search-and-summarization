@@ -88,6 +88,12 @@ report selection (D6). Additive; applied 2026-09-27. Because `videos` and
 All four 2026-09-27 migrations were applied with a single-transaction script
 that also records the version in `supabase_migrations.schema_migrations`.
 
+`migrations/20260928000000_local_time_heatmap_and_time_filters.sql` replaces
+`get_incident_dashboard` and `list_incident_report_summaries` (adds
+`p_timezone TEXT DEFAULT 'UTC'`). When computing weekday/hour groupings and
+filters, `generated_datetime` (stored as naive UTC) is converted to
+`p_timezone` via `AT TIME ZONE 'utc' AT TIME ZONE params.target_tz`. Unapplied.
+
 `migrations/20261016000000_enable_rls_and_lockdown_anon.sql` (pending: not yet
 applied to the live database, so RLS stays disabled until it is) enables
 Row-Level Security on all 22 public tables (18 operational/eval tables and
@@ -114,7 +120,6 @@ agent mode still writes legacy values until prompt-contract phase 3, so
 query-time folding (`canonical_incident_type`, `canonical_entity_type` and the
 console's `canonicalIncidentType`) must stay until this migration is applied
 **and** phase 3 is done.
-
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have

@@ -61,6 +61,27 @@ Chronological log of architectural, technical, and tooling decisions for the Inc
 
 ---
 
+### 2026-09-28: Dashboard heatmap and time-of-day filters use local time with viewer timezone detection
+- **Decision:**
+  - `get_incident_dashboard` and `list_incident_report_summaries` accept an optional `p_timezone TEXT DEFAULT 'UTC'` parameter.
+  - When aggregating day of week and hour of day in `get_incident_dashboard`, and when filtering by weekday or time-of-day in both RPCs, `reports.generated_datetime` (stored as naive UTC) is converted to the target timezone via `(r.generated_datetime AT TIME ZONE 'utc' AT TIME ZONE params.target_tz)`.
+  - Next.js API routes (`/api/dashboard` and `/api/reports`) accept an optional `timezone` query parameter, accepting only IANA names recognised by `Intl.DateTimeFormat` (offsets such as `+05:00` are rejected, as Postgres reads them with the sign reversed) before forwarding `p_timezone` to Supabase.
+  - The client dashboard and reports library detect the viewer's local timezone on mount via `Intl.DateTimeFormat().resolvedOptions().timeZone` (avoiding SSR hydration mismatch) and pass it in API requests.
+  - Heatmap labels, active filter badges and the reports time-of-day inputs show local hours with the IANA zone name (e.g. `America/New_York`), not a current-date abbreviation, which would be wrong for rows on the other side of a DST change.
+  - The viewer's detected zone is the only timezone source: there is no `timezone` URL parameter or remembered override on `/reports`. Dashboard and reports detect the same zone, so drill-down links keep count parity.
+- **Why:**
+  - Security and operations operators analyse incident trends by local shift and time of day, whereas UTC hour buckets obscured local peak times.
+  - Preserves backwards compatibility: omitting `p_timezone` defaults cleanly to `'UTC'`.
+  - Maintains strict parity: clicking a dashboard cell at local hour H and weekday W navigates to `/reports` filtered by that exact local weekday and hour in the viewer's timezone.
+  - Deploy order: the console always sends `p_timezone`, so the migration must be applied before or with the console deploy.
+- **Alternatives rejected:**
+  - Client-side heatmap re-bucketing: would require downloading all individual incident timestamps, defeating the bounded aggregate RPC design.
+  - Converting `reports.generated_datetime` column to `TIMESTAMP WITH TIME ZONE`: requires schema data migration across all existing rows and tables; timezone conversion in the RPC view is lightweight, backwards-compatible, and respects user-selected timezones.
+- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`../incident-console-v2/lib/dashboard/links.ts`](../incident-console-v2/lib/dashboard/links.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx).
+
+
+---
+
 ### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
 - **Decision:**
   - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).
