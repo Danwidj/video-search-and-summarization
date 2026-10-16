@@ -1,0 +1,8 @@
+{
+  "session_id": "session_xyz123",
+  "message": {
+    "role": "user",
+    "content": "Here is the response.",
+    "citations": []
+  }
+}

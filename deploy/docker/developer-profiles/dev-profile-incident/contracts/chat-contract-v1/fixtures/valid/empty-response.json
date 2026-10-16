@@ -1,0 +1,8 @@
+{
+  "session_id": "session_xyz123",
+  "message": {
+    "role": "assistant",
+    "content": "No matching incidents or evidence items were found for your query.",
+    "citations": []
+  }
+}

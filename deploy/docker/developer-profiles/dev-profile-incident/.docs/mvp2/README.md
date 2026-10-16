@@ -110,7 +110,7 @@ Search & Retrieval
 | **query_results** (new Supabase table) | Records: `id, query_id, incident_id, model_run_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
 | **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
 | **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
-| **Chat endpoint contract** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `query` (natural-language string), `conversation_history[]`, filters. Returns ranked results with critic verdicts and cropped images. | PR 118 (frontend chat) |
+| **chat-contract-v1** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `session_id` (optional), `messages[]` (`{role: "user" | "assistant", content}`), `context` (`{scope: "global" | "incident", incident_id, evidence_crop_ids}`). Returns assistant response with grounded evidence citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`). | PR 118 (frontend chat) |
 | **incident-contract-v3 taxonomy** | Retained from contract-v2: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. `entity type {human, animal, unknown}`. `instrument threat_level 1-5`. Item IDs: sequential `E1..`, `I1..`, `A1..`. | All workstreams |
 
 ---
@@ -127,7 +127,7 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 | **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 | Delivered |
 | **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
 | **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic, query persistence, and hexagonal `SearchStore` port (live pgvector RPC integration in PR 120) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
-| **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Pending |
+| **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Delivered (`services/agent/src/vss_agents/api/incident_chat.py`, `chat-contract-v1`) |
 | **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both VM and local modes with always-on critic and persisted ranking/verdicts) |
 
 ### PR Workstreams (in this repo, building docs + UI/code):
@@ -293,11 +293,10 @@ The following specifications are planned, not final, pending completion of the o
 > - **Owner:** PR 120 (implementation) and PR 119 (tuning)
 > - **Stand-in Placeholder:** `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`.
 
-> [!IMPORTANT]
-> **TODO [Contracts / PR 118]: Conversational Q&A History Schema**
-> - **Missing:** JSON schema defining conversation history payload for `POST /api/v1/incidents/chat`.
-> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 118
-> - **Stand-in Placeholder:** `messages: [{role: "user" | "assistant", content: string}]`.
+> [!NOTE]
+> **COMPLETED [Contracts / Chat Endpoint]: Conversational Q&A Schema (`chat-contract-v1`) & Backend Endpoint**
+> - **Delivered:** JSON schemas defining multi-turn message history and grounded assistant responses with citations for `POST /api/v1/incidents/chat` under `contracts/chat-contract-v1/`.
+> - **Endpoints:** Native endpoint implemented in `vss-agent` (`services/agent/src/vss_agents/api/incident_chat.py`) with hexagonal `SearchClient` port and in-memory adapter; mock endpoint in `mock-backend/base_profile_mock` (port 7777).
 
 > [!IMPORTANT]
 > **TODO [Contracts / PR 120]: Item Type Filter Enum Alignment**
@@ -319,7 +318,7 @@ The following specifications are planned, not final, pending completion of the o
 |---|---|---|---|
 | 1 | Search Route, UI & Hit Cards | PR 118 | `/search` mock route & cards |
 | 2 | Evidence Timeline & Crop Gallery | PR 118 | Scrubber markers at `timestamp_seconds` |
-| 3 | Conversational Q&A Chat | PR 118 / Contracts | Chat panel on `POST /api/v1/incidents/chat` |
+| 3 | Conversational Q&A Chat | Chat Endpoint / PR 118 | `chat-contract-v1`, native `vss-agent` chat endpoint & mock |
 | 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |
 | 5 | Baseline vs Full System Benchmark | PR 119 | One-shot VLM baseline evaluation harness |
 | 6 | Retrieval Benchmark Suite (50+ queries) | PR 119 | `eval/scripts/eval_retrieval.py` |

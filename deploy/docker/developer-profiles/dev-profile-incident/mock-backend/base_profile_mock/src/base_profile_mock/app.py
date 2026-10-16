@@ -18,6 +18,7 @@ from base_profile_mock.routers import agent_static
 from base_profile_mock.routers import agent_video
 from base_profile_mock.routers import health
 from base_profile_mock.routers import incident_analyze
+from base_profile_mock.routers import incident_chat
 from base_profile_mock.routers import incident_search
 from base_profile_mock.routers import vst_replay
 from base_profile_mock.routers import vst_sensor
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(incident_analyze.router)
+    app.include_router(incident_chat.router)
     app.include_router(incident_search.router)
     app.include_router(agent_video.router)
     app.include_router(agent_rtsp.router)

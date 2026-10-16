@@ -1,0 +1,23 @@
+{
+  "session_id": "session_xyz123",
+  "message": {
+    "role": "assistant",
+    "content": "Across the recorded assault incidents, two primary weapons were identified: a machete (I1) in Assault007, and a blunt wooden club in Assault011.",
+    "citations": [
+      {
+        "incident_id": "Assault007",
+        "item_id": "I1",
+        "item_type": "instrument",
+        "timestamp_seconds": 14,
+        "crop_image_url": "https://pub-r2.example.com/evidence/Assault007/m86a5c319e26659804b0/instruments/I1.jpg"
+      },
+      {
+        "incident_id": "Assault011",
+        "item_id": "I2",
+        "item_type": "instrument",
+        "timestamp_seconds": 22,
+        "crop_image_url": "https://pub-r2.example.com/evidence/Assault011/m12b6f481c19842109a1/instruments/I2.jpg"
+      }
+    ]
+  }
+}
