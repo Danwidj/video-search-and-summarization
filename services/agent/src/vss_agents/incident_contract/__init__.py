@@ -166,8 +166,8 @@ def report_prompt_template() -> str:
 
 def p1_request() -> dict[str, Any]:
     """Fixed P1 request settings shared with eval and the console (temperature, max_tokens, media_io_kwargs)."""
-    inference = _read_json("inference.json")
-    return inference["p1"]
+    p1: dict[str, Any] = _read_json("inference.json")["p1"]
+    return p1
 
 
 def rp1_request() -> dict[str, Any]:
