@@ -1,7 +1,10 @@
-# Incident Reports and Dashboard
+# Incident Reports and Dashboard (Retired v1 Console)
 
-Run .venv/bin/streamlit run app.py. This note covers two of the app's pages:
-Incident Reports and Analytics Dashboard (see the incident-console README for
+> [!NOTE]
+> This note documents the retired Streamlit v1 console. Active UI development is in [`incident-console-v2`](../incident-console-v2/README.md).
+
+Run `.venv/bin/streamlit run app.py`. This note covers two of the app's pages:
+Incident Reports and Analytics Dashboard (see the [incident-console README](README.md) for
 the full page list). Details are an internal view of Incident Reports, selected
 by the report query parameter.
 

@@ -187,6 +187,12 @@ The three PR task docs assume the following conventions and environment setup. T
 
 **File:** `.docs/mvp2/frontend.md` (to be created by PR assignee)
 
+> [!IMPORTANT]
+> **TODO [PR 118]: Frontend Console Search UI & Interactive Intelligence**
+> - **Missing:** Implementation of `/search` route, natural-language query input with filter chips, search hit cards rendering crop image with threat and critic badges, jump-to-clip video scrubber integration, user relevance feedback persisting to `query_results`, evidence timeline with crop drawer on report page, saved searches drawer, theme token loader for dynamic styling, and conversational Q&A chat panel.
+> - **Owner:** PR 118 (`docs(dev-profile-incident): MVP2 frontend (search, chat, theming) workstream tasks`)
+> - **Stand-in Placeholder:** `incident-console-v2/app/search/page.tsx` rendering mock results via `search-contract-v1` against `mock-backend` on port 7778; `components/chat-drawer.tsx` connecting to mock chat route.
+
 **What PR 118 needs from this overview:**
 - The `POST /api/v1/incidents/search` REST contract (query text, filter parameters, return shape, critic verdict format)
 - The `POST /api/v1/incidents/chat` REST contract (conversation history context + query)
@@ -205,6 +211,12 @@ The three PR task docs assume the following conventions and environment setup. T
 
 **File:** `.docs/mvp2/eval.md` (to be created by PR assignee)
 
+> [!IMPORTANT]
+> **TODO [PR 119]: System-Level Benchmarking & Retrieval Suite**
+> - **Missing:** System-level evaluation framework comparing one-shot VLM prompt baseline against the full VSS pipeline, independent non-circular benchmark queries dataset (50+ queries), retrieval benchmark suite (`eval/scripts/eval_retrieval.py` measuring P@K, R@K, MRR, F1), always-on critic utility ablation study, open-vocabulary detector comparative framing evaluation (Grounding DINO, OWLv2, Florence-2), and embedding model comparison.
+> - **Owner:** PR 119 (`docs(dev-profile-incident): MVP2 eval (system vs one-shot baseline, retrieval) workstream tasks`)
+> - **Stand-in Placeholder:** `eval/eval_data/retrieval_benchmark_sample.json` query set; `eval/scripts/eval_retrieval.py` reporting mock metrics (`P@5=0.80, R@5=0.75, MRR=0.85`).
+
 **What PR 119 needs from this overview:**
 - The `evidence_crops` table schema (especially `embedding vector(1024)`, `timestamp_seconds`, `bounding_box`) for embedding generation and HNSW indexing
 - The `query_results` table structure (rank, similarity_score, critic_verdict, critic_rationale) for evaluating critic impact
@@ -222,6 +234,12 @@ The three PR task docs assume the following conventions and environment setup. T
 ### PR 120 - Data and Search Layer, Zero-VM
 
 **File:** `.docs/mvp2/db-migration.md` (to be created by PR assignee)
+
+> [!IMPORTANT]
+> **TODO [PR 120]: MVP2 Data and Search Layer (Zero-VM Architecture)**
+> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), Supabase MVP2 migration enabling `vector` extension and creating `evidence_crops` and `query_results` tables with RLS and HNSW index, PostgreSQL hybrid search RPC `search_evidence_items` with service_role permissions, standalone crop embedding generator, batch re-analysis ingestion loader, Cloudflare R2 evidence crop storage management, and typed data module `incident-console-v2/lib/db/`.
+> - **Owner:** PR 120 (`docs(dev-profile-incident): MVP2 data and search layer (zero-VM) workstream tasks`)
+> - **Stand-in Placeholder:** Table definitions in §2 and DDL checklist in §6.3; typed module stub `incident-console-v2/lib/db/index.ts`.
 
 **What PR 120 needs from this overview:**
 - The complete `evidence_crops` migration DDL (table definition, HNSW index, RLS lockdown)
@@ -247,18 +265,68 @@ The three PR task docs assume the following conventions and environment setup. T
 
 ---
 
-## 7. Still-Not-Final (Planned, Not Final)
+## 7. Still-Not-Final (Planned, Not Final) & Master TODO Index
 
-Mark the following as planned, not final, since the VM backend contracts are still being built:
+The following specifications are planned, not final, pending completion of the open workstreams and the MVP2 contracts branch (`fm/vss-mvp2-contracts`):
 
-- **Bounding box format** in `evidence_crops.bounding_box`: `[ymin, xmin, ymax, xmax]` normalised integers 0-1000. *Source: incident-contract-v3 decision after box-accuracy pilot; open-vocabulary detector stage.*
-- **Critic model and endpoint**: Which VLM critic model (`nvidia/cosmos-3-nano-reasoner` etc.) and the exact `/v1/chat/completions` prompt format. *These are VM backend decisions.*
-- **pgvector dimension**: `vector(1024)` dimension. *Confirmed by current schema, but may change with model switch.*
-- **RPC parameter defaults**: `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`. *May be tuned after eval PR 119 runs benchmarks.*
-- **Chat endpoint conversation history format**: Exact JSON shape for passing conversation context to `search_evidence_items`. *To be defined by VM backend Step 5.*
-- **Item type filter values**: `'entity'`, `'instrument'`, `'asset'`. *Match contract-v2 enum; may be expanded.*
+> [!IMPORTANT]
+> **TODO [Contracts / PR 119]: Bounding Box Format & Detector Framing**
+> - **Missing:** Final detector model selection (Grounding DINO vs OWLv2 vs Florence-2) and exact bounding box coordinate constraints in schema.
+> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 119
+> - **Stand-in Placeholder:** `[ymin, xmin, ymax, xmax]` normalised integers 0–1000 with 5% margin padding.
 
-These are marked `planned` not `final` so that this doc does not contradict the contracts when they land.
+> [!IMPORTANT]
+> **TODO [Contracts / PR 119]: Critic Model Specification & Verification Prompt**
+> - **Missing:** Final critic model selection (`nvidia/cosmos-3-nano-reasoner` or alternate) and strict structured chat completion prompt.
+> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 119
+> - **Stand-in Placeholder:** Structured output schema returning `{verdict: "confirmed" | "rejected", rationale: string}`.
+
+> [!IMPORTANT]
+> **TODO [PR 120 / PR 119]: Embedding Model & Vector Dimension**
+> - **Missing:** Benchmark selection between NVIDIA NeMo NIM, OpenAI text-embedding-3, and MiniLM.
+> - **Owner:** PR 120 and PR 119
+> - **Stand-in Placeholder:** `vector(1024)` column definition on `evidence_crops.embedding`.
+
+> [!IMPORTANT]
+> **TODO [PR 120 / PR 119]: Search RPC Parameter Tuning**
+> - **Missing:** Calibrated default thresholds for `min_similarity` and `top_k`.
+> - **Owner:** PR 120 (implementation) and PR 119 (tuning)
+> - **Stand-in Placeholder:** `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`.
+
+> [!IMPORTANT]
+> **TODO [Contracts / PR 118]: Conversational Q&A History Schema**
+> - **Missing:** JSON schema defining conversation history payload for `POST /api/v1/incidents/chat`.
+> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 118
+> - **Stand-in Placeholder:** `messages: [{role: "user" | "assistant", content: string}]`.
+
+> [!IMPORTANT]
+> **TODO [Contracts / PR 120]: Item Type Filter Enum Alignment**
+> - **Missing:** Finalization of item category enum in `search-contract-v1` and database RPC.
+> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 120
+> - **Stand-in Placeholder:** Enum values `'entity'`, `'instrument'`, `'asset'`.
+
+---
+
+### Master Workstream TODO Index
+
+| Item | Missing Component | Owning Workstream | Stand-in Placeholder |
+|---|---|---|---|
+| 1 | Search Route, UI & Hit Cards | PR 118 | `/search` mock route & cards |
+| 2 | Evidence Timeline & Crop Gallery | PR 118 | Scrubber markers at `timestamp_seconds` |
+| 3 | Conversational Q&A Chat | PR 118 / Contracts | Chat panel on `POST /api/v1/incidents/chat` |
+| 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |
+| 5 | Baseline vs Full System Benchmark | PR 119 | One-shot VLM baseline evaluation harness |
+| 6 | Retrieval Benchmark Suite (50+ queries) | PR 119 | `eval/scripts/eval_retrieval.py` |
+| 7 | Always-On Critic Ablation Study | PR 119 | Precision vs latency false-positive report |
+| 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report |
+| 9 | Embedding Model Comparison | PR 119 / PR 120 | NeMo vs OpenAI vs MiniLM benchmark |
+| 10 | Live DB RLS Lockdown Verification | PR 120 | Verification test suite on migration `20261016000000` |
+| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Migration DDL with `vector(1024)` and HNSW index |
+| 12 | `search_evidence_items` Database RPC | PR 120 | Service-role hybrid search Postgres function |
+| 13 | Crop Embedding Generator & Ingestion | PR 120 | `scripts/ingest_mvp2_crops.py` script |
+| 14 | Typed Data Access Module (`lib/db/`) | PR 120 | `incident-console-v2/lib/db/index.ts` |
+| 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
+| 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |
 
 ---
 

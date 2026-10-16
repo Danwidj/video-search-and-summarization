@@ -28,7 +28,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Mode | Backend | Analysis path (`ANALYSIS_MODE`) | Needs |
 |---|---|---|---|
 | `--mode local` | `mock-backend` + `vlm-gateway` on the laptop | `gateway`: console calls the gateway, the console writes Supabase | `.env.local`, no GPU, no SSH |
-| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze`, both agent and console write Supabase | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
+| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`) and writes Supabase; agent persists nothing when `model_run_id` is supplied | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
 
 ---
 
@@ -41,7 +41,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Upload a clip and generate, re-run, review or check an incident report | [`incident-analyze-video`](incident-analyze-video/SKILL.md) |
 | Change or inspect the Supabase schema, apply a migration, find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
 | Ingest ground truth, run the P1/RP1 VLM benchmark, aggregate results | [`incident-run-eval`](incident-run-eval/SKILL.md) |
-| Natural-language video search (MVP2) | Not built yet. See [`.docs/status.md`](../.docs/status.md). Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
+| Natural-language video search (MVP2) | Overview merged in [`.docs/mvp2/README.md`](../.docs/mvp2/README.md); workstreams in progress (PR 118, PR 119, PR 120). Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
 
 **Easy to confuse:**
 
