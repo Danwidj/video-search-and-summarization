@@ -27,7 +27,8 @@ from scripts.backfill_official_timestamps import (  # noqa: E402
     InMemoryEvidenceStore,
     InMemoryReportSource,
     OfficialReport,
-    SiblingServiceCropClient,
+    dump_evidence_records,
+    load_evidence_records,
     parse_args,
 )
 
@@ -254,12 +255,6 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.reports[0].items[0].description, original_desc)
         self.assertEqual(self.reports[0].items[0].item_id, original_id)
 
-    def test_sibling_service_crop_client_fallback_or_wiring(self) -> None:
-        client = SiblingServiceCropClient()
-        # Key function should default cleanly even if crop_evidence module is not yet present
-        key = client.get_evidence_key("Animal003", "MR01", "entities", "E1")
-        self.assertEqual(key, "evidence/Animal003/MR01/entities/E1.jpg")
-
     async def test_file_report_source(self) -> None:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             data = [
@@ -292,11 +287,80 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
             temp_path.unlink()
 
     def test_cli_parse_args(self) -> None:
-        args = parse_args(["--dry-run", "--batch-size", "10", "--concurrency", "8", "--video-id", "Animal003"])
+        args = parse_args(["--dry-run", "--batch-size", "10", "--concurrency", "8", "--video-id", "Animal003", "--output-file", "crops.jsonl"])
         self.assertTrue(args.dry_run)
         self.assertEqual(args.batch_size, 10)
         self.assertEqual(args.concurrency, 8)
         self.assertEqual(args.video_id, "Animal003")
+        self.assertEqual(args.output_file, Path("crops.jsonl"))
+
+    def test_cli_parse_args_rejects_non_positive_batch_size(self) -> None:
+        with self.assertRaises(SystemExit):
+            parse_args(["--batch-size", "0"])
+        with self.assertRaises(SystemExit):
+            parse_args(["--batch-size", "-3"])
+
+    async def test_output_file_json_lines_persistence_and_resumption(self) -> None:
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            temp_path = Path(f.name)
+
+        try:
+            # Phase 1: Process initial batch of 2 items
+            batch1_store = InMemoryEvidenceStore()
+            batch1_runner = BackfillRunner(
+                report_source=self.report_source,
+                vlm_client=self.vlm_client,
+                crop_client=self.crop_client,
+                evidence_store=batch1_store,
+            )
+            summary1 = await batch1_runner.run(BackfillOptions(batch_size=2))
+            self.assertEqual(summary1.processed_count, 2)
+            self.assertEqual(summary1.skipped_count, 0)
+
+            crops1 = await batch1_store.list_crops()
+            self.assertEqual(len(crops1), 2)
+            dump_evidence_records(crops1, temp_path)
+
+            # Assert observable JSON lines file contents
+            lines = [line.strip() for line in temp_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertEqual(len(lines), 2)
+            loaded_data = [json.loads(line) for line in lines]
+            self.assertEqual({d["item_id"] for d in loaded_data}, {"E1", "E2"})
+
+            # Phase 2: Rerun loading from file; pre-existing 2 are skipped, remaining 3 are processed
+            resumed_records = load_evidence_records(temp_path)
+            self.assertEqual(len(resumed_records), 2)
+            batch2_store = InMemoryEvidenceStore(resumed_records)
+            batch2_runner = BackfillRunner(
+                report_source=self.report_source,
+                vlm_client=self.vlm_client,
+                crop_client=self.crop_client,
+                evidence_store=batch2_store,
+            )
+            summary2 = await batch2_runner.run(BackfillOptions())
+            self.assertEqual(summary2.skipped_count, 2)
+            self.assertEqual(summary2.processed_count, 3)
+
+            crops2 = await batch2_store.list_crops()
+            self.assertEqual(len(crops2), 5)
+            dump_evidence_records(crops2, temp_path)
+
+            # Phase 3: Rerun with all 5 items completed; all 5 are skipped, 0 processed
+            all_records = load_evidence_records(temp_path)
+            self.assertEqual(len(all_records), 5)
+            batch3_store = InMemoryEvidenceStore(all_records)
+            batch3_runner = BackfillRunner(
+                report_source=self.report_source,
+                vlm_client=self.vlm_client,
+                crop_client=self.crop_client,
+                evidence_store=batch3_store,
+            )
+            summary3 = await batch3_runner.run(BackfillOptions())
+            self.assertEqual(summary3.skipped_count, 5)
+            self.assertEqual(summary3.processed_count, 0)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 if __name__ == "__main__":

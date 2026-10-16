@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib
 import json
 import logging
 import os
@@ -585,55 +584,9 @@ class FakeCropClient:
         )
 
 
-class SiblingServiceCropClient:
-    """Adapter invoking crop_evidence_item and evidence_key from services.agent."""
-
-    # TODO(crop-service): Wire to services.agent.src.vss_agents.utils.crop_evidence
-    # once the sibling crop-service task merges crop_evidence_item and evidence_key.
-    def __init__(self, detector: str = "grounding_dino"):
-        self.detector = detector
-
-    def get_evidence_key(
-        self,
-        video_id: str,
-        model_run_id: str,
-        collection: str,
-        item_id: str,
-    ) -> str:
-        try:
-            mod = importlib.import_module("vss_agents.utils.crop_evidence")
-            key_fn = mod.evidence_key
-            return str(key_fn(video_id, model_run_id, collection, item_id))
-        except (ImportError, AttributeError):
-            return f"evidence/{video_id}/{model_run_id}/{collection}/{item_id}.jpg"
-
-    async def crop_item(
-        self,
-        video_ref: str,
-        timestamp_seconds: int,
-        label: str,
-        *,
-        video_id: str,
-        model_run_id: str,
-        collection: str,
-        item_id: str,
-        detector: str | None = None,
-    ) -> CropResult:
-        try:
-            mod = importlib.import_module("vss_agents.utils.crop_evidence")
-            crop_fn = mod.crop_evidence_item
-            key_fn = mod.evidence_key
-        except (ImportError, AttributeError) as exc:
-            raise NotImplementedError(
-                "services.agent.src.vss_agents.utils.crop_evidence is not yet available; "
-                "sibling crop-service task is in progress. Use FakeCropClient for local runs or tests."
-            ) from exc
-
-        det = detector or self.detector
-        res = crop_fn(video_ref, timestamp_seconds, label, det)
-        key = key_fn(video_id, model_run_id, collection, item_id)
-        bbox = getattr(res, "bounding_box", [0, 0, 1000, 1000])
-        return CropResult(bounding_box=bbox, image_key=key)
+# TODO(crop-service): Production CropClient adapter delegating to
+# services.agent.src.vss_agents.utils.crop_evidence will be owned by
+# the sibling crop-service task once merged.
 
 
 class InMemoryEvidenceStore:
@@ -672,81 +625,8 @@ class InMemoryEvidenceStore:
         return items
 
 
-# TODO(PR-120): Wire to PR 120 loader / Supabase evidence_crops table
-# once the database teammate's migration and loader are merged.
-class SupabaseEvidenceStore:
-    """Adapter targeting the PR 120 evidence_crops table in Supabase."""
-
-    def __init__(self, client: Any):
-        self.client = client
-
-    async def has_crop(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-    ) -> bool:
-        res = (
-            await self.client.table("evidence_crops")
-            .select("item_id")
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .eq("item_type", item_type)
-            .eq("item_id", item_id)
-            .maybe_single()
-            .execute()
-        )
-        return bool(res and res.data)
-
-    async def save_crop(self, record: EvidenceCropRecord) -> None:
-        data = {
-            "incident_id": record.incident_id,
-            "model_run_id": record.model_run_id,
-            "item_type": record.item_type,
-            "item_id": record.item_id,
-            "item_name": record.item_name,
-            "description": record.description,
-            "threat_level": record.threat_level,
-            "holder_entity_id": record.holder_entity_id,
-            "timestamp_seconds": record.timestamp_seconds,
-            "bounding_box": record.bounding_box,
-            "image": record.image,
-            "created_at": record.created_at,
-        }
-        await self.client.table("evidence_crops").upsert(data).execute()
-
-    async def list_crops(
-        self,
-        incident_id: str | None = None,
-        model_run_id: str | None = None,
-    ) -> list[EvidenceCropRecord]:
-        query = self.client.table("evidence_crops").select("*")
-        if incident_id is not None:
-            query = query.eq("incident_id", incident_id)
-        if model_run_id is not None:
-            query = query.eq("model_run_id", model_run_id)
-        res = await query.execute()
-        records: list[EvidenceCropRecord] = []
-        for row in res.data or []:
-            records.append(
-                EvidenceCropRecord(
-                    incident_id=row["incident_id"],
-                    model_run_id=row["model_run_id"],
-                    item_type=row["item_type"],
-                    item_id=row["item_id"],
-                    item_name=row["item_name"],
-                    description=row["description"],
-                    threat_level=row.get("threat_level"),
-                    holder_entity_id=row.get("holder_entity_id"),
-                    timestamp_seconds=row["timestamp_seconds"],
-                    label=row.get("label", ""),
-                    bounding_box=row["bounding_box"],
-                    image=row["image"],
-                    created_at=row.get("created_at", ""),
-                )
-            )
-        return records
+# TODO(PR 120 loader): Production persistence into the Supabase evidence_crops table
+# is owned by the PR 120 database loader; do not wire direct Supabase/R2 calls here.
 
 
 # =============================================================================
@@ -814,7 +694,7 @@ class BackfillRunner:
             return summary
 
         # Apply batch size limit if specified
-        if options.batch_size is not None and options.batch_size >= 0:
+        if options.batch_size is not None and options.batch_size > 0:
             tasks_to_process = tasks_to_process[: options.batch_size]
 
         semaphore = asyncio.Semaphore(max(1, options.concurrency))
@@ -907,7 +787,7 @@ class BackfillRunner:
               f"({summary.entities_count} entities, {summary.instruments_count} instruments, {summary.assets_count} assets)")
         print(f"Already backfilled (will skip): {summary.skipped_count}")
         print(f"Pending backfill: {len(tasks_to_process)}")
-        if options.batch_size is not None:
+        if options.batch_size is not None and options.batch_size > 0:
             print(f"Batch size limit: {options.batch_size} "
                   f"(will process up to {min(len(tasks_to_process), options.batch_size)} items)")
         print(f"Concurrency: {options.concurrency}")
@@ -943,6 +823,37 @@ class BackfillRunner:
 # =============================================================================
 
 
+def _positive_int(val: str) -> int:
+    try:
+        ival = int(val)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid integer: {val!r}") from exc
+    if ival < 1:
+        raise argparse.ArgumentTypeError(f"batch-size must be >= 1, got {ival}")
+    return ival
+
+
+def load_evidence_records(path: Path) -> list[EvidenceCropRecord]:
+    records: list[EvidenceCropRecord] = []
+    if not path.exists():
+        return records
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            records.append(EvidenceCropRecord(**data))
+    return records
+
+
+def dump_evidence_records(records: list[EvidenceCropRecord], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(asdict(rec)) + "\n")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Backfill timestamps and detector labels for existing official incident reports."
@@ -954,9 +865,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--batch-size",
-        type=int,
+        type=_positive_int,
         default=None,
-        help="Maximum number of items to process in this run.",
+        help="Maximum number of items to process in this run (must be >= 1).",
     )
     parser.add_argument(
         "--concurrency",
@@ -992,7 +903,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-file",
         type=Path,
         default=None,
-        help="Path to write the execution summary JSON to.",
+        help="Path to JSON lines file for saving and resuming evidence crop records.",
     )
     parser.add_argument(
         "--verbose",
@@ -1054,8 +965,17 @@ async def async_main(args: argparse.Namespace) -> int:
     # Resolve Crop client
     crop_client: CropClient = FakeCropClient()
 
-    # Resolve Evidence store
-    evidence_store: EvidenceStore = InMemoryEvidenceStore()
+    # Resolve Evidence store (resumable via output_file if provided)
+    initial_records: list[EvidenceCropRecord] = []
+    if options.output_file and options.output_file.exists():
+        initial_records = load_evidence_records(options.output_file)
+        logger.info(
+            "Loaded %d existing evidence records from %s",
+            len(initial_records),
+            options.output_file,
+        )
+
+    evidence_store: EvidenceStore = InMemoryEvidenceStore(initial_records)
 
     runner = BackfillRunner(
         report_source=report_source,
@@ -1066,10 +986,10 @@ async def async_main(args: argparse.Namespace) -> int:
 
     summary = await runner.run(options)
 
-    if options.output_file:
-        options.output_file.parent.mkdir(parents=True, exist_ok=True)
-        options.output_file.write_text(json.dumps(summary.to_dict(), indent=2), encoding="utf-8")
-        logger.info("Summary written to %s", options.output_file)
+    if options.output_file and not options.dry_run:
+        records = await evidence_store.list_crops()
+        dump_evidence_records(records, options.output_file)
+        logger.info("Wrote %d evidence records to %s", len(records), options.output_file)
 
     return 0 if summary.failed_count == 0 else 1
 
