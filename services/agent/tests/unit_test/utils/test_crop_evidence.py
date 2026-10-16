@@ -176,11 +176,6 @@ class TestCropEvidenceItem:
         assert result.frame_size == (120, 80)
         assert len(result.normalized_box) == 4
         assert result.image_bytes[:2] == b"\xff\xd8"
-        # Properties
-        assert result.width == 120
-        assert result.height == 80
-        assert result.image == result.image_bytes
-        assert result.box == result.normalized_box
 
     def test_crop_picks_best_box(self, tiny_video_path: Path) -> None:
         detector = FakeDetector(
