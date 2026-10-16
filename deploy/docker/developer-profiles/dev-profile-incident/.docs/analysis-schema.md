@@ -125,12 +125,12 @@ The report page:
 
 ## 5. Legacy data
 
-Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until phase 3 because agent mode still writes legacy values. Notes and timestamps are never rewritten:
+Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until the migration is applied (agent mode now writes contract values, as phase 3 is complete). Notes and timestamps are never rewritten:
 - `fighting` → `assault`, `animal` → `animal attack`;
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
 
-Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes v2-form values for that run; its historical notes are untouched.
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes contract-form values for that run; its historical notes are untouched.
 
 ## 6. Agent mode
 
