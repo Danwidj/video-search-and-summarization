@@ -52,6 +52,7 @@ from pydantic import Field
 
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
 
 logger = logging.getLogger(__name__)
@@ -268,6 +269,20 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 model_name=config.vlm_model_name,
                 report=report,
             )
+
+        # Best-effort evidence cropping behind the detector and store ports
+        try:
+            crop_service = crop_evidence.get_crop_evidence_service()
+            if crop_service.is_detector_available():
+                await crop_service.process_incident_report(
+                    video_ref=tool_input.video_url,
+                    incident_id=tool_input.incident_id,
+                    model_run_id=tool_input.model_run_id or config.model_run_id,
+                    report=report,
+                )
+        except Exception as crop_exc:
+            logger.warning("incident_report_gen: crop evidence generation skipped: %s", crop_exc)
+
         return IncidentReportGenOutput(
             report=report,
             report_text=report_text,

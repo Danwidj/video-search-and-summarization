@@ -51,13 +51,29 @@ VALID = {
         "location": "shop interior",
     },
     "entities": [
-        {"entity_id": "E1", "type": "human", "description": "Attacker."},
-        {"entity_id": "E2", "type": "human", "description": "Victim."},
+        {"entity_id": "E1", "type": "human", "description": "Attacker.", "timestamp_seconds": 3, "label": "attacker"},
+        {"entity_id": "E2", "type": "human", "description": "Victim.", "timestamp_seconds": 3, "label": "victim"},
     ],
     "instruments": [
-        {"instrument_id": "I1", "entity_id": "E1", "name": "bottle", "description": "Glass.", "threat_level": 3}
+        {
+            "instrument_id": "I1",
+            "entity_id": "E1",
+            "name": "bottle",
+            "description": "Glass.",
+            "threat_level": 3,
+            "timestamp_seconds": 5,
+            "label": "bottle",
+        }
     ],
-    "assets": [{"asset_id": "A1", "name": "counter", "description": "Shop counter."}],
+    "assets": [
+        {
+            "asset_id": "A1",
+            "name": "counter",
+            "description": "Shop counter.",
+            "timestamp_seconds": 3,
+            "label": "counter",
+        }
+    ],
     "timeline": [
         {"start_seconds": 3, "end_seconds": 5, "description": "E1 approaches E2."},
         {"start_seconds": 5, "end_seconds": 11, "description": "E1 strikes E2 with I1."},
