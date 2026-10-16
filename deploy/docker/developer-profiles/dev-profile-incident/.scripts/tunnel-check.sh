@@ -17,6 +17,13 @@ else
   exit 1
 fi
 
+search_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST http://localhost:8000/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"healthcheck","top_k":1}' || echo 000)"
+if [ "$search_code" = "200" ]; then
+  echo "search route ok (localhost:8000/api/v1/incidents/search -> ${VSS_VM_IP}:8000)"
+else
+  echo "search route returned HTTP ${search_code} (expected 200)"
+fi
+
 for port in 30081 30082; do
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://localhost:${port}/v1/models" || echo 000)"
   echo "nim :${port} -> ${VSS_VM_IP}:${port}: HTTP ${code}"

@@ -2,6 +2,23 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: MVP2 start.sh always-on search route startup and readiness check (VM Step 6)
+- **Decision:**
+  - Update `start.sh` so the natural-language incident search route (`POST /api/v1/incidents/search` with an always-on VLM critic and persisted ranking/verdicts) is always brought up and announced alongside `vss-agent` in both `--mode vm` and `--mode local`.
+  - Enforce that there is no opt-in `--search` flag; search is always on on every run, and unknown arguments including `--search` are rejected.
+  - In `--mode local`, replace static `sleep 2` with active readiness polling on `http://127.0.0.1:7777/health` (<5s timeout), confirming mock backend and search route readiness in under 5 seconds.
+  - Extend `.scripts/tunnel-check.sh` to probe `POST http://localhost:8000/api/v1/incidents/search` through the SSH tunnel, verifying always-on search availability in VM mode.
+  - Add comprehensive regression and argument tests for `start.sh` in `eval/tests/test_start_script.py`, checking rejection of `--search` flag, unknown flags, invalid modes, kwanz-ws hostname guard, shellcheck compliance, and <5s local search readiness.
+- **Why:**
+  - Satisfies MVP2 VM backend Step 6 and acceptance criteria: search route is unconditionally mounted on every run with no feature flag, local search launches in under 5 seconds, and ranking and verdicts are persisted.
+  - Ensures reliable developer loops and fast feedback across both VM and zero-GPU mock environments.
+- **Alternatives rejected:**
+  - Introducing an opt-in `--search` flag or `ENABLE_SEARCH` environment variable (rejected: MVP2 architecture mandates search as an always-on core capability).
+  - Retaining fixed `sleep 2` in local mode without health verification (rejected: polling `http://127.0.0.1:7777/health` provides faster startup and deterministic readiness).
+- **Links:** [`../start.sh`](../start.sh); [`../.scripts/tunnel-check.sh`](../.scripts/tunnel-check.sh); [`../eval/tests/test_start_script.py`](../eval/tests/test_start_script.py); [`../mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
+
+---
+
 ### 2026-10-16: Targeted timestamp and detector label backfill over existing official incident reports
 - **Decision:**
   - Build `scripts/backfill_official_timestamps.py` (and test suite `scripts/tests/test_backfill_official_timestamps.py`) to execute an automated, targeted temporal grounding and detector label pass over existing official incident reports (`videos.selected_model_run_id IS NOT NULL`).
