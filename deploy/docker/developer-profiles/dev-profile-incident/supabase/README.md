@@ -121,6 +121,18 @@ agent mode still writes legacy values until prompt-contract phase 3, so
 query-time folding (`canonical_incident_type`, `canonical_entity_type` and the
 console's `canonicalIncidentType`) must stay until this migration is applied
 **and** phase 3 is done.
+
+`migrations/20261016120000_mvp2_evidence_search_and_crops.sql` enables the
+pgvector extension (`CREATE EXTENSION IF NOT EXISTS vector;`), creates the
+unified `evidence_crops` table for item-level evidence crops, detector bounding
+boxes, and 1024-dimensional semantic text embeddings (with an HNSW cosine
+distance index and composite lookup index), creates the `query_results` audit
+table for multi-item retrieval logging and VLM critic verdicts, enables
+Row-Level Security on both tables granting access exclusively to `service_role`,
+and creates the service-role-only `search_evidence_items` RPC function scoped
+strictly to official reports (`videos.selected_model_run_id = ec.model_run_id`).
+Unapplied.
+
 ## Applying these migrations to a Supabase project
 
 From the repo root, using the same `INCIDENT_DB_DSN` you already have
