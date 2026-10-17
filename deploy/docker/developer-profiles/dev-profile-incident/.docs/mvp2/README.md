@@ -92,6 +92,7 @@ Search & Retrieval
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Joins with `videos` (via `selected_model_run_id`) and `incidents` to return candidate metadata.
    - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the cropped screenshot and item description. Both ranking and critic verdicts are persisted into `query_results` before returning results.
+   - **Interim console path (decided 2026-10-17):** the route above stays the MVP2 target, but for now `incident-console-v2` searches Supabase directly through `EvidenceSearchRepository`, keyword-only and without the critic, until the team decides otherwise ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
 
 5. **Query Results** (new table):
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
