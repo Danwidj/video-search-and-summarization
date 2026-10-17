@@ -43,7 +43,7 @@ incident-console-v2/
         mappers/                  # report row <-> domain translation (videos, model_runs, incidents, evidence, review_status, reports)
         client.ts                 # PostgrestClient wrapper and service-role configuration
         index.ts                  # Factory functions getDbAdapters() and getDbHealth()
-      memory/                     # In-memory fakes of each port, for use-case tests
+      memory/                     # In-memory fakes of IncidentRepository and VideoRepository, for use-case tests
 ```
 
 The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. Each adapter maps the RPC JSON it receives and translates database refusals into `StoreRejection` itself (`incidents.ts`, `videos.ts`); `mappers/report.ts` holds the report-row translation.

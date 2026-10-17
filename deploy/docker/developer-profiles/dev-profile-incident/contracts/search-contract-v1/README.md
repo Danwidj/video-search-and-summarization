@@ -6,7 +6,7 @@ Defines the request and response contract for the natural-language incident evid
 ## Background & Scope
 
 Part of MVP2 (natural-language evidence search with object crops for `dev-profile-incident`).
-The contract aligns the mock backend (`mock-backend/base_profile_mock`), the native VM search service (`services/agent`), `incident-console-v2` (PR 118), retrieval eval (PR 119), and Supabase pgvector search (PR 120).
+The contract aligns the mock backend (`mock-backend/base_profile_mock`), the native VM search service (`services/agent`), `incident-console-v2` (PR 118), retrieval eval (PR 119), and Supabase pgvector search (PR 126).
 
 ### Key Decisions & Pilot Adjustments
 - **Pilot spatial grounding finding:** The VLM bounding box accuracy pilot revealed that while VLMs fail at coordinate regression (0% well-framed), temporal grounding is highly accurate (>95% of timestamps land on the correct frame). Therefore, `incident-contract-v3` supplies `timestamp_seconds` and a short detector `label`.
