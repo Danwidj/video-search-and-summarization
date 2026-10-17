@@ -29,7 +29,6 @@ const KNOWN_EXCEPTIONS = {
   'app/api/videos/[videoId]/runs/route.ts': 'run history moves with the verified/AI report split',
   'lib/analysis/run-contract-analysis.ts': 'analysis saving moves with the verified/AI report split',
   'lib/analysis/persistence.ts': 'analysis saving moves with the verified/AI report split',
-  'app/api/reports/[videoId]/delete/route.ts': 'migrating',
 };
 
 const inside = (file, dir) => file.startsWith(`${dir}/`);

@@ -4,13 +4,16 @@
 // ports only; storage signing is passed in as a function, so they never import
 // an adapter, R2 or PostgREST and are tested with in-memory fakes.
 
-import type { IncidentRepository, ReviewState, RunKey } from '@/lib/ports';
+import type { DbAdapters, IncidentRepository, ReviewState, RunKey } from '@/lib/ports';
 import type { ReportView } from '@/lib/reports/report-view';
 import type { ReviewStatus } from '@/lib/reports/storage';
 import { toReportView } from '@/lib/reports/view';
 
 /** Turns a stored object key into a short-lived URL the browser can play. */
 export type SignStorageKey = (storageKey: string) => Promise<string>;
+
+/** Deletes a stored video object and everything derived from it (its thumbnail). */
+export type RemoveStoredVideo = (storageKey: string) => Promise<unknown>;
 
 /** One run's report view; null when the run, its video or its incident is missing. */
 export async function getReport(incidents: IncidentRepository, key: RunKey, sign: SignStorageKey): Promise<ReportView | null> {
@@ -46,4 +49,25 @@ export async function changeReviewStatus(
   if (!next) return { kind: 'unchanged' };
   await incidents.saveReview(key, next);
   return { kind: 'changed', at: now };
+}
+
+/**
+ * Deletes one run's report, or the whole video: its stored objects first, then
+ * the video row (incidents, evidence, reviews and reports cascade) and the run
+ * records that name only this video.
+ */
+export async function deleteReport(
+  { incidents, videos }: DbAdapters,
+  key: RunKey,
+  wholeVideo: boolean,
+  removeStoredVideo: RemoveStoredVideo,
+): Promise<void> {
+  if (!wholeVideo) {
+    await incidents.deleteRun(key);
+    return;
+  }
+  const video = await videos.getVideo(key.videoId);
+  if (video?.storageKey == null) throw new Error('Video has no R2 object key');
+  await removeStoredVideo(video.storageKey);
+  await videos.deleteVideo(key.videoId);
 }
