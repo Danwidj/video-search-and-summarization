@@ -11,8 +11,9 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
+const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
 const { runReportFromRows } = await import('../lib/adapters/supabase/mappers/report.ts');
-const { changeReviewStatus, getReport } = await import('../lib/application/reports.ts');
+const { changeReviewStatus, deleteReport, getReport } = await import('../lib/application/reports.ts');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const KEY = { videoId: smoke.videoId, modelRunId: smoke.modelRunId };
@@ -36,4 +37,35 @@ test('getReport signs the stored key and refuses a run without one', async () =>
 
   const noVideo = new InMemoryIncidentRepository([runReportFromRows({ ...smoke, video: { ...smoke.video, filepath: '' } })]);
   await assert.rejects(getReport(noVideo, KEY, async () => 'unused'), /The report has no linked R2 video/);
+});
+
+function stores(storageKey = smoke.video.filepath) {
+  return {
+    incidents: new InMemoryIncidentRepository([runReportFromRows(smoke)]),
+    videos: new InMemoryVideoRepository([{ videoId: KEY.videoId, storageKey, uploadedAt: null, source: null, officialRunId: null, runsWithReport: [KEY.modelRunId] }]),
+  };
+}
+
+test('deleting one report removes only that run', async () => {
+  const ports = stores();
+  await deleteReport(ports, KEY, false, async () => assert.fail('no stored object is removed for a single report'));
+  assert.equal(await ports.incidents.runExists(KEY), false);
+  assert.notEqual(await ports.videos.getVideo(KEY.videoId), null);
+});
+
+test('deleting a whole video removes its stored objects before the video row', async () => {
+  const ports = stores();
+  const removed = [];
+  await deleteReport(ports, KEY, true, async (storageKey) => {
+    removed.push({ storageKey, videoStillStored: Boolean(await ports.videos.getVideo(KEY.videoId)) });
+  });
+  assert.deepEqual(removed, [{ storageKey: smoke.video.filepath, videoStillStored: true }]);
+  assert.equal(await ports.videos.getVideo(KEY.videoId), null);
+});
+
+test('a whole-video delete refuses a video without a stored object and deletes nothing', async () => {
+  const ports = stores(null);
+  await assert.rejects(deleteReport(ports, KEY, true, async () => assert.fail('nothing to remove')), /Video has no R2 object key/);
+  assert.notEqual(await ports.videos.getVideo(KEY.videoId), null);
+  await assert.rejects(deleteReport(ports, { ...KEY, videoId: 'v-none' }, true, async () => undefined), /Video has no R2 object key/);
 });
