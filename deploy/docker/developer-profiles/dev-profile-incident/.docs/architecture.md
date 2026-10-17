@@ -190,6 +190,22 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
 
 ## 4. Runtime Interaction Sequences
 
+### Console middle layer (ports and adapters)
+
+`incident-console-v2` reaches Supabase through a hexagonal middle layer ([`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md)):
+
+```
+components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (multi-step use cases)
+                                         |                       |
+                                         +-----> lib/ports/* <---+   (domain types + port interfaces)
+                                                      ^
+                                     lib/adapters/supabase/* (getDbAdapters, mappers) --> lib/postgrest/client.ts --> PostgREST
+```
+
+- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns; `lib/adapters/supabase/mappers/` translates rows and RPC JSON into camelCase domain types, and database refusals into `StoreRejection`.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. Health, the videos list, official selection and edit call a port directly.
+- Not yet behind the ports (listed in `tests/architecture.test.mjs`): `/api/dashboard` and `/api/reports` (until the lazy-loading change lands), ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+
 ### Report library pagination and deferred report loading
 
 ```mermaid
@@ -209,7 +225,7 @@ sequenceDiagram
     UI-->>User: Lazy screenshot images or skeleton fallback
     User->>UI: Open one report
     UI->>API: GET /api/reports/videoId?run=modelRunId
-    API->>DB: Read selected report graph
+    API->>DB: Read selected report graph (IncidentRepository.getRunReport)
     API->>R2: Create selected object's signed URL
     API-->>UI: Full report + playback URL
 ```

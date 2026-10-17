@@ -18,7 +18,7 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (ERD, table specs, `inse
 | Caller / network | Client | Credentials |
 |---|---|---|
 | Agent on `kwanz-ws` (port 5432 DPI-blocked) | PostgREST over HTTPS (`supabase-py`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` |
-| `incident-console-v2` and `eval/` writers | PostgREST (`lib/postgrest/client.ts`, `eval/db_postgrest.py`) | same |
+| `incident-console-v2` and `eval/` writers | PostgREST (console: adapters in `lib/adapters/supabase/` plus the not-yet-migrated callers listed in `tests/architecture.test.mjs`, all over `lib/postgrest/client.ts`; `eval/db_postgrest.py`) | same |
 | Laptop tooling, `supabase` CLI, v1 console | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
 All PostgREST writers must use `/rpc/insert_incident` for the `incidents` + `review_status` pair. PostgREST has no client-held transactions.
