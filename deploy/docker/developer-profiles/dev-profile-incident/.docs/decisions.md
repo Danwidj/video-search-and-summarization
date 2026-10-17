@@ -2,6 +2,12 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-18: Detect VSS_VM_IP from the VM in start.sh vm mode
+- **Decision:** When `VSS_VM_IP` is unset, `start.sh --mode vm` reads the VM's default-route source address over the existing SSH connection (`ip -4 route get 1.1.1.1`), falling back to `10.131.1.5` if that fails. An explicit `VSS_VM_IP` still wins.
+- **Why:** The VM's DHCP LAN address moved from `10.131.1.5` to `10.132.56.251`, so the hardcoded default broke the tunnel forwards without a manual override.
+- **Alternatives rejected:** Updating the hardcoded default (breaks again on the next change); using the Tailscale address (the services bind and are reached on the LAN address); also changing `.scripts/tunnel.sh` (out of scope here, still defaults to `10.131.1.5`).
+- **Links:** [`start.sh`](../start.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
+
 ### 2026-10-17: MVP2 database migration for evidence_crops, query_results, and search_evidence_items RPC
 - **Decision:**
   - Add Supabase migration `20261016120000_mvp2_evidence_search_and_crops.sql` establishing the pgvector semantic search and audit storage layer.

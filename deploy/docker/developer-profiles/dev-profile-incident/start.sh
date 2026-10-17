@@ -65,7 +65,9 @@
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
 #   VSS_SSH_HOST             VM hostname (default: kwanz-ws)
-#   VSS_VM_IP                VM address for the tunnel forwards (default: 10.131.1.5)
+#   VSS_VM_IP                VM address for the tunnel forwards. If unset, detected
+#                            from the VM over SSH (its default-route source address),
+#                            falling back to 10.131.1.5 if detection fails.
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
 #                            behavior-analytics natively, plus elasticsearch/kafka in Docker
@@ -136,7 +138,6 @@ trap cleanup EXIT INT TERM
 if [ "$VSS_START_MODE" = "vm" ]; then
   # shellcheck source=.scripts/resolve-ssh-target.sh
   source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
-  VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
@@ -162,6 +163,17 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     fi
     echo "  Fix: Check your 'Host kwanz-ws' entry in ~/.ssh/config and ensure Tailscale/network is connected." >&2
     exit 1
+  fi
+
+  if [ -z "${VSS_VM_IP:-}" ]; then
+    VSS_VM_IP="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
+      'ip -4 route get 1.1.1.1' 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1 || true)"
+    if [ -n "$VSS_VM_IP" ]; then
+      echo "start.sh: detected VM address $VSS_VM_IP (set VSS_VM_IP to override)."
+    else
+      VSS_VM_IP="10.131.1.5"
+      echo "start.sh: could not detect the VM address; falling back to $VSS_VM_IP (set VSS_VM_IP to override)." >&2
+    fi
   fi
 
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="

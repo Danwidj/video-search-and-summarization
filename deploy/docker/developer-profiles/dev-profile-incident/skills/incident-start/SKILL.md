@@ -55,7 +55,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 
 The console runs in the foreground. Ctrl-C stops it, along with the backgrounded mock, gateway and tunnel.
 
-Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh).
+Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). In vm mode `VSS_VM_IP` is detected from the VM over SSH when unset (fallback `10.131.1.5`); set it only to force an address.
 
 ## Verify
 

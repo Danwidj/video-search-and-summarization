@@ -104,7 +104,7 @@ The primary UI (`incident-console-v2`) runs locally on developer laptops. Runnin
 
 ### SSH Port Tunneling (Manual / Standalone)
 
-`start.sh --mode vm` manages the tunnel automatically. If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
+`start.sh --mode vm` manages the tunnel automatically. It detects the VM's LAN address over SSH (`ip -4 route get 1.1.1.1`, `src` field) unless `VSS_VM_IP` is set, and falls back to `10.131.1.5` if detection fails. `.scripts/tunnel.sh` does not detect: it still defaults to `10.131.1.5`, so set `VSS_VM_IP` when the address has changed (currently `10.132.56.251`). If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident
