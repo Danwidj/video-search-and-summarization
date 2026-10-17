@@ -77,7 +77,7 @@ Active configuration inspected in `/srv/rise-up/vss/deploy/docker/developer-prof
 |---|---|---|
 | `VSS_APPS_DIR` | `/srv/rise-up/vss/deploy/docker` | Points to docker deployment directory |
 | `VSS_DATA_DIR` | `/srv/rise-up/vss-apps-data` | Persistent container volume mounts on host |
-| `HOST_IP` | `10.131.1.5` | VM internal network interface IP |
+| `HOST_IP` | `10.132.56.251` | VM internal network interface IP (DHCP changed from `10.131.1.5`; `.scripts/vm-ensure-docker.sh` updates automatically) |
 | `EXTERNAL_IP` | `localhost` | Embedded URL host for tunneled browser access |
 | `VSS_AGENT_CONFIG_FILE` | `./deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` | Base profile config providing report-generation |
 | `REPORT_REFERENCE_BASE_DIR` | `/tmp` | Required by agent evaluation config schema |

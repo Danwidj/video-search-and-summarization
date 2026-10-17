@@ -138,10 +138,11 @@ flowchart TD
     LocalInit --> RunV2Local["Launch incident-console-v2 (Port 3200)"]
 
     %% VM Mode Path
-    CheckMode -->|vm| CheckSSH["Check VM State via SSH<br/>(docker compose ps & native-services.sh status)"]
+    CheckMode -->|vm| Preflight["SSH Preflight & IP Detection<br/>(.scripts/vm-preflight.sh)"]
+    Preflight --> CheckSSH["Check VM State via SSH<br/>(docker compose ps & native-services.sh status)"]
     CheckSSH --> StateDecision{Deploy State?}
     
-    StateDecision -->|Nothing Running| FreshDeploy["Deploy Docker Appliances over SSH<br/>Start Native Services via native-services.sh"]
+    StateDecision -->|Nothing Running| FreshDeploy["Deploy Docker Appliances over SSH (.scripts/vm-ensure-docker.sh)<br/>Start Native Services via native-services.sh"]
     StateDecision -->|Partial State| SelfHeal["Self-Heal: Start only missing Docker & Native services"]
     StateDecision -->|All Running| Ready["Backend Ready"]
     
@@ -149,21 +150,23 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777, 30081, 30082<br/>then wait for localhost:8000/health"] --> VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777, 30081, 30082<br/>then wait for localhost:8000/health"] --> CheckConsole{--no-console?}
+    CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
+    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
 ### SSH Tunnel Port Forwards
 
 When running in VM mode, `start.sh` opens a backgrounded SSH tunnel (the standalone equivalent is `.scripts/tunnel.sh`) forwarding the following
-ports from `localhost` to `kwanz-ws` (`10.131.1.5`):
+ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4 route get 1.1.1.1`, fallback `10.131.1.5`, currently `10.132.56.251`):
 
 | Local Port | Remote Destination | Target Service | Usage |
 |---|---|---|---|
-| `8000` | `10.131.1.5:8000` | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
-| `7777` | `10.131.1.5:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
-| `30081` | `10.131.1.5:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
-| `30082` | `10.131.1.5:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |
+| `8000` | `<vm-ip>:8000` | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
+| `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
+| `30081` | `<vm-ip>:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
+| `30082` | `<vm-ip>:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |
 
 ---
 

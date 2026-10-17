@@ -117,10 +117,10 @@ To verify active tunnel ports:
 ```
 
 Forwarded ports:
-- `localhost:8000` -> `10.131.1.5:8000` (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
-- `localhost:7777` -> `10.131.1.5:7777` (`vss-haproxy-ingress`)
-- `localhost:30081` -> `10.131.1.5:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
-- `localhost:30082` -> `10.131.1.5:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
+- `localhost:8000` -> `<vm-ip>:8000` (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
+- `localhost:7777` -> `<vm-ip>:7777` (`vss-haproxy-ingress`)
+- `localhost:30081` -> `<vm-ip>:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
+- `localhost:30082` -> `<vm-ip>:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
 
 ### SSH Username Resolution & Troubleshooting
 
@@ -186,7 +186,7 @@ Forwarded ports:
 The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`) configures container volume mounts, networking, and remote inference routing. Follow these standing principles when configuring the environment:
 
 1. **Absolute App and Data Directories:** `VSS_APPS_DIR` must point to the absolute path of `deploy/docker` on the host filesystem so Docker Compose `include:` directives resolve correctly. `VSS_DATA_DIR` must point to the persistent data volume on the host.
-2. **Dual-IP Network Topology:** `HOST_IP` must be set to the workstation's internal network IP (`10.131.1.5`) for inter-container communication, while `EXTERNAL_IP` must be `localhost` so response URLs function over developer SSH port tunnels.
+2. **Dual-IP Network Topology:** `HOST_IP` must be set to the workstation's internal network IP (currently `10.132.56.251`, previously `10.131.1.5`; `.scripts/vm-ensure-docker.sh` detects and updates stale entries automatically) for inter-container communication, while `EXTERNAL_IP` must be `localhost` so response URLs function over developer SSH port tunnels.
 3. **Base Config for Incident Profile:** `VSS_AGENT_CONFIG_FILE` must reference the `dev-profile-base` agent configuration; the shipped search configuration lacks the required `report_agent` and `video_report_gen` modules.
 4. **Evaluation Directory Guard:** `REPORT_REFERENCE_BASE_DIR` must be defined (e.g. `/tmp`) to satisfy the NAT configuration schema and prevent startup crashes.
 5. **Stream Processor Port Alignment:** `STREAM_PROCESSOR_HTTP_PORT` must be 10000 — the streamprocessing HTTP port that vss-vios-ingress (:30888) proxies `/vst/api/v1` and `/vst/storage` to.
