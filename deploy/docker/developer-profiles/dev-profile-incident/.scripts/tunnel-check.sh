@@ -8,7 +8,7 @@
 # HTTP level — any status code proves the forward works (a 4xx from the NIM
 # is still the NIM answering).
 
-VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
+VSS_VM_IP="${VSS_VM_IP:-the VM}"
 
 if curl -sf --max-time 15 http://localhost:8000/health | grep -q isAlive; then
   echo "agent ok (localhost:8000 -> ${VSS_VM_IP}:8000)"

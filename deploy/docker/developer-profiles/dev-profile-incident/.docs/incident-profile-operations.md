@@ -104,7 +104,7 @@ The primary UI (`incident-console-v2`) runs locally on developer laptops. Runnin
 
 ### SSH Port Tunneling (Manual / Standalone)
 
-`start.sh --mode vm` manages the tunnel automatically. It detects the VM's LAN address over SSH (`ip -4 route get 1.1.1.1`, `src` field) unless `VSS_VM_IP` is set, and falls back to `10.131.1.5` if detection fails. `.scripts/tunnel.sh` does not detect: it still defaults to `10.131.1.5`, so set `VSS_VM_IP` when the address has changed (currently `10.132.56.251`). If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
+`start.sh --mode vm` manages the tunnel automatically. `start.sh` and `.scripts/tunnel.sh` detect the VM's LAN address over SSH (`ip -4 route get 1.1.1.1`, `src` field) unless `VSS_VM_IP` is set, and fall back to `10.131.1.5` if detection fails (currently `10.132.56.251`). If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident
@@ -132,10 +132,27 @@ Forwarded ports:
 
 **Mode Isolation & Preflight Check:**
 - **Local Mode (`--mode local`):** Never sources `resolve-ssh-target.sh` and never touches SSH at all.
-- **VM Mode (`--mode vm`):** Runs a fast SSH preflight check (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`) before any tunnel, deploy check, env generation, npm install, or UI start. If the check fails, `start.sh` aborts immediately with non-zero exit status and an actionable error message.
+- **VM Mode (`--mode vm`):** Runs a fast SSH preflight check (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`, one retry on a timeout) before any tunnel, deploy check, env generation, npm install, or UI start. If it fails, `start.sh` aborts with a non-zero exit status, the raw SSH error, the classified cause and the next step (`.scripts/vm-preflight.sh`).
+
+**VM unreachable: causes `start.sh` reports**
+
+| Cause | Detected from | Next step it prints |
+|---|---|---|
+| Tailscale not logged in | `tailscale status --json` `BackendState` `NeedsLogin` | `tailscale up` / sign in |
+| Tailscale stopped, or its daemon not running | `Stopped` / CLI cannot reach `tailscaled` | `tailscale up` / open the app |
+| VM offline in the tailnet | the VM's peer entry has `Online: false` | power on the VM or restart its `tailscaled` |
+| Host name does not resolve | ssh `Could not resolve hostname` | fix `HostName` in `~/.ssh/config`, MagicDNS, or `VSS_SSH_HOST` |
+| SSH timeout | ssh `timed out` | `tailscale ping`; VM off, ACL or firewall |
+| SSH server not running | ssh `Connection refused` | `sudo systemctl start ssh` from the VM console |
+| No route | `No route to host` / `Network is unreachable` | check Wi-Fi/VPN/Tailscale |
+| Login rejected | `Permission denied` | `VSS_SSH_USER`, `ssh-add -l`, authorised key |
+| Host key changed | `Host key verification failed` | `ssh-keygen -R <host>` |
+
+**Reachable VM, services down or missing:** `start.sh` lists what is missing and runs `.scripts/vm-ensure-docker.sh` on the VM (piped over SSH, so the laptop copy always runs). It clones the repo if `VSS_REPO_ROOT` has no checkout, stops with instructions if `generated.env.remote` is missing (secrets cannot be generated), rewrites a stale `HOST_IP` there to the VM's current address (timestamped `.bak-` copy first), pulls images that are not on the VM (`docker compose pull --ignore-buildable --include-deps --policy missing`; `mdx-*` images are built by `up`), and runs `docker compose up -d` under `VSS_COMPOSE_UP_TIMEOUT` (default 600 s). On a timeout it prints container states and the last Kafka / broker health-check log lines. Native services start under `VSS_NATIVE_START_TIMEOUT` (default 300 s). A stale `HOST_IP` was the cause of the 2026-10-18 hang: the Kafka broker health check never passed.
 
 **Troubleshooting Gotchas:**
-- **SSH Preflight Fails:** Ensure Tailscale is active and connected, and verify your `Host kwanz-ws` entry in `~/.ssh/config` is configured with the correct `HostName` and `User`.
+- **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host kwanz-ws` entry in `~/.ssh/config` has the correct `HostName` and `User`.
+- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (wrong `VSS_VM_IP`: agent healthy on the VM but unreachable at that address), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`).
 - **Wrong User Account:** Each teammate has a provisioned account on `kwanz-ws`. Configure `User <your-vm-username>` under `Host kwanz-ws` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---

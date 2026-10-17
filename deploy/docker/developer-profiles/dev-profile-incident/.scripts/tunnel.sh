@@ -24,8 +24,8 @@
 # dev-profile-incident/.env INCIDENT_AGENT_BASE_URL) and the tunneled LLM at
 # http://localhost:30081/v1 (set in the untracked incident-console/.env.local,
 # replacing the mock default http://localhost:8900/v1 - see
-# incident-console/README.md). Override VSS_SSH_TARGET / VSS_VM_IP only when
-# your login or the VM address differs from the defaults below.
+# incident-console/README.md). The VM address is detected over SSH (default-route source
+# address); set VSS_VM_IP / VSS_SSH_TARGET only to force a different address or login.
 #
 # Run this in the foreground (Ctrl-C closes it). Run it first, then start
 # the console locally against the tunneled backend. The `start.sh` wrapper
@@ -39,12 +39,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=resolve-ssh-target.sh
 source "${SCRIPT_DIR}/resolve-ssh-target.sh"
-VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
+# shellcheck source=vm-preflight.sh
+source "${SCRIPT_DIR}/vm-preflight.sh"
 
 if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then
   echo "tunnel.sh: run this from your laptop, not on kwanz-ws (it forwards laptop ports to the VM)." >&2
   exit 1
 fi
+
+vm_preflight_ssh || exit 1
+VSS_VM_IP="$(vm_detect_ip)"
 
 ssh -N \
   -L 8000:"$VSS_VM_IP":8000 \

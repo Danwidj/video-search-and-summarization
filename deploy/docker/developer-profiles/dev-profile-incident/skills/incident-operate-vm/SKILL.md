@@ -60,7 +60,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Stop everything safely | `./down.sh` (native stop + `compose down --remove-orphans`, no `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
 | Load NGC credentials | `source ./ngc-env.sh` |
 
-A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state.
+A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state (clones a missing checkout, fixes a stale `HOST_IP` in `generated.env.remote` with a backup, pulls missing images, bounded `compose up`; see `.scripts/vm-ensure-docker.sh`).
 
 ### 3. Agent editable reinstall
 
