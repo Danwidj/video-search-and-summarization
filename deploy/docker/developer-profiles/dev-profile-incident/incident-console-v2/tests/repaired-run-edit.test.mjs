@@ -16,7 +16,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { PATCH } = await import('../app/api/reports/[videoId]/edit/route.ts');
 const { draftFromView, editFromDraft } = await import('../lib/reports/edit-draft.ts');
-const { buildReportView } = await import('../lib/reports/view.ts');
+const { buildReportView } = await import('../lib/adapters/supabase/mappers/report.ts');
 
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const clone = (value) => JSON.parse(JSON.stringify(value));
