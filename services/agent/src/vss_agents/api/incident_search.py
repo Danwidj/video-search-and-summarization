@@ -38,6 +38,8 @@ from pydantic import Field
 from pydantic import field_validator
 
 from vss_agents.utils import incident_db
+from vss_agents.utils.embeddings import EMBEDDING_DIMENSIONS
+from vss_agents.utils.embeddings import RemoteTextEmbedder
 from vss_agents.utils.r2 import resolve_r2_url
 
 logger = logging.getLogger(__name__)
@@ -609,16 +611,19 @@ class QueryEmbedder(ABC):
 class DefaultQueryEmbedder(QueryEmbedder):
     """Default query text embedder adapter.
 
-    TODO(PR-120): Owned by PR #120 / PR #119 (embedding benchmark and selection).
-    Wire this adapter to the chosen embedding model (NeMo / text-embedding-3 / MiniLM)
-    once finalized.
+    Uses the remote embedding endpoint (the same model the evidence loader embeds descriptions with)
+    when an embedding API key is configured. Otherwise falls back to a deterministic placeholder
+    vector so zero-VM mock runs and unit tests need no credentials.
     """
 
-    def __init__(self, vector_dim: int = 1024) -> None:
+    def __init__(self, vector_dim: int = EMBEDDING_DIMENSIONS, remote: RemoteTextEmbedder | None = None) -> None:
         self.vector_dim = vector_dim
+        self._remote = remote or RemoteTextEmbedder(dimensions=vector_dim)
 
     async def embed_query(self, query: str) -> list[float]:
-        # Deterministic normalized unit vector placeholder for query text
+        if self._remote.is_configured():
+            return await self._remote.embed_query(query)
+        logger.warning("No embedding API key configured; using the deterministic placeholder query embedding")
         val = sum(ord(c) for c in query) % 100 / 100.0
         vec = [val] * self.vector_dim
         norm = (sum(x * x for x in vec)) ** 0.5 or 1.0
