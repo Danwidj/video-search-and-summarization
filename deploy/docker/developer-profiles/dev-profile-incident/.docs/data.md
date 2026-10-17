@@ -229,6 +229,36 @@ erDiagram
         datetime matched_at "DateTime, naive UTC (DB default)"
     }
 
+    EVIDENCE_CROPS {
+        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
+        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
+        string item_type PK "String(16), check entity/instrument/asset"
+        string item_id PK "String(20), sequential item identifier"
+        string item_name "String(256), item name or detector label"
+        text description "Text, visual description"
+        int threat_level "Integer, 1-5 or null"
+        string holder_entity_id "String(20), wielding entity or null"
+        int timestamp_seconds "Integer, video offset"
+        int_array bounding_box "Integer[4], normalized [ymin, xmin, ymax, xmax]"
+        string image "String(1024), R2 crop key"
+        vector embedding "Vector(1024), semantic text embedding"
+        datetime created_at "DateTime, naive UTC (DB default)"
+    }
+
+    QUERY_RESULTS {
+        string id PK "String(36), UUID or hex"
+        string query_id FK "String(20) -> queries.id ON DELETE CASCADE"
+        string incident_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
+        string model_run_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
+        string item_type "String(16), entity / instrument / asset"
+        string item_id "String(20)"
+        int rank "Integer, 1-based"
+        float similarity_score "Double precision, 1 - distance"
+        string critic_verdict "String(16), confirmed / rejected / unverified"
+        text critic_rationale "Text, critic justification"
+        datetime retrieved_at "DateTime, naive UTC (DB default)"
+    }
+
     VIDEOS ||--o{ INCIDENTS : "1 video = 1 incident (ON DELETE CASCADE)"
     VIDEOS ||--o{ GT_INCIDENTS : "has ground truth (ON DELETE CASCADE)"
     MODEL_RUNS ||--o{ INCIDENTS : "scores (ON DELETE CASCADE)"
@@ -238,6 +268,9 @@ erDiagram
     INCIDENTS ||--o{ ENTITIES : "contains (ON DELETE CASCADE)"
     INCIDENTS ||--o{ INSTRUMENTS : "involves (ON DELETE CASCADE)"
     INCIDENTS ||--o{ ASSETS : "impacts (ON DELETE CASCADE)"
+    INCIDENTS ||--o{ EVIDENCE_CROPS : "contains crops (ON DELETE CASCADE)"
+    QUERIES ||--o{ QUERY_RESULTS : "logs results (ON DELETE CASCADE)"
+    INCIDENTS ||--o{ QUERY_RESULTS : "audits (ON DELETE CASCADE)"
     INCIDENTS ||--o| REVIEW_STATUS : "tracks review (ON DELETE CASCADE)"
     INCIDENTS ||--o{ NOTIFICATIONS : "triggers alerts (ON DELETE CASCADE)"
     INCIDENTS ||--o{ SEVERITY_EVAL_LOG : "evaluates (ON DELETE CASCADE)"
@@ -574,7 +607,7 @@ Database access is split across two client implementations according to operatio
 **Pending:** migration `20261016000000_enable_rls_and_lockdown_anon.sql` has not been applied to the live database yet. Until it is, RLS stays disabled and `anon`/`authenticated` keep full access. Once applied, it enables Row-Level Security on all 22 public schema tables (`relrowsecurity = true`) to close known issue 8, with this effect:
 - **Default-deny:** With RLS enabled and no permissive policies defined, anonymous (`anon`) and standard authenticated (`authenticated`) roles cannot read, insert, update, or delete rows in any table.
 - **Revoked grants:** All table and sequence privileges in schema `public` are explicitly revoked from `anon` and `authenticated`.
-- **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`) were already restricted to `service_role`.
+- **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`, `search_evidence_items`) are likewise restricted to `service_role`.
 - **Default privileges:** These apply only to objects later created by the migrating role (`postgres`). In schema `public` they grant no table, sequence or function privileges to `anon` or `authenticated` and grant all to `service_role`. Globally, new functions get no `EXECUTE` for `PUBLIC` (`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`), so `anon` and `authenticated` cannot inherit it. Objects created by other roles are not covered, so each new function should still carry its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`, as earlier migrations do.
 - **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold PostgreSQL's `BYPASSRLS` attribute (`rolbypassrls = true`), preserving full access without regression. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it, so it would change nothing.
 
