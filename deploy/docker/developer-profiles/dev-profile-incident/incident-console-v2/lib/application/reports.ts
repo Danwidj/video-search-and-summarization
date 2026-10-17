@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Report use cases: what a route asks for, in domain terms. They depend on
-// ports only; storage signing is passed in as a function, so they never import
-// an adapter, R2 or PostgREST and are tested with in-memory fakes.
+// ports only; R2 signing and deletion are passed in as functions, so they never
+// import an adapter, R2 or PostgREST and are tested with in-memory fakes.
 
 import type { DbAdapters, IncidentRepository, ReviewState, RunKey } from '@/lib/ports';
 import type { ReportView } from '@/lib/reports/report-view';
