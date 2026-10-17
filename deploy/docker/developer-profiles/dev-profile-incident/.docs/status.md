@@ -64,7 +64,7 @@ Current delivery status verified against the codebase:
 3. **Possible contract v4:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
 4. **Apply legacy type/entity and orphan cleanup migration** (phase 4: `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`) to shared Supabase once approved; legacy table cleanup remains separate. Query-time folding can be dropped once it is applied (phase 3 is now done).
 5. **Apply RLS lockdown migration** (`20261016000000_enable_rls_and_lockdown_anon.sql`) to shared Supabase once approved; **tiered client-side RLS policies** (if direct browser client auth is introduced) and **writer consolidation (Option B).**
-6. **Apply MVP2 evidence crops and search migration** (`20261016120000_mvp2_evidence_search_and_crops.sql`: pgvector extension, `evidence_crops`, `query_results`, RLS lockdown, `search_evidence_items` RPC) to shared Supabase once approved.
+6. ~~**Apply MVP2 evidence crops and search migration** (`20261016120000_mvp2_evidence_search_and_crops.sql`: pgvector extension, `evidence_crops`, `query_results`, RLS lockdown, `search_evidence_items` RPC) to shared Supabase once approved.~~ **Done (applied to shared Supabase; evidence_crops populated on kwanz-ws).**
 
 ---
 

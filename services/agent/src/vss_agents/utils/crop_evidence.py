@@ -185,7 +185,7 @@ def encode_jpeg(frame_crop: np.ndarray, quality: int = 85) -> bytes | None:
     if cv2 is not None:
         success, buf = cv2.imencode(".jpg", frame_crop, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         if success and buf is not None:
-            return buf.tobytes()
+            return bytes(buf.tobytes())
 
     try:
         if len(frame_crop.shape) == 3 and frame_crop.shape[2] == 3:

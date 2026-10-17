@@ -27,6 +27,7 @@ import os
 import time
 from typing import Any
 from typing import Literal
+from typing import cast
 import uuid
 
 from fastapi import APIRouter
@@ -922,7 +923,7 @@ def create_incident_search_router(
             execution_time_ms=elapsed_ms,
             hits=hits,
         )
-        return response.model_dump()
+        return cast("dict[str, Any]", response.model_dump())
 
     return router
 
