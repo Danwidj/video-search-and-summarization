@@ -42,6 +42,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_VLM_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
 DEFAULT_VLM_MODEL = "nvidia/cosmos-3-super-reasoner"
 DEFAULT_CRITIC_TIMEOUT_SECONDS = 30.0
+DEFAULT_CRITIC_DELAY_SECONDS = 1.0
+CRITIC_DELAY_ENV_VAR = "INCIDENT_SEARCH_CRITIC_DELAY_SECONDS"
+
+
+def _get_critic_delay_seconds(configured_delay: float | None = None) -> float:
+    """Resolve the delay between critic calls in seconds.
+
+    Checks configured_delay first, then INCIDENT_SEARCH_CRITIC_DELAY_SECONDS environment variable,
+    falling back to DEFAULT_CRITIC_DELAY_SECONDS (1.0s). 0 disables the delay.
+    """
+    if configured_delay is not None:
+        return max(0.0, float(configured_delay))
+    raw = os.getenv(CRITIC_DELAY_ENV_VAR)
+    if raw is not None:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            logger.warning(
+                "Invalid %s=%r; falling back to default %s",
+                CRITIC_DELAY_ENV_VAR,
+                raw,
+                DEFAULT_CRITIC_DELAY_SECONDS,
+            )
+    return DEFAULT_CRITIC_DELAY_SECONDS
 
 
 # =============================================================================
@@ -588,6 +612,7 @@ def create_incident_search_router(
     store: SearchStore | None = None,
     critic: CriticEvaluator | None = None,
     embedder: QueryEmbedder | None = None,
+    critic_delay_seconds: float | None = None,
 ) -> APIRouter:
     """Build the POST /api/v1/incidents/search router implementing search-contract-v1."""
     router = APIRouter()
@@ -626,7 +651,9 @@ def create_incident_search_router(
             max_severity=max_sev,
         )
 
-        # 3. Always-on critic evaluation per candidate hit
+        # 3. Always-on critic evaluation per candidate hit with configurable delay spacing
+        delay = _get_critic_delay_seconds(critic_delay_seconds)
+
         async def _evaluate_hit(rank: int, cand: EvidenceCandidate) -> SearchHit:
             item = ItemHit(
                 item_type=cand.item_type,
@@ -672,7 +699,13 @@ def create_incident_search_router(
                 critic=verdict,
             )
 
-        eval_tasks = [_evaluate_hit(rank, cand) for rank, cand in enumerate(candidates, start=1)]
+        eval_tasks: list[asyncio.Task[SearchHit]] = []
+        for idx, cand in enumerate(candidates):
+            rank = idx + 1
+            if idx > 0 and delay > 0:
+                await asyncio.sleep(delay)
+            eval_tasks.append(asyncio.create_task(_evaluate_hit(rank, cand)))
+
         hits: list[SearchHit] = await asyncio.gather(*eval_tasks) if eval_tasks else []
 
         # 4. Persist query and query_results audit trail through SearchStore port
@@ -711,13 +744,28 @@ def create_incident_search_router(
     return router
 
 
-def register_incident_search_routes(app: FastAPI, config: Any = None) -> None:
+def register_incident_search_routes(
+    app: FastAPI,
+    config: Any = None,
+    store: SearchStore | None = None,
+    critic: CriticEvaluator | None = None,
+    embedder: QueryEmbedder | None = None,
+    critic_delay_seconds: float | None = None,
+) -> None:
     """Register POST /api/v1/incidents/search on the FastAPI application.
 
     The search route is always-on with no feature flag, matching the MVP2 architecture specification.
     """
     try:
-        app.include_router(create_incident_search_router(config))
+        app.include_router(
+            create_incident_search_router(
+                config=config,
+                store=store,
+                critic=critic,
+                embedder=embedder,
+                critic_delay_seconds=critic_delay_seconds,
+            )
+        )
         logger.info("Registered POST /api/v1/incidents/search (Always-On Critic)")
     except Exception as exc:
         logger.error("Failed to register incident search route: %s", exc, exc_info=True)
