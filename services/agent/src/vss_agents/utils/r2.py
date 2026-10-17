@@ -97,7 +97,7 @@ def resolve_r2_url(key_or_url: str, expires_in: int = 3600) -> str:
     - If the input points to a dummy mock domain ('pub-r2.example.com'), strips the
       mock host to extract the underlying object key.
     - If the input is already a valid non-dummy http/https URL, returns it directly.
-    - If a public base URL is configured via R2_PUBLIC_URL or INCIDENT_VIDEO_BASE_URL,
+    - If a public base URL is configured via INCIDENT_VIDEO_BASE_URL,
       returns the public URL.
     - If Cloudflare R2 credentials are configured, generates a presigned R2 URL.
     - Otherwise returns the key or original URL as fallback.
@@ -118,7 +118,7 @@ def resolve_r2_url(key_or_url: str, expires_in: int = 3600) -> str:
     clean_key = ref.lstrip("/")
 
     # Check for public base URL
-    public_base = (os.getenv("R2_PUBLIC_URL") or os.getenv("INCIDENT_VIDEO_BASE_URL") or "").strip()
+    public_base = (os.getenv("INCIDENT_VIDEO_BASE_URL") or "").strip()
     if public_base:
         return f"{public_base.rstrip('/')}/{clean_key}"
 

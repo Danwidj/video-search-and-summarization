@@ -575,16 +575,16 @@ def get_default_search_store() -> SearchStore:
 
     Selection policy:
     1. Check INCIDENT_SEARCH_STORE environment variable:
-       - 'memory' | 'in_memory' | 'mock' -> InMemorySearchStore()
-       - 'supabase' | 'live' | 'db' -> SupabaseSearchStore()
+       - 'memory' -> InMemorySearchStore()
+       - 'supabase' -> SupabaseSearchStore()
     2. Fallback based on database configuration:
        - If incident_db.is_configured() -> SupabaseSearchStore()
        - Otherwise -> InMemorySearchStore() (for local zero-VM/mock use)
     """
     mode = (os.getenv("INCIDENT_SEARCH_STORE") or "").strip().lower()
-    if mode in ("memory", "in_memory", "mock"):
+    if mode == "memory":
         return InMemorySearchStore()
-    if mode in ("supabase", "live", "db"):
+    if mode == "supabase":
         return SupabaseSearchStore()
 
     if incident_db.is_configured():

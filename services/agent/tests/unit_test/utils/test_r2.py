@@ -42,7 +42,6 @@ def _clear_r2_state(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
         "R2_ACCESS_KEY",
         "R2_SECRET_KEY",
         "R2_BUCKET",
-        "R2_PUBLIC_URL",
         "INCIDENT_VIDEO_BASE_URL",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -141,7 +140,7 @@ def test_resolve_r2_url_strips_pub_r2_and_presigns(monkeypatch: pytest.MonkeyPat
 
 
 def test_resolve_r2_url_public_base_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("R2_PUBLIC_URL", "https://pub-r2.mycdn.net")
+    monkeypatch.setenv("INCIDENT_VIDEO_BASE_URL", "https://pub-r2.mycdn.net")
     key = "evidence/Assault001/m1/instruments/I1.jpg"
     assert resolve_r2_url(key) == "https://pub-r2.mycdn.net/evidence/Assault001/m1/instruments/I1.jpg"
 
