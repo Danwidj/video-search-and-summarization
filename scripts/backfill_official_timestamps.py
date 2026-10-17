@@ -17,8 +17,12 @@
 
 For each official report (videos.selected_model_run_id is not null), for each
 entity, instrument, and asset item, this script sends the video (or clip window)
-plus the item's existing description to the VLM to obtain timestamp_seconds and
-a concise detector label (incident-contract-v3 fields).
+plus the item's existing description to the remote VLM to obtain timestamp_seconds and
+a concise detector label (incident-contract-v3 fields), crops the item out of the video
+frame at that second (bounding box also from the remote VLM), uploads the crop to
+Cloudflare R2, embeds the item description with the remote embedding endpoint and upserts
+the evidence_crops row in Supabase. Needs the R2_*, INCIDENT_SUPABASE_*, VLM
+(VLM_GATEWAY_API_KEY or OPENAI_API_KEY, VLM_BASE_URL) and embedding (NVIDIA_API_KEY) settings.
 
 - Crucial invariants:
 - Never changes the report's text, IDs, severity, or human edits.
@@ -60,6 +64,11 @@ for path in (REPO_ROOT, AGENT_SRC, PROFILE_DIR):
         sys.path.insert(0, str(path))
 
 logger = logging.getLogger("backfill_official_timestamps")
+
+DEFAULT_VLM_MODEL = os.getenv("VLM_NAME") or "nvidia/cosmos-3-nano-reasoner"
+DEFAULT_DETECTOR = "vlm"
+GROUNDING_MAX_ATTEMPTS = 4
+RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 ITEM_TYPE_TO_COLLECTION = {
     "entity": "entities",
@@ -137,6 +146,7 @@ class EvidenceCropRecord:
     threat_level: int | None = None
     holder_entity_id: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    embedding: list[float] | None = None
 
 
 @dataclass
@@ -158,8 +168,8 @@ class BackfillOptions:
     concurrency: int = 4
     dry_run: bool = False
     video_id: str | None = None
-    model: str = "nvidia/cosmos-3-nano-reasoner"
-    detector: str = "grounding_dino"
+    model: str = DEFAULT_VLM_MODEL
+    detector: str = DEFAULT_DETECTOR
     input_file: Path | None = None
     output_file: Path | None = None
     verbose: bool = False
@@ -225,7 +235,7 @@ class CropClient(Protocol):
         model_run_id: str,
         collection: str,
         item_id: str,
-        detector: str = "grounding_dino",
+        detector: str = DEFAULT_DETECTOR,
     ) -> CropResult: ...
 
     def get_evidence_key(
@@ -235,6 +245,13 @@ class CropClient(Protocol):
         collection: str,
         item_id: str,
     ) -> str: ...
+
+
+@runtime_checkable
+class TextEmbedder(Protocol):
+    """Port for embedding an evidence description into the evidence_crops vector."""
+
+    async def embed(self, text: str) -> list[float]: ...
 
 
 @runtime_checkable
@@ -464,12 +481,19 @@ class RemoteVLMClient:
         model: str = "nvidia/cosmos-3-nano-reasoner",
         timeout: float = 240.0,
     ):
-        self.base_url = (
+        root = (
             base_url
             or os.getenv("VLM_GATEWAY_BASE_URL")
-            or "https://switchyard-13doh4lsz.brevlab.com/v1"
+            or os.getenv("VLM_BASE_URL")
+            or "https://switchyard-13doh4lsz.brevlab.com"
         ).rstrip("/")
-        self.api_key = api_key or os.getenv("VLM_GATEWAY_API_KEY", "")
+        self.base_url = root if root.endswith("/v1") else f"{root}/v1"
+        self.api_key = (
+            api_key
+            or os.getenv("VLM_GATEWAY_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or ""
+        )
         self.model = model
         self.timeout = timeout
 
@@ -483,8 +507,11 @@ class RemoteVLMClient:
     ) -> GroundingResult:
         import httpx
 
+        from vss_agents.utils.crop_evidence import parse_json_object
+        from vss_agents.utils.r2 import resolve_r2_url
+
         if not self.api_key:
-            raise ValueError("VLM_GATEWAY_API_KEY is not configured")
+            raise ValueError("VLM_GATEWAY_API_KEY or OPENAI_API_KEY is not configured")
 
         item_label_name = item.name or item.item_type
         prompt = (
@@ -501,7 +528,7 @@ class RemoteVLMClient:
             prompt += f"- Temporal Search Window: between {clip_window[0]}s and {clip_window[1]}s\n"
 
         content = [
-            {"type": "video_url", "video_url": {"url": video_ref}},
+            {"type": "video_url", "video_url": {"url": resolve_r2_url(video_ref)}},
             {"type": "text", "text": prompt},
         ]
         messages = [{"role": "user", "content": content}]
@@ -526,19 +553,31 @@ class RemoteVLMClient:
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions", json=payload, headers=headers
-            )
+        parsed: dict[str, Any] = {}
+        for attempt in range(1, GROUNDING_MAX_ATTEMPTS + 1):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions", json=payload, headers=headers
+                )
+            last_attempt = attempt == GROUNDING_MAX_ATTEMPTS
+            if resp.status_code in RETRYABLE_STATUS_CODES and not last_attempt:
+                await asyncio.sleep(
+                    float(resp.headers.get("retry-after") or 2.0 * attempt)
+                )
+                continue
             resp.raise_for_status()
-            data = resp.json()
-
-        choices = data.get("choices", [])
-        if not choices:
-            raise ValueError(f"No choices returned from VLM: {data}")
-
-        raw_content = choices[0]["message"]["content"]
-        parsed = json.loads(raw_content)
+            choices = resp.json().get("choices", [])
+            if not choices:
+                raise ValueError(f"No choices returned from VLM: {resp.json()}")
+            try:
+                parsed = parse_json_object(choices[0]["message"]["content"])
+                break
+            except ValueError:
+                if last_attempt:
+                    raise
+                logger.warning(
+                    "Unparseable grounding reply (attempt %d); retrying", attempt
+                )
 
         ts = int(parsed["timestamp_seconds"])
         label = str(parsed["label"]).strip()
@@ -599,9 +638,80 @@ class FakeCropClient:
         )
 
 
-# TODO(crop-service): Production CropClient adapter delegating to
-# services.agent.src.vss_agents.utils.crop_evidence will be owned by
-# the sibling crop-service task once merged.
+class LiveCropClient:
+    """Production crop adapter: remote VLM bounding box on the video frame, crop uploaded to R2."""
+
+    def __init__(self, detector: Any | None = None, image_store: Any | None = None):
+        from vss_agents.utils.crop_evidence import DefaultDetector
+        from vss_agents.utils.crop_evidence import R2EvidenceStore
+
+        self.detector = detector if detector is not None else DefaultDetector()
+        self.image_store = image_store if image_store is not None else R2EvidenceStore()
+
+    def get_evidence_key(
+        self,
+        video_id: str,
+        model_run_id: str,
+        collection: str,
+        item_id: str,
+    ) -> str:
+        from vss_agents.utils.crop_evidence import evidence_key
+
+        return evidence_key(video_id, model_run_id, collection, item_id)
+
+    async def crop_item(
+        self,
+        video_ref: str,
+        timestamp_seconds: int,
+        label: str,
+        *,
+        video_id: str,
+        model_run_id: str,
+        collection: str,
+        item_id: str,
+        detector: str = DEFAULT_DETECTOR,  # noqa: ARG002 - the detector is the remote VLM configured at construction
+    ) -> CropResult:
+        from vss_agents.utils.crop_evidence import crop_evidence_item
+        from vss_agents.utils.r2 import resolve_r2_url
+
+        crop = await asyncio.to_thread(
+            crop_evidence_item,
+            resolve_r2_url(video_ref),
+            timestamp_seconds,
+            label,
+            self.detector,
+        )
+        if crop is None:
+            raise ValueError(f"No crop found for {label!r} at {timestamp_seconds}s")
+        key = self.get_evidence_key(video_id, model_run_id, collection, item_id)
+        await self.image_store.put_image(key, crop.image_bytes)
+        return CropResult(
+            bounding_box=crop.normalized_box, image_key=key, confidence=crop.score
+        )
+
+
+class RemoteTextEmbedderAdapter:
+    """Embeds evidence descriptions as passages with the remote embedding endpoint."""
+
+    def __init__(self, embedder: Any | None = None):
+        from vss_agents.utils.embeddings import RemoteTextEmbedder
+
+        self.embedder = embedder if embedder is not None else RemoteTextEmbedder()
+
+    async def embed(self, text: str) -> list[float]:
+        return await self.embedder.embed_passage(text)
+
+
+class FakeTextEmbedder:
+    """In-memory fake embedder for tests and dry runs."""
+
+    def __init__(self, vector: list[float] | None = None):
+        self.vector = vector or [0.0] * 1024
+        self.texts: list[str] = []
+
+    async def embed(self, text: str) -> list[float]:
+        self.texts.append(text)
+        return list(self.vector)
 
 
 class InMemoryEvidenceStore:
@@ -645,8 +755,62 @@ class InMemoryEvidenceStore:
         return items
 
 
-# TODO(PR 120 loader): Production persistence into the Supabase evidence_crops table
-# is owned by the PR 120 database loader; do not wire direct Supabase/R2 calls here.
+class LiveEvidenceStore:
+    """Production persistence: evidence_crops rows (with embeddings) upserted into Supabase.
+
+    Records already known locally (for example resumed from --output-file) count as present
+    without a database lookup.
+    """
+
+    def __init__(
+        self,
+        crops: Any | None = None,
+        initial_records: list[EvidenceCropRecord] | None = None,
+    ):
+        if crops is None:
+            from vss_agents.utils.crop_evidence import SupabaseEvidenceStore
+
+            crops = SupabaseEvidenceStore()
+        self.crops = crops
+        self.local = InMemoryEvidenceStore(initial_records)
+
+    async def has_crop(
+        self,
+        incident_id: str,
+        model_run_id: str,
+        item_type: str,
+        item_id: str,
+    ) -> bool:
+        if await self.local.has_crop(incident_id, model_run_id, item_type, item_id):
+            return True
+        return (
+            await self.crops.get_crop(incident_id, model_run_id, item_type, item_id)
+            is not None
+        )
+
+    async def save_crop(self, record: EvidenceCropRecord) -> None:
+        await self.crops.record_crop(
+            incident_id=record.incident_id,
+            model_run_id=record.model_run_id,
+            item_type=record.item_type,
+            item_id=record.item_id,
+            item_name=record.item_name,
+            description=record.description,
+            timestamp_seconds=record.timestamp_seconds,
+            bounding_box=record.bounding_box,
+            image_key=record.image,
+            threat_level=record.threat_level,
+            holder_entity_id=record.holder_entity_id,
+            embedding=record.embedding,
+        )
+        await self.local.save_crop(record)
+
+    async def list_crops(
+        self,
+        incident_id: str | None = None,
+        model_run_id: str | None = None,
+    ) -> list[EvidenceCropRecord]:
+        return await self.local.list_crops(incident_id, model_run_id)
 
 
 # =============================================================================
@@ -663,11 +827,13 @@ class BackfillRunner:
         vlm_client: VLMClient,
         crop_client: CropClient,
         evidence_store: EvidenceStore,
+        embedder: TextEmbedder | None = None,
     ):
         self.report_source = report_source
         self.vlm_client = vlm_client
         self.crop_client = crop_client
         self.evidence_store = evidence_store
+        self.embedder = embedder
 
     async def run(self, options: BackfillOptions) -> BackfillSummary:
         start_time = time.monotonic()
@@ -741,13 +907,21 @@ class BackfillRunner:
                         detector=options.detector,
                     )
 
-                    # 3. Persist into evidence_crops via store
+                    # 3. Embed the item text for pgvector search
+                    item_name = item.name or grounding.label
+                    embedding = (
+                        await self.embedder.embed(f"{item_name}: {item.description}")
+                        if self.embedder
+                        else None
+                    )
+
+                    # 4. Persist into evidence_crops via store
                     record = EvidenceCropRecord(
                         incident_id=report.video_id,
                         model_run_id=report.model_run_id,
                         item_type=item.item_type,
                         item_id=item.item_id,
-                        item_name=item.name or grounding.label,
+                        item_name=item_name,
                         description=item.description,
                         threat_level=item.threat_level,
                         holder_entity_id=item.holder_entity_id,
@@ -755,6 +929,7 @@ class BackfillRunner:
                         label=grounding.label,
                         bounding_box=crop_result.bounding_box,
                         image=crop_result.image_key,
+                        embedding=embedding,
                     )
                     await self.evidence_store.save_crop(record)
                     summary.processed_count += 1
@@ -917,14 +1092,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="nvidia/cosmos-3-nano-reasoner",
-        help="VLM model identifier for grounding (default: nvidia/cosmos-3-nano-reasoner).",
+        default=DEFAULT_VLM_MODEL,
+        help=f"VLM model identifier for grounding (default: $VLM_NAME or {DEFAULT_VLM_MODEL}).",
     )
     parser.add_argument(
         "--detector",
         type=str,
-        default="grounding_dino",
-        help="Open-vocabulary detector identifier (default: grounding_dino).",
+        default=DEFAULT_DETECTOR,
+        help="Open-vocabulary detector identifier (default: vlm, the remote VLM bounding box).",
     )
     parser.add_argument(
         "--input-file",
@@ -990,21 +1165,7 @@ async def async_main(args: argparse.Namespace) -> int:
             )
             report_source = InMemoryReportSource([])
 
-    # Resolve VLM client
-    if options.dry_run:
-        vlm_client: VLMClient = FakeVLMClient()
-    else:
-        api_key = os.getenv("VLM_GATEWAY_API_KEY")
-        if api_key:
-            vlm_client = RemoteVLMClient(model=options.model)
-        else:
-            logger.warning("VLM_GATEWAY_API_KEY not found; using FakeVLMClient.")
-            vlm_client = FakeVLMClient()
-
-    # Resolve Crop client
-    crop_client: CropClient = FakeCropClient()
-
-    # Resolve Evidence store (resumable via output_file if provided)
+    # Resolve VLM client, crop client, embedder and store (dry runs use fakes and make no calls)
     initial_records: list[EvidenceCropRecord] = []
     if options.output_file and options.output_file.exists():
         initial_records = load_evidence_records(options.output_file)
@@ -1014,13 +1175,45 @@ async def async_main(args: argparse.Namespace) -> int:
             options.output_file,
         )
 
-    evidence_store: EvidenceStore = InMemoryEvidenceStore(initial_records)
+    vlm_client: VLMClient
+    crop_client: CropClient
+    embedder: TextEmbedder | None
+    evidence_store: EvidenceStore
+    if options.dry_run:
+        vlm_client = FakeVLMClient()
+        crop_client = FakeCropClient()
+        embedder = None
+        evidence_store = (
+            LiveEvidenceStore(initial_records=initial_records)
+            if isinstance(report_source, SupabaseReportSource)
+            else InMemoryEvidenceStore(initial_records)
+        )
+    else:
+        if (
+            not isinstance(report_source, SupabaseReportSource)
+            and not options.input_file
+        ):
+            logger.error(
+                "Supabase credentials are required for a live run (use --dry-run to plan)"
+            )
+            return 2
+        remote_vlm = RemoteVLMClient(model=options.model)
+        if not remote_vlm.api_key:
+            logger.error(
+                "VLM_GATEWAY_API_KEY or OPENAI_API_KEY must be set for a live run (use --dry-run to plan)"
+            )
+            return 2
+        vlm_client = remote_vlm
+        crop_client = LiveCropClient()
+        embedder = RemoteTextEmbedderAdapter()
+        evidence_store = LiveEvidenceStore(initial_records=initial_records)
 
     runner = BackfillRunner(
         report_source=report_source,
         vlm_client=vlm_client,
         crop_client=crop_client,
         evidence_store=evidence_store,
+        embedder=embedder,
     )
 
     summary = await runner.run(options)

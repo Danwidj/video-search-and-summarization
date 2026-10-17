@@ -59,6 +59,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` (native stop + `compose down --remove-orphans`, no `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
 | Load NGC credentials | `source ./ngc-env.sh` |
+| Populate or refresh search evidence (`evidence_crops`) | In `/srv/rise-up/vss`: `set -a; . deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote; set +a; services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --dry-run`, then rerun without `--dry-run` (add `--concurrency 2`; the Brev gateway rate-limits at 4). Idempotent: it skips rows already present. All model calls are remote (Brev VLM, NVIDIA-hosted embeddings). Restart `vss-agent` afterwards only if `services/agent/src` changed. |
 
 A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state.
 
@@ -85,6 +86,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - `REPORT_REFERENCE_BASE_DIR` is set (for example `/tmp`).
 - `STREAM_PROCESSOR_HTTP_PORT=10000`.
 - `LLM_MODEL_TYPE=openai` and `VLM_MODEL_TYPE=openai`, with bare Brev URLs.
+- Search embeddings use the NVIDIA-hosted endpoint with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from this file; the Brev key cannot call `/v1/embeddings`. Override with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`. The loader and the search route must use the same model.
 - `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
 
 ## Troubleshooting order
