@@ -575,7 +575,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 4. **Presigned Media URLs:**
    Access is private by default. Video playback and up to six report-card thumbnail URLs are generated server-side using AWS SDK S3 client
    presigning (`getSignedUrl` with `GetObjectCommand`, `ResponseContentDisposition: 'inline'`, and a 1-hour
-   expiration window).
+   expiration window). Agent-side evidence crops and video files are resolved via `services/agent/src/vss_agents/utils/r2.py` (`resolve_r2_url` / `get_r2_presigned_url`), generating boto3 S3 presigned URLs (1-hour expiration) or using public base URLs when configured (`INCIDENT_VIDEO_BASE_URL`).
 
 ---
 

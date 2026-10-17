@@ -2,6 +2,24 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-17: Supabase-backed SearchStore and Cloudflare R2 presigned URLs for natural-language incident search
+- **Decision:**
+  - Implement `SupabaseSearchStore` in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`) querying `evidence_crops` via the existing `search_evidence_items` RPC using the service role client.
+  - Scope queries to official reports only, as enforced by the `search_evidence_items` RPC inner join on `videos v ON v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id`.
+  - Add Cloudflare R2 resolution utility (`services/agent/src/vss_agents/utils/r2.py`) with `resolve_r2_url()` and `get_r2_presigned_url()` that normalises crop image keys (stripping dummy host prefixes like `pub-r2.example.com/`), resolves public base URLs when configured (`INCIDENT_VIDEO_BASE_URL`), or generates standard boto3 presigned S3 URLs for the configured R2 bucket when AWS/R2 credentials are set.
+  - Implement store selection in `get_default_search_store()`, selecting `SupabaseSearchStore` when `INCIDENT_SEARCH_STORE="supabase"` or when Supabase credentials are configured via `incident_db.is_configured()`, falling back to `InMemorySearchStore` for local/mock development.
+  - Persist search query audit logs (`queries` and `query_results` tables) asynchronously in `SupabaseSearchStore.record_query()` and `SupabaseSearchStore.record_results()`.
+  - Reuse the 1024-dimensional placeholder embedding from `DefaultQueryEmbedder` aligned with the pgvector schema per MVP2 plan Decision 4 until deep embedding models are integrated.
+- **Why:**
+  - On the `kwanz-ws` VM, the search route previously ran on built-in sample data (`InMemorySearchStore`) whose mock crop URLs pointed to non-existent host `pub-r2.example.com`, causing the Brev VLM critic to fail with HTTP 500 when attempting to fetch images, resulting in all hits returning as `verdict="unverified"`.
+  - Pointing the search route to the live database via `search_evidence_items` RPC retrieves real evidence crops, and signing/resolving R2 keys provides fetchable image URLs to the critic.
+- **Alternatives rejected:**
+  - Generating public-only URLs without presigning support (rejected: private R2 buckets require presigned S3 URLs unless a custom public domain or proxy is explicitly configured).
+  - Calling an external embedding service (rejected: out of scope, introduces external paid dependencies and latency; MVP2 plan Decision 4 specifies minimal consistent embedding placeholder matching pgvector).
+- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`services/agent/src/vss_agents/utils/r2.py`](../../../../../services/agent/src/vss_agents/utils/r2.py); [`services/agent/tests/unit_test/api/test_incident_search.py`](../../../../../services/agent/tests/unit_test/api/test_incident_search.py); [`services/agent/tests/unit_test/utils/test_r2.py`](../../../../../services/agent/tests/unit_test/utils/test_r2.py); [`.docs/status.md`](status.md).
+
+---
+
 ### 2026-10-16: Configurable delay spacing between VLM critic calls in incident search route
 - **Decision:**
   - Introduce configurable delay spacing between vision-language model (VLM) critic calls in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`).
