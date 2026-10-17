@@ -401,4 +401,4 @@ sequenceDiagram
 *Authoritative specification, sequence, and data flow: [`mvp2/README.md`](mvp2/README.md) and [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).*
 
 > [!NOTE]
-> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). Active workstreams are tracked in PR 118, PR 119, and PR 120. See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
+> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture, end-to-end data flow and active workstreams.
