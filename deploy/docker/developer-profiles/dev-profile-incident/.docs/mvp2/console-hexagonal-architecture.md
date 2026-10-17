@@ -244,7 +244,7 @@ export interface EvidenceSearchRepository {
 }
 ```
 
-Search goes straight to Supabase (decided 2026-10-17). It is **keyword-only for now**: Postgres full-text ranking over `item_name` and `description`, with no embedding provider, because hosted embeddings cost money. `queryEmbedding` is optional so a free in-process embedding model can be added later without changing the port; when one is added it must be the same model and dimension that embedded `evidence_crops.embedding`. This needs `search_evidence_items` (PR 126) to accept a null embedding and rank by text alone. Under this design the console is the only writer of `queries` / `query_results`; writes are insert-only with caller-generated ids, and feedback updates only the feedback columns of a row matched by result and query id.
+Search goes straight to Supabase, without the critic (decided 2026-10-17). This is interim: the vss-agent search route in the [MVP2 overview](README.md#key-data-flow-details) (§2 step 4) stays the target. It is **keyword-only for now**: Postgres full-text ranking over `item_name` and `description`, with no embedding provider, because hosted embeddings cost money. `queryEmbedding` is optional so a free in-process embedding model can be added later without changing the port; when one is added it must be the same model and dimension that embedded `evidence_crops.embedding`. This needs `search_evidence_items` (PR 126) to accept a null embedding and rank by text alone. Under this design the console is the only writer of `queries` / `query_results`; writes are insert-only with caller-generated ids, and feedback updates only the feedback columns of a row matched by result and query id.
 
 #### `lib/ports/health.ts`
 ```typescript
