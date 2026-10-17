@@ -31,6 +31,10 @@
 #     video-analytics-api and behavior-analytics).
 #
 # Execution flow (vm mode):
+#   0. Preflight: probes SSH and, on failure, says why (Tailscale not
+#      installed/stopped/logged out, VM offline in the tailnet, host not
+#      resolving, SSH timeout/refused, no route, auth, host key) and what to
+#      do (.scripts/vm-preflight.sh). Then detects the VM address.
 #   1. Checks the current deploy state over SSH against the VM:
 #        - Docker containers via `docker compose -p mdx ps`
 #        - Native services via `native-services.sh status`
@@ -44,6 +48,11 @@
 #        - PARTIAL (some up)         -> SELF-HEAL. Prints what's missing,
 #          starts only the missing Docker and native services over SSH,
 #          then proceeds to the tunnel.
+#      Starting Docker services runs .scripts/vm-ensure-docker.sh on the VM
+#      (piped over SSH): it clones the repo if the checkout is missing, fixes a
+#      stale HOST_IP in generated.env.remote (backed up first), pulls missing
+#      images, then runs `docker compose up -d` under a timeout. Every step is
+#      bounded and fails with a message instead of hanging.
 #   3. The tunnel step is laptop-side only (same hostname guard the old
 #      `mdx-tunnel-incident` alias had — refuse if run ON kwanz-ws:
 #      forwarding the VM to itself is at best a no-op). It is backgrounded
@@ -65,8 +74,18 @@
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
 #   VSS_SSH_HOST             VM hostname (default: kwanz-ws)
-#   VSS_VM_IP                VM address for the tunnel forwards (default: 10.131.1.5)
+#   VSS_VM_IP                VM address for the tunnel forwards. If unset, detected
+#                            from the VM over SSH (its default-route source address),
+#                            falling back to 10.131.1.5 if detection fails.
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
+#   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
+#                            clone's `origin`)
+#   VSS_SSH_CONNECT_TIMEOUT  SSH connect timeout in seconds (default: 10)
+#   VSS_PULL_TIMEOUT         image pull/clone timeout on the VM, seconds (default: 1800)
+#   VSS_COMPOSE_UP_TIMEOUT   `docker compose up` timeout on the VM, seconds (default: 600)
+#   VSS_NATIVE_START_TIMEOUT native service start timeout on the VM, seconds (default: 300)
+#   --no-console             bring the backend and tunnel up, skip incident-console-v2,
+#                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
 #                            behavior-analytics natively, plus elasticsearch/kafka in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
@@ -76,7 +95,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Parse --mode flag
+# Parse --mode / --no-console flags (--no-console: bring the backend and tunnel up, skip the Next.js console)
+NO_CONSOLE=0
 VSS_START_MODE="${VSS_START_MODE:-vm}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -88,9 +108,13 @@ while [[ $# -gt 0 ]]; do
       VSS_START_MODE="${1#*=}"
       shift
       ;;
+    --no-console)
+      NO_CONSOLE=1
+      shift
+      ;;
     *)
       echo "start.sh: unknown argument '$1'" >&2
-      echo "Usage: ./start.sh [--mode local|vm]" >&2
+      echo "Usage: ./start.sh [--mode local|vm] [--no-console]" >&2
       exit 1
       ;;
   esac
@@ -111,10 +135,27 @@ if [ "$(hostname -s 2>/dev/null)" = "kwanz-ws" ]; then
 fi
 
 TUNNEL_PID=""
+TUNNEL_LOG=""
 MOCK_BACKEND_PID=""
 VLM_GATEWAY_PID=""
 
+# Laptop-side name -> compose service name for the Docker appliances.
+map_docker_service() {
+  case "$1" in
+    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
+    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
+    vss-vios-ingress)          echo "vst-ingress" ;;
+    vss-vios-postgres)         echo "centralizedb" ;;
+    *)                         echo "$1" ;;
+  esac
+}
+
 cleanup() {
+  if [ -n "${VM_SSH_PID:-}" ] && kill -0 "$VM_SSH_PID" 2>/dev/null; then
+    kill "$VM_SSH_PID" 2>/dev/null || true
+    VM_SSH_PID=""
+  fi
+  [ -n "$TUNNEL_LOG" ] && rm -f "$TUNNEL_LOG"
   if [ -n "$VLM_GATEWAY_PID" ] && kill -0 "$VLM_GATEWAY_PID" 2>/dev/null; then
     kill "$VLM_GATEWAY_PID" 2>/dev/null || true
     echo "start.sh: stopped the local vlm-gateway (pid $VLM_GATEWAY_PID)."
@@ -136,7 +177,6 @@ trap cleanup EXIT INT TERM
 if [ "$VSS_START_MODE" = "vm" ]; then
   # shellcheck source=.scripts/resolve-ssh-target.sh
   source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
-  VSS_VM_IP="${VSS_VM_IP:-10.131.1.5}"
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
@@ -154,37 +194,45 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
   INCIDENT_NATIVE_SERVICES="${INCIDENT_NATIVE_SERVICES:-$default_native_services}"
 
-  # Fast SSH preflight check before any tunnel, deploy check, env generation, npm install, or UI start
-  if ! preflight_err="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true 2>&1)"; then
-    echo "start.sh: SSH connection to '$VSS_SSH_TARGET' failed." >&2
-    if [ -n "$preflight_err" ]; then
-      echo "  SSH error: ${preflight_err}" >&2
-    fi
-    echo "  Fix: Check your 'Host kwanz-ws' entry in ~/.ssh/config and ensure Tailscale/network is connected." >&2
+  # shellcheck source=.scripts/vm-preflight.sh
+  source "${SCRIPT_DIR}/.scripts/vm-preflight.sh"
+
+  # Case 1 (VM unreachable): classify why and say what to do, before anything else runs.
+  if ! vm_preflight_ssh; then
     exit 1
   fi
+  VSS_VM_IP="$(vm_detect_ip)"
+
+  VSS_PULL_TIMEOUT="${VSS_PULL_TIMEOUT:-1800}"
+  VSS_COMPOSE_UP_TIMEOUT="${VSS_COMPOSE_UP_TIMEOUT:-600}"
+  VSS_NATIVE_START_TIMEOUT="${VSS_NATIVE_START_TIMEOUT:-300}"
+  VSS_REPO_URL="${VSS_REPO_URL:-$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || true)}"
+  vm_profile_dir="$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident"
 
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
 
-  # 1. Query Docker containers state
-  state_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-    "cd '$VSS_REPO_ROOT/deploy/docker' && docker compose -p mdx ps -a --format '{{.Name}} {{.State}}'" 2>&1)"
-  ssh_rc=$?
-  if [ "$ssh_rc" -ne 0 ]; then
-    echo "start.sh: could not query Docker deploy state over SSH ($VSS_SSH_TARGET)." >&2
-    echo "${state_output}" >&2
-    echo "  Is the VM reachable (tailscale/network) and is docker compose available?" >&2
-    exit 1
-  fi
-
-  # 2. Query Native services state
-  native_output="$(ssh -o ConnectTimeout=10 "$VSS_SSH_TARGET" \
-    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status --porcelain" 2>&1)"
-  native_rc=$?
-  if [ "$native_rc" -ne 0 ]; then
-    echo "start.sh: could not query native services state over SSH ($VSS_SSH_TARGET)." >&2
-    echo "${native_output}" >&2
-    exit 1
+  state_output=""
+  native_output=""
+  # The ssh commands below deliberately expand the paths on the client side.
+  # shellcheck disable=SC2029
+  if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "test -f '$VSS_REPO_ROOT/deploy/docker/compose.yml'" 2>/dev/null; then
+    # A failing query is not fatal: the services count as missing and the deploy step
+    # below diagnoses why (docker down, user not in the docker group, ...).
+    # shellcheck disable=SC2029
+    if ! state_output="$(ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" \
+      "cd '$VSS_REPO_ROOT/deploy/docker' && timeout 60 docker compose -p mdx ps -a --format '{{.Name}} {{.State}}'" 2>&1)"; then
+      echo "start.sh: could not list the VM's Docker containers (${state_output:-no output}); treating them as not running." >&2
+      state_output=""
+    fi
+    # shellcheck disable=SC2029
+    if ! native_output="$(ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" \
+      "timeout 60 bash '$vm_profile_dir/.scripts/native-services.sh' status --porcelain" 2>&1)"; then
+      echo "start.sh: could not read the VM's native service status (${native_output:-no output})." >&2
+      echo "  If native-services.sh is missing, the VM checkout is behind: run 'git pull' in $VSS_REPO_ROOT." >&2
+      native_output=""
+    fi
+  else
+    echo "start.sh: no VSS checkout at $VSS_REPO_ROOT on the VM; it will be cloned in the deploy step."
   fi
 
   echo "--- Docker containers (project: mdx) ---"
@@ -195,9 +243,13 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "--- Native services (managed natively) ---"
-  # shellcheck disable=SC2029
-  ssh "$VSS_SSH_TARGET" \
-    "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' status" 2>&1 || true
+  if [ -z "$native_output" ]; then
+    echo "(no services)"
+  else
+    # shellcheck disable=SC2029
+    ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" \
+      "timeout 60 bash '$vm_profile_dir/.scripts/native-services.sh' status" 2>&1 || true
+  fi
 
   docker_up=()
   docker_missing=()
@@ -237,118 +289,52 @@ if [ "$VSS_START_MODE" = "vm" ]; then
 
   if [ "$total_missing_count" -eq 0 ]; then
     echo "start.sh: all expected backend services (Docker and native) are already running — skipping backend deploy."
-  elif [ "$total_up_count" -eq 0 ]; then
-    echo "start.sh: nothing relevant is running — deploying the backend fresh."
-    echo "=== STEP 2/3 — Deploying backend (Docker appliances + Native services) ==="
-
-    deploy_script=$(cat <<EOF
-set -e
-cd "$VSS_REPO_ROOT/deploy/docker"
-if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
-  echo "start.sh: developer-profiles/dev-profile-incident/generated.env.remote not found on the VM." >&2
-  echo "  Create it from the tracked .env template and fill in the real values:" >&2
-  echo "  cp ${VSS_REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/.env ${VSS_REPO_ROOT}/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote" >&2
-  echo "  (see .docs/incident-profile-operations.md §5)" >&2
-  exit 1
-fi
-
-map_docker_service() {
-  case "\$1" in
-    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
-    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
-    vss-vios-ingress)          echo "vst-ingress" ;;
-    vss-vios-postgres)         echo "centralizedb" ;;
-    *)                         echo "\$1" ;;
-  esac
-}
-
-COMPOSE_SERVICES=""
-for svc in ${INCIDENT_DOCKER_SERVICES}; do
-  mapped="\$(map_docker_service "\$svc")"
-  COMPOSE_SERVICES="\${COMPOSE_SERVICES} \${mapped}"
-done
-COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
-
-echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
-if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
-else
-  docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
-fi
-EOF
-)
-    echo "--- deploying Docker appliances over SSH ---"
-    ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_script}"
-    deploy_rc=$?
-    if [ "$deploy_rc" -ne 0 ]; then
-      echo "start.sh: Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
-      exit 1
-    fi
-
-    echo "--- starting Native services over SSH (${INCIDENT_NATIVE_SERVICES}) ---"
-    # shellcheck disable=SC2029
-    ssh "$VSS_SSH_TARGET" \
-      "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${INCIDENT_NATIVE_SERVICES}"
-    native_start_rc=$?
-    if [ "$native_start_rc" -ne 0 ]; then
-      echo "start.sh: Native service startup over SSH failed (exit $native_start_rc)." >&2
-      exit 1
-    fi
-
-    echo "start.sh: backend deploy completed (Docker appliances + Native services)."
   else
-    echo "start.sh: partial deploy detected — starting missing services..."
+    if [ "$total_up_count" -eq 0 ]; then
+      echo "start.sh: nothing relevant is running — deploying the backend fresh."
+    else
+      echo "start.sh: partial deploy detected — starting missing services..."
+    fi
+    echo "=== STEP 2/3 — Starting missing backend services (Docker appliances + Native services) ==="
+
+    # Cases 2 and 3 (services stopped, repo/images not downloaded): vm-ensure-docker.sh
+    # runs on the VM and clones/pulls what is missing, then runs a bounded `compose up`.
     if [ "${#docker_missing[@]}" -gt 0 ]; then
+      compose_services=()
+      for svc in "${docker_missing[@]}"; do
+        compose_services+=("$(map_docker_service "$svc")")
+      done
       echo "--- starting missing Docker appliances (${docker_missing[*]}) over SSH ---"
-      deploy_missing_script=$(cat <<EOF
-set -e
-cd "$VSS_REPO_ROOT/deploy/docker"
-if [ ! -f developer-profiles/dev-profile-incident/generated.env.remote ]; then
-  echo "start.sh: developer-profiles/dev-profile-incident/generated.env.remote not found on the VM." >&2
-  exit 1
-fi
-
-map_docker_service() {
-  case "\$1" in
-    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
-    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
-    vss-vios-ingress)          echo "vst-ingress" ;;
-    vss-vios-postgres)         echo "centralizedb" ;;
-    *)                         echo "\$1" ;;
-  esac
-}
-
-COMPOSE_SERVICES=""
-for svc in ${docker_missing[*]}; do
-  mapped="\$(map_docker_service "\$svc")"
-  COMPOSE_SERVICES="\${COMPOSE_SERVICES} \${mapped}"
-done
-COMPOSE_SERVICES="\${COMPOSE_SERVICES# }"
-
-echo "--- starting Docker appliance containers (\${COMPOSE_SERVICES}) ---"
-if sudo -n true 2>/dev/null; then
-  sudo docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
-else
-  docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d \${COMPOSE_SERVICES}
-fi
-EOF
-)
-      ssh "$VSS_SSH_TARGET" "bash -s" <<<"${deploy_missing_script}"
-      deploy_rc=$?
-      if [ "$deploy_rc" -ne 0 ]; then
-        echo "start.sh: missing Docker appliance deploy over SSH failed (exit $deploy_rc)." >&2
+      docker_rc=0
+      # ssh joins its arguments into one string, so quote them (an empty repo URL must survive).
+      remote_cmd="bash -s -- $(printf '%q ' "$VSS_REPO_ROOT" "$VSS_REPO_URL" "$VSS_PULL_TIMEOUT" "$VSS_COMPOSE_UP_TIMEOUT" "${compose_services[@]}")"
+      vm_ssh_limited $((VSS_PULL_TIMEOUT + VSS_COMPOSE_UP_TIMEOUT + 300)) "$VSS_SSH_TARGET" "$remote_cmd" \
+        < "${SCRIPT_DIR}/.scripts/vm-ensure-docker.sh" || docker_rc=$?
+      if [ "$docker_rc" -ne 0 ]; then
+        case "$docker_rc" in
+          124)     echo "start.sh: the Docker step on the VM timed out; a health check is stuck (see the [vm] lines above). Raise VSS_COMPOSE_UP_TIMEOUT only if the services are genuinely just slow." >&2 ;;
+          143|137) echo "start.sh: gave up waiting for the VM's Docker step (connection lost or no reply). Re-run; nothing was left half-configured." >&2 ;;
+          255)     echo "start.sh: the SSH connection to the VM dropped during the Docker step. Re-run start.sh." >&2 ;;
+          *)       echo "start.sh: the Docker step on the VM failed (exit $docker_rc); see the [vm] lines above." >&2 ;;
+        esac
         exit 1
       fi
     fi
 
     if [ "${#native_missing[@]}" -gt 0 ]; then
       echo "--- starting missing Native services (${native_missing[*]}) over SSH ---"
+      native_rc=0
       # shellcheck disable=SC2029
-      ssh "$VSS_SSH_TARGET" \
-        "bash '$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident/.scripts/native-services.sh' start ${native_missing[*]}"
-      native_start_rc=$?
-      if [ "$native_start_rc" -ne 0 ]; then
-        echo "start.sh: missing Native service startup over SSH failed (exit $native_start_rc)." >&2
+      vm_ssh_limited $((VSS_NATIVE_START_TIMEOUT + 60)) "$VSS_SSH_TARGET" \
+        "timeout --kill-after=15 ${VSS_NATIVE_START_TIMEOUT} bash '$vm_profile_dir/.scripts/native-services.sh' start ${native_missing[*]}" || native_rc=$?
+      if [ "$native_rc" -ne 0 ]; then
+        if [ "$native_rc" -eq 124 ] || [ "$native_rc" -eq 143 ]; then
+          echo "start.sh: native service startup did not finish within ${VSS_NATIVE_START_TIMEOUT}s (VSS_NATIVE_START_TIMEOUT)." >&2
+        else
+          echo "start.sh: native service startup on the VM failed (exit $native_rc); see the output above." >&2
+        fi
+        echo "  If 'nat binary not found': the agent virtualenv is missing - follow 'Agent editable reinstall' in skills/incident-operate-vm/SKILL.md." >&2
+        echo "  If the script itself is missing: the VM checkout is behind - run 'git pull' in $VSS_REPO_ROOT." >&2
         exit 1
       fi
     fi
@@ -357,26 +343,47 @@ EOF
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-  ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
+  for port in 8000 30081 30082 7777; do
+    if holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
+      echo "start.sh: laptop port $port is already in use by $holder, so the tunnel cannot forward it." >&2
+      echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
+      exit 1
+    fi
+  done
+  TUNNEL_LOG="$(mktemp)"
+  ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
     -L 8000:"$VSS_VM_IP":8000 \
     -L 30081:"$VSS_VM_IP":30081 \
     -L 30082:"$VSS_VM_IP":30082 \
     -L 7777:"$VSS_VM_IP":7777 \
-    "$VSS_SSH_TARGET" &
+    "$VSS_SSH_TARGET" 2>"$TUNNEL_LOG" &
   TUNNEL_PID=$!
 
   echo "  tunnel pid $TUNNEL_PID; waiting for the tunneled agent health check (localhost:8000/health)..."
   tunnel_ok=""
-  for _i in $(seq 1 30); do
+  tunnel_deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$tunnel_deadline" ]; do
     if curl -sf --max-time 5 http://localhost:8000/health | grep -q isAlive; then
       tunnel_ok=1
+      break
+    fi
+    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
       break
     fi
     sleep 2
   done
   if [ -z "$tunnel_ok" ]; then
     echo "start.sh: the tunneled agent never came up on localhost:8000." >&2
-    echo "  Run ./tunnel-check.sh for a per-port breakdown." >&2
+    # The SSH log repeats one line per failed connection; show each distinct line once.
+    tunnel_err="$(sed 's/^channel [0-9]*: //' "$TUNNEL_LOG" | sort -u | head -n 3 | tr '\n' ';')"
+    if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf --max-time 5 http://localhost:8000/health' 2>/dev/null | grep -q isAlive; then
+      echo "  The agent is healthy ON the VM, but the tunnel cannot reach it at ${VSS_VM_IP}:8000${tunnel_err:+ (${tunnel_err})}." >&2
+      echo "  Fix: the VM address is wrong or blocked. Re-run with VSS_VM_IP set to the VM's LAN address (ssh $VSS_SSH_TARGET 'ip -4 route get 1.1.1.1')." >&2
+    else
+      [ -n "$tunnel_err" ] && echo "  SSH tunnel said: ${tunnel_err}" >&2
+      echo "  The agent does not answer on the VM either: it crashed after starting. Read its log: ssh $VSS_SSH_TARGET 'tail -n 40 $VSS_REPO_ROOT/.run/vss-agent.log'" >&2
+    fi
+    echo "  Run ./.scripts/tunnel-check.sh for a per-port breakdown." >&2
     cleanup
     exit 1
   fi
@@ -432,6 +439,13 @@ if [ -n "${VLM_GATEWAY_URL:-}" ]; then
 fi
 echo "  ANALYSIS_MODE=${ANALYSIS_MODE}"
 echo "  SEARCH_ROUTE=${INCIDENT_AGENT_BASE_URL}/api/v1/incidents/search (always-on)"
+
+if [ "$NO_CONSOLE" = 1 ]; then
+  echo "start.sh: --no-console: backend ready; holding the tunnel/local services open. Ctrl-C to stop."
+  # wait is interruptible, unlike a foreground sleep loop; with no background job it returns at once.
+  wait ${TUNNEL_PID:+"$TUNNEL_PID"} ${MOCK_BACKEND_PID:+"$MOCK_BACKEND_PID"} || true
+  exit 0
+fi
 
 echo "=== FINAL STEP — Starting incident-console-v2 ==="
 if ! command -v npm >/dev/null 2>&1; then

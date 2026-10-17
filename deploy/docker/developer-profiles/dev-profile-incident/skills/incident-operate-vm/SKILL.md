@@ -60,7 +60,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Stop everything safely | `./down.sh` (native stop + `compose down --remove-orphans`, no `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
 | Load NGC credentials | `source ./ngc-env.sh` |
 
-A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state.
+A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state (clones a missing checkout, fixes a stale `HOST_IP` in `generated.env.remote` with a backup, pulls missing images, bounded `compose up`; see `.scripts/vm-ensure-docker.sh`).
 
 ### 3. Agent editable reinstall
 
@@ -80,7 +80,7 @@ Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_ur
 The file is untracked and lives on the VM only. Rules (why for each: [operations §5](../../.docs/incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)):
 
 - `VSS_APPS_DIR` and `VSS_DATA_DIR` are absolute paths.
-- `HOST_IP=10.131.1.5` and `EXTERNAL_IP=localhost`.
+- `HOST_IP` set to the VM's internal LAN IP (currently `10.132.56.251`, previously `10.131.1.5`; `vm-ensure-docker.sh` updates stale entries automatically) and `EXTERNAL_IP=localhost`.
 - `VSS_AGENT_CONFIG_FILE` points at the **dev-profile-base** config. The search config lacks `report_agent`.
 - `REPORT_REFERENCE_BASE_DIR` is set (for example `/tmp`).
 - `STREAM_PROCESSOR_HTTP_PORT=10000`.

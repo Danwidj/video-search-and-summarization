@@ -18,7 +18,7 @@ metadata:
 | User says | Mode | Why |
 |---|---|---|
 | "run it locally", "no GPU", "frontend work", "offline from the VM" | `--mode local` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. |
-| "run against the VM", "real agent", "full stack", "demo", no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services. |
+| "run against the VM", "real agent", "full stack", "demo", no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#2-deployment--connectivity).
 
@@ -51,11 +51,12 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 ```bash
 ./start.sh --mode local     # zero-GPU loop
 ./start.sh --mode vm        # VM backend (default when --mode is omitted)
+./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 
 The console runs in the foreground. Ctrl-C stops it, along with the backgrounded mock, gateway and tunnel.
 
-Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh).
+Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). In vm mode `VSS_VM_IP` is detected from the VM over SSH when unset (fallback `10.131.1.5`); set it only to force an address.
 
 ## Verify
 
@@ -76,7 +77,9 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 
 | Symptom | Fix |
 |---|---|
-| `start.sh` aborts at the SSH preflight | Tailscale is disconnected or `Host kwanz-ws` is wrong. Test with `ssh -o BatchMode=yes kwanz-ws true`. |
+| `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
+| `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and Kafka logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
+| Tunnel step fails | `start.sh` says whether a laptop port is taken, the VM address is wrong (set `VSS_VM_IP`), or the agent is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |
 | Port 3200, 7777, 8000 or 8600 already in use | A previous run is still alive. Stop it, or find it with `lsof -i :<port>`. |
 | Console health shows Supabase or R2 not configured | A missing variable or broken symlink. Re-run the prerequisite checks. |

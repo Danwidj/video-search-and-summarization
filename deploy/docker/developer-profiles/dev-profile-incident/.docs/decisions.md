@@ -2,6 +2,21 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-18: start.sh vm mode explains unreachable VMs and bounds every VM step
+- **Decision:**
+  - `start.sh --mode vm` classifies an SSH failure before doing anything else (`.scripts/vm-preflight.sh`: Tailscale logged out/stopped/daemon down, VM offline in the tailnet, DNS, timeout, refused, no route, auth, host key) and prints cause plus next step.
+  - The Docker part of the deploy moves into `.scripts/vm-ensure-docker.sh`, piped over SSH so the laptop copy always runs. It clones a missing checkout, requires `generated.env.remote`, rewrites a stale `HOST_IP` there (timestamped backup first), pulls missing images, then runs `docker compose up -d` under `VSS_COMPOSE_UP_TIMEOUT`, printing container states and Kafka logs on failure.
+  - Native start, the ssh calls and the tunnel wait are bounded too; the fresh and partial paths share one code path. `tunnel.sh` also uses the detected VM address. New `--no-console` flag stops after the tunnel.
+- **Why:** The 2026-10-17 run hung in `docker compose up` on the Kafka broker health check because `HOST_IP` in `generated.env.remote` still held the old VM address, and nothing timed out. Unreachable-VM errors were a raw ssh line.
+- **Alternatives rejected:** Only adding timeouts (the stale `HOST_IP` would still fail every run); asking the user to fix `HOST_IP` by hand (the fix is mechanical and backed up, so doing it removes a recurring failure); calling `native-services.sh`-style scripts from the VM checkout for the Docker step (breaks when the checkout is behind); auto-installing the agent virtualenv (its dependencies resolve only via NVIDIA's internal artifactory, so start.sh points at the reinstall procedure instead).
+- **Links:** [`start.sh`](../start.sh); [`.scripts/vm-preflight.sh`](../.scripts/vm-preflight.sh); [`.scripts/vm-ensure-docker.sh`](../.scripts/vm-ensure-docker.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-10-18: Detect VSS_VM_IP from the VM in start.sh vm mode
+- **Decision:** When `VSS_VM_IP` is unset, `start.sh --mode vm` reads the VM's default-route source address over the existing SSH connection (`ip -4 route get 1.1.1.1`), falling back to `10.131.1.5` if that fails. An explicit `VSS_VM_IP` still wins.
+- **Why:** The VM's DHCP LAN address moved from `10.131.1.5` to `10.132.56.251`, so the hardcoded default broke the tunnel forwards without a manual override.
+- **Alternatives rejected:** Updating the hardcoded default (breaks again on the next change); using the Tailscale address (the services bind and are reached on the LAN address); also changing `.scripts/tunnel.sh` (out of scope here, still defaults to `10.131.1.5`).
+- **Links:** [`start.sh`](../start.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
+
 ### 2026-10-17: MVP2 database migration for evidence_crops, query_results, and search_evidence_items RPC
 - **Decision:**
   - Add Supabase migration `20261016120000_mvp2_evidence_search_and_crops.sql` establishing the pgvector semantic search and audit storage layer.
