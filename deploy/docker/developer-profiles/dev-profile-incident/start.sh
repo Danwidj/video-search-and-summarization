@@ -243,9 +243,13 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "--- Native services (managed natively) ---"
-  # shellcheck disable=SC2029
-  ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" \
-    "timeout 60 bash '$vm_profile_dir/.scripts/native-services.sh' status" 2>&1 || true
+  if [ -z "$native_output" ]; then
+    echo "(no services)"
+  else
+    # shellcheck disable=SC2029
+    ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" \
+      "timeout 60 bash '$vm_profile_dir/.scripts/native-services.sh' status" 2>&1 || true
+  fi
 
   docker_up=()
   docker_missing=()
