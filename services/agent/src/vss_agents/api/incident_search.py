@@ -37,6 +37,9 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 
+from vss_agents.utils import incident_db
+from vss_agents.utils.r2 import resolve_r2_url
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_VLM_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
@@ -408,10 +411,185 @@ class InMemorySearchStore(SearchStore):
             self.query_results.append({"query_id": query_id, **row})
 
 
-# TODO(PR-120): Real PostgREST adapter for SearchStore is owned by PR #120
-# (MVP2 data and search layer workstream). PR #120 will wire Supabase RPC
-# 'search_evidence_items' and tables 'queries' and 'query_results' once migration
-# 20261016120000_mvp2_evidence_search_and_crops.sql lands.
+def _parse_timestamp_seconds(ts: Any) -> float:
+    """Parse a timestamp into seconds offset as float."""
+    if ts is None:
+        return 0.0
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    s = str(ts).strip()
+    if not s:
+        return 0.0
+    if ":" in s:
+        parts = s.split(":")
+        try:
+            return float(sum(float(p) * (60**i) for i, p in enumerate(reversed(parts))))
+        except ValueError:
+            return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+class SupabaseSearchStore(SearchStore):
+    """Supabase PostgREST candidate store and query audit log querying search_evidence_items RPC."""
+
+    def __init__(
+        self,
+        client: Any = None,
+        r2_resolver: Any = None,
+    ) -> None:
+        self._client = client
+        self._r2_resolver = r2_resolver or resolve_r2_url
+
+    async def _get_client(self) -> Any:
+        if self._client is not None:
+            return self._client
+        db = await incident_db.get_db()
+        if db is None:
+            raise RuntimeError(
+                "Incident Supabase DB is not configured (INCIDENT_SUPABASE_URL and "
+                "INCIDENT_SUPABASE_SERVICE_ROLE_KEY required)"
+            )
+        return db.client
+
+    async def search_evidence_items(
+        self,
+        query_embedding: list[float],
+        top_k: int = 10,
+        min_similarity: float = 0.2,
+        item_types: list[str] | None = None,
+        incident_types: list[str] | None = None,
+        min_severity: int | None = None,
+        max_severity: int | None = None,
+    ) -> list[EvidenceCandidate]:
+        if not query_embedding:
+            return []
+
+        client = await self._get_client()
+
+        params: dict[str, Any] = {
+            "p_query_embedding": query_embedding,
+            "p_top_k": top_k,
+            "p_min_similarity": min_similarity,
+            "p_item_types": item_types if item_types else ["entity", "instrument", "asset"],
+            "p_incident_types": incident_types,
+            "p_min_severity": min_severity,
+            "p_max_severity": max_severity,
+        }
+
+        resp = await client.rpc("search_evidence_items", params).execute()
+        rows = resp.data or []
+
+        candidates: list[EvidenceCandidate] = []
+        for row in rows:
+            image_ref = row.get("image") or row.get("crop_image_url") or ""
+            crop_image_url = self._r2_resolver(image_ref)
+
+            video_ref = row.get("video_filepath") or row.get("playback_url") or ""
+            playback_url = self._r2_resolver(video_ref)
+
+            if "incident_window" in row and isinstance(row["incident_window"], list):
+                incident_window = [float(x) for x in row["incident_window"][:2]]
+            else:
+                start_sec = _parse_timestamp_seconds(row.get("incident_start_timestamp"))
+                end_sec = _parse_timestamp_seconds(row.get("incident_end_timestamp"))
+                incident_window = [start_sec, max(start_sec, end_sec)]
+
+            raw_item_type = str(row.get("item_type", "entity")).lower()
+            item_type: Literal["entity", "instrument", "asset"]
+            if raw_item_type in ("entity", "instrument", "asset"):
+                item_type = raw_item_type  # type: ignore[assignment]
+            else:
+                item_type = "entity"
+
+            cand = EvidenceCandidate(
+                incident_id=str(row.get("incident_id", "")),
+                model_run_id=str(row.get("model_run_id", "")),
+                playback_url=playback_url,
+                incident_type=str(row.get("incident_type", "unknown")),
+                severity_level=int(row.get("severity_level", 1)),
+                incident_title=row.get("incident_title") or row.get("title"),
+                incident_description=str(row.get("incident_description") or ""),
+                incident_window=incident_window,
+                item_type=item_type,
+                item_id=str(row.get("item_id", "")),
+                item_name=str(row.get("item_name") or ""),
+                item_label=str(row.get("item_label") or row.get("item_name") or ""),
+                item_description=str(row.get("item_description") or row.get("description") or ""),
+                threat_level=int(row["threat_level"]) if row.get("threat_level") is not None else None,
+                holder_entity_id=row.get("holder_entity_id"),
+                crop_image_url=crop_image_url,
+                timestamp_seconds=int(row.get("timestamp_seconds", 0)),
+                bounding_box=row.get("bounding_box"),
+                similarity_score=float(row.get("similarity_score", 0.0)),
+            )
+            candidates.append(cand)
+
+        return candidates
+
+    async def persist_query(self, query_id: str, query: str) -> None:
+        try:
+            client = await self._get_client()
+            data = {
+                "id": query_id,
+                "query_text": query,
+                "submitted_datetime": _dt.datetime.now(_dt.UTC).replace(tzinfo=None).isoformat(),
+            }
+            await client.table("queries").upsert(data, on_conflict="id").execute()
+        except Exception as exc:
+            logger.warning("Failed to persist query '%s' to Supabase queries table: %s", query_id, exc)
+
+    async def persist_query_results(self, query_id: str, results: list[dict[str, Any]]) -> None:
+        if not results:
+            return
+        try:
+            client = await self._get_client()
+            rows = [
+                {
+                    "id": r["id"],
+                    "query_id": query_id,
+                    "incident_id": r["incident_id"],
+                    "model_run_id": r["model_run_id"],
+                    "item_type": r["item_type"],
+                    "item_id": r["item_id"],
+                    "rank": r["rank"],
+                    "similarity_score": r["similarity_score"],
+                    "critic_verdict": r["critic_verdict"],
+                    "critic_rationale": r.get("critic_rationale"),
+                    "retrieved_at": r.get(
+                        "retrieved_at",
+                        _dt.datetime.now(_dt.UTC).replace(tzinfo=None).isoformat(),
+                    ),
+                }
+                for r in results
+            ]
+            await client.table("query_results").upsert(rows, on_conflict="id").execute()
+        except Exception as exc:
+            logger.warning("Failed to persist query_results for '%s' to Supabase: %s", query_id, exc)
+
+
+def get_default_search_store() -> SearchStore:
+    """Resolve the default SearchStore based on environment and configuration.
+
+    Selection policy:
+    1. Check INCIDENT_SEARCH_STORE environment variable:
+       - 'memory' -> InMemorySearchStore()
+       - 'supabase' -> SupabaseSearchStore()
+    2. Fallback based on database configuration:
+       - If incident_db.is_configured() -> SupabaseSearchStore()
+       - Otherwise -> InMemorySearchStore() (for local zero-VM/mock use)
+    """
+    mode = (os.getenv("INCIDENT_SEARCH_STORE") or "").strip().lower()
+    if mode == "memory":
+        return InMemorySearchStore()
+    if mode == "supabase":
+        return SupabaseSearchStore()
+
+    if incident_db.is_configured():
+        return SupabaseSearchStore()
+    return InMemorySearchStore()
 
 
 # =============================================================================
@@ -616,7 +794,7 @@ def create_incident_search_router(
 ) -> APIRouter:
     """Build the POST /api/v1/incidents/search router implementing search-contract-v1."""
     router = APIRouter()
-    search_store = store or InMemorySearchStore()
+    search_store = store if store is not None else get_default_search_store()
     critic_evaluator = critic or VlmCriticEvaluator()
     query_embedder = embedder or DefaultQueryEmbedder()
 

@@ -42,9 +42,11 @@ from vss_agents.api.incident_search import InMemorySearchStore
 from vss_agents.api.incident_search import ItemHit
 from vss_agents.api.incident_search import SearchRequest
 from vss_agents.api.incident_search import SearchResponse
+from vss_agents.api.incident_search import SupabaseSearchStore
 from vss_agents.api.incident_search import VlmCriticEvaluator
 from vss_agents.api.incident_search import _get_critic_delay_seconds
 from vss_agents.api.incident_search import create_incident_search_router
+from vss_agents.api.incident_search import get_default_search_store
 from vss_agents.api.incident_search import register_incident_search_routes
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -675,6 +677,212 @@ class TestSearchStores:
         hits = await store.search_evidence_items(query_embedding=[], top_k=10, min_similarity=0.2)
         assert len(hits) > 0
         assert hits[0].similarity_score >= hits[-1].similarity_score
+
+    def test_get_default_search_store_resolution(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("INCIDENT_SEARCH_STORE", raising=False)
+        monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+        monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
+
+        # 1. Unconfigured -> InMemorySearchStore
+        store = get_default_search_store()
+        assert isinstance(store, InMemorySearchStore)
+
+        # 2. Configured Supabase -> SupabaseSearchStore
+        monkeypatch.setenv("INCIDENT_SUPABASE_URL", "https://xyz.supabase.co")
+        monkeypatch.setenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", "secret-key")
+        store = get_default_search_store()
+        assert isinstance(store, SupabaseSearchStore)
+
+        # 3. Explicit override to memory -> InMemorySearchStore
+        monkeypatch.setenv("INCIDENT_SEARCH_STORE", "memory")
+        store = get_default_search_store()
+        assert isinstance(store, InMemorySearchStore)
+
+        # 4. Explicit override to supabase -> SupabaseSearchStore
+        monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+        monkeypatch.setenv("INCIDENT_SEARCH_STORE", "supabase")
+        store = get_default_search_store()
+        assert isinstance(store, SupabaseSearchStore)
+
+    @pytest.mark.asyncio
+    async def test_supabase_search_store_empty_embedding(self) -> None:
+        mock_client = MagicMock()
+        store = SupabaseSearchStore(client=mock_client)
+        hits = await store.search_evidence_items(query_embedding=[])
+        assert hits == []
+        mock_client.rpc.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_supabase_search_store_requires_configured_db(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("INCIDENT_SUPABASE_URL", raising=False)
+        monkeypatch.delenv("INCIDENT_SUPABASE_SERVICE_ROLE_KEY", raising=False)
+        store = SupabaseSearchStore()
+        with pytest.raises(RuntimeError, match="Incident Supabase DB is not configured"):
+            await store.search_evidence_items(query_embedding=[0.1] * 10)
+
+    @pytest.mark.asyncio
+    async def test_supabase_search_store_search_evidence_items_mapping(self) -> None:
+        mock_client = MagicMock()
+        rpc_builder = MagicMock()
+        sample_rpc_row = {
+            "incident_id": "Assault007_x264",
+            "model_run_id": "m86a5c319e26659804b0",
+            "video_filepath": "videos/anomaly/assault/Assault007_x264.mp4",
+            "incident_type": "assault",
+            "severity_level": 4,
+            "incident_title": "Assault incident",
+            "incident_description": "Perpetrator brandishes blade.",
+            "incident_start_timestamp": "10.0",
+            "incident_end_timestamp": "28.0",
+            "item_type": "instrument",
+            "item_id": "I1",
+            "item_name": "machete",
+            "item_label": "machete",
+            "item_description": "Long curved blade held by assailant.",
+            "threat_level": 4,
+            "holder_entity_id": "E1",
+            "image": "evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+            "timestamp_seconds": 14,
+            "bounding_box": [320, 450, 510, 600],
+            "similarity_score": 0.89,
+        }
+        rpc_builder.execute = AsyncMock(return_value=MagicMock(data=[sample_rpc_row]))
+        mock_client.rpc = MagicMock(return_value=rpc_builder)
+
+        def fake_signer(ref: str) -> str:
+            return f"https://mock-r2.test/{ref}"
+
+        store = SupabaseSearchStore(client=mock_client, r2_resolver=fake_signer)
+        hits = await store.search_evidence_items(
+            query_embedding=[0.5] * 1024,
+            top_k=5,
+            min_similarity=0.3,
+            item_types=["instrument"],
+            incident_types=["assault"],
+            min_severity=2,
+            max_severity=5,
+        )
+
+        assert len(hits) == 1
+        cand = hits[0]
+        assert cand.incident_id == "Assault007_x264"
+        assert cand.model_run_id == "m86a5c319e26659804b0"
+        assert cand.playback_url == "https://mock-r2.test/videos/anomaly/assault/Assault007_x264.mp4"
+        assert cand.crop_image_url == (
+            "https://mock-r2.test/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg"
+        )
+        assert cand.item_type == "instrument"
+        assert cand.item_id == "I1"
+        assert cand.incident_window == [10.0, 28.0]
+        assert cand.similarity_score == 0.89
+
+        mock_client.rpc.assert_called_once_with(
+            "search_evidence_items",
+            {
+                "p_query_embedding": [0.5] * 1024,
+                "p_top_k": 5,
+                "p_min_similarity": 0.3,
+                "p_item_types": ["instrument"],
+                "p_incident_types": ["assault"],
+                "p_min_severity": 2,
+                "p_max_severity": 5,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_supabase_search_store_persists_queries_and_results(self) -> None:
+        mock_client = MagicMock()
+        table_mock = MagicMock()
+        upsert_mock = MagicMock()
+        upsert_mock.execute = AsyncMock()
+        table_mock.upsert = MagicMock(return_value=upsert_mock)
+        mock_client.table = MagicMock(return_value=table_mock)
+
+        store = SupabaseSearchStore(client=mock_client)
+
+        await store.persist_query("q-123", "edged weapon")
+        mock_client.table.assert_called_with("queries")
+        table_mock.upsert.assert_called_once()
+        upsert_call_args = table_mock.upsert.call_args[0][0]
+        assert upsert_call_args["id"] == "q-123"
+        assert upsert_call_args["query_text"] == "edged weapon"
+
+        table_mock.reset_mock()
+        results = [
+            {
+                "id": "res-1",
+                "incident_id": "Assault007",
+                "model_run_id": "m1",
+                "item_type": "instrument",
+                "item_id": "I1",
+                "rank": 1,
+                "similarity_score": 0.9,
+                "critic_verdict": "confirmed",
+                "critic_rationale": "Verified weapon",
+            }
+        ]
+        await store.persist_query_results("q-123", results)
+        mock_client.table.assert_called_with("query_results")
+        table_mock.upsert.assert_called_once()
+        results_call_args = table_mock.upsert.call_args[0][0]
+        assert len(results_call_args) == 1
+        assert results_call_args[0]["query_id"] == "q-123"
+        assert results_call_args[0]["critic_verdict"] == "confirmed"
+
+    def test_search_route_with_supabase_store_e2e(self) -> None:
+        mock_client = MagicMock()
+        rpc_builder = MagicMock()
+        sample_rpc_row = {
+            "incident_id": "Assault007_x264",
+            "model_run_id": "m86a5c319e26659804b0",
+            "video_filepath": "videos/Assault007_x264.mp4",
+            "incident_type": "assault",
+            "severity_level": 4,
+            "incident_title": "Assault incident",
+            "incident_description": "Perpetrator brandishes blade.",
+            "incident_start_timestamp": "10.0",
+            "incident_end_timestamp": "28.0",
+            "item_type": "instrument",
+            "item_id": "I1",
+            "item_name": "machete",
+            "item_label": "machete",
+            "item_description": "Long curved blade held by assailant.",
+            "threat_level": 4,
+            "holder_entity_id": "E1",
+            "image": "evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+            "timestamp_seconds": 14,
+            "bounding_box": [320, 450, 510, 600],
+            "similarity_score": 0.89,
+        }
+        rpc_builder.execute = AsyncMock(return_value=MagicMock(data=[sample_rpc_row]))
+        mock_client.rpc = MagicMock(return_value=rpc_builder)
+
+        table_mock = MagicMock()
+        upsert_mock = MagicMock()
+        upsert_mock.execute = AsyncMock()
+        table_mock.upsert = MagicMock(return_value=upsert_mock)
+        mock_client.table = MagicMock(return_value=table_mock)
+
+        def fake_signer(ref: str) -> str:
+            return f"https://real-r2.test/{ref}"
+
+        store = SupabaseSearchStore(client=mock_client, r2_resolver=fake_signer)
+        critic = MockCriticEvaluator(verdict="confirmed", confidence=0.92, rationale="Object matches query")
+
+        app = FastAPI()
+        register_incident_search_routes(app, store=store, critic=critic)
+        client = TestClient(app)
+
+        resp = client.post("/api/v1/incidents/search", json={"query": "machete", "top_k": 5})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_hits"] == 1
+        hit = data["hits"][0]
+        assert hit["critic"]["verdict"] == "confirmed"
+        assert hit["critic"]["confidence"] == 0.92
+        assert hit["item"]["crop_image_url"] == (
+            "https://real-r2.test/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg"
+        )
 
 
 # =============================================================================
