@@ -97,6 +97,19 @@ def test_start_script_shellcheck():
     )
 
 
+@pytest.mark.parametrize("name", ["test-vm-preflight.sh", "test-vm-ensure-docker.sh"])
+def test_vm_helper_scripts_hermetic_tests(name: str):
+    """The VM-side failure classification and Docker step have their own fake-ssh/fake-docker tests."""
+    res = subprocess.run(
+        ["bash", str(INCIDENT_PROFILE_DIR / ".scripts" / name)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert res.returncode == 0, f"{name} failed:\n{res.stdout}\n{res.stderr}"
+
+
 def test_start_script_always_mounts_search_route():
     """Verify that the search route is mounted unconditionally and responds with expected status codes."""
     import sys
