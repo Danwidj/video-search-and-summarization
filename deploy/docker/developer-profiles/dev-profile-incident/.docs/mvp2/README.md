@@ -237,7 +237,7 @@ The three PR task docs assume the following conventions and environment setup. T
 
 > [!IMPORTANT]
 > **TODO [PR 120]: MVP2 Data and Search Layer**
-> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), Supabase MVP2 migration enabling `vector` extension and creating `evidence_crops` and `query_results` tables with RLS and HNSW index, PostgreSQL hybrid search RPC `search_evidence_items` with service_role permissions, standalone crop embedding generator, batch re-analysis ingestion loader, Cloudflare R2 evidence crop storage management, and typed data module `incident-console-v2/lib/db/`.
+> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), live application of Supabase MVP2 migration `20261016120000_mvp2_evidence_search_and_crops.sql` (migration DDL delivered), standalone crop embedding generator, batch re-analysis ingestion loader, Cloudflare R2 evidence crop storage management, and typed data module `incident-console-v2/lib/db/`.
 > - **Owner:** PR 120 (`docs(dev-profile-incident): MVP2 data and search layer workstream tasks`)
 > - **Stand-in Placeholder:** Table definitions in §2 and DDL checklist in §6.3; typed module stub `incident-console-v2/lib/db/index.ts`.
 
@@ -326,8 +326,8 @@ The following specifications are planned, not final, pending completion of the o
 | 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report (detector port & CropEvidenceService implemented in services/agent) |
 | 9 | Embedding Model Comparison | PR 119 / PR 120 | NeMo vs OpenAI vs MiniLM benchmark |
 | 10 | Live DB RLS Lockdown Verification | PR 120 | Verification test suite on migration `20261016000000` |
-| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Migration DDL with `vector(1024)` and HNSW index |
-| 12 | `search_evidence_items` Database RPC | PR 120 | Service-role hybrid search Postgres function |
+| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; pending live application) |
+| 12 | `search_evidence_items` Database RPC | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; pending live application) |
 | 13 | Crop Embedding Generator & Ingestion | PR 120 | `scripts/ingest_mvp2_crops.py` script |
 | 14 | Typed Data Access Module (`lib/db/`) | PR 120 | `incident-console-v2/lib/db/index.ts` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |

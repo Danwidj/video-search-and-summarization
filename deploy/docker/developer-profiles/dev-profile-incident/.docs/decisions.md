@@ -2,6 +2,26 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-17: MVP2 database migration for evidence_crops, query_results, and search_evidence_items RPC
+- **Decision:**
+  - Add Supabase migration `20261016120000_mvp2_evidence_search_and_crops.sql` establishing the pgvector semantic search and audit storage layer.
+  - Enable PostgreSQL `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`).
+  - Create unified `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchors (`timestamp_seconds`), detector bounding boxes (`bounding_box INTEGER[4]`), R2 crop image keys (`image VARCHAR(1024)`), and 1024-dimensional semantic text embeddings (`embedding vector(1024)`).
+  - Add HNSW cosine distance index `evidence_crops_embedding_hnsw_idx` on `evidence_crops.embedding` with parameters `m = 16, ef_construction = 64`, plus composite lookup index on `(incident_id, model_run_id)`.
+  - Create `query_results` table for item-level search hit auditing, similarity rankings, and VLM critic verdicts (`confirmed`, `rejected`, `unverified`) with objective rationales.
+  - Enforce Row-Level Security (RLS) on both `evidence_crops` and `query_results`: revoke all privileges from `anon` and `authenticated`, granting access exclusively to `service_role`.
+  - Implement `search_evidence_items` PostgreSQL RPC function with pgvector cosine distance calculation, metadata filtering (item types, incident taxonomy, min/max severity, min similarity), and strict official report scoping via inner join on `videos v ON v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id`. Restrict RPC execution exclusively to `service_role`.
+- **Why:**
+  - The live search retest on `kwanz-ws` failed with PostgREST `PGRST202` because `search_evidence_items` was missing from the schema cache.
+  - Consolidating evidence entities, instruments, and assets into a single unified `evidence_crops` table avoids three disparate vector columns and three UNION queries, enabling single-pass HNSW index lookups.
+  - Scoping retrieval to official reports prevents outdated or re-analysis runs from producing conflicting duplicate hits.
+- **Alternatives rejected:**
+  - Altering legacy `entities`, `instruments`, and `assets` tables directly (rejected: mutates existing production tables, complicates multi-item queries, and duplicates vector indexes).
+  - Leaving search unconstrained by official selection (rejected: causes duplicate conflicting evidence items when multiple model runs exist for a video).
+- **Links:** [`../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`.docs/data.md`](data.md); [`.docs/mvp2/README.md`](mvp2/README.md).
+
+---
+
 ### 2026-10-17: Supabase-backed SearchStore and Cloudflare R2 presigned URLs for natural-language incident search
 - **Decision:**
   - Implement `SupabaseSearchStore` in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`) querying `evidence_crops` via the existing `search_evidence_items` RPC using the service role client.
