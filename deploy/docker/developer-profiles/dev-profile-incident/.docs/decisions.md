@@ -2,6 +2,22 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Configurable delay spacing between VLM critic calls in incident search route
+- **Decision:**
+  - Introduce configurable delay spacing between vision-language model (VLM) critic calls in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`).
+  - Stagger each candidate hit's critic evaluation call by starting each call a configurable delay after the previous one starts (default `1.0` second, governed by environment variable `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` or router argument `critic_delay_seconds`). Setting delay to `0` disables spacing and restores simultaneous invocation.
+  - Preserve strict rank ordering of hits and maintain graceful degradation to `verdict="unverified"` (with confidence `None`) if any critic evaluation fails or times out.
+  - Avoid complex machinery such as retries or concurrency thread pools to keep architecture simple and reliable.
+- **Why:**
+  - On the `kwanz-ws` VM, firing all VLM critic calls simultaneously via `asyncio.gather` for multi-hit search requests against the remote Brev Switchyard endpoint caused upstream HTTP 429 rate limit and HTTP 500 server errors, causing all hits to degrade to unverified verdicts despite single calls returning 200 OK.
+  - Staggering call starts spreads request traffic across the rate limit window, allowing the remote endpoint to process evidence verification smoothly.
+- **Alternatives rejected:**
+  - Implementing full retry loops with backoff or concurrency pools (rejected: out of scope, introduces complex state and potential request amplification).
+  - Fully sequential execution waiting for each call to complete before initiating the next (rejected: overly increases total latency; spacing call starts maintains high concurrency while smoothing request bursts).
+- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`services/agent/tests/unit_test/api/test_incident_search.py`](../../../../../services/agent/tests/unit_test/api/test_incident_search.py); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
+
+---
+
 ### 2026-10-16: MVP2 chat backend endpoint and chat-contract-v1
 - **Decision:**
   - Define `chat-contract-v1` in `contracts/chat-contract-v1/` specifying request (`chat_request.schema.json`) and response (`chat_response.schema.json`) JSON schemas with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
