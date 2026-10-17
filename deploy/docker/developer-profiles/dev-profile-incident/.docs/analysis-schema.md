@@ -12,7 +12,7 @@ This document describes how incident analysis output is defined, validated, stor
 1. **`contracts/` defines the complete model output.** `incident_report.schema.json` (JSON Schema draft 2020-12), `incident_extraction_prompt.md` and `VERSION` are the source of truth for what the VLM must return and what counts as a valid response. In `incident-contract-v3`, entities, instruments, and assets require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localization. Spatial bounding boxes are detector-produced and optional in search hits, not VLM outputs.
 2. **`model_runs.notes` stores the complete validated report and its provenance, immutably.** Nothing ever edits it.
 3. **Relational tables are a query-optimised projection** (`incidents`, `entities`, `instruments`, `assets`). A field gets a column when it must be queried, filtered, aggregated, joined, edited, matched or charted.
-4. **What the report page shows follows reviewer usefulness**, drawing from both the projection and the notes.
+4. **What the report page shows follows reviewer usefulness**, drawing from both the projection and the notes. The console translates the rows of one run (projection, review state, official selection, decoded notes) into a `RunReportRecord` in `incident-console-v2/lib/adapters/supabase/mappers/report.ts`; `toReportView` in `lib/reports/view.ts` builds the report view from that record without reading any column.
 
 ## 2. The analysis request (identical to eval P1)
 

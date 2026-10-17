@@ -92,6 +92,7 @@ Search & Retrieval
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Joins with `videos` (via `selected_model_run_id`) and `incidents` to return candidate metadata.
    - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the cropped screenshot and item description. Both ranking and critic verdicts are persisted into `query_results` before returning results.
+   - **Interim console path (decided 2026-10-17):** the route above stays the MVP2 target, but for now `incident-console-v2` searches Supabase directly through `EvidenceSearchRepository`, keyword-only and without the critic, until the team decides otherwise ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
 
 5. **Query Results** (new table):
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
@@ -106,7 +107,7 @@ Search & Retrieval
 | Contract / Schema | Description | Consumed By |
 |---|---|---|
 | **incident-contract-v3** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
-| **evidence_crops** (new Supabase table) | Unified table: `(incident_id, model_run_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | PR 120 (data migration), search route, chat endpoint |
+| **evidence_crops** (new Supabase table) | Unified table: `(incident_id, model_run_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | PR 126 (data migration), search route, chat endpoint |
 | **query_results** (new Supabase table) | Records: `id, query_id, incident_id, model_run_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
 | **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
 | **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
@@ -126,7 +127,7 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 | **Step 1** | `incident-contract-v3` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - | Delivered |
 | **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 | Delivered |
 | **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
-| **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic, query persistence, and hexagonal `SearchStore` port (live pgvector RPC integration in PR 120) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
+| **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic, query persistence, and hexagonal `SearchStore` port (live pgvector RPC integration in PR 126) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
 | **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Delivered (`services/agent/src/vss_agents/api/incident_chat.py`, `chat-contract-v1`) |
 | **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both VM and local modes with always-on critic and persisted ranking/verdicts) |
 
@@ -136,11 +137,12 @@ The three PR workstreams and the VM backend steps form a chain of dependencies. 
 |---|---|---|---|
 | **PR 118** (frontend) | Search box, results display, chat endpoint, theming | VM backend Step 4 (search REST route), Step 5 (chat REST route) | Cannot display search results or chat without REST API routes |
 | **PR 119** (eval) | System vs one-shot baseline, retrieval benchmarks, critic verdicts | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
-| **PR 120** (data & search layer) | Hexagonal decoupling, `evidence_crops` migration, pgvector setup, RLS & RPC lockdown, connection & VM persistence verification | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot migrate schema or run search without the contract and mock backend |
+| **PR 120** (console middle layer) | Hexagonal ports and adapters in `incident-console-v2` (`lib/ports/`, `lib/adapters/supabase/`, `lib/application/`); keyword-first evidence search port | PR 126 tables for the search adapter | Console search needs the search port and adapter |
+| **PR 126** (data & search layer) | `evidence_crops` / `query_results` migration, pgvector setup, `search_evidence_items` RPC, RLS & RPC lockdown, connection & VM persistence verification | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot migrate schema or run search without the contract and mock backend |
 
 **Order of operations:**
-1. VM backend Step 1: `incident-contract-v3` lands → PR 120 can start data/migration work
-2. VM backend Step 2: Mock backend with search-profile mock → PR 120 validates migration locally
+1. VM backend Step 1: `incident-contract-v3` lands → PR 126 can start data/migration work
+2. VM backend Step 2: Mock backend with search-profile mock → PR 126 validates migration locally
 3. VM backend Step 3: Crop service + `evidence_crops` table → PR 119 can embed and test retrieval
 4. VM backend Step 4: `search_evidence_items` RPC and search REST route → PR 118 can implement search UI; PR 119 evaluates critic verdicts
 5. VM backend Step 5: Chat REST endpoint → PR 118 implements chat
@@ -231,25 +233,32 @@ The three PR task docs assume the following conventions and environment setup. T
 - Critic accuracy: % of hits confirmed by the VLM critic
 - One-shot vs system baseline delta (critic rejection rate, ranking shift)
 
-### PR 120 - Data and Search Layer
+### PR 120 - incident-console-v2 Middle Layer
 
-**File:** `.docs/mvp2/db-migration.md` (to be created by PR assignee)
+**File:** [`.docs/mvp2/console-hexagonal-architecture.md`](console-hexagonal-architecture.md)
+
+Hexagonal ports and adapters between the console's API routes and Supabase (no database migrations). Console evidence search is keyword-only for now and goes straight to Supabase through `EvidenceSearchRepository`; its adapter follows PR 126's tables.
+
+### PR 126 - Data and Search Layer
+
+**File:** `.docs/mvp2/db-migration.md` (on the PR 126 branch, https://github.com/Danwidj/video-search-and-summarization/pull/126)
 
 > [!IMPORTANT]
-> **TODO [PR 120]: MVP2 Data and Search Layer**
-> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), Supabase MVP2 migration enabling `vector` extension and creating `evidence_crops` and `query_results` tables with RLS and HNSW index, PostgreSQL hybrid search RPC `search_evidence_items` with service_role permissions, standalone crop embedding generator, batch re-analysis ingestion loader, Cloudflare R2 evidence crop storage management, and typed data module `incident-console-v2/lib/db/`.
-> - **Owner:** PR 120 (`docs(dev-profile-incident): MVP2 data and search layer workstream tasks`)
-> - **Stand-in Placeholder:** Table definitions in §2 and DDL checklist in §6.3; typed module stub `incident-console-v2/lib/db/index.ts`.
+> **TODO [PR 126]: MVP2 Data and Search Layer**
+> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), Supabase MVP2 migration enabling `vector` extension and creating `evidence_crops` and `query_results` tables with RLS and HNSW index, PostgreSQL hybrid search RPC `search_evidence_items` with service_role permissions, standalone crop embedding generator, batch re-analysis ingestion loader, and Cloudflare R2 evidence crop storage management.
+> - **Owner:** PR 126 (`docs(dev-profile-incident): MVP2 database migration and search layer workstream tasks`)
+> - **Stand-in Placeholder:** Table definitions in §2 and DDL checklist in §6.3; the console reaches these tables only through PR 120's search port (`incident-console-v2/lib/ports/search.ts`).
 
-**What PR 120 needs from this overview:**
+**What PR 126 needs from this overview:**
 - The complete `evidence_crops` migration DDL (table definition, HNSW index, RLS lockdown)
 - The `query_results` migration DDL (table definition, indexes)
 - The `search_evidence_items` RPC migration (PG function definition with pgvector parameters)
 - RLS policy: `ENABLE ROW LEVEL SECURITY`, `REVOKE ALL FROM anon, authenticated`, `GRANT ALL TO service_role`
 - RPC execution permission lockdown: `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`
 - pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-- Hexagonal decoupling of `incident-console-v2`, connection verification, and verifying VM `vss-agent` persists reports to Supabase end to end
-- The `start.sh` launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference (this launcher change belongs to VM backend Step 6 `start.sh` search task, not to PR 120's scope)
+- Connection verification, and verifying VM `vss-agent` persists reports to Supabase end to end (hexagonal decoupling of `incident-console-v2` is PR 120)
+- `search_evidence_items` accepting a null query embedding and ranking by full text alone, because console search is keyword-only for now
+- The `start.sh` launcher: search is always on (no `--search` flag), starts in <5 seconds because it uses Supabase pgvector and Brev Switchyard for critic inference (this launcher change belongs to VM backend Step 6 `start.sh` search task, not to PR 126's scope)
 - Dependency on VM backend Step 1 (`incident-contract-v3`) and Step 2 (mock backend)
 
 **Migration checklist:**
@@ -282,15 +291,15 @@ The following specifications are planned, not final, pending completion of the o
 > - **Stand-in Placeholder:** Structured output schema returning `{verdict: "confirmed" | "rejected", rationale: string}`.
 
 > [!IMPORTANT]
-> **TODO [PR 120 / PR 119]: Embedding Model & Vector Dimension**
+> **TODO [PR 126 / PR 119]: Embedding Model & Vector Dimension**
 > - **Missing:** Benchmark selection between NVIDIA NeMo NIM, OpenAI text-embedding-3, and MiniLM.
-> - **Owner:** PR 120 and PR 119
-> - **Stand-in Placeholder:** `vector(1024)` column definition on `evidence_crops.embedding`.
+> - **Owner:** PR 126 and PR 119
+> - **Stand-in Placeholder:** `vector(1024)` column definition on `evidence_crops.embedding`. Console search is keyword-only for now (no hosted embeddings); a free in-process model may be added later and must match the stored model and dimension.
 
 > [!IMPORTANT]
-> **TODO [PR 120 / PR 119]: Search RPC Parameter Tuning**
+> **TODO [PR 126 / PR 119]: Search RPC Parameter Tuning**
 > - **Missing:** Calibrated default thresholds for `min_similarity` and `top_k`.
-> - **Owner:** PR 120 (implementation) and PR 119 (tuning)
+> - **Owner:** PR 126 (implementation) and PR 119 (tuning)
 > - **Stand-in Placeholder:** `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`.
 
 > [!NOTE]
@@ -299,16 +308,16 @@ The following specifications are planned, not final, pending completion of the o
 > - **Endpoints:** Native endpoint implemented in `vss-agent` (`services/agent/src/vss_agents/api/incident_chat.py`) with hexagonal `SearchClient` port and in-memory adapter; mock endpoint in `mock-backend/base_profile_mock` (port 7777).
 
 > [!IMPORTANT]
-> **TODO [Contracts / PR 120]: Item Type Filter Enum Alignment**
+> **TODO [Contracts / PR 126]: Item Type Filter Enum Alignment**
 > - **Missing:** Finalization of item category enum in `search-contract-v1` and database RPC.
-> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 120
+> - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 126
 > - **Stand-in Placeholder:** Enum values `'entity'`, `'instrument'`, `'asset'`.
 
 > [!IMPORTANT]
 > **TODO [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass**
 > - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
 > - **Owner:** `fm/vss-mvp2-backfill-timestamps`
-> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore` with JSON lines `--output-file` persistence/resumption, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`. Production database loading is owned by PR 120 loader; production crop extraction by crop-service.
+> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore` with JSON lines `--output-file` persistence/resumption, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`. Production database loading is owned by PR 126 loader; production crop extraction by crop-service.
 
 ---
 
@@ -324,12 +333,12 @@ The following specifications are planned, not final, pending completion of the o
 | 6 | Retrieval Benchmark Suite (50+ queries) | PR 119 | `eval/scripts/eval_retrieval.py` |
 | 7 | Always-On Critic Ablation Study | PR 119 | Precision vs latency false-positive report |
 | 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report (detector port & CropEvidenceService implemented in services/agent) |
-| 9 | Embedding Model Comparison | PR 119 / PR 120 | NeMo vs OpenAI vs MiniLM benchmark |
-| 10 | Live DB RLS Lockdown Verification | PR 120 | Verification test suite on migration `20261016000000` |
-| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Migration DDL with `vector(1024)` and HNSW index |
-| 12 | `search_evidence_items` Database RPC | PR 120 | Service-role hybrid search Postgres function |
-| 13 | Crop Embedding Generator & Ingestion | PR 120 | `scripts/ingest_mvp2_crops.py` script |
-| 14 | Typed Data Access Module (`lib/db/`) | PR 120 | `incident-console-v2/lib/db/index.ts` |
+| 9 | Embedding Model Comparison | PR 119 / PR 126 | NeMo vs OpenAI vs MiniLM benchmark |
+| 10 | Live DB RLS Lockdown Verification | PR 126 | Verification test suite on migration `20261016000000` |
+| 11 | `evidence_crops` & `query_results` Migration | PR 126 | Migration DDL with `vector(1024)` and HNSW index |
+| 12 | `search_evidence_items` Database RPC | PR 126 | Service-role hybrid search Postgres function |
+| 13 | Crop Embedding Generator & Ingestion | PR 126 | `scripts/ingest_mvp2_crops.py` script |
+| 14 | Console Middle Layer (ports and adapters) | PR 120 | `incident-console-v2/lib/ports/`, `lib/adapters/supabase/` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
 | 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |
 | 17 | Targeted Timestamp Backfill Script | `fm/vss-mvp2-backfill-timestamps` | `scripts/backfill_official_timestamps.py` script & test suite |

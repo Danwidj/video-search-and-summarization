@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP1 (reporting) is done. MVP2 (natural-language search) overview is merged ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)); workstreams are in progress under PR 118, PR 119, and PR 120.
+Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP1 (reporting) is done. MVP2 (natural-language search) overview is merged ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)); workstreams are in progress under PR 118, PR 119, PR 120 (console middle layer) and PR 126 (database and search layer).
 
 - **Operate the profile** (launch, VM ops, analyse, migrate, evaluate): use the skills in [`skills/README.md`](skills/README.md).
 - **Understand it:** [`.docs/`](#docs-map). Start with [`.docs/status.md`](.docs/status.md) for what is true today.

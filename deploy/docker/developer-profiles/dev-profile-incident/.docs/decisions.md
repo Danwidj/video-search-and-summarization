@@ -2,6 +2,35 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-16: Hexagonal architecture for incident-console-v2 UI and database decoupling
+- **Decision:**
+  - Adopt hexagonal architecture (ports and adapters) for `incident-console-v2`: route handlers (`app/api/*`) depend on domain ports (`lib/ports/`) and reach the database only through Supabase PostgREST adapters (`lib/adapters/supabase/`) wired by `getDbAdapters()`, decoupling the API from direct PostgREST transport and table schemas. Components keep consuming domain types over `/api` and never touch the database.
+  - Ports, thin use cases and adapters form the console's middle layer between the frontend and Supabase, inside the app. Routes that combine several steps (report detail, review status change, delete) go through use cases in `lib/application/`; single-call routes call a port directly.
+  - Port signatures keep everything the routes use: runs are identified by `(videoId, modelRunId)`, review state keeps its three statuses plus verifier and editor with timestamps, and the dashboard port takes the full `get_incident_dashboard` filter set and returns everything the dashboard shows.
+  - Console evidence search goes straight to Supabase through `EvidenceSearchRepository`, keyword-only (Postgres full-text) for now, with the query embedding optional.
+  - First round (amended 2026-10-17) migrates health, the videos list, official selection, report detail, review, edit and delete. Deferred: the dashboard and report-list routes until a teammate's lazy-loading change lands; ground truth stays untouched; analysis saving and run history move later together with the separation of human-verified and AI-generated reports; the search adapter waits for https://github.com/Danwidj/video-search-and-summarization/pull/126's tables.
+  - Split the MVP2 reorganisation into two independent workstreams: PR #120 covers the UI/frontend restructure with hexagonal architecture, while https://github.com/Danwidj/video-search-and-summarization/pull/126 covers the database migration and VM persistence.
+  - The dependency rules (only the Supabase adapters import the PostgREST client; ports are type-only; use cases import no infrastructure) are documented conventions upheld in review, with the callers not yet migrated listed in the spec's §7. No test or lint tool checks them.
+- **Why:**
+  - Hexagonal architecture isolates Next.js UI route handlers from database implementation details, eliminating hard-coded PostgREST client calls across routes and enabling clean plug-in points for MVP2 tables (`evidence_crops`, `query_results`).
+  - The API did not translate data properly: some routes returned database rows or RPC JSON to the browser with only a TypeScript cast. Adapters now own every column name and RPC argument and map rows and RPC JSON field by field into camelCase domain types, and translate database refusals into a domain error (`StoreRejection`) instead of routes parsing PostgREST text.
+  - Backends can be swapped in one factory, and in-memory fakes of each port make use cases testable without a database; contract suites keep the fakes faithful to the Supabase adapters.
+  - Use cases keep orchestration and domain rules (R2 before database on whole-video delete, the review transition rule) out of HTTP handlers.
+  - Keyword search because hosted embeddings cost money; a free in-process model can be added later without changing the port, and must then match the model and dimension of the stored vectors.
+  - Splitting UI decoupling from database migration allows each workstream to be reviewed, tested, and rolled back independently.
+  - A check of the dependency rules needs a tool that resolves imports; the console has none (`lint` is `tsc --noEmit`) and adding one needs approval.
+- **Alternatives rejected:**
+  - Ad-hoc helper module `lib/db/` without refactoring existing API routes (rejected: leaves routes coupled to raw PostgREST client and creates inconsistent data-access paradigms).
+  - Monolithic PR combining UI hexagonal refactor with live database migration (rejected: harder to review and roll back independently).
+  - Routes calling ports directly for multi-step flows (rejected: orchestration and domain rules would stay in HTTP handlers and be testable only through HTTP).
+  - Console search through the vss-agent search route (not chosen for now; an agent-backed implementation can replace the Supabase one later behind the use case).
+  - Hosted NVIDIA embeddings for search (rejected for now: cost).
+  - A test that regex-matches `import` lines in the source (rejected: proves nothing about behaviour, misses commented-out, double-quoted and dynamic imports, and breaks on behaviour-preserving refactors).
+  - ESLint `no-restricted-imports` or dependency-cruiser (not chosen for now: new dependency).
+- **Links:** [PR #120](https://github.com/Danwidj/video-search-and-summarization/pull/120); [`.docs/mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md); [`incident-console-v2`](../incident-console-v2/).
+
+---
+
 ### 2026-10-16: MVP2 chat backend endpoint and chat-contract-v1
 - **Decision:**
   - Define `chat-contract-v1` in `contracts/chat-contract-v1/` specifying request (`chat_request.schema.json`) and response (`chat_response.schema.json`) JSON schemas with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).

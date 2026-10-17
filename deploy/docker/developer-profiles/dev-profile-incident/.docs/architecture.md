@@ -204,6 +204,22 @@ OPENAI_API_KEY=<brev-switchyard-api-key>
 
 ## 4. Runtime Interaction Sequences
 
+### Console middle layer (ports and adapters)
+
+`incident-console-v2` reaches Supabase through a hexagonal middle layer ([`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md)):
+
+```
+components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (multi-step use cases)
+                                         |                       |
+                                         +-----> lib/ports/* <---+   (domain types + port interfaces)
+                                                      ^
+                                     lib/adapters/supabase/* (getDbAdapters, mappers) --> lib/postgrest/client.ts --> PostgREST
+```
+
+- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. Each adapter maps rows and RPC JSON into camelCase domain types and database refusals into `StoreRejection`; `lib/adapters/supabase/mappers/report.ts` holds the report-row translation.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. Health, the videos list, official selection and edit call a port directly.
+- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): `/api/dashboard` and `/api/reports` (until the lazy-loading change lands), ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+
 ### Report library pagination and deferred report loading
 
 ```mermaid
@@ -223,7 +239,7 @@ sequenceDiagram
     UI-->>User: Lazy screenshot images or skeleton fallback
     User->>UI: Open one report
     UI->>API: GET /api/reports/videoId?run=modelRunId
-    API->>DB: Read selected report graph
+    API->>DB: Read selected report graph (IncidentRepository.getRunReport)
     API->>R2: Create selected object's signed URL
     API-->>UI: Full report + playback URL
 ```
@@ -385,4 +401,4 @@ sequenceDiagram
 *Authoritative specification, sequence, and data flow: [`mvp2/README.md`](mvp2/README.md) and [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).*
 
 > [!NOTE]
-> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). Active workstreams are tracked in PR 118, PR 119, and PR 120. See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
+> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture, end-to-end data flow and active workstreams.
