@@ -298,36 +298,36 @@ export interface HealthRepository {
 
 ## 5. Workstream Task Checklist
 
-- [ ] **Define Domain Ports (`lib/ports/`):**
-  - [ ] Create `lib/ports/common.ts` (`RunKey`, `Page`, `StoreRejection`).
-  - [ ] Create `lib/ports/incidents.ts` (`IncidentRepository`).
-  - [ ] Create `lib/ports/dashboard.ts` (`DashboardRepository`).
-  - [ ] Create `lib/ports/videos.ts` (`VideoRepository`).
-  - [ ] Create `lib/ports/search.ts` (`EvidenceSearchRepository`).
-  - [ ] Create `lib/ports/health.ts` (`HealthRepository`).
-  - [ ] Create `lib/ports/index.ts` exporting all port interfaces.
+- [x] **Define Domain Ports (`lib/ports/`):**
+  - [x] Create `lib/ports/common.ts` (`RunKey`, `Page`, `StoreRejection`).
+  - [x] Create `lib/ports/incidents.ts` (`IncidentRepository`).
+  - [x] Create `lib/ports/dashboard.ts` (`DashboardRepository`).
+  - [x] Create `lib/ports/videos.ts` (`VideoRepository`).
+  - [x] Create `lib/ports/search.ts` (`EvidenceSearchRepository`).
+  - [x] Create `lib/ports/health.ts` (`HealthRepository`).
+  - [x] Create `lib/ports/index.ts` exporting all port interfaces.
 - [ ] **Implement Supabase PostgREST Adapters (`lib/adapters/supabase/`):**
-  - [ ] Create `lib/adapters/supabase/client.ts` encapsulating service-role client configuration.
-  - [ ] Create `lib/adapters/supabase/incidents.ts` implementing `IncidentRepository`.
+  - [x] Create `lib/adapters/supabase/client.ts` encapsulating service-role client configuration.
+  - [x] Create `lib/adapters/supabase/incidents.ts` implementing `IncidentRepository`.
   - [ ] Create `lib/adapters/supabase/dashboard.ts` implementing `DashboardRepository` (with the dashboard route, §7).
-  - [ ] Create `lib/adapters/supabase/videos.ts` implementing `VideoRepository`.
+  - [x] Create `lib/adapters/supabase/videos.ts` implementing `VideoRepository`.
   - [ ] Create `lib/adapters/supabase/search.ts` implementing `EvidenceSearchRepository` (after PR 126's tables exist, §7).
-  - [ ] Create `lib/adapters/supabase/health.ts` implementing `HealthRepository`.
-  - [ ] Create `lib/adapters/supabase/index.ts` providing `getDbAdapters()` and `getDbHealth()`.
-- [ ] **Add thin use cases (`lib/application/`)** for report detail, review status change and delete.
+  - [x] Create `lib/adapters/supabase/health.ts` implementing `HealthRepository`.
+  - [x] Create `lib/adapters/supabase/index.ts` providing `getDbAdapters()` and `getDbHealth()`.
+- [x] **Add thin use cases (`lib/application/`)** for report detail, review status change and delete.
 - [ ] **Refactor API Routes (`app/api/*`):**
-  - [ ] Refactor `app/api/health/route.ts`.
+  - [x] Refactor `app/api/health/route.ts`.
   - [ ] Refactor `app/api/dashboard/route.ts` (deferred, §7).
-  - [ ] Refactor `app/api/videos/route.ts` and `app/api/videos/[videoId]/official/route.ts`.
+  - [x] Refactor `app/api/videos/route.ts` and `app/api/videos/[videoId]/official/route.ts`.
   - [ ] Refactor `app/api/reports/route.ts` (deferred, §7).
-  - [ ] Refactor `app/api/reports/[videoId]/route.ts`, `review`, `edit` and `delete`.
+  - [x] Refactor `app/api/reports/[videoId]/route.ts`, `review`, `edit` and `delete`.
   - [ ] `app/api/reports/[videoId]/ground-truth`, `app/api/videos/[videoId]/runs`, `app/api/analysis` and `lib/analysis/*` (deferred, §7).
-- [ ] **Testing & Quality Assurance:**
-  - [ ] Characterisation tests for routes that had none (report detail, review), written against the unrefactored routes.
-  - [ ] Contract suites that run the same cases against the in-memory fake and the Supabase adapter (over `tests/support/fake-postgrest.mjs`).
-  - [ ] Architecture test enforcing the dependency rules, with an allow-list of callers not yet migrated.
-  - [ ] Verify existing test suite passes unmodified apart from import paths: `npm run test`.
-  - [ ] Verify production Next.js build passes cleanly: `npm run build`.
+- [x] **Testing & Quality Assurance:**
+  - [x] Characterisation tests for responses no test pinned (report detail, review, the videos list), written against the unrefactored routes.
+  - [x] Contract suites that run the same cases against the in-memory fake and the Supabase adapter (over `tests/support/fake-postgrest.mjs`).
+  - [x] Architecture test enforcing the dependency rules, with an allow-list of callers not yet migrated.
+  - [x] Verify existing test suite passes unmodified apart from import paths: `npm run test`.
+  - [x] Verify production Next.js build passes cleanly: `npm run build`.
 
 ---
 
