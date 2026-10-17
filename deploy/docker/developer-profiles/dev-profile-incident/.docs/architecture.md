@@ -202,9 +202,9 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
                                      lib/adapters/supabase/* (getDbAdapters, mappers) --> lib/postgrest/client.ts --> PostgREST
 ```
 
-- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns; `lib/adapters/supabase/mappers/` translates rows and RPC JSON into camelCase domain types, and database refusals into `StoreRejection`.
+- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. Each adapter maps rows and RPC JSON into camelCase domain types and database refusals into `StoreRejection`; `lib/adapters/supabase/mappers/report.ts` holds the report-row translation.
 - Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. Health, the videos list, official selection and edit call a port directly.
-- Not yet behind the ports (listed in `tests/architecture.test.mjs`): `/api/dashboard` and `/api/reports` (until the lazy-loading change lands), ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): `/api/dashboard` and `/api/reports` (until the lazy-loading change lands), ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
 
 ### Report library pagination and deferred report loading
 
