@@ -676,12 +676,6 @@ class SupabaseEvidenceStore:
         )
         return list(resp.data or [])
 
-    async def list_crops(self) -> list[dict[str, Any]]:
-        """List every crop row (without embeddings)."""
-        client = await self._get_client()
-        resp = await client.table("evidence_crops").select(self._COLUMNS).execute()
-        return list(resp.data or [])
-
 
 class LiveEvidenceStore(EvidenceStore):
     """Production EvidenceStore: images in Cloudflare R2, crop rows and embeddings in Supabase."""
