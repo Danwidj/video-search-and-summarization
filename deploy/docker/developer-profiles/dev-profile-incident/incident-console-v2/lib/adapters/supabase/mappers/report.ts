@@ -8,7 +8,6 @@ import type { ReviewState, RunKey, RunReportRecord } from '@/lib/ports';
 import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
 import { parseRunNotes } from '@/lib/reports/run-notes';
 import type { ReviewStatus } from '@/lib/reports/storage';
-import { toReportView, type ReportView } from '@/lib/reports/view';
 
 type Row = Record<string, unknown>;
 
@@ -91,9 +90,4 @@ export function runReportFromRows(rows: ReportRows): RunReportRecord {
     review: reviewFromRow(rows.review),
     report: rows.reportRow ? { reportId: text(rows.reportRow.id), generatedAt: text(rows.reportRow.generated_datetime) } : null,
   };
-}
-
-/** Rows -> view in one step: the seam the row-fixture tests use. */
-export function buildReportView(rows: ReportRows & { playbackUrl: string }): ReportView {
-  return toReportView(runReportFromRows(rows), rows.playbackUrl);
 }

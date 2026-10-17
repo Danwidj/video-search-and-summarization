@@ -40,19 +40,21 @@ incident-console-v2/
         incidents.ts              # SupabaseIncidentAdapter implements IncidentRepository
         videos.ts                 # SupabaseVideoAdapter implements VideoRepository
         health.ts                 # SupabaseHealthAdapter implements HealthRepository
-        mappers/                  # row <-> domain and RPC JSON -> domain translation (only place with column names)
+        mappers/                  # report row <-> domain translation (videos, model_runs, incidents, evidence, review_status, reports)
         client.ts                 # PostgrestClient wrapper and service-role configuration
         index.ts                  # Factory functions getDbAdapters() and getDbHealth()
       memory/                     # In-memory fakes of each port, for use-case tests
 ```
 
+The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. Each adapter maps the RPC JSON it receives and translates database refusals into `StoreRejection` itself (`incidents.ts`, `videos.ts`); `mappers/report.ts` holds the report-row translation.
+
 `SupabaseDashboardAdapter` and `SupabaseEvidenceSearchAdapter` are added with the routes that use them (§7); an adapter is never shipped without a caller.
 
-**Dependency rules** (checked by `tests/architecture.test.mjs`):
+**Dependency rules** (conventions upheld in review; no test or lint tool checks them):
 1. `app/api/**` reaches the database only through `@/lib/adapters/supabase` (the factory), never `@/lib/postgrest/*` or another adapter module.
 2. `lib/ports/**` holds type-only imports (apart from the `StoreRejection` class in `common.ts`), so ports stay browser-safe.
 3. `lib/application/**` never imports `lib/adapters`, `lib/postgrest`, `lib/r2` or `lib/gateway`; R2 work is passed in as functions.
-4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value. Callers not yet migrated are listed in the test's allow-list (§7).
+4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value. The callers not yet migrated are listed in §7; remove an entry when its caller moves.
 5. incident-contract-v3 shapes (`lib/contract/types.ts`, `StructuredEdit`) keep their snake_case keys: they mirror the JSON Schema shared with eval and the agent. Translation applies to database shapes, not to that contract.
 
 ---
@@ -266,7 +268,7 @@ export interface HealthRepository {
 2. **Raw PostgREST Query Construction:**
    Table names, filters (`eq.`, `in.(...)`, `like.`), embedded selects, ordering and RPC argument names (`p_*`) are encapsulated inside `lib/adapters/supabase/`.
 3. **Schema Mapping & Normalization:**
-   Database row mapping to domain models (snake_case columns to camelCase domain types, decoding `model_runs.notes`, normalising legacy values) moves into `lib/adapters/supabase/mappers/`. RPC JSON is mapped field by field instead of passed through with a cast.
+   Database row mapping to domain models (snake_case columns to camelCase domain types, decoding `model_runs.notes`, normalising legacy values) moves into the Supabase adapters, with the report rows in `lib/adapters/supabase/mappers/report.ts`. Each adapter maps the RPC JSON it receives field by field instead of passing it through with a cast.
 4. **Error Translation:**
    Database refusals become `StoreRejection` in the adapter (e.g. a failed run chosen as the official report), so routes no longer parse PostgREST error text.
 5. **Adapter Factory Pattern:**
@@ -325,7 +327,7 @@ export interface HealthRepository {
 - [x] **Testing & Quality Assurance:**
   - [x] Characterisation tests for responses no test pinned (report detail, review, the videos list), written against the unrefactored routes.
   - [x] Contract suites that run the same cases against the in-memory fake and the Supabase adapter (over `tests/support/fake-postgrest.mjs`).
-  - [x] Architecture test enforcing the dependency rules, with an allow-list of callers not yet migrated.
+  - [x] Dependency rules recorded as conventions (§2), with the list of callers not yet migrated (§7).
   - [x] Verify existing test suite passes unmodified apart from import paths: `npm run test`.
   - [x] Verify production Next.js build passes cleanly: `npm run build`.
 
@@ -336,10 +338,10 @@ export interface HealthRepository {
 For the whole workstream:
 - Domain ports created under `incident-console-v2/lib/ports/`; Supabase adapters under `incident-console-v2/lib/adapters/supabase/`.
 - Every `app/api/*` database access goes through `getDbAdapters()` / `getDbHealth()` and the ports, and no file outside `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value (including `lib/analysis/*`).
-- Every route test that existed before the refactor passes unmodified apart from import paths; characterisation tests exist for routes that had none; each port has a contract suite; the architecture test has an empty allow-list.
+- Every route test that existed before the refactor passes unmodified apart from import paths; characterisation tests exist for routes that had none; each port has a contract suite; §7's list of callers not yet migrated is empty.
 - `npm run typecheck`, `npm test` and `npm run build` pass without errors.
 
-This round meets these for every route not listed in §7; the routes in §7 stay in the architecture test's allow-list until they move.
+This round meets these for every route not listed in §7; the callers in §7 stay listed there until they move.
 
 ---
 
@@ -350,3 +352,14 @@ Decided 2026-10-17:
 - **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): untouched; no ground-truth port. Its GET still returns raw rows.
 - **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): unchanged for now; they move into the middle layer later, together with the planned separation of human-verified and AI-generated reports.
 - **Search adapter and route**: the port is defined (keyword-first, §3.1); `SupabaseEvidenceSearchAdapter` and a console search route follow once PR 126's `evidence_crops`, `query_results` and `search_evidence_items` exist on `main`. No embedding provider is wired.
+
+Files outside `lib/adapters/supabase/**` that still import `lib/postgrest/client` as a value (dependency rule 4), each with the reason it waits:
+
+| File | Waits for |
+|---|---|
+| `app/api/dashboard/route.ts` | the lazy-loading change |
+| `app/api/reports/route.ts` | the lazy-loading change |
+| `app/api/reports/[videoId]/ground-truth/route.ts` | nothing planned: ground truth stays untouched |
+| `app/api/videos/[videoId]/runs/route.ts` | the verified/AI report split |
+| `lib/analysis/run-contract-analysis.ts` | the verified/AI report split |
+| `lib/analysis/persistence.ts` | the verified/AI report split |
