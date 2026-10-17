@@ -10,3 +10,10 @@ export type {
 } from '@/lib/ports/incidents';
 export type { EvidenceCropItem, EvidenceItemType, EvidenceSearchRepository, SearchEvidenceParams, SearchQueryRecord } from '@/lib/ports/search';
 export type { OfficialClearance, OfficialSelection, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';
+
+import type { VideoRepository } from '@/lib/ports/videos';
+
+/** What getDbAdapters() returns: one implementation per driven port in use. */
+export interface DbAdapters {
+  videos: VideoRepository;
+}

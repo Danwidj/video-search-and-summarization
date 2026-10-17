@@ -4,9 +4,19 @@
 // adapter backs each port. Built per call (a client is two strings), so the
 // configuration is read at request time and never cached at module load.
 
+import { createPostgrestClient } from '@/lib/adapters/supabase/client';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
+import { SupabaseVideoAdapter } from '@/lib/adapters/supabase/videos';
 import type { ServiceConfiguration } from '@/lib/env';
-import type { HealthRepository } from '@/lib/ports';
+import type { DbAdapters, HealthRepository } from '@/lib/ports';
+
+/** Throws 'Supabase PostgREST is not configured' when the service-role settings are missing. */
+export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
+  const db = createPostgrestClient(config);
+  return {
+    videos: new SupabaseVideoAdapter(db),
+  };
+}
 
 /** Never throws: /api/health must answer when the database is not configured. */
 export function getDbHealth(config?: ServiceConfiguration): HealthRepository {
