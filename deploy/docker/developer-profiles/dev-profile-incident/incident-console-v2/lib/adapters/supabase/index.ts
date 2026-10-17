@@ -6,6 +6,7 @@
 
 import { createPostgrestClient } from '@/lib/adapters/supabase/client';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
+import { SupabaseIncidentAdapter } from '@/lib/adapters/supabase/incidents';
 import { SupabaseVideoAdapter } from '@/lib/adapters/supabase/videos';
 import type { ServiceConfiguration } from '@/lib/env';
 import type { DbAdapters, HealthRepository } from '@/lib/ports';
@@ -14,6 +15,7 @@ import type { DbAdapters, HealthRepository } from '@/lib/ports';
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
   const db = createPostgrestClient(config);
   return {
+    incidents: new SupabaseIncidentAdapter(db),
     videos: new SupabaseVideoAdapter(db),
   };
 }

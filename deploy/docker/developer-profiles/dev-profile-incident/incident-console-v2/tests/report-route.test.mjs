@@ -23,7 +23,7 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/video.mp4' } });
 
 const { GET } = await import('../app/api/reports/[videoId]/route.ts');
-const { buildReportView } = await import('../lib/reports/view.ts');
+const { buildReportView } = await import('../lib/adapters/supabase/mappers/report.ts');
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };

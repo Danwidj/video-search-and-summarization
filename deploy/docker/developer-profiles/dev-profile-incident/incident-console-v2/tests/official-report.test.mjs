@@ -9,7 +9,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { PUT, DELETE } = await import('../app/api/videos/[videoId]/official/route.ts');
-const { buildReportView } = await import('../lib/reports/view.ts');
+const { buildReportView } = await import('../lib/adapters/supabase/mappers/report.ts');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const originalFetch = globalThis.fetch;
