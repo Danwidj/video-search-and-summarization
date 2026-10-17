@@ -124,7 +124,8 @@ Following the box-accuracy pilot (where VLM bounding boxes scored 0% well-framed
 **Active MVP2 Workstreams (open PRs):**
 - **PR 118:** Frontend console search UI, evidence timeline, chat, and dynamic style theming.
 - **PR 119:** System vs one-shot baseline benchmarking, retrieval evaluation suite, critic utility ablation, and detector selection.
-- **PR 120:** Data and search layer, hexagonal decoupling of `incident-console-v2`, Supabase migrations (`evidence_crops`, `query_results`), RLS lockdown, connection verification, VM `vss-agent` persistence verification, and RPC search function.
+- **PR 120:** Hexagonal middle layer for `incident-console-v2` (ports, thin use cases and Supabase PostgREST adapters between the API routes and the database) and the keyword-first evidence search port.
+- **PR 126:** Data and search layer: Supabase migrations (`evidence_crops`, `query_results`), RLS lockdown, connection verification, VM `vss-agent` persistence verification, and the `search_evidence_items` RPC.
 - **Contracts & Endpoints:** `search-contract-v1` and `chat-contract-v1` REST schemas; native search and chat routes in `vss-agent` and mock backend search/chat routes on ports 7777/7778.
 - **Backfill (`fm/vss-mvp2-backfill-timestamps`):** Targeted timestamp and detector label backfill script over existing official reports (`scripts/backfill_official_timestamps.py`).
 
