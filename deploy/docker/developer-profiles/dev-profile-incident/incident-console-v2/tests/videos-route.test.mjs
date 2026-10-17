@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Characterisation test for GET /api/videos, written against the pre-refactor
+// route: the row -> list item mapping and pagination moved into the video adapter.
+
+import assert from 'node:assert/strict';
+import { register } from 'node:module';
+import { afterEach, beforeEach, test } from 'node:test';
+
+register('./support/alias-loader.mjs', import.meta.url);
+
+const { GET } = await import('../app/api/videos/route.ts');
+const originalFetch = globalThis.fetch;
+const originalEnv = { ...process.env };
+beforeEach(() => { Object.assign(process.env, { INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k' }); });
+afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+
+const ROWS = [
+  {
+    id: 'v1', filepath: 'uploads/sensor-1/clip.mp4', uploaded_datetime: '2026-10-01T08:00:00', source: 'sensor-1', selected_model_run_id: 'm1',
+    incidents: [{ model_run_id: 'm1', reports: [{ id: 'r1' }] }, { model_run_id: 'm2', reports: [] }, { model_run_id: 'm3', reports: [{ id: 'r3' }] }],
+  },
+  { id: 'v2', filepath: null, uploaded_datetime: null, source: null, selected_model_run_id: null, incidents: [] },
+  { id: 'v3', filepath: 'anomaly/burglary/', uploaded_datetime: '2026-09-01T00:00:00', source: 7, selected_model_run_id: null },
+];
+
+test('videos are listed with their report count, official run and pagination', async () => {
+  let request;
+  globalThis.fetch = async (url) => {
+    request = new URL(String(url));
+    return new Response(JSON.stringify(ROWS), { headers: { 'content-range': '20-22/43' } });
+  };
+  const response = await GET(new Request('http://localhost/api/videos?page=2'));
+  assert.equal(response.status, 200);
+  assert.equal(request.pathname, '/rest/v1/videos');
+  assert.equal(request.searchParams.get('limit'), '20');
+  assert.equal(request.searchParams.get('offset'), '20');
+  assert.equal(request.searchParams.get('order'), 'uploaded_datetime.desc.nullslast,id.asc');
+  assert.deepEqual(await response.json(), {
+    videos: [
+      { videoId: 'v1', filename: 'clip.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', analysesWithReport: 2, officialRunId: 'm1' },
+      { videoId: 'v2', filename: 'v2', uploadedAt: null, source: null, analysesWithReport: 0, officialRunId: null },
+      { videoId: 'v3', filename: 'v3', uploadedAt: '2026-09-01T00:00:00', source: null, analysesWithReport: 0, officialRunId: null },
+    ],
+    pagination: { page: 2, pageSize: 20, totalItems: 43, totalPages: 3 },
+    filter: 'all',
+  });
+});
+
+test('an unknown filter is rejected before Supabase', async () => {
+  let called = false;
+  globalThis.fetch = async () => { called = true; return new Response('[]'); };
+  assert.equal((await GET(new Request('http://localhost/api/videos?filter=everything'))).status, 400);
+  assert.equal(called, false);
+});
