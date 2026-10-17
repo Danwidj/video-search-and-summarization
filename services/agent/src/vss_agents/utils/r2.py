@@ -43,8 +43,8 @@ def get_r2_client() -> Any:
     if _r2_client is not None:
         return _r2_client
 
-    import boto3  # type: ignore[import-untyped]
-    from botocore.config import Config  # type: ignore[import-untyped]
+    import boto3
+    from botocore.config import Config
 
     account_id = (os.getenv("R2_ACCOUNT_ID") or "").strip()
     access_key = (os.getenv("R2_ACCESS_KEY") or "").strip()
