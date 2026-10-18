@@ -506,7 +506,6 @@ class RemoteVLMClient:
         incident_context: dict[str, Any] | None = None,
     ) -> GroundingResult:
         import httpx
-
         from vss_agents.utils.crop_evidence import parse_json_object
         from vss_agents.utils.r2 import resolve_r2_url
 
@@ -642,8 +641,7 @@ class LiveCropClient:
     """Production crop adapter: remote VLM bounding box on the video frame, crop uploaded to R2."""
 
     def __init__(self, detector: Any | None = None, image_store: Any | None = None):
-        from vss_agents.utils.crop_evidence import DefaultDetector
-        from vss_agents.utils.crop_evidence import R2EvidenceStore
+        from vss_agents.utils.crop_evidence import DefaultDetector, R2EvidenceStore
 
         self.detector = detector if detector is not None else DefaultDetector()
         self.image_store = image_store if image_store is not None else R2EvidenceStore()
@@ -669,7 +667,7 @@ class LiveCropClient:
         model_run_id: str,
         collection: str,
         item_id: str,
-        detector: str = DEFAULT_DETECTOR,  # noqa: ARG002 - the detector is the remote VLM configured at construction
+        detector: str = DEFAULT_DETECTOR,
     ) -> CropResult:
         from vss_agents.utils.crop_evidence import crop_evidence_item
         from vss_agents.utils.r2 import resolve_r2_url
