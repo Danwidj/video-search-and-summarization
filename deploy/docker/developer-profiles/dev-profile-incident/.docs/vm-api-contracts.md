@@ -69,7 +69,7 @@ Response `200`:
 | `total_hits` | int | `len(hits)`; 0 is a normal answer |
 | `execution_time_ms` | float | server time |
 | `hits[]` | | ranked, `rank` starts at 1 |
-| `hits[].result_id` | string | `res-<8 hex>` |
+| `hits[].result_id` | string | `res-<32 hex>` (36 chars, fits `query_results.id` VARCHAR(36)) |
 | `hits[].rank` | int | |
 | `hits[].similarity_score` | float 0-1 | |
 | `hits[].item` | object | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level` (int or null), `holder_entity_id` (string or null), `crop_image_url`, `timestamp_seconds` (int), `bounding_box` (null or `[ymin, xmin, ymax, xmax]`, 4 normalised ints) |
@@ -80,7 +80,7 @@ Behaviour:
 - `hide_rejected` defaults to true: hits marked `rejected` by the critic are excluded from `hits[]` by default (`rank` retains its pre-filter value). Pass `hide_rejected: false` to return them.
 - A failing critic never drops a hit: it degrades to `verdict: "unverified"`, with `confidence` typically null (or 0.0 observed on some unverified responses), with the failure in `rationale`.
 - `crop_image_url` and `playback_url` are resolved from R2 by the agent. Use them as given.
-- Errors: 422 on validation. A store or embedding failure is not caught, so expect `500` (plain-text `Internal Server Error`, not the `detail` shape).
+- Errors: 422 on validation. `503` `{"detail":"Query embedding unavailable: ..."}` when the query cannot be embedded: an embedder error, or no embedding API key with the Supabase store (the deterministic placeholder embedding is only used with the in-memory store). A store failure is not caught, so expect `500` (plain-text `Internal Server Error`, not the `detail` shape).
 - Timing: embedding plus pgvector query, then critic calls spaced by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1.0 s between hits). Expect about 7 s for no hits (measured ~7.2 s on the VM) and roughly `top_k` seconds plus critic latency (30 s timeout each) for `top_k` hits. Use a client timeout of at least 90 s for `top_k` up to 50, and show a loading state.
 - Side effect: each call writes one `queries` row and one `query_results` row per hit (audit trail, failures only logged).
 
@@ -98,7 +98,7 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
   "total_hits": 1,
   "execution_time_ms": 3612.4,
   "hits": [{
-    "result_id": "res-1a2b3c4d",
+    "result_id": "res-1a2b3c4d5e6f70818293a4b5c6d7e8f9",
     "rank": 1,
     "similarity_score": 0.89,
     "item": {

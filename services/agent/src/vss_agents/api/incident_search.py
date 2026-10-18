@@ -32,6 +32,7 @@ import uuid
 
 from fastapi import APIRouter
 from fastapi import FastAPI
+from fastapi import HTTPException
 import httpx
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -610,21 +611,35 @@ class QueryEmbedder(ABC):
         pass
 
 
+class EmbeddingUnavailableError(RuntimeError):
+    """The query cannot be embedded: no usable embedding endpoint is available."""
+
+
 class DefaultQueryEmbedder(QueryEmbedder):
     """Default query text embedder adapter.
 
     Uses the remote embedding endpoint (the same model the evidence loader embeds descriptions with)
-    when an embedding API key is configured. Otherwise falls back to a deterministic placeholder
-    vector so zero-VM mock runs and unit tests need no credentials.
+    when an embedding API key is configured. Otherwise, only when ``allow_placeholder`` is set, falls
+    back to a deterministic placeholder vector so zero-VM mock runs and unit tests need no
+    credentials. A placeholder is meaningless against real pgvector data, so without it a missing key
+    raises ``EmbeddingUnavailableError``.
     """
 
-    def __init__(self, vector_dim: int = EMBEDDING_DIMENSIONS, remote: RemoteTextEmbedder | None = None) -> None:
+    def __init__(
+        self,
+        vector_dim: int = EMBEDDING_DIMENSIONS,
+        remote: RemoteTextEmbedder | None = None,
+        allow_placeholder: bool = True,
+    ) -> None:
         self.vector_dim = vector_dim
+        self.allow_placeholder = allow_placeholder
         self._remote = remote or RemoteTextEmbedder(dimensions=vector_dim)
 
     async def embed_query(self, query: str) -> list[float]:
         if self._remote.is_configured():
             return await self._remote.embed_query(query)
+        if not self.allow_placeholder:
+            raise EmbeddingUnavailableError("No embedding API key configured; cannot embed the search query")
         logger.warning("No embedding API key configured; using the deterministic placeholder query embedding")
         val = sum(ord(c) for c in query) % 100 / 100.0
         vec = [val] * self.vector_dim
@@ -803,7 +818,7 @@ def create_incident_search_router(
     router = APIRouter()
     search_store = store if store is not None else get_default_search_store()
     critic_evaluator = critic or VlmCriticEvaluator()
-    query_embedder = embedder or DefaultQueryEmbedder()
+    query_embedder = embedder or DefaultQueryEmbedder(allow_placeholder=isinstance(search_store, InMemorySearchStore))
 
     @router.post(
         "/api/v1/incidents/search",
@@ -816,7 +831,11 @@ def create_incident_search_router(
         query_id = f"q-{uuid.uuid4().hex[:12]}"
 
         # 1. Embed query text
-        query_embedding = await query_embedder.embed_query(req.query)
+        try:
+            query_embedding = await query_embedder.embed_query(req.query)
+        except Exception as exc:
+            logger.error("Query embedding failed: %s", exc)
+            raise HTTPException(status_code=503, detail=f"Query embedding unavailable: {exc}") from exc
 
         # 2. Retrieve candidate items through SearchStore port
         item_types: list[str] | None = (
@@ -876,7 +895,7 @@ def create_incident_search_router(
                     rationale=f"Critic verification failed: {exc}",
                 )
             return SearchHit(
-                result_id=f"res-{uuid.uuid4().hex[:8]}",
+                result_id=f"res-{uuid.uuid4().hex}",
                 rank=rank,
                 similarity_score=cand.similarity_score,
                 item=item,

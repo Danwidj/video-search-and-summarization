@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -30,6 +30,7 @@ from scripts.backfill_official_timestamps import (
     InMemoryReportSource,
     LiveEvidenceStore,
     OfficialReport,
+    RemoteVLMClient,
     dump_evidence_records,
     load_evidence_records,
     parse_args,
@@ -481,6 +482,32 @@ class ParseGroundingReplyTests(unittest.TestCase):
     def test_truncated_json_missing_label_raises(self) -> None:
         with self.assertRaises(ValueError):
             parse_grounding_reply('{"timestamp_seconds": 12, "lab')
+
+    def test_runaway_digit_run_is_recovered_by_regex(self) -> None:
+        reply = (
+            '{"timestamp_seconds": ' + "9" * 400 + ', "label": "x", "reasoning": "tr'
+        )
+        self.assertGreater(parse_grounding_reply(reply)["timestamp_seconds"], 10**300)
+
+
+class GroundItemTimestampBoundsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_oversized_timestamp_is_rejected_not_overflowed(self) -> None:
+        client = RemoteVLMClient(model="m")
+        client.api_key = "k"
+        reply = (
+            '{"timestamp_seconds": ' + "9" * 400 + ', "label": "x", "reasoning": "tr'
+        )
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"choices": [{"message": {"content": reply}}]}
+        with (
+            patch("httpx.AsyncClient.post", AsyncMock(return_value=resp)),
+            self.assertRaisesRegex(ValueError, "Invalid grounding fields"),
+        ):
+            await client.ground_item(
+                video_ref="v.mp4",
+                item=EvidenceItem(item_type="entity", item_id="E1", description="d"),
+                incident_context={},
+            )
 
 
 if __name__ == "__main__":

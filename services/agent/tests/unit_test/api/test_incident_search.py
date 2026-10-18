@@ -36,6 +36,7 @@ from vss_agents.api.incident_search import DEFAULT_CRITIC_DELAY_SECONDS
 from vss_agents.api.incident_search import CriticEvaluator
 from vss_agents.api.incident_search import CriticVerdict
 from vss_agents.api.incident_search import DefaultQueryEmbedder
+from vss_agents.api.incident_search import EmbeddingUnavailableError
 from vss_agents.api.incident_search import EvidenceCandidate
 from vss_agents.api.incident_search import IncidentHit
 from vss_agents.api.incident_search import InMemorySearchStore
@@ -712,6 +713,12 @@ class TestSearchRouteEndToEnd:
 # =============================================================================
 
 
+def _stub_remote_embedder() -> RemoteTextEmbedder:
+    remote = RemoteTextEmbedder(api_key="k")
+    remote.embed_query = AsyncMock(return_value=[0.1] * 1024)  # type: ignore[method-assign]
+    return remote
+
+
 class TestSearchStores:
     """Unit tests for SearchStore adapters."""
 
@@ -914,7 +921,9 @@ class TestSearchStores:
         critic = MockCriticEvaluator(verdict="confirmed", confidence=0.92, rationale="Object matches query")
 
         app = FastAPI()
-        register_incident_search_routes(app, store=store, critic=critic)
+        register_incident_search_routes(
+            app, store=store, critic=critic, embedder=DefaultQueryEmbedder(remote=_stub_remote_embedder())
+        )
         client = TestClient(app)
 
         resp = client.post("/api/v1/incidents/search", json={"query": "machete", "top_k": 5})
@@ -1186,3 +1195,75 @@ class TestDefaultQueryEmbedder:
 
         assert len(vector) == 1024
         assert abs(sum(x * x for x in vector) - 1.0) < 1e-3
+
+
+class TestEmbeddingFailuresReturn503:
+    """A placeholder embedding is in-memory only; embedder failures map to HTTP 503."""
+
+    @pytest.mark.asyncio
+    async def test_placeholder_disallowed_without_api_key_raises(self) -> None:
+        embedder = DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key=""), allow_placeholder=False)
+
+        with pytest.raises(EmbeddingUnavailableError):
+            await embedder.embed_query("edged weapon")
+
+    def test_supabase_store_without_key_returns_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("EVIDENCE_EMBEDDING_API_KEY", "NVIDIA_API_KEY", "NGC_CLI_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+        store = MagicMock(spec=SupabaseSearchStore)
+        store.search_evidence_items = AsyncMock(return_value=[])
+        app = FastAPI()
+        app.include_router(create_incident_search_router(store=store, critic=MockCriticEvaluator()))
+
+        resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
+
+        assert resp.status_code == 503
+        assert "embedding" in resp.json()["detail"].lower()
+        store.search_evidence_items.assert_not_awaited()
+
+    def test_in_memory_store_without_key_still_uses_placeholder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("EVIDENCE_EMBEDDING_API_KEY", "NVIDIA_API_KEY", "NGC_CLI_API_KEY"):
+            monkeypatch.delenv(name, raising=False)
+        app = FastAPI()
+        app.include_router(create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator()))
+
+        resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
+
+        assert resp.status_code == 200
+
+    def test_embedder_error_returns_503(self) -> None:
+        embedder = MagicMock()
+        embedder.embed_query = AsyncMock(
+            side_effect=httpx.HTTPStatusError("boom", request=MagicMock(), response=MagicMock())
+        )
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator(), embedder=embedder)
+        )
+
+        resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
+
+        assert resp.status_code == 503
+
+
+class TestResultIds:
+    def test_result_ids_are_full_width_and_unique(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(
+                store=InMemorySearchStore(candidates=sample_candidates),
+                critic=MockCriticEvaluator(),
+                embedder=DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key="")),
+            )
+        )
+        client = TestClient(app)
+
+        ids = [
+            hit["result_id"]
+            for _ in range(5)
+            for hit in client.post("/api/v1/incidents/search", json={"query": "machete", "top_k": 2}).json()["hits"]
+        ]
+
+        assert ids
+        assert len(set(ids)) == len(ids)
+        assert all(len(i) == 36 and i.startswith("res-") for i in ids)
