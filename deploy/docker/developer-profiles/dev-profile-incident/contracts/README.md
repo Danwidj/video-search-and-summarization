@@ -1,8 +1,8 @@
 # Incident contract (`incident-contract-v3`)
 
-This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Background and phasing are in [`../.docs/prompt-contract-plan.md`](../.docs/prompt-contract-plan.md).
+This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. Decisions: [`../.docs/decisions.md`](../.docs/decisions.md).
 
-**Status:** phases 1 (eval), 2 (console gateway mode) and 3 (vss-agent and console agent mode) done. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` (gateway and agent mode) uses it too (`lib/contract/`, `lib/analysis/build-request.ts`, `lib/analysis/run-contract-analysis.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). `vss-agent` vendors the contract under `services/agent/src/vss_agents/incident_contract/` and executes P1/RP1 directly.
+**Status:** all consumers are on the contract. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` (gateway and agent mode) uses it too (`lib/contract/`, `lib/analysis/build-request.ts`, `lib/analysis/run-contract-analysis.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). `vss-agent` vendors the contract under `services/agent/src/vss_agents/incident_contract/` and executes P1/RP1 directly.
 
 | File | Purpose |
 |---|---|
@@ -44,4 +44,4 @@ This directory is the single source of truth for incident extraction: one prompt
 
 ## Model evidence
 
-The phase 0 probe results are recorded in [`../.docs/prompt-contract-plan.md` §5a](../.docs/prompt-contract-plan.md#5a-phase-0-results). They cover schema enforcement per model, URL fetching, the gateway's ~24-frame default, and Super ignoring `num_frames`. The probe script itself was removed after phase 0. The eval run is now the measure of each model on the contract.
+The probe results are recorded in [`../.docs/analysis-schema.md` §7](../.docs/analysis-schema.md#7-model-inference-findings). They cover schema enforcement per model, URL fetching, the gateway's ~24-frame default, and Super ignoring `num_frames`. The probe script itself was removed after phase 0. The eval run is now the measure of each model on the contract.

@@ -11,7 +11,7 @@ metadata:
 
 `<vm-host>` is a **shared** team workstation. Every action here affects teammates.
 
-Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification) and [`.docs/status.md` §4](../../.docs/status.md#4-live-vm-configuration-snapshot-<vm-host>) (live env snapshot).
+Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md) (topology, runbook, verification) and [`.docs/status.md` §6](../../.docs/status.md#6-live-vm-configuration-<vm-host>) (live env snapshot).
 
 ## Never
 
