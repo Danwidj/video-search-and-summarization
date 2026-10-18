@@ -340,12 +340,24 @@ class FakeDetector:
         return self.detections
 
 
+def _whole_frame_result(frame: np.ndarray) -> CropResult | None:
+    """Whole-frame crop (box [0, 0, 1000, 1000], score 0.0 marking low confidence)."""
+    frame_h, frame_w = frame.shape[:2]
+    jpeg_bytes = encode_jpeg(frame, quality=85)
+    if not jpeg_bytes:
+        return None
+    return CropResult(
+        image_bytes=jpeg_bytes, normalized_box=[0, 0, 1000, 1000], score=0.0, frame_size=(frame_w, frame_h)
+    )
+
+
 def crop_evidence_item(
     video_ref: str | Path | np.ndarray,
     timestamp_seconds: int | float,
     label: str,
     detector: Any | None = None,
     min_score: float = 0.0,
+    whole_frame_fallback: bool = False,
 ) -> CropResult | None:
     """Crop an evidence object from a video at the specified timestamp using a detector.
 
@@ -355,6 +367,8 @@ def crop_evidence_item(
         label: Short search query/label for the detector (e.g. 'crowbar', 'person in hoodie').
         detector: Detector port implementing detect(frame, query) or callable.
         min_score: Minimum confidence score threshold (default 0.0).
+        whole_frame_fallback: When the detector yields no usable box, return the whole frame
+            (box [0, 0, 1000, 1000], score 0.0) instead of None. A missing frame still returns None.
 
     Returns:
         CropResult or None when nothing is found or detector is unavailable.
@@ -388,7 +402,7 @@ def crop_evidence_item(
         return None
 
     if not raw_detections:
-        return None
+        return _whole_frame_result(frame) if whole_frame_fallback else None
 
     parsed_detections: list[Detection] = []
     for d in raw_detections:
@@ -402,29 +416,31 @@ def crop_evidence_item(
         elif hasattr(d, "box") and hasattr(d, "score"):
             parsed_detections.append(Detection(box=list(d.box), score=float(d.score), label=getattr(d, "label", label)))
 
+    fallback = _whole_frame_result(frame) if whole_frame_fallback else None
+
     if not parsed_detections:
-        return None
+        return fallback
 
     best = max(parsed_detections, key=lambda d: d.score)
     if best.score < min_score:
-        return None
+        return fallback
 
     box = best.box
     if len(box) != 4:
-        return None
+        return fallback
 
     ymin, xmin, ymax, xmax = box
     if ymin >= ymax or xmin >= xmax:
-        return None
+        return fallback
 
     c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(box, frame_w, frame_h, padding_fraction=0.05)
     if c_ymin >= c_ymax or c_xmin >= c_xmax:
-        return None
+        return fallback
 
     crop = frame[c_ymin:c_ymax, c_xmin:c_xmax]
     jpeg_bytes = encode_jpeg(crop, quality=85)
     if not jpeg_bytes:
-        return None
+        return fallback
 
     norm_box = normalize_box(c_ymin, c_xmin, c_ymax, c_xmax, frame_w, frame_h)
     return CropResult(

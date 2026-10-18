@@ -54,7 +54,8 @@ Request (`extra` fields are rejected with 422):
 |---|---|---|---|
 | `query` | string | required | 1-500 chars |
 | `top_k` | int | 10 | 1-50 |
-| `min_similarity` | float | 0.2 | 0.0-1.0 |
+| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score, the critic judges relevance) |
+| `hide_rejected` | bool | true | drop hits the critic marked `rejected` from `hits[]` (`rank` keeps its pre-filter value); `false` returns them |
 | `filters.incident_types` | string[] | none | |
 | `filters.min_severity`, `filters.max_severity` | int | none | 1-5 |
 | `filters.item_types` | `"entity"\|"instrument"\|"asset"`[] | all three | |

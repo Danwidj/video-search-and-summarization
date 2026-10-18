@@ -168,7 +168,7 @@ The three PR task docs assume the following conventions and environment setup. T
 - **Critic always on:** Every search candidate is evaluated by the VLM critic; both ranking and verdict are persisted. No opt-in `--search` flag; search starts automatically with `start.sh`.
 - **R2 key layout:** `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` (e.g. `evidence/Explosion001/MR001/entities/E1.jpg`).
 - **Search parameters:**
-  - REST route: `query` (natural-language string), `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
+  - REST route: `query` (natural-language string), `top_k DEFAULT 10`, `min_similarity DEFAULT 0.0`, `hide_rejected DEFAULT true`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
   - Database RPC: `p_query_embedding vector(1024)`, `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
 
 ### Definitions (for PR task doc consistency)
@@ -291,7 +291,7 @@ The following specifications are planned, not final, pending completion of the o
 > **TODO [PR 120 / PR 119]: Search RPC Parameter Tuning**
 > - **Missing:** Calibrated default thresholds for `min_similarity` and `top_k`.
 > - **Owner:** PR 120 (implementation) and PR 119 (tuning)
-> - **Stand-in Placeholder:** `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`.
+> - **Stand-in Placeholder:** `top_k DEFAULT 10`; the REST route sends `min_similarity DEFAULT 0.0` (the RPC keeps its own 0.2 default, unused by the route).
 
 > [!NOTE]
 > **COMPLETED [Contracts / Chat Endpoint]: Conversational Q&A Schema (`chat-contract-v1`) & Backend Endpoint**

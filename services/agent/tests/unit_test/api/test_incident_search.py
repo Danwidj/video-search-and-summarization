@@ -195,7 +195,8 @@ class TestContractFixturesValidation:
         req = SearchRequest.model_validate(data)
         assert req.query == "sharp weapon"
         assert req.top_k == 10
-        assert req.min_similarity == 0.2
+        assert req.min_similarity == 0.0
+        assert req.hide_rejected is True
         assert req.filters is None
 
     def test_valid_request_full(self) -> None:
@@ -654,6 +655,46 @@ class TestSearchRouteEndToEnd:
         data = resp.json()
         assert data["total_hits"] == 1
         assert data["hits"][0]["similarity_score"] >= 0.85
+
+    def test_search_route_default_has_no_similarity_cutoff(self) -> None:
+        low = EvidenceCandidate(
+            incident_id="I1",
+            model_run_id="run-001",
+            playback_url="",
+            incident_type="burglary",
+            severity_level=2,
+            incident_description="",
+            incident_window=[0.0, 1.0],
+            item_type="instrument",
+            item_id="I1",
+            item_name="Tool",
+            item_label="Tool",
+            item_description="Prying tool",
+            crop_image_url="",
+            timestamp_seconds=1,
+            similarity_score=0.192,
+        )
+        app = FastAPI()
+        app.include_router(create_incident_search_router(store=InMemorySearchStore(candidates=[low])))
+        client = TestClient(app)
+        assert client.post("/api/v1/incidents/search", json={"query": "edged weapon"}).json()["total_hits"] == 1
+        resp = client.post("/api/v1/incidents/search", json={"query": "edged weapon", "min_similarity": 0.2})
+        assert resp.json()["total_hits"] == 0
+
+    def test_search_route_hide_rejected(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(
+                store=InMemorySearchStore(candidates=sample_candidates),
+                critic=MockCriticEvaluator(verdict="rejected"),
+            )
+        )
+        client = TestClient(app)
+        hidden = client.post("/api/v1/incidents/search", json={"query": "weapon"}).json()
+        assert hidden["total_hits"] == 0
+        shown = client.post("/api/v1/incidents/search", json={"query": "weapon", "hide_rejected": False}).json()
+        assert shown["total_hits"] == len(sample_candidates)
+        assert all(hit["critic"]["verdict"] == "rejected" for hit in shown["hits"])
 
     def test_search_route_rejects_extra_request_properties(self) -> None:
         app = FastAPI()

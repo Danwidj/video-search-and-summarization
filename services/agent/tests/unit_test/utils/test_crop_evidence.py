@@ -183,6 +183,16 @@ class TestCropEvidenceItem:
         assert len(result.normalized_box) == 4
         assert result.image_bytes[:2] == b"\xff\xd8"
 
+    def test_whole_frame_fallback_when_no_box(self, tiny_video_path: Path) -> None:
+        detector = FakeDetector(detections=[])
+        assert crop_evidence_item(tiny_video_path, 0, "weapon", detector=detector) is None
+        result = crop_evidence_item(tiny_video_path, 0, "weapon", detector=detector, whole_frame_fallback=True)
+        assert result is not None
+        assert result.normalized_box == [0, 0, 1000, 1000]
+        assert result.score == 0.0
+        assert result.frame_size == (120, 80)
+        assert result.image_bytes[:2] == b"\xff\xd8"
+
     def test_crop_picks_best_box(self, tiny_video_path: Path) -> None:
         detector = FakeDetector(
             detections=[

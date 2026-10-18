@@ -97,7 +97,8 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=500)
     top_k: int = Field(default=10, ge=1, le=50)
-    min_similarity: float = Field(default=0.2, ge=0.0, le=1.0)
+    min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
+    hide_rejected: bool = True
     filters: SearchFilters | None = None
 
 
@@ -341,7 +342,7 @@ class SearchStore(ABC):
         self,
         query_embedding: list[float],
         top_k: int = 10,
-        min_similarity: float = 0.2,
+        min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
@@ -376,7 +377,7 @@ class InMemorySearchStore(SearchStore):
         self,
         query_embedding: list[float],  # noqa: ARG002
         top_k: int = 10,
-        min_similarity: float = 0.2,
+        min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
@@ -461,7 +462,7 @@ class SupabaseSearchStore(SearchStore):
         self,
         query_embedding: list[float],
         top_k: int = 10,
-        min_similarity: float = 0.2,
+        min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
@@ -914,6 +915,9 @@ def create_incident_search_router(
                 await search_store.persist_query_results(query_id, results_to_persist)
         except Exception as exc:
             logger.error("Failed to persist search query/results audit for query_id=%s: %s", query_id, exc)
+
+        if req.hide_rejected:
+            hits = [hit for hit in hits if hit.critic.verdict != "rejected"]
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
         response = SearchResponse(

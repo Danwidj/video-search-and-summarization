@@ -33,6 +33,7 @@ from scripts.backfill_official_timestamps import (
     dump_evidence_records,
     load_evidence_records,
     parse_args,
+    parse_grounding_reply,
 )
 
 
@@ -461,6 +462,25 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             await store.has_crop("Animal003", "mr_official_01", "entity", "X9")
         )
+
+
+class ParseGroundingReplyTests(unittest.TestCase):
+    def test_complete_json(self) -> None:
+        self.assertEqual(
+            parse_grounding_reply('{"timestamp_seconds": 7, "label": "fireball"}'),
+            {"timestamp_seconds": 7, "label": "fireball"},
+        )
+
+    def test_truncated_json_recovers_both_fields(self) -> None:
+        reply = '{"timestamp_seconds": 12, "label": "person in \\"hoodie\\"", "reasoning": "the su'
+        self.assertEqual(
+            parse_grounding_reply(reply),
+            {"timestamp_seconds": 12, "label": 'person in "hoodie"'},
+        )
+
+    def test_truncated_json_missing_label_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_grounding_reply('{"timestamp_seconds": 12, "lab')
 
 
 if __name__ == "__main__":
