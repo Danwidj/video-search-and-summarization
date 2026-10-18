@@ -16,8 +16,13 @@
 """Unit tests for crop_evidence utility and CropEvidenceService (MVP2 VM Step 3)."""
 
 from collections.abc import Generator
+import io
 from pathlib import Path
 import tempfile
+from typing import ClassVar
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -29,6 +34,7 @@ from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import Detection
 from vss_agents.utils.crop_evidence import FakeDetector
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
+from vss_agents.utils.crop_evidence import LiveEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
 from vss_agents.utils.crop_evidence import SupabaseEvidenceStore
 from vss_agents.utils.crop_evidence import apply_box_padding
@@ -205,7 +211,7 @@ class TestCropEvidenceItem:
         assert result is None
 
     def test_crop_returns_none_when_detector_unavailable(self, tiny_video_path: Path) -> None:
-        detector = DefaultDetector()
+        detector = DefaultDetector(api_key="")
         assert not detector.is_available()
         result = crop_evidence_item(
             video_ref=tiny_video_path,
@@ -280,24 +286,108 @@ class TestEvidenceStoreAdapters:
         assert all_crops[0]["item_id"] == "I1"
 
     @pytest.mark.asyncio
-    async def test_r2_and_supabase_adapters_raise_not_implemented(self) -> None:
-        r2_store = R2EvidenceStore()
-        with pytest.raises(NotImplementedError, match="owned by PR 120"):
-            await r2_store.put_image("key", b"data")
+    async def test_r2_store_puts_and_gets_image(self) -> None:
+        client = MagicMock()
+        client.get_object.return_value = {"Body": io.BytesIO(b"jpeg-bytes")}
+        store = R2EvidenceStore(bucket="bucket", client=client)
 
-        supabase_store = SupabaseEvidenceStore()
-        with pytest.raises(NotImplementedError, match="owned by PR 120"):
-            await supabase_store.record_crop(
-                incident_id="v1",
-                model_run_id="m1",
-                item_type="entity",
-                item_id="E1",
-                item_name="person",
-                description="desc",
-                timestamp_seconds=5,
-                bounding_box=[0, 0, 100, 100],
-                image_key="key",
-            )
+        key = await store.put_image("evidence/V1/M1/entities/E1.jpg", b"jpeg-bytes")
+
+        assert key == "evidence/V1/M1/entities/E1.jpg"
+        client.put_object.assert_called_once_with(
+            Bucket="bucket", Key=key, Body=b"jpeg-bytes", ContentType="image/jpeg"
+        )
+        assert await store.get_image(key) == b"jpeg-bytes"
+
+    @pytest.mark.asyncio
+    async def test_r2_store_get_image_returns_none_for_missing_key(self) -> None:
+        class NoSuchKeyError(Exception):
+            response: ClassVar[dict[str, dict[str, str]]] = {"Error": {"Code": "NoSuchKey"}}
+
+        client = MagicMock()
+        client.get_object.side_effect = NoSuchKeyError()
+        store = R2EvidenceStore(bucket="bucket", client=client)
+
+        assert await store.get_image("evidence/missing.jpg") is None
+
+    @pytest.mark.asyncio
+    async def test_supabase_store_upserts_and_reads_crop_rows(self) -> None:
+        table = MagicMock()
+        table.upsert.return_value.execute = AsyncMock()
+        table.select.return_value.eq.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute = AsyncMock(
+            return_value=MagicMock(data=[{"item_id": "I1"}])
+        )
+        client = MagicMock()
+        client.table.return_value = table
+        store = SupabaseEvidenceStore(client=client)
+
+        row = await store.record_crop(
+            incident_id="v1",
+            model_run_id="m1",
+            item_type="instrument",
+            item_id="I1",
+            item_name="knife",
+            description="a kitchen knife",
+            timestamp_seconds=5,
+            bounding_box=[1, 2, 3, 4],
+            image_key="evidence/v1/m1/instruments/I1.jpg",
+            threat_level=4,
+            embedding=[0.5] * 3,
+        )
+
+        client.table.assert_called_with("evidence_crops")
+        table.upsert.assert_called_once_with(row, on_conflict="incident_id,model_run_id,item_type,item_id")
+        assert row["image"] == "evidence/v1/m1/instruments/I1.jpg"
+        assert row["embedding"] == [0.5] * 3
+        assert await store.get_crop("v1", "m1", "instrument", "I1") == {"item_id": "I1"}
+
+    @pytest.mark.asyncio
+    async def test_live_store_delegates_images_to_r2_and_rows_to_supabase(self) -> None:
+        images = MagicMock()
+        images.put_image = AsyncMock(return_value="k")
+        crops = MagicMock()
+        crops.record_crop = AsyncMock(return_value={"ok": True})
+        crops.get_crop = AsyncMock(return_value=None)
+        store = LiveEvidenceStore(images=images, crops=crops)
+
+        assert await store.put_image("k", b"x") == "k"
+        assert await store.record_crop(item_id="E1") == {"ok": True}
+        assert await store.get_crop("v1", "m1", "entity", "E1") is None
+        images.put_image.assert_awaited_once_with("k", b"x", "image/jpeg")
+        crops.record_crop.assert_awaited_once_with(item_id="E1")
+
+
+class TestDefaultDetector:
+    """Test the remote-VLM-backed open-vocabulary detector."""
+
+    def _frame(self) -> np.ndarray:
+        return np.zeros((80, 120, 3), dtype=np.uint8)
+
+    def test_detect_converts_vlm_box_to_ymin_xmin_ymax_xmax(self) -> None:
+        detector = DefaultDetector(api_key="k", base_url="https://vlm.example/v1")
+        reply = MagicMock()
+        reply.json.return_value = {
+            "choices": [{"message": {"content": '```json\n{"bbox_2d": [100, 200, 300, 400], "label": "knife"}\n```'}}]
+        }
+        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply) as post:
+            detections = detector.detect(self._frame(), "knife")
+
+        assert detections == [Detection(box=[200, 100, 400, 300], score=1.0, label="knife")]
+        assert post.call_args.args[0] == "https://vlm.example/v1/chat/completions"
+        assert post.call_args.kwargs["headers"] == {"Authorization": "Bearer k"}
+
+    def test_detect_returns_nothing_when_item_not_visible(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        reply = MagicMock()
+        reply.json.return_value = {"choices": [{"message": {"content": '{"bbox_2d": null}'}}]}
+        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply):
+            assert detector.detect(self._frame(), "unicorn") == []
+
+    def test_detect_without_credentials_makes_no_call(self) -> None:
+        detector = DefaultDetector(api_key="")
+        with patch("vss_agents.utils.crop_evidence.httpx.post") as post:
+            assert detector.detect(self._frame(), "knife") == []
+        post.assert_not_called()
 
 
 class TestCropEvidenceService:
@@ -373,7 +463,7 @@ class TestCropEvidenceService:
     async def test_process_incident_report_gracefully_degrades_when_detector_unavailable(
         self, tiny_video_path: Path
     ) -> None:
-        service = CropEvidenceService(detector=DefaultDetector())
+        service = CropEvidenceService(detector=DefaultDetector(api_key=""))
         assert not service.is_detector_available()
 
         report = {

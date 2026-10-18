@@ -304,11 +304,10 @@ The following specifications are planned, not final, pending completion of the o
 > - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 120
 > - **Stand-in Placeholder:** Enum values `'entity'`, `'instrument'`, `'asset'`.
 
-> [!IMPORTANT]
-> **TODO [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass**
+> [!NOTE]
+> **COMPLETED [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass & Production Evidence Loader**
 > - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
-> - **Owner:** `fm/vss-mvp2-backfill-timestamps`
-> - **Stand-in Placeholder:** In-memory ports (`InMemoryReportSource`, `InMemoryEvidenceStore` with JSON lines `--output-file` persistence/resumption, `FakeCropClient`, `FakeVLMClient`) tested under unit test suite `scripts/tests/test_backfill_official_timestamps.py`. Production database loading is owned by PR 120 loader; production crop extraction by crop-service.
+> - **Production Adapters:** `LiveCropClient` (remote VLM detector + R2 upload), `RemoteTextEmbedderAdapter` (NVIDIA-hosted `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions), and `LiveEvidenceStore` (`SupabaseEvidenceStore` upserting into `evidence_crops`). In-memory fakes retained for unit tests and `--dry-run`.
 
 ---
 
@@ -326,9 +325,9 @@ The following specifications are planned, not final, pending completion of the o
 | 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report (detector port & CropEvidenceService implemented in services/agent) |
 | 9 | Embedding Model Comparison | PR 119 / PR 120 | NeMo vs OpenAI vs MiniLM benchmark |
 | 10 | Live DB RLS Lockdown Verification | PR 120 | Verification test suite on migration `20261016000000` |
-| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; pending live application) |
-| 12 | `search_evidence_items` Database RPC | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; pending live application) |
-| 13 | Crop Embedding Generator & Ingestion | PR 120 | `scripts/ingest_mvp2_crops.py` script |
+| 11 | `evidence_crops` & `query_results` Migration | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
+| 12 | `search_evidence_items` Database RPC | PR 120 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
+| 13 | Crop Embedding Generator & Ingestion | PR 120 / Backfill | Delivered via `scripts/backfill_official_timestamps.py` |
 | 14 | Typed Data Access Module (`lib/db/`) | PR 120 | `incident-console-v2/lib/db/index.ts` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
 | 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |

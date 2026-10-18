@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -21,11 +22,13 @@ from scripts.backfill_official_timestamps import (
     EvidenceCropRecord,
     EvidenceItem,
     FakeCropClient,
+    FakeTextEmbedder,
     FakeVLMClient,
     FileReportSource,
     GroundingResult,
     InMemoryEvidenceStore,
     InMemoryReportSource,
+    LiveEvidenceStore,
     OfficialReport,
     dump_evidence_records,
     load_evidence_records,
@@ -395,6 +398,69 @@ class TestBackfillOfficialTimestamps(unittest.IsolatedAsyncioTestCase):
         finally:
             if temp_path.exists():
                 temp_path.unlink()
+
+    async def test_embeds_item_text_into_saved_records(self) -> None:
+        embedder = FakeTextEmbedder(vector=[0.25] * 4)
+        runner = BackfillRunner(
+            report_source=self.report_source,
+            vlm_client=self.vlm_client,
+            crop_client=self.crop_client,
+            evidence_store=self.evidence_store,
+            embedder=embedder,
+        )
+        summary = await runner.run(BackfillOptions(concurrency=1))
+
+        self.assertEqual(summary.processed_count, 5)
+        stored = await self.evidence_store.list_crops()
+        self.assertTrue(all(r.embedding == [0.25] * 4 for r in stored))
+        self.assertIn("human: Child in yellow shirt playing on lawn", embedder.texts)
+
+    async def test_embedding_failure_is_isolated_per_item(self) -> None:
+        embedder = FakeTextEmbedder()
+        embedder.embed = AsyncMock(side_effect=RuntimeError("embedding endpoint down"))  # type: ignore[method-assign]
+        runner = BackfillRunner(
+            report_source=self.report_source,
+            vlm_client=self.vlm_client,
+            crop_client=self.crop_client,
+            evidence_store=self.evidence_store,
+            embedder=embedder,
+        )
+        summary = await runner.run(BackfillOptions())
+
+        self.assertEqual(summary.failed_count, 5)
+        self.assertEqual(await self.evidence_store.list_crops(), [])
+
+    async def test_live_store_upserts_rows_and_skips_known_items(self) -> None:
+        crops = MagicMock()
+        crops.get_crop = AsyncMock(return_value=None)
+        crops.record_crop = AsyncMock(return_value={})
+        store = LiveEvidenceStore(crops=crops)
+        runner = BackfillRunner(
+            report_source=self.report_source,
+            vlm_client=self.vlm_client,
+            crop_client=self.crop_client,
+            evidence_store=store,
+            embedder=FakeTextEmbedder(vector=[0.5] * 4),
+        )
+
+        summary = await runner.run(BackfillOptions())
+
+        self.assertEqual(summary.processed_count, 5)
+        self.assertEqual(crops.record_crop.await_count, 5)
+        kwargs = crops.record_crop.await_args_list[0].kwargs
+        self.assertEqual(kwargs["embedding"], [0.5] * 4)
+        self.assertTrue(kwargs["image_key"].startswith("evidence/"))
+        # Items saved in this run are skipped without another database lookup.
+        lookups = crops.get_crop.await_count
+        self.assertTrue(
+            await store.has_crop("Animal003", "mr_official_01", "entity", "E1")
+        )
+        self.assertEqual(crops.get_crop.await_count, lookups)
+        # Unknown items fall back to the database.
+        crops.get_crop.return_value = {"item_id": "X"}
+        self.assertTrue(
+            await store.has_crop("Animal003", "mr_official_01", "entity", "X9")
+        )
 
 
 if __name__ == "__main__":

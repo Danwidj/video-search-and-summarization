@@ -48,6 +48,7 @@ from vss_agents.api.incident_search import _get_critic_delay_seconds
 from vss_agents.api.incident_search import create_incident_search_router
 from vss_agents.api.incident_search import get_default_search_store
 from vss_agents.api.incident_search import register_incident_search_routes
+from vss_agents.utils.embeddings import RemoteTextEmbedder
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACT_FIXTURES_DIR = (
@@ -543,7 +544,9 @@ class TestSearchRouteEndToEnd:
         app = FastAPI()
         store = InMemorySearchStore(candidates=sample_candidates)
         critic = MockCriticEvaluator(verdict="confirmed", confidence=0.91, rationale="Verified evidence match")
-        router = create_incident_search_router(store=store, critic=critic, embedder=DefaultQueryEmbedder())
+        router = create_incident_search_router(
+            store=store, critic=critic, embedder=DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key=""))
+        )
         app.include_router(router)
 
         client = TestClient(app)
@@ -1121,3 +1124,24 @@ class TestCriticDelaySpacing:
         t0 = critic.call_records[0]["timestamp"]
         t1 = critic.call_records[1]["timestamp"]
         assert t1 - t0 >= 0.05 * 0.8
+
+
+class TestDefaultQueryEmbedder:
+    """DefaultQueryEmbedder uses the remote embedding endpoint when configured, else a placeholder."""
+
+    @pytest.mark.asyncio
+    async def test_uses_remote_embedder_when_configured(self) -> None:
+        remote = RemoteTextEmbedder(api_key="k")
+        remote.embed_query = AsyncMock(return_value=[0.1] * 1024)  # type: ignore[method-assign]
+
+        vector = await DefaultQueryEmbedder(remote=remote).embed_query("edged weapon")
+
+        assert vector == [0.1] * 1024
+        remote.embed_query.assert_awaited_once_with("edged weapon")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_placeholder_without_api_key(self) -> None:
+        vector = await DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key="")).embed_query("edged weapon")
+
+        assert len(vector) == 1024
+        assert abs(sum(x * x for x in vector) - 1.0) < 1e-3

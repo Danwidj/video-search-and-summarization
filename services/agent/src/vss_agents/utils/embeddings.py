@@ -1,0 +1,132 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Remote text embedding client for incident evidence search.
+
+Evidence descriptions (loader) and search queries (agent route) must be embedded by the same
+model so cosine distance over ``evidence_crops.embedding vector(1024)`` is meaningful. This calls an
+OpenAI-compatible ``POST {base_url}/embeddings`` endpoint (NVIDIA-hosted by default) and never runs a
+local model.
+"""
+
+import asyncio
+import logging
+import os
+from typing import Literal
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+EMBEDDING_DIMENSIONS = 1024
+DEFAULT_EMBEDDING_BASE_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2"
+DEFAULT_EMBEDDING_TIMEOUT_SECONDS = 30.0
+EMBEDDING_BATCH_SIZE = 32
+EMBEDDING_MAX_ATTEMPTS = 3
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+InputType = Literal["query", "passage"]
+
+
+def _api_key_from_env() -> str:
+    for name in ("EVIDENCE_EMBEDDING_API_KEY", "NVIDIA_API_KEY", "NGC_CLI_API_KEY"):
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+class RemoteTextEmbedder:
+    """Async client producing ``EMBEDDING_DIMENSIONS``-dimensional vectors from a remote endpoint.
+
+    Settings (constructor argument, then environment, then default):
+    ``EVIDENCE_EMBEDDING_BASE_URL``, ``EVIDENCE_EMBEDDING_MODEL`` and
+    ``EVIDENCE_EMBEDDING_API_KEY`` (falls back to ``NVIDIA_API_KEY`` then ``NGC_CLI_API_KEY``).
+    """
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        dimensions: int = EMBEDDING_DIMENSIONS,
+        timeout_seconds: float = DEFAULT_EMBEDDING_TIMEOUT_SECONDS,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self.base_url = (base_url or os.getenv("EVIDENCE_EMBEDDING_BASE_URL") or DEFAULT_EMBEDDING_BASE_URL).rstrip("/")
+        self.model = model or os.getenv("EVIDENCE_EMBEDDING_MODEL") or DEFAULT_EMBEDDING_MODEL
+        self.api_key = api_key if api_key is not None else _api_key_from_env()
+        self.dimensions = dimensions
+        self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
+
+    def is_configured(self) -> bool:
+        """Return True when an API key is available for the embedding endpoint."""
+        return bool(self.api_key)
+
+    async def embed(self, texts: list[str], *, input_type: InputType) -> list[list[float]]:
+        """Embed texts, preserving order. Raises on endpoint failure or unexpected vector size."""
+        if not texts:
+            return []
+        if not self.is_configured():
+            raise ValueError(
+                "Embedding API key is not configured (EVIDENCE_EMBEDDING_API_KEY, NVIDIA_API_KEY or NGC_CLI_API_KEY)"
+            )
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            vectors.extend(await self._embed_batch(texts[start : start + EMBEDDING_BATCH_SIZE], input_type))
+        return vectors
+
+    async def embed_query(self, text: str) -> list[float]:
+        """Embed one search query."""
+        return (await self.embed([text], input_type="query"))[0]
+
+    async def embed_passage(self, text: str) -> list[float]:
+        """Embed one document passage (an evidence description)."""
+        return (await self.embed([text], input_type="passage"))[0]
+
+    async def _embed_batch(self, texts: list[str], input_type: InputType) -> list[list[float]]:
+        body = {
+            "model": self.model,
+            "input": texts,
+            "input_type": input_type,
+            "dimensions": self.dimensions,
+            "encoding_format": "float",
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        url = f"{self.base_url}/embeddings"
+
+        for attempt in range(1, EMBEDDING_MAX_ATTEMPTS + 1):
+            if self._http_client is not None:
+                resp = await self._http_client.post(url, json=body, headers=headers, timeout=self.timeout_seconds)
+            else:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < EMBEDDING_MAX_ATTEMPTS:
+                logger.warning("Embedding endpoint returned HTTP %d; retrying (%d)", resp.status_code, attempt)
+                await asyncio.sleep(2.0 * attempt)
+                continue
+            resp.raise_for_status()
+            break
+
+        rows = sorted(resp.json()["data"], key=lambda row: row.get("index", 0))
+        vectors = [[float(x) for x in row["embedding"]] for row in rows]
+        if len(vectors) != len(texts) or any(len(v) != self.dimensions for v in vectors):
+            raise ValueError(
+                f"Embedding endpoint returned {len(vectors)} vectors of sizes "
+                f"{sorted({len(v) for v in vectors})}; expected {len(texts)} x {self.dimensions}"
+            )
+        return vectors

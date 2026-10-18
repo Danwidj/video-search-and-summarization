@@ -22,13 +22,18 @@ frame, and encoding JPEG quality 85 evidence images persisted via EvidenceStore.
 
 from abc import ABC
 from abc import abstractmethod
+import asyncio
+import base64
 from collections.abc import Sequence
 from dataclasses import dataclass
 import io
+import json
 import logging
 import math
 import os
 from pathlib import Path
+import re
+import time
 from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
@@ -37,10 +42,13 @@ try:
     import cv2
 except ImportError:  # pragma: no cover
     cv2 = None  # type: ignore[assignment]
+import httpx
 import numpy as np
 from PIL import Image
 
+from vss_agents.utils import incident_db
 from vss_agents.utils.optional_cv2 import ensure_codecs
+from vss_agents.utils.r2 import get_r2_client
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +185,7 @@ def encode_jpeg(frame_crop: np.ndarray, quality: int = 85) -> bytes | None:
     if cv2 is not None:
         success, buf = cv2.imencode(".jpg", frame_crop, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         if success and buf is not None:
-            return buf.tobytes()
+            return bytes(buf.tobytes())
 
     try:
         if len(frame_crop.shape) == 3 and frame_crop.shape[2] == 3:
@@ -202,24 +210,121 @@ class OpenVocabularyDetector(Protocol):
         ...
 
 
-class DefaultDetector:
-    """Default open-vocabulary detector port adapter.
+DEFAULT_GROUNDING_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
+DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-super-reasoner"
+GROUNDING_MAX_EDGE_PIXELS = 1280
+GROUNDING_MAX_ATTEMPTS = 4
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_JSON_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$")
 
-    Acts as a placeholder swap point until eval PR 119 selects the final
-    open-vocabulary detector model (Grounding DINO vs OWLv2 vs Florence-2).
+
+def parse_json_object(text: str) -> dict[str, Any]:
+    """Parse a JSON object from model output, tolerating Markdown code fences."""
+    parsed = json.loads(_JSON_FENCE_PATTERN.sub("", text.strip()))
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Expected a JSON object, got {type(parsed).__name__}")
+    return parsed
+
+
+class DefaultDetector:
+    """Open-vocabulary detector backed by the remote vision-language model.
+
+    Sends the video frame and the item label to an OpenAI-compatible chat completions endpoint
+    (Brev Switchyard) and asks for one tight bounding box, so no local detector weights are needed.
+    Settings: ``VLM_GATEWAY_BASE_URL`` or ``VLM_BASE_URL``, ``VLM_GATEWAY_API_KEY`` or ``OPENAI_API_KEY``,
+    and ``VLM_NAME`` (each overridable through the constructor).
     """
 
-    def __init__(self, model_name: str = "default-open-vocab", min_score: float = 0.2) -> None:
-        self.model_name = model_name
+    def __init__(
+        self,
+        model_name: str | None = None,
+        min_score: float = 0.2,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout_seconds: float = 120.0,
+    ) -> None:
+        self.model_name = model_name or os.getenv("VLM_NAME") or DEFAULT_GROUNDING_MODEL
         self.min_score = min_score
+        self.base_url = (
+            base_url or os.getenv("VLM_GATEWAY_BASE_URL") or os.getenv("VLM_BASE_URL") or DEFAULT_GROUNDING_BASE_URL
+        ).rstrip("/")
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("VLM_GATEWAY_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+        )
+        self.timeout_seconds = timeout_seconds
 
     def is_available(self) -> bool:
-        """Return True if detector weights/service are available in the current environment."""
-        return False
+        """Return True if the remote VLM endpoint is configured with credentials."""
+        return bool(self.api_key)
 
-    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:  # noqa: ARG002
-        # TODO [PR 119]: Plug in selected open-vocabulary detector (Grounding DINO / OWLv2)
-        return []
+    def _chat_url(self) -> str:
+        root = self.base_url[: -len("/v1")] if self.base_url.endswith("/v1") else self.base_url
+        return f"{root}/v1/chat/completions"
+
+    def _request_box(self, body: dict[str, Any]) -> dict[str, Any]:
+        """POST the grounding request, retrying rate limits, server errors and unparseable replies."""
+        for attempt in range(1, GROUNDING_MAX_ATTEMPTS + 1):
+            resp = httpx.post(
+                self._chat_url(),
+                json=body,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=self.timeout_seconds,
+            )
+            last_attempt = attempt == GROUNDING_MAX_ATTEMPTS
+            if resp.status_code in _RETRYABLE_STATUS_CODES and not last_attempt:
+                time.sleep(float(resp.headers.get("retry-after") or 2.0 * attempt))
+                continue
+            resp.raise_for_status()
+            try:
+                return parse_json_object(resp.json()["choices"][0]["message"]["content"])
+            except ValueError:
+                if last_attempt:
+                    raise
+                logger.warning("Unparseable grounding reply (attempt %d); retrying", attempt)
+        raise RuntimeError("unreachable")  # pragma: no cover
+
+    def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+        if not self.is_available():
+            return []
+        frame_h, frame_w = frame.shape[:2]
+        scale = min(1.0, GROUNDING_MAX_EDGE_PIXELS / max(frame_h, frame_w))
+        if scale < 1.0:
+            frame = np.asarray(
+                Image.fromarray(frame[..., ::-1]).resize((round(frame_w * scale), round(frame_h * scale)))
+            )[..., ::-1]
+        jpeg = encode_jpeg(np.ascontiguousarray(frame), quality=85)
+        if not jpeg:
+            return []
+
+        prompt = (
+            f'Locate the single best match for "{query}" in this image. Return JSON only, in the form '
+            '{"bbox_2d": [xmin, ymin, xmax, ymax], "label": "<what the box contains>"} with integer coordinates '
+            'normalised to 0-1000 (0,0 is the top-left corner). If it is not visible, return {"bbox_2d": null}.'
+        )
+        body = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")},
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            "temperature": 0.0,
+            "max_tokens": 512,
+            "response_format": {"type": "json_object"},
+        }
+        data = self._request_box(body)
+        raw_box = data.get("bbox_2d")
+        if not isinstance(raw_box, list) or len(raw_box) != 4:
+            return []
+        xmin, ymin, xmax, ymax = (max(0, min(1000, round(float(v)))) for v in raw_box)
+        return [Detection(box=[ymin, xmin, ymax, xmax], score=1.0, label=str(data.get("label") or query))]
 
 
 class FakeDetector:
@@ -450,50 +555,53 @@ class InMemoryEvidenceStore(EvidenceStore):
         ]
 
 
-class R2EvidenceStore(EvidenceStore):
-    """Cloudflare R2 adapter for evidence crop images.
+class R2EvidenceStore:
+    """Cloudflare R2 adapter for evidence crop images (object storage half of the evidence catalog)."""
 
-    TODO [PR 120]: Cloudflare R2 evidence crop storage management and presigned
-    URL generation owned by PR 120 (MVP2 data and search layer).
-    """
-
-    def __init__(self, bucket: str | None = None, account_id: str | None = None) -> None:
+    def __init__(self, bucket: str | None = None, client: Any = None) -> None:
         self.bucket = bucket or os.getenv("R2_BUCKET", "")
-        self.account_id = account_id or os.getenv("R2_ACCOUNT_ID", "")
+        self._client = client
+
+    def _get_client(self) -> Any:
+        return self._client if self._client is not None else get_r2_client()
 
     async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
-        # TODO [PR 120]: Implement boto3/aioboto3 PutObject to R2
-        raise NotImplementedError("R2EvidenceStore.put_image owned by PR 120")
+        await asyncio.to_thread(
+            self._get_client().put_object, Bucket=self.bucket, Key=key, Body=image_bytes, ContentType=content_type
+        )
+        return key
 
     async def get_image(self, key: str) -> bytes | None:
-        # TODO [PR 120]: Implement boto3/aioboto3 GetObject from R2
-        raise NotImplementedError("R2EvidenceStore.get_image owned by PR 120")
-
-    async def record_crop(self, **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("R2EvidenceStore only manages object storage; metadata is owned by PR 120")
-
-    async def get_crop(self, *args: Any, **kwargs: Any) -> dict[str, Any] | None:
-        raise NotImplementedError("R2EvidenceStore only manages object storage")
-
-    async def list_crops_for_incident(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        raise NotImplementedError("R2EvidenceStore only manages object storage")
+        try:
+            obj = await asyncio.to_thread(self._get_client().get_object, Bucket=self.bucket, Key=key)
+            return bytes(obj["Body"].read())
+        except Exception as exc:
+            if getattr(exc, "response", {}).get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                return None
+            raise
 
 
-class SupabaseEvidenceStore(EvidenceStore):
-    """Supabase PostgREST adapter for evidence_crops table.
+class SupabaseEvidenceStore:
+    """Supabase PostgREST adapter for the evidence_crops table (catalog half of the evidence catalog)."""
 
-    TODO [PR 120]: Supabase evidence_crops table migration and PostgREST persistence
-    adapter owned by PR 120 (MVP2 data and search layer).
-    """
+    _COLUMNS = (
+        "incident_id,model_run_id,item_type,item_id,item_name,description,threat_level,holder_entity_id,"
+        "timestamp_seconds,bounding_box,image,created_at"
+    )
 
     def __init__(self, client: Any = None) -> None:
         self.client = client
 
-    async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
-        raise NotImplementedError("SupabaseEvidenceStore only manages database rows; images belong in R2")
-
-    async def get_image(self, key: str) -> bytes | None:
-        raise NotImplementedError("SupabaseEvidenceStore only manages database rows")
+    async def _get_client(self) -> Any:
+        if self.client is not None:
+            return self.client
+        db = await incident_db.get_db()
+        if db is None:
+            raise RuntimeError(
+                "Incident Supabase DB is not configured (INCIDENT_SUPABASE_URL and "
+                "INCIDENT_SUPABASE_SERVICE_ROLE_KEY required)"
+            )
+        return db.client
 
     async def record_crop(
         self,
@@ -511,8 +619,27 @@ class SupabaseEvidenceStore(EvidenceStore):
         holder_entity_id: str | None = None,
         embedding: list[float] | None = None,
     ) -> dict[str, Any]:
-        # TODO [PR 120]: Insert row into evidence_crops via PostgREST service_role client
-        raise NotImplementedError("SupabaseEvidenceStore.record_crop owned by PR 120")
+        client = await self._get_client()
+        row = {
+            "incident_id": incident_id,
+            "model_run_id": model_run_id,
+            "item_type": item_type,
+            "item_id": item_id,
+            "item_name": item_name[:256],
+            "description": description,
+            "threat_level": threat_level,
+            "holder_entity_id": holder_entity_id,
+            "timestamp_seconds": timestamp_seconds,
+            "bounding_box": bounding_box,
+            "image": image_key,
+            "embedding": embedding,
+        }
+        await (
+            client.table("evidence_crops")
+            .upsert(row, on_conflict="incident_id,model_run_id,item_type,item_id")
+            .execute()
+        )
+        return row
 
     async def get_crop(
         self,
@@ -521,16 +648,66 @@ class SupabaseEvidenceStore(EvidenceStore):
         item_type: str,
         item_id: str,
     ) -> dict[str, Any] | None:
-        # TODO [PR 120]: Select row from evidence_crops via PostgREST
-        raise NotImplementedError("SupabaseEvidenceStore.get_crop owned by PR 120")
+        client = await self._get_client()
+        resp = await (
+            client.table("evidence_crops")
+            .select(self._COLUMNS)
+            .eq("incident_id", incident_id)
+            .eq("model_run_id", model_run_id)
+            .eq("item_type", item_type)
+            .eq("item_id", item_id)
+            .limit(1)
+            .execute()
+        )
+        return resp.data[0] if resp.data else None
 
     async def list_crops_for_incident(
         self,
         incident_id: str,
         model_run_id: str,
     ) -> list[dict[str, Any]]:
-        # TODO [PR 120]: Select rows from evidence_crops where incident_id and model_run_id
-        raise NotImplementedError("SupabaseEvidenceStore.list_crops_for_incident owned by PR 120")
+        client = await self._get_client()
+        resp = await (
+            client.table("evidence_crops")
+            .select(self._COLUMNS)
+            .eq("incident_id", incident_id)
+            .eq("model_run_id", model_run_id)
+            .execute()
+        )
+        return list(resp.data or [])
+
+
+class LiveEvidenceStore(EvidenceStore):
+    """Production EvidenceStore: images in Cloudflare R2, crop rows and embeddings in Supabase."""
+
+    def __init__(self, images: R2EvidenceStore | None = None, crops: SupabaseEvidenceStore | None = None) -> None:
+        self.images = images if images is not None else R2EvidenceStore()
+        self.crops = crops if crops is not None else SupabaseEvidenceStore()
+
+    async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
+        return await self.images.put_image(key, image_bytes, content_type)
+
+    async def get_image(self, key: str) -> bytes | None:
+        return await self.images.get_image(key)
+
+    async def record_crop(self, **kwargs: Any) -> dict[str, Any]:
+        return await self.crops.record_crop(**kwargs)
+
+    async def get_crop(
+        self,
+        incident_id: str,
+        model_run_id: str,
+        item_type: str,
+        item_id: str,
+    ) -> dict[str, Any] | None:
+        return await self.crops.get_crop(incident_id, model_run_id, item_type, item_id)
+
+    async def list_crops_for_incident(
+        self,
+        incident_id: str,
+        model_run_id: str,
+    ) -> list[dict[str, Any]]:
+        return await self.crops.list_crops_for_incident(incident_id, model_run_id)
 
 
 class CropEvidenceService:
