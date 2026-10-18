@@ -40,6 +40,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -69,6 +70,25 @@ DEFAULT_VLM_MODEL = os.getenv("VLM_NAME") or "nvidia/cosmos-3-nano-reasoner"
 DEFAULT_DETECTOR = "vlm"
 GROUNDING_MAX_ATTEMPTS = 4
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_TIMESTAMP_FIELD = re.compile(r'"timestamp_seconds"\s*:\s*(\d+)')
+_LABEL_FIELD = re.compile(r'"label"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def parse_grounding_reply(text: str) -> dict[str, Any]:
+    """Parse a grounding reply, recovering the two fields from a truncated JSON object."""
+    from vss_agents.utils.crop_evidence import parse_json_object
+
+    try:
+        return parse_json_object(text)
+    except ValueError:
+        ts, label = _TIMESTAMP_FIELD.search(text), _LABEL_FIELD.search(text)
+        if ts is None or label is None:
+            raise
+        return {
+            "timestamp_seconds": int(ts.group(1)),
+            "label": json.loads(f'"{label.group(1)}"'),
+        }
+
 
 ITEM_TYPE_TO_COLLECTION = {
     "entity": "entities",
@@ -506,7 +526,6 @@ class RemoteVLMClient:
         incident_context: dict[str, Any] | None = None,
     ) -> GroundingResult:
         import httpx
-        from vss_agents.utils.crop_evidence import parse_json_object
         from vss_agents.utils.r2 import resolve_r2_url
 
         if not self.api_key:
@@ -536,7 +555,7 @@ class RemoteVLMClient:
             "model": self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": 1024,
+            "max_tokens": 2048,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -569,7 +588,7 @@ class RemoteVLMClient:
             if not choices:
                 raise ValueError(f"No choices returned from VLM: {resp.json()}")
             try:
-                parsed = parse_json_object(choices[0]["message"]["content"])
+                parsed = parse_grounding_reply(choices[0]["message"]["content"])
                 break
             except ValueError:
                 if last_attempt:
@@ -678,6 +697,7 @@ class LiveCropClient:
             timestamp_seconds,
             label,
             self.detector,
+            whole_frame_fallback=True,
         )
         if crop is None:
             raise ValueError(f"No crop found for {label!r} at {timestamp_seconds}s")

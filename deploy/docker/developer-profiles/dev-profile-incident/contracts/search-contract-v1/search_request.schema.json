@@ -22,8 +22,13 @@
       "type": "number",
       "minimum": 0.0,
       "maximum": 1.0,
-      "default": 0.2,
+      "default": 0.0,
       "description": "Minimum vector cosine similarity threshold (1.0 - cosine_distance)."
+    },
+    "hide_rejected": {
+      "type": "boolean",
+      "default": true,
+      "description": "Omit hits the critic marked rejected."
     },
     "filters": {
       "type": "object",
