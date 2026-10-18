@@ -1,167 +1,46 @@
-# Incident Search & Reporting Capstone — Action Plan
+# Incident Search & Reporting Capstone - Action Plan
 
-This document outlines the goals, scope, and implementation plan for the Incident Search and
-Reporting profile (`dev-profile-incident`), built as a capstone project on NVIDIA's Video Search and
-Summarization (VSS) Blueprint and sponsored by NVIDIA NVAITC.
+Goals, scope and standing decisions for the Incident Search and Reporting profile (`dev-profile-incident`), a capstone on NVIDIA's Video Search and Summarization (VSS) Blueprint sponsored by NVIDIA NVAITC. Live status: [`status.md`](status.md).
 
 ---
 
-## 1. Goals and Intended Outcomes
+## 1. Goals
 
-The objective is to build an intelligent, video-driven incident search and reporting system for
-physical security, warehouse operations, and anomaly monitoring footage.
+An intelligent, video-driven incident search and reporting system for physical security, warehouse operations and anomaly footage. It replaces manual video inspection with VLM analysis:
 
-The system replaces manual video inspection with automated Vision-Language Model (VLM) analysis:
-1. **Ingest surveillance and anomaly video clips** via high-throughput video streaming infrastructure.
-2. **Extract structured, timestamped incident intelligence** (incident classification, severity,
-   confidence, summary, observed entities, weapons/instruments, affected assets, and event timeline).
-3. **Facilitate human review, editing, and verification** of AI findings through an interactive web console.
-4. **Benchmark AI output quality** against human ground truth through automated evaluation.
-5. **Enable natural language video retrieval** (MVP2) across video archives using multi-modal embeddings
-   and vector search.
+1. **Ingest** surveillance and anomaly clips and keep canonical copies in Cloudflare R2.
+2. **Extract** structured, timestamped incident reports: type, severity, confidence, summary, entities, instruments, assets, timeline and uncertainties.
+3. **Review** AI findings in a web console (edit, verify, choose an official report per video).
+4. **Benchmark** extraction quality against human ground truth.
+5. **Search** the archive in natural language over evidence crops and embeddings (MVP2).
 
----
+## 2. Scope
 
-## 2. Scope Breakdown: MVP1 vs. MVP2
+### Incident reporting (delivered)
 
-Development is partitioned into two major milestones. MVP1 delivers the end-to-end incident analysis
-and reporting loop; MVP2 adds natural-language semantic video search.
+- **Ingestion:** VST/NvStreamer chunked upload with a direct-to-R2 fallback; durable playback links generated on demand.
+- **Analysis:** either the credential-holding `vlm-gateway` or the native `vss-agent` (`POST /api/v1/incidents/{incident_id}/analyze`), on `incident-contract-v3`, with any of three allowlisted VLMs, strict validation and ID-only recovery. Every attempt is recorded; failures stay in a per-video history.
+- **Review UI (`incident-console-v2`):** upload workspace, report view with timestamp seeking and evidence cards, review lifecycle `unreviewed` / `under review` / `verified`, structured reviewer editing that leaves model output immutable, run history and re-analysis, explicit official report per video, and a dashboard that counts official incidents only.
+- **Tier 1 ground-truth evaluation:** `gt_*` tables from human annotations; exact match for type and severity, LLM-judge scoring for the description, temporal tolerance for start/end/duration, and precision / recall / F1 for entities, instruments and assets via embedding similarity and Hungarian matching.
 
-```
-+-----------------------------------------------------------------------------+
-|                                    MVP1                                     |
-|                      (Incident Report Generation)                           |
-|                                                                             |
-|  +------------------+    +--------------------+    +---------------------+  |
-|  | Video Ingestion  | -> |   VLM / Agent AI   | -> | Interactive Review  |  |
-|  | (NvStreamer/R2)  |    | Report Generation  |    | & Verification (UI) |  |
-|  +------------------+    +--------------------+    +---------------------+  |
-|                                      |                                      |
-|                                      v                                      |
-|                          +-----------------------+                          |
-|                          | Ground-Truth Eval (T1)|                          |
-|                          +-----------------------+                          |
-+-----------------------------------------------------------------------------+
-                                       |
-                                       v
-+-----------------------------------------------------------------------------+
-|                                    MVP2                                     |
-|                       (Natural-Language Search)                             |
-|                                                                             |
-|  +------------------+    +--------------------+    +---------------------+  |
-|  | Keyframe & Crop  | -> | Supabase pgvector  | -> | Console Search UI   |  |
-|  | (Open-Vocab Det) |    | (evidence_crops)   |    | & Jump-to-Clip      |  |
-|  +------------------+    +--------------------+    +---------------------+  |
-|                                      |                                      |
-|                                      v                                      |
-|                          +-----------------------+                          |
-|                          | VLM Critic Always-On  |                          |
-|                          | & Retrieval Eval Suite|                          |
-|                          +-----------------------+                          |
-+-----------------------------------------------------------------------------+
-```
+### MVP2: natural-language incident search
 
-### MVP1: Incident Report Generation
+Specification and architecture: [`mvp2/README.md`](mvp2/README.md). A hybrid pipeline, because VLM bounding boxes scored 0% well-framed while timestamps were over 95% accurate:
 
-*Focus: Ingestion, automated analysis, structured metadata extraction, human verification, and ground-truth evaluation.*
+- **VLM extraction:** reports with item timestamps (`incident-contract-v3`).
+- **Crop pipeline:** keyframes at item timestamps, an open-vocabulary detector (Grounding DINO / OWLv2) for boxes, crops uploaded to R2.
+- **Search layer:** metadata and 1024-d text embeddings in `evidence_crops` (HNSW index), queried through the `search_evidence_items` RPC (`service_role` only).
+- **Always-on VLM critic:** checks each candidate hit against the query and records verdicts in `query_results`.
+- **Frontend:** search route in `incident-console-v2` with filter chips, hit cards with crops and critic rationales, jump-to-clip, and conversational Q&A.
+- **Contracts:** `search-contract-v1` and `chat-contract-v1`, with routes in `vss-agent` and the mock backends (ports 7777 / 7778).
 
-- **Scope:**
-  - **Video Ingestion & Storage:** Upload video clips through VST/NvStreamer chunked upload and persist
-    canonical copies in Cloudflare R2 object storage.
-  - **Automated Analysis Pipeline:** Trigger VLM inference over uploaded footage (via either the local
-    credential-holding `vlm-gateway` or the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze`
-    endpoint).
-  - **Structured Incident Extraction:** Populate normalized incident reports with:
-    - Incident classification / taxonomy type (`road accident`, `burglary`, `explosion`, `fighting`, `animal`).
-    - Severity rating (integer 1–5) and explicit reasoning.
-    - Confidence score (float 0.0–1.0).
-    - Incident description / summary.
-    - Start and end timestamps with duration in seconds.
-    - Key entities observed (persons, actors, descriptions, actions).
-    - Observed instruments, tools, or weapons with threat levels (1–5).
-    - Impacted or observed assets (vehicles, structures, equipment).
-    - Chronological event timeline (start/end seconds, event descriptions).
-    - Explicit uncertainties and extraction gaps.
-  - **Review & Verification UI:** `incident-console-v2` Next.js frontend supporting:
-    - Video upload workspace with progress tracking.
-    - Incident report view with timestamp seeking, evidence cards, and print styling.
-    - Review lifecycle transitions: `unreviewed` -> `under review` -> `verified`.
-    - Model run comparison (comparing multiple analyses over the same video).
-  - **Ground-Truth Evaluation (Tier 1):**
-    - Parallel ground-truth schema (`gt_*` tables) populated from human annotations.
-    - Exact match scoring for incident type and severity.
-    - LLM-judge qualitative scoring for incident description.
-    - Temporal tolerance comparison for start/end timestamps and duration.
-    - Entity, instrument, and asset precision, recall, and F1 via embedding similarity and Hungarian matching.
+## 3. Standing architectural decisions
 
-- **MVP1 Success Criteria:**
-  - Zero-data-loss video ingestion with durable playback links generated on demand.
-  - End-to-end report generation completes reliably without rate-limit deadlocks.
-  - AI extraction outputs valid JSON adhering to schema constraints and graceful fallbacks for ambiguous inputs.
-  - Review status changes and human verification actions persist atomically to Postgres.
-  - Tier 1 evaluation pipeline successfully computes comparative metric scores against ground truth.
-
-- **MVP1 extension delivered 2026-09-27 (console on the shared contract):**
-  - Upload or re-analyse with any of the three evaluated VLMs, using the same `incident-contract-v3` request as eval, with strict validation and ID-only recovery.
-  - Every attempt is recorded, with failures kept in a per-video analysis history.
-  - Structured reviewer editing that leaves model output immutable.
-  - Explicit official report per video.
-  - The dashboard counts official incidents only, and its numbers link into the reports page.
-
----
-
-### MVP2: Natural Language Incident Search
-
-*Authoritative specification, end goal, and architecture: [`mvp2/README.md`](mvp2/README.md) (PR 122).*
-
-Following the box-accuracy pilot (where VLM bounding boxes scored 0% well-framed while timestamps were >95% accurate), MVP2 shifted to a **hybrid pipeline**:
-- **VLM Extraction:** Extract structured incident reports with item timestamps (`incident-contract-v3`).
-- **Open-Vocabulary Crop Pipeline:** Extract video frames at item timestamps and run an open-vocabulary detector (Grounding DINO / OWLv2) to crop high-precision bounding boxes uploaded to Cloudflare R2.
-- **Data & Vector Search Layer:** Store metadata and 1024-d text embeddings in the Supabase `evidence_crops` table with an HNSW index, queried via the `search_evidence_items` RPC (restricted to `service_role`).
-- **Always-On VLM Critic:** Evaluates candidate retrieval hits against the user query; records verdicts and rankings into `query_results`.
-- **Frontend & Interaction:** Natural-language search route in `incident-console-v2`, filter chips, candidate hit cards with crop images and critic rationales, jump-to-clip video scrubbing, and conversational Q&A.
-
-**Active MVP2 Workstreams (open PRs):**
-- **PR 118:** Frontend console search UI, evidence timeline, chat, and dynamic style theming.
-- **PR 119:** System vs one-shot baseline benchmarking, retrieval evaluation suite, critic utility ablation, and detector selection.
-- **PR 120:** Data and search layer, hexagonal decoupling of `incident-console-v2`, Supabase migrations (`evidence_crops`, `query_results`), RLS lockdown, connection verification, VM `vss-agent` persistence verification, and RPC search function.
-- **Contracts & Endpoints:** `search-contract-v1` and `chat-contract-v1` REST schemas; native search and chat routes in `vss-agent` and mock backend search/chat routes on ports 7777/7778.
-- **Backfill (`fm/vss-mvp2-backfill-timestamps`):** Targeted timestamp and detector label backfill script over existing official reports (`scripts/backfill_official_timestamps.py`).
-
-See [`mvp2/README.md`](mvp2/README.md) for full technical specifications, dependencies, and TODO stand-in indices.
-
----
-
-## 3. Standing Architectural Decisions
-
-The following core principles govern all work in `dev-profile-incident`:
-
-1. **Profile Tag:** Reuses NVIDIA's `bp_developer_search` compose tag. The `BP_PROFILE` variable in `.env`
-   remains `bp_developer_search` so the stack is a superset of the base and search pipelines.
-2. **Dual Analysis Architecture:**
-   - **Gateway Mode (`ANALYSIS_MODE=gateway`):** Fast, zero-GPU local development. The Next.js frontend calls
-     `vlm-gateway` (port 8600), which holds the upstream inference key and calls the hosted Brev switchyard endpoint.
-   - **Agent Mode (`ANALYSIS_MODE=agent`):** Full blueprint integration. The frontend connects over SSH tunnel
-     to the native `vss-agent` (port 8000) on `kwanz-ws`, which invokes remote NGC models and persists reports.
-3. **Storage Architecture:**
-   - **Cloudflare R2:** The canonical, permanent object store for uploaded videos and evidence frames.
-   - **Supabase (PostgreSQL):** The canonical database for incident reports, review workflows, ground truth, and
-     evaluations.
-   - **Local VIOS Disk:** Acts solely as an ephemeral working cache for video ingestion and streaming.
-4. **Data Model Identity Rule:** **1 video = 1 incident.** `incidents.incident_id` is identical to `videos.id`.
-   There is no separate `video_id` column.
-5. **Multi-Model Run Support:** `incidents`, `entities`, `instruments`, and `assets` are keyed by composite
-   primary keys including `model_run_id`, allowing multiple model runs or prompts over the same video without
-   collision.
-6. **Isolated Review State:** The `review_status` table tracks human review (`unreviewed`, `under review`,
-   `verified`) keyed by `(incident_id, model_run_id)` so that the core AI-generated `incidents` table remains
-   an immutable record of model output.
-7. **VM Network Constraints:** The VM host environment (`kwanz-ws`) blocks raw Postgres wire protocol (port 5432)
-   via deep packet inspection (DPI). Therefore, all agent-side database persistence uses HTTPS PostgREST
-   (`supabase-py`), while local laptop scripts and tools can connect directly via `INCIDENT_DB_DSN`.
-8. **Stateless User Model:** `edited_by`, `verified_by`, and `rater` fields store plain text usernames entered by
-   team members; no complex authentication or user account table is required.
-
----
-
-For live implementation status, component readiness, and known issues, see [`status.md`](status.md).
+1. **Profile tag:** reuses NVIDIA's `bp_developer_search` compose tag (`BP_PROFILE` stays `bp_developer_search`), so the stack is a superset of the base and search pipelines.
+2. **Dual analysis modes:** `ANALYSIS_MODE=gateway` (Next.js to `vlm-gateway` :8600 to the hosted Brev endpoint; zero GPU) and `ANALYSIS_MODE=agent` (Next.js over an SSH tunnel to the native `vss-agent` :8000 on `kwanz-ws`).
+3. **Storage:** R2 is the permanent store for videos and evidence images; Supabase Postgres holds reports, review, ground truth and evaluations; the VIOS disk is only a working cache.
+4. **1 video = 1 incident:** `incidents.incident_id` equals `videos.id`; there is no `video_id` column.
+5. **Multi-run support:** `incidents`, `entities`, `instruments` and `assets` are keyed by `model_run_id` as well, so several runs over one video do not collide.
+6. **Isolated review state:** `review_status` is keyed by `(incident_id, model_run_id)`, leaving `incidents` an immutable record of model output.
+7. **VM network constraint:** `kwanz-ws` blocks port 5432, so agent-side persistence uses HTTPS PostgREST (`supabase-py`); laptop tools may use `INCIDENT_DB_DSN`.
+8. **Stateless users:** `edited_by`, `verified_by` and `rater` are plain-text names; there is no account table.

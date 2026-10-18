@@ -12,7 +12,7 @@ Streamlit console (v1) for the VSS incident search & reporting capstone, origina
 migrated from the deprecated sibling `rise-up` project onto this blueprint fork. See
 [`.docs/`](../.docs/) for the current plan;
 this legacy app implements the frontend half of
-the shared implementation reference (superseded by [`../.docs/action-plan.md`](../.docs/action-plan.md) and [`../.docs/data.md`](../.docs/data.md); legacy plan preserved under [`../.docs/archive/`](../.docs/archive/)).
+the shared implementation reference (superseded by [`../.docs/action-plan.md`](../.docs/action-plan.md) and [`../.docs/data.md`](../.docs/data.md)).
 
 This package is **profile-exclusive** and retired — active frontend work lives under
 [`incident-console-v2/`](../incident-console-v2/README.md).

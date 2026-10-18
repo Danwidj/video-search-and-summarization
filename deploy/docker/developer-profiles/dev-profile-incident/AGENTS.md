@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP1 (reporting) is done. MVP2 (natural-language search) overview is merged ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)); workstreams are in progress under PR 118, PR 119, and PR 120.
+Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP2 adds natural-language search ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)).
 
 - **Operate the profile** (launch, VM ops, analyse, migrate, evaluate): use the skills in [`skills/README.md`](skills/README.md).
 - **Understand it:** [`.docs/`](#docs-map). Start with [`.docs/status.md`](.docs/status.md) for what is true today.
@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([plan](.docs/prompt-contract-plan.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
@@ -45,76 +45,52 @@ uv sync && uv run pytest tests/
 
 ## Architecture rules
 
-- **1 video = 1 incident:** `videos.id` == `incidents.incident_id`, with no separate `video_id`. Every analysis gets its own `model_run_id`, and evidence tables key on `(incident_id, model_run_id)`.
-- **Two analysis modes:**
-  - `ANALYSIS_MODE=gateway`: the console calls `vlm-gateway` and writes Supabase itself.
-  - `ANALYSIS_MODE=agent`: the console calls the native `vss-agent` for P1 only (`skip_rp1`) and writes Supabase itself; the agent persists nothing when the console passes `model_run_id`.
-  - **Gateway mode uses `incident-contract-v3`** from `contracts/`, sending the same request as eval. It validates strictly and applies only the ID-only `id-normalization-v1` recovery. Every attempt is recorded immutably in `model_runs.notes` with its outcome. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
-    - Never modify `model_runs.notes` after an attempt is written.
-    - Never add a repair step that changes semantic content.
-    - Never let application-side repair affect eval results.
-    - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-  - **Agent mode uses `incident-contract-v3`** vendored in `services/agent/src/vss_agents/incident_contract/` (P1, plus RP1 for standalone calls), and `incident-console-v2` routes the response through the same `core-scored-v1` validation policy and attempt recording as gateway mode. The agent never writes `videos`.
-  - **Reviewer edits change only the relational projection** (`apply_structured_report_edit`).
-  - **Official reports are explicit** (`select_official_report`); never infer "latest run wins".
-  - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only and never reports. Count runs by outcome, never raw `model_runs` rows.
-  - A change to one mode's persistence must be checked against the other. See [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
-- **PostgREST only from `kwanz-ws`:** port 5432 is DPI-blocked there. All PostgREST writers use `/rpc/insert_incident` for atomic `incidents` + `review_status`.
-- **Storage split:**
-  - R2 holds videos, and `videos.filepath` must hold an **R2 key**, never a VST URL.
-  - Supabase holds rows.
-  - VIOS disk is only a cache.
-- **Secrets are server-side only:**
-  - In the console, never use `NEXT_PUBLIC_` for any credential or URL. `/api/health` returns booleans only.
-  - The gateway, not the browser, owns `VLM_GATEWAY_API_KEY`.
+- **1 video = 1 incident:** `videos.id` == `incidents.incident_id` (no `video_id`). Every analysis gets its own `model_run_id`; evidence tables key on `(incident_id, model_run_id)`.
+- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In both the console writes Supabase; the agent persists nothing when given a `model_run_id` and never writes `videos`. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
+- **Both modes use `incident-contract-v3`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
+  - Never modify `model_runs.notes` after an attempt is written.
+  - Never add a repair step that changes semantic content, or let repair affect eval results.
+  - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
+- **Reviewer edits change only the relational projection** (`apply_structured_report_edit`). Official reports are explicit (`select_official_report`); never infer "latest run wins".
+- **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
+- **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). All PostgREST writers use `/rpc/insert_incident`.
+- **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
+- **Secrets are server-side only:** never `NEXT_PUBLIC_` for a credential or URL; `/api/health` returns booleans only; the gateway owns `VLM_GATEWAY_API_KEY`.
 - **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`).
 
 ## Boundaries
 
-- **Always:**
-  - Run the component's checks.
-  - Add the SPDX license header used by neighbouring files.
-  - Update the affected `.docs/` file and skill in the same PR (see [Docs rule](#docs-rule)).
-- **Ask first:**
-  - Applying a migration to the live Supabase DB.
-  - Anything that restarts or stops shared services on `kwanz-ws`.
-  - Editing `generated.env.remote`.
-  - Starting Option B work ([`.docs/restructure-plan.md`](.docs/restructure-plan.md) is awaiting approval).
-  - Adding dependencies.
+- **Always:** run the component's checks; add the neighbouring SPDX header; update the affected `.docs/` file and skill in the same PR ([Docs rule](#docs-rule)).
+- **Ask first:** applying a migration to the live Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
-  - Run `dev-profile.sh down` or `up` for this profile. It wipes the VM model cache and does not know the profile.
+  - Run `dev-profile.sh down` or `up` for this profile (it wipes the VM model cache and does not know the profile).
   - Start the Docker `vss-agent` while the native one runs.
   - Add features to the retired `incident-console/`.
   - Skip failing tests.
 
 ## Docs rule
 
-Stale docs are a defect, not a follow-up. Any change in this directory updates, in the same PR:
+Stale docs are a defect. Update in the same PR:
 
 | Change | Update |
 |---|---|
-| Scope or milestones | [`.docs/action-plan.md`](.docs/action-plan.md) |
-| Implementation status, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (a snapshot: rewrite it, don't append) |
+| A command, port, script or API contract | The matching `skills/incident-*/SKILL.md` and [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) |
+| Schema, R2 layout or report fields | [`.docs/data.md`](.docs/data.md), [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
 | Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md) |
-| Schema or R2 layout | [`.docs/data.md`](.docs/data.md) |
-| Report model or field translation | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
-| Runtime, deploy, troubleshooting facts | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) |
-| A command, port, script or API contract that a skill uses | The matching `skills/incident-*/SKILL.md` |
-| Any architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links |
+| Implementation state, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (rewrite, don't append) |
+| An architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links |
 | A doc or skill added, moved or renamed | [`README.md`](README.md) doc index and [`skills/README.md`](skills/README.md) |
 
 ## Docs map
 
 | File | Read when |
 |---|---|
-| [`.docs/status.md`](.docs/status.md) | Starting any task: what's done, known issues, live VM config |
-| [`.docs/action-plan.md`](.docs/action-plan.md) | Checking scope or MVP1/MVP2 goals |
+| [`.docs/status.md`](.docs/status.md) | Starting any task: what is done, known issues, live VM config |
+| [`.docs/action-plan.md`](.docs/action-plan.md) | Checking scope or goals |
 | [`.docs/architecture.md`](.docs/architecture.md) | Touching more than one component, or tracing a request |
 | [`.docs/data.md`](.docs/data.md) | Touching tables, the RPC, cascades or R2 keys |
-| [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts or translation |
+| [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
-| [`.docs/restructure-plan.md`](.docs/restructure-plan.md) | Option B (proposed, not approved) |
-| [`.docs/prompt-contract-plan.md`](.docs/prompt-contract-plan.md) | Touching prompts, the report schema, VLM calls or output parsing in eval, console or agent (phases 1-3 delivered) |
-| [`.docs/archive/`](.docs/archive/) | Historical plans only. Not current truth. |
+| [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |

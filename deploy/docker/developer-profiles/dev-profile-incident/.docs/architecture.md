@@ -67,7 +67,7 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST /rpc/insert_incident| Supabase
-    UI -->|/rpc/apply_incident_report_patch| Supabase
+    UI -->|/rpc/apply_structured_report_edit| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -172,26 +172,9 @@ ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4
 
 ## 3. Remote LLM/VLM Deployment Facts (Brev Switchyard & Remote Inference)
 
-The VM deployment runs LLM, VLM, and evaluation judge inference against Brev Switchyard (`https://switchyard-13doh4lsz.brevlab.com`),
-eliminating the need for local NIM inference containers on `kwanz-ws` and avoiding NGC hosted endpoint rate-limits.
+The VM deployment runs LLM, VLM, and evaluation judge inference against Brev Switchyard (`https://switchyard-13doh4lsz.brevlab.com`). There are no local NIM inference containers on `kwanz-ws`.
 
-### Configuration Variables (`generated.env.remote`)
-
-```dotenv
-LLM_MODE=remote
-VLM_MODE=remote
-LLM_MODEL_TYPE=openai
-VLM_MODEL_TYPE=openai
-LLM_NAME=nvidia/nemotron-3-ultra
-VLM_NAME=nvidia/cosmos-3-super-reasoner
-LLM_NAME_SLUG=none
-VLM_NAME_SLUG=none
-LLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com
-VLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com
-LLM_ENDPOINT_URL=https://switchyard-13doh4lsz.brevlab.com
-VLM_ENDPOINT_URL=https://switchyard-13doh4lsz.brevlab.com
-OPENAI_API_KEY=<brev-switchyard-api-key>
-```
+Live values are in [`status.md`](status.md); the full procedure for editing `generated.env.remote` is in [`incident-profile-operations.md`](incident-profile-operations.md).
 
 ### Inference Rules & Requirements
 
@@ -237,7 +220,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 ### Dashboard analytics and cross-filtering
 
-`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC. Since 2026-09-27 it counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC. It counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
 - Videos with reports but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
 - Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
 - Model coverage counts every analysis attempt in the period by outcome.
@@ -388,4 +371,4 @@ sequenceDiagram
 *Authoritative specification, sequence, and data flow: [`mvp2/README.md`](mvp2/README.md) and [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).*
 
 > [!NOTE]
-> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). Active workstreams are tracked in PR 118, PR 119, and PR 120. See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
+> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), open-vocabulary object cropping (Grounding DINO / OWLv2), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
