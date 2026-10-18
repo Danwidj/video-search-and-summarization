@@ -92,5 +92,6 @@ Stale docs are a defect. Update in the same PR:
 | [`.docs/data.md`](.docs/data.md) | Touching tables, the RPC, cascades or R2 keys |
 | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
+| [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |
