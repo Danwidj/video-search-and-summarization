@@ -84,7 +84,11 @@ def parse_grounding_reply(text: str) -> dict[str, Any]:
         ts, label = _TIMESTAMP_FIELD.search(text), _LABEL_FIELD.search(text)
         if ts is None or label is None:
             raise
-        return {"timestamp_seconds": int(ts.group(1)), "label": json.loads(f'"{label.group(1)}"')}
+        return {
+            "timestamp_seconds": int(ts.group(1)),
+            "label": json.loads(f'"{label.group(1)}"'),
+        }
+
 
 ITEM_TYPE_TO_COLLECTION = {
     "entity": "entities",
