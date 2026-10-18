@@ -29,18 +29,47 @@ else
   echo "[bootstrap] All apt packages already present."
 fi
 
-# apt doesn't package starship for jammy — official curl installer.
+# apt doesn't package starship for jammy — download pinned release binary with checksum.
+# Set BOOTSTRAP_SKIP_STARSHIP=1 to skip.
 # Check via a real interactive shell (`bash -ic`), not a bare `which` in
 # this script's own non-interactive subshell: PATH only picks up
 # ~/.local/bin once .bashrc has been sourced, so a naive `command -v
 # starship` here would false-negative against an install that's already
 # in place and try to reinstall it every run.
+STARSHIP_VERSION="1.22.1"
 mkdir -p "$HOME/.local/bin"
-if bash -ic 'command -v starship' >/dev/null 2>&1; then
+if [ "${BOOTSTRAP_SKIP_STARSHIP:-0}" = "1" ]; then
+  echo "[bootstrap] BOOTSTRAP_SKIP_STARSHIP=1 — skipping starship installation."
+elif bash -ic 'command -v starship' >/dev/null 2>&1; then
   echo "[bootstrap] starship already installed."
 else
-  echo "[bootstrap] Installing starship..."
-  curl -sS https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64)
+      starship_target="x86_64-unknown-linux-gnu"
+      starship_sha256="e57db6f6497ee8a426c5e77b4d6f5c50734d3e9cca7a18a8aef46730505a3ae7"
+      ;;
+    aarch64)
+      starship_target="aarch64-unknown-linux-musl"
+      starship_sha256="b82edd21060f3ed112460442c48a3a9545c8dbf3b564154441f4e6b58eacc387"
+      ;;
+    *)
+      echo "[bootstrap] Unsupported arch '$arch' for starship — skipping (install manually if needed)." >&2
+      starship_target=""
+      starship_sha256=""
+      ;;
+  esac
+  if [ -n "$starship_target" ]; then
+    echo "[bootstrap] Installing starship $STARSHIP_VERSION ($starship_target)..."
+    starship_tmp="$(mktemp -d)"
+    starship_tar="${starship_tmp}/starship.tar.gz"
+    curl -sSL "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/starship-${starship_target}.tar.gz" -o "$starship_tar"
+    echo "${starship_sha256}  ${starship_tar}" | sha256sum -c -
+    tar -xzf "$starship_tar" -C "$starship_tmp"
+    cp "$starship_tmp/starship" "$HOME/.local/bin/starship"
+    chmod +x "$HOME/.local/bin/starship"
+    rm -rf "$starship_tmp"
+  fi
 fi
 
 # apt doesn't package git-delta for jammy either (only noble/24.04+) — same

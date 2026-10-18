@@ -10,8 +10,9 @@ box, not a personal daily-driver machine.
 - Installs `fzf`, `ripgrep`, `bat` (aliased as `bat`, apt ships the binary
   as `batcat`) and `btop` via `apt` (skips anything already
   installed).
-- Installs `starship` via its official curl installer (apt doesn't package
-  it for jammy) and drops a config tuned for this box: username+hostname
+- Installs `starship` via a pinned GitHub binary release with checksum
+  verification (apt doesn't package it for jammy; set `BOOTSTRAP_SKIP_STARSHIP=1`
+  to skip) and drops a config tuned for this box: username+hostname
   always visible (six accounts, one machine), directory, git branch/status,
   command duration, no GPU/docker custom module (see below).
 - Installs `git-delta` (as `delta`) the same curl-binary way (apt doesn't
