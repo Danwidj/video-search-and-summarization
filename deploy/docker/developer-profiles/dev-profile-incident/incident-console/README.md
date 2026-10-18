@@ -444,9 +444,10 @@ ignored `generated.env.local` / `generated.env.remote` copy passed to
 
 ## VM deploy
 
-`Dockerfile` + `compose.yml` here are for the VM deploy only (service
-`incident-console`, compose profile `bp_developer_search_2d`). Local dev never
-uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
+`Dockerfile` + `compose.yml` here are historical artifacts for the legacy VM deploy
+(service `incident-console`, compose profile `bp_developer_search_2d`). As this console
+is retired, its compose include has been dropped from the parent profile `compose.yml`.
+Local dev never uses them. The image is a `uv sync --frozen --no-dev` multi-stage build per
 the shared implementation reference. Never create `.env` / `.env.local`
 with real values on the VM build host: `COPY . .` would bake them into the image
 (see `.dockerignore`).
