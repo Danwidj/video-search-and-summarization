@@ -69,6 +69,8 @@ logger = logging.getLogger("backfill_official_timestamps")
 DEFAULT_VLM_MODEL = os.getenv("VLM_NAME") or "nvidia/cosmos-3-nano-reasoner"
 DEFAULT_DETECTOR = "vlm"
 GROUNDING_MAX_ATTEMPTS = 4
+# A runaway digit run in a truncated reply parses to an int too large for float maths downstream.
+MAX_TIMESTAMP_SECONDS = 86_400
 RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 _TIMESTAMP_FIELD = re.compile(r'"timestamp_seconds"\s*:\s*(\d+)')
 _LABEL_FIELD = re.compile(r'"label"\s*:\s*"((?:[^"\\]|\\.)*)"')
@@ -599,7 +601,7 @@ class RemoteVLMClient:
 
         ts = int(parsed["timestamp_seconds"])
         label = str(parsed["label"]).strip()
-        if ts < 0 or not label:
+        if not 0 <= ts <= MAX_TIMESTAMP_SECONDS or not label:
             raise ValueError(
                 f"Invalid grounding fields returned: ts={ts}, label={label}"
             )
