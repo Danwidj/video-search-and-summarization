@@ -20,6 +20,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Database schema & R2 storage](.docs/data.md)
 - [Incident analysis schema & field mapping](.docs/analysis-schema.md)
 - [Profile operations & runbook](.docs/incident-profile-operations.md)
+- [VM API contracts & tunnel endpoints (frontend)](.docs/vm-api-contracts.md)
 - [Decision log](.docs/decisions.md)
 - [MVP2 natural-language search overview](.docs/mvp2/README.md)
 
