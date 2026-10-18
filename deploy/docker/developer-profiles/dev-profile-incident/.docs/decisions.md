@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-18: Drop retired Streamlit incident-console from compose.yml
+- **Decision:** Remove `./incident-console/compose.yml` from `deploy/docker/developer-profiles/dev-profile-incident/compose.yml` and correct the comments stating it is the profile-exclusive service.
+- **Why:** The Streamlit v1 console is retired (`incident-console-v2` is the sole UI). Nothing depends on including `vss-incident-console` in the profile's compose stack.
+- **Rejected:** keeping the inactive include in `compose.yml`.
+- **Links:** [`compose.yml`](../compose.yml); [`../incident-console/README.md`](../incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
+
 ### 2026-10-18: No search similarity cutoff; hide critic-rejected hits; loader keeps unboxed items
 - **Decision:** `POST /api/v1/incidents/search` defaults `min_similarity` to 0.0 and takes top_k; hits the critic marks `rejected` are dropped unless `hide_rejected` is false. The loader stores the whole frame (box `[0,0,1000,1000]`, confidence 0.0) when the detector finds no box, raises grounding `max_tokens` to 2048 and recovers `timestamp_seconds` and `label` from a truncated reply.
 - **Why:** Scores of all 57 loaded rows sit between 0.14 and 0.35, so the 0.2 cutoff flipped "edged weapon" between 0 and 5 hits on a 0.01 difference (best score 0.192). The critic already judges relevance. Whole-frame crops keep items (including the only weapon) searchable, since scoring uses the description embedding.

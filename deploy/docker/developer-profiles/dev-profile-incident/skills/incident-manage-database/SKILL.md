@@ -44,10 +44,33 @@ Natural-language search queries evidence items through the service-role-only `/r
 From the repo root:
 
 ```bash
+# 1. Always inspect local vs remote migration state first
+supabase migration list --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN"
+
+# 2. Preview what would be applied — review output, then ask captain/lead
 supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN" --dry-run          # review output, then ask
+  --db-url "$INCIDENT_DB_DSN" --dry-run
+
+# 3. Apply for real
 supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
   --db-url "$INCIDENT_DB_DSN"
+```
+
+If an older-timestamped migration is pending after a newer one has already been applied remotely (e.g. `20261016120000` applied while `20260928000000` is pending), `supabase db push` will refuse to apply it out-of-order. Use `--include-all` to force applying older pending migrations:
+
+```bash
+supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --include-all --dry-run
+supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --include-all
+```
+
+If a migration was applied manually or out-of-band and needs to be marked as applied (or unapplied) in Supabase's migration tracking table without re-executing SQL, use `supabase migration repair`:
+
+```bash
+supabase migration repair --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
 
 ### Read via PostgREST (works from anywhere with HTTPS)

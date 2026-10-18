@@ -74,17 +74,17 @@ Response `200`:
 | `hits[].similarity_score` | float 0-1 | |
 | `hits[].item` | object | `item_type`, `item_id`, `name`, `label`, `description`, `threat_level` (int or null), `holder_entity_id` (string or null), `crop_image_url`, `timestamp_seconds` (int), `bounding_box` (null or `[ymin, xmin, ymax, xmax]`, 4 normalised ints) |
 | `hits[].incident` | object | `incident_id`, `model_run_id`, `incident_type`, `severity_level` (1-5), `title` (string or null), `description`, `playback_url`, `incident_window` (`[start_s, end_s]`) |
-| `hits[].critic` | object | `verdict` (`confirmed`, `rejected`, `unverified`), `confidence` (0-1 or null), `rationale` |
+| `hits[].critic` | object | `verdict` (`confirmed`, `rejected`, `unverified`), `confidence` (0-1, null, or observed 0.0), `rationale` |
 
 Behaviour:
-- Rejected hits are still returned; the frontend decides whether to hide `rejected`.
-- A failing critic never drops a hit: it degrades to `verdict: "unverified"`, `confidence: null`, with the failure in `rationale`.
+- `hide_rejected` defaults to true: hits marked `rejected` by the critic are excluded from `hits[]` by default (`rank` retains its pre-filter value). Pass `hide_rejected: false` to return them.
+- A failing critic never drops a hit: it degrades to `verdict: "unverified"`, with `confidence` typically null (or 0.0 observed on some unverified responses), with the failure in `rationale`.
 - `crop_image_url` and `playback_url` are resolved from R2 by the agent. Use them as given.
 - Errors: 422 on validation. A store or embedding failure is not caught, so expect `500` (plain-text `Internal Server Error`, not the `detail` shape).
-- Timing: embedding plus pgvector query, then critic calls spaced by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1.0 s between hits). Expect about 2-3 s for no hits (2.5 s measured on the VM) and roughly `top_k` seconds plus critic latency (30 s timeout each) for `top_k` hits. Use a client timeout of at least 90 s for `top_k` up to 50, and show a loading state.
+- Timing: embedding plus pgvector query, then critic calls spaced by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1.0 s between hits). Expect about 7 s for no hits (measured ~7.2 s on the VM) and roughly `top_k` seconds plus critic latency (30 s timeout each) for `top_k` hits. Use a client timeout of at least 90 s for `top_k` up to 50, and show a loading state.
 - Side effect: each call writes one `queries` row and one `query_results` row per hit (audit trail, failures only logged).
 
-Example (hit shape built from the Pydantic models; the live VM returned no hits, see differences below):
+Example (illustrative hit shape built from the Pydantic models; the live VM returns hits as detailed in the retest reports):
 
 ```bash
 curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/json' \

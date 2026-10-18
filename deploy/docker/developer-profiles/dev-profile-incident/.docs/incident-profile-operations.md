@@ -199,7 +199,18 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 
 ---
 
-## 6. End-to-End Verification Checklist
+## 6. Pre-Demo Checklist
+
+Run through these checks before any live demo or presentation:
+
+- [ ] **Health Endpoint Check:** Call `GET /api/health` on `incident-console-v2` (`curl -s http://localhost:3200/api/health`). All core services (`database`, `storage`, `inference`, `agent`) should report `true`. If any status reports `degraded`, treat it as an active warning and investigate before presenting.
+- [ ] **Search Configuration & UX:** Keep search `top_k` set to 5–10 (each candidate hit adds ~1 s of critic launch delay spacing, so high `top_k` values scale latency linearly). Ensure the frontend displays a loading state during query evaluation.
+- [ ] **Recorded Fallback Asset:** Keep a pre-recorded demo video or offline screencast ready in case remote inference or network connectivity degrades during the demo.
+- [ ] **Evidence Loader Status:** Do not re-run the evidence backfill loader (`scripts/backfill_official_timestamps.py`) before or during a demo. The 64 loaded evidence crops are stable; re-run the loader only after the remote gateway recovers from upstream HTTP 500 errors on `v5c609184047f88c720e`.
+
+---
+
+## 7. End-to-End Verification Checklist
 
 Verify deployment health against this checklist before declaring a build ready:
 
@@ -224,7 +235,7 @@ Verify deployment health against this checklist before declaring a build ready:
 
 ---
 
-## 7. Troubleshooting Order & Diagnostics
+## 8. Troubleshooting Order & Diagnostics
 
 When troubleshooting unexpected failures:
 

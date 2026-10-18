@@ -140,13 +140,33 @@ configured for local console dev (session-pooler URL, port 5432 — see
 `../incident-console/README.md`'s Supabase section):
 
 ```bash
-# Preview first — prints what would change, touches nothing:
+# 1. Inspect migration status (local vs remote):
+supabase migration list --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN"
+
+# 2. Preview first — prints what would change, touches nothing:
 supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
   --db-url "$INCIDENT_DB_DSN" --dry-run
 
-# Apply for real:
+# 3. Apply for real:
 supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
   --db-url "$INCIDENT_DB_DSN"
+```
+
+If older-timestamped migrations are pending while a newer one is already recorded as applied, use `--include-all` (with `--dry-run` first):
+
+```bash
+supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --include-all --dry-run
+supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --include-all
+```
+
+To update migration history for out-of-band changes without re-executing SQL:
+
+```bash
+supabase migration repair --workdir deploy/docker/developer-profiles/dev-profile-incident \
+  --db-url "$INCIDENT_DB_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
 
 If `$INCIDENT_DB_DSN` carries a SQLAlchemy driver suffix (e.g.
