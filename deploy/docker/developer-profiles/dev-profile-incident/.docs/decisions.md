@@ -8,6 +8,12 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** keeping the inactive include in `compose.yml`.
 - **Links:** [`compose.yml`](../compose.yml); [`../incident-console/README.md`](../incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
 
+### 2026-10-18: Console binds loopback; agent bind stays configurable
+- **Decision:** `incident-console-v2` runs with `-H 127.0.0.1` (npm `dev`/`start` scripts and `start.sh`). `VSS_AGENT_HOST` keeps its `0.0.0.0` default and is documented, with `${HOST_IP}` as the narrower setting.
+- **Why:** Next defaults to all interfaces and the console holds database and storage admin keys with no authentication. `vss-haproxy-ingress` reaches the agent at `${HOST_IP}:8000` (`services/infra/haproxy/haproxy.cfg.template`), so a 127.0.0.1 agent bind and a loopback tunnel target would break `/api` on :7777 and the tunnel.
+- **Rejected:** defaulting the agent to 127.0.0.1 (breaks haproxy); changing the shared haproxy backend (shared service, out of scope).
+- **Links:** [`incident-profile-operations.md`](incident-profile-operations.md).
+
 ### 2026-10-18: No search similarity cutoff; hide critic-rejected hits; loader keeps unboxed items
 - **Decision:** `POST /api/v1/incidents/search` defaults `min_similarity` to 0.0 and takes top_k; hits the critic marks `rejected` are dropped unless `hide_rejected` is false. The loader stores the whole frame (box `[0,0,1000,1000]`, confidence 0.0) when the detector finds no box, raises grounding `max_tokens` to 2048 and recovers `timestamp_seconds` and `label` from a truncated reply.
 - **Why:** Scores of all 57 loaded rows sit between 0.14 and 0.35, so the 0.2 cutoff flipped "edged weapon" between 0 and 5 hits on a 0.01 difference (best score 0.192). The critic already judges relevance. Whole-frame crops keep items (including the only weapon) searchable, since scoring uses the description embedding.

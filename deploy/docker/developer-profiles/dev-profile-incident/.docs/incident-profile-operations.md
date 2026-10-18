@@ -122,6 +122,10 @@ Forwarded ports:
 - `localhost:30081` -> `<vm-ip>:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
 - `localhost:30082` -> `<vm-ip>:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
 
+Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add `GatewayPorts`). `incident-console-v2` is bound to `127.0.0.1:3200` by `start.sh` and the `dev`/`start` npm scripts, so nothing on the laptop network can reach it.
+
+**`VSS_AGENT_HOST` on the VM:** the default stays `0.0.0.0` because `vss-haproxy-ingress` (host network) proxies `/api` to `${HOST_IP}:8000`, and the tunnel targets the VM LAN address. The agent is therefore reachable from the VM's network and has no authentication; keep the VM on a trusted network. Setting `VSS_AGENT_HOST=${HOST_IP}` (in `.env` / `generated.env.remote`) keeps haproxy and the tunnel working while dropping other interfaces. `127.0.0.1` breaks both.
+
 ### SSH Username Resolution & Troubleshooting
 
 `start.sh` (in `vm` mode) and `.scripts/tunnel.sh` resolve the SSH login target using `.scripts/resolve-ssh-target.sh` non-interactively with no prompts:

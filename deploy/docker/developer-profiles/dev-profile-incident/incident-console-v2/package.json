@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3200",
+    "dev": "next dev -H 127.0.0.1 --port 3200",
     "build": "next build",
-    "start": "next start --port 3200",
+    "start": "next start -H 127.0.0.1 --port 3200",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "node --experimental-strip-types --experimental-test-module-mocks --test tests/*.test.mjs",

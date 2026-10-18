@@ -59,7 +59,7 @@
 #      here so the script can continue, and is torn down automatically when
 #      the console exits (Ctrl-C).
 #   4. v2 runs the profile's standard local dev loop:
-#      `cd incident-console-v2 && npm run dev -- --port 3200` (see
+#      `cd incident-console-v2 && npm run dev -- -H 127.0.0.1 --port 3200` (see
 #      incident-console-v2/README.md). It occupies the foreground; Ctrl-C when
 #      you're done.
 #
@@ -456,7 +456,7 @@ cd "${SCRIPT_DIR}/incident-console-v2"
 npm install
 
 echo "  v2 running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
-npm run dev -- --port 3200
+npm run dev -- -H 127.0.0.1 --port 3200
 console_rc=$?
 cleanup
 exit "$console_rc"
