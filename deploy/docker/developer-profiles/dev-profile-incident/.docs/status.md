@@ -1,116 +1,68 @@
 # Incident Profile Status
 
-> **As of 2026-09-27**
->
-> This is a volatile snapshot document capturing the current operational state, delivery milestones, known issues, and environment configuration. It is intended to be rewritten as reality evolves, not monotonically appended.
+> **As of 2026-10-18.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
----
+## 1. What is live
 
-## 1. Milestone Status: Done vs. Outstanding
-
-Current delivery status verified against the codebase:
-
-| Component / Feature | Current State | Verifiable Source Files |
+| Area | State | Where |
 |---|---|---|
-| **incident-console-v2 (Next.js)** | **Contract-v3 analysis, run history, official reports and official-incident dashboard live-verified 2026-09-27** | Gateway analysis uses `incident-contract-v3` with a model picker (3 allowlisted VLMs), strict validation, ID-only repair and four recorded outcomes (`lib/analysis/run-contract-analysis.ts`, `lib/contract/`). Report view = structured projection + read-only model output + run details (`components/incident-report.tsx`, `lib/reports/view.ts`); Class A editing via `apply_structured_report_edit` (`components/structured-editor.tsx`). `/videos`, `/videos/[id]` (history + re-analysis), `/videos/[id]/ground-truth`; explicit official report selection; dashboard counts official incidents only and links into `/reports?scope=official`. Migrations `20260927150000`–`20260927180000` applied to shared Supabase. Timestamps render UTC-correctly in local time (`lib/time.ts`). |
-| **vlm-gateway Proxy** | **Done** | `vlm-gateway/app.py`, `vlm-gateway/README.md` (FastAPI proxy on port 8600 holding upstream API credentials) |
-| **mock-backend (Zero-GPU)** | **Done (MVP2 Search & Chat supported)** | `mock-backend/base_profile_mock/` (port 7777, mock VST upload, mock stream registration, mock incident analysis, mock `POST /api/v1/incidents/search` per `search-contract-v1`, and mock `POST /api/v1/incidents/chat` per `chat-contract-v1`) and `search_profile_mock/` (port 7778). |
-| **Agent /analyze Route & Tool** | **Done** | `services/agent/src/vss_agents/api/incident_analyze.py`, `services/agent/src/vss_agents/tools/incident_report_gen.py` |
-| **Native VM Services Architecture** | **Done** | `.scripts/native-services.sh`, `.scripts/prune-native-images.sh` (`vss-agent` runs natively on `kwanz-ws` for 2s fast restarts; relinked editable to `services/agent/` with Brev inference) |
-| **PostgREST Agent Persistence** | **Done** | `services/agent/src/vss_agents/utils/incident_db.py`, `supabase/migrations/20260917141225_insert_incident_function.sql`, `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` |
-| **Database Defaults & Precision Fix** | **Done (Live)** | `supabase/migrations/20260925031000_schema_defaults_and_precision.sql` applied to live Supabase DB on 2026-09-25: server-side UTC defaults on 9 timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` updated to `p_confidence_score DOUBLE PRECISION`. PostgREST writers (`incident-console/db_postgrest.py`, `eval/db_postgrest.py`) updated to use `/rpc/insert_incident`. Agent extraction validation failure now surfaces HTTP 422/504 instead of persisting default reports. |
-| **Cloudflare R2 Integration** | **Done** | `incident-console-v2/lib/r2/config.ts`, `incident-console-v2/app/api/uploads/r2/route.ts`, `incident-console/r2_videos.py`. Direct uploads are verified by `HeadObject` against the submitted byte length, and analysis re-verifies that the object is nonempty before inference. |
-| **Tier 1 Ground-Truth Evaluation** | **Done** | Scoring stays in `eval/` (`eval/eval_gt.py`, `eval/matching.py`); the console's ground-truth page (`components/ground-truth-screen.tsx`) edits GT (never pre-filled from model output) and shows a read-only comparison with a chosen analysis. |
-| **Unified Launcher (`start.sh`)** | **Done (MVP2 Always-On Search)** | `start.sh`, `.scripts/tunnel.sh`, `.scripts/tunnel-check.sh`, `.scripts/resolve-ssh-target.sh` (supports `--mode local` and `--mode vm` with non-interactive SSH resolution, a classified SSH preflight (`.scripts/vm-preflight.sh`), and auto self-heal that clones/pulls what is missing and bounds every VM step with a timeout (`.scripts/vm-ensure-docker.sh`); always brings up search route `POST /api/v1/incidents/search` with no opt-in flag, <5s local readiness polling, and tunnel check verification) |
-| **Unified Prompt & Structured-Output Contract** | **Phases 1-3 implemented (eval, console gateway mode, vss-agent); phase 4 migration delivered; eval benchmark run pending; phase 5 not started** | `contracts/` (`incident-contract-v3`, `inference.json`, shared `fixtures/`), `eval/contract.py`, `services/agent/src/vss_agents/incident_contract/` (strict Pydantic models + direct P1/RP1 calls), `incident-console-v2` (`lib/contract/` TS validator, `run-contract-analysis.ts` shared across gateway and agent modes). Legacy console contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`) and `data_models/incident_report.py` retired. Phase 4 taxonomy migration and orphan run cleanup delivered in `supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`; the migration is a one-time clean-up, and query-time folding stays until it is applied. |
-| **Agent-mode contract** | **Retired** | Moved onto `incident-contract-v3` (Phase 3 complete). Legacy schema files retired. |
-| **Live VM & Brev Verification** | **Done (Live)** | Two-flows end-to-end run on 2026-09-25 with `~/Desktop/test2.mp4` against Brev Switchyard (see §5): `./start.sh --mode vm` (agent mode on `kwanz-ws`) and `./start.sh --mode local` (gateway mode via `mock-backend` + `vlm-gateway`) both produce valid non-empty snake_case reports; each re-analysis writes a distinct `model_runs` row in both modes; review flow `unreviewed` -> `verified` works in both modes. Schema/field parity holds across the flows; content consistency does not (different VLMs, see known issue 7). Fixed HITL `NotImplementedError` and short-duration filter empty-report bugs in `services/agent` |
-| **MVP2 Natural-Language Evidence Search** | **In Progress (PR 122 Overview Merged)** | End goal and architecture defined in [`mvp2/README.md`](mvp2/README.md). Delivered components: `search-contract-v1`, `chat-contract-v1`, crop service, `vss-agent` search route with `SupabaseSearchStore` and Cloudflare R2 presigned crop URL resolution, targeted backfill script (`scripts/backfill_official_timestamps.py`), and database migration (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`). Workstreams in progress: PR 118 (frontend search UI & chat), PR 119 (eval retrieval suite & baseline benchmarking), and PR 120 (data layer, RLS, pgvector migration). |
-| **Targeted Timestamp Backfill Script** | **Done** | `scripts/backfill_official_timestamps.py` (with symlink in profile `scripts/`), `scripts/tests/test_backfill_official_timestamps.py`. Targeted temporal grounding and detector label pass over existing official incident reports (`videos.selected_model_run_id IS NOT NULL`). Hexagonal architecture with bounded concurrency (`--concurrency`), batch size (`--batch-size`), non-destructive planning (`--dry-run`), isolated per-item failures, and resumable JSON lines `--output-file` persistence. |
-| **MVP2 Crop Evidence Service (VM Step 3)** | **Done** | `services/agent/src/vss_agents/utils/crop_evidence.py`, `services/agent/tests/unit_test/utils/test_crop_evidence.py`. `CropEvidenceService` seeks to VLM `timestamp_seconds`, runs open-vocabulary detector port, applies 5% margin padding, encodes JPEG quality 85, persists to the `EvidenceStore` port (in-memory adapter, and `LiveEvidenceStore` = R2 images + Supabase rows); the detector is the remote VLM. Wired into `incident_report_gen`. |
-| **Live Search Evidence Load (kwanz-ws)** | **Done (57 of 69 items, verified 2026-10-18)** | `scripts/backfill_official_timestamps.py` (remote VLM grounding and boxes, R2 upload, NVIDIA-hosted `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions, upsert) loaded 57 of the 69 items from the 13 official reports into `evidence_crops`; all LLM, VLM and embedding calls are remote. 12 items fail deterministically: 5 Brev HTTP 500 (video `v5c609184047f88c720e`), 3 truncated JSON replies, 4 where the VLM found no box (`SUV`, `ATM machine`, `Fireball`, `weapon`). Search on the VM (`POST /api/v1/incidents/search`, `top_k=5`): "monkey in a living room" 5 hits in 10.2 s (top hit `animal` 0.536, critic `confirmed`), "fire or explosion" 5 hits in 7.3 s, "dark brown wooden coffee table" 5 hits in 7.4 s (top `coffee table` 0.555, `confirmed`), "knife" 3 hits, "weapon" 5 hits, "edged weapon" 0 hits (the knife-like instrument is among the failed items). Every returned crop URL fetched with HTTP 200; verdicts were a mix of `confirmed`, `rejected` and `unverified`. Rerun the loader with `--concurrency 2` after Brev recovers to fill the rest. |
-| **Multi-Subagent Search Config** | **Outstanding (MVP2)** | `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` multi-subagent routing (`report_agent` + `search_agent`) planned; not yet wired together |
-| **Natural Language Search Route** | **Done (search-contract-v1, mock backend & vss-agent service)** | `search-contract-v1` request/response schemas and fixtures under `contracts/search-contract-v1/`; `POST /api/v1/incidents/search` implemented in `base_profile_mock`, `search_profile_mock`, and `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`). Route features always-on VLM critic evaluation with configurable delay spacing (`INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, default 1.0s, 0 disables), graceful degradation to unverified verdicts, hexagonal `SearchStore` port with `InMemorySearchStore` and `SupabaseSearchStore` (calling `search_evidence_items` RPC with Cloudflare R2 presigned crop URL resolution), and query/result persistence. Verified by unit and contract fixture tests in `services/agent/tests/unit_test/api/test_incident_search.py` and `services/agent/tests/unit_test/utils/test_r2.py`. |
-| **Incident Chat Route & Contract** | **Done (chat-contract-v1, mock backend & vss-agent service)** | `chat-contract-v1` request/response schemas and fixtures under `contracts/chat-contract-v1/`; `POST /api/v1/incidents/chat` implemented in `base_profile_mock` (port 7777) and `vss-agent` (`services/agent/src/vss_agents/api/incident_chat.py`). Route features hexagonal `SearchClient` port with in-memory adapter, grounded citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`), and session conversation history support. |
-| **Full RT-CV + RT-Embed Indexing** | **Outstanding (MVP2)** | DeepStream perception and vector embedding pipeline integration with Elasticsearch under live incident load |
-| **Retrieval Benchmark Framework** | **Outstanding (MVP2)** | Precision/Recall/F1 benchmark suite for search queries |
+| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md) |
+| Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
+| Storage | Supabase rows plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
+| Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
+| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
+| Mocks | `base_profile_mock` (:7777) and `search_profile_mock` (:7778), including search and chat routes | `mock-backend/` |
 
----
+## 2. MVP2: natural-language evidence search
 
-## 2. Known Issues & Technical Debt
+Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
-1. **Agent persistence only for standalone calls.** In both modes the console writes all rows (`videos`, `model_runs`, `incidents`, evidence, `reports`). The agent persists only when `/analyze` is called without `model_run_id` (standalone use), and never writes `videos`. Consolidation (Option B) is not started.
-2. **Model output lives in `model_runs.notes` (TEXT).** It is intentional: an immutable per-attempt record. It is queried through `try_parse_jsonb` in RPCs and a `like` pre-filter plus parsing in the app. Scale is small today (57 runs); a JSONB column or index would be needed at volume.
-3. **The Cosmos models often break the timeline rule.** They include lead-up/aftermath events outside their own incident window (Super on Animal003, Assault018, Burglary005 and the phase-0 road clip; Nano on Animal003).
-   - Clarified prompt wording did not change this in a 12-call pilot.
-   - As of 2026-10-16, RP1 runs whenever `core_ok` is true with unchanged input and an RP1 prompt instruction that timeline events outside the incident time are context, preserving lead-up/aftermath context in generated reports.
-4. **Pre-existing orphaned runs (resolved in migration).** 20 legacy console `model_runs` rows named videos that no longer exist (left by earlier deletions). Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` removes these 20 rows.
-5. **Unrecorded outcome for the earliest contract run.** `m86a5c319e26659804b0` (stage-1 smoke test) predates recorded outcomes and is shown as `valid_first_pass` (inferred).
-6. **Legacy values migrated once; still folded at query time until the migration is applied.** `fighting`/`animal` types and `person` entities are migrated by `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` (`fighting` -> `assault`, `animal` -> `animal attack`, `person` -> `human`). Relational `incidents.type` has 0 rows with `other`; the only `other` value is inside the notes of test-pattern run `m5629b0938e679c9873d` (no incidents row), and it stays there because the profile [`AGENTS.md`](../AGENTS.md) forbids modifying `model_runs.notes` after an attempt is written. This is the accepted resolution of the `other` case. The migration is a one-time clean-up: agent mode now writes contract values (phase 3 done), but query-time folding (`canonicalIncidentType`, `canonicalEntityType`, SQL `canonical_incident_type` / `canonical_entity_type`) must stay until the migration is applied.
-7. **Heatmap and time-of-day filters use UTC hours until migration `20260928000000` is applied.** The fix is pending: the console now sends the viewer's timezone as `p_timezone` to `get_incident_dashboard` and `list_incident_report_summaries`, which only migration `20260928000000_local_time_heatmap_and_time_filters.sql` (unapplied) accepts. Apply the migration before or with the console deploy; until then `/api/dashboard` and `/api/reports` fail.
-8. **Legacy tables and RLS.** The four pre-v1 tables remain. RLS is still disabled and `anon`/`authenticated` still have full access on the live database: the lockdown migration `20261016000000_enable_rls_and_lockdown_anon.sql` (RLS on all 22 public tables, `anon`/`authenticated` access revoked, default privileges secured) is pending until it is applied. All application services use `service_role` (BYPASSRLS), so applying it should break nothing.
-9. **`selected_by/selected_at` can outlive a selection** cleared by the FK when the official incident is deleted; the UI treats a NULL `selected_model_run_id` as no official report.
+- **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; timestamp backfill script (`scripts/backfill_official_timestamps.py`).
+- **Live on `kwanz-ws` (verified 2026-10-18):** the evidence loader (`scripts/backfill_official_timestamps.py`: remote VLM grounding and boxes, R2 upload, `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions, upsert) loaded 57 of 69 items from the 13 official reports into `evidence_crops`. 12 fail deterministically: 5 Brev HTTP 500 (video `v5c609184047f88c720e`), 3 truncated JSON replies, 4 with no VLM box (`SUV`, `ATM machine`, `Fireball`, `weapon`). `POST /api/v1/incidents/search` (`top_k=5`) returns 3-5 hits in about 7-10 s for queries such as "monkey in a living room" and "fire or explosion"; every crop URL fetched with HTTP 200, with a mix of `confirmed`, `rejected` and `unverified` verdicts. Rerun the loader with `--concurrency 2` after Brev recovers to fill the rest.
+- **In progress:** frontend search UI and chat; retrieval eval suite and baseline benchmarks; data layer and RLS work.
+- **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark.
 
----
+## 3. Pending approvals (migrations not yet applied to shared Supabase)
 
-## 3. Follow-Ups & Out-of-Scope Items
+`20261016120000_mvp2_evidence_search_and_crops.sql` (pgvector, `evidence_crops`, `query_results`, `search_evidence_items`) is already applied.
 
-1. ~~**Prompt-contract phase 3:** move `vss-agent` onto `incident-contract-v3` (then retire `lib/analysis/schema.ts` and `incident-report-contract.json`).~~ **Done.**
-2. **Eval benchmark run** under `core-scored-v1`, including malformed-ID frequency and per-model core and enrichment failure rates.
-   - The raw answers of the earlier full run were not retained.
-   - Runs now keep an immutable copy per run.
-   - Fixed P1 run ids still overwrite the benchmark rows in the DB.
-2a. **RP1 and inconsistent timelines:** Done (2026-10-16). RP1 runs when `core_ok` with unchanged input, `contracts/report_generation_prompt.md` includes the timeline context instruction, and `contracts/VERSION` bumped to `incident-contract-v3`.
-3. **Possible contract v4:** ID patterns in the schema only if the malformed-ID evidence justifies it (changes eval).
-4. **Apply legacy type/entity and orphan cleanup migration** (phase 4: `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`) to shared Supabase once approved; legacy table cleanup remains separate. Query-time folding can be dropped once it is applied (phase 3 is now done).
-5. **Apply RLS lockdown migration** (`20261016000000_enable_rls_and_lockdown_anon.sql`) to shared Supabase once approved; **tiered client-side RLS policies** (if direct browser client auth is introduced) and **writer consolidation (Option B).**
-6. ~~**Apply MVP2 evidence crops and search migration** (`20261016120000_mvp2_evidence_search_and_crops.sql`: pgvector extension, `evidence_crops`, `query_results`, RLS lockdown, `search_evidence_items` RPC) to shared Supabase once approved.~~ **Done (applied to shared Supabase; evidence_crops populated on kwanz-ws).**
+| Migration | Effect |
+|---|---|
+| `20260928000000_local_time_heatmap_and_time_filters.sql` | `p_timezone` on the dashboard and library RPCs. The console already sends it, so `/api/dashboard` and `/api/reports` fail until it is applied. |
+| `20261016000000_enable_rls_and_lockdown_anon.sql` | RLS on all 22 public tables; `anon` / `authenticated` revoked. Services use `service_role`, so nothing should break. |
+| `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` | `fighting` to `assault`, `animal` to `animal attack`, `person` to `human`, removes 20 orphaned runs. Query-time folding stays until applied. |
 
----
+## 4. Known issues
 
-## 4. Live VM Configuration Snapshot (`kwanz-ws`)
+1. **Two writers in agent mode.** The console writes every row; the agent persists only standalone calls (no `model_run_id`) and never writes `videos`. Consolidating writers is not planned in detail.
+2. **Model output lives in `model_runs.notes` (TEXT).** Intentional, as an immutable per-attempt record; queried via `try_parse_jsonb` and a `like` pre-filter. A JSONB column or index would be needed at volume.
+3. **Cosmos models often break the timeline rule** (lead-up or aftermath events outside the incident window). Recorded, never repaired; see [`analysis-schema.md`](analysis-schema.md) section 7.
+4. **One run has no recorded outcome.** `m86a5c319e26659804b0` predates recorded outcomes and shows as `valid_first_pass` (inferred).
+5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no incident row) stays, because attempt notes are immutable.
+6. **Four legacy pre-v1 tables remain**; dropping them is a separate approval.
+7. **`selected_by` / `selected_at` can outlive a cleared selection**; the UI treats a NULL `selected_model_run_id` as no official report.
+8. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
 
-*Verified live read-only over SSH via `.scripts/resolve-ssh-target.sh` on 2026-09-25 01:43:45+08:00 (2026-09-24T17:43:45Z).*
+## 5. Follow-ups
 
-Active configuration inspected in `/srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote`:
+- Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates).
+- Consider a contract v4 with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
+- Apply the migrations in section 3 once approved.
 
-| Setting | Live Value on `kwanz-ws` | Notes |
-|---|---|---|
-| `VSS_APPS_DIR` | `/srv/rise-up/vss/deploy/docker` | Points to docker deployment directory |
-| `VSS_DATA_DIR` | `/srv/rise-up/vss-apps-data` | Persistent container volume mounts on host |
-| `HOST_IP` | `10.132.56.251` | VM internal network interface IP (DHCP changed from `10.131.1.5`; `.scripts/vm-ensure-docker.sh` updates automatically) |
-| `EXTERNAL_IP` | `localhost` | Embedded URL host for tunneled browser access |
-| `VSS_AGENT_CONFIG_FILE` | `./deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` | Base profile config providing report-generation |
-| `REPORT_REFERENCE_BASE_DIR` | `/tmp` | Required by agent evaluation config schema |
-| `STREAM_PROCESSOR_HTTP_PORT` | `10000` | Streamprocessing HTTP port (ingress on :30888 proxies /vst/api/v1 and /vst/storage here) |
-| `LLM_NAME` | `nvidia/nemotron-3-ultra` | Brev Switchyard model for LLM router and eval judge |
-| `VLM_NAME` | `nvidia/cosmos-3-super-reasoner` | Brev Switchyard model for video understanding |
-| `LLM_BASE_URL` | `https://switchyard-13doh4lsz.brevlab.com` | Brev inference endpoint (no trailing `/v1`) |
-| `VLM_BASE_URL` | `https://switchyard-13doh4lsz.brevlab.com` | Brev inference endpoint (no trailing `/v1`) |
-| `LLM_MODEL_TYPE` | `openai` | Required client type for Brev compatibility |
-| `VLM_MODEL_TYPE` | `openai` | Required client type for Brev compatibility |
-| `OPENAI_API_KEY` | *(Set)* | Brev Switchyard API Key |
-| `NVIDIA_API_KEY` | *(Set)* | NGC inference API Key |
-| `NGC_CLI_API_KEY` | *(Set)* | NGC container registry authentication key |
-| `INCIDENT_SUPABASE_URL` | *(Set)* | Supabase PostgREST endpoint |
-| `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | *(Set)* | Supabase Service Role Key |
+## 6. Live VM configuration (`kwanz-ws`)
 
-> [!NOTE]
-> On 2026-09-25, the VM `vss-agent` venv was relinked editable to the repository checkout (`services/agent`) with public dependencies (`supabase`, `opencv-python-headless`, `setuptools`). The live agent process was restarted and is actively connected to Brev Switchyard for LLM (`nvidia/nemotron-3-ultra`), VLM (`nvidia/cosmos-3-super-reasoner`), and eval judge inference.
+Read from `generated.env.remote`; verify with `incident-operate-vm` before relying on it.
 
----
+| Setting | Value |
+|---|---|
+| `VSS_APPS_DIR` / `VSS_DATA_DIR` | `/srv/rise-up/vss/deploy/docker` / `/srv/rise-up/vss-apps-data` |
+| `HOST_IP` | VM LAN address; changes with DHCP and is rewritten by `.scripts/vm-ensure-docker.sh` |
+| `EXTERNAL_IP` | `localhost` (tunnelled browser access) |
+| `VSS_AGENT_CONFIG_FILE` | `./deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` |
+| `STREAM_PROCESSOR_HTTP_PORT` | `10000` |
+| `LLM_NAME` / `VLM_NAME` | `nvidia/nemotron-3-ultra` / `nvidia/cosmos-3-super-reasoner` |
+| `LLM_BASE_URL` / `VLM_BASE_URL` | `https://switchyard-13doh4lsz.brevlab.com` (no trailing `/v1`) |
+| `LLM_MODEL_TYPE` / `VLM_MODEL_TYPE` | `openai` |
+| Secrets | `OPENAI_API_KEY`, `NVIDIA_API_KEY`, `NGC_CLI_API_KEY`, `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (set, never printed) |
 
-## 5. Live Verification Log: Contract-v2 console (2026-09-27)
-
-All on the local stack (`./start.sh --mode local`, shared Supabase and R2). Test video `v4992173cd9c16efbd15` is a copy of `anomaly/assault/Assault018_x264.mp4` uploaded as `smoke-test-contract-v2-assault018.mp4`.
-
-| # | Check | Result |
-|---|---|---|
-| 1 | Upload + analysis with each model | cosmos-3-nano `m86a5c319e26659804b0`: valid. cosmos-3-super: 422 (timeline outside window). nemotron-omni: 422 before ID repair existed. The gateway received eval's exact P1 request (prompt and schema fingerprints matched). |
-| 2 | ID-only repair | nemotron-omni re-run `m811cf2b237f50ff9812`: first pass `ID_NOT_SEQUENTIAL_ENTITY` + `_INSTRUMENT`; operations: reorder `[E2,E1]`, rename `"," → I2`; re-validated; stored raw reply byte-identical to the earlier capture; one model call. |
-| 3 | Structured edit + restore through the UI | Severity 3→2, end 13→12 (duration 12→11), then restored. Notes byte-identical throughout; review status unchanged; `edited_by/at` recorded. |
-| 4 | Re-analysis | cosmos-nano with an instruction: `ma5fa04781cc50f1cae7`, new report. cosmos-super: `m233514c76646100da3f`, contract_failed, recorded in history only. `uploaded_datetime` unchanged; earlier runs untouched. |
-| 5 | Official report | Selected and cleared through the UI; review status untouched. The test video is back to awaiting selection. |
-| 6 | Dashboard parity | Temporary official selection: every dashboard number equals the `/reports?scope=official` total (8/8 live; 40/40 per period in the rolled-back dry run). Selection cleared afterwards. |
-
-The 2026-09-25 two-flows verification (agent and gateway modes on `test2.mp4`) is recorded in the git history of this file.
+The VM `vss-agent` virtualenv is installed editable from the repository checkout (`services/agent`); see [`incident-profile-operations.md`](incident-profile-operations.md).

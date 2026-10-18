@@ -9,8 +9,7 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 The database schema is defined authoritatively by versioned SQL migrations under
 [`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`](../supabase/README.md)
-(applied via `supabase db push`). Schema authority moved completely out of the retired Streamlit
-v1 console's `incident-console/db.py`. It supports multi-model runs over the same video, a parallel
+(applied via `supabase db push`). Schema authority is the migrations, not the retired Streamlit console's `incident-console/db.py`. It supports multi-model runs over the same video, a parallel
 ground-truth evaluation structure, human review workflows, and the MVP2 vector search extension
 (`evidence_crops`, `query_results`; see [`mvp2/README.md`](mvp2/README.md)).
 
@@ -22,7 +21,7 @@ ground-truth evaluation structure, human review workflows, and the MVP2 vector s
   - `p_entity_types`: exact canonical entity type;
   - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality);
   - `p_timezone`: IANA zone for the weekday and time-of-day filters (default `'UTC'`).
-- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. Migration `20261016010000` rewrites the stored values once, but folding stays until the migration is applied (agent mode now writes contract values, as phase 3 is complete).
+- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. Migration `20261016010000` rewrites the stored values once, but folding stays until the migration is applied.
 
 - **Per-report outputs:**
   - the analysis `outcome`, from `run_outcome(notes)`;
@@ -40,7 +39,7 @@ Helper functions (service role, `20260927180000`):
 - that run's `entities` / `instruments` / `assets`;
 - `review_status.edited_by/edited_at`.
 
-It re-checks the contract's types, ranges, sequential IDs and holder references, and **never touches `model_runs.notes`**. The earlier `apply_incident_report_patch` (which wrote an `editedReport` copy into notes) remains in the database but is no longer called.
+It re-checks the contract's types, ranges, sequential IDs and holder references, and **never touches `model_runs.notes`**. The superseded `apply_incident_report_patch` remains in the database but is no longer called.
 
 **Official report selection (D6).** `select_official_report(p_video_id, p_model_run_id, p_selected_by)` and `clear_official_report(p_video_id, p_cleared_by)` (`20260927170000`):
 - only a successful analysis of the same video with a `reports` row can be selected;
@@ -58,232 +57,9 @@ It re-checks the contract's types, ranges, sequential IDs and holder references,
 
 Every dashboard count equals the library total for `scope=official` with the same filters (instrument/asset links use `match=exact`).
 
-### Entity-Relationship Diagram
+### Relationships
 
-```mermaid
-erDiagram
-    VIDEOS {
-        string id PK "String(20), 'v'+19hex or clip name, equals incident_id"
-        string filepath "String(1024), R2 object key or legacy VST path"
-        datetime uploaded_datetime "DateTime, naive UTC (DB default)"
-        int duration "Integer, seconds"
-        string source "String(512), sensorId"
-    }
-
-    QUERIES {
-        string id PK "String(20)"
-        text query_text "Text, user search query"
-        datetime submitted_datetime "DateTime, naive UTC (DB default)"
-    }
-
-    MODEL_RUNS {
-        string id PK "String(20)"
-        string model_name "String(128)"
-        string model_version "String(128)"
-        string prompt_version "String(64)"
-        datetime run_datetime "DateTime, naive UTC (DB default)"
-        text notes "Text, v2 JSON / mock note / NULL"
-    }
-
-    INCIDENTS {
-        string incident_id PK, FK "String(20) -> videos.id ON DELETE CASCADE"
-        string model_run_id PK, FK "String(20) -> model_runs.id ON DELETE CASCADE"
-        string type "String(32), free text"
-        string start_timestamp "String(32), clock string (M:SS) or bare seconds"
-        string end_timestamp "String(32), clock string (M:SS) or bare seconds"
-        int duration "Integer, seconds"
-        text description "Text, incident narrative"
-        int severity_level "Integer, 1 to 5"
-        float confidence_score "Double precision, 0.0 to 1.0"
-    }
-
-    REPORTS {
-        string id PK "String(20)"
-        string incident_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string query_id FK "String(20), nullable"
-        string model_run_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string filepath "String(1024), artifact path (NULL or mock://)"
-        datetime generated_datetime "DateTime, naive UTC (DB default)"
-    }
-
-    ENTITIES {
-        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string entity_id PK "String(20), E1 / e01 / sha256 / p..."
-        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string type "String(16), free text (human/animal/unknown/person)"
-        text description "Text, person/actor description"
-        string image "String(1024), R2 evidence key (always NULL today)"
-    }
-
-    INSTRUMENTS {
-        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string instrument_id PK "String(20), I1 / i01 / sha256"
-        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string entity_id "String(20), wielding entity"
-        string name "String(256), tool or weapon name"
-        text description "Text"
-        int threat_level "Integer, 1 to 5 or null"
-        string image "String(1024), R2 evidence key (always NULL today)"
-    }
-
-    ASSETS {
-        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string asset_id PK "String(20), A1 / a01 / sha256"
-        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string name "String(256), property/vehicle name"
-        text description "Text"
-        string image "String(1024), R2 evidence key (always NULL today)"
-    }
-
-    REVIEW_STATUS {
-        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string status "String(32), DB default 'unreviewed'"
-        string verified_by "String(256), reviewer name"
-        datetime verified_at "DateTime, naive UTC"
-        string edited_by "String(256), editor name"
-        datetime edited_at "DateTime, naive UTC"
-    }
-
-    NOTIFICATIONS {
-        int id PK "Integer, autoincrement"
-        string incident_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string model_run_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        int severity "Integer, 1 to 5"
-        datetime created_at "DateTime, naive UTC (DB default)"
-        boolean acknowledged "Boolean, DB default false"
-    }
-
-    SEVERITY_EVAL_LOG {
-        int id PK "Integer, autoincrement"
-        string incident_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string model_run_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        int ai_severity "Integer, 1 to 5"
-        int human_severity "Integer, 1 to 5"
-        string rater "String(256), rater name"
-        datetime rated_at "DateTime, naive UTC (DB default)"
-    }
-
-    GT_INCIDENTS {
-        string incident_id PK, FK "String(20) -> videos.id ON DELETE CASCADE"
-        string type "String(32), free text"
-        string start_timestamp "String(32), free text (bare seconds)"
-        string end_timestamp "String(32), free text (bare seconds)"
-        int duration "Integer"
-        text description "Text"
-        int severity_level "Integer, 1 to 5"
-        string labelled_by "String(256)"
-        datetime labelled_datetime "DateTime, naive UTC"
-    }
-
-    GT_ENTITIES {
-        string incident_id PK, FK "String(20) -> gt_incidents.incident_id ON DELETE CASCADE"
-        string entity_id PK "String(20)"
-        string type "String(16)"
-        text description "Text"
-        string image "String(1024)"
-    }
-
-    GT_INSTRUMENTS {
-        string incident_id PK, FK "String(20) -> gt_incidents.incident_id ON DELETE CASCADE"
-        string instrument_id PK "String(20)"
-        string entity_id "String(20)"
-        string name "String(256)"
-        text description "Text"
-        int threat_level "Integer"
-        string image "String(1024)"
-    }
-
-    GT_ASSETS {
-        string incident_id PK, FK "String(20) -> gt_incidents.incident_id ON DELETE CASCADE"
-        string asset_id PK "String(20)"
-        string name "String(256)"
-        text description "Text"
-        string image "String(1024)"
-    }
-
-    ENTITY_MATCHES {
-        string incident_id PK, FK "String(20)"
-        string model_run_id PK, FK "String(20)"
-        string entity_id PK, FK "String(20)"
-        string gt_entity_id FK "String(20), NOT NULL"
-        float similarity_score "Float"
-        datetime matched_at "DateTime, naive UTC (DB default)"
-    }
-
-    INSTRUMENT_MATCHES {
-        string incident_id PK, FK "String(20)"
-        string model_run_id PK, FK "String(20)"
-        string instrument_id PK, FK "String(20)"
-        string gt_instrument_id FK "String(20), NOT NULL"
-        float similarity_score "Float"
-        datetime matched_at "DateTime, naive UTC (DB default)"
-    }
-
-    ASSET_MATCHES {
-        string incident_id PK, FK "String(20)"
-        string model_run_id PK, FK "String(20)"
-        string asset_id PK, FK "String(20)"
-        string gt_asset_id FK "String(20), NOT NULL"
-        float similarity_score "Float"
-        datetime matched_at "DateTime, naive UTC (DB default)"
-    }
-
-    EVIDENCE_CROPS {
-        string incident_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string model_run_id PK, FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string item_type PK "String(16), check entity/instrument/asset"
-        string item_id PK "String(20), sequential item identifier"
-        string item_name "String(256), item name or detector label"
-        text description "Text, visual description"
-        int threat_level "Integer, 1-5 or null"
-        string holder_entity_id "String(20), wielding entity or null"
-        int timestamp_seconds "Integer, video offset"
-        int_array bounding_box "Integer[4], normalized [ymin, xmin, ymax, xmax]"
-        string image "String(1024), R2 crop key"
-        vector embedding "Vector(1024), semantic text embedding"
-        datetime created_at "DateTime, naive UTC (DB default)"
-    }
-
-    QUERY_RESULTS {
-        string id PK "String(36), UUID or hex"
-        string query_id FK "String(20) -> queries.id ON DELETE CASCADE"
-        string incident_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string model_run_id FK "String(20), composite FK -> incidents ON DELETE CASCADE"
-        string item_type "String(16), entity / instrument / asset"
-        string item_id "String(20)"
-        int rank "Integer, 1-based"
-        float similarity_score "Double precision, 1 - distance"
-        string critic_verdict "String(16), confirmed / rejected / unverified"
-        text critic_rationale "Text, critic justification"
-        datetime retrieved_at "DateTime, naive UTC (DB default)"
-    }
-
-    VIDEOS ||--o{ INCIDENTS : "1 video = 1 incident (ON DELETE CASCADE)"
-    VIDEOS ||--o{ GT_INCIDENTS : "has ground truth (ON DELETE CASCADE)"
-    MODEL_RUNS ||--o{ INCIDENTS : "scores (ON DELETE CASCADE)"
-    MODEL_RUNS ||--o{ REPORTS : "generates"
-    INCIDENTS ||--o{ REPORTS : "summarized in (ON DELETE CASCADE)"
-    QUERIES ||--o{ REPORTS : "originates from (ON DELETE SET NULL)"
-    INCIDENTS ||--o{ ENTITIES : "contains (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ INSTRUMENTS : "involves (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ ASSETS : "impacts (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ EVIDENCE_CROPS : "contains crops (ON DELETE CASCADE)"
-    QUERIES ||--o{ QUERY_RESULTS : "logs results (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ QUERY_RESULTS : "audits (ON DELETE CASCADE)"
-    INCIDENTS ||--o| REVIEW_STATUS : "tracks review (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ NOTIFICATIONS : "triggers alerts (ON DELETE CASCADE)"
-    INCIDENTS ||--o{ SEVERITY_EVAL_LOG : "evaluates (ON DELETE CASCADE)"
-    GT_INCIDENTS ||--o{ GT_ENTITIES : "contains (ON DELETE CASCADE)"
-    GT_INCIDENTS ||--o{ GT_INSTRUMENTS : "involves (ON DELETE CASCADE)"
-    GT_INCIDENTS ||--o{ GT_ASSETS : "impacts (ON DELETE CASCADE)"
-    ENTITIES ||--o{ ENTITY_MATCHES : "paired with GT (ON DELETE CASCADE)"
-    GT_ENTITIES ||--o{ ENTITY_MATCHES : "referenced by (ON DELETE CASCADE)"
-    INSTRUMENTS ||--o{ INSTRUMENT_MATCHES : "paired with GT (ON DELETE CASCADE)"
-    GT_INSTRUMENTS ||--o{ INSTRUMENT_MATCHES : "referenced by (ON DELETE CASCADE)"
-    ASSETS ||--o{ ASSET_MATCHES : "paired with GT (ON DELETE CASCADE)"
-    GT_ASSETS ||--o{ ASSET_MATCHES : "referenced by (ON DELETE CASCADE)"
-```
+Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `evidence_crops`, `query_results`, `review_status`, `notifications`, `severity_eval_log` and the `*_matches` tables all hang off it. `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. Column-level detail is in the table specifications below and in `supabase/migrations/`.
 
 ---
 
@@ -299,7 +75,7 @@ Primary registry of ingested video assets.
 |---|---|---|---|
 | `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(sensorId)` for uploads (20 chars); clip-name ids (e.g. `Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Equals `incident_id`. Raw sensor ids are never used directly as `id` since they can be up to 128 chars. |
 | `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<sensorId>/<uuid>.<ext>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`). Not guaranteed: legacy v1-console rows may hold an absolute VST path (`/home/vst/...`) — validate with `isValidR2Key` before presigning. (The agent no longer writes `videos`; the console owns `videos.filepath`). |
-| `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Real DB default added in migration `20260925031000`; previously client-side SQLAlchemy `default=_utcnow` in `incident-console/db.py` only — PostgREST writers that omitted it received NULL (58/162 historical rows have NULL `uploaded_datetime`). |
+| `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Database default; some historical rows are NULL. |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
 | `selected_model_run_id` | `VARCHAR(20)` | NULLABLE; composite FK `(id, selected_model_run_id)` → `incidents(incident_id, model_run_id)` ON DELETE SET NULL (`selected_model_run_id`) | The video's explicitly selected **official report** (D6). NULL = awaiting selection. Only set/cleared by `select_official_report` / `clear_official_report`; analysis never writes it. Because of this second relationship, PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey`. |
@@ -312,7 +88,7 @@ Tracks natural language queries submitted by users (MVP2 search).
 |---|---|---|---|
 | `id` | `VARCHAR(20)` | PRIMARY KEY | Unique query identifier |
 | `query_text` | `TEXT` | NOT NULL | Natural language query string |
-| `submitted_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp when submitted (DB default added in migration `20260925031000`) |
+| `submitted_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp when submitted |
 
 ##### `model_runs`
 Tracks each execution of an AI pipeline run over an incident video.
@@ -323,8 +99,8 @@ Tracks each execution of an AI pipeline run over an incident video.
 | `model_name` | `VARCHAR(128)` | NOT NULL | Model identifier (e.g. `nvidia/cosmos-3-nano-reasoner`, `incident_report_gen`, `vss-agent`) |
 | `model_version` | `VARCHAR(128)` | NULLABLE | Optional version tag of the model |
 | `prompt_version` | `VARCHAR(64)` | NULLABLE | Prompt template version tag |
-| `run_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC execution timestamp (DB default added in migration `20260925031000`) |
-| `notes` | `TEXT` | NULLABLE | Free text, nullable. Since 2026-09-27 `incident-console-v2` writes the **immutable analysis-attempt record** `{"incidentConsoleV2":{recordType:"analysis_attempt", status, stage, failure, contractVersion, videoId, r2Key, attemptedAt, request, response, validation, repair, report?}}` for every attempt (see [`analysis-schema.md` §4](analysis-schema.md#4-storage)); it is never modified afterwards. Failed attempts (`contract_failed` / `request_failed`) are `model_runs` rows with no incident, report, review or evidence rows; their video association is `notes.incidentConsoleV2.videoId`. Earlier console rows hold `{"incidentConsoleV2":{report,editedReport?,rawModelOutput,normalizedModelOutput}}`; `mock-backend` stores a plain-text note; agent/seed/eval runs leave it NULL. Batch eval/seed runs (`P1-*`, `MR-SEED`, `MOCK8`) are shared by many videos: run history is keyed by (video, run), not by `model_runs` row. Any count of runs must filter by outcome (`run_outcome(notes)`) or count via `reports`. |
+| `run_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC execution timestamp |
+| `notes` | `TEXT` | NULLABLE | Free text, nullable. `incident-console-v2` writes the **immutable analysis-attempt record** `{"incidentConsoleV2":{recordType:"analysis_attempt", status, stage, failure, contractVersion, videoId, r2Key, attemptedAt, request, response, validation, repair, report?}}` for every attempt (see [`analysis-schema.md` §4](analysis-schema.md#4-storage)); it is never modified afterwards. Failed attempts (`contract_failed` / `request_failed`) are `model_runs` rows with no incident, report, review or evidence rows; their video association is `notes.incidentConsoleV2.videoId`. Older console rows hold `{"incidentConsoleV2":{report,editedReport?,rawModelOutput,normalizedModelOutput}}`; `mock-backend` stores a plain-text note; agent/seed/eval runs leave it NULL. Batch eval/seed runs (`P1-*`, `MR-SEED`, `MOCK8`) are shared by many videos: run history is keyed by (video, run), not by `model_runs` row. Any count of runs must filter by outcome (`run_outcome(notes)`) or count via `reports`. |
 
 ---
 
@@ -337,13 +113,13 @@ AI-extracted incident intelligence for a specific model run over a video.
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `videos.id` ON DELETE CASCADE | Associated video/incident identifier |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `model_runs.id` ON DELETE CASCADE | Model run identifier |
-| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); contract taxonomy `road accident`, `burglary`, `explosion`, `assault`, `animal attack` (`incident-contract-v2` / `incident-contract-v3`) is not enforced by a DB CHECK constraint. Migration `20261016010000` (awaiting approval to apply) rewrites stored `fighting` → `assault` and `animal` → `animal attack`; 0 rows hold `other`. Agent mode now writes contract values (phase 3 done), but consumers fold them until the migration is applied. NULL is allowed. |
+| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); contract taxonomy `road accident`, `burglary`, `explosion`, `assault`, `animal attack` (`incident-contract-v2` / `incident-contract-v3`) is not enforced by a DB CHECK constraint. Migration `20261016010000` (awaiting approval to apply) rewrites stored `fighting` → `assault` and `animal` → `animal attack`; 0 rows hold `other`. Consumers fold legacy values until the migration is applied. NULL is allowed. |
 | `start_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `end_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `duration` | `INTEGER` | NULLABLE | Incident duration in seconds |
 | `description` | `TEXT` | NULLABLE | Narrative summary of the incident |
 | `severity_level` | `INTEGER` | NULLABLE | Severity score (1 to 5) |
-| `confidence_score`| `DOUBLE PRECISION` | NULLABLE | Model confidence score (0.0 to 1.0). The column has always been `DOUBLE PRECISION`; migration `20260925031000` widened the `insert_incident` RPC parameter `p_confidence_score` from `REAL` to `DOUBLE PRECISION`, so rows written through the old RPC may still hold float4-rounded values. |
+| `confidence_score`| `DOUBLE PRECISION` | NULLABLE | Model confidence score (0.0 to 1.0). Rows written before the RPC parameter was widened to `DOUBLE PRECISION` may hold float4-rounded values. |
 
 ##### `reports`
 Artifact pointer table linking an incident and model run to external files or queries.
@@ -355,7 +131,7 @@ Artifact pointer table linking an incident and model run to external files or qu
 | `query_id` | `VARCHAR(20)` | NULLABLE, FK -> `queries.id` ON DELETE SET NULL | Triggering search query (always NULL today) |
 | `model_run_id` | `VARCHAR(20)` | NOT NULL; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
 | `filepath` | `VARCHAR(1024)` | NULLABLE | Optional path to rendered report artifact: NULL (`incident-console-v2`) or `mock://reports/<file>` (`mock-backend`). |
-| `generated_datetime`| `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC generation timestamp (DB default added in migration `20260925031000`) |
+| `generated_datetime`| `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC generation timestamp |
 
 ##### `entities`
 Observed actors or persons extracted by the model during a specific run.
@@ -365,7 +141,7 @@ Observed actors or persons extracted by the model during a specific run.
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
 | `entity_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `E1`/`E2` (seed/eval, contract), `e01`/`e02` (console-v2 gateway), `E1`/`E2` (agent standalone), `p...` (mock). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
-| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): console-v2 gateway mode writes contract entity types (`human`, ...); agent mode now writes contract entity types (phase 3 done), so `canonical_entity_type` folds `person` → `human` at query time until migration `20261016010000` is applied. Migration `20261016010000` (awaiting approval to apply) rewrites the stored `person` rows to `human` once; legacy seed/v1 rows may also hold `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
+| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): console-v2 gateway mode writes contract entity types (`human`, ...); agent mode writes contract entity types too, and `canonical_entity_type` folds `person` → `human` at query time until migration `20261016010000` is applied. Migration `20261016010000` (awaiting approval to apply) rewrites the stored `person` rows to `human` once; legacy seed/v1 rows may also hold `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
 | `description` | `TEXT` | NULLABLE | Visual description and observed actions |
 | `image` | `VARCHAR(1024)` | NULLABLE | R2 object key for cropped evidence screenshot (schema-only, always NULL today) |
 
@@ -406,7 +182,7 @@ Carries the reviewer verification state independently of the AI report.
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
-| `status` | `VARCHAR(32)` | NOT NULL, DEFAULT `'unreviewed'` | State (`unreviewed`, `under review`, `verified`). Real DB default `'unreviewed'` added in migration `20260925031000`. |
+| `status` | `VARCHAR(32)` | NOT NULL, DEFAULT `'unreviewed'` | State (`unreviewed`, `under review`, `verified`). |
 | `verified_by` | `VARCHAR(256)` | NULLABLE | Reviewer username who verified the report |
 | `verified_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of verification |
 | `edited_by` | `VARCHAR(256)` | NULLABLE | Editor username who modified report fields |
@@ -422,8 +198,8 @@ Legacy alert queue retained for compatibility with the retired Streamlit console
 | `incident_id` | `VARCHAR(20)` | composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Associated incident |
 | `model_run_id` | `VARCHAR(20)` | composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Associated model run |
 | `severity` | `INTEGER` | NULLABLE | Triggering severity rating (typically >= 4) |
-| `created_at` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Alert creation timestamp (naive UTC, DB default added in migration `20260925031000`) |
-| `acknowledged` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | Reviewer acknowledgement status (DB default added in migration `20260925031000`) |
+| `created_at` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Alert creation timestamp (naive UTC) |
+| `acknowledged` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | Reviewer acknowledgement status |
 
 ##### `severity_eval_log`
 Tracks comparative human vs. AI severity scoring for human-in-the-loop evaluation.
@@ -436,7 +212,7 @@ Tracks comparative human vs. AI severity scoring for human-in-the-loop evaluatio
 | `ai_severity` | `INTEGER` | NULLABLE | Severity score produced by the AI |
 | `human_severity`| `INTEGER` | NULLABLE | Severity score assigned by human reviewer |
 | `rater` | `VARCHAR(256)` | NULLABLE | Evaluator name |
-| `rated_at` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Evaluation timestamp (naive UTC, DB default added in migration `20260925031000`) |
+| `rated_at` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Evaluation timestamp (naive UTC) |
 
 ---
 
@@ -527,45 +303,7 @@ Audit log and hit persistence for natural-language search queries and always-on 
 
 ### The `insert_incident` Postgres RPC Function
 
-Because Supabase PostgREST does not support multi-statement client-held transactions or `SELECT ... FOR UPDATE`,
-the atomic operation of saving an incident report is executed server-side via the stored procedure
-`insert_incident` (`supabase/migrations/20260917141225_insert_incident_function.sql`, updated with `DOUBLE PRECISION` in `20260925031000_schema_defaults_and_precision.sql`):
-
-```sql
-CREATE OR REPLACE FUNCTION insert_incident(
-    p_incident_id TEXT,
-    p_model_run_id TEXT,
-    p_type TEXT,
-    p_start_timestamp TEXT,
-    p_end_timestamp TEXT,
-    p_duration INTEGER,
-    p_description TEXT,
-    p_severity_level INTEGER,
-    p_confidence_score DOUBLE PRECISION
-) RETURNS VOID LANGUAGE plpgsql AS $$
-BEGIN
-    DELETE FROM incidents
-    WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id;
-
-    INSERT INTO incidents (
-        incident_id, model_run_id, type, start_timestamp, end_timestamp,
-        duration, description, severity_level, confidence_score
-    ) VALUES (
-        p_incident_id, p_model_run_id, p_type, p_start_timestamp, p_end_timestamp,
-        p_duration, p_description, p_severity_level, p_confidence_score
-    );
-
-    DELETE FROM review_status
-    WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id;
-
-    INSERT INTO review_status (incident_id, model_run_id, status)
-    VALUES (p_incident_id, p_model_run_id, 'unreviewed');
-END;
-$$;
-```
-
-This ensures that re-analyzing an incident atomically replaces the previous report for that run ID
-and resets review status to `'unreviewed'` in a single database transaction.
+PostgREST has no client-held transactions, so saving an incident is one server-side call: `insert_incident(p_incident_id, p_model_run_id, p_type, p_start_timestamp, p_end_timestamp, p_duration, p_description, p_severity_level, p_confidence_score DOUBLE PRECISION)` (`supabase/migrations/20260917141225_insert_incident_function.sql`, `20260925031000_schema_defaults_and_precision.sql`). It deletes any existing `incidents` and `review_status` rows for the `(incident_id, model_run_id)` pair, inserts the new incident and resets review status to `'unreviewed'`, all in one transaction.
 
 > [!IMPORTANT]
 > **Cascading Deletes on Child Records:**

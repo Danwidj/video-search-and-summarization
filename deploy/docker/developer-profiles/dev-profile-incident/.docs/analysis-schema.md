@@ -3,7 +3,7 @@
 This document describes how incident analysis output is defined, validated, stored and shown.
 
 > [!NOTE]
-> Since `incident-contract-v3`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Background and decisions: [`prompt-contract-plan.md`](prompt-contract-plan.md).
+> Since `incident-contract-v3`, **eval, `incident-console-v2` (gateway and agent mode) and `vss-agent` share one contract**: the same prompt, schema and P1 settings in [`../contracts/`](../contracts/README.md). Decisions: [`decisions.md`](decisions.md).
 
 ---
 
@@ -103,7 +103,7 @@ Field notes:
 - `reportId` and `generatedAt`: valid outcomes only.
 - `response`: holds only the fields the gateway actually returned.
 
-Stage-1 records (before 2026-09-27 12:00) lack `status`; they are shown as `valid_first_pass` (inferred). Pre-contract console records are "earlier analyses", never failures.
+Records written before attempt statuses existed lack `status`; they are shown as `valid_first_pass` (inferred). Pre-contract console records are "earlier analyses", never failures.
 
 ### Three classes of report fields
 
@@ -125,7 +125,7 @@ The report page:
 
 ## 5. Legacy data
 
-Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until the migration is applied (agent mode now writes contract values, as phase 3 is complete). Notes and timestamps are never rewritten:
+Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until the migration is applied. Notes and timestamps are never rewritten:
 - `fighting` → `assault`, `animal` → `animal attack`;
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
@@ -141,3 +141,12 @@ Their notes are parsed best-effort for the read-only Class B fields. Saving an e
 - In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason in `model_runs.notes`, and writes every row itself through `persistContractRun`. Its timeout is the model's, as in gateway mode, since only P1 runs. A non-empty `additionalInstruction` is a 400 in agent mode, because the agent does not take one. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
 - Legacy agent-mode contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`) have been retired.
 
+## 7. Model inference findings
+
+Measured when the contract was introduced; they explain the fixed P1 settings in `contracts/inference.json`.
+
+- **Schema enforcement works** (`response_format: json_schema`) on `cosmos-3-nano-reasoner`, `cosmos-3-super-reasoner` and `nemotron-3-nano-omni-30b-a3b-reasoning`. Signed R2 URLs are fetched by the inference server; URL and base64 input gave identical results.
+- **Frame sampling:** the gateway forwards `media_io_kwargs` (`{"video": {"num_frames": N}}`), but the default is about 24 frames per video whatever its length, so long clips are sampled every 5-10 s. `num_frames` takes effect on Nano and Nemotron; **Super ignores it** (flat ~1080 prompt tokens at 8 and 64 frames). Nano sees frames at thumbnail resolution (~44 tokens each).
+- **Token budget:** Nemotron needs about 16k tokens to reason and then emit JSON (4096 ended with `finish_reason=length`), hence `max_tokens 16384` and `num_frames 64` for every model.
+- **Timeline rule:** Cosmos models often include lead-up or aftermath events outside their own incident window (Super on Animal003, Assault018 and Burglary005; Nano on Animal003). Clarified prompt wording did not change this in a 12-call pilot, which is why `core-scored-v1` records `TIMELINE_*` failures without rejecting the report.
+- **Correctness is separate from validity:** a strict pass says nothing about accuracy, and one Cosmos misclassification of a long explosion clip was most likely sparse sampling. Eval is the measure of each model.

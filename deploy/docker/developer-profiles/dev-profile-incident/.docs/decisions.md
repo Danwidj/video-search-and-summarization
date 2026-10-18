@@ -1,679 +1,155 @@
 # Incident Profile Decision Log
 
-Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
+Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
-### 2026-10-18: Remote embedding endpoint and remote-VLM cropping for evidence search
+### 2026-10-18: Remote embeddings and remote-VLM cropping for evidence search
 - **Decision:**
-  - Embed evidence descriptions (loader, input type `passage`) and search queries (`DefaultQueryEmbedder`, input type `query`) with one remote model, `nvidia/llama-nemotron-embed-vl-1b-v2` on the NVIDIA-hosted `https://integrate.api.nvidia.com/v1/embeddings`, requesting `dimensions=1024` to match `evidence_crops.embedding vector(1024)`. Client: `services/agent/src/vss_agents/utils/embeddings.py` (`EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`, falling back to `NVIDIA_API_KEY` then `NGC_CLI_API_KEY` from `generated.env.remote`). Without a key the route keeps the deterministic placeholder vector (zero-VM mocks and unit tests only).
-  - `DefaultDetector` in `crop_evidence.py` is now backed by the remote VLM (one tight `bbox_2d` per frame, normalised 0-1000) instead of a local open-vocabulary detector. `R2EvidenceStore`, `SupabaseEvidenceStore` and the composing `LiveEvidenceStore` replace the `NotImplementedError` stubs.
-  - `scripts/backfill_official_timestamps.py` is the production evidence loader: report source (Supabase) -> VLM grounding (`timestamp_seconds`, label) -> VLM box + crop -> R2 upload -> embedding -> `evidence_crops` upsert. Dry runs keep the fakes.
-- **Why:**
-  - The earlier loader wrote nothing (fake crop client, in-memory store, no embedding step), so `POST /api/v1/incidents/search` returned 200 with zero hits on `kwanz-ws`.
-  - The Brev Switchyard key can only reach chat models (`/v1/embeddings` returns 403 for every embedding model), and the NVIDIA-hosted `nv-embedqa-e5-v5` and `llama-3.2-nv-embedqa-1b-v2` are end-of-life (HTTP 410). `llama-nemotron-embed-vl-1b-v2` is live and accepts `dimensions=1024` (`nemotron-3-embed-1b` accepts only 2048).
-  - The remote VLM already serves grounding; a second remote service (Grounding DINO) adds a deployment for no measured gain, and no local GPU model may be started.
-- **Alternatives rejected:**
-  - Local MiniLM embedding server (`eval/scripts/eval_embedding_server.py`): 384 dimensions, a local model, and not on the VM.
-  - Padding or truncating 2048-dimension `nemotron-3-embed-1b` vectors: breaks cosine geometry.
-  - Local Grounding DINO / OWLv2 detector: needs a GPU model on the VM; the open-vocabulary detector comparison stays with PR 119.
-- **Links:** [`services/agent/src/vss_agents/utils/embeddings.py`](../../../../../services/agent/src/vss_agents/utils/embeddings.py); [`services/agent/src/vss_agents/utils/crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py); [`scripts/backfill_official_timestamps.py`](../../../../../scripts/backfill_official_timestamps.py); [`.docs/status.md`](status.md)
+  - Evidence descriptions (loader, input type `passage`) and search queries (`DefaultQueryEmbedder`, input type `query`) use one remote model, `nvidia/llama-nemotron-embed-vl-1b-v2` on `https://integrate.api.nvidia.com/v1/embeddings`, requesting `dimensions=1024` to match `evidence_crops.embedding`. Client: `utils/embeddings.py` (`EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`, falling back to `NVIDIA_API_KEY` then `NGC_CLI_API_KEY`). Without a key the route keeps the deterministic placeholder vector (zero-VM mocks and unit tests only).
+  - `DefaultDetector` in `crop_evidence.py` is backed by the remote VLM (one tight `bbox_2d` per frame, normalised 0-1000), not a local detector. `R2EvidenceStore`, `SupabaseEvidenceStore` and the composing `LiveEvidenceStore` replace the stubs.
+  - `scripts/backfill_official_timestamps.py` is the production evidence loader: Supabase report source, VLM grounding, VLM box and crop, R2 upload, embedding, `evidence_crops` upsert. Dry runs keep the fakes.
+- **Why:** The earlier loader wrote nothing, so search returned 200 with zero hits on `kwanz-ws`. The Brev key cannot call `/v1/embeddings` (403), and `nv-embedqa-e5-v5` and `llama-3.2-nv-embedqa-1b-v2` are end-of-life (410). `llama-nemotron-embed-vl-1b-v2` is live and accepts `dimensions=1024` (`nemotron-3-embed-1b` only 2048). The remote VLM already serves grounding, and no local GPU model may be started.
+- **Rejected:** a local MiniLM server (384 dimensions, not on the VM); padding or truncating 2048-d vectors (breaks cosine geometry); a local Grounding DINO / OWLv2 detector (needs a GPU model on the VM; detector comparison stays in the retrieval eval).
+- **Links:** [`services/agent/src/vss_agents/utils/embeddings.py`](../../../../../services/agent/src/vss_agents/utils/embeddings.py); [`services/agent/src/vss_agents/utils/crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py); [`scripts/backfill_official_timestamps.py`](../../../../../scripts/backfill_official_timestamps.py); [`status.md`](status.md).
 
-### 2026-10-18: start.sh vm mode explains unreachable VMs and bounds every VM step
+### 2026-10-18: start.sh vm mode explains unreachable VMs, bounds every VM step and detects the VM address
+- **Decision:** `start.sh --mode vm` classifies an SSH failure first (`.scripts/vm-preflight.sh`: Tailscale state, VM offline, DNS, timeout, refused, no route, auth, host key) and prints cause and next step. The Docker deploy runs from `.scripts/vm-ensure-docker.sh`, piped over SSH: it clones a missing checkout, requires `generated.env.remote`, rewrites a stale `HOST_IP` (timestamped backup first), pulls missing images and runs `docker compose up -d` under `VSS_COMPOSE_UP_TIMEOUT`. Native start, ssh calls and the tunnel wait are bounded too. `VSS_VM_IP` defaults to the VM's default-route source address (`ip -4 route get 1.1.1.1`, fallback `10.131.1.5`); an explicit value wins. `--no-console` stops after the tunnel.
+- **Why:** A stale `HOST_IP` hung `docker compose up` on the Kafka health check with no timeout, and the VM's DHCP address had moved.
+- **Rejected:** only adding timeouts (the stale `HOST_IP` still fails); hand-editing `HOST_IP`; auto-installing the agent virtualenv (its dependencies resolve only via NVIDIA's internal artifactory).
+- **Links:** [`start.sh`](../start.sh); [`.scripts/vm-preflight.sh`](../.scripts/vm-preflight.sh); [`.scripts/vm-ensure-docker.sh`](../.scripts/vm-ensure-docker.sh); [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-10-18: incident-console-v2 on TypeScript 5.9 with bundler module resolution
+- **Decision:** Pin `typescript` 5.9.3, set `moduleResolution: bundler` and drop `baseUrl`; the `@/*` alias stays in `paths`.
+- **Why:** TypeScript 6 deprecates `baseUrl` and node10 resolution; `bundler` needs TypeScript 5.0 or later.
+- **Rejected:** `ignoreDeprecations: "6.0"` (silences the warning only); staying on 4.9.5.
+- **Links:** [`incident-console-v2/tsconfig.json`](../incident-console-v2/tsconfig.json).
+
+### 2026-10-17: MVP2 search storage: evidence_crops, query_results, SupabaseSearchStore, R2 presigned crops
 - **Decision:**
-  - `start.sh --mode vm` classifies an SSH failure before doing anything else (`.scripts/vm-preflight.sh`: Tailscale logged out/stopped/daemon down, VM offline in the tailnet, DNS, timeout, refused, no route, auth, host key) and prints cause plus next step.
-  - The Docker part of the deploy moves into `.scripts/vm-ensure-docker.sh`, piped over SSH so the laptop copy always runs. It clones a missing checkout, requires `generated.env.remote`, rewrites a stale `HOST_IP` there (timestamped backup first), pulls missing images, then runs `docker compose up -d` under `VSS_COMPOSE_UP_TIMEOUT`, printing container states and Kafka logs on failure.
-  - Native start, the ssh calls and the tunnel wait are bounded too; the fresh and partial paths share one code path. `tunnel.sh` also uses the detected VM address. New `--no-console` flag stops after the tunnel.
-- **Why:** The 2026-10-17 run hung in `docker compose up` on the Kafka broker health check because `HOST_IP` in `generated.env.remote` still held the old VM address, and nothing timed out. Unreachable-VM errors were a raw ssh line.
-- **Alternatives rejected:** Only adding timeouts (the stale `HOST_IP` would still fail every run); asking the user to fix `HOST_IP` by hand (the fix is mechanical and backed up, so doing it removes a recurring failure); calling `native-services.sh`-style scripts from the VM checkout for the Docker step (breaks when the checkout is behind); auto-installing the agent virtualenv (its dependencies resolve only via NVIDIA's internal artifactory, so start.sh points at the reinstall procedure instead).
-- **Links:** [`start.sh`](../start.sh); [`.scripts/vm-preflight.sh`](../.scripts/vm-preflight.sh); [`.scripts/vm-ensure-docker.sh`](../.scripts/vm-ensure-docker.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
+  - Migration `20261016120000_mvp2_evidence_search_and_crops.sql` adds pgvector, one unified `evidence_crops` table keyed `(incident_id, model_run_id, item_type, item_id)` (HNSW cosine index, `vector(1024)`), `query_results` (rank, similarity, critic verdict and rationale) and the `search_evidence_items` RPC. RLS on, `service_role` only. The RPC joins `videos.selected_model_run_id`, so only official reports are searchable.
+  - `vss-agent` uses `SupabaseSearchStore` when `INCIDENT_SEARCH_STORE=supabase` or Supabase credentials are configured, otherwise `InMemorySearchStore`. Crop keys resolve to public URLs (`INCIDENT_VIDEO_BASE_URL`) or boto3 presigned R2 URLs (`utils/r2.py`). Queries and results are persisted.
+  - Query embedding is covered by the remote-embeddings decision above.
+- **Why:** The sample-data store pointed at a non-existent host, so the critic failed to fetch images and every hit was `unverified`. One table avoids three vector columns and three UNIONs. Official scoping stops re-analysis runs producing duplicate hits.
+- **Rejected:** altering the legacy `entities` / `instruments` / `assets` tables; unscoped search; public-only URLs (private buckets need presigning); an external embedding service for now.
+- **Links:** [`../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](data.md); [`mvp2/README.md`](mvp2/README.md).
 
-### 2026-10-18: Detect VSS_VM_IP from the VM in start.sh vm mode
-- **Decision:** When `VSS_VM_IP` is unset, `start.sh --mode vm` reads the VM's default-route source address over the existing SSH connection (`ip -4 route get 1.1.1.1`), falling back to `10.131.1.5` if that fails. An explicit `VSS_VM_IP` still wins.
-- **Why:** The VM's DHCP LAN address moved from `10.131.1.5` to `10.132.56.251`, so the hardcoded default broke the tunnel forwards without a manual override.
-- **Alternatives rejected:** Updating the hardcoded default (breaks again on the next change); using the Tailscale address (the services bind and are reached on the LAN address); also changing `.scripts/tunnel.sh` (out of scope here, still defaults to `10.131.1.5`).
-- **Links:** [`start.sh`](../start.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
-
-### 2026-10-17: MVP2 database migration for evidence_crops, query_results, and search_evidence_items RPC
+### 2026-10-16: MVP2 search route, chat route, crop service, backfill and launcher
 - **Decision:**
-  - Add Supabase migration `20261016120000_mvp2_evidence_search_and_crops.sql` establishing the pgvector semantic search and audit storage layer.
-  - Enable PostgreSQL `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`).
-  - Create unified `evidence_crops` table mapping `(incident_id, model_run_id, item_type, item_id)` with temporal anchors (`timestamp_seconds`), detector bounding boxes (`bounding_box INTEGER[4]`), R2 crop image keys (`image VARCHAR(1024)`), and 1024-dimensional semantic text embeddings (`embedding vector(1024)`).
-  - Add HNSW cosine distance index `evidence_crops_embedding_hnsw_idx` on `evidence_crops.embedding` with parameters `m = 16, ef_construction = 64`, plus composite lookup index on `(incident_id, model_run_id)`.
-  - Create `query_results` table for item-level search hit auditing, similarity rankings, and VLM critic verdicts (`confirmed`, `rejected`, `unverified`) with objective rationales.
-  - Enforce Row-Level Security (RLS) on both `evidence_crops` and `query_results`: revoke all privileges from `anon` and `authenticated`, granting access exclusively to `service_role`.
-  - Implement `search_evidence_items` PostgreSQL RPC function with pgvector cosine distance calculation, metadata filtering (item types, incident taxonomy, min/max severity, min similarity), and strict official report scoping via inner join on `videos v ON v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id`. Restrict RPC execution exclusively to `service_role`.
-- **Why:**
-  - The live search retest on `kwanz-ws` failed with PostgREST `PGRST202` because `search_evidence_items` was missing from the schema cache.
-  - Consolidating evidence entities, instruments, and assets into a single unified `evidence_crops` table avoids three disparate vector columns and three UNION queries, enabling single-pass HNSW index lookups.
-  - Scoping retrieval to official reports prevents outdated or re-analysis runs from producing conflicting duplicate hits.
-- **Alternatives rejected:**
-  - Altering legacy `entities`, `instruments`, and `assets` tables directly (rejected: mutates existing production tables, complicates multi-item queries, and duplicates vector indexes).
-  - Leaving search unconstrained by official selection (rejected: causes duplicate conflicting evidence items when multiple model runs exist for a video).
-- **Links:** [`../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`.docs/data.md`](data.md); [`.docs/mvp2/README.md`](mvp2/README.md).
+  - `POST /api/v1/incidents/search` (`search-contract-v1`) and `POST /api/v1/incidents/chat` (`chat-contract-v1`) in `vss-agent`, mounted unconditionally, behind hexagonal ports (`SearchStore`, `QueryEmbedder`, `SearchClient`) with in-memory adapters; mock routes on :7777 and :7778 serve the frontend without a GPU.
+  - The VLM critic is always on. A failed or timed-out critic call degrades to `verdict="unverified"` with `confidence=None`; hits are never dropped. Critic calls start `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0, 0 disables) to avoid upstream 429/500 bursts.
+  - `CropEvidenceService` crops keyframes at `timestamp_seconds` using a detector port (remote VLM boxes, see above) (5% margin, JPEG quality 85) and stores them via an `EvidenceStore` port under `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg`.
+  - `scripts/backfill_official_timestamps.py` re-queries the VLM only for timestamps and detector labels of existing official reports (idempotent, resumable, `--dry-run`), never rewriting reviewed text.
+  - `start.sh` always brings up and checks search (no `--search` flag); local readiness polls `/health`; `.scripts/tunnel-check.sh` probes search through the tunnel.
+- **Why:** A pilot showed VLM bounding boxes were 0% well-framed but timestamps over 95% accurate, so the VLM supplies timestamps and labels and a detector supplies boxes. Ports let the workstreams proceed in parallel. Spacing call starts smooths bursts without retries or sequential latency.
+- **Rejected:** VLM bounding boxes; dropping hits on critic failure; a feature flag for search; retries or thread pools for the critic; full re-analysis for backfill (destroys reviewer edits).
+- **Links:** [`../contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`mvp2/README.md`](mvp2/README.md).
 
----
+### 2026-10-16: Contract v3 temporal grounding and RP1 on core_ok
+- **Decision:** `incident-contract-v3` adds required `timestamp_seconds` and `label` to entities, instruments and assets; bounding boxes are detector-produced only. Console validation is version-aware, so v2 runs stay viewable. RP1 runs when `core_ok` (not only `full_contract_ok`), receives the unchanged prediction, and `report_generation_prompt.md` says timeline events outside the incident time are context.
+- **Why:** Cosmos models consistently emit lead-up and aftermath events; gating RP1 on full validity skipped prose for otherwise valid incidents. A two-clip pilot showed the extra line kept the reported window while describing context.
+- **Rejected:** sub-versions in recorded results; clipping timeline events before RP1 (loses narrative context).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`analysis-schema.md`](analysis-schema.md).
 
-### 2026-10-17: Supabase-backed SearchStore and Cloudflare R2 presigned URLs for natural-language incident search
+### 2026-10-16: vss-agent on incident-contract-v3
+- **Decision:** `vss_agents/incident_contract/` vendors `contracts/` with strict Pydantic models and parity tests. `incident_report_gen` runs P1 then RP1 directly. `POST /api/v1/incidents/{id}/analyze` takes `{ video_url, model_run_id?, skip_rp1? }`: 422 on contract violation, 504 on timeout, 501 when unconfigured. It validates under `core-scored-v1` with `id-normalization-v1` and persists best-effort only when called without `model_run_id`; the console is otherwise the only writer, and the agent never writes `videos`. Console agent mode runs the same `runContractAnalysis` and `persistContractRun` as gateway mode.
+- **Why:** One contract, validation policy and attempt recording across both modes; removes the markdown-then-extract chain and duplicate video writes.
+- **Rejected:** separate agent and gateway validation policies; keeping the legacy console schema files.
+- **Links:** [`analysis-schema.md`](analysis-schema.md); `services/agent/src/vss_agents/incident_contract/`.
+
+### 2026-10-16: RLS and public schema lockdown
+- **Decision:** Migration `20261016000000_enable_rls_and_lockdown_anon.sql` enables RLS on all 22 public tables, revokes table, sequence and `insert_incident` privileges from `anon` and `authenticated`, and sets default privileges so new objects grant nothing to them and everything to `service_role`. No `FORCE ROW LEVEL SECURITY`. Each new function still carries its own explicit `REVOKE ... FROM PUBLIC, anon, authenticated` and `GRANT ... TO service_role`.
+- **Why:** With RLS off and default grants, an exposed `anon` key could cascade-delete all data via `DELETE FROM videos`. All services use `service_role` or `postgres`, both `BYPASSRLS`, so nothing breaks.
+- **Rejected:** dropping legacy tables in the same migration; client-side RLS policies (no browser client); `FORCE ROW LEVEL SECURITY` (no effect with a `BYPASSRLS` owner).
+- **Links:** [`../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql`](../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql); [`data.md`](data.md).
+
+### 2026-10-16: Legacy taxonomy migration; query-time folding stays
+- **Decision:** Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` maps `incidents.type` `fighting` to `assault` and `animal` to `animal attack`, `entities.type` `person` to `human`, and removes 20 orphaned legacy console `model_runs`. The one `other` value lives only in an immutable run's notes and stays. Folding (`canonicalIncidentType`, `canonicalEntityType`, SQL `canonical_*`) remains until the migration is applied.
+- **Why:** Match the five-label ground-truth taxonomy; folding is idempotent and safe in every state.
+- **Rejected:** dropping folding early; editing `model_runs.notes`.
+- **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql).
+
+### 2026-10-16: unless-stopped restart policy
+- **Decision:** `compose.override.yml` sets `restart: unless-stopped` on the persistent services, plus `deploy.restart_policy.condition: unless-stopped` on `streamprocessing-ms` (upstream's deploy `always` overrides `restart`). `nvstreamer-2d-fusion` keeps upstream `on-failure`.
+- **Why:** Upstream `restart: always` restarts stopped containers on every VM reboot; runtime `docker update` is lost on recreate.
+- **Rejected:** ad-hoc `docker update`; editing upstream compose files.
+- **Links:** [`compose.override.yml`](../compose.override.yml); [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-09-28: Dashboard and time filters use the viewer's timezone
+- **Decision:** `get_incident_dashboard` and `list_incident_report_summaries` take `p_timezone` (default `'UTC'`) and convert `reports.generated_datetime` (naive UTC) for weekday and hour grouping and filtering. The console sends the viewer's IANA zone (offsets rejected) detected after mount; labels show local hours with the zone name. Migration `20260928000000` must be applied before or with the console deploy.
+- **Why:** Operators analyse by local shift. Dashboard drill-down links stay count-exact because both pages detect the same zone.
+- **Rejected:** client-side re-bucketing; converting the column to `timestamptz`.
+- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts).
+
+### 2026-09-27: Validation policy core-scored-v1
+- **Decision:** Only database-backed fields (type, window, description, severity, confidence, entities, instruments, assets) decide persistence and scoring. `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment: a `TIMELINE_*` failure is recorded and shown but neither rejects the report nor empties the eval prediction, and is never repaired. A contextual core rule requires the window to lie within the video when its length is readable (`0 <= T < duration + 1`). Schema violations stay fatal. `full_contract_ok` keeps contract validity; `core_ok` decides.
+- **Why:** In a 12-call pilot the strict timeline rule rejected 7 answers, 4 with windows matching ground truth, yet accepted a 29-36 s window on a 12.5 s clip. Recovered answers rose from 6 of 15 to 13 of 15.
+- **Rejected:** a whole-video timeline (deferred); isolating enrichment schema errors (needs partial parsing).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/lib/contract/validate.ts`](../incident-console-v2/lib/contract/validate.ts).
+
+### 2026-09-27: Console on the shared contract with ID-only repair
+- **Decision:** Gateway analysis sends eval's exact P1 request (allowlisted model from `contracts/inference.json`, canonical prompt, strict `response_format`, 16384 tokens, 64 frames) plus an optional fenced reviewer instruction. It validates strictly and records every attempt immutably in `model_runs.notes` with outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`. The only repair is `id-normalization-v1`: it applies only when every violation is ID-only, changes only IDs, holder references and order, then re-validates. Eval never credits repaired output.
+- **Why:** The endpoint enforces the schema, but cross-field rules (sequential IDs, timeline window) can only be checked afterwards. Malformed IDs are safely repairable; timeline content is a model judgement.
+- **Rejected:** LLM repair passes; retrying the same request (deterministic at temperature 0); ID patterns in the schema (only if malformed-ID evidence justifies a v4).
+- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../incident-console-v2/lib/contract/repair.ts`](../incident-console-v2/lib/contract/repair.ts).
+
+### 2026-09-27: Unified contract decisions (eval, console, agent)
+- **Decision:** The eval P1 prompt is the base. Nested snake_case output enforced by `response_format: json_schema`, with the prompt describing field meaning only. One request pattern everywhere: P1 (video to JSON) then RP1 (JSON to prose). Strict parsing, no few-shot, no alias normalisation. Taxonomy is eval's five labels: road accident, burglary, explosion, assault, animal attack. Video is a 1 h signed R2 URL in every path. `confidence_score` is null unless the API gives a native score. `incident.duration` is computed as `end_timestamp - start_timestamp` and is not in the schema. Files live in `contracts/`, validated in Python with `jsonschema` plus cross-field checks in `eval/contract.py`.
+- **Why:** The three paths previously differed in prompt, schema, taxonomy, video encoding and parsing, so the benchmark did not measure production behaviour; category few-shot leaked the label; asking a model for a value code can compute only adds a failure mode.
+- **Rejected:** a seven-label taxonomy (overlapping labels the ground truth cannot score); base64 video; tolerant parsing; Pydantic as the shared source (the schema file is the neutral source).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`analysis-schema.md`](analysis-schema.md).
+
+### 2026-09-27: Review and reporting model
 - **Decision:**
-  - Implement `SupabaseSearchStore` in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`) querying `evidence_crops` via the existing `search_evidence_items` RPC using the service role client.
-  - Scope queries to official reports only, as enforced by the `search_evidence_items` RPC inner join on `videos v ON v.id = ec.incident_id AND v.selected_model_run_id = ec.model_run_id`.
-  - Add Cloudflare R2 resolution utility (`services/agent/src/vss_agents/utils/r2.py`) with `resolve_r2_url()` and `get_r2_presigned_url()` that normalises crop image keys (stripping dummy host prefixes like `pub-r2.example.com/`), resolves public base URLs when configured (`INCIDENT_VIDEO_BASE_URL`), or generates standard boto3 presigned S3 URLs for the configured R2 bucket when AWS/R2 credentials are set.
-  - Implement store selection in `get_default_search_store()`, selecting `SupabaseSearchStore` when `INCIDENT_SEARCH_STORE="supabase"` or when Supabase credentials are configured via `incident_db.is_configured()`, falling back to `InMemorySearchStore` for local/mock development.
-  - Persist search query audit logs (`queries` and `query_results` tables) asynchronously in `SupabaseSearchStore.record_query()` and `SupabaseSearchStore.record_results()`.
-  - Reuse the 1024-dimensional placeholder embedding from `DefaultQueryEmbedder` aligned with the pgvector schema per MVP2 plan Decision 4 until deep embedding models are integrated.
-- **Why:**
-  - On the `kwanz-ws` VM, the search route previously ran on built-in sample data (`InMemorySearchStore`) whose mock crop URLs pointed to non-existent host `pub-r2.example.com`, causing the Brev VLM critic to fail with HTTP 500 when attempting to fetch images, resulting in all hits returning as `verdict="unverified"`.
-  - Pointing the search route to the live database via `search_evidence_items` RPC retrieves real evidence crops, and signing/resolving R2 keys provides fetchable image URLs to the critic.
-- **Alternatives rejected:**
-  - Generating public-only URLs without presigning support (rejected: private R2 buckets require presigned S3 URLs unless a custom public domain or proxy is explicitly configured).
-  - Calling an external embedding service (rejected: out of scope, introduces external paid dependencies and latency; MVP2 plan Decision 4 specifies minimal consistent embedding placeholder matching pgvector).
-- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`services/agent/src/vss_agents/utils/r2.py`](../../../../../services/agent/src/vss_agents/utils/r2.py); [`services/agent/tests/unit_test/api/test_incident_search.py`](../../../../../services/agent/tests/unit_test/api/test_incident_search.py); [`services/agent/tests/unit_test/utils/test_r2.py`](../../../../../services/agent/tests/unit_test/utils/test_r2.py); [`.docs/status.md`](status.md).
-
----
-
-### 2026-10-16: Configurable delay spacing between VLM critic calls in incident search route
-- **Decision:**
-  - Introduce configurable delay spacing between vision-language model (VLM) critic calls in `vss-agent` (`services/agent/src/vss_agents/api/incident_search.py`).
-  - Stagger each candidate hit's critic evaluation call by starting each call a configurable delay after the previous one starts (default `1.0` second, governed by environment variable `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` or router argument `critic_delay_seconds`). Setting delay to `0` disables spacing and restores simultaneous invocation.
-  - Preserve strict rank ordering of hits and maintain graceful degradation to `verdict="unverified"` (with confidence `None`) if any critic evaluation fails or times out.
-  - Avoid complex machinery such as retries or concurrency thread pools to keep architecture simple and reliable.
-- **Why:**
-  - On the `kwanz-ws` VM, firing all VLM critic calls simultaneously via `asyncio.gather` for multi-hit search requests against the remote Brev Switchyard endpoint caused upstream HTTP 429 rate limit and HTTP 500 server errors, causing all hits to degrade to unverified verdicts despite single calls returning 200 OK.
-  - Staggering call starts spreads request traffic across the rate limit window, allowing the remote endpoint to process evidence verification smoothly.
-- **Alternatives rejected:**
-  - Implementing full retry loops with backoff or concurrency pools (rejected: out of scope, introduces complex state and potential request amplification).
-  - Fully sequential execution waiting for each call to complete before initiating the next (rejected: overly increases total latency; spacing call starts maintains high concurrency while smoothing request bursts).
-- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`services/agent/tests/unit_test/api/test_incident_search.py`](../../../../../services/agent/tests/unit_test/api/test_incident_search.py); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
-
----
-
-### 2026-10-16: MVP2 chat backend endpoint and chat-contract-v1
-- **Decision:**
-  - Define `chat-contract-v1` in `contracts/chat-contract-v1/` specifying request (`chat_request.schema.json`) and response (`chat_response.schema.json`) JSON schemas with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
-  - Request schema specifies `messages` history (each with `role` and `content`), optional `session_id`, and optional `context` (`scope: "global" | "incident"`, `incident_id`, `evidence_crop_ids`).
-  - Response schema specifies assistant response with structured, grounded `citations` referencing `incident_id`, `item_id`, `item_type`, `timestamp_seconds`, and `crop_image_url` for visual evidence inspection and jump-to-clip.
-  - Implement native `POST /api/v1/incidents/chat` in `vss-agent` (`services/agent/src/vss_agents/api/incident_chat.py`) following hexagonal architecture: access evidence retrieval capabilities through a `SearchClient` protocol port with an `InMemorySearchClient` adapter and a clear TODO for wiring to the sibling search route / pgvector RPC once merged.
-  - Implement mock chat route in `mock-backend/base_profile_mock` (`base_profile_mock/routers/incident_chat.py` on port 7777) implementing `chat-contract-v1` against `_CANNED_HITS` so frontend PR 118 can build and test immediately without GPU or VM dependencies.
-  - Handle empty results cleanly by returning an assistant response with `citations: []`. Validate input schemas, returning HTTP 400 for empty or missing user messages and 422 for invalid scopes.
-- **Why:**
-  - Delivers MVP2 VM step 5 for conversational intelligence across incident evidence.
-  - Avoids coupling to parallel workstream code (sibling search route) by using a clean hexagonal port and adapter pattern.
-  - Aligns frontend PR 118, eval PR 119, and the backend on an authoritative, validated contract.
-- **Alternatives rejected:**
-  - Directly importing search route internals (rejected: coupling parallel workstreams during active development).
-  - Unstructured plain text answers without citations (rejected: violates MVP2 requirements for visual crop inspection and jump-to-clip).
-- **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`services/agent/src/vss_agents/api/incident_chat.py`](../../../../../services/agent/src/vss_agents/api/incident_chat.py); [`mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_chat.py`](../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_chat.py); [`.docs/mvp2/README.md`](mvp2/README.md).
-
----
-
-### 2026-10-16: MVP2 start.sh always-on search route startup and readiness check (VM Step 6)
-- **Decision:**
-  - Update `start.sh` so the natural-language incident search route (`POST /api/v1/incidents/search` with an always-on VLM critic and persisted ranking/verdicts) is always brought up and announced alongside `vss-agent` in both `--mode vm` and `--mode local`.
-  - Enforce that there is no opt-in `--search` flag; search is always on on every run, and unknown arguments including `--search` are rejected.
-  - In `--mode local`, replace static `sleep 2` with active readiness polling on `http://127.0.0.1:7777/health` (<5s timeout), confirming mock backend and search route readiness in under 5 seconds.
-  - Extend `.scripts/tunnel-check.sh` to probe `POST http://localhost:8000/api/v1/incidents/search` through the SSH tunnel, verifying always-on search availability in VM mode.
-  - Add comprehensive regression and argument tests for `start.sh` in `eval/tests/test_start_script.py`, checking rejection of `--search` flag, unknown flags, invalid modes, kwanz-ws hostname guard, shellcheck compliance, and <5s local search readiness.
-- **Why:**
-  - Satisfies MVP2 VM backend Step 6 and acceptance criteria: search route is unconditionally mounted on every run with no feature flag, local search launches in under 5 seconds, and ranking and verdicts are persisted.
-  - Ensures reliable developer loops and fast feedback across both VM and zero-GPU mock environments.
-- **Alternatives rejected:**
-  - Introducing an opt-in `--search` flag or `ENABLE_SEARCH` environment variable (rejected: MVP2 architecture mandates search as an always-on core capability).
-  - Retaining fixed `sleep 2` in local mode without health verification (rejected: polling `http://127.0.0.1:7777/health` provides faster startup and deterministic readiness).
-- **Links:** [`../start.sh`](../start.sh); [`../.scripts/tunnel-check.sh`](../.scripts/tunnel-check.sh); [`../eval/tests/test_start_script.py`](../eval/tests/test_start_script.py); [`../mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
-
----
-
-### 2026-10-16: Targeted timestamp and detector label backfill over existing official incident reports
-- **Decision:**
-  - Build `scripts/backfill_official_timestamps.py` (and test suite `scripts/tests/test_backfill_official_timestamps.py`) to execute an automated, targeted temporal grounding and detector label pass over existing official incident reports (`videos.selected_model_run_id IS NOT NULL`).
-  - Architecture adheres strictly to hexagonal ports: `VideoReportSource` (fetching official reports without mutating existing text, IDs, or human reviews), `VLMClient` (querying VLM for `timestamp_seconds` and short detector `label`), `CropClient` (`FakeCropClient` stand-in; production adapter owned by crop-service task), and `EvidenceStore` (`InMemoryEvidenceStore` with JSON lines `--output-file` export and rerun resumption; production database loading owned by PR 120 loader).
-  - Guarantees: fully idempotent and resumable (skips items already present in the evidence store or loaded from `--output-file`), bounded concurrency (`--concurrency`, default 4), validated positive batch size (`--batch-size`), non-destructive `--dry-run` planning mode, and isolated per-item error handling without aborting the batch.
-- **Why:**
-  - Official reports carry human review and edits that must not be overwritten or discarded. Re-running entire incident analysis from scratch would erase manual reviewer corrections and historical IDs.
-  - VLM bounding box pilot showed 0% well-framed spatial boxes from VLMs but >95% temporal accuracy; the targeted pass queries the VLM solely for whole-second timestamps and detector labels, letting the open-vocabulary crop detector generate precise bounding boxes. Other architectural rationale: ask captain.
-- **Alternatives rejected:**
-  - Automated full re-analysis of all videos under contract-v3 (rejected: destroys human reviewer edits, creates duplicate run histories, and re-triggers full extraction latency).
-  - VLM spatial bounding box backfill (rejected: pilot proved VLM spatial coordinates degenerate completely).
-- **Links:** [`scripts/backfill_official_timestamps.py`](../../../../../scripts/backfill_official_timestamps.py); [`scripts/tests/test_backfill_official_timestamps.py`](../../../../../scripts/tests/test_backfill_official_timestamps.py); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/data.md`](data.md).
-
----
-
-### 2026-10-16: MVP2 crop evidence service with detector and storage ports (VM Step 3)
-- **Decision:**
-  - Build `services/agent/src/vss_agents/utils/crop_evidence.py` implementing `CropEvidenceService`, exposing canonical `crop_evidence_item(video_ref, timestamp_seconds, label, detector)` returning `CropResult` (`image_bytes`, `normalized_box`, `score`, `frame_size`) or `None`, and `evidence_key(video_id, model_run_id, collection, item_id)` generating canonical R2 layout keys `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg`.
-  - Bounding boxes are derived from an open-vocabulary detector port (`OpenVocabularyDetector` / `DefaultDetector`) evaluating on keyframes at `timestamp_seconds` using item labels as queries, with 5% margin padding clamped to the frame boundaries and JPEG quality 85 encoding.
-  - Image and metadata storage are abstracted behind the `EvidenceStore` port with an in-memory adapter (`InMemoryEvidenceStore`) for hermetic zero-GPU testing; `R2EvidenceStore` and `SupabaseEvidenceStore` adapters are scaffolded as TODOs owned by PR 120.
-  - Hook crop extraction into report generation (`services/agent/src/vss_agents/tools/incident_report_gen.py`) behind the detector port, preserving existing report generation behavior when the detector is unavailable.
-- **Why:**
-  - Satisfies MVP2 VM backend step 3.
-  - Aligns with the VLM Bounding Box Accuracy Pilot findings: VLMs provide accurate temporal grounding (`timestamp_seconds`) but 0% well-framed bounding boxes, so spatial bounding boxes are provided by specialized 2D open-vocabulary detectors on extracted keyframes.
-  - Decouples detector model evaluation (PR 119) and Supabase/R2 storage migration (PR 120) behind hexagonal ports so workers build in parallel without circular dependencies.
-- **Alternatives rejected:**
-  - Direct VLM bounding box extraction (0% well-framed in pilot).
-  - Hardcoding a heavy detector model (e.g. Grounding DINO weights) into base agents before eval PR 119 selects the optimal detector.
-  - Direct R2/Postgres writes without ports (breaks zero-GPU local mock and unit tests).
-- **Links:** [`../mvp2/README.md`](mvp2/README.md); [`../../../../../services/agent/src/vss_agents/utils/crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py); [`../../../../../services/agent/tests/unit_test/utils/test_crop_evidence.py`](../../../../../services/agent/tests/unit_test/utils/test_crop_evidence.py).
-
----
-
-### 2026-10-16: MVP2 vss-agent search route with always-on critic and hexagonal SearchStore port
-- **Decision:**
-  - Build `services/agent/src/vss_agents/api/incident_search.py` implementing `POST /api/v1/incidents/search` matching `search-contract-v1` with an always-on VLM critic.
-  - Implement a hexagonal architecture using `SearchStore` and `QueryEmbedder` ports. Provide `InMemorySearchStore` (canned candidates matching `base_profile_mock`, in-memory audit store) for zero-VM testing and local fallback, leaving the live PostgREST adapter owned by PR #120 for Supabase RPC `search_evidence_items` and table persistence (`queries`, `query_results`).
-  - Implement `VlmCriticEvaluator` using Brev Switchyard OpenAI-compatible chat completions endpoint (`DEFAULT_VLM_BASE_URL`, `DEFAULT_VLM_MODEL`), evaluating retrieved crops and item descriptions against queries.
-  - Critic degradation: On any VLM evaluation failure, network error, or timeout, never drop hits; degrade gracefully to `verdict="unverified"` with `confidence=None` and rationale explaining the failure.
-  - Wire route registration unconditionally in `CustomFastApiFrontEndWorker` (`services/agent/src/vss_agents/api/custom_fastapi_worker.py`), making incident search always-on with no feature flag.
-- **Why:**
-  - Implements MVP2 VM backend Step 4. Provides natural-language evidence search per `search-contract-v1`.
-  - Decouples vss-agent search route development from PR #120's database migration and PR #119's embedding benchmarks via hexagonal ports.
-  - Ensures robust reliability by degrading critic errors to "unverified" rather than failing the search query or dropping evidence candidates.
-- **Alternatives rejected:**
-  - Dropping candidate hits when the critic call fails (rejected: critical evidence could be silently lost due to transient network or VLM issues).
-  - Feature-flagging the search route behind an optional profile knob (rejected: per MVP2 spec, search is an always-on core capability).
-  - Waiting for PR #120's database migration to land before implementing the agent search endpoint (rejected: hexagonal port allows independent development and comprehensive unit testing).
-- **Links:** [`services/agent/src/vss_agents/api/incident_search.py`](../../../../../services/agent/src/vss_agents/api/incident_search.py); [`contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`.docs/mvp2/README.md`](mvp2/README.md); [`.docs/status.md`](status.md).
-
----
-
-### 2026-10-16: Prompt-contract phase 3: move vss-agent onto incident-contract-v3 and retire legacy console contract files
-- **Decision:**
-  - Move `vss-agent` (`services/agent`) onto `incident-contract-v3`. `vss_agents/incident_contract/` holds a vendored copy of `contracts/` with strict Pydantic models (`strict=True, extra="forbid"`) and unit tests enforcing parity with `contracts/`.
-  - `incident_report_gen` executes the contract P1 (direct VLM OpenAI chat completion with JSON Schema response format) -> RP1 (prose report) calls. The markdown-then-extract chain and `data_models/incident_report.py` are removed.
-  - `POST /api/v1/incidents/{incident_id}/analyze` accepts `{ video_url, model_run_id?, skip_rp1? }` (signed R2 URL from the console). `skip_rp1: true` runs P1 only; console agent mode always sends it, because gateway mode runs P1 only and the console has nowhere to store RP1 prose, so its agent timeout covers P1 only. Standalone calls default to P1 + RP1. Returns 422 on contract violation, 504 on timeout, 501 when `incident_report_gen` is unconfigured.
-  - `incident_report_gen` validates under `core-scored-v1` with `id-normalization-v1`, like the console; a 422 carries the raw output so the console records the attempt. It persists best-effort to PostgREST with contract IDs (`E1`, `I1`, `A1`) only when called without `model_run_id`; when the console passes one, the console is the only writer. It never touches `videos` (the console owns `videos.filepath` and the durable R2 key).
-  - `dev-profile-base` config: `incident_report_gen` uses `VLM_BASE_URL`, `VLM_NAME`, `LLM_BASE_URL`.
-  - Console agent mode aligns with gateway mode: both run through `runContractAnalysis`, both enforce validation policy `core-scored-v1` (including ID-only `id-normalization-v1` repair and recorded outcomes in `model_runs.notes`), and both persist via `persistContractRun`. If main's `core-scored-v1` policy and PR 109's never-repair rule conflict, main's policy is followed.
-  - Retire legacy agent-mode contract files: delete `incident-console-v2/lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`. Decouple `storage.ts` and `run-notes.ts` by defining an inlined legacy report interface for decoding pre-contract notes.
-- **Why:**
-  - Completes prompt-contract phase 3 (unified contract across eval, gateway, and agent).
-  - Eliminates the two-step markdown extraction chain, brittle regex timestamp parsing, and duplicate video writes in agent mode.
-  - Ensures consistent behaviour, validation, and attempt recording across console gateway and agent modes.
-- **Alternatives rejected:**
-  - Maintaining separate agent and gateway validation policies (would cause mode-dependent outcomes).
-  - Keeping legacy `schema.ts` alongside contract types (unnecessary maintenance burden; legacy notes are adequately decoded with an inlined interface).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); [`services/agent/src/vss_agents/incident_contract/`](../../../../../services/agent/src/vss_agents/incident_contract/); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py); [`incident-console-v2/lib/analysis/run-contract-analysis.ts`](../incident-console-v2/lib/analysis/run-contract-analysis.ts).
-
----
-
-### 2026-10-16: MVP2 search contract v1 and incident-contract-v3 temporal grounding
-- **Decision:**
-  - Introduce `search-contract-v1` defining request and response JSON schemas for `POST /api/v1/incidents/search` with dual-language validation (Python `Draft202012Validator` and Node `Ajv2020`).
-  - Incorporate findings from the VLM Bounding Box Accuracy Pilot: VLMs are retained strictly for temporal grounding (`timestamp_seconds`) and short detector labels (`label`), while spatial bounding boxes (`bounding_box`) are optional, nullable detector-produced outputs and never requested from or emitted by VLMs.
-  - Bump contract `VERSION` to `incident-contract-v3`, adding required `timestamp_seconds` (integer >= 0) and `label` (string) to `entities`, `instruments`, and `assets` items in `incident_report.schema.json` and section 9 visual grounding to `incident_extraction_prompt.md`.
-  - Maintain compatibility for historical `incident-contract-v2` runs by providing version-aware validation caching in `incident-console-v2/lib/contract/validate.ts`.
-  - Update `mock-backend` (`base_profile_mock` on :7777 and `search_profile_mock` on :7778) to serve `POST /api/v1/incidents/search` returning valid mock hits with canned R2 crop URLs, parent incident details, and always-on critic verdicts.
-- **Why:**
-  - The pilot demonstrated 0% well-framed boxes from VLMs but >95% temporal accuracy. Requiring bounding boxes from VLMs led to severe degeneracies (zero-area points, sliding arithmetic columns, watermark crops).
-  - Unblocks the frontend (PR 118), eval (PR 119), and database (PR 120) workstreams to build against stable, shared schema contracts without GPU or VM dependencies.
-- **Alternatives rejected:**
-  - Direct VLM bounding box extraction (rejected: 0% framing accuracy in pilot).
-  - Breaking historical v2 run compatibility in the console (rejected: prevents viewing and evaluating historical benchmark runs).
-- **Links:** [`../contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`../contracts/incident_report.schema.json`](../contracts/incident_report.schema.json); [`../contracts/incident_extraction_prompt.md`](../contracts/incident_extraction_prompt.md); [`../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_search.py`](../mock-backend/base_profile_mock/src/base_profile_mock/routers/incident_search.py); [`analysis-schema.md`](analysis-schema.md); [`status.md`](status.md).
-
----
-
-### 2026-10-16: Row-Level Security (RLS) and public schema lockdown for anon and authenticated roles
-- **Decision:**
-  - Enable Row-Level Security (`ENABLE ROW LEVEL SECURITY`) on all 22 public tables (18 operational/eval tables and 4 legacy pre-v1 tables).
-  - Revoke `EXECUTE` on `insert_incident` from `PUBLIC`, `anon`, and `authenticated`, granting exclusively to `service_role`.
-  - Revoke all privileges on all tables and sequences in schema `public` from `anon` and `authenticated`.
-  - Update default privileges for objects later created by the migrating role (`postgres`): in schema `public`, no table, sequence or function grants to `anon` or `authenticated`, and all to `service_role`; globally, no `EXECUTE` for `PUBLIC` on new functions (`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`). Without the global rule `anon` and `authenticated` would still inherit `EXECUTE` through `PUBLIC`. Defaults do not cover objects created by other roles, so each new function still carries its own explicit `REVOKE ... FROM PUBLIC, anon, authenticated`, as earlier migrations do.
-  - Retain the 4 pre-v1 legacy tables under RLS protection pending a formal drop approval.
-  - Do not apply `FORCE ROW LEVEL SECURITY`. `service_role` and `postgres` bypass RLS through `BYPASSRLS` either way.
-- **Why:**
-  - Closes known issue 8 and follow-up 5: public tables had RLS disabled and granted `ALL PRIVILEGES` to `anon` and `authenticated` by default.
-  - Exposure of the `anon` key would allow cascading deletes (e.g. `DELETE FROM videos` wiping all incidents, evidence, and ground truth via `ON DELETE CASCADE`) or arbitrary incident overwrite via `insert_incident`.
-  - All existing readers and writers (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via `service_role` key over HTTPS PostgREST or direct TCP as `postgres`.
-  - Zero regression risk to active services because `service_role` and `postgres` possess `rolbypassrls = true`.
-- **Alternatives rejected:**
-  - Dropping legacy tables in the same migration (separated per scope; legacy table drop is deferred).
-  - Defining tiered client-side RLS policies for `anon` / `authenticated` (unnecessary complexity since all clients run server-side with `service_role` or direct `postgres`, which on Supabase is not a superuser but has `BYPASSRLS`).
-  - Applying `FORCE ROW LEVEL SECURITY` (it only subjects the table owner to RLS, and only when the owner lacks `BYPASSRLS`; the owner here is `postgres`, which has `BYPASSRLS`, so it would add nothing).
-- **Links:** [`../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql`](../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql); [`.docs/data.md`](data.md); [`.docs/status.md`](status.md).
-
----
-
-### 2026-10-16: Run RP1 when core_ok with unchanged input; timeline context in RP1 prompt
-- **Decision:**
-  - Run RP1 when `core_ok` (under validation policy `core-scored-v1`) rather than requiring `full_contract_ok`.
-  - Pass the unchanged prediction (with derived fields) to RP1, preserving timeline events outside the incident window.
-  - Add one line to `contracts/report_generation_prompt.md` under `INCIDENT DETAILS`: `Timeline events outside the incident time are context.`
-  - Bump `contracts/VERSION` to `incident-contract-v3`.
-- **Why:**
-  - Evidence from the 2026-09-27 pilot on Animal003 and Assault018 showed Cosmos models (Super and Nano) consistently produce lead-up and aftermath timeline events outside their detected incident window.
-  - While `core-scored-v1` recovered these predictions for persistence and scoring (unscored enrichment), RP1 remained gated on `full_contract_ok`, skipping prose generation on valid incidents.
-  - A 2-clip pilot (Animal003 and Assault018) compared RP1 output from the baseline prompt with output from the prompt carrying the new timeline context line. With the new line, the prose described lead-up and aftermath events as chronological context and kept the reported incident window and duration. Pilot outputs are not stored in the repo.
-- **Versioning:**
-  - `contracts/VERSION` is bumped to `incident-contract-v3` because `report_generation_prompt.md` changed, following the profile rule in `dev-profile-incident/AGENTS.md` ("Contract changes bump contracts/VERSION and update eval and the console together").
-  - Eval, the console, and their shared fixtures/tests are updated together without adding new fields to the recorded result shape. The separate in-flight branch `fm/vss-agent-contract-v2`, which vendors `contracts/` into `services/agent`, re-syncs with v3 as part of phase 3.
-- **Alternatives rejected:**
-  - Retaining `incident-contract-v2` with report-prompt hashes or sub-versions in recorded results (rejected: extends the recorded result shape, violating provenance consistency; following the profile rule of a version bump is cleaner and respects the existing result schema).
-  - Truncating or clipping timeline events to `[start_timestamp, end_timestamp]` before RP1 (rejected: destroys valuable narrative context and creates inconsistencies between the structured data and prose).
-- **Links:** [`../contracts/report_generation_prompt.md`](../contracts/report_generation_prompt.md); [`../contracts/README.md`](../contracts/README.md); [`../eval/scripts/eval_run.py`](../eval/scripts/eval_run.py); [`../eval/tests/test_eval_run_contract.py`](../eval/tests/test_eval_run_contract.py).
-
----
-
-### 2026-10-16: Prompt-contract phase 4 legacy taxonomy migration and orphaned run clean-up
-- **Decision:**
-  - Migrate stored legacy incident types in `incidents.type`: `fighting` -> `assault` (13 rows), `animal` -> `animal attack` (20 rows).
-  - Migrate stored legacy entity types in `entities.type`: `person` -> `human` (6 rows).
-  - Clean up the 20 pre-existing orphaned legacy console `model_runs` rows that explicitly name videos that no longer exist and have no incident rows.
-  - Relational `incidents.type` currently contains 0 rows with `other`. No relational mapping for `other` is added. The only `other` value is inside the notes of test-pattern run `m5629b0938e679c9873d` (no incidents row) and stays there, because the profile [`AGENTS.md`](../AGENTS.md) rule says never to modify `model_runs.notes` after an attempt is written. The supervisor confirmed this as the accepted resolution of the `other` case (2026-10-16).
-  - Query-time folding (`canonicalIncidentType`, `canonicalEntityType`) is retained in application code and SQL helper functions until the migration is applied to the live database **and** prompt-contract phase 3 moves agent mode onto the contract. The migration is a one-time clean-up: agent mode (`ANALYSIS_MODE=agent`) still writes `fighting`/`animal` types and `person` entities, so dropping folding earlier would cause UI and filter regressions. Keeping it is idempotent and safe in every state.
-- **Why:**
-  - Completes prompt-contract phase 4 taxonomy consolidation to match eval ground truth and `incident-contract-v2`.
-  - Removes 20 dangling attempt rows from deleted videos without cascading to any other table.
-- **Alternatives rejected:**
-  - Dropping query-time folding once the migration is applied (unsafe on unmigrated databases and on rows agent mode writes before phase 3).
-  - Modifying `model_runs.notes` for `other` (violates the core rule that attempt notes are immutable).
-  - Mapping test-pattern video run `m5629b0938e679c9873d` to a contract incident type (it contains no incident).
-- **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql); [`status.md`](status.md); [`prompt-contract-plan.md`](prompt-contract-plan.md).
-
----
-
-### 2026-09-28: Dashboard heatmap and time-of-day filters use local time with viewer timezone detection
-- **Decision:**
-  - `get_incident_dashboard` and `list_incident_report_summaries` accept an optional `p_timezone TEXT DEFAULT 'UTC'` parameter.
-  - When aggregating day of week and hour of day in `get_incident_dashboard`, and when filtering by weekday or time-of-day in both RPCs, `reports.generated_datetime` (stored as naive UTC) is converted to the target timezone via `(r.generated_datetime AT TIME ZONE 'utc' AT TIME ZONE params.target_tz)`.
-  - Next.js API routes (`/api/dashboard` and `/api/reports`) accept an optional `timezone` query parameter, accepting only IANA names recognised by `Intl.DateTimeFormat` (offsets such as `+05:00` are rejected, as Postgres reads them with the sign reversed) before forwarding `p_timezone` to Supabase.
-  - The client dashboard and reports library detect the viewer's local timezone on mount via `Intl.DateTimeFormat().resolvedOptions().timeZone` (avoiding SSR hydration mismatch) and pass it in API requests.
-  - Heatmap labels, active filter badges and the reports time-of-day inputs show local hours with the IANA zone name (e.g. `America/New_York`), not a current-date abbreviation, which would be wrong for rows on the other side of a DST change.
-  - The viewer's detected zone is the only timezone source: there is no `timezone` URL parameter or remembered override on `/reports`. Dashboard and reports detect the same zone, so drill-down links keep count parity.
-- **Why:**
-  - Security and operations operators analyse incident trends by local shift and time of day, whereas UTC hour buckets obscured local peak times.
-  - Preserves backwards compatibility: omitting `p_timezone` defaults cleanly to `'UTC'`.
-  - Maintains strict parity: clicking a dashboard cell at local hour H and weekday W navigates to `/reports` filtered by that exact local weekday and hour in the viewer's timezone.
-  - Deploy order: the console always sends `p_timezone`, so the migration must be applied before or with the console deploy.
-- **Alternatives rejected:**
-  - Client-side heatmap re-bucketing: would require downloading all individual incident timestamps, defeating the bounded aggregate RPC design.
-  - Converting `reports.generated_datetime` column to `TIMESTAMP WITH TIME ZONE`: requires schema data migration across all existing rows and tables; timezone conversion in the RPC view is lightweight, backwards-compatible, and respects user-selected timezones.
-- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx); [`../incident-console-v2/lib/dashboard/links.ts`](../incident-console-v2/lib/dashboard/links.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx).
-
-
----
-
-### 2026-09-27: Validation policy core-scored-v1: database-backed fields decide persistence and scoring
-- **Decision:**
-  - Only the database-backed fields (incident type, window, description, severity, confidence; entities, instruments, assets) decide whether a model response is persisted (console) and how the model scores (eval).
-  - `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment and are never scored.
-  - A `TIMELINE_*` failure is recorded and shown ("not consistent with the detected incident window"), but no longer rejects the report or empties the eval prediction. It is never repaired, clipped or removed. D11's rule stays as the timeline's consistency check; only its consequence moved.
-  - New contextual core rule: the incident window must lie within the video when its length can be read from the MP4 header. A whole-second timestamp T is valid iff `0 <= T < duration + 1`.
-  - Schema violations stay fatal. The ID-only repair is unchanged and considers core violations only.
-  - `full_contract_ok` / `fullContractValid` keeps incident-contract validity exactly as before; `core_ok` / `coreValid` is the validity that decides.
-  - Eval results also carry the policy, the violations by scope and the video length, and each run keeps a never-overwritten copy under `results/runs/`. RP1 gating is unchanged (full contract validity) pending a separate decision.
-- **Why:**
-  - A 12-call A/B pilot on Animal003 and Assault018 showed clarified prompt wording did not change the lead-up/aftermath timeline behaviour.
-  - D11 rejected 7 of the 12 answers, 4 of them with windows matching ground truth, while accepting a 29-36 s window on a 12.54 s clip.
-  - Recovered answers (pilot plus the eval smoke run): accepted 6 of 15 before, 13 of 15 now, with one correct new rejection (the window beyond the video).
-- **Versioning:** prompt and schema are byte-identical, so `VERSION` stays `incident-contract-v2` and the policy is identified separately as `core-scored-v1`.
-- **Alternatives rejected:**
-  - Redefining the timeline as a whole-video context timeline (deferred; this change makes that decision low-stakes).
-  - Isolating enrichment schema errors (needs partial-schema parsing).
-  - Showing only database fields in the UI (does not stop the rejection, which happens before persistence).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/lib/contract/validate.ts`](../incident-console-v2/lib/contract/validate.ts); [`../contracts/fixtures/policy/`](../contracts/fixtures/policy/).
-
----
-
-### 2026-09-27: Dashboard counts official incidents; the URL is the reports filter state
-- **Decision:**
-  - `get_incident_dashboard` counts incident statistics only through each video's selected official report.
-  - Uploaded videos, videos awaiting an official report and videos without a report are counted separately, all time.
-  - Evidence statistics use canonical entity types and normalised instrument and asset names, counted per distinct incident.
-  - Every number links to `/reports?scope=official&...`, with exact names for instruments and assets.
-  - The library RPC gains `p_scope`, `p_entity_types` and `p_evidence_match`, and folds legacy types.
-  - The reports page applies URL filters alone whenever the URL carries any.
-- **Why:**
-  - Counting every run made re-running a video look like more incidents.
-  - Counting free-text descriptions made "entities" near-unique.
-  - Hidden dashboard-only state made links unshareable.
-  - The dry run checked 40 dashboard-to-library parity cases per period, with no mismatches.
-- **Deviation from plan:** the library's *default* scope stays "all successful reports", not "official". Otherwise every existing report would disappear until reviewers select officials. Dashboard links always carry `scope=official`.
-- **Alternatives rejected:**
-  - "Latest (verified) run wins" as the representative (implicit, and D6 forbids it).
-  - Substring evidence matching for dashboard links (the totals don't match).
-- **Links:** [`../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql`](../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql); [`../incident-console-v2/components/dashboard.tsx`](../incident-console-v2/components/dashboard.tsx).
-
----
-
-### 2026-09-27: Explicit official report per video (D6)
-- **Decision:**
-  - `videos.selected_model_run_id/selected_by/selected_at`, with a composite FK to the video's own incidents (ON DELETE SET NULL of the run column only).
-  - `select_official_report` / `clear_official_report` RPCs.
-  - Only a reviewer sets it. Analysis never does, and it is independent of review status.
-- **Why:** a video can have many analyses; official statistics need one explicitly chosen report, never an inferred "newest".
-- **Alternatives rejected:**
-  - Deriving it from the single verified run ("verified" means accurate, not chosen; several can be verified).
-  - Counting runs instead of incidents (categories multiply on re-runs).
-- **Note:** the second videos/incidents FK makes PostgREST embeds ambiguous; embeds must name `incidents_incident_id_fkey`.
-- **Links:** [`../supabase/migrations/20260927170000_official_report_selection.sql`](../supabase/migrations/20260927170000_official_report_selection.sql).
-
----
-
-### 2026-09-27: Video run history and re-analysis
-- **Decision:**
-  - A video is the parent of its analyses. History is keyed by (video, run): batch eval/seed runs are shared by many videos.
-  - History combines incident-backed runs with incident-less attempt records whose notes explicitly name the video.
-  - Re-analysis runs the stored R2 object through the same pipeline as an upload: always a new run, never writing the video row or the official selection.
-  - Video deletion removes the run records that explicitly name the video and have no incident left.
-  - Ground truth moves to its own page and is never pre-filled from model output.
-- **Why:** failed attempts must be auditable without ever becoming reports.
-- **Alternatives rejected:**
-  - A new attempts table (not needed: 34 of 56 run rows already had no incident, and no consumer assumes one).
-  - Deleting the 20 pre-existing orphaned legacy run rows (a destructive production-data change; left in place).
-- **Links:** [`../incident-console-v2/lib/runs/history.ts`](../incident-console-v2/lib/runs/history.ts); [`../incident-console-v2/app/api/videos/[videoId]/runs/route.ts`](../incident-console-v2/app/api/videos/[videoId]/runs/route.ts).
-
----
-
-### 2026-09-27: Structured (Class A) editing; model output immutable
-- **Decision:**
-  - The report view combines three sources: the relational projection (Class A, editable), read-only model output from notes (Class B: title, severity rationale, location, timeline, uncertainties), and provenance (Class C).
-  - Edits go through `apply_structured_report_edit`, which validates against the contract's own sub-schemas and ID/holder/window rules, changes only the projection and `review_status.edited_by/edited_at`, and never touches notes.
-  - The severity rationale is labelled "Model severity rationale", and is shown with the model's severity once a reviewer changes it.
-  - No application-only rules stricter than the contract (e.g. no non-empty-summary rule).
-- **Why:**
-  - Reviewer edits must never alter what the model produced.
-  - Class B fields are useful to reviewers but are not needed as columns.
-- **Alternatives rejected:**
-  - Editing notes (as `apply_incident_report_patch` did).
-  - Showing only relational fields (loses the rationale and timeline).
-  - Making Class B editable (needs new columns and blurs model vs reviewer).
-- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../supabase/migrations/20260927160000_apply_structured_report_edit.sql`](../supabase/migrations/20260927160000_apply_structured_report_edit.sql).
-
----
-
-### 2026-09-27: Console analysis on incident-contract-v2 (prompt-contract phase 2), with ID-only repair
-- **Decision:**
-  - Gateway-mode analysis sends eval's exact P1 request (allowlisted model from `contracts/inference.json`, canonical prompt, strict `response_format`, 16384 tokens, 64 frames), plus an optional fenced reviewer instruction that cannot change the output contract.
-  - It validates strictly and records every attempt immutably in `model_runs.notes`, with the outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`.
-  - The only repair is `id-normalization-v1`:
-    - it applies only when every violation is ID-only;
-    - it changes only IDs, holder references and order;
-    - free text is never touched;
-    - an invariance check runs, followed by full re-validation.
-  - Eval is unchanged and never credits repaired output.
-- **Why:** live checks showed the endpoint enforces the schema, but cross-field rules (sequential IDs, the timeline window) can only be checked after the response.
-  - Nemotron's malformed or out-of-order IDs are safely repairable.
-  - Cosmos Super's lead-up timeline events are a content judgement and stay a failure (consistent with D11).
-- **Alternatives rejected:**
-  - LLM repair passes (they change semantics or need re-inference).
-  - Retrying the same request (deterministic at temperature 0).
-  - Adding ID patterns to the contract (deferred to a possible future contract version, pending malformed-ID frequency evidence).
-- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../contracts/inference.json`](../contracts/inference.json); [`../incident-console-v2/lib/contract/repair.ts`](../incident-console-v2/lib/contract/repair.ts).
-
----
-
-### 2026-09-27: Remove alerts from the active incident console
-- **Decision:** Remove the Alerts navigation item, unread polling, `/notifications` page and API, notification UI component, and high-severity notification writes from `incident-console-v2`. Keep the existing `notifications` database table temporarily for compatibility with the retired Streamlit console and evaluation tooling.
-- **Why:** The review workflow only needs persisted review states; an alert queue is no longer part of the active product.
-- **Alternatives rejected:** Hiding only the navigation link (leaves polling, routes, and writes active); immediately dropping the table (breaks retired/evaluation tooling and requires a separately approved live migration).
-- **Links:** [`../incident-console-v2/components/app-header.tsx`](../incident-console-v2/components/app-header.tsx); [`../incident-console-v2/app/api/reports/[videoId]/review/route.ts`](../incident-console-v2/app/api/reports/[videoId]/review/route.ts); [`.docs/data.md`](data.md).
-
----
-
-### 2026-09-27: Persist reviewer edits as atomic field-level patches
-- **Decision:** Compute changed top-level report fields in the edit API and apply them through a single `apply_incident_report_patch` transaction. The function locks the target model run and incident, merges only the supplied patch into the latest stored report, updates only corresponding incident projections/evidence categories, preserves the original AI report, and advances `edited_at`. Report-library filters now include weekday and low/medium severity bands; dashboard navigation carries exact period bounds and must ignore stale session filters on entry.
-- **Why:** Independent PostgREST writes can leave report JSON, incidents, evidence, and edit metadata disagreeing after a partial failure. Replacing the entire client-submitted report also risks overwriting concurrent edits or losing omitted fields. The database transaction makes a failed edit all-or-nothing and untouched fields remain unchanged.
-- **Alternatives rejected:** Multiple client REST writes (not transactional); replacing all fields from the client payload (can restore stale values); rewriting all evidence collections when one category changes (unnecessary mutation and partial-data risk).
-- **Migration status:** Applied to shared Supabase on 2026-09-27 after approval; PostgREST's schema cache was reloaded and the weekday-filtered summary RPC was smoke-tested. The management connector recorded the migration as version `20260927075044`, while the checked-in file retains `20260927140000` so it sorts after the report-library and dashboard migrations in the repository.
-- **Links:** [`../supabase/migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql`](../supabase/migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql); [`../incident-console-v2/app/api/reports/[videoId]/edit/route.ts`](../incident-console-v2/app/api/reports/[videoId]/edit/route.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx); [`.docs/data.md`](data.md).
-
----
-
-### 2026-09-27: Eval moved onto the incident contract (phase 1); contract probe removed
-- **Decision:**
-  - `eval_run.py` sends a signed R2 URL, then the contract prompt, with the schema enforced, and parses strictly with `contract.parse_report`.
-  - The fixed P1 config is `temperature 0`, `max_tokens 16384`, `media_io_kwargs {"video": {"num_frames": 64}}`, identical for all models.
-  - A contract failure is scored as an empty prediction (a miss), listed under `contract_failures`, and its RP1 is skipped rather than counted as an RP1 failure.
-  - The split manifests are unchanged, so the former few-shot demonstration videos stay excluded and results stay comparable video-for-video.
-  - Deleted: `eval/prompts.py`, `eval/scripts/eval_few_shot.py`, `extract_json`, base64 video and the local video cache, and, at the captain's request, the phase 0 probe script and its tests.
-  - `eval/tests/test_contract.py` stays: it covers `contract.py`, which the runner now depends on.
-- **Why:** Phase 0 evidence (plan §5a):
-  - schema enforcement works on all three models;
-  - URL and base64 give identical results;
-  - Nemotron needs 16k tokens;
-  - the gateway samples only ~24 frames by default.
-
-  Scoring failures as misses keeps strict parsing honest in the numbers instead of hiding failures.
-- **Alternatives rejected:**
-  - Per-model configs (this breaks the one-variable comparison).
-  - Excluding failed videos from the scores (this inflates accuracy).
-  - Keeping the probe as a maintained tool (the captain asked for its removal; its results are recorded).
-- **Links:** [`../eval/README.md`](../eval/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md).
-
-### 2026-09-27: Strict timeline bounds; `duration` derived in code (`incident-contract-v2`)
-- **Decision:**
-  - Keep the cross-field rule that every timeline event falls within `[start_timestamp, end_timestamp]`; a lead-up event is a contract violation (HTTP 422).
-  - Remove `incident.duration` from the schema and the P1 prompt. Consumers compute it as `end_timestamp - start_timestamp` after validation (`with_derived_fields`).
-  - Bump the contract to `incident-contract-v2`.
-- **Why:** Probe run 2 showed `cosmos-3-super-reasoner` returning valid JSON with lead-up events before the incident window. The captain chose strictness over leniency for the timeline. Asking a model for a value that code can compute exactly only adds a failure mode.
-- **Alternatives rejected:**
-  - Relaxing the timeline to `[0, end_timestamp]`.
-  - Dropping the timeline rule.
-  - Keeping `duration` in the schema with a strict equality check.
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`prompt-contract-plan.md`](prompt-contract-plan.md) §2 and §5a.
-
-### 2026-09-27: Contract files in profile `contracts/`, validated with `jsonschema`; phase 0 probe with controls
-- **Decision:** Put the shared schema, the P1/RP1 prompts and `VERSION` in `dev-profile-incident/contracts/`. Validate in Python with `jsonschema` (Draft 2020-12, new `eval` dependency) plus explicit cross-field checks in `eval/contract.py`. Gate the rollout on `eval/scripts/probe_structured_output.py`, which proves schema enforcement with a contradictory-prompt control (the schema allows only `{"answer_code": "schema-enforced"}` while the prompt asks for prose) and proves URL fetching with a missing-object negative control.
-- **Why:** One location every consumer can read or vendor. `jsonschema` validates against the same file the model is sent, with no hand-written mirror. The controls stop a model that happens to emit JSON, or that answers without reading the video, from passing.
-- **Alternatives rejected:**
-  - Pydantic as the Python source (eval and agent are separate packages, so the file is the only neutral source; the agent will keep Pydantic with a parity test in phase 3).
-  - Probing with the P1 call alone (cannot tell enforcement from compliance, or a fetch from a hallucination).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); `eval/scripts/probe_structured_output.py` (removed); [`prompt-contract-plan.md`](prompt-contract-plan.md).
-
-### 2026-09-27: Unified prompt and structured-output contract planned, awaiting review
-- **Decision:** Plan one shared contract for eval P1, console gateway mode and agent mode: the eval P1 prompt as the base (with title, severity_reason, location, timeline and uncertainties added), a nested snake_case JSON Schema enforced through `response_format: json_schema`, strict parsing that returns 422 instead of repairing, and the same call chain everywhere (P1 video to JSON, then RP1 JSON to prose). Other choices: no few-shot, eval's 5-label taxonomy (road accident, burglary, explosion, assault, animal attack), signed R2 URLs for video input, and `confidence_score` null unless the API gives a native score. Agent mode is in scope. No code changes yet; a per-model structured-output and URL-fetch check (phase 0) gates everything else.
-- **Why:** The three paths differ in prompt, schema, taxonomy, video encoding, few-shot and parsing, so the benchmark does not measure production behaviour. Eval's category-specific few-shot block also leaks the label into the prompt. Lenient parsing hides model failures.
-- **Alternatives rejected:**
-  - A 7-label superset taxonomy (overlapping labels, and the ground truth cannot score `fighting` or `animal`).
-  - A fixed mixed-category few-shot set (the captain chose none).
-  - Base64 video (payload size, and the console would have to stream whole clips).
-  - Keeping agent mode on its flat contract (leaves two shapes).
-  - A prompted JSON template with tolerant parsing (the status quo).
-- **Links:** [`.docs/prompt-contract-plan.md`](prompt-contract-plan.md); `eval/prompts.py` (removed); `eval/scripts/eval_few_shot.py` (removed); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/tools/incident_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/incident_report_gen.py).
-
-### 2026-09-27: Edit the full report beside the original AI result
-- **Decision:** Replace the individual report's `Start review` action with `Edit report`. Editing opens the original AI structured result beside an editable copy. Title, incident type, summary, severity, confidence, time range, duration, location, severity reason, people/entities, instruments, assets, timeline, and uncertainties are editable. Store the editable copy as `incidentConsoleV2.editedReport` in `model_runs.notes`, update searchable incident fields, and leave the original `incidentConsoleV2.report` intact. Remove the separate bottom-page structured editor.
-- **Why:** Reviewers need to correct the full structured report while the source result and video evidence remain in view.
-- **Alternatives rejected:** Editing the AI snapshot directly (loses provenance); keeping the editor at the bottom (separates work from evidence); adding a report-revision table (the existing notes column can preserve both snapshots).
-- **Links:** [`../incident-console-v2/components/incident-report.tsx`](../incident-console-v2/components/incident-report.tsx); [`../incident-console-v2/components/advanced-report-tools.tsx`](../incident-console-v2/components/advanced-report-tools.tsx); [`../incident-console-v2/app/api/reports/[videoId]/route.ts`](../incident-console-v2/app/api/reports/[videoId]/route.ts); [`../incident-console-v2/app/api/reports/[videoId]/edit/route.ts`](../incident-console-v2/app/api/reports/[videoId]/edit/route.ts); [`.docs/architecture.md`](architecture.md).
-
-### 2026-09-27: Store lightweight upload-time screenshots for report cards
-- **Decision:** `incident-console-v2` captures the browser-decoded frame exactly 25% into each newly selected video, scales it to at most 640×360, encodes it near WebP quality 0.78, and uploads it to the deterministic R2 key `thumbnails/<video-key>.webp`. The six-item library signs and lazy-loads only these images; a missing or failed thumbnail renders the static skeleton. Full videos remain exclusive to individual report pages. Deleting a video deletes its derived thumbnail too.
-- **Why:** Static placeholders provide no visual context, while restoring `<video>` previews would reintroduce the expensive library behavior that pagination removed. The browser already holds the selected file, so frame capture adds no video download and requires no duplicated Supabase table or column. Sampling at 25% replaces the initial at-or-before-one-second strategy after a valid upload produced an all-black opening thumbnail.
-- **Alternatives rejected:** Loading each video to generate a client-side card frame (downloads videos on the library page); server-side extraction during every library request (high latency and repeated work); adding a thumbnail table/column (the key is deterministically derived from the existing R2 key); automatically downloading and processing all legacy videos in this change (separate backfill with potentially substantial transfer cost).
-- **Links:** [`../incident-console-v2/components/analysis-workspace.tsx`](../incident-console-v2/components/analysis-workspace.tsx); [`../incident-console-v2/app/api/uploads/thumbnail/route.ts`](../incident-console-v2/app/api/uploads/thumbnail/route.ts); [`../incident-console-v2/lib/r2/key.ts`](../incident-console-v2/lib/r2/key.ts); [`.docs/data.md`](data.md).
-
-### 2026-09-26: Paginate report summaries in Postgres and defer video loading
-- **Decision:** Serve `/reports` through the `list_incident_report_summaries` Supabase RPC, six summaries per page. The library RPC joins existing tables and returns no `model_runs.notes`, evidence arrays, signed R2 URL, or video bytes. Report cards never load video; they now use the upload-time screenshot described in the 2026-09-27 decision when available and a static skeleton otherwise. `GET /api/reports/<videoId>?run=<modelRunId>` remains the only UI path that signs and loads a selected video. The RPC is `SECURITY INVOKER` and executable only by `service_role`.
-- **Why:** The previous library read eight complete tables, parsed every stored report, signed every R2 video, and rendered every video before the page became usable. Server-side filtering and pagination make work proportional to the six visible summaries without creating duplicated summary data.
-- **Alternatives rejected:** A summary table (duplicates mutable report/review state); client-side `slice(0, 6)` (still transfers and processes all rows); lazy video loading (unnecessary because library cards intentionally never request video); a view plus client-side joins (does not encapsulate filtered counts and pagination cleanly).
-- **Live verification:** Migration applied 2026-09-26. Direct read-back returned 6 of 35 matching reports, no summary contained `playbackUrl`, and function privileges were `service_role=true`, `anon=false`, `authenticated=false`.
-- **Links:** [`../supabase/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts); [`../incident-console-v2/components/reports-library.tsx`](../incident-console-v2/components/reports-library.tsx); [`.docs/data.md`](data.md); [`.docs/architecture.md`](architecture.md).
-
-### 2026-09-26: Verify R2 and Supabase durability before returning analysis success
-- **Decision:** `incident-console-v2` verifies direct uploads with R2 `HeadObject`, verifies the object again before inference, maps the normalized report through `lib/analysis/persistence.ts`, then reads back `videos`, `model_runs`, `incidents`, and `reports` and confirms that `videos.filepath` is the submitted R2 key before `POST /api/analysis` returns 200. The canonical schema stays snake_case but normalizes common camelCase/entity aliases at the VLM ingestion boundary.
-- **Why:** A syntactically valid R2 key does not prove the object exists, and independent PostgREST writes can partially succeed. The UI must not label an in-memory VLM result as a completed durable report when its video, relational graph, or permanent video reference is missing. Alias normalization preserves semantically valid VLM output instead of silently writing schema defaults.
-- **Alternatives rejected:** Trusting individual successful write responses (does not detect later clobbering or missing agent-owned rows); starting the larger Option B transactional restructure in this fix (still approval-gated and broader than the observed false-success gap).
-- **Links:** [`incident-console-v2/app/api/analysis/route.ts`](../incident-console-v2/app/api/analysis/route.ts); [`incident-console-v2/lib/analysis/persistence.ts`](../incident-console-v2/lib/analysis/persistence.ts); [`incident-console-v2/lib/r2/config.ts`](../incident-console-v2/lib/r2/config.ts); [`incident-console-v2/tests/analysis-route.test.mjs`](../incident-console-v2/tests/analysis-route.test.mjs); [`.docs/architecture.md`](architecture.md).
-
-### 2026-09-25: Fix gateway mode 0-second duration bug via prompt null placeholders and timeline span fallback
-- **Decision:** In `incident-console-v2/lib/analysis/prompt.ts`, replace example placeholders `"duration_seconds": 0` and `"incident_start"/"incident_end": "0:00"` with `null` so small reasoning models (`nvidia/cosmos-3-nano-reasoner`) are not primed to output zero duration or zero timestamps. In `incident-console-v2/lib/analysis/parse.ts` (gateway path only; the shared `incidentAnalysisSchema` and agent mode are unchanged), add a timeline-span fallback modeled on the agent's (`incident_report_gen.py`): when `duration_seconds` is `null` or `0` and the timeline has a positive span, derive `duration_seconds` as `Math.round(max(end_seconds ?? start_seconds) - min(start_seconds))` across all events. The gateway deliberately goes beyond the agent (which only fills `null`) by also replacing an explicit `0` when the timeline span is positive, because the nano model emits `0` even when the timeline shows a real span. Model stays on `nvidia/cosmos-3-nano-reasoner`.
-- **Why:** During the 2026-09-25 two-flows end-to-end run, gateway mode stored `duration_seconds: 0` for `test2.mp4` (a 5.3s clip) while its own timeline spanned 0.0s–5.0s (known issue 8 in `status.md`), whereas agent mode reported 5s. Two root causes in gateway code: (1) prompt example placeholder suggested `"duration_seconds": 0` which the small model copied, and (2) the gateway parser lacked the agent's timeline span fallback. With the fix, re-analysis of `test2.mp4` in local gateway mode stored `duration_seconds: 5` (run `m6d4b327cf8970d4132f`), matching the agent's duration.
-- **Alternatives rejected:** Upgrading the gateway model to `cosmos-3-super-reasoner` (rejected: out of scope, captain directed gateway mode stays on `nvidia/cosmos-3-nano-reasoner`); leaving duration 0 when model returns 0 (rejected: 0s incident is physically invalid when timeline events span positive time); modifying agent prompt or behavior (rejected: out of scope, agent already computes timeline span fallback and agent prompt has no example JSON).
-- **Links:** [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`incident-console-v2/lib/analysis/parse.ts`](../incident-console-v2/lib/analysis/parse.ts); [`incident-console-v2/tests/analysis-parse.test.mjs`](../incident-console-v2/tests/analysis-parse.test.mjs); [`incident-console-v2/tests/analysis-route.test.mjs`](../incident-console-v2/tests/analysis-route.test.mjs); [`incident-console-v2/tests/contract-parity.test.mjs`](../incident-console-v2/tests/contract-parity.test.mjs); [`.docs/status.md`](status.md).
-
-### 2026-09-25: Fix HITL unhandled NotImplementedError and short-duration event filtering in agent analysis
-- **Decision:** The headless `POST /api/v1/incidents/{id}/analyze` route (`api/incident_analyze.py`) passes an explicit internal `skip_hitl=True` through `incident_report_gen` to `video_report_gen`, which then uses the configured VLM prompt without calling NAT's `user_input_manager.prompt_user_input`. Every other caller (report_agent / UI chat) still prompts, and still raises `NotImplementedError` when its websocket callback is missing, so report_agent's websocket diagnostic keeps firing. In `video_report_gen.py`, filter every chunk first and keep the unfiltered chunk contents only if short-duration filtering (`min_duration_seconds=2.0`) would eliminate every timestamped event across the whole report (`_filter_short_duration_across_chunks`) (e.g., short video clips where individual action spans are under 2 seconds), preventing empty markdown reports and spurious empty-incident fallbacks.
-- **Why:** Live verification of `start.sh --mode vm` with `~/Desktop/test2.mp4` (5.3s clip) against Brev Switchyard uncovered two bugs: (1) `config.yml` sets `hitl_enabled: true`, which caused NAT's `prompt_user_input` to fail with `NotImplementedError("No human prompt callback was registered")` when invoked via the REST API endpoint `POST /api/v1/incidents/{id}/analyze`. (2) In `test2.mp4`, the VLM detected 5 timeline events ranging from 1.1s to 1.5s; the 2.0s duration threshold discarded all of them, producing an empty markdown report that misled the extraction LLM into outputting an empty "No Incident Detected" report.
-- **Alternatives rejected:** Disabling HITL globally in `config.yml` (rejected: breaks interactive CLI / user prompt flows where human callbacks are provided); catching `NotImplementedError` inside `video_report_gen` for every caller (rejected: silently auto-approves the default prompt for interactive UI users whose websocket callback is broken and hides report_agent's diagnostic); applying the same headless fallback to `lvs_config_media.py` / `lvs_video_understanding.py` (rejected: not on the incident path, their `while not scenario/events` re-prompt loops would spin forever without configured defaults, and a headless call would silently confirm live-stream captioning); a per-chunk fallback (rejected: lets sub-2s noise through in any chunk that only holds short events); lowering `min_duration_seconds` to 0 universally (rejected: 2.0s threshold is desirable for longer videos to suppress noise; falling back only when all events would be lost preserves noise suppression while safeguarding short clips).
-- **Links:** [`services/agent/src/vss_agents/tools/video_report_gen.py`](../../../../../services/agent/src/vss_agents/tools/video_report_gen.py); [`services/agent/tests/unit_test/tools/test_video_report_gen.py`](../../../../../services/agent/tests/unit_test/tools/test_video_report_gen.py); [`.docs/status.md`](status.md).
-
-### 2026-09-25: Remove sdr-controller and SDRC services from dev-profile-incident deployment
-- **Decision:** Remove `sdr-controller` and the SDRC services (`init-dirs`, `render-config`, `wdm-env-from-config`, `wait-for-redis`, `wait-for-docker-workloads`) from the incident profile deployment. Add `deploy/docker/developer-profiles/dev-profile-incident/compose.override.yml` setting `scale: 0` for all SDRC services. `start.sh`, `rebuild-svc.sh` and the documented compose commands pass `-f developer-profiles/dev-profile-incident/compose.override.yml`, which is the single mechanism for disabling SDRC. Retain the `SDR_CONTROLLER_CONFIG_PATH` variable in `dev-profile-incident/.env` (upstream `sdrc/docker-compose.yaml` included via `compose.yml` evaluates volume interpolation at parse time), and remove known issue 4 from `.docs/status.md`.
-- **Why:** Removed because unused by the incident profile (which uses video file upload and analysis rather than live RTSP camera routing) and port-clashing with streamprocessing on port 10000 (`WDM_MS_LISTENER_PORT: 10000` vs `STREAM_PROCESSOR_HTTP_PORT=10000`), which caused `sdr-controller` to crash-loop continuously on `kwanz-ws` (~1,190 restarts in 20 hours). Re-add (and move streamprocessing back to 30001 or give SDRC another listener port) when live RTSP camera routing is needed.
-- **Alternatives rejected:** Editing shared NVIDIA files under `deploy/docker/services/infra/sdrc/` or `dev-profile-search/` (rejected: warehouse and other profiles require SDRC; changes must be strictly scoped to the incident profile); changing streamprocessing port back to 30001 (rejected: incident profile ingress specifically proxies port 10000).
-- **Links:** [`../compose.override.yml`](../compose.override.yml); [`../start.sh`](../start.sh); [`../.scripts/rebuild-svc.sh`](../.scripts/rebuild-svc.sh); [`.docs/status.md`](status.md); [`skills/incident-operate-vm/SKILL.md`](../skills/incident-operate-vm/SKILL.md); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
-
-### 2026-09-25: Adopt NVIDIA's agent-doc layout (profile AGENTS.md + profile-local agentskills.io skills)
-- **Decision:** Mirror how upstream VSS structures agent guidance.
-  - Add `dev-profile-incident/AGENTS.md` (with a `CLAUDE.md` that imports it) for code changes: components, per-component checks, architecture rules, Always / Ask first / Never boundaries, the docs rule as a table, and a `.docs/` map. This follows the pattern of `services/agent/AGENTS.md`.
-  - Add operational skills in agentskills.io format under `dev-profile-incident/skills/` (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`), with a router `skills/README.md` modelled on the root `skills/README.md`.
-  - Make them discoverable to Claude Code through symlinks in repo-root `.claude/skills/`. Narrow the root `.gitignore` from `.claude` to `**/.claude/*` plus `!/.claude/skills/`, so local Claude state stays untracked.
-  - Skills link to `.docs/` rather than copying it.
-  - Tidy while here: renumber the duplicate `## 3.` in `status.md`, fix broken archive and anchor links, and remove the drifting duplicate `incident-console/docs/vlm_benchmark_results.md` (single copy kept in `eval/docs/`).
-- **Why:** NVIDIA separates *coding* guidance (per-component `AGENTS.md`/`CLAUDE.md`) from *operating* guidance (skills: deploy and runtime procedures an agent follows from natural language). The profile had reference docs only, with no task-shaped procedures, so agents re-derived runbooks from long `.docs/` files each session.
-  - Symlinks in root `.claude/skills/` load at session start, whereas a nested `.claude/skills/` loads only after a file in that subdirectory is read.
-- **Alternatives rejected:**
-  - Putting the skills in root `skills/` next to the `vss-*` skills. Rejected because it edits NVIDIA's catalogue and `skills/README.md`, creating merge conflicts on every upstream sync, and upstream Skills Eval CI would run on them.
-  - One `AGENTS.md` per component. Deferred: a single profile file is lean enough at this size.
-  - Renaming `.docs/` to `docs/`. Rejected by the captain (avoids link churn).
-  - A `incident-update-docs` skill. Rejected because the docs rule is coding guidance, which belongs in `AGENTS.md`.
-- **Links:** [`../AGENTS.md`](../AGENTS.md); [`../skills/README.md`](../skills/README.md); [NVIDIA `skills/README.md`](../../../../../skills/README.md); [Claude Code skills docs](https://code.claude.com/docs/en/skills).
-
-### 2026-09-25: Unify analysis contract on agent snake_case schema and agent prompt
-- **Decision:** Unify `incident-console-v2` onto the reference `snake_case` analysis schema defined by `vss-agent` (`IncidentReport` in `services/agent/src/vss_agents/data_models/incident_report.py`) across both Gateway and Agent modes. Delete the agent-mode `camelCase` translator in `app/api/analysis/route.ts`. Update Gateway mode prompt (`lib/analysis/prompt.ts`, version `incident-v2-snake`) to use the agent's extraction rules and request the identical `snake_case` JSON shape. Preserve tolerant parsing and legacy `camelCase` read-compatibility in `reportFromNotes`. Enforce schema parity through checked-in `incident-report-contract.json` and unit tests in both v2 and agent.
-- **Why:** Gateway mode and Agent mode previously maintained divergent schemas (`camelCase` vs `snake_case`, different default values, entity mapping differences, dropped fields like `location` and `incident_start_confirmed`). The captain decided: one contract, the agent's `snake_case` field names, and the agent's prompt used for both modes.
-- **Alternatives rejected:** Converting agent to `camelCase` (rejected: agent is authoritative reference and matches Python/Pydantic conventions); keeping runtime translator (rejected: source of continuous schema drift and loss of fields).
-- **Links:** [`.docs/analysis-schema.md`](analysis-schema.md); [`.docs/architecture.md`](architecture.md); [`incident-console-v2/lib/analysis/incident-report-contract.json`](../incident-console-v2/lib/analysis/incident-report-contract.json); [`incident-console-v2/lib/analysis/schema.ts`](../incident-console-v2/lib/analysis/schema.ts); [`incident-console-v2/lib/analysis/prompt.ts`](../incident-console-v2/lib/analysis/prompt.ts); [`services/agent/src/vss_agents/data_models/incident_report.py`](../../../../../services/agent/src/vss_agents/data_models/incident_report.py).
-
-### 2026-09-25: Add database-side column defaults, widen insert_incident p_confidence_score to double precision, atomic RPC writers, and error surfacing
-- **Decision:** Apply migration `20260925031000_schema_defaults_and_precision.sql` to the live Supabase database adding server-side defaults (`(now() AT TIME ZONE 'utc')` across 9 timestamp columns, `'unreviewed'` on `review_status.status`, and `FALSE` on `notifications.acknowledged`) and replacing `insert_incident` RPC with `p_confidence_score DOUBLE PRECISION`. Update PostgREST writers (`incident-console/db_postgrest.py`, `eval/db_postgrest.py`) to call `/rpc/insert_incident` atomically. Update `services/agent` to raise errors and return HTTP 422/504 on extraction failure instead of persisting and returning a fake default report. Keep foreign key composite `ON DELETE CASCADE` behavior and document it.
-- **Why:** Schema validation found 43 discrepancies between code, live DB, and documentation: timestamp columns were documented as DB defaults but were SQLAlchemy client-side defaults only, leaving 58/162 live video rows with NULL `uploaded_datetime`; `p_confidence_score` as single-precision `REAL` caused precision loss against the `DOUBLE PRECISION` column; non-RPC PostgREST writers performed non-atomic writes; agent extraction failures silently persisted a default "road accident / severity 1" report. Captain approved live database migration and keeping `ON DELETE CASCADE`.
-- **Alternatives rejected:** Dropping ON DELETE CASCADE (rejected by captain: cascading delete is intentional for re-analysis under the same model run ID); overloading `insert_incident` without dropping the `REAL` signature (rejected: PostgREST returns ambiguity error when multiple functions have identical parameter names).
-- **Links:** Migration `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/20260925031000_schema_defaults_and_precision.sql`; [`.docs/data.md`](data.md); [`.docs/analysis-schema.md`](analysis-schema.md); [`.docs/status.md`](status.md); report `/Users/danielwidjaja/workspace/firstmate/data/vss-validate-schema/report.md`.
-
-### 2026-09-25: Non-interactive SSH target resolution and preflight check in start.sh
-- **Decision:** Eliminate interactive username prompts from `.scripts/resolve-ssh-target.sh`. In `--mode local`, never source or invoke SSH. In `--mode vm`, resolve the SSH user non-interactively using existing precedence (`VSS_SSH_TARGET` -> `VSS_SSH_USER` -> `~/.ssh/config` `User` for `Host kwanz-ws` via `ssh -G` -> `$USER`/`whoami`) with no prompt ever, and run a fast SSH preflight (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`) before any tunnel, deploy check, env generation, npm install, or UI start. On preflight failure, abort immediately with an actionable error.
-- **Why:** Captain directed that local mode should never ask for the VM user, and in vm mode the hinted username is always correct (all teammates have `Host kwanz-ws` in `~/.ssh/config`). An interactive prompt was disruptive and unnecessary; preflighting SSH early prevents backgrounding tunnels or running subsequent startup logic if the VM is unreachable.
-- **Alternatives rejected:** Interactive confirmation prompt with timeout (rejected: prompts were redundant since hinted username is always correct); sourcing SSH resolution in local mode (rejected: local mode must never touch SSH); letting SSH commands fail later inside backend deploy/tunnel steps (rejected: preflight check fails immediately before anything starts).
-- **Links:** [`start.sh`](../start.sh); [`.scripts/resolve-ssh-target.sh`](../.scripts/resolve-ssh-target.sh); [`.scripts/tunnel.sh`](../.scripts/tunnel.sh); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
-
-### 2026-09-25: Option B restructure planned, awaiting approval
-- **Decision:** Plan "Option B" architectural restructure to resolve the two-writer conflict between Next.js and `vss-agent`, split `videos.filepath` into `r2_key` and `stream_url`, elevate lost VLM intelligence fields (`title`, `severity_reason`, `uncertainties`, `location`, `timeline`) into first-class SQL schema and `incident_timeline` table, and transfer schema authority from retired `incident-console/db.py` to `supabase/migrations/`. No code changes implemented yet; implementation roadmap and migration DDL await captain approval.
-- **Why:** In the current Option A architecture, both the agent and Next.js console write to the database in agent mode, causing partial-failure risks and overwriting the durable R2 key with the ephemeral VST stream URL. Additionally, unstructured data is dumped into `model_runs.notes` JSON string, and the database schema lacks a versioned migration source of truth.
-- **Alternatives rejected:** Option A continuation (rejected: dual-writer race conditions, fragile filepath clobber/restore workarounds, unindexed JSON in `model_runs.notes`). Creating a separate intermediate microservice for database writes (rejected: adds moving parts and operational overhead; native PostgREST in agent + Next.js gateway orchestrator is the simplest path).
-- **Links:** [`.docs/restructure-plan.md`](restructure-plan.md); [`.docs/status.md`](status.md); [`.docs/architecture.md`](architecture.md); [`.docs/data.md`](data.md).
-
-### 2026-09-25: Trim AGENTS.md to always-needed content
-- **Decision:** Reshuffle and trim the root `AGENTS.md` down to ~50–60 lines containing only context needed across almost every session; move detailed profile-specific sections (v1 Streamlit implementation notes, shared DB PostgREST/DPI details, kwanz-ws dotfiles and scripts, real-VST R2 upload fallback) into their respective component READMEs and `.docs/data.md`, leaving one-line pointers in `AGENTS.md`.
-- **Why:** loaded every session; captain request 2026-09-25.
-- **Alternatives rejected:** none considered.
-- **Links:** [`AGENTS.md`](../../../../../AGENTS.md); [`.docs/data.md`](data.md); [`incident-console/README.md`](../incident-console/README.md); [`incident-console-v2/README.md`](../incident-console-v2/README.md); [`.dotfiles/README.md`](../.dotfiles/README.md).
-
-### 2026-09-25: Move vss-agent remote LLM and VLM to Brev endpoint (Nemotron 3 Ultra + Cosmos 3 Super Reasoner)
-- **Decision:** Switch `vss-agent` remote LLM and VLM from NGC's hosted free tier (`integrate.api.nvidia.com`) to the Brev Switchyard endpoint (`https://switchyard-13doh4lsz.brevlab.com`) with `LLM_NAME=nvidia/nemotron-3-ultra` and `VLM_NAME=nvidia/cosmos-3-super-reasoner` (captain chose "the most capable models").
-- **Why:** NGC free tier caps at 16 concurrent requests and report generation hangs on it; Brev key provides higher capacity. Config-only switch via LangChain `_type: openai` client (avoids upstream `verify_ssl` HTTP 400 bug in `_type: nim`). Probes on 2026-09-25 passed tool calling (`bind_tools`, 1.89s) and `json_schema` structured output (0.95s) on `nemotron-3-ultra`, and base64 MP4 `video_url` inlining across 5s, 60s, and 60s 1080p (~6MB) clips on `cosmos-3-super-reasoner` without payload rejection or `<think>` tag leakage. Fallback models `nemotron-3-super-120b-a12b` and `nemotron-3-nano-omni` frames also passed.
-- **Alternatives rejected:** Cosmos for both LLM and VLM (rejected: cosmos models reject tool calling on Brev with HTTP 400, breaking `/chat`); VLM-only on Brev with LLM on NGC (rejected: both `openai_*` blocks share `OPENAI_API_KEY`, splitting endpoints requires code/config changes to `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml`).
-- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/architecture.md`](architecture.md); [`.docs/incident-profile-operations.md`](incident-profile-operations.md). *(Internal scout and probe reports summarized in place; no API keys included).*
-
-### 2026-09-25: Switch agent evaluation judge (`eval_llm_judge`) to OpenAI client type on Brev
-- **Decision:** Change `eval_llm_judge` in `vss-agent` config from `_type: nim` to `_type: openai`, following `LLM_BASE_URL` onto the Brev endpoint using the shared `OPENAI_API_KEY`.
-- **Why:** Captain directed using the same Brev endpoint for evaluation rather than NGC. The judge runs only under `nat eval`, never during `nat serve`.
-- **Alternatives rejected:** Keeping judge on NGC pinned to `integrate.api.nvidia.com` (captain directed using the same Brev endpoint, not NGC).
-- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); commit [`5ec2b0e56`](https://github.com/Danwidj/video-search-and-summarization/commit/5ec2b0e56); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
-
-### 2026-09-25: Retire local GPU NIM deployment for LLM and VLM
-- **Decision:** Officially retire on-prem GPU NIM container deployment (`dev-profile-incident` local LLM/VLM) and move implementation documentation to `.docs/archive/`.
-- **Why:** Remote hosted inference was judged robust enough by the captain; no separate robustness verification was run.
-- **Alternatives rejected:** None considered.
-- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/archive/incident-plan-implementation-local.md`](archive/incident-plan-implementation-local.md).
-
-### 2026-09-25: Standardize reference incident report schema on agent snake_case
-- **Decision:** Adopt the native `vss-agent` Pydantic model (`IncidentReport` in `services/agent`) with `snake_case` field names as the reference format in `.docs/analysis-schema.md`.
-- **Why:** The agent is the long-term owner of the report; code alignment for the console is deferred.
-- **Alternatives rejected:** Console `camelCase` schema (rejected because agent is the long-term owner of the report).
-- **Links:** [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`.docs/analysis-schema.md`](analysis-schema.md); [`services/agent/src/vss_agents/data_models/incident_report.py`](../../../../../services/agent/src/vss_agents/data_models/incident_report.py).
-
-### 2026-09-25: Restructure documentation into `.docs/` suite with standing update rule
-- **Decision:** Restructure profile documentation into modular files under `.docs/` (`action-plan.md`, `architecture.md`, `data.md`, `analysis-schema.md`, `incident-profile-operations.md`, `archive/`) and establish a standing docs rule in `AGENTS.md`.
-- **Why:** Monolithic and legacy plan documents drifted out of date; standing rule in `AGENTS.md` treats stale documentation as a defect and requires updating affected docs in the same PR.
-- **Alternatives rejected:** None considered.
-- **Links:** [PR #93](https://github.com/Danwidj/video-search-and-summarization/pull/93); [PR #94](https://github.com/Danwidj/video-search-and-summarization/pull/94); [`AGENTS.md`](../../../../../AGENTS.md).
-
-### 2026-09-25: Make incident-console-v2 analysis schema tolerant and lenient
-- **Decision:** Update `incident-console-v2`'s `incidentAnalysisSchema` with Zod transforms to provide safe defaults, clamp numeric ranges, map text severity levels, and passthrough unknown fields instead of throwing validation errors.
-- **Why:** Variations in VLM output or future prompt adjustments crashed the UI with validation errors; lenient defaults and Zod transforms avoid UI crashes.
-- **Alternatives rejected:** None considered.
-- **Links:** [PR #92](https://github.com/Danwidj/video-search-and-summarization/pull/92); commit [`88204849e`](https://github.com/Danwidj/video-search-and-summarization/commit/88204849e); [`incident-console-v2/lib/analysis/schema.ts`](../incident-console-v2/lib/analysis/schema.ts).
-
-### 2026-09-24: Adopt dual analysis architecture ("Option A") in incident-console-v2 and start.sh
-- **Decision:** Support two analysis modes via `start.sh --mode local|vm`: Gateway Mode (`ANALYSIS_MODE=gateway` via local `vlm-gateway`) and Agent Mode (`ANALYSIS_MODE=agent` via native `vss-agent`). In Agent Mode, the agent writes incident rows (`incidents`, `entities`, `instruments`, `assets`) while console-v2 writes `reports` and serialized JSON in `model_runs.notes` ("Option A").
-- **Why:** Enables fast zero-GPU local frontend testing while preserving full blueprint integration on `kwanz-ws`.
-- **Alternatives rejected:** "Option B" (agent owns all machine output, schema moved into supabase/migrations) is planned, not started.
-- **Links:** [PR #88](https://github.com/Danwidj/video-search-and-summarization/pull/88); [PR #89](https://github.com/Danwidj/video-search-and-summarization/pull/89); [PR #90](https://github.com/Danwidj/video-search-and-summarization/pull/90); [`.docs/architecture.md`](architecture.md); [`.docs/data.md`](data.md).
-
-### 2026-09-24: Retire Streamlit incident-console (v1) in favor of Next.js incident-console-v2
-- **Decision:** Drop the Streamlit-based `incident-console` from `start.sh` and active development on 2026-09-24; `incident-console-v2` becomes the sole UI.
-- **Why:** Slow UI loading, and the UI looked bad; Next.js is better for development (captain, 2026-09-25).
-- **Alternatives rejected:** None considered.
-- **Links:** [PR #80](https://github.com/Danwidj/video-search-and-summarization/pull/80); commit [`8fd8267ca`](https://github.com/Danwidj/video-search-and-summarization/commit/8fd8267ca); [`start.sh`](../start.sh).
-
-### 2026-09-24: Fall back to direct R2 upload on real VST chunk uploads
-- **Decision:** In `incident-console-v2`, when chunked video upload through VST omits a durable R2 storage key (`filePath`), fall back to uploading directly to R2 via server-side route `/api/uploads/r2`.
-- **Why:** Real VST/NvStreamer chunk response never includes a durable R2 object key (`filePath`) — only `mock-backend` faked that field — and analysis flows hard-require that key.
-- **Alternatives rejected:** None considered.
-- **Links:** [PR #81](https://github.com/Danwidj/video-search-and-summarization/pull/81); commit [`7e9fb29f9`](https://github.com/Danwidj/video-search-and-summarization/commit/7e9fb29f9); [`incident-console-v2/app/api/uploads/r2/route.ts`](../incident-console-v2/app/api/uploads/r2/route.ts).
-
-### 2026-09-24: Build standalone P1/RP1 evaluation pipeline separately from `nat eval`
-- **Decision:** Implement dedicated P1 (structured extraction) and RP1 (report generation) benchmark suite under `eval/` rather than using `vss-agent`'s built-in `nat eval`.
-- **Why:** The two measure different things: `eval/` evaluates per-field extraction accuracy against tabular ground truth, while `nat eval` tests conversational chat trajectory and QA. Why a separate pipeline was chosen: Reason not recorded - ask HengZhengKai.
-- **Alternatives rejected:** Reason not recorded - ask HengZhengKai.
-- **Links:** [PR #83](https://github.com/Danwidj/video-search-and-summarization/pull/83); [PR #84](https://github.com/Danwidj/video-search-and-summarization/pull/84); [PR #86](https://github.com/Danwidj/video-search-and-summarization/pull/86); [`eval/`](../eval/).
-
-### 2026-09-23: Dual database engine split (autocommit read engine + transactional write engine)
-- **Decision:** Split `IncidentDB` in `incident-console/db.py` into a transactional engine for writes (`self.engine.begin()`) and a separate `AUTOCOMMIT` engine for reads (`self.read_engine.connect()`).
-- **Why:** The database is remote; default read connections paid four round trips per query (pre-ping, `BEGIN`, statement, `ROLLBACK`). Dedicated `AUTOCOMMIT` read pool cuts wire overhead to 1 RTT per query.
-- **Alternatives rejected:** Global AUTOCOMMIT (rejected: not atomic on writes); switching isolation level per checkout on a shared pool (rejected: costs two round trips per read due to SQLAlchemy reset on pool return sending `SET`).
-- **Links:** [PR #78](https://github.com/Danwidj/video-search-and-summarization/pull/78); commit [`3f395e877`](https://github.com/Danwidj/video-search-and-summarization/commit/3f395e877); [`incident-console/db_connection.py`](../incident-console/db_connection.py).
-
-### 2026-09-23: Batch and cache Dashboard evidence queries
-- **Decision:** Replace per-incident evidence queries in `incident-console` with `IncidentDB.list_evidence_batch` executing 3 statements on the read engine, cached via `st.cache_data` (30s TTL).
-- **Why:** Iterating queries per incident in Streamlit cost ~440 server round trips per rerun (~14s at 30ms latency); batching by `(incident_id, model_run_id)` pairs eliminates the loop overhead.
-- **Alternatives rejected:** Batching on `incident_id` alone (rejected: inadvertently mixes evidence across different model runs).
-- **Links:** [PR #76](https://github.com/Danwidj/video-search-and-summarization/pull/76); commit [`fdbe44781`](https://github.com/Danwidj/video-search-and-summarization/commit/fdbe44781); [`incident-console/dashboard_data.py`](../incident-console/dashboard_data.py).
-
-### 2026-09-23: Lazy loading of video previews in Report Review
-- **Decision:** Load incident video previews in `incident-console/pages/2_Report_Review.py` only upon clicking "Load preview", scoped to an `st.fragment` using `st.session_state`.
-- **Why:** Streamlit mounts and executes whatever a run renders even inside a collapsed `st.expander` or unselected `st.tabs` tab, visually hiding content without deferring network fetches.
-- **Alternatives rejected:** Visually hiding content in collapsed expanders or unselected tabs (rejected: does not defer fetching in Streamlit).
-- **Links:** [PR #77](https://github.com/Danwidj/video-search-and-summarization/pull/77); commit [`fd584f8ca`](https://github.com/Danwidj/video-search-and-summarization/commit/fd584f8ca); [`incident-console/pages/2_Report_Review.py`](../incident-console/pages/2_Report_Review.py).
-
-### 2026-09-21: Native service execution for vss-agent and analytics on kwanz-ws
-- **Decision:** Run `vss-agent`, `video-analytics-api`, and `behavior-analytics` as native host processes on `kwanz-ws` managed by `.scripts/native-services.sh`, leaving VIOS/VST media and databases in Docker.
-- **Why:** Fast-iterating application services run as native processes directly on `kwanz-ws` so a code change is a ~2s process restart instead of a container rebuild; media/appliance infra stays in Docker. Captain wants services native as much as possible (captain, 2026-09-25).
-- **Alternatives rejected:** Docker for everything - rejected (slow rebuild per code change). Running VIOS/VST media engines, DeepStream perception, and core infra (Postgres, Redis, Kafka, Elasticsearch, Phoenix, HAProxy) natively - rejected: an investigation classified them infeasible or no-benefit natively because they depend on proprietary CUDA/GStreamer/DeepStream/Triton container toolchains or are heavy JVM appliances, while vss-agent, video-analytics-api and behavior-analytics are high-feasibility native. All services already use host networking, so native processes reach the Docker ones on localhost.
-- **Links:** [PR #70](https://github.com/Danwidj/video-search-and-summarization/pull/70); commit [`6bc80f2da`](https://github.com/Danwidj/video-search-and-summarization/commit/6bc80f2da); [`.docs/incident-profile-operations.md`](incident-profile-operations.md).
-
-### 2026-09-17: Agent database access via Supabase PostgREST and insert_incident RPC
-- **Decision:** Agent accesses Supabase via PostgREST HTTPS client (`services/agent/src/vss_agents/utils/incident_db.py` via `supabase-py` `AsyncClient`), utilizing the stored procedure `insert_incident` Postgres RPC for atomic upserts and review status resets. Console and local tools retain direct Postgres (`incident-console/db.py`).
-- **Why:** The campus network firewall on `kwanz-ws` silently drops outbound port 5432 regardless of destination, breaking raw Postgres drivers like `asyncpg`. HTTPS port 443 works. PostgREST lacks client-held transactions, so atomic delete-then-insert plus review reset requires the `insert_incident` RPC function.
-- **Alternatives rejected:** Direct-Postgres / `asyncpg` on `kwanz-ws` (fails because campus firewall drops outbound port 5432). No other alternatives were considered.
-- **Links:** [PR #53](https://github.com/Danwidj/video-search-and-summarization/pull/53); [PR #54](https://github.com/Danwidj/video-search-and-summarization/pull/54); [PR #57](https://github.com/Danwidj/video-search-and-summarization/pull/57); [`.docs/data.md`](data.md); [`services/agent/src/vss_agents/utils/incident_db.py`](../../../../../services/agent/src/vss_agents/utils/incident_db.py).
-
-### 2026-09-06: Remote (hosted) LLM/VLM chosen over local GPU NIM deployment
-- **Decision:** Configure `dev-profile-incident` to use remote hosted LLM/VLM inference endpoints (`LLM_MODE=remote`, `VLM_MODE=remote`) rather than local GPU NIM containers on `kwanz-ws`.
-- **Why:** GPU cost/benefit: "running them locally would consume an entire GPU for no reason once a free-tier hosted option exists." Offloading inference frees GPU 1 entirely and keeps GPU 0 dedicated to VIOS video streaming.
-- **Alternatives rejected:** Running LLM/VLM locally as NIM containers (rejected: consumes an entire GPU for no reason once a free hosted option exists).
-- **Links:** [`.docs/archive/incident-plan-implementation-remote.md`](archive/incident-plan-implementation-remote.md) §1; [`.docs/architecture.md`](architecture.md).
-
-### 2026-09-06: MVP1 / MVP2 scope partitioning
-- **Decision:** Partition project deliverables into MVP1 (ingestion, automated extraction, human review UI, ground-truth evaluation) and MVP2 (real-time perception RT-CV/RT-Embed, Elasticsearch vector storage, multi-subagent routing, natural language search).
-- **Why:** Scope entirely determined by deadline: MVP1 is due for the mid-term, MVP2 for finals (captain, 2026-09-25).
-- **Alternatives rejected:** None considered.
-- **Links:** [`.docs/action-plan.md`](action-plan.md); [`.docs/archive/incident-plan-implementation-shared.md`](archive/incident-plan-implementation-shared.md).
-### 2026-09-26: Keep user-upload R2 keys independent of VLM classification
-- **Decision:** Store all new user uploads under `uploads/<sensorId>/<uuid>.<ext>` in both local-mock and real-VST flows. Reserve `anomaly/<category>/` for classified seed/evaluation media.
-- **Why:** Storage happens before inference, so an upload path cannot truthfully encode the VLM's later `incident_type`. The mock's prior hash-picked category made `incident_type: none` videos appear to be classified anomalies and could overwrite files sharing a name.
-- **Alternatives rejected:** Move objects after analysis (adds copy/delete failure modes and breaks persisted keys and signed URLs); use the VLM result in the initial path (impossible because inference occurs after upload).
-- **Links:** [`mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py`](../mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py); [`.docs/data.md`](data.md).
-
-### 2026-10-16: Permanent unless-stopped restart policy for incident profile services
-- **Decision:** Set `restart: unless-stopped` in `dev-profile-incident/compose.override.yml` for the persistent appliances and stack services, plus `deploy.restart_policy.condition: unless-stopped` on `streamprocessing-ms`. `nvstreamer-2d-fusion` keeps its upstream `on-failure` deploy policy, which already leaves it stopped after a reboot.
-- **Why:** NVIDIA upstream compose files define `restart: always` on `redis`, `vss-haproxy-ingress`, `centralizedb`, `vst-ingress`, `vss-ui`, `elasticsearch`, `logstash` and `kibana`. `streamprocessing-ms` has upstream `restart: unless-stopped`, but its `deploy.restart_policy.condition: always` takes precedence over `restart`, so the override must set the deploy condition too. Together these cause Docker to restart them automatically on every VM reboot even after an explicit `docker compose -p mdx stop`. A runtime `docker update --restart=unless-stopped` is lost when containers are recreated. Layering `unless-stopped` in `compose.override.yml` ensures stopped containers stay stopped across system reboots.
-- **Alternatives rejected:** Relying on ad-hoc `docker update` commands on the host (lost on container recreation); editing NVIDIA upstream compose files under `services/` (violates profile isolation and upstream maintainability).
-- **Links:** [`compose.override.yml`](../compose.override.yml); [`.docs/incident-profile-operations.md`](incident-profile-operations.md); [`skills/incident-operate-vm/SKILL.md`](../skills/incident-operate-vm/SKILL.md).
-
-### 2026-10-18: Upgrade incident-console-v2 to TypeScript 5.9 with bundler module resolution
-- **Decision:** Pin `typescript` to 5.9.3, set `moduleResolution` to `bundler` and remove `baseUrl` from `incident-console-v2/tsconfig.json`. The `@/*` alias stays in `paths`, which resolves relative to the tsconfig.
-- **Why:** TypeScript 6 deprecates `baseUrl` and `moduleResolution: node` (node10) and removes them in 7.0. `bundler` needs TypeScript 5.0 or later, and the previous 4.9.5 pin rejects it.
-- **Alternatives rejected:** `ignoreDeprecations: "6.0"` (only silences the warning and still needs TypeScript 5 or later); staying on 4.9.5 (cannot use `bundler`).
-- **Links:** [`incident-console-v2/tsconfig.json`](../incident-console-v2/tsconfig.json); [`incident-console-v2/package.json`](../incident-console-v2/package.json).
+  - **Official report:** `videos.selected_model_run_id/selected_by/selected_at` with a composite FK to the video's own incidents (ON DELETE SET NULL on the run column), set only by `select_official_report` / `clear_official_report`. Analysis never selects, and selection is independent of review status. PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey`.
+  - **Dashboard:** counts official incidents only; unselected videos are counted separately. Every number links to `/reports?scope=official&...`, the URL is the filter state, and the library's default scope stays "all successful reports".
+  - **History:** a video is the parent of its analyses. History combines incident-backed runs with incident-less attempt records whose notes name the video. Re-analysis always creates a new run and never writes the video row or the official selection. Deleting a video removes run records that name it and have no incident left.
+  - **Editing:** model output is immutable. Reviewers edit Class A fields (the relational projection) through `apply_structured_report_edit`, which validates against the contract sub-schemas and never touches notes. Ground truth has its own page and is never pre-filled from model output.
+  - **Alerts** were removed from the console; the `notifications` table stays for the retired Streamlit console and eval tooling.
+- **Why:** Official statistics need one explicit report per video (counting runs multiplies categories on re-runs); failed attempts must be auditable without becoming reports; reviewer edits must never alter what the model produced.
+- **Rejected:** "latest run wins" or the verified run as official; a separate attempts table; editing notes; making Class B fields editable.
+- **Links:** [`../supabase/migrations/20260927170000_official_report_selection.sql`](../supabase/migrations/20260927170000_official_report_selection.sql); [`../supabase/migrations/20260927160000_apply_structured_report_edit.sql`](../supabase/migrations/20260927160000_apply_structured_report_edit.sql); [`../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql`](../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql); [`analysis-schema.md`](analysis-schema.md).
+
+### 2026-09-27: Report library and thumbnails
+- **Decision:** `/reports` is served by the `list_incident_report_summaries` RPC (`SECURITY INVOKER`, `service_role` only), six summaries per page, returning no notes, evidence arrays or signed URLs. Cards never load video. The browser captures a frame 25% into each new upload (at most 640x360 WebP) and uploads it to `thumbnails/<video-key>.webp`; a missing thumbnail shows a skeleton, and deleting a video deletes its thumbnail. `GET /api/reports/<videoId>?run=<modelRunId>` is the only path that signs and loads a video.
+- **Why:** The old library read eight tables, parsed every report and signed every video before becoming usable.
+- **Rejected:** a summary table; client-side slicing; per-card video loading; server-side frame extraction per request.
+- **Links:** [`../supabase/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts).
+
+### 2026-09-26: Durability checks and upload key layout
+- **Decision:** `incident-console-v2` verifies direct uploads with R2 `HeadObject`, verifies again before inference, then reads back `videos`, `model_runs`, `incidents` and `reports` and confirms `videos.filepath` is the submitted R2 key before `POST /api/analysis` returns 200. All new uploads go under `uploads/<sensorId>/<uuid>.<ext>`; `anomaly/<category>/` is reserved for classified seed and eval media.
+- **Why:** A valid-looking key does not prove the object exists, independent PostgREST writes can partly succeed, and an upload path cannot encode a classification that happens after storage.
+- **Rejected:** trusting individual write responses; moving objects after analysis.
+- **Links:** [`../incident-console-v2/lib/r2/config.ts`](../incident-console-v2/lib/r2/config.ts); [`data.md`](data.md).
+
+### 2026-09-25: Database defaults, atomic RPC writers and error surfacing
+- **Decision:** Server-side UTC defaults on timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` with `p_confidence_score DOUBLE PRECISION` (migration `20260925031000`). PostgREST writers call `/rpc/insert_incident` atomically. The agent returns HTTP 422/504 on extraction failure instead of persisting a default report. Composite `ON DELETE CASCADE` stays.
+- **Why:** Defaults were client-side only, leaving NULL timestamps; the `REAL` parameter lost precision; non-RPC writes were not atomic; failures persisted a fake default report. Cascade is intentional for re-analysis under one run id.
+- **Rejected:** dropping `ON DELETE CASCADE`; overloading `insert_incident` (PostgREST reports ambiguity).
+- **Links:** [`../supabase/migrations/20260925031000_schema_defaults_and_precision.sql`](../supabase/migrations/20260925031000_schema_defaults_and_precision.sql); [`data.md`](data.md).
+
+### 2026-09-25: Remote Brev inference, no local GPU NIMs
+- **Decision:** `vss-agent` and the eval judge use the Brev Switchyard endpoint with `_type: openai` (never `nim`) and bare base URLs, `LLM_NAME=nvidia/nemotron-3-ultra`, `VLM_NAME=nvidia/cosmos-3-super-reasoner`. On-prem GPU NIM deployment is retired.
+- **Why:** The NGC free tier caps at 16 concurrent requests and hung report generation; local NIMs would consume a GPU for no benefit. `_type: nim` leaks `verify_ssl` into the request body (HTTP 400). Probes passed tool calling and `json_schema` on Nemotron and base64 `video_url` on Cosmos. Cosmos models reject tool calling on Brev, so they cannot be the LLM.
+- **Rejected:** Cosmos for both roles; splitting endpoints between Brev and NGC (shared `OPENAI_API_KEY`).
+- **Links:** [`architecture.md`](architecture.md); [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-09-25: Agent-doc layout and SDRC removal
+- **Decision:** A profile `AGENTS.md` for code changes and agentskills.io skills under `skills/` for operations, linked into repo-root `.claude/skills/` by symlinks. `sdr-controller` and its helper services are scaled to 0 in `compose.override.yml`, the single mechanism for disabling SDRC; `SDR_CONTROLLER_CONFIG_PATH` stays because upstream interpolates it at parse time.
+- **Why:** Mirrors NVIDIA's split of coding guidance and operating guidance. SDRC is unused (file upload, not live RTSP routing) and clashed with streamprocessing on port 10000, crash-looping.
+- **Rejected:** skills in root `skills/` (merge conflicts with upstream); editing shared SDRC files.
+- **Links:** [`../AGENTS.md`](../AGENTS.md); [`../skills/README.md`](../skills/README.md); [`../compose.override.yml`](../compose.override.yml).
+
+### 2026-09-24: Retire the Streamlit console; separate eval pipeline; R2 upload fallback
+- **Decision:** `incident-console-v2` (Next.js) is the sole UI; the Streamlit `incident-console` is retired (fixes only). Evaluation is a standalone P1/RP1 pipeline in `eval/`, not `nat eval`, because it scores per-field extraction against tabular ground truth rather than chat trajectories. When a real VST chunk upload returns no durable R2 key, the console uploads directly to R2 via `/api/uploads/r2`.
+- **Why:** The Streamlit UI was slow; real VST never returns an R2 key, only the mock faked it.
+- **Links:** [`../eval/`](../eval/); [`../incident-console-v2/app/api/uploads/r2/route.ts`](../incident-console-v2/app/api/uploads/r2/route.ts).
+
+### 2026-09-21: Native services on kwanz-ws
+- **Decision:** Run `vss-agent`, `video-analytics-api` and `behavior-analytics` as native host processes via `.scripts/native-services.sh`; VIOS/VST media and infrastructure stay in Docker.
+- **Why:** A code change is a ~2 s restart instead of a container rebuild. Media, DeepStream, Triton and JVM appliances depend on container toolchains and gain nothing natively. All services use host networking, so native processes reach Docker ones on localhost.
+- **Links:** [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-09-17: Agent database access through PostgREST
+- **Decision:** The agent uses Supabase PostgREST over HTTPS (`utils/incident_db.py`, `supabase-py`) and the `insert_incident` RPC for atomic upserts and review resets.
+- **Why:** The campus firewall on `kwanz-ws` drops outbound port 5432, so raw Postgres drivers fail; PostgREST lacks client-held transactions, so atomicity needs the RPC.
+- **Rejected:** direct Postgres / `asyncpg` on the VM.
+- **Links:** [`data.md`](data.md); `services/agent/src/vss_agents/utils/incident_db.py`.

@@ -21,10 +21,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Incident analysis schema & field mapping](.docs/analysis-schema.md)
 - [Profile operations & runbook](.docs/incident-profile-operations.md)
 - [Decision log](.docs/decisions.md)
-- [Option B architecture restructure plan](.docs/restructure-plan.md) (proposed)
-- [Unified prompt & structured-output contract plan](.docs/prompt-contract-plan.md) (phases 1-3 delivered)
 - [MVP2 natural-language search overview](.docs/mvp2/README.md)
-- [Archive / retired plans](.docs/archive/)
 
 **Components**
 - [Next.js console (v2, active)](incident-console-v2/README.md)
