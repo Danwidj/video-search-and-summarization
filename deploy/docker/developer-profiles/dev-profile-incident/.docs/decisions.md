@@ -2,6 +2,21 @@
 
 Chronological log of architectural, technical, and tooling decisions for the Incident Search & Reporting profile (`dev-profile-incident`), newest first. Each entry captures the date, decision, why (evidence and constraints), alternatives rejected, and traceable links (PR, commit, or doc).
 
+### 2026-10-18: Remote embedding endpoint and remote-VLM cropping for evidence search
+- **Decision:**
+  - Embed evidence descriptions (loader, input type `passage`) and search queries (`DefaultQueryEmbedder`, input type `query`) with one remote model, `nvidia/llama-nemotron-embed-vl-1b-v2` on the NVIDIA-hosted `https://integrate.api.nvidia.com/v1/embeddings`, requesting `dimensions=1024` to match `evidence_crops.embedding vector(1024)`. Client: `services/agent/src/vss_agents/utils/embeddings.py` (`EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`, falling back to `NVIDIA_API_KEY` then `NGC_CLI_API_KEY` from `generated.env.remote`). Without a key the route keeps the deterministic placeholder vector (zero-VM mocks and unit tests only).
+  - `DefaultDetector` in `crop_evidence.py` is now backed by the remote VLM (one tight `bbox_2d` per frame, normalised 0-1000) instead of a local open-vocabulary detector. `R2EvidenceStore`, `SupabaseEvidenceStore` and the composing `LiveEvidenceStore` replace the `NotImplementedError` stubs.
+  - `scripts/backfill_official_timestamps.py` is the production evidence loader: report source (Supabase) -> VLM grounding (`timestamp_seconds`, label) -> VLM box + crop -> R2 upload -> embedding -> `evidence_crops` upsert. Dry runs keep the fakes.
+- **Why:**
+  - The earlier loader wrote nothing (fake crop client, in-memory store, no embedding step), so `POST /api/v1/incidents/search` returned 200 with zero hits on `kwanz-ws`.
+  - The Brev Switchyard key can only reach chat models (`/v1/embeddings` returns 403 for every embedding model), and the NVIDIA-hosted `nv-embedqa-e5-v5` and `llama-3.2-nv-embedqa-1b-v2` are end-of-life (HTTP 410). `llama-nemotron-embed-vl-1b-v2` is live and accepts `dimensions=1024` (`nemotron-3-embed-1b` accepts only 2048).
+  - The remote VLM already serves grounding; a second remote service (Grounding DINO) adds a deployment for no measured gain, and no local GPU model may be started.
+- **Alternatives rejected:**
+  - Local MiniLM embedding server (`eval/scripts/eval_embedding_server.py`): 384 dimensions, a local model, and not on the VM.
+  - Padding or truncating 2048-dimension `nemotron-3-embed-1b` vectors: breaks cosine geometry.
+  - Local Grounding DINO / OWLv2 detector: needs a GPU model on the VM; the open-vocabulary detector comparison stays with PR 119.
+- **Links:** [`services/agent/src/vss_agents/utils/embeddings.py`](../../../../../services/agent/src/vss_agents/utils/embeddings.py); [`services/agent/src/vss_agents/utils/crop_evidence.py`](../../../../../services/agent/src/vss_agents/utils/crop_evidence.py); [`scripts/backfill_official_timestamps.py`](../../../../../scripts/backfill_official_timestamps.py); [`.docs/status.md`](status.md)
+
 ### 2026-10-18: start.sh vm mode explains unreachable VMs and bounds every VM step
 - **Decision:**
   - `start.sh --mode vm` classifies an SSH failure before doing anything else (`.scripts/vm-preflight.sh`: Tailscale logged out/stopped/daemon down, VM offline in the tailnet, DNS, timeout, refused, no route, auth, host key) and prints cause plus next step.
