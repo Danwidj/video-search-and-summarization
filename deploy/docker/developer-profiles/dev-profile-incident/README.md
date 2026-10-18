@@ -61,10 +61,10 @@ Run `start.sh` with your chosen mode:
   ```bash
   ./start.sh --mode local
   ```
-  Starts the local mock backend (`mock-backend/base_profile_mock` on `127.0.0.1:7777`), the local VLM gateway (`vlm-gateway` on `127.0.0.1:8600`), and launches `incident-console-v2` on port 3200 (never touches SSH).
+  Starts the local mock backend (`mock-backend/base_profile_mock` on `127.0.0.1:7777`), the local VLM gateway (`vlm-gateway` on `127.0.0.1:8600`), and launches `incident-console-v2` on `127.0.0.1:3200` (never touches SSH).
 
 - **VM Mode (Full blueprint stack on kwanz-ws):**
   ```bash
   ./start.sh --mode vm
   ```
-  Connects to `kwanz-ws` over SSH (explaining the cause if the VM is unreachable), checks running services, automatically deploys or self-heals missing Docker appliances and native services (`vss-agent`, cloning/pulling what is missing under timeouts), opens the backgrounded SSH port tunnel (8000, 7777, 30081, 30082), and launches `incident-console-v2` on port 3200 (`--no-console` stops after the tunnel).
+  Connects to `kwanz-ws` over SSH (explaining the cause if the VM is unreachable), checks running services, automatically deploys or self-heals missing Docker appliances and native services (`vss-agent`, cloning/pulling what is missing under timeouts), opens the backgrounded SSH port tunnel (8000, 7777, 30081, 30082), and launches `incident-console-v2` on `127.0.0.1:3200` (`--no-console` stops after the tunnel).

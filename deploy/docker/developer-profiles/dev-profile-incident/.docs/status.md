@@ -58,6 +58,7 @@ Read from `generated.env.remote`; verify with `incident-operate-vm` before relyi
 | `VSS_APPS_DIR` / `VSS_DATA_DIR` | `/srv/rise-up/vss/deploy/docker` / `/srv/rise-up/vss-apps-data` |
 | `HOST_IP` | VM LAN address; changes with DHCP and is rewritten by `.scripts/vm-ensure-docker.sh` |
 | `EXTERNAL_IP` | `localhost` (tunnelled browser access) |
+| `VSS_AGENT_HOST` | `0.0.0.0` (haproxy reaches the agent at `${HOST_IP}:8000`; `${HOST_IP}` is the narrower safe setting, `127.0.0.1` breaks haproxy) |
 | `VSS_AGENT_CONFIG_FILE` | `./deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml` |
 | `STREAM_PROCESSOR_HTTP_PORT` | `10000` |
 | `LLM_NAME` / `VLM_NAME` | `nvidia/nemotron-3-ultra` / `nvidia/cosmos-3-super-reasoner` |
