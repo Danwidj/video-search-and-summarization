@@ -163,7 +163,7 @@ ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4
 
 | Local Port | Remote Destination | Target Service | Usage |
 |---|---|---|---|
-| `8000` | `<vm-ip>:8000` | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
+| `8000` | `127.0.0.1:8000` (loopback) | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
 | `30081` | `<vm-ip>:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
 | `30082` | `<vm-ip>:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |

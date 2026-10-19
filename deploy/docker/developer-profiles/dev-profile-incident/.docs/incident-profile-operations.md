@@ -117,7 +117,7 @@ To verify active tunnel ports:
 ```
 
 Forwarded ports:
-- `localhost:8000` -> `<vm-ip>:8000` (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
+- `localhost:8000` -> `127.0.0.1:8000` on the VM (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
 - `localhost:7777` -> `<vm-ip>:7777` (`vss-haproxy-ingress`)
 - `localhost:30081` -> `<vm-ip>:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
 - `localhost:30082` -> `<vm-ip>:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
