@@ -5,7 +5,7 @@ export type { Page, RunKey } from '@/lib/ports/common';
 export type { DashboardQuery, DashboardRepository, DashboardSeverity } from '@/lib/ports/dashboard';
 export type { DatabaseHealth, HealthRepository } from '@/lib/ports/health';
 export type {
-  IncidentRepository, OfficialSelectionState, ReviewState, RunReportRecord, StructuredEditResult,
+  IncidentRepository, OfficialSelectionState, ReportList, ReportListQuery, ReportSort, ReviewState, RunReportRecord, StructuredEditResult,
 } from '@/lib/ports/incidents';
 export type { EvidenceCropItem, EvidenceItemType, EvidenceSearchRepository, SearchEvidenceParams, SearchQueryRecord } from '@/lib/ports/search';
 export type { OfficialClearance, OfficialSelection, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';

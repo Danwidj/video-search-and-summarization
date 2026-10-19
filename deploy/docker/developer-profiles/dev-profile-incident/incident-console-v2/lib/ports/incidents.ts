@@ -1,15 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// IncidentRepository: one run's report, its review state, structured edits and
-// run deletes. Every method is scoped to one (videoId, modelRunId) run: a video
-// has many runs, and incidents are keyed by (incident_id, model_run_id).
-// Report-library listing joins this port when app/api/reports/route.ts moves.
+// IncidentRepository: the report library, and one run's report, its review
+// state, structured edits and run deletes. Every per-run method is scoped to
+// one (videoId, modelRunId) run: a video has many runs, and incidents are keyed
+// by (incident_id, model_run_id).
 
-import type { RunKey } from '@/lib/ports/common';
+import type { Page, RunKey } from '@/lib/ports/common';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
 import type { RunNotes } from '@/lib/reports/run-notes';
-import type { ReviewStatus } from '@/lib/reports/storage';
+import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
+
+export type ReportSort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
+
+/** The report library's filters, validated by the route; null means no filter. */
+export interface ReportListQuery {
+  page: number;
+  pageSize: number;
+  /** Matched against title, type, summary, filename and evidence text. */
+  search: string | null;
+  type: string | null;
+  /** A band ('low' | 'medium' | 'high') or an exact level ('1' to '5'). */
+  severity: string | null;
+  /** A review status; an unknown value matches nothing. */
+  status: string | null;
+  /** Bounds on the report's generation time, as stored timestamps (naive UTC). */
+  generatedAfter: string | null;
+  generatedBefore: string | null;
+  /** Time-of-day bounds, read in `timezone`. */
+  timeFrom: string | null;
+  timeTo: string | null;
+  /** Evidence text: substrings, or exact names when evidenceMatch is 'exact'. */
+  entities: string[] | null;
+  instruments: string[] | null;
+  assets: string[] | null;
+  /** 0 (Sunday) to 6, in `timezone`. */
+  dayOfWeek: number | null;
+  sort: ReportSort;
+  /** 'official' keeps only each video's selected official report. */
+  scope: 'all' | 'official';
+  /** Canonical entity types (human, animal, unknown). */
+  entityTypes: string[] | null;
+  evidenceMatch: 'contains' | 'exact';
+  timezone: string;
+}
+
+/** One page of the report library. Thumbnails are not signed here. */
+export interface ReportList extends Page<ReportLibraryItem> {
+  /** Every incident type in the store, for the type filter. */
+  incidentTypes: string[];
+}
 
 /** One review_status row: three statuses plus who verified and edited the report, and when. */
 export interface ReviewState {
@@ -59,6 +99,8 @@ export interface StructuredEditResult {
 }
 
 export interface IncidentRepository {
+  /** One filtered, sorted page of report summaries (runs with a report). */
+  listReports(query: ReportListQuery): Promise<ReportList>;
   /** Null when the run, its video or its incident is missing. */
   getRunReport(key: RunKey): Promise<RunReportRecord | null>;
   /** True when the run has an incident row. */

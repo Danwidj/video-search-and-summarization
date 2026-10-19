@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { reviewFromRow, reviewToRow, runReportFromRows } from '@/lib/adapters/supabase/mappers/report';
-import type { IncidentRepository, ReviewState, RunKey, RunReportRecord, StructuredEditResult } from '@/lib/ports';
+import { reportListFromRpc, reportListRpcArgs } from '@/lib/adapters/supabase/mappers/report-library';
+import type {
+  IncidentRepository, ReportList, ReportListQuery, ReviewState, RunKey, RunReportRecord, StructuredEditResult,
+} from '@/lib/ports';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 
@@ -16,6 +19,10 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
 
   constructor(db: PostgrestClient) {
     this.db = db;
+  }
+
+  async listReports(query: ReportListQuery): Promise<ReportList> {
+    return reportListFromRpc(await this.db.rpc('list_incident_report_summaries', reportListRpcArgs(query)));
   }
 
   async getRunReport(key: RunKey): Promise<RunReportRecord | null> {
