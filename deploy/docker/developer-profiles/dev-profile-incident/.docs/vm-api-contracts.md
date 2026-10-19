@@ -31,7 +31,7 @@ start.sh: cannot reach the VM over SSH ('daniel@kwanz-ws').
 
 Classified causes: Tailscale not logged in, stopped or daemon down, VM offline in the tailnet, host does not resolve, SSH timeout (`VSS_SSH_CONNECT_TIMEOUT`, default 10 s), connection refused, no route, host key changed, permission denied, connection dropped, otherwise unclassified.
 
-When SSH works but the tunnelled health check fails, start.sh says whether the agent is healthy on the VM (wrong `VSS_VM_IP`) or dead on the VM (read `.run/vss-agent.log`), then exits non-zero.
+When SSH works but the tunnelled health check fails, start.sh says whether the agent is healthy on the VM (SSH forward blocked or `VSS_AGENT_HOST` bound to LAN instead of `127.0.0.1`) or dead on the VM (read `.run/vss-agent.log`), then exits non-zero.
 
 ## Common behaviour
 
