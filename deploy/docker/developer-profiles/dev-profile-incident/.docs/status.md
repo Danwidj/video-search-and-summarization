@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-10-18.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
+> **As of 2026-10-19.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
 ## 1. What is live
 
@@ -64,6 +64,7 @@ Read from `generated.env.remote`; verify with `incident-operate-vm` before relyi
 | `LLM_NAME` / `VLM_NAME` | `nvidia/nemotron-3-ultra` / `nvidia/cosmos-3-super-reasoner` |
 | `LLM_BASE_URL` / `VLM_BASE_URL` | `https://switchyard-13doh4lsz.brevlab.com` (no trailing `/v1`) |
 | `LLM_MODEL_TYPE` / `VLM_MODEL_TYPE` | `openai` |
+| `GPU allocation` | GPU 0 only (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, all Docker appliances and native services pinned to GPU 0; GPU 1 reserved for co-tenant training workloads) |
 | Secrets | `OPENAI_API_KEY`, `NVIDIA_API_KEY`, `NGC_CLI_API_KEY`, `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (set, never printed) |
 
 The VM `vss-agent` virtualenv is installed editable from the repository checkout (`services/agent`); see [`incident-profile-operations.md`](incident-profile-operations.md).

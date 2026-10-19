@@ -93,6 +93,10 @@
 
 set -euo pipefail
 
+# Pin all local processes and defaults to GPU 0 to protect GPU 1 for co-tenants
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-0}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse --mode / --no-console flags (--no-console: bring the backend and tunnel up, skip the Next.js console)
