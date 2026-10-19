@@ -7,7 +7,9 @@ export type { DatabaseHealth, HealthRepository } from '@/lib/ports/health';
 export type {
   IncidentRepository, OfficialSelectionState, ReportList, ReportListQuery, ReportSort, ReviewState, RunReportRecord, StructuredEditResult,
 } from '@/lib/ports/incidents';
-export type { EvidenceCropItem, EvidenceItemType, EvidenceSearchRepository, SearchEvidenceParams, SearchQueryRecord } from '@/lib/ports/search';
+export type {
+  CriticVerdict, EvidenceItemType, EvidenceSearchFilters, EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult,
+} from '@/lib/ports/search';
 export type { OfficialClearance, OfficialSelection, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';
 
 import type { DashboardRepository } from '@/lib/ports/dashboard';
