@@ -51,7 +51,7 @@ vm_preflight_ssh || exit 1
 VSS_VM_IP="$(vm_detect_ip)"
 
 ssh -N \
-  -L 8000:"$VSS_VM_IP":8000 \
+  -L 8000:127.0.0.1:8000 \
   -L 30081:"$VSS_VM_IP":30081 \
   -L 30082:"$VSS_VM_IP":30082 \
   -L 7777:"$VSS_VM_IP":7777 \

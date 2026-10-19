@@ -111,9 +111,9 @@ start_vss_agent() {
     return 1
   fi
 
-  # 0.0.0.0 stays the default: vss-haproxy-ingress (host network) proxies /api to ${HOST_IP}:8000,
-  # so a 127.0.0.1 bind would break it. Set VSS_AGENT_HOST=${HOST_IP} to drop other interfaces.
-  local host="${VSS_AGENT_HOST:-0.0.0.0}"
+  # Loopback by default: the agent has no auth. vss-haproxy-ingress (host network) reaches it at
+  # 127.0.0.1 via VSS_AGENT_BACKEND_HOST (compose.override.yml); the laptop uses the SSH tunnel.
+  local host="${VSS_AGENT_HOST:-127.0.0.1}"
   local port="${VSS_AGENT_PORT:-8000}"
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"

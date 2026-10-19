@@ -88,6 +88,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - `LLM_MODEL_TYPE=openai` and `VLM_MODEL_TYPE=openai`, with bare Brev URLs.
 - Search embeddings use the NVIDIA-hosted endpoint with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from this file; the Brev key cannot call `/v1/embeddings`. Override with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`. The loader and the search route must use the same model.
 - `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
+- `VSS_AGENT_HOST` defaults to `127.0.0.1` (loopback only: the agent has no auth and holds the DB admin key). An old `VSS_AGENT_HOST=0.0.0.0` must be removed or set to `127.0.0.1`.
 - GPU allocation: all Docker appliances and native services pinned strictly to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `FIXED_SHARED_DEVICE_IDS=0`) to protect GPU 1 for co-tenants.
 
 ## Troubleshooting order
