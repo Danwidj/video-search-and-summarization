@@ -35,10 +35,9 @@ export class InMemoryIncidentRepository implements IncidentRepository {
   }
 
   async listReports(query: ReportListQuery): Promise<ReportList> {
-    const unmodelled = UNMODELLED_FILTERS.filter((name) => query[name] !== null);
-    if (unmodelled.length || (query.sort !== 'newest' && query.sort !== 'oldest')) {
-      throw new Error(`InMemoryIncidentRepository does not model: ${[...unmodelled, query.sort].join(', ')}`);
-    }
+    const unmodelled: string[] = UNMODELLED_FILTERS.filter((name) => query[name] !== null);
+    if (query.sort !== 'newest' && query.sort !== 'oldest') unmodelled.push(`sort ${query.sort}`);
+    if (unmodelled.length) throw new Error(`InMemoryIncidentRepository does not model: ${unmodelled.join(', ')}`);
     const direction = query.sort === 'oldest' ? 1 : -1;
     const matching = this.summaries
       .filter((summary) => (query.scope !== 'official' || summary.isOfficial) && (query.status === null || summary.status === query.status))
