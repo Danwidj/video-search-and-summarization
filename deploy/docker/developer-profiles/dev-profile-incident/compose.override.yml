@@ -42,6 +42,9 @@ services:
 
   vss-haproxy-ingress:
     restart: unless-stopped
+    environment:
+      # vss-agent binds 127.0.0.1 only (no auth, holds the DB admin key); haproxy is host-network, so loopback works.
+      VSS_AGENT_BACKEND_HOST: 127.0.0.1
 
   centralizedb:
     restart: unless-stopped
