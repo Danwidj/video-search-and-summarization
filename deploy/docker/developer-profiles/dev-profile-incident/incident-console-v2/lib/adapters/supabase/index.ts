@@ -5,6 +5,7 @@
 // configuration is read at request time and never cached at module load.
 
 import { createPostgrestClient } from '@/lib/adapters/supabase/client';
+import { SupabaseDashboardAdapter } from '@/lib/adapters/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
 import { SupabaseIncidentAdapter } from '@/lib/adapters/supabase/incidents';
 import { SupabaseVideoAdapter } from '@/lib/adapters/supabase/videos';
@@ -15,6 +16,7 @@ import type { DbAdapters, HealthRepository } from '@/lib/ports';
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
   const db = createPostgrestClient(config);
   return {
+    dashboard: new SupabaseDashboardAdapter(db),
     incidents: new SupabaseIncidentAdapter(db),
     videos: new SupabaseVideoAdapter(db),
   };
