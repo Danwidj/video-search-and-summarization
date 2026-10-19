@@ -834,8 +834,11 @@ def create_incident_search_router(
         try:
             query_embedding = await query_embedder.embed_query(req.query)
         except Exception as exc:
-            logger.error("Query embedding failed: %s", exc)
-            raise HTTPException(status_code=503, detail=f"Query embedding unavailable: {exc}") from exc
+            exc_type = type(exc).__name__
+            msg = str(exc).strip()
+            err_detail = f"{exc_type}: {msg}" if msg else exc_type
+            logger.error("Query embedding failed (%s): %s", exc_type, exc, exc_info=True)
+            raise HTTPException(status_code=503, detail=f"Query embedding unavailable: {err_detail}") from exc
 
         # 2. Retrieve candidate items through SearchStore port
         item_types: list[str] | None = (
