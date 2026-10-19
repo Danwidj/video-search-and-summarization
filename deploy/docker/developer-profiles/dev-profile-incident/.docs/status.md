@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-10-18.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
+> **As of 2026-10-19.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
 ## 1. What is live
 
