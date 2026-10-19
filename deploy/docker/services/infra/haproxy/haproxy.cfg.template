@@ -38,7 +38,8 @@ backend bk_vss_ui
     server s1 "${HOST_IP}:${VSS_UI_PORT}" check
 
 backend bk_vss_agent
-    server s1 "${HOST_IP}:${VSS_AGENT_PORT}" check
+    # VSS_AGENT_BACKEND_HOST defaults to HOST_IP; a profile can set 127.0.0.1 to keep the agent off the LAN.
+    server s1 "${VSS_AGENT_BACKEND_HOST}:${VSS_AGENT_PORT}" check
 
 backend bk_vst_ingress
     server s1 "${HOST_IP}:${VST_PORT}" check

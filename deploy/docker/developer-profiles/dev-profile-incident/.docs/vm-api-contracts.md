@@ -8,7 +8,7 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 
 | Local port | VM target | Service | Frontend use |
 |---|---|---|---|
-| `8000` | `<vm-ip>:8000` | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
+| `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` (VIOS/VST) | video upload and storage API |
 | `30081` | `<vm-ip>:30081` | LLM NIM | unused: nothing listens on the VM (Brev inference) |
 | `30082` | `<vm-ip>:30082` | VLM NIM | unused: nothing listens on the VM (Brev inference) |
@@ -31,7 +31,7 @@ start.sh: cannot reach the VM over SSH ('daniel@kwanz-ws').
 
 Classified causes: Tailscale not logged in, stopped or daemon down, VM offline in the tailnet, host does not resolve, SSH timeout (`VSS_SSH_CONNECT_TIMEOUT`, default 10 s), connection refused, no route, host key changed, permission denied, connection dropped, otherwise unclassified.
 
-When SSH works but the tunnelled health check fails, start.sh says whether the agent is healthy on the VM (wrong `VSS_VM_IP`) or dead on the VM (read `.run/vss-agent.log`), then exits non-zero.
+When SSH works but the tunnelled health check fails, start.sh says whether the agent is healthy on the VM (SSH forward blocked or `VSS_AGENT_HOST` bound to LAN instead of `127.0.0.1`) or dead on the VM (read `.run/vss-agent.log`), then exits non-zero.
 
 ## Common behaviour
 

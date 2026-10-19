@@ -352,7 +352,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   done
   TUNNEL_LOG="$(mktemp)"
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
-    -L 8000:"$VSS_VM_IP":8000 \
+    -L 8000:127.0.0.1:8000 \
     -L 30081:"$VSS_VM_IP":30081 \
     -L 30082:"$VSS_VM_IP":30082 \
     -L 7777:"$VSS_VM_IP":7777 \
@@ -377,8 +377,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     # The SSH log repeats one line per failed connection; show each distinct line once.
     tunnel_err="$(sed 's/^channel [0-9]*: //' "$TUNNEL_LOG" | sort -u | head -n 3 | tr '\n' ';')"
     if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf --max-time 5 http://localhost:8000/health' 2>/dev/null | grep -q isAlive; then
-      echo "  The agent is healthy ON the VM, but the tunnel cannot reach it at ${VSS_VM_IP}:8000${tunnel_err:+ (${tunnel_err})}." >&2
-      echo "  Fix: the VM address is wrong or blocked. Re-run with VSS_VM_IP set to the VM's LAN address (ssh $VSS_SSH_TARGET 'ip -4 route get 1.1.1.1')." >&2
+      echo "  The agent is healthy ON the VM, but the tunnel cannot reach it at the VM loopback :8000${tunnel_err:+ (${tunnel_err})}." >&2
+      echo "  Fix: the SSH connection or forward is blocked; check the SSH target. If VSS_AGENT_HOST on the VM is set to a LAN address instead of 127.0.0.1, unset it and restart the agent." >&2
     else
       [ -n "$tunnel_err" ] && echo "  SSH tunnel said: ${tunnel_err}" >&2
       echo "  The agent does not answer on the VM either: it crashed after starting. Read its log: ssh $VSS_SSH_TARGET 'tail -n 40 $VSS_REPO_ROOT/.run/vss-agent.log'" >&2
@@ -387,7 +387,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     cleanup
     exit 1
   fi
-  echo "  agent ok (localhost:8000 -> ${VSS_VM_IP}:8000)"
+  echo "  agent ok (localhost:8000 -> VM loopback :8000)"
   echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"

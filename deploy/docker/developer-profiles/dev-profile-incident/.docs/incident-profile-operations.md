@@ -117,14 +117,14 @@ To verify active tunnel ports:
 ```
 
 Forwarded ports:
-- `localhost:8000` -> `<vm-ip>:8000` (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
+- `localhost:8000` -> `127.0.0.1:8000` on the VM (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
 - `localhost:7777` -> `<vm-ip>:7777` (`vss-haproxy-ingress`)
 - `localhost:30081` -> `<vm-ip>:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
 - `localhost:30082` -> `<vm-ip>:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
 
 Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add `GatewayPorts`). `incident-console-v2` is bound to `127.0.0.1:3200` by `start.sh` and the `dev`/`start` npm scripts, so nothing on the laptop network can reach it.
 
-**`VSS_AGENT_HOST` on the VM:** the default stays `0.0.0.0` because `vss-haproxy-ingress` (host network) proxies `/api` to `${HOST_IP}:8000`, and the tunnel targets the VM LAN address. The agent is therefore reachable from the VM's network and has no authentication; keep the VM on a trusted network. Setting `VSS_AGENT_HOST=${HOST_IP}` (in `.env` / `generated.env.remote`) keeps haproxy and the tunnel working while dropping other interfaces. `127.0.0.1` breaks both.
+**`VSS_AGENT_HOST` on the VM:** the default is `127.0.0.1` because the agent has no authentication and holds the database admin key. `vss-haproxy-ingress` (host network) reaches it through `VSS_AGENT_BACKEND_HOST=127.0.0.1` (set in `compose.override.yml`; the shared haproxy template defaults it to `HOST_IP` for other profiles), and the tunnel forwards `-L 8000:127.0.0.1:8000`, which resolves on the VM. Other tunnel ports still target the VM LAN address. Rolling this out needs a haproxy recreate (`compose up -d`) and an agent restart (`native-services.sh restart vss-agent`); an old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or changed. The browser-side `vss-ui` (which calls `${HOST_IP}:8000`) is not deployed in this profile.
 
 ### SSH Username Resolution & Troubleshooting
 
@@ -156,7 +156,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 
 **Troubleshooting Gotchas:**
 - **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host kwanz-ws` entry in `~/.ssh/config` has the correct `HostName` and `User`.
-- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (wrong `VSS_VM_IP`: agent healthy on the VM but unreachable at that address), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`).
+- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`).
 - **Wrong User Account:** Each teammate has a provisioned account on `kwanz-ws`. Configure `User <your-vm-username>` under `Host kwanz-ws` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---
@@ -197,6 +197,7 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 6. **Remote Endpoint Format:** Remote Switchyard/Brev endpoints must omit trailing slashes and paths (e.g. `https://switchyard-...brevlab.com`, not ending with `/v1`).
 7. **Client Type Enforcement:** Remote models must use `_type: openai` (`LLM_MODEL_TYPE=openai`, `VLM_MODEL_TYPE=openai`). Never use `_type: nim` against remote endpoints; the `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible endpoints.
 8. **Search Embedding Credentials:** Search query embeddings and evidence crop loader embeddings use the NVIDIA-hosted endpoint (`https://integrate.api.nvidia.com/v1/embeddings`) with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from `generated.env.remote`; the Brev key cannot call `/v1/embeddings`. Can be overridden with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, and `EVIDENCE_EMBEDDING_API_KEY`. The loader and search route must use the same model (`nvidia/llama-nemotron-embed-vl-1b-v2` at 1024 dimensions).
+9. **Loopback Agent Bind:** `VSS_AGENT_HOST` defaults to `127.0.0.1` because the agent has no authentication and holds the database admin key. An old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or updated to `127.0.0.1`; `vss-haproxy-ingress` reaches it via `VSS_AGENT_BACKEND_HOST=127.0.0.1` in `compose.override.yml`.
 
 > [!NOTE]
 > For the current live environment values and deployed model configurations on `kwanz-ws`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#6-live-vm-configuration-kwanz-ws).
