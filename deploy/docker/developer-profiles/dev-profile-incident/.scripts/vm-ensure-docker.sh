@@ -21,6 +21,10 @@
 
 set -uo pipefail
 
+# Pin all Docker operations / subprocesses to GPU 0 to protect GPU 1 for co-tenants
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-0}"
+
 REPO_ROOT="${1:?repo root}"
 REPO_URL="${2:-}"
 PULL_TIMEOUT="${3:-1800}"

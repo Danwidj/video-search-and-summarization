@@ -49,11 +49,56 @@ services:
   vst-ingress:
     restart: unless-stopped
 
+  # GPU pinning overrides: pin all Docker appliances that use GPU or the nvidia runtime
+  # to GPU 0, ensuring GPU 1 remains completely untouched for co-tenant training workloads.
   streamprocessing-ms:
     restart: unless-stopped
     deploy:
       restart_policy:
         condition: unless-stopped
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+
+  sensor-ms:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+
+  nvstreamer-2d-fusion:
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+
+  perception-2d-fusion:
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+
+  rtvi-embed:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
 
   kafka:
     restart: unless-stopped

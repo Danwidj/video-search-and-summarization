@@ -27,6 +27,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 # Ensure common user binary locations are on PATH
 export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:/usr/local/bin:${PATH}"
 
+# Pin all native processes to GPU 0 to protect GPU 1 for co-tenants
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-0}"
+
 # Directory for PID files and log output
 RUN_DIR="${VSS_RUN_DIR:-${REPO_ROOT}/.run}"
 mkdir -p "${RUN_DIR}"

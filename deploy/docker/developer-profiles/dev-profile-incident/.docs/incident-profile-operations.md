@@ -34,13 +34,13 @@ Networking: nearly all containers use host networking (network_mode: host); exce
 | **Native Process (High Feasibility)** | `vss-agent` | `8000` | Core AI agent running via NAT framework (`nat serve`). Iterated constantly; ~2s native restart vs ~3min container build. |
 | **Native Process (High Feasibility)** | `video-analytics-api` | `8081` | Optional analytics API (`node index.js`, gated by `ENABLE_ANALYTICS=true`). Fast Node.js runtime. |
 | **Native Process (High Feasibility)** | `behavior-analytics` | none | Optional behavior analytics (`python3 apps/...`, `ENABLE_ANALYTICS=true`; Kafka consumer, no HTTP port). Fast Python runtime. |
-| **Docker (Infeasible Natively)** | `vss-vios-streamprocessing` | `10000` | Hardware video decode/encode core and VST storage/upload API (nvidia runtime, all GPUs visible; receives chunked uploads via ingress). Bound to proprietary CUDA, GStreamer, and Triton toolchains. |
+| **Docker (Infeasible Natively)** | `vss-vios-streamprocessing` | `10000` | Hardware video decode/encode core and VST storage/upload API (GPU 0; receives chunked uploads via ingress). Bound to proprietary CUDA, GStreamer, and Triton toolchains. |
 | **Docker (Infeasible Natively)** | `vss-vios-nvstreamer` | `31000` | NvStreamer RTSP file streamer (GPU 0; not in upload path; not routed by ingress/HAProxy). Bound to proprietary GStreamer pipelines. |
 | **Docker (Infeasible Natively)** | `vss-vios-ingress` | `30888` | Nginx gateway for internal VIOS APIs: `/vst/api/v1/sensor` → sensor-ms :30000; other `/vst/api/v1` and `/vst/storage` → streamprocessing :10000. |
-| **Docker (Infeasible Natively)** | `vss-vios-sensor` | `30000` | VST sensor registration service (`sensor-ms`, nvidia runtime). Ingress routes `/vst/api/v1/sensor/` to it. |
+| **Docker (Infeasible Natively)** | `vss-vios-sensor` | `30000` | VST sensor registration service (`sensor-ms`, GPU 0). Ingress routes `/vst/api/v1/sensor/` to it. |
 | **Docker (Infeasible Natively)** | `vss-vios-postgres` | Internal | VIOS internal database (Unix socket only). Pre-configured schema and user provisioning within VIOS ecosystem. |
 | **Docker (Infeasible Natively)** | `vss-rtvi-cv` | `9000` | Real-time computer vision perception pipeline (GPU 0). DeepStream / CUDA dependency stack. |
-| **Docker (Infeasible Natively)** | `vss-rtvi-embed` | `8017` | Real-time video embedding generation (GPU 1, bridged port 8017→8000). Triton / CUDA dependency stack. |
+| **Docker (Infeasible Natively)** | `vss-rtvi-embed` | `8017` | Real-time video embedding generation (GPU 0, bridged port 8017→8000; unused in MVP2). Triton / CUDA dependency stack. |
 | **Docker (Standard Appliance)** | `redis` | Internal | In-memory cache and pub/sub message broker. Standard off-the-shelf appliance; zero development gain natively. |
 | **Docker (Standard Appliance)** | `phoenix` | `6006` | Tracing, telemetry, and observability UI (bridged `mdx_default`, published 6006:6006). Standard standalone monitoring appliance. |
 | **Docker (Standard Appliance)** | `vss-haproxy-ingress` | `7777` | Public gateway reverse proxy routing traffic to agent (:8000) and VIOS ingress (:30888). |
