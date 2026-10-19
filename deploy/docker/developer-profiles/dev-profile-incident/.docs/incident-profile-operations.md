@@ -124,7 +124,7 @@ Forwarded ports:
 
 Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add `GatewayPorts`). `incident-console-v2` is bound to `127.0.0.1:3200` by `start.sh` and the `dev`/`start` npm scripts, so nothing on the laptop network can reach it.
 
-**`VSS_AGENT_HOST` on the VM:** the default stays `0.0.0.0` because `vss-haproxy-ingress` (host network) proxies `/api` to `${HOST_IP}:8000`, and the tunnel targets the VM LAN address. The agent is therefore reachable from the VM's network and has no authentication; keep the VM on a trusted network. Setting `VSS_AGENT_HOST=${HOST_IP}` (in `.env` / `generated.env.remote`) keeps haproxy and the tunnel working while dropping other interfaces. `127.0.0.1` breaks both.
+**`VSS_AGENT_HOST` on the VM:** the default is `127.0.0.1` because the agent has no authentication and holds the database admin key. `vss-haproxy-ingress` (host network) reaches it through `VSS_AGENT_BACKEND_HOST=127.0.0.1` (set in `compose.override.yml`; the shared haproxy template defaults it to `HOST_IP` for other profiles), and the tunnel forwards `-L 8000:127.0.0.1:8000`, which resolves on the VM. Other tunnel ports still target the VM LAN address. Rolling this out needs a haproxy recreate (`compose up -d`) and an agent restart (`native-services.sh restart vss-agent`); an old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or changed. The browser-side `vss-ui` (which calls `${HOST_IP}:8000`) is not deployed in this profile.
 
 ### SSH Username Resolution & Troubleshooting
 

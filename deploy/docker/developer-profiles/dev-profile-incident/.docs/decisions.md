@@ -9,8 +9,8 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`compose.yml`](../compose.yml); [`../incident-console/README.md`](../incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
 
 ### 2026-10-18: Console binds loopback; agent bind stays configurable
-- **Decision:** `incident-console-v2` runs with `-H 127.0.0.1` (npm `dev`/`start` scripts and `start.sh`). `VSS_AGENT_HOST` keeps its `0.0.0.0` default and is documented, with `${HOST_IP}` as the narrower setting.
-- **Why:** Next defaults to all interfaces and the console holds database and storage admin keys with no authentication. `vss-haproxy-ingress` reaches the agent at `${HOST_IP}:8000` (`services/infra/haproxy/haproxy.cfg.template`), so a 127.0.0.1 agent bind and a loopback tunnel target would break `/api` on :7777 and the tunnel.
+- **Decision:** `incident-console-v2` runs with `-H 127.0.0.1` (npm `dev`/`start` scripts and `start.sh`). `VSS_AGENT_HOST` defaults to `127.0.0.1`; haproxy's agent backend uses `VSS_AGENT_BACKEND_HOST=127.0.0.1` (profile override of a new shared-template variable defaulting to `HOST_IP`) and the tunnel forwards to the VM loopback.
+- **Why:** Next defaults to all interfaces and the console holds database and storage admin keys with no authentication. haproxy is host-network, so it can reach a loopback agent once its backend host is configurable; the console reaches the agent through the tunnel, not haproxy, and no `vss-ui` runs on the VM.
 - **Rejected:** defaulting the agent to 127.0.0.1 (breaks haproxy); changing the shared haproxy backend (shared service, out of scope).
 - **Links:** [`incident-profile-operations.md`](incident-profile-operations.md).
 
