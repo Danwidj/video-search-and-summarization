@@ -1244,6 +1244,28 @@ class TestEmbeddingFailuresReturn503:
         resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
 
         assert resp.status_code == 503
+        assert resp.json()["detail"] == "Query embedding unavailable: HTTPStatusError: boom"
+
+    def test_embedder_timeout_with_empty_message_returns_503_and_names_type(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When an exception has an empty message (e.g. ReadTimeout("")), type is named in 503 detail and log."""
+        embedder = MagicMock()
+        embedder.embed_query = AsyncMock(side_effect=httpx.ReadTimeout(""))
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator(), embedder=embedder)
+        )
+
+        with caplog.at_level("ERROR", logger="vss_agents.api.incident_search"):
+            resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
+
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Query embedding unavailable: ReadTimeout"
+        assert any(
+            "Query embedding failed (ReadTimeout)" in record.message and record.exc_info is not None
+            for record in caplog.records
+        )
 
 
 class TestResultIds:
