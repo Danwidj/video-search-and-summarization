@@ -51,6 +51,7 @@ uv sync && uv run pytest tests/
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
+- **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `lib/adapters/supabase/` builds PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
 - **Reviewer edits change only the relational projection** (`apply_structured_report_edit`). Official reports are explicit (`select_official_report`); never infer "latest run wins".
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). All PostgREST writers use `/rpc/insert_incident`.
@@ -95,3 +96,4 @@ Stale docs are a defect. Update in the same PR:
 | [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |
 | [`.docs/decisions.md`](.docs/decisions.md) | Before reversing an existing choice |
 | [`.docs/mvp2/README.md`](.docs/mvp2/README.md) | Natural-language search work |
+| [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) | Changing an `incident-console-v2` API route or its database access |

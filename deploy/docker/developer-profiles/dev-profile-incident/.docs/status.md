@@ -6,7 +6,7 @@
 
 | Area | State | Where |
 |---|---|---|
-| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md) |
+| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard. API routes reach Supabase through the middle layer (ports and adapters), except ground truth, analysis saving and run history | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Supabase rows plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
@@ -19,7 +19,7 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; timestamp backfill script (`scripts/backfill_official_timestamps.py`).
 - **Live on `kwanz-ws` (verified 2026-10-18):** the evidence loader (`scripts/backfill_official_timestamps.py`: remote VLM grounding and boxes, R2 upload, `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions, upsert) loaded 64 of 69 items from the 13 official reports into `evidence_crops`. 7 items were recovered by PR 141's whole-frame fallback (4 items with no VLM box: `SUV`, `ATM machine`, `Fireball`, and `weapon`) and JSON repair (3 truncated JSON replies). The remaining 5 failures are all from video `v5c609184047f88c720e` and still fail with remote gateway HTTP 500. `POST /api/v1/incidents/search` (`top_k=5`) returns 2-5 hits in about 6-9 s across benchmark queries ("weapon" surfaces the assault weapon at rank 1, similarity 0.331); crop URLs are fetchable via HTTP 206 Partial Content, with critic verdicts (`confirmed`, `rejected`, `unverified`). Rerun the loader only after the remote gateway recovers to fill the remaining 5 items.
-- **In progress:** frontend search UI and chat; retrieval eval suite and baseline benchmarks; data layer and RLS work.
+- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval suite and baseline benchmarks; data layer and RLS work.
 - **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark.
 
 ## 3. Pending approvals (migrations not yet applied to shared Supabase)
