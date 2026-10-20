@@ -190,6 +190,23 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
 
 ## 4. Runtime Interaction Sequences
 
+### Console middle layer (ports and adapters)
+
+`incident-console-v2` reaches Supabase through a hexagonal middle layer ([`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md)):
+
+```
+components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (multi-step use cases)
+                                         |                       |
+                                         +-----> lib/ports/* <---+   (domain types + port interfaces)
+                                                      ^
+                                     lib/adapters/supabase/* (getDbAdapters, mappers) --> lib/postgrest/client.ts --> PostgREST
+```
+
+- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+- `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
+- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+
 ### Report library pagination and deferred report loading
 
 ```mermaid
@@ -202,14 +219,14 @@ sequenceDiagram
 
     User->>UI: Open library or change metadata/evidence filter
     UI->>API: GET summaries (page size 6; entity/instrument/asset terms)
-    API->>DB: list_incident_report_summaries(...)
+    API->>DB: list_incident_report_summaries(...) (IncidentRepository.listReports)
     DB-->>API: 6 summaries + total count
     API->>R2: Sign up to 6 derived thumbnail keys
     API-->>UI: Metadata + small thumbnail URLs (no video URL)
     UI-->>User: Lazy screenshot images or skeleton fallback
     User->>UI: Open one report
     UI->>API: GET /api/reports/videoId?run=modelRunId
-    API->>DB: Read selected report graph
+    API->>DB: Read selected report graph (IncidentRepository.getRunReport)
     API->>R2: Create selected object's signed URL
     API-->>UI: Full report + playback URL
 ```
@@ -220,7 +237,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 ### Dashboard analytics and cross-filtering
 
-`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC. It counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
 - Videos with reports but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
 - Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
 - Model coverage counts every analysis attempt in the period by outcome.

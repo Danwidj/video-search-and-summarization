@@ -2,12 +2,12 @@
 
 import { NextResponse } from 'next/server';
 
-import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
+import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { PostgrestClient } from '@/lib/postgrest/client';
+import type { ReportListQuery, ReportSort } from '@/lib/ports';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
 import { isValidTimeZone } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
@@ -16,17 +16,15 @@ const PAGE_SIZE = 6;
 const SORTS = new Set(['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
 const SEVERITIES = new Set(['all', 'low', 'medium', 'high', '1', '2', '3', '4', '5']);
 
-interface RpcResult {
-  reports?: ReportLibraryItem[];
-  totalItems?: number;
-  incidentTypes?: string[];
-}
-
 const SCOPES = new Set(['all', 'official']);
 const MATCHES = new Set(['contains', 'exact']);
 const ENTITY_TYPES = new Set(['human', 'animal', 'unknown']);
 const MAX_EVIDENCE_FILTERS = 10;
 const MAX_EVIDENCE_FILTER_LENGTH = 100;
+
+const isSort = (value: string): value is ReportSort => SORTS.has(value);
+const isScope = (value: string): value is ReportListQuery['scope'] => SCOPES.has(value);
+const isMatch = (value: string): value is ReportListQuery['evidenceMatch'] => MATCHES.has(value);
 
 function optional(params: URLSearchParams, key: string): string | null {
   const value = params.get(key)?.trim();
@@ -44,7 +42,7 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
 export async function GET(request: Request) {
   try {
     const config = getServiceConfiguration();
-    if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
+    const { incidents } = getDbAdapters(config);
 
     const params = new URL(request.url).searchParams;
     const requestedPage = Number.parseInt(params.get('page') || '1', 10);
@@ -60,39 +58,34 @@ export async function GET(request: Request) {
     const scope = params.get('scope') || 'all';
     const match = params.get('match') || 'contains';
     const entityTypes = [...new Set(params.getAll('entityType').map((value) => value.trim().toLowerCase()).filter(Boolean))];
-    if (!SORTS.has(sort)) return NextResponse.json({ error: 'Invalid report sort' }, { status: 400 });
-    if (!SCOPES.has(scope)) return NextResponse.json({ error: 'Invalid report scope' }, { status: 400 });
-    if (!MATCHES.has(match)) return NextResponse.json({ error: 'Invalid evidence match' }, { status: 400 });
+    if (!isSort(sort)) return NextResponse.json({ error: 'Invalid report sort' }, { status: 400 });
+    if (!isScope(scope)) return NextResponse.json({ error: 'Invalid report scope' }, { status: 400 });
+    if (!isMatch(match)) return NextResponse.json({ error: 'Invalid evidence match' }, { status: 400 });
     if (entityTypes.some((value) => !ENTITY_TYPES.has(value))) return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
     if (!SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid report severity' }, { status: 400 });
     if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
 
-    const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    const result = await db.rpc('list_incident_report_summaries', {
-      p_page: page,
-      p_page_size: pageSize,
-      p_search: optional(params, 'search'),
-      p_type: optional(params, 'type'),
-      p_severity: optional(params, 'severity'),
-      p_status: optional(params, 'status'),
-      p_generated_after: optional(params, 'after'),
-      p_generated_before: optional(params, 'before'),
-      p_time_from: optional(params, 'fromTime'),
-      p_time_to: optional(params, 'toTime'),
-      p_entities: evidenceFilters(params, 'entity'),
-      p_instruments: evidenceFilters(params, 'instrument'),
-      p_assets: evidenceFilters(params, 'asset'),
-      p_day_of_week: dayOfWeek,
-      p_sort: sort,
-      p_scope: scope,
-      p_entity_types: entityTypes.length ? entityTypes : null,
-      p_evidence_match: match,
-      p_timezone: timezone,
-    }) as RpcResult;
-    // The summary RPC returns each report's analysis outcome (from the run's
-    // immutable notes, e.g. IDs repaired) and whether it is the video's
-    // official report.
-    const summaries = Array.isArray(result?.reports) ? result.reports : [];
+    const { items: summaries, totalItems, incidentTypes } = await incidents.listReports({
+      page,
+      pageSize,
+      search: optional(params, 'search'),
+      type: optional(params, 'type'),
+      severity: optional(params, 'severity'),
+      status: optional(params, 'status'),
+      generatedAfter: optional(params, 'after'),
+      generatedBefore: optional(params, 'before'),
+      timeFrom: optional(params, 'fromTime'),
+      timeTo: optional(params, 'toTime'),
+      entities: evidenceFilters(params, 'entity'),
+      instruments: evidenceFilters(params, 'instrument'),
+      assets: evidenceFilters(params, 'asset'),
+      dayOfWeek,
+      sort,
+      scope,
+      entityTypes: entityTypes.length ? entityTypes : null,
+      evidenceMatch: match,
+      timezone,
+    });
     const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
       if (!isValidR2Key(report.r2Key)) return report;
       try {
@@ -101,11 +94,10 @@ export async function GET(request: Request) {
         return report;
       }
     }));
-    const totalItems = typeof result?.totalItems === 'number' ? result.totalItems : 0;
 
     return NextResponse.json({
       reports,
-      incidentTypes: Array.isArray(result?.incidentTypes) ? result.incidentTypes : [],
+      incidentTypes,
       pagination: {
         page,
         pageSize,

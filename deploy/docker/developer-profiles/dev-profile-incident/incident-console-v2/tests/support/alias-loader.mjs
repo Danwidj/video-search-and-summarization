@@ -17,7 +17,8 @@ export async function resolve(specifier, context, nextResolve) {
   }
   if (specifier.startsWith('@/')) {
     const rest = specifier.slice(2);
-    for (const ext of ['.ts', '.tsx']) {
+    // '/index.ts' resolves directory imports such as '@/lib/adapters/supabase'.
+    for (const ext of ['.ts', '.tsx', '/index.ts']) {
       const candidate = new URL(`${rest}${ext}`, projectRoot);
       if (existsSync(fileURLToPath(candidate))) {
         return nextResolve(candidate.href, context);
