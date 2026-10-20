@@ -91,6 +91,15 @@ FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... $W/supabase/tests/pr
                                        # expect 401/403 for every public-key line, 200 for the service key
 ```
 
+**Finals uses the new key types:** the server key is `sb_secret_...` and the public key
+`sb_publishable_...`, not JWTs. They go in the `apikey` header only (`probe_api.sh` does this).
+Before the switch, the VM's `supabase-py` must be proven to accept the `sb_secret_` key (the
+agent's version is not pinned and older 2.x releases reject non-JWT keys), and the console and
+eval must stop sending the key as `Authorization: Bearer` (PR B). The connection test and the
+table of every key sender are in the
+[`incident-manage-database`](../skills/incident-manage-database/SKILL.md#finals-keys-sb_secret_)
+skill.
+
 Then the copy, from a laptop (`kwanz-ws` blocks port 5432). Each env file holds `INCIDENT_DB_DSN`:
 
 ```bash

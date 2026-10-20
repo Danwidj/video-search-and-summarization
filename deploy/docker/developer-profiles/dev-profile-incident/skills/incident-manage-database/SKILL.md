@@ -81,23 +81,34 @@ People: someone with **Supabase account access** (the organisation owner who cre
 
 Preparation (no downtime):
 
-1. **Supabase owner:** create the finals project in the same organisation and region as midterm, Postgres 17. Turn **off** email signups; keep SSL enforced. Hand over the URL, the server key, the session-pooler DSN and the public key (for the probe only) through the team's secret channel, never the repo.
+1. **Supabase owner:** create the finals project in the same organisation and region as midterm, Postgres 17. Turn **off** email signups; keep SSL enforced. Hand over the URL, the server key, the session-pooler DSN and the public key (for the probe only) through the team's secret channel, never the repo. **Finals uses the new key types:** the server key is an `sb_secret_...` key and the public key an `sb_publishable_...` key. Neither is a JWT (see [Keys](#finals-keys-sb_secret_)), so every client that sends the key must accept that.
 2. Merge the console change that reads the effective views and `set_review_status` (it must be in before the switch).
 3. **Captain:** apply the baseline (`db push --dry-run`, then for real, as above), then `security_check.sql` (0 rows) and `FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... supabase/tests/probe_api.sh` (401/403 for every public-key line, 200 for the server key).
-4. **Captain:** rehearse against the real finals: `supabase/copy/copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env>` (rolls back; every check must pass). Then once with `--commit`, run `supabase/tests/parity_check.py` with the same arguments, and smoke-test a local console pointed at finals, read only. These rows are replaced at the cutover.
+4. **VM key check** (someone with `kwanz-ws` access, before the cutover): the agent and the evidence loader connect through `supabase-py` (`utils/incident_db.py`, `acreate_client`), and `services/agent/pyproject.toml` only requires `supabase~=2.0` while `uv.lock` does not pin it, so the installed version on the VM is unknown. Test the agent's own environment against finals with the `sb_secret_` key (reads one row of `videos`; `rows 0` is a pass while finals is still empty):
+
+   ```bash
+   cd /srv/rise-up/vss
+   read -rp 'finals URL: ' FINALS_URL; read -rsp 'finals sb_secret key: ' FINALS_KEY; echo; export FINALS_URL FINALS_KEY
+   services/agent/.venv/bin/python -c "import os, importlib.metadata as m, supabase; c = supabase.create_client(os.environ['FINALS_URL'], os.environ['FINALS_KEY']); print('supabase', m.version('supabase'), 'ok, rows', len(c.table('videos').select('id').limit(1).execute().data))"
+   unset FINALS_KEY
+   ```
+
+   If it fails with `Invalid API key`, a JWT error or a 401, upgrade in the agent's environment, `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (tell the team first: the VM is shared), then retest until it passes. The evidence loader (`scripts/backfill_official_timestamps.py`) runs with the same `services/agent/.venv` and connects through the same `incident_db.get_db()`, so this one test covers it too.
+5. **Captain:** rehearse against the real finals: `supabase/copy/copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env>` (rolls back; every check must pass). Then once with `--commit`, run `supabase/tests/parity_check.py` with the same arguments, and smoke-test a local console pointed at finals, read only. These rows are replaced at the cutover.
 
 Cutover window:
 
-5. Everyone stops local consoles and eval runs. No VM service has to stop.
-6. **Freeze midterm:** run `supabase/midterm/freeze_midterm.sql` in the midterm SQL editor. Expect the check row `rls_off 0, anon_readable 0, service_reads true, service_writes false`.
-7. **Captain:** `copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env> --replace --commit`. Keep its output as the record.
-8. Re-check finals: `security_check.sql` (0 rows), `probe_api.sh`, `parity_check.py` (only the expected differences: uploaded videos 196 → 188 and without-report 55 → 47; 6 cleared `editedBy/editedAt`; the legacy official run `m37883594f65802c8a31` reads `assault` and `0`/`18`; 3 entity crops say `human`).
-9. **VM:** back up `generated.env.remote`, set `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` to finals, restart `vss-agent` ([`incident-operate-vm`](../incident-operate-vm/SKILL.md)), and check the host (never the key) in `/proc/<pid>/environ`.
-10. **Laptops:** set the 3 values in `.env.local`, refresh the `.env.local` copies in other worktrees, `git pull`, `./start.sh`.
-11. Run the checklist below, announce that finals is live, and rewrite `.docs/status.md`.
+6. Everyone stops local consoles and eval runs. No VM service has to stop.
+7. **Freeze midterm:** run `supabase/midterm/freeze_midterm.sql` in the midterm SQL editor. Expect the check row `rls_off 0, anon_readable 0, service_reads true, service_writes false`.
+8. **Captain:** `copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env> --replace --commit`. Keep its output as the record.
+9. Re-check finals: `security_check.sql` (0 rows), `probe_api.sh`, `parity_check.py` (only the expected differences: uploaded videos 196 → 188 and without-report 55 → 47; 6 cleared `editedBy/editedAt`; the legacy official run `m37883594f65802c8a31` reads `assault` and `0`/`18`; 3 entity crops say `human`).
+10. **VM:** back up `generated.env.remote`, set `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (the `sb_secret_` key) to finals, restart `vss-agent` ([`incident-operate-vm`](../incident-operate-vm/SKILL.md)), and check the host (never the key) in `/proc/<pid>/environ`. If step 4 was not done, do it now, before the restart.
+11. **Laptops:** set the 3 values in `.env.local`, refresh the `.env.local` copies in other worktrees, `git pull`, `./start.sh`.
+12. Run the checklist below, announce that finals is live, and rewrite `.docs/status.md`.
 
 Checklist:
 
+- [ ] VM key check (step 4) passes in the agent's environment with the finals `sb_secret_` key.
 - [ ] Security: `security_check.sql` 0 rows; `probe_api.sh` public key 401/403 on every table, view and RPC, server key 200; midterm refuses a server-key `POST /rest/v1/videos` and a public-key `GET`.
 - [ ] Console (pointed at finals): `/api/health` 200 with `postgrest.reachable: true`; dashboard 13 official reports, uploaded 188, withOfficial 13, withoutReport 47, reviews 6 verified and 7 unreviewed; library 24 reports (13 official); `/reports/v18c252bf933457bc737?run=mb2484aa55750392701c` shows the reviewer's description; a video with failed attempts shows them in run history.
 - [ ] On a test video: select and clear the official report; an edit leaves the AI row unchanged, adds a `human_reports` row and bumps `revision`; verifying leaves `edited_by` unchanged; a second edit sends the report back to `under review`.
@@ -107,8 +118,8 @@ Checklist:
 
 Rollback:
 
-- **Before step 9** (nothing points at finals yet): run `unfreeze_midterm.sql` and stop. Finals keeps its rows for the next attempt (`--replace`).
-- **After step 9:** restore the backed-up `generated.env.remote` and restart the agent; put the midterm values back in `.env.local`; run `unfreeze_midterm.sql`; check out the console commit from before the effective-views change (midterm has no effective views or `set_review_status`). The copy is one way: list anything written to finals after the cutover by `run_datetime` and `generated_datetime` and carry it back by hand.
+- **Before step 10** (nothing points at finals yet): run `unfreeze_midterm.sql` and stop. Finals keeps its rows for the next attempt (`--replace`).
+- **After step 10:** restore the backed-up `generated.env.remote` and restart the agent; put the midterm values back in `.env.local`; run `unfreeze_midterm.sql`; check out the console commit from before the effective-views change (midterm has no effective views or `set_review_status`). The copy is one way: list anything written to finals after the cutover by `run_datetime` and `generated_datetime` and carry it back by hand.
 
 After the switch, take a full `pg_dump` of midterm (Postgres 17 client, schema and data) for the course files. Pause midterm only when the finals phase is over; never delete it before the course ends.
 
@@ -120,7 +131,24 @@ curl -s "$INCIDENT_SUPABASE_URL/rest/v1/incidents?incident_id=eq.<id>&select=*" 
   -H "Authorization: Bearer $INCIDENT_SUPABASE_SERVICE_ROLE_KEY"
 ```
 
-A new-style `sb_secret_...` key goes in `apikey` only: it is not a JWT, so PostgREST rejects it as `Authorization: Bearer`.
+With an `sb_secret_...` key (finals) send `apikey` only: drop the `Authorization` line.
+
+### Finals keys (`sb_secret_`)
+
+Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public key `sb_publishable_...`. They are not JWTs, so the Supabase gateway rejects one sent as `Authorization: Bearer` ("invalid JWT"); send it in the `apikey` header only. Who sends the key, and whether it copes:
+
+| Sender | How | Handles `sb_secret_`? |
+|---|---|---|
+| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore` and `SupabaseEvidenceStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0` and `uv.lock` does not pin it. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
+| Evidence loader `scripts/backfill_official_timestamps.py` | Same `incident_db.get_db()` in the same `services/agent/.venv` | Same as the agent; the VM key check covers it. Its own `Authorization: Bearer` header goes to the VLM gateway, not Supabase |
+| `mock-backend/base_profile_mock` (local mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
+| `incident-console-v2` `lib/postgrest/client.ts` | `apikey` + always `Authorization: Bearer` | No, until PR B sends Bearer only for JWT-style keys |
+| `eval/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No, until PR B (same fix) |
+| Retired `incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (retired; do not point it at finals) |
+| `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
+| `supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
+
+Follow-ups (not in this change): pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock`; the console and eval header fix is PR B.
 
 ### R2 objects
 
