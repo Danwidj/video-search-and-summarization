@@ -15,6 +15,7 @@ import {
 } from '@/lib/reports/edit-draft';
 import { formatClock } from '@/lib/reports/normalize';
 import type { ReportView } from '@/lib/reports/report-view';
+import type { ReviewStatus } from '@/lib/reports/storage';
 
 /**
  * Class A editor: incident type, window, summary, severity level, and the
@@ -22,7 +23,7 @@ import type { ReportView } from '@/lib/reports/report-view';
  * rationale, location, timeline, uncertainties) and provenance are shown
  * read-only on the left and are never part of an edit.
  */
-export function StructuredEditor({ report, onCancel, onSaved }: { report: ReportView; onCancel: () => void; onSaved: () => void }) {
+export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { report: ReportView; reviewStatus: ReviewStatus; onCancel: () => void; onSaved: () => void }) {
   const [draft, setDraft] = useState<EditDraft>(() => draftFromView(report));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string[]>([]);
@@ -37,7 +38,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
     if (problems.length || busy) return;
     const editedBy = window.prompt('Your name is required to save a reviewer edit.');
     if (!editedBy?.trim()) return;
-    if (report.review.status === 'verified' && !window.confirm('This report is verified. Saving this edit sends it back to under review and clears the verification. Save anyway?')) return;
+    if (reviewStatus === 'verified' && !window.confirm('This report is verified. Saving this edit sends it back to under review and clears the verification. Save anyway?')) return;
     setBusy(true);
     setError([]);
     try {
