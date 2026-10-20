@@ -56,6 +56,7 @@ test('a valid edit goes to the reviewer-version RPC only; model_runs (notes) is 
   const writes = calls.filter((c) => c.method !== 'GET');
   assert.deepEqual(writes.map((c) => c.table), ['rpc/save_human_report_edit']);
   assert.deepEqual(writes[0].body, { p_incident_id: repaired.videoId, p_model_run_id: repaired.modelRunId, p_edit: edit, p_edited_by: 'Rev' });
+  assert.deepEqual(writes[0].body.p_edit.instruments.map((i) => i.source_id), ['I1', 'I2'], 'each item names its AI origin');
   assert.ok(!calls.some((c) => c.table === 'model_runs'), 'the edit path never touches model_runs');
 });
 

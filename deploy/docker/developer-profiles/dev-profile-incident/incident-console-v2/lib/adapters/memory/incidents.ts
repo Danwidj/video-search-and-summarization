@@ -3,7 +3,8 @@
 // In-memory IncidentRepository for use-case tests. It implements the semantics
 // the Supabase adapter owns: run scoping, null on a missing run, the reviewer
 // version (an edit or a verification never changes the AI report; the report
-// read is the reviewer's version when there is one), atomic review transitions,
+// read is the reviewer's version when there is one; each reviewer item keeps
+// the AI item it came from), atomic review transitions,
 // and the run delete cascading to the review, the reviewer version and the
 // run's library summary.
 // The library is seeded with summaries as list_incident_report_summaries
@@ -24,6 +25,10 @@ type HumanVersion = Pick<RunReportRecord, 'incident' | 'entities' | 'instruments
 
 /** Stored timestamps are naive UTC, as Postgres returns them. */
 const storedNow = () => new Date().toISOString().replace('Z', '');
+
+/** An edited item's AI origin: its source_id when sent, else the AI item with the same ID, if any. */
+const sourceOf = (item: { source_id?: string | null }, itemId: string, aiIds: string[]) =>
+  item.source_id !== undefined ? item.source_id : aiIds.includes(itemId) ? itemId : null;
 
 const UNMODELLED_FILTERS = [
   'search', 'type', 'severity', 'generatedAfter', 'generatedBefore', 'timeFrom', 'timeTo',
@@ -109,12 +114,18 @@ export class InMemoryIncidentRepository implements IncidentRepository {
         type: incident.type, startSeconds: incident.start_timestamp, endSeconds: incident.end_timestamp, duration,
         description: incident.description, severityLevel: incident.severity_level, confidenceScore: run.incident.confidenceScore,
       },
-      entities: edit.entities.map((entity) => ({ entityId: entity.entity_id, type: entity.type, description: entity.description })),
-      instruments: edit.instruments.map((instrument) => ({
-        instrumentId: instrument.instrument_id, entityId: instrument.entity_id, name: instrument.name,
-        description: instrument.description, threatLevel: instrument.threat_level,
+      entities: edit.entities.map((entity) => ({
+        entityId: entity.entity_id, sourceId: sourceOf(entity, entity.entity_id, run.entities.map((e) => e.entityId)),
+        type: entity.type, description: entity.description,
       })),
-      assets: edit.assets.map((asset) => ({ assetId: asset.asset_id, name: asset.name, description: asset.description })),
+      instruments: edit.instruments.map((instrument) => ({
+        instrumentId: instrument.instrument_id, sourceId: sourceOf(instrument, instrument.instrument_id, run.instruments.map((i) => i.instrumentId)),
+        entityId: instrument.entity_id, name: instrument.name, description: instrument.description, threatLevel: instrument.threat_level,
+      })),
+      assets: edit.assets.map((asset) => ({
+        assetId: asset.asset_id, sourceId: sourceOf(asset, asset.asset_id, run.assets.map((a) => a.assetId)),
+        name: asset.name, description: asset.description,
+      })),
       revision,
     });
     // An edit sends a verified report back to 'under review' and clears the verifier.

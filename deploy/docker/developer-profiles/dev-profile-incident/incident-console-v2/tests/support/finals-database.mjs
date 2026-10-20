@@ -13,13 +13,24 @@ const runOf = (args) => ({ incident_id: args.p_incident_id, model_run_id: args.p
 const storedNow = () => new Date().toISOString().replace('Z', '');
 const humanOf = (store, run) => (store.human_reports ?? []).find((row) => sameRun(row, run));
 
+/** An AI item as an effective_* view returns it: its own ID is its source. */
+const aiItem = (idColumn) => (row) => ({ ...row, [`source_${idColumn}`]: row[idColumn], source: 'ai' });
+
 /** The AI items of runs without a reviewer version, then the reviewer's items. */
 function effectiveItems(aiTable, humanTable, idColumn) {
   return (store) => [
-    ...(store[aiTable] ?? []).filter((row) => !humanOf(store, row)).map((row) => ({ ...row, [`source_${idColumn}`]: row[idColumn], source: 'ai' })),
+    ...(store[aiTable] ?? []).filter((row) => !humanOf(store, row)).map(aiItem(idColumn)),
     ...(store[humanTable] ?? []).map((row) => ({ ...row, image: null, source: 'human' })),
   ];
 }
+
+/** A row fixture of a run without a reviewer version (AI table rows), as getRunReport reads it from the effective_* views. */
+export const effectiveRowsOfAiRun = (rows) => ({
+  ...rows,
+  entities: rows.entities.map(aiItem('entity_id')),
+  instruments: rows.instruments.map(aiItem('instrument_id')),
+  assets: rows.assets.map(aiItem('asset_id')),
+});
 
 export const effectiveViews = {
   effective_incidents: (store) => (store.incidents ?? []).map((incident) => {

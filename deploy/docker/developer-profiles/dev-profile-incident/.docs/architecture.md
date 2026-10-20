@@ -269,7 +269,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 ### Structured (Class A) report editing
 
 `Edit report` opens a side-by-side editor: the original model output read-only on the left, and the structured fields on the right.
-- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets. IDs are renumbered by position.
+- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets. IDs are renumbered by position; each item sends the AI item it came from as `source_id` (null for an item the reviewer added), so a delete or reorder never relinks it to the AI item that now has its number.
 - **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
 - **Provenance:** never editable.
 

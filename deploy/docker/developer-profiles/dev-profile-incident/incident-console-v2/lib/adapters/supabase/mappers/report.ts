@@ -101,9 +101,10 @@ export function runReportFromRows(rows: ReportRows): RunReportRecord {
       severityLevel: num(incident.severity_level),
       confidenceScore: num(incident.confidence_score),
     },
-    entities: [...rows.entities].sort(byId('entity_id')).map((row) => ({ entityId: String(row.entity_id ?? ''), type: canonicalEntityType(row.type), description: String(row.description ?? '') })),
-    instruments: [...rows.instruments].sort(byId('instrument_id')).map((row) => ({ instrumentId: String(row.instrument_id ?? ''), entityId: text(row.entity_id), name: String(row.name ?? ''), description: String(row.description ?? ''), threatLevel: num(row.threat_level) })),
-    assets: [...rows.assets].sort(byId('asset_id')).map((row) => ({ assetId: String(row.asset_id ?? ''), name: String(row.name ?? ''), description: String(row.description ?? '') })),
+    // source_*_id: an AI row's own ID, a reviewer row's AI origin (NULL when the reviewer added it).
+    entities: [...rows.entities].sort(byId('entity_id')).map((row) => ({ entityId: String(row.entity_id ?? ''), sourceId: text(row.source_entity_id), type: canonicalEntityType(row.type), description: String(row.description ?? '') })),
+    instruments: [...rows.instruments].sort(byId('instrument_id')).map((row) => ({ instrumentId: String(row.instrument_id ?? ''), sourceId: text(row.source_instrument_id), entityId: text(row.entity_id), name: String(row.name ?? ''), description: String(row.description ?? ''), threatLevel: num(row.threat_level) })),
+    assets: [...rows.assets].sort(byId('asset_id')).map((row) => ({ assetId: String(row.asset_id ?? ''), sourceId: text(row.source_asset_id), name: String(row.name ?? ''), description: String(row.description ?? '') })),
     review: reviewFromRow(rows.review),
     report: rows.reportRow ? { reportId: text(rows.reportRow.id), generatedAt: text(rows.reportRow.generated_datetime) } : null,
   };

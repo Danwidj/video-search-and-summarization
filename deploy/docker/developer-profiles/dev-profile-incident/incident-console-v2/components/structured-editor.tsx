@@ -95,7 +95,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
           <textarea className="control mt-1 min-h-[100px]" onChange={(e) => setIncident({ description: e.target.value })} value={draft.incident.description} />
         </label>
 
-        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { key: newKey('entity'), type: 'human', description: '' }] }))}>
+        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { key: newKey('entity'), sourceId: null, type: 'human', description: '' }] }))}>
           {draft.entities.map((entity, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={entity.key}>
               <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
           ))}
         </Section>
 
-        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { key: newKey('instrument'), holderKey: null, name: '', description: '', threat_level: null }] }))}>
+        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { key: newKey('instrument'), sourceId: null, holderKey: null, name: '', description: '', threat_level: null }] }))}>
           {draft.instruments.map((instrument, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={instrument.key}>
               <div className="flex items-center gap-2">
@@ -133,7 +133,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
           ))}
         </Section>
 
-        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { key: newKey('asset'), name: '', description: '' }] }))}>
+        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { key: newKey('asset'), sourceId: null, name: '', description: '' }] }))}>
           {draft.assets.map((asset, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={asset.key}>
               <div className="flex items-center gap-2">

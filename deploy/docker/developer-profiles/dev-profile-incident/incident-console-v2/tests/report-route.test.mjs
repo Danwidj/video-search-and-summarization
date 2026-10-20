@@ -24,6 +24,7 @@ mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: asy
 
 const { GET } = await import('../app/api/reports/[videoId]/route.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
+const { effectiveRowsOfAiRun } = await import('./support/finals-database.mjs');
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -38,7 +39,7 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 const call = (query) => GET(new Request(`http://localhost/api/reports/${smoke.videoId}${query}`), { params: Promise.resolve({ videoId: smoke.videoId }) });
 
 function database(overrides = {}) {
-  const rows = { ...smoke, video: { ...smoke.video, selected_model_run_id: smoke.modelRunId, selected_by: 'Lead', selected_at: '2026-10-01T00:00:00' }, ...overrides };
+  const rows = { ...effectiveRowsOfAiRun(smoke), video: { ...smoke.video, selected_model_run_id: smoke.modelRunId, selected_by: 'Lead', selected_at: '2026-10-01T00:00:00' }, ...overrides };
   const requests = [];
   globalThis.fetch = async (url) => {
     const parsed = new URL(String(url));

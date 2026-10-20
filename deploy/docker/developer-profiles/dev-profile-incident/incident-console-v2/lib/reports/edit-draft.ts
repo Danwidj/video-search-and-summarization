@@ -3,7 +3,9 @@
 // Browser-safe shape of a structured (Class A) reviewer edit and the helpers
 // the editor uses. Identifiers are managed here, never typed by the reviewer:
 // every change renumbers E#/I#/A# by position and carries instrument holders
-// with their entity. Validation happens server-side
+// with their entity. Each item keeps the ID of the AI item it came from
+// (source_id; null for an item the reviewer added), so a delete or reorder
+// does not relink it to whichever AI item has its new number. Validation happens server-side
 // (lib/contract/structured-edit.ts) and again in the database function.
 
 import type { ReportView } from '@/lib/reports/report-view';
@@ -13,17 +15,17 @@ export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
 
 export interface StructuredEdit {
   incident: { type: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
-  entities: Array<{ entity_id: string; type: string; description: string }>;
-  instruments: Array<{ instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number }>;
-  assets: Array<{ asset_id: string; name: string; description: string }>;
+  entities: Array<{ entity_id: string; source_id?: string | null; type: string; description: string }>;
+  instruments: Array<{ instrument_id: string; source_id?: string | null; entity_id: string | null; name: string; description: string; threat_level: number }>;
+  assets: Array<{ asset_id: string; source_id?: string | null; name: string; description: string }>;
 }
 
 /** An in-progress edit: values a legacy run may lack (type, times, threat level) start empty and must be chosen. */
 export interface EditDraft {
   incident: { type: string | null; start_timestamp: number | null; end_timestamp: number | null; description: string; severity_level: number | null };
-  entities: Array<{ key: string; type: string; description: string }>;
-  instruments: Array<{ key: string; holderKey: string | null; name: string; description: string; threat_level: number | null }>;
-  assets: Array<{ key: string; name: string; description: string }>;
+  entities: Array<{ key: string; sourceId: string | null; type: string; description: string }>;
+  instruments: Array<{ key: string; sourceId: string | null; holderKey: string | null; name: string; description: string; threat_level: number | null }>;
+  assets: Array<{ key: string; sourceId: string | null; name: string; description: string }>;
 }
 
 let keySequence = 0;
@@ -49,17 +51,19 @@ export function draftFromView(view: ReportView): EditDraft {
     },
     entities: entities.map((entity, index) => ({
       key: `entity-${index}`,
+      sourceId: entity.sourceId,
       type: (EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type) ? entity.type : 'unknown',
       description: entity.description,
     })),
     instruments: instruments.map((instrument, index) => ({
       key: `instrument-${index}`,
+      sourceId: instrument.sourceId,
       holderKey: instrument.entityId ? entityKeys.get(instrument.entityId) ?? null : null,
       name: instrument.name,
       description: instrument.description,
       threat_level: instrument.threatLevel !== null && instrument.threatLevel >= 1 && instrument.threatLevel <= 5 ? instrument.threatLevel : null,
     })),
-    assets: assets.map((asset, index) => ({ key: `asset-${index}`, name: asset.name, description: asset.description })),
+    assets: assets.map((asset, index) => ({ key: `asset-${index}`, sourceId: asset.sourceId, name: asset.name, description: asset.description })),
   };
 }
 
@@ -75,7 +79,7 @@ export function draftProblems(draft: EditDraft): string[] {
   return problems;
 }
 
-/** The edit sent to the server: sequential IDs by position, holders resolved to the renumbered entity IDs. */
+/** The edit sent to the server: sequential IDs by position, holders resolved to the renumbered entity IDs, each item's source_id kept. */
 export function editFromDraft(draft: EditDraft): StructuredEdit {
   const problems = draftProblems(draft);
   if (problems.length) throw new Error(problems.join(' '));
@@ -88,14 +92,15 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       description: draft.incident.description,
       severity_level: draft.incident.severity_level!,
     },
-    entities: draft.entities.map((entity, index) => ({ entity_id: `E${index + 1}`, type: entity.type, description: entity.description })),
+    entities: draft.entities.map((entity, index) => ({ entity_id: `E${index + 1}`, source_id: entity.sourceId, type: entity.type, description: entity.description })),
     instruments: draft.instruments.map((instrument, index) => ({
       instrument_id: `I${index + 1}`,
+      source_id: instrument.sourceId,
       entity_id: instrument.holderKey ? entityIdByKey.get(instrument.holderKey) ?? null : null,
       name: instrument.name,
       description: instrument.description,
       threat_level: instrument.threat_level!,
     })),
-    assets: draft.assets.map((asset, index) => ({ asset_id: `A${index + 1}`, name: asset.name, description: asset.description })),
+    assets: draft.assets.map((asset, index) => ({ asset_id: `A${index + 1}`, source_id: asset.sourceId, name: asset.name, description: asset.description })),
   };
 }

@@ -21,9 +21,10 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { SupabaseIncidentAdapter } = await import('../lib/adapters/supabase/incidents.ts');
-const { reviewTransitionFromRpc, runReportFromRows, structuredEditResultFromRpc } = await import('../lib/adapters/supabase/mappers/report.ts');
+const { reviewTransitionFromRpc, structuredEditResultFromRpc } = await import('../lib/adapters/supabase/mappers/report.ts');
 const { reportListFromRpc, reportListRpcArgs } = await import('../lib/adapters/supabase/mappers/report-library.ts');
 const { PostgrestClient } = await import('../lib/postgrest/client.ts');
+const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
@@ -61,7 +62,7 @@ function smokeEdit() {
 // Each implementation also exposes the stored AI report, which no edit or verification may change.
 const implementations = {
   memory: () => {
-    const repo = new InMemoryIncidentRepository([runReportFromRows(smoke)], summaries.reports);
+    const repo = new InMemoryIncidentRepository([aiRunReport(smoke)], summaries.reports);
     const ai = () => {
       const { incident, entities, instruments, assets } = repo.runs.get(`${KEY.videoId}\u0000${KEY.modelRunId}`);
       return { incident, entities, instruments, assets };
@@ -148,6 +149,24 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal((await repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor')).revision, 2);
     });
 
+    test('each reviewer item keeps its AI origin through a delete, an added item and the next edit', async () => {
+      const { repo } = make();
+      assert.deepEqual((await repo.getRunReport(KEY)).entities.map((entity) => entity.sourceId), ['E1', 'E2'], 'an AI item is its own source');
+      const edit = smokeEdit();
+      edit.entities = [{ entity_id: 'E1', source_id: 'E2', type: 'human', description: smoke.entities[1].description }];
+      edit.assets = [{ asset_id: 'A1', source_id: null, name: 'bench', description: 'Added by the reviewer' }, ...edit.assets.slice(1).map((asset) => ({ ...asset, asset_id: 'A2' }))];
+      await repo.applyStructuredEdit(KEY, edit, 'Editor');
+      const record = await repo.getRunReport(KEY);
+      assert.deepEqual(record.entities.map((entity) => [entity.entityId, entity.sourceId]), [['E1', 'E2']], 'AI E1 was deleted; the reviewer E1 is AI E2');
+      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', null], ['A2', 'A2']], 'without source_id, the AI item with the same ID');
+      // The next edit starts from the reviewer version and keeps the origins.
+      const next = smokeEdit();
+      next.entities = record.entities.map((entity) => ({ entity_id: entity.entityId, source_id: entity.sourceId, type: entity.type, description: entity.description }));
+      next.assets = record.assets.map((asset) => ({ asset_id: asset.assetId, source_id: asset.sourceId, name: asset.name, description: asset.description }));
+      await repo.applyStructuredEdit(KEY, next, 'Editor');
+      assert.deepEqual((await repo.getRunReport(KEY)).entities.map((entity) => entity.sourceId), ['E2']);
+    });
+
     test('editing a verified report sends it back to under review and clears the verifier', async () => {
       const { repo } = make();
       await repo.setReviewStatus(KEY, 'verified', 'Lead');
@@ -196,7 +215,7 @@ describe('Supabase adapter: reviewer version', () => {
     db.store.human_report_entities = [{ incident_id: KEY.videoId, model_run_id: KEY.modelRunId, entity_id: 'E1', source_entity_id: 'E2', type: 'human', description: 'Copied entity' }];
     const record = await repo.getRunReport(KEY);
     assert.deepEqual([record.incident.description, record.incident.startSeconds, record.incident.duration, record.incident.severityLevel], ['Copied reviewer text', 2, 4, 4]);
-    assert.deepEqual(record.entities, [{ entityId: 'E1', type: 'human', description: 'Copied entity' }]);
+    assert.deepEqual(record.entities, [{ entityId: 'E1', sourceId: 'E2', type: 'human', description: 'Copied entity' }]);
     assert.deepEqual(record.assets, []);
     const read = db.requests.map((request) => request.path);
     assert.deepEqual(read.filter((path) => path.startsWith('effective_')).sort(), ['effective_assets', 'effective_entities', 'effective_incidents', 'effective_instruments']);
