@@ -62,7 +62,9 @@ BEGIN
     SELECT string_agg(v.id, ', ') INTO in_use FROM migration_excluded_videos v
     WHERE EXISTS (SELECT 1 FROM src_incidents i WHERE i.incident_id = v.id)
        OR EXISTS (SELECT 1 FROM src_gt_incidents g WHERE g.incident_id = v.id)
-       OR EXISTS (SELECT 1 FROM src_model_runs mr WHERE mr.notes LIKE '%"videoId":"' || v.id || '"%');
+       OR EXISTS (SELECT 1 FROM src_model_runs mr WHERE v.id IN (
+              public.try_parse_jsonb(mr.notes) #>> '{incidentConsoleV2,videoId}',
+              public.try_parse_jsonb(mr.notes) #>> '{incidentConsoleV2,report,videoId}'));
     IF in_use IS NOT NULL THEN RAISE EXCEPTION 'Videos to leave behind are in use: %', in_use; END IF;
 END $$;
 
@@ -175,8 +177,9 @@ FROM migration_run_diffs d
 LEFT JOIN src_review_status rs USING (incident_id, model_run_id);
 
 -- 4. Review stamps: clear edited_by/at where provably not a content edit -----------------------
--- (a) contract runs whose rows equal the AI report: nothing was edited; the stamp came from a
---     status change (the console writes it on every review change) or a no-op save;
+-- (a) contract runs (step 3's test: a valid outcome and a report.incident object in notes) whose
+--     rows equal the AI report: nothing was edited; the stamp came from a status change (the
+--     console writes it on every review change) or a no-op save;
 -- (b) other runs whose stamp is exactly the verification stamp (same name, same instant).
 -- Edited runs keep their stamp: it is the only record of who changed the report.
 CREATE TEMP TABLE migration_cleared_stamps AS
@@ -184,7 +187,8 @@ SELECT rs.incident_id, rs.model_run_id, rs.edited_by, rs.edited_at,
        CASE WHEN cr.model_run_id IS NOT NULL THEN 'rows equal the AI report' ELSE 'stamp equals verification' END AS reason
 FROM public.review_status rs
 JOIN public.model_runs mr ON mr.id = rs.model_run_id
-LEFT JOIN LATERAL (SELECT rs.model_run_id WHERE public.run_outcome(mr.notes) IN ('valid_first_pass', 'valid_after_structural_repair')) cr ON TRUE
+LEFT JOIN LATERAL (SELECT rs.model_run_id WHERE public.run_outcome(mr.notes) IN ('valid_first_pass', 'valid_after_structural_repair')
+    AND jsonb_typeof(public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report,incident}') = 'object') cr ON TRUE
 WHERE rs.edited_by IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM migration_edited_runs e WHERE e.incident_id = rs.incident_id AND e.model_run_id = rs.model_run_id)
   AND (cr.model_run_id IS NOT NULL OR (rs.edited_by = rs.verified_by AND rs.edited_at = rs.verified_at));
@@ -239,6 +243,21 @@ BEGIN
         PERFORM public.create_human_report_from_ai(r.incident_id, r.model_run_id, COALESCE(r.verified_by, 'unknown reviewer'),
             COALESCE(r.verified_at, now() AT TIME ZONE 'utc'));
     END LOOP;
+END $$;
+
+-- 5c. A run that still carries an edit stamp but has no reviewer version was changed where step 3
+--     cannot see it (a legacy run edited on midterm, or a status change on a run with no notes
+--     report): its stored rows may hold the reviewer's text. A person decides, as for item edits.
+DO $$
+DECLARE unexplained TEXT;
+BEGIN
+    SELECT string_agg(rs.model_run_id || ' (' || rs.incident_id || ', ' || rs.edited_by || ')', ', ' ORDER BY rs.model_run_id)
+    INTO unexplained FROM public.review_status rs
+    WHERE rs.edited_by IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM public.human_reports h WHERE h.incident_id = rs.incident_id AND h.model_run_id = rs.model_run_id);
+    IF unexplained IS NOT NULL THEN
+        RAISE EXCEPTION 'Runs keep an edit stamp but have no reviewer version (%); decide by hand before copying', unexplained;
+    END IF;
 END $$;
 
 -- 6. Official selections, now that every incident exists ---------------------------------------

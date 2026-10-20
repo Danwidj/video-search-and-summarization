@@ -131,7 +131,7 @@ The AI report is immutable twice over: in `model_runs.notes` and in its relation
 - **The effective report** is the reviewer version if there is one, otherwise the AI version (`effective_*` views). The library, dashboard and search read it; eval and the crop loader read the AI rows, so a reviewer edit never leaks into a benchmark.
 - **Edits** (`save_human_report_edit`, or its `apply_structured_report_edit` shim) are validated against the contract's own sub-schemas and the ID/holder/window rules and applied in one transaction. They set `review_status.edited_by/edited_at`, which now means "last content edit" only: status changes never write it.
 - **Verification** (`set_review_status`) is one atomic transition. Verifying without edits copies the AI report, so every verified report has a reviewer version.
-- **Evidence crops belong to AI items**, whose IDs never change; a reviewer item shows the crop of its `source_*_id`, and a reviewer-added item has none.
+- **Evidence crops belong to AI items**, whose IDs never change; a reviewer item shows the crop of its `source_*_id`, and a reviewer-added item has none. The console sends each item's `source_id` (`null` for an added item), because the editor renumbers items by position; a save without it keeps the links the reviewer version already has.
 - Neither path touches notes.
 
 The report page:

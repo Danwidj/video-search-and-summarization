@@ -65,7 +65,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order, 15 tests (security and behaviour)
+# Finals schema: applies every file in ../migrations/ in order, 19 tests (security, behaviour and the copy's guards)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
@@ -126,7 +126,10 @@ What it copies and what it leaves behind:
   data (`P1-*` runs, `severity_eval_log`); and the seed/fake test reports (`MR-SEED`, `MOCK8`).
 - **Leaves behind** 20 orphan runs whose video was deleted, 15 unlinked test runs (`mock-run-*`,
   `nmtest0925a`), 8 broken uploads (no incident, ground truth, attempt or playable file) and the
-  4 pre-v1 tables. Guards fail the copy if anything else matches those rules.
+  4 pre-v1 tables. Guards fail the copy if anything else matches those rules, if a run that
+  names a left-behind video in its notes would be copied, if an edit changed items (their AI
+  source is a guess), or if a run keeps an edit stamp but gets no reviewer version (a legacy
+  run edited on midterm): a person decides each of those by hand.
 - **Changes on the way:** `fighting` → `assault`, `animal` → `animal attack`, `person` → `human`
   (incidents, entities and entity crop names); a reviewer version for the 2 edited and 6 verified
   reports (7 in all), with the AI's own text put back on the 2 edited runs from `model_runs.notes`;

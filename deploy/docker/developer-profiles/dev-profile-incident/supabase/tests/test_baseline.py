@@ -12,6 +12,7 @@ Writes go through SET ROLE service_role, the role PostgREST uses with the servic
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import tempfile
@@ -23,6 +24,7 @@ from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
 MIGRATIONS = sorted((HERE.parent / "migrations").glob("*.sql"))
+COPY = HERE.parent / "copy"
 PASSED: list[str] = []
 
 
@@ -159,17 +161,21 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result["editedBy"] == "Kai" and result["duration"] == 8 and result["revision"] == 1
         assert ai_rows() == ("AI said this.", 2), ai_rows()
         assert one(conn, "SELECT description, source FROM public.effective_incidents WHERE model_run_id = 'r1'") == ("Edited.", "human")
-        # No source_id key: the AI item with the same ID is the source (midterm behaviour).
+        # No source_id key on a first reviewer version: the AI item with the same ID is the source.
         assert conn.execute("SELECT entity_id, source_entity_id FROM public.human_report_entities ORDER BY 1").fetchall() == [("E1", "E1")]
         assert one(conn, "SELECT edited_by FROM public.review_status WHERE model_run_id = 'r1'")[0] == "Kai"
 
-    @test("search hides the crop of an item the reviewer removed and shows the reviewer's text")
+    def search(incident_id):
+        return conn.execute("SELECT item_type, item_id, item_name, item_description, incident_description, threat_level "
+                            "FROM public.search_evidence_items(%s::extensions.vector, 100, -1) WHERE incident_id = %s ORDER BY 1, 2",
+                            (vec(1.0), incident_id)).fetchall()
+
+    @test("search hides the crop of an item the reviewer removed and shows the reviewer's text and names")
     def _():
-        rows = conn.execute("SELECT item_type, item_id, item_description, incident_description, threat_level FROM public.search_evidence_items(%s::extensions.vector, 10, -1)",
-                            (vec(1.0),)).fetchall()
+        rows = search("v1")
         assert ("entity", "E2") not in [(r[0], r[1]) for r in rows], rows
-        assert ("entity", "E1", "Attacker", "Edited.", None) in rows, rows
-        assert ("instrument", "I1", "swung hard", "Edited.", 5) in rows, rows
+        assert ("entity", "E1", "human", "Attacker", "Edited.", None) in rows, rows  # an entity's name is its (reviewer) type
+        assert ("instrument", "I1", "bat", "swung hard", "Edited.", 5) in rows, rows
 
     @test("library and dashboard read the reviewer version")
     def _():
@@ -231,6 +237,58 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT status FROM public.review_status WHERE model_run_id = 'r3'")[0] == "unreviewed"
         assert one(conn, "SELECT count(*) FROM public.human_reports WHERE model_run_id = 'r3'")[0] == 0
 
+    def sources(run):
+        return conn.execute("SELECT entity_id, source_entity_id FROM public.human_report_entities WHERE model_run_id = %s ORDER BY 1", (run,)).fetchall()
+
+    def crops(incident_id, run, items):
+        for item_id, x in items:
+            conn.execute("""INSERT INTO public.evidence_crops (incident_id, model_run_id, item_type, item_id, item_name, description,
+                timestamp_seconds, bounding_box, image, embedding) VALUES (%s, %s, 'entity', %s, 'human', 'ai text', 2, '{0,0,10,10}', 'k', %s)""",
+                (incident_id, run, item_id, vec(x)))
+        conn.execute("INSERT INTO public.reports (id, incident_id, model_run_id) VALUES (%s, %s, %s)", ("rep-" + run, incident_id, run))
+        conn.execute("SELECT public.select_official_report(%s, %s, 'rev')", (incident_id, run))
+
+    @test("an edit without source_id keys keeps a verified legacy run's sources, and search keeps its crops")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('v4', 'uploads/s/v4.mp4')")
+        conn.execute("INSERT INTO public.model_runs (id, model_name) VALUES ('r4', 'm')")
+        conn.execute("SELECT public.insert_incident('v4', 'r4', 'fighting', '0:00', '0:18', 18, 'Legacy.', 3, 0.95)")
+        conn.execute("""INSERT INTO public.entities (incident_id, entity_id, model_run_id, type, description) VALUES
+            ('v4', 'e01', 'r4', 'person', 'first'), ('v4', 'e02', 'r4', 'person', 'second')""")
+        crops("v4", "r4", [("e01", 1.0), ("e02", 0.9)])
+        conn.execute("SELECT public.set_review_status('v4', 'r4', 'verified', 'Lead')")
+        assert sources("r4") == [("E1", "e01"), ("E2", "e02")]
+        # The midterm console renumbers by position and sends no source_id; E3 is one it added.
+        conn.execute("SELECT public.apply_structured_report_edit('v4', 'r4', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "type": "animal", "description": "first, edited"},
+            {"entity_id": "E2", "type": "human", "description": "second"},
+            {"entity_id": "E3", "type": "human", "description": "added"}]),))
+        assert sources("r4") == [("E1", "e01"), ("E2", "e02"), ("E3", None)], sources("r4")
+        assert search("v4") == [("entity", "e01", "animal", "first, edited", "Edited.", None),
+                                ("entity", "e02", "human", "second", "Edited.", None)], search("v4")
+
+    @test("a contract run whose E1 is deleted keeps E2's origin, so search shows E2's crop with E2's text")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('v5', 'uploads/s/v5.mp4')")
+        conn.execute("INSERT INTO public.model_runs (id, model_name) VALUES ('r5', 'm')")
+        conn.execute("SELECT public.insert_incident('v5', 'r5', 'assault', '1', '9', 8, 'AI.', 3, 0.8)")
+        conn.execute("""INSERT INTO public.entities (incident_id, entity_id, model_run_id, type, description) VALUES
+            ('v5', 'E1', 'r5', 'human', 'Attacker'), ('v5', 'E2', 'r5', 'human', 'Bystander')""")
+        crops("v5", "r5", [("E1", 1.0), ("E2", 0.9)])
+        conn.execute("SELECT public.save_human_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "type": "human", "description": "Attacker"}, {"entity_id": "E2", "type": "human", "description": "Bystander"}]),))
+        assert sources("r5") == [("E1", "E1"), ("E2", "E2")]
+        conn.execute("SELECT public.save_human_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "type": "human", "description": "Bystander, now E1", "source_id": "E2"},
+            {"entity_id": "E2", "type": "animal", "description": "Dog", "source_id": None}]),))
+        assert sources("r5") == [("E1", "E2"), ("E2", None)], sources("r5")
+        assert search("v5") == [("entity", "E2", "human", "Bystander, now E1", "Edited.", None)], search("v5")
+        # A later edit without keys keeps those links instead of re-guessing E1 -> AI E1.
+        conn.execute("SELECT public.apply_structured_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "type": "human", "description": "Bystander again"}, {"entity_id": "E2", "type": "animal", "description": "Dog"}]),))
+        assert sources("r5") == [("E1", "E2"), ("E2", None)], sources("r5")
+        assert search("v5") == [("entity", "E2", "human", "Bystander again", "Edited.", None)], search("v5")
+
     @test("deleting a run removes its reviewer version and clears the official selection")
     def _():
         conn.execute("SELECT public.save_human_report_edit('v1', 'r1', %s, 'Kai')", (edit_payload(
@@ -250,6 +308,35 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT count(*) FROM public.incidents WHERE incident_id = 'v2'")[0] == 0
 
     conn.execute("RESET ROLE")
+
+    # The copy's guards: copy/transform.sql on hand-made src_* rows, rolled back each time.
+    spec = importlib.util.spec_from_file_location("copy_midterm_to_finals", COPY / "copy_midterm_to_finals.py")
+    copy_script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(copy_script)
+    transform = (COPY / "transform.sql").read_text()
+
+    def run_transform(rows: str) -> str:
+        sql = "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES) + rows + transform
+        return refused(conn, sql)
+
+    @test("copy: a run that names a left-behind video in its notes is caught, however the JSON is spaced")
+    def _():
+        error = run_transform("""INSERT INTO src_videos (id, filepath) VALUES ('v833746b6eaad1531436', 'uploads/x.mp4');
+            INSERT INTO src_model_runs (id, model_name, notes) VALUES ('rv', 'm', '{"incidentConsoleV2": {"videoId": "v833746b6eaad1531436"}}');""")
+        assert "Videos to leave behind are in use: v833746b6eaad1531436" in error, error
+
+    @test("copy: a run that keeps an edit stamp but gets no reviewer version stops the copy")
+    def _():
+        base = """INSERT INTO src_videos (id, filepath) VALUES ('vc', 'uploads/c.mp4');
+            INSERT INTO src_model_runs (id, model_name, notes) VALUES ('rc', 'm', %s);
+            INSERT INTO src_incidents (incident_id, model_run_id, type, start_timestamp, end_timestamp, duration, description, severity_level)
+                VALUES ('vc', 'rc', 'assault', '0', '5', 5, 'maybe edited', 3);
+            INSERT INTO src_review_status (incident_id, model_run_id, status, edited_by, edited_at) VALUES ('vc', 'rc', 'under review', 'Kai', '2026-10-01');"""
+        for notes in ("NULL",  # a legacy run edited on midterm
+                      """'{"incidentConsoleV2": {"contractVersion": "v3"}}'"""):  # a valid run with no report in notes
+            error = run_transform(base % notes)
+            assert "keep an edit stamp but have no reviewer version (rc (vc, Kai))" in error, error
+
     conn.close()
 
 print(f"\n{len(PASSED)} passed")

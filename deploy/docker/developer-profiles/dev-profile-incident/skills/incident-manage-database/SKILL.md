@@ -94,7 +94,7 @@ Preparation (no downtime):
    ```
 
    If it fails with `Invalid API key`, a JWT error or a 401, upgrade in the agent's environment, `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (tell the team first: the VM is shared), then retest until it passes. The evidence loader (`scripts/backfill_official_timestamps.py`) runs with the same `services/agent/.venv` and connects through the same `incident_db.get_db()`, so this one test covers it too.
-5. **Captain:** rehearse against the real finals: `supabase/copy/copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env>` (rolls back; every check must pass). Then once with `--commit`, run `supabase/tests/parity_check.py` with the same arguments, and smoke-test a local console pointed at finals, read only. These rows are replaced at the cutover.
+5. **Captain:** rehearse against the real finals: `supabase/copy/copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env>` (rolls back; every check must pass). The guards added after the 2026-10-20 rehearsal (a stamped run with no reviewer version, a run naming a left-behind video) have only run on hand-made rows, so if one fires here, stop and decide the named runs by hand before going on. Then once with `--commit`, run `supabase/tests/parity_check.py` with the same arguments, and smoke-test a local console pointed at finals, read only. These rows are replaced at the cutover.
 
 Cutover window:
 
