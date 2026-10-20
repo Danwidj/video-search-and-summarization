@@ -2,6 +2,30 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-20: One Supabase project per phase; finals built from one baseline; midterm frozen
+- **Decision:**
+  - The midterm project (`rfevukimyftzbxlehwel`) becomes a frozen, read-only record, and a new finals project is built from scratch with `supabase/migrations/20261020000000_finals_baseline.sql`, then filled once by `supabase/copy/copy_midterm_to_finals.py`.
+  - The 14 midterm migrations move unchanged to `supabase/midterm/migrations/` (an archive, not a CLI workdir); `supabase/migrations/` holds only finals files, so the CLI workdir and commands stay the same.
+  - Security is on from the first statement: default privileges are revoked before any object exists, RLS is on for every table, nothing is granted to `PUBLIC`/`anon`/`authenticated`, every function pins `search_path`, pgvector lives in `extensions`, and a self-check block fails the migration if anything is exposed. No `FORCE ROW LEVEL SECURITY` (no effect with a `BYPASSRLS` owner).
+  - The copy brings over every real row plus the ground truth, evaluation data and seed/fake test reports, and leaves behind 20 orphan runs, 15 unlinked test runs, 8 broken uploads and the 4 pre-v1 tables (guards fail on anything else). It relabels `fighting`/`animal`/`person` once; query-time folding stays as a guard, and the one `other` value stays in an immutable run's notes.
+  - At the cutover `supabase/midterm/freeze_midterm.sql` locks midterm (anon out, `service_role` read-only, direct-DSN sessions read-only); `unfreeze_midterm.sql` is the rollback. R2 is shared, so no object moves.
+  - A SQL harness (`supabase/tests/`, `pgserver`) tests the schema hermetically; every later finals migration extends it.
+- **Why:** The supervisor asked for one database per project phase. Midterm's migration history does not match what is applied (three applied migrations unrecorded, one recorded under another version, two never applied), its base tables came from no repo file, and the public key could read and change everything (RLS on 2 of 22 tables, default grants to `anon`). Starting clean removes the junk and the open access in one step, and the frozen midterm stays readable as the phase record. Freezing rather than leaving it writable makes a forgotten env file fail loudly instead of writing to the wrong database (the agent only warns when it cannot record a search).
+- **Rejected:** more migrations on the shared database (the history is inconsistent and the lockdown and clean-up were never applied); a separate `supabase/finals/` workdir (changes every doc path, and the old folder stays pushable at midterm); pausing midterm at once (no longer a readable record); a bucket per phase (doubles 59.5 GB for no gain); copying the orphan and test runs or the pre-v1 tables (no reader can reach them).
+- **Links:** [`../supabase/README.md`](../supabase/README.md); [`../supabase/midterm/README.md`](../supabase/midterm/README.md); [`data.md`](data.md); [`architecture.md`](architecture.md#two-supabase-projects-one-per-phase).
+
+### 2026-10-20: AI report and reviewer version stored separately
+- **Decision:**
+  - The AI report's relational rows (`incidents`, `entities`, `instruments`, `assets`) are written once by analysis and never edited. A reviewer's changes go to a separate full copy, `human_reports` and its items, **one per run**, each item recording its source AI item (`source_*_id`; `ON DELETE SET NULL`).
+  - Readers use the `effective_*` views (reviewer version if present, else AI). The library, dashboard and search RPCs keep their signatures and output.
+  - **Editing a verified report sends it back to `under review`** and clears the verifier (`save_human_report_edit`).
+  - **Verifying without edits still copies the AI report** into the reviewer version (`set_review_status`, one transaction), so every verified report has one. Status changes no longer write `edited_by/at`.
+  - Evidence crops stay keyed to AI items, which never change; they are made for every report (Daniel's crop pipeline).
+  - `apply_structured_report_edit` stays as a compatibility shim over `save_human_report_edit` until no console calls it.
+- **Why:** The meeting asked that the AI version is never overwritten. In-place edits made the AI original survive only in notes, renumbered items so a crop could attach to the wrong item, left an edited report "verified", and turned every status change into a misleading "last edited by". Stable AI rows also keep reviewer edits out of eval.
+- **Rejected:** storing only the edits (merge logic in every reader); renaming/splitting `incidents` (every FK, writer and RPC changes); JSON revisions (the library, dashboard and search filter on relational item rows); one reviewer version per video (would sit between runs and look like ground truth); plain foreign keys from reviewer items to AI items (run and video deletes fail: the cascade reaches the reviewer items along two paths and a `NO ACTION` check fires in between).
+- **Links:** [`analysis-schema.md`](analysis-schema.md#ai-version-and-reviewer-version); [`data.md`](data.md#reviewer-version-and-effective-views); [`../supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql).
+
 ### 2026-10-19: Hexagonal architecture for incident-console-v2 UI and database decoupling
 - **Decision:** (adopted 2026-10-16 in PR 120; scope amended 2026-10-17 and 2026-10-19)
   - `incident-console-v2` route handlers (`app/api/*`) depend on domain ports (`lib/ports/`) and reach Supabase only through PostgREST adapters (`lib/adapters/supabase/`) wired by `getDbAdapters()`. Ports, thin use cases (`lib/application/`, only for the multi-step routes: report detail, review status change, delete) and adapters are the console's middle layer, inside the app. Components keep calling `/api` and never touch the database.
@@ -65,7 +89,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - Query embedding is covered by the remote-embeddings decision above.
 - **Why:** The sample-data store pointed at a non-existent host, so the critic failed to fetch images and every hit was `unverified`. One table avoids three vector columns and three UNIONs. Official scoping stops re-analysis runs producing duplicate hits.
 - **Rejected:** altering the legacy `entities` / `instruments` / `assets` tables; unscoped search; public-only URLs (private buckets need presigning); an external embedding service for now.
-- **Links:** [`../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](data.md); [`mvp2/README.md`](mvp2/README.md).
+- **Links:** [`../supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`](../supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql); [`data.md`](data.md); [`mvp2/README.md`](mvp2/README.md).
 
 ### 2026-10-16: MVP2 search route, chat route, crop service, backfill and launcher
 - **Decision:**
@@ -90,18 +114,6 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** separate agent and gateway validation policies; keeping the legacy console schema files.
 - **Links:** [`analysis-schema.md`](analysis-schema.md); `services/agent/src/vss_agents/incident_contract/`.
 
-### 2026-10-16: RLS and public schema lockdown
-- **Decision:** Migration `20261016000000_enable_rls_and_lockdown_anon.sql` enables RLS on all 22 public tables, revokes table, sequence and `insert_incident` privileges from `anon` and `authenticated`, and sets default privileges so new objects grant nothing to them and everything to `service_role`. No `FORCE ROW LEVEL SECURITY`. Each new function still carries its own explicit `REVOKE ... FROM PUBLIC, anon, authenticated` and `GRANT ... TO service_role`.
-- **Why:** With RLS off and default grants, an exposed `anon` key could cascade-delete all data via `DELETE FROM videos`. All services use `service_role` or `postgres`, both `BYPASSRLS`, so nothing breaks.
-- **Rejected:** dropping legacy tables in the same migration; client-side RLS policies (no browser client); `FORCE ROW LEVEL SECURITY` (no effect with a `BYPASSRLS` owner).
-- **Links:** [`../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql`](../supabase/migrations/20261016000000_enable_rls_and_lockdown_anon.sql); [`data.md`](data.md).
-
-### 2026-10-16: Legacy taxonomy migration; query-time folding stays
-- **Decision:** Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` maps `incidents.type` `fighting` to `assault` and `animal` to `animal attack`, `entities.type` `person` to `human`, and removes 20 orphaned legacy console `model_runs`. The one `other` value lives only in an immutable run's notes and stays. Folding (`canonicalIncidentType`, `canonicalEntityType`, SQL `canonical_*`) remains until the migration is applied.
-- **Why:** Match the five-label ground-truth taxonomy; folding is idempotent and safe in every state.
-- **Rejected:** dropping folding early; editing `model_runs.notes`.
-- **Links:** [`../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql`](../supabase/migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql).
-
 ### 2026-10-16: unless-stopped restart policy
 - **Decision:** `compose.override.yml` sets `restart: unless-stopped` on the persistent services, plus `deploy.restart_policy.condition: unless-stopped` on `streamprocessing-ms` (upstream's deploy `always` overrides `restart`). `nvstreamer-2d-fusion` keeps upstream `on-failure`.
 - **Why:** Upstream `restart: always` restarts stopped containers on every VM reboot; runtime `docker update` is lost on recreate.
@@ -112,7 +124,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** `get_incident_dashboard` and `list_incident_report_summaries` take `p_timezone` (default `'UTC'`) and convert `reports.generated_datetime` (naive UTC) for weekday and hour grouping and filtering. The console sends the viewer's IANA zone (offsets rejected) detected after mount; labels show local hours with the zone name. Migration `20260928000000` must be applied before or with the console deploy.
 - **Why:** Operators analyse by local shift. Dashboard drill-down links stay count-exact because both pages detect the same zone.
 - **Rejected:** client-side re-bucketing; converting the column to `timestamptz`.
-- **Links:** [`../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts).
+- **Links:** [`../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts).
 
 ### 2026-09-27: Validation policy core-scored-v1
 - **Decision:** Only database-backed fields (type, window, description, severity, confidence, entities, instruments, assets) decide persistence and scoring. `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment: a `TIMELINE_*` failure is recorded and shown but neither rejects the report nor empties the eval prediction, and is never repaired. A contextual core rule requires the window to lie within the video when its length is readable (`0 <= T < duration + 1`). Schema violations stay fatal. `full_contract_ok` keeps contract validity; `core_ok` decides.
@@ -137,17 +149,17 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - **Official report:** `videos.selected_model_run_id/selected_by/selected_at` with a composite FK to the video's own incidents (ON DELETE SET NULL on the run column), set only by `select_official_report` / `clear_official_report`. Analysis never selects, and selection is independent of review status. PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey`.
   - **Dashboard:** counts official incidents only; unselected videos are counted separately. Every number links to `/reports?scope=official&...`, the URL is the filter state, and the library's default scope stays "all successful reports".
   - **History:** a video is the parent of its analyses. History combines incident-backed runs with incident-less attempt records whose notes name the video. Re-analysis always creates a new run and never writes the video row or the official selection. Deleting a video removes run records that name it and have no incident left.
-  - **Editing:** model output is immutable. Reviewers edit Class A fields (the relational projection) through `apply_structured_report_edit`, which validates against the contract sub-schemas and never touches notes. Ground truth has its own page and is never pre-filled from model output.
+  - **Editing:** model output is immutable. Reviewers edit Class A fields, validated against the contract sub-schemas, never touching notes; since 2026-10-20 the edits go to a separate reviewer version (entry above). Ground truth has its own page and is never pre-filled from model output.
   - **Alerts** were removed from the console; the `notifications` table stays for the retired Streamlit console and eval tooling.
 - **Why:** Official statistics need one explicit report per video (counting runs multiplies categories on re-runs); failed attempts must be auditable without becoming reports; reviewer edits must never alter what the model produced.
 - **Rejected:** "latest run wins" or the verified run as official; a separate attempts table; editing notes; making Class B fields editable.
-- **Links:** [`../supabase/migrations/20260927170000_official_report_selection.sql`](../supabase/migrations/20260927170000_official_report_selection.sql); [`../supabase/migrations/20260927160000_apply_structured_report_edit.sql`](../supabase/migrations/20260927160000_apply_structured_report_edit.sql); [`../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql`](../supabase/migrations/20260927180000_official_dashboard_and_library_filters.sql); [`analysis-schema.md`](analysis-schema.md).
+- **Links:** [`../supabase/midterm/migrations/20260927170000_official_report_selection.sql`](../supabase/midterm/migrations/20260927170000_official_report_selection.sql); [`../supabase/midterm/migrations/20260927160000_apply_structured_report_edit.sql`](../supabase/midterm/migrations/20260927160000_apply_structured_report_edit.sql); [`../supabase/midterm/migrations/20260927180000_official_dashboard_and_library_filters.sql`](../supabase/midterm/migrations/20260927180000_official_dashboard_and_library_filters.sql); [`analysis-schema.md`](analysis-schema.md).
 
 ### 2026-09-27: Report library and thumbnails
 - **Decision:** `/reports` is served by the `list_incident_report_summaries` RPC (`SECURITY INVOKER`, `service_role` only), six summaries per page, returning no notes, evidence arrays or signed URLs. Cards never load video. The browser captures a frame 25% into each new upload (at most 640x360 WebP) and uploads it to `thumbnails/<video-key>.webp`; a missing thumbnail shows a skeleton, and deleting a video deletes its thumbnail. `GET /api/reports/<videoId>?run=<modelRunId>` is the only path that signs and loads a video.
 - **Why:** The old library read eight tables, parsed every report and signed every video before becoming usable.
 - **Rejected:** a summary table; client-side slicing; per-card video loading; server-side frame extraction per request.
-- **Links:** [`../supabase/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts).
+- **Links:** [`../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts).
 
 ### 2026-09-26: Durability checks and upload key layout
 - **Decision:** `incident-console-v2` verifies direct uploads with R2 `HeadObject`, verifies again before inference, then reads back `videos`, `model_runs`, `incidents` and `reports` and confirms `videos.filepath` is the submitted R2 key before `POST /api/analysis` returns 200. All new uploads go under `uploads/<sensorId>/<uuid>.<ext>`; `anomaly/<category>/` is reserved for classified seed and eval media.
@@ -159,7 +171,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** Server-side UTC defaults on timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` with `p_confidence_score DOUBLE PRECISION` (migration `20260925031000`). PostgREST writers call `/rpc/insert_incident` atomically. The agent returns HTTP 422/504 on extraction failure instead of persisting a default report. Composite `ON DELETE CASCADE` stays.
 - **Why:** Defaults were client-side only, leaving NULL timestamps; the `REAL` parameter lost precision; non-RPC writes were not atomic; failures persisted a fake default report. Cascade is intentional for re-analysis under one run id.
 - **Rejected:** dropping `ON DELETE CASCADE`; overloading `insert_incident` (PostgREST reports ambiguity).
-- **Links:** [`../supabase/migrations/20260925031000_schema_defaults_and_precision.sql`](../supabase/migrations/20260925031000_schema_defaults_and_precision.sql); [`data.md`](data.md).
+- **Links:** [`../supabase/midterm/migrations/20260925031000_schema_defaults_and_precision.sql`](../supabase/midterm/migrations/20260925031000_schema_defaults_and_precision.sql); [`data.md`](data.md).
 
 ### 2026-09-25: Remote Brev inference, no local GPU NIMs
 - **Decision:** `vss-agent` and the eval judge use the Brev Switchyard endpoint with `_type: openai` (never `nim`) and bare base URLs, `LLM_NAME=nvidia/nemotron-3-ultra`, `VLM_NAME=nvidia/cosmos-3-super-reasoner`. On-prem GPU NIM deployment is retired.

@@ -3,8 +3,8 @@
 // Requested proof for the repaired run m811cf2b237f50ff9812: an edit changes
 // its relational values while its original response, repair operations,
 // repaired report and valid_after_structural_repair outcome stay byte-for-byte
-// unchanged. The database half (the SQL function itself) is exercised by the
-// transactional dry run of 20260927160000_apply_structured_report_edit.sql.
+// unchanged. The database half (the SQL function itself) is exercised by
+// supabase/tests/test_baseline.py against 20261020000000_finals_baseline.sql.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

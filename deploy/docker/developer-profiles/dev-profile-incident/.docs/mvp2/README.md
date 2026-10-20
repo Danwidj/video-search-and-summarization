@@ -244,11 +244,11 @@ Hexagonal ports and adapters between the console's API routes and Supabase (no d
 
 > [!IMPORTANT]
 > **TODO [PR 126]: MVP2 Data and Search Layer**
-> - **Missing:** Live Supabase RLS lockdown migration verification (`20261016000000`), standalone crop embedding generator, batch re-analysis ingestion loader, and Cloudflare R2 evidence crop storage management. The MVP2 migration `20261016120000_mvp2_evidence_search_and_crops.sql` (`evidence_crops`, `query_results`, `search_evidence_items`) is already delivered and applied.
+> - **Missing:** standalone crop embedding generator, batch re-analysis ingestion loader, and Cloudflare R2 evidence crop storage management. The MVP2 migration `20261016120000_mvp2_evidence_search_and_crops.sql` (`evidence_crops`, `query_results`, `search_evidence_items`) is delivered and applied on midterm, and is part of the finals baseline. The RLS lockdown of `20261016000000` is superseded: finals starts locked down and midterm is frozen ([`../decisions.md`](../decisions.md)).
 > - **Owner:** PR 126 (`docs(dev-profile-incident): MVP2 database migration and search layer workstream tasks`)
 > - **Stand-in Placeholder:** Table definitions in §2 and the migration checklist below; the console never queries these tables (it searches through the vss-agent route).
 
-The DDL, RLS and RPC items below are delivered and applied (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`, PR 134); PR 126 keeps the live verification.
+The DDL, RLS and RPC items below are delivered and applied (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`, PR 134; in finals they are part of `supabase/migrations/20261020000000_finals_baseline.sql`, which reads the reviewer version through the effective views); PR 126 keeps the live verification.
 
 **What PR 126 needs from this overview:**
 - The complete `evidence_crops` migration DDL (table definition, HNSW index, RLS lockdown)
@@ -333,9 +333,9 @@ The following specifications are planned, not final, pending completion of the o
 | 7 | Always-On Critic Ablation Study | PR 119 | Paired trade-off report ([`eval.md`](eval.md) §3.6) |
 | 8 | Detector Framing Evaluation | PR 119 | `DefaultDetector` (remote VLM) vs offline candidates through the detector port ([`eval.md`](eval.md) §6.2) |
 | 9 | Embedding Model Comparison | PR 119 / PR 126 | Production embedder vs callable candidates, offline ([`eval.md`](eval.md) §6.3) |
-| 10 | Live DB RLS Lockdown Verification | PR 126 | Verification test suite on migration `20261016000000` |
-| 11 | `evidence_crops` & `query_results` Migration | PR 134 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
-| 12 | `search_evidence_items` Database RPC | PR 134 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
+| 10 | Live DB RLS Lockdown Verification | PR 126 | Superseded: finals is locked down by its baseline (tested by `supabase/tests/`; `security_check.sql` and `probe_api.sh` at the cutover) and midterm is frozen |
+| 11 | `evidence_crops` & `query_results` Migration | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
+| 12 | `search_evidence_items` Database RPC | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
 | 13 | Crop Embedding Generator & Ingestion | Backfill | Delivered via `scripts/backfill_official_timestamps.py` |
 | 14 | Console Middle Layer (ports and adapters) | PR 120 | `incident-console-v2/lib/ports/`, `lib/adapters/supabase/` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |

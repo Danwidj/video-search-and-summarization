@@ -109,14 +109,30 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 | Class | Fields | Source | Editable |
 |---|---|---|---|
-| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`) | `incidents`, `entities`, `instruments`, `assets` | Yes, except duration (recomputed) and confidence |
+| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`) | AI version: `incidents`, `entities`, `instruments`, `assets`. Reviewer version: `human_reports` and its items. Readers: `effective_*` views | Yes, into the reviewer version only, except duration (recomputed) and confidence |
 | **B: model output** | title, severity rationale, location, timeline, uncertainties | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
-**Reviewer edits** (`apply_structured_report_edit`) change Class A only:
-- the edit is validated against the contract's own sub-schemas and the ID/holder/window rules, and applied in one transaction;
-- it sets `review_status.edited_by/edited_at`;
-- it never touches notes.
+### AI version and reviewer version
+
+The AI report is immutable twice over: in `model_runs.notes` and in its relational rows (`incidents`, `entities`, `instruments`, `assets`), which analysis writes once and nothing edits afterwards. A reviewer's changes go to a separate **reviewer version** of the run (`human_reports` and its items; schema in [`data.md`](data.md#reviewer-version-and-effective-views)):
+
+| Event | AI rows | Reviewer version | `review_status` |
+|---|---|---|---|
+| Successful analysis | written once | – | `unreviewed` |
+| First edit | untouched | created from the edit (a complete report), each item with its `source_*_id` | `edited_by/at` |
+| Later edit | untouched | replaced, `revision + 1` | `edited_by/at`; a `verified` report goes back to `under review` and the verifier is cleared |
+| Verify, no edits | untouched | created as a copy of the AI report | `verified`, `verified_by/at` |
+| Verify after edits | untouched | unchanged | `verified`, `verified_by/at` |
+| Back to unreviewed / under review | untouched | kept (status is not content) | status only |
+| Delete run or video | cascade | cascade | cascade |
+
+- **One reviewer version per run**, keyed `(incident_id, model_run_id)` like `review_status` and the official selection. The official report's content is that run's effective version.
+- **The effective report** is the reviewer version if there is one, otherwise the AI version (`effective_*` views). The library, dashboard and search read it; eval and the crop loader read the AI rows, so a reviewer edit never leaks into a benchmark.
+- **Edits** (`save_human_report_edit`, or its `apply_structured_report_edit` shim) are validated against the contract's own sub-schemas and the ID/holder/window rules and applied in one transaction. They set `review_status.edited_by/edited_at`, which now means "last content edit" only: status changes never write it.
+- **Verification** (`set_review_status`) is one atomic transition. Verifying without edits copies the AI report, so every verified report has a reviewer version.
+- **Evidence crops belong to AI items**, whose IDs never change; a reviewer item shows the crop of its `source_*_id`, and a reviewer-added item has none.
+- Neither path touches notes.
 
 The report page:
 - shows "Model severity rationale";
@@ -125,12 +141,12 @@ The report page:
 
 ## 5. Legacy data
 
-Older rows are shown in contract form for display and querying. Migration `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` rewrites the stored `incidents.type` and `entities.type` values once, but folding stays until the migration is applied. Notes and timestamps are never rewritten:
+Older rows are shown in contract form for display and querying. The midterm-to-finals copy rewrote the stored `incidents.type`, `entities.type` and entity crop `item_name` values once; query-time folding stays as a guard. Notes and AI-row timestamps are never rewritten:
 - `fighting` → `assault`, `animal` → `animal attack`;
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
 
-Their notes are parsed best-effort for the read-only Class B fields. Saving an edit on a legacy run writes contract-form values for that run; its historical notes are untouched.
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit or verifying a legacy run writes a contract-form reviewer version (`e01` → `E1` with `source_entity_id = 'e01'`, `"0:18"` → 18); its AI rows and historical notes are untouched.
 
 ## 6. Agent mode
 

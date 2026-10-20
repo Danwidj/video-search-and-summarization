@@ -67,7 +67,7 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST /rpc/insert_incident| Supabase
-    UI -->|/rpc/apply_structured_report_edit| Supabase
+    UI -->|/rpc/apply_structured_report_edit (reviewer version)| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -107,7 +107,7 @@ flowchart TB
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
 | `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
-| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` | Relational store for reports, incidents, evidence, reviews, and ground truth |
+| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals); `supabase/midterm/` (frozen record) | Relational store for reports, incidents, evidence, reviews, and ground truth. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
 
@@ -167,6 +167,27 @@ ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
 | `30081` | `<vm-ip>:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
 | `30082` | `<vm-ip>:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |
+
+### Two Supabase projects (one per phase)
+
+| Project | Role | Schema | Access |
+|---|---|---|---|
+| **Finals** (new project, same organisation and region as midterm) | The live database every service uses | [`supabase/migrations/`](../supabase/README.md): the finals baseline, then later finals migrations | `service_role` (PostgREST) and `postgres` (direct DSN) only; RLS on everything; the public key reaches nothing |
+| **Midterm** (`rfevukimyftzbxlehwel`) | Frozen record of the midterm phase | [`supabase/midterm/`](../supabase/midterm/README.md) (archive; never pushed) | Read-only after the freeze: `service_role` reads and runs the read RPCs, every write fails, direct-DSN sessions are read-only, `anon` is locked out |
+
+Finals is built from the baseline and filled once from midterm by `supabase/copy/copy_midterm_to_finals.py` (one-way; [`../supabase/README.md`](../supabase/README.md)). **R2 is shared:** both projects name the same bucket and keys, so no object is copied and no R2 setting changes. A delete in finals removes R2 objects that the midterm record still names; that is accepted for a record.
+
+What points at the database, and how it switches at the cutover:
+
+| Where | Settings | Read by | How it switches |
+|---|---|---|---|
+| `dev-profile-incident/.env.local` on each laptop (symlinked into `incident-console/`, `incident-console-v2/`, `vlm-gateway/`, `mock-backend/`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | Console, eval, mock backend in local mode, the copy and parity scripts | Each teammate sets the 3 finals values |
+| `.env.local` copies in other worktrees | same | Console or eval started from those worktrees | `.githooks/setup-worktree.sh` never overwrites an existing copy, so old worktrees keep midterm values: refresh or delete them. The freeze makes a stale one fail loudly |
+| `generated.env.remote` on `kwanz-ws` | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Native `vss-agent` (search, chat, standalone persistence); the evidence loader (`scripts/backfill_official_timestamps.py`); `.scripts/native-services.sh` | Back up, set the two finals values, restart `vss-agent` ("ask first"; [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
+| `deploy/docker/services/agent/compose.yml` | `INCIDENT_SUPABASE_*` passthrough | The Docker `vss-agent` (not used; the native one owns :8000) | Nothing |
+| `eval/` | `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_*` from the same `.env.local` | P1/RP1 batch, ground-truth ingest | Same `.env.local`; `init_schema()` is a no-op on finals (every table exists) |
+
+The agent only **warns** when it cannot record a search query, so an agent still pointed at midterm keeps answering searches and silently loses the query logs: check that `queries` grows on finals after the switch. The cutover steps, checklist and rollback are in the [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill.
 
 ---
 
@@ -252,7 +273,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
 - **Provenance:** never editable.
 
-`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `apply_structured_report_edit`. That function updates the relational projection and `review_status.edited_by/edited_at` in one transaction and never touches `model_runs.notes`.
+`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `apply_structured_report_edit`. On finals that is a shim over `save_human_report_edit`, which writes the run's reviewer version (`human_reports` and its items) and `review_status.edited_by/edited_at` in one transaction, sends a verified report back to `under review`, and never touches the AI rows or `model_runs.notes` ([`analysis-schema.md`](analysis-schema.md#ai-version-and-reviewer-version)).
 
 The report then shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
 

@@ -2,7 +2,7 @@
 
 // Characterisation test for GET /api/dashboard's response, written against the
 // pre-refactor route: get_incident_dashboard's result, in the shape its SQL
-// builds (20260928000000_local_time_heatmap_and_time_filters.sql), reaches the
+// builds (supabase/migrations/20261020000000_finals_baseline.sql), reaches the
 // browser unchanged, and the checks run in the same order.
 
 import assert from 'node:assert/strict';
