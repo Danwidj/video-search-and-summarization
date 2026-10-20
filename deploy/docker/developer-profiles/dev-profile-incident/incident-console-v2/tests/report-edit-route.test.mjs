@@ -33,12 +33,14 @@ function recordingFetch(calls, { incidentExists = true } = {}) {
     const parsed = new URL(String(url));
     calls.push({ table: parsed.pathname.replace('/rest/v1/', ''), method: init.method || 'GET', body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (parsed.pathname.endsWith('/incidents')) return new Response(JSON.stringify(incidentExists ? [{ incident_id: repaired.videoId }] : []));
-    if (parsed.pathname.endsWith('/rpc/apply_structured_report_edit')) return new Response(JSON.stringify({ editedBy: 'Rev', duration: 12 }));
+    if (parsed.pathname.endsWith('/rpc/save_human_report_edit')) {
+      return new Response(JSON.stringify({ incidentId: repaired.videoId, modelRunId: repaired.modelRunId, editedBy: 'Rev', editedAt: '2026-10-21T01:00:00', duration: 12, revision: 2, status: 'under review' }));
+    }
     return new Response('[]');
   };
 }
 
-test('a valid edit goes to the atomic RPC only; model_runs (notes) is never written', async () => {
+test('a valid edit goes to the reviewer-version RPC only; model_runs (notes) is never written', async () => {
   const calls = [];
   globalThis.fetch = recordingFetch(calls);
   const edit = baseEdit();
@@ -47,8 +49,12 @@ test('a valid edit goes to the atomic RPC only; model_runs (notes) is never writ
   const response = await patch({ modelRunId: repaired.modelRunId, editedBy: 'Rev', edit });
 
   assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    saved: true,
+    result: { incidentId: repaired.videoId, modelRunId: repaired.modelRunId, editedBy: 'Rev', editedAt: '2026-10-21T01:00:00', duration: 12, revision: 2, status: 'under review' },
+  });
   const writes = calls.filter((c) => c.method !== 'GET');
-  assert.deepEqual(writes.map((c) => c.table), ['rpc/apply_structured_report_edit']);
+  assert.deepEqual(writes.map((c) => c.table), ['rpc/save_human_report_edit']);
   assert.deepEqual(writes[0].body, { p_incident_id: repaired.videoId, p_model_run_id: repaired.modelRunId, p_edit: edit, p_edited_by: 'Rev' });
   assert.ok(!calls.some((c) => c.table === 'model_runs'), 'the edit path never touches model_runs');
 });

@@ -17,18 +17,31 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 
 const call = (body) => PATCH(new Request('http://localhost/x', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ videoId: 'v1' }) });
 
+/** incidents and review_status reads, and set_review_status as the finals baseline returns it. */
 function database({ incident = { incident_id: 'v1', model_run_id: 'm1' }, review = null } = {}) {
   const writes = [];
   const fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
     const table = parsed.pathname.replace('/rest/v1/', '');
-    if (init.method === 'POST') { writes.push({ table, onConflict: parsed.searchParams.get('on_conflict'), body: JSON.parse(String(init.body)) }); return new Response('[]'); }
+    if (init.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      writes.push({ table, body });
+      if (table !== 'rpc/set_review_status') return new Response('[]');
+      const base = { incidentId: body.p_incident_id, modelRunId: body.p_model_run_id, status: body.p_status };
+      if ((review?.status ?? 'unreviewed') === body.p_status) return new Response(JSON.stringify({ ...base, changed: false }));
+      const verified = body.p_status === 'verified';
+      return new Response(JSON.stringify({
+        ...base, verifiedBy: verified ? body.p_reviewer : null, verifiedAt: verified ? '2026-10-21T01:02:03.456789' : null, changed: true, humanVersionCreated: verified,
+      }));
+    }
     if (table === 'incidents') return new Response(JSON.stringify(incident ? [incident] : []));
     if (table === 'review_status') return new Response(JSON.stringify(review ? [review] : []));
     return new Response('[]');
   };
   return { fetch, writes };
 }
+
+const rpcCall = (status) => ({ table: 'rpc/set_review_status', body: { p_incident_id: 'v1', p_model_run_id: 'm1', p_status: status, p_reviewer: 'R' } });
 
 test('invalid input is rejected before Supabase', async () => {
   let called = false;
@@ -47,16 +60,16 @@ test('a run without an incident is 404 and writes nothing', async () => {
   assert.deepEqual(db.writes, []);
 });
 
-test('an unchanged status is acknowledged without a write', async () => {
+test('an unchanged status is acknowledged; set_review_status decides it and writes nothing', async () => {
   const db = database({ review: { incident_id: 'v1', model_run_id: 'm1', status: 'verified' } });
   globalThis.fetch = db.fetch;
   const response = await call({ modelRunId: 'm1', status: 'verified', reviewedBy: ' R ' });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: 'verified', reviewedBy: 'R' });
-  assert.deepEqual(db.writes, []);
+  assert.deepEqual(db.writes, [rpcCall('verified')]);
 });
 
-test('verifying stamps verifier and editor; other statuses clear the verifier', async () => {
+test('each status change is one set_review_status call; review_status is never written directly', async () => {
   for (const status of ['verified', 'under review', 'unreviewed']) {
     const db = database({ review: { incident_id: 'v1', model_run_id: 'm1', status: status === 'verified' ? 'unreviewed' : 'verified' } });
     globalThis.fetch = db.fetch;
@@ -65,14 +78,9 @@ test('verifying stamps verifier and editor; other statuses clear the verifier', 
     const payload = await response.json();
     assert.equal(payload.status, status);
     assert.equal(payload.reviewedBy, 'R');
-    assert.match(payload.reviewedAt, /^\d{4}-\d\d-\d\dT/);
-    assert.equal(db.writes.length, 1);
-    const [write] = db.writes;
-    assert.equal(write.table, 'review_status');
-    assert.equal(write.onConflict, 'incident_id,model_run_id');
-    assert.deepEqual(write.body, {
-      incident_id: 'v1', model_run_id: 'm1', status, edited_by: 'R', edited_at: payload.reviewedAt,
-      verified_by: status === 'verified' ? 'R' : null, verified_at: status === 'verified' ? payload.reviewedAt : null,
-    });
+    // Verifying reports the stored verification time; other changes the time of the request.
+    if (status === 'verified') assert.equal(payload.reviewedAt, '2026-10-21T01:02:03.456789');
+    else assert.match(payload.reviewedAt, /^\d{4}-\d\d-\d\dT.*Z$/);
+    assert.deepEqual(db.writes, [rpcCall(status)]);
   }
 });

@@ -48,9 +48,10 @@ function database(overrides = {}) {
     if (table === 'model_runs') return one(rows.modelRun);
     if (table === 'videos') return one(rows.video);
     if (table === 'review_status') return one(rows.review);
-    if (table === 'incidents') return one(rows.incident);
+    if (table === 'effective_incidents') return one(rows.incident);
     if (table === 'reports') return one(rows.reportRow);
-    if (table in { entities: 1, instruments: 1, assets: 1 }) return new Response(JSON.stringify(rows[table]));
+    const items = { effective_entities: 'entities', effective_instruments: 'instruments', effective_assets: 'assets' }[table];
+    if (items) return new Response(JSON.stringify(rows[items]));
     return new Response('[]');
   };
   return { rows, requests };
@@ -68,6 +69,10 @@ test('the report is the view built from the run rows with a signed playback URL'
   assert.deepEqual((await response.json()).report, expected);
   assert.equal(expected.official.isOfficial, true);
   assert.equal(requests.length, 8);
+  // The report is the effective one (the reviewer's version when there is one), never the AI tables.
+  assert.deepEqual(requests.map((request) => request.split('?')[0]).sort(), [
+    'effective_assets', 'effective_entities', 'effective_incidents', 'effective_instruments', 'model_runs', 'reports', 'review_status', 'videos',
+  ]);
 });
 
 test('a missing incident, run or video is 404', async () => {

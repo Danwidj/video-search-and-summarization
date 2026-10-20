@@ -151,15 +151,26 @@ export interface StructuredEditResult {
   editedBy: string;
   editedAt: string;
   duration: number;
+  revision: number;                // 1 for the first saved reviewer version, +1 per save
+  status: ReviewStatus;            // after the save: an edit sends a verified report back to 'under review'
+}
+
+/** One atomic review transition; never changes editedBy/editedAt. */
+export interface ReviewTransition {
+  changed: boolean;                // false when the run already had the status
+  status: ReviewStatus;
+  verifiedBy: string | null;       // set only by verifying
+  verifiedAt: string | null;
+  humanVersionCreated: boolean;    // verifying copied the AI report into a reviewer version
 }
 
 export interface IncidentRepository {
   listReports(query: ReportListQuery): Promise<ReportList>;
-  getRunReport(key: RunKey): Promise<RunReportRecord | null>;   // null when the run, its video or its incident is missing
+  getRunReport(key: RunKey): Promise<RunReportRecord | null>;   // the effective report (reviewer version, else AI); null when the run, its video or its incident is missing
   runExists(key: RunKey): Promise<boolean>;
   getReview(key: RunKey): Promise<ReviewState | null>;
-  saveReview(key: RunKey, review: ReviewState): Promise<void>;
-  applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>;
+  setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition>;    // set_review_status
+  applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>; // save_human_report_edit
   deleteRun(key: RunKey): Promise<void>;                         // evidence, review and report rows cascade
 }
 ```

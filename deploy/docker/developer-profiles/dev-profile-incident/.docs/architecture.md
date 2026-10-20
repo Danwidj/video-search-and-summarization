@@ -67,7 +67,7 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST /rpc/insert_incident| Supabase
-    UI -->|/rpc/apply_structured_report_edit (reviewer version)| Supabase
+    UI -->|/rpc/save_human_report_edit, /rpc/set_review_status| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -224,7 +224,7 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
 - Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
 
@@ -273,7 +273,9 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
 - **Provenance:** never editable.
 
-`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `apply_structured_report_edit`. On finals that is a shim over `save_human_report_edit`, which writes the run's reviewer version (`human_reports` and its items) and `review_status.edited_by/edited_at` in one transaction, sends a verified report back to `under review`, and never touches the AI rows or `model_runs.notes` ([`analysis-schema.md`](analysis-schema.md#ai-version-and-reviewer-version)).
+`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `save_human_report_edit`. In one transaction that function saves the run's reviewer version (`human_reports` and its items; created on the first edit, `revision` +1 per save) and stamps `review_status.edited_by/edited_at`; an edit of a verified report sends it back to `under review` and clears the verifier. It never touches the AI rows or `model_runs.notes`. The console calls it directly, not the `apply_structured_report_edit` shim the finals database keeps for older consoles.
+
+`PATCH /api/reports/[videoId]/review` calls `set_review_status`, one transaction that never writes `edited_by/edited_at` (they mean the last content edit). Verifying a report with no reviewer version first copies the AI report into one, so every verified report has a reviewer version.
 
 The report then shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
 

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Row -> domain translation for one run's report rows (videos, model_runs,
-// incidents, entities, instruments, assets, review_status, reports). The only
-// place that knows those column names; lifted unchanged from lib/reports/view.ts.
+// the effective_* views, review_status, reports) and the results of the
+// reviewer RPCs. The only place that knows those column and result names;
+// the row mapping is lifted unchanged from lib/reports/view.ts.
 
-import type { ReviewState, RunKey, RunReportRecord } from '@/lib/ports';
+import type { ReviewState, ReviewTransition, RunKey, RunReportRecord, StructuredEditResult } from '@/lib/ports';
+import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
 import { parseRunNotes } from '@/lib/reports/run-notes';
 import type { ReviewStatus } from '@/lib/reports/storage';
@@ -27,14 +29,16 @@ export interface ReportRows {
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const byId = (key: string) => (a: Row, b: Row) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), undefined, { numeric: true });
+const asRow = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
 const REVIEW_STATUSES = new Set(['unreviewed', 'under review', 'verified']);
+const reviewStatus = (value: unknown, fallback: ReviewStatus): ReviewStatus =>
+  (typeof value === 'string' && REVIEW_STATUSES.has(value) ? value : fallback) as ReviewStatus;
 
 /** review_status row -> ReviewState; an unknown stored status reads as 'unreviewed', as the report view always showed it. */
 export function reviewFromRow(row: Row | null): ReviewState | null {
   if (!row) return null;
-  const status = text(row.status);
   return {
-    status: (status && REVIEW_STATUSES.has(status) ? status : 'unreviewed') as ReviewStatus,
+    status: reviewStatus(row.status, 'unreviewed'),
     verifiedBy: text(row.verified_by),
     verifiedAt: text(row.verified_at),
     editedBy: text(row.edited_by),
@@ -42,16 +46,29 @@ export function reviewFromRow(row: Row | null): ReviewState | null {
   };
 }
 
-/** ReviewState -> review_status upsert row. */
-export function reviewToRow(key: RunKey, review: ReviewState): Row {
+/** set_review_status's result -> ReviewTransition. */
+export function reviewTransitionFromRpc(result: unknown, status: ReviewStatus): ReviewTransition {
+  const row = asRow(result);
   return {
-    incident_id: key.videoId,
-    model_run_id: key.modelRunId,
-    status: review.status,
-    edited_by: review.editedBy,
-    edited_at: review.editedAt,
-    verified_by: review.verifiedBy,
-    verified_at: review.verifiedAt,
+    changed: row.changed === true,
+    status: reviewStatus(row.status, status),
+    verifiedBy: text(row.verifiedBy),
+    verifiedAt: text(row.verifiedAt),
+    humanVersionCreated: row.humanVersionCreated === true,
+  };
+}
+
+/** save_human_report_edit's result (duration = end - start) -> StructuredEditResult. */
+export function structuredEditResultFromRpc(result: unknown, key: RunKey, edit: StructuredEdit, editedBy: string): StructuredEditResult {
+  const row = asRow(result);
+  return {
+    incidentId: text(row.incidentId) ?? key.videoId,
+    modelRunId: text(row.modelRunId) ?? key.modelRunId,
+    editedBy: text(row.editedBy) ?? editedBy.trim(),
+    editedAt: text(row.editedAt) ?? '',
+    duration: num(row.duration) ?? edit.incident.end_timestamp - edit.incident.start_timestamp,
+    revision: num(row.revision) ?? 1,
+    status: reviewStatus(row.status, 'unreviewed'),
   };
 }
 
