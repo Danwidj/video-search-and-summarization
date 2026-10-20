@@ -171,6 +171,7 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
 
 export type ReviewStatus = 'unreviewed' | 'under review' | 'verified';
 
+/** One report-library card (list_incident_report_summaries); null where the stored column is empty. */
 export interface ReportLibraryItem {
   reportId: string;
   videoId: string;
@@ -182,17 +183,17 @@ export interface ReportLibraryItem {
   severity: number;
   /** null when the model reported no confidence (incident-contract-v2 allows null). */
   confidence: number | null;
-  generatedAt: string;
-  uploadedAt?: string;
+  generatedAt: string | null;
+  uploadedAt?: string | null;
   model: string;
   status: ReviewStatus;
-  verifiedBy?: string;
-  verifiedAt?: string;
-  editedBy?: string;
-  editedAt?: string;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  editedBy?: string | null;
+  editedAt?: string | null;
   thumbnailUrl?: string;
-  r2Key?: string;
-  sensorId?: string;
+  r2Key?: string | null;
+  sensorId?: string | null;
   /** How the report's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */
   outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy';
   /** The video's explicitly selected official report (D6). */

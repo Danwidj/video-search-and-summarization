@@ -2,12 +2,12 @@
 
 import { NextResponse } from 'next/server';
 
-import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
+import { getDbAdapters } from '@/lib/adapters/supabase';
+import { deleteReport } from '@/lib/application/reports';
+import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { PostgrestClient } from '@/lib/postgrest/client';
 import { deleteR2Video } from '@/lib/r2/config';
 import { thumbnailKeyForVideo } from '@/lib/r2/key';
-import { explicitVideoId } from '@/lib/reports/run-notes';
 
 export async function DELETE(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -16,43 +16,12 @@ export async function DELETE(request: Request, context: { params: Promise<{ vide
     const modelRunId = params.get('run');
     if (!modelRunId) return NextResponse.json({ error: 'A model run ID is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
-    const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    if (params.get('deleteVideo') === 'true') {
-      const video = await db.selectOne('videos', { id: videoId });
-      if (typeof video?.filepath !== 'string') throw new Error('Video has no R2 object key');
-      await Promise.all([
-        deleteR2Video(config, video.filepath),
-        deleteR2Video(config, thumbnailKeyForVideo(video.filepath)),
-      ]);
-      await db.deleteWhere('videos', { id: videoId });
-      // incidents, evidence, review status and reports cascade from the video;
-      // then remove the run records that still name this video.
-      await deleteVideoRunRecords(db, videoId);
-    } else {
-      await db.deleteWhere('incidents', { incident_id: videoId, model_run_id: modelRunId });
-    }
+    await deleteReport(getDbAdapters(config), { videoId, modelRunId }, params.get('deleteVideo') === 'true', (storageKey) => Promise.all([
+      deleteR2Video(config, storageKey),
+      deleteR2Video(config, thumbnailKeyForVideo(storageKey)),
+    ]));
     return NextResponse.json({ deleted: true });
   } catch (error) {
     return errorResponse(error, 'Could not delete report');
   }
 }
-
-/**
- * After a video is deleted, remove the model_runs records that explicitly name
- * that exact videoId in their notes (failed attempts, and successful console
- * runs whose report rows were removed with the video) and have no incident
- * left. The notes text search is only a pre-filter: each candidate is
- * confirmed from its parsed notes. Batch eval/seed runs have no such notes and
- * are shared with other videos, so they are never touched here.
- */
-async function deleteVideoRunRecords(db: PostgrestClient, videoId: string): Promise<void> {
-  const candidates = await db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,notes');
-  for (const candidate of candidates) {
-    if (typeof candidate.id !== 'string' || explicitVideoId(candidate.notes) !== videoId) continue;
-    const incident = await db.selectOne('incidents', { model_run_id: candidate.id }, 'incident_id');
-    if (incident) continue;
-    await db.deleteWhere('model_runs', { id: candidate.id });
-  }
-}
-

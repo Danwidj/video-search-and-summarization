@@ -2,16 +2,16 @@
 
 import { NextResponse } from 'next/server';
 
-import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
+import { getDbAdapters } from '@/lib/adapters/supabase';
 import { errorResponse } from '@/lib/http';
-import { PostgrestClient } from '@/lib/postgrest/client';
-import type { DashboardAnalytics } from '@/lib/dashboard/types';
+import type { DashboardSeverity } from '@/lib/ports';
 import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
 const PERIODS = new Set(['7', '30', 'all']);
 const SEVERITIES = new Set(['low', 'medium', 'high']);
+const isSeverity = (value: string): value is DashboardSeverity => SEVERITIES.has(value);
 
 function integerParameter(params: URLSearchParams, name: string, minimum: number, maximum: number): number | null {
   const raw = params.get(name);
@@ -25,15 +25,14 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const period = params.get('days') || '30';
-    const severity = params.get('severity');
+    const severity = params.get('severity') || null;
     const tzParam = params.get('timezone');
     if (tzParam !== null && !isValidTimeZone(tzParam)) return NextResponse.json({ error: 'Invalid dashboard timezone' }, { status: 400 });
     const timezone = tzParam || 'UTC';
     if (!PERIODS.has(period)) return NextResponse.json({ error: 'Invalid dashboard period' }, { status: 400 });
-    if (severity && !SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid severity filter' }, { status: 400 });
+    if (severity !== null && !isSeverity(severity)) return NextResponse.json({ error: 'Invalid severity filter' }, { status: 400 });
 
-    const config = getServiceConfiguration();
-    if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
+    const { dashboard } = getDbAdapters();
     const requestedStart = params.get('after');
     const requestedEnd = params.get('before');
     // after/before are zoneless UTC (like every stored timestamp); read them as UTC, never as server-local time.
@@ -42,16 +41,15 @@ export async function GET(request: Request) {
     if ((periodStart && Number.isNaN(periodStart.getTime())) || (periodEnd && Number.isNaN(periodEnd.getTime())) || (periodStart && periodEnd && periodStart >= periodEnd)) {
       return NextResponse.json({ error: 'Invalid dashboard date range' }, { status: 400 });
     }
-    const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    const analytics = await db.rpc('get_incident_dashboard', {
-      p_period_start: periodStart?.toISOString().replace('Z', '') ?? null,
-      p_period_end: periodEnd?.toISOString().replace('Z', '') ?? null,
-      p_type: params.get('type')?.trim() || null,
-      p_severity: severity || null,
-      p_day_of_week: integerParameter(params, 'day', 0, 6),
-      p_hour: integerParameter(params, 'hour', 0, 23),
-      p_timezone: timezone,
-    }) as DashboardAnalytics;
+    const analytics = await dashboard.getDashboard({
+      periodStart,
+      periodEnd,
+      type: params.get('type')?.trim() || null,
+      severity,
+      dayOfWeek: integerParameter(params, 'day', 0, 6),
+      hour: integerParameter(params, 'hour', 0, 23),
+      timezone,
+    });
     return NextResponse.json({ analytics });
   } catch (error) {
     if (error instanceof RangeError) return NextResponse.json({ error: error.message }, { status: 400 });

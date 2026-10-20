@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// A small in-memory PostgREST for adapter contract tests: eq and like filters,
+// limit, upsert with on_conflict, delete, and RPCs supplied by the test.
+// Embedded selects and cascades are not modelled.
+
+const CONTROL = new Set(['select', 'limit', 'offset', 'on_conflict', 'order']);
+
+/** PostgREST like-pattern (`*` / `%` any run, `_` one char, `\` escapes) as a RegExp. */
+function likePattern(pattern) {
+  let source = '';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === '\\') source += pattern[++index].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    else if (character === '*' || character === '%') source += '.*';
+    else if (character === '_') source += '.';
+    else source += character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${source}$`, 's');
+}
+
+function matches(row, params) {
+  return [...params].every(([key, value]) => {
+    if (CONTROL.has(key)) return true;
+    if (value.startsWith('eq.')) return String(row[key]) === value.slice(3);
+    if (value.startsWith('like.')) return likePattern(value.slice(5)).test(String(row[key] ?? ''));
+    throw new Error(`fake PostgREST does not support the filter ${key}=${value}`);
+  });
+}
+
+/**
+ * tables: { name: rows[] }. rpc: { name: (args, store) => result }; an RPC
+ * refuses like a RAISE EXCEPTION by throwing { message }.
+ */
+export function fakePostgrest(tables, { rpc = {} } = {}) {
+  const store = Object.fromEntries(Object.entries(tables).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]));
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const path = parsed.pathname.replace('/rest/v1/', '');
+    const method = init.method || 'GET';
+    if (path.startsWith('rpc/')) {
+      const handler = rpc[path.slice(4)];
+      if (!handler) return json({ message: `unknown function ${path}` }, 404);
+      try {
+        return json(handler(JSON.parse(String(init.body)), store) ?? null);
+      } catch (error) {
+        return json({ code: 'P0001', message: error.message }, 400);
+      }
+    }
+    const rows = (store[path] ??= []);
+    if (method === 'GET') {
+      const found = rows.filter((row) => matches(row, parsed.searchParams));
+      const limit = Number(parsed.searchParams.get('limit') || found.length);
+      return json(found.slice(0, limit));
+    }
+    if (method === 'DELETE') {
+      store[path] = rows.filter((row) => !matches(row, parsed.searchParams));
+      return new Response(null, { status: 204 });
+    }
+    if (method === 'POST') {
+      const keys = (parsed.searchParams.get('on_conflict') || '').split(',').filter(Boolean);
+      const incoming = [].concat(JSON.parse(String(init.body)));
+      for (const row of incoming) {
+        const index = keys.length ? rows.findIndex((existing) => keys.every((key) => existing[key] === row[key])) : -1;
+        if (index >= 0) rows[index] = { ...rows[index], ...row };
+        else rows.push({ ...row });
+      }
+      return json(incoming);
+    }
+    return json({ message: `unsupported ${method}` }, 405);
+  };
+  return { fetch, store };
+}

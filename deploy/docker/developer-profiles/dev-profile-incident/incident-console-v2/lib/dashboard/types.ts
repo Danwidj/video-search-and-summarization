@@ -49,7 +49,8 @@ export interface DashboardAnalytics {
   reviews: { unreviewed: number; under_review: number; verified: number };
   types: TypeDetail[];
   trend: Array<{ date: string; count: number }>;
-  heatmap: Array<{ day: number; hour: number; count: number }>;
+  /** day and hour are null only for an official report without generated_datetime. */
+  heatmap: Array<{ day: number | null; hour: number | null; count: number }>;
   confidence: Array<{ bucket: number; count: number }>;
   entityTypes: RankedValue[];
   topInstruments: RankedValue[];

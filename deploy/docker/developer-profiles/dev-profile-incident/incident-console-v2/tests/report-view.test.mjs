@@ -8,7 +8,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildReportView, reportHeading } = await import('../lib/reports/view.ts');
+const { buildReportView } = await import('./support/report-view.mjs');
+const { reportHeading } = await import('../lib/reports/view.ts');
 const { parseRunNotes } = await import('../lib/reports/run-notes.ts');
 const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import('../lib/reports/normalize.ts');
 

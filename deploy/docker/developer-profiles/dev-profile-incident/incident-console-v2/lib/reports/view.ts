@@ -1,31 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Server-only builder for the report view (types in lib/reports/report-view.ts).
+// Its input is the translated RunReportRecord (lib/ports/incidents.ts); the
+// Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/lib/contract/validate';
-import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
+import type { RunReportRecord } from '@/lib/ports';
+import { canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/lib/reports/report-view';
-import { parseRunNotes } from '@/lib/reports/run-notes';
-import type { ReviewStatus } from '@/lib/reports/storage';
 
 export { reportHeading } from '@/lib/reports/report-view';
 export type { ReportView } from '@/lib/reports/report-view';
-
-type Row = Record<string, unknown>;
-
-export interface ReportRows {
-  videoId: string;
-  modelRunId: string;
-  playbackUrl: string;
-  video: Row;
-  modelRun: Row;
-  incident: Row;
-  entities: Row[];
-  instruments: Row[];
-  assets: Row[];
-  review: Row | null;
-  reportRow: Row | null;
-}
 
 type RawEvent = { startSeconds: number; endSeconds: number | null; description: string };
 
@@ -45,28 +30,16 @@ function timelineCodes(codes: string[]): string[] {
 }
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
-const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-const byId = (key: string) => (a: Row, b: Row) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), undefined, { numeric: true });
-const REVIEW_STATUSES = new Set(['unreviewed', 'under review', 'verified']);
 
-export function buildReportView(rows: ReportRows): ReportView {
-  const { incident } = rows;
+export function toReportView(record: RunReportRecord, playbackUrl: string): ReportView {
   const structured: ReportView['structured'] = {
-    incident: {
-      type: canonicalIncidentType(incident.type),
-      startSeconds: parseTimestamp(incident.start_timestamp),
-      endSeconds: parseTimestamp(incident.end_timestamp),
-      duration: num(incident.duration),
-      description: text(incident.description),
-      severityLevel: num(incident.severity_level),
-      confidenceScore: num(incident.confidence_score),
-    },
-    entities: [...rows.entities].sort(byId('entity_id')).map((row) => ({ entityId: String(row.entity_id ?? ''), type: canonicalEntityType(row.type), description: String(row.description ?? '') })),
-    instruments: [...rows.instruments].sort(byId('instrument_id')).map((row) => ({ instrumentId: String(row.instrument_id ?? ''), entityId: text(row.entity_id), name: String(row.name ?? ''), description: String(row.description ?? ''), threatLevel: num(row.threat_level) })),
-    assets: [...rows.assets].sort(byId('asset_id')).map((row) => ({ assetId: String(row.asset_id ?? ''), name: String(row.name ?? ''), description: String(row.description ?? '') })),
+    incident: record.incident,
+    entities: record.entities,
+    instruments: record.instruments,
+    assets: record.assets,
   };
 
-  const notes = parseRunNotes(rows.modelRun.notes);
+  const { notes } = record.modelRun;
   let modelOutput: ModelOutput | null = null;
   if (notes.kind === 'contract') {
     const { report } = notes;
@@ -140,16 +113,16 @@ export function buildReportView(rows: ReportRows): ReportView {
     }
   }
 
-  const filepath = text(rows.video.filepath) ?? '';
+  const { videoId, modelRunId } = record.key;
   const run: RunDetails = {
-    videoId: rows.videoId,
-    modelRunId: rows.modelRunId,
-    reportId: text(rows.reportRow?.id) ?? `${rows.videoId}-${rows.modelRunId}`,
-    filename: filepath.split('/').pop() || rows.videoId,
-    playbackUrl: rows.playbackUrl,
-    model: text(rows.modelRun.model_name) ?? 'Unknown model',
-    promptVersion: text(rows.modelRun.prompt_version),
-    generatedAt: text(rows.reportRow?.generated_datetime) ?? text(rows.modelRun.run_datetime) ?? '',
+    videoId,
+    modelRunId,
+    reportId: record.report?.reportId ?? `${videoId}-${modelRunId}`,
+    filename: record.video.filename,
+    playbackUrl,
+    model: record.modelRun.modelName ?? 'Unknown model',
+    promptVersion: record.modelRun.promptVersion,
+    generatedAt: record.report?.generatedAt ?? record.modelRun.runAt ?? '',
     notesKind: notes.kind,
   };
   if (notes.kind === 'contract' || notes.kind === 'invalid-contract') {
@@ -176,25 +149,20 @@ export function buildReportView(rows: ReportRows): ReportView {
     run.legacyReviewerEdits = notes.legacyReviewerEdits;
   }
 
-  const status = text(rows.review?.status);
+  const { official } = record.video;
   return {
-    videoId: rows.videoId,
-    modelRunId: rows.modelRunId,
+    videoId,
+    modelRunId,
     structured,
     modelOutput,
     run,
-    official: {
-      officialRunId: text(rows.video.selected_model_run_id),
-      selectedBy: text(rows.video.selected_model_run_id) ? text(rows.video.selected_by) : null,
-      selectedAt: text(rows.video.selected_model_run_id) ? text(rows.video.selected_at) : null,
-      isOfficial: text(rows.video.selected_model_run_id) === rows.modelRunId,
-    },
+    official: { ...official, isOfficial: official.officialRunId === modelRunId },
     review: {
-      status: (status && REVIEW_STATUSES.has(status) ? status : 'unreviewed') as ReviewStatus,
-      verifiedBy: text(rows.review?.verified_by) ?? undefined,
-      verifiedAt: text(rows.review?.verified_at) ?? undefined,
-      editedBy: text(rows.review?.edited_by) ?? undefined,
-      editedAt: text(rows.review?.edited_at) ?? undefined,
+      status: record.review?.status ?? 'unreviewed',
+      verifiedBy: record.review?.verifiedBy ?? undefined,
+      verifiedAt: record.review?.verifiedAt ?? undefined,
+      editedBy: record.review?.editedBy ?? undefined,
+      editedAt: record.review?.editedAt ?? undefined,
     },
     differences,
   };

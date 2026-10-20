@@ -3,10 +3,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { getDbAdapters } from '@/lib/adapters/supabase';
 import { StructuredEditError, validateStructuredEdit } from '@/lib/contract/structured-edit';
-import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { PostgrestClient } from '@/lib/postgrest/client';
 
 // Structured (Class A) reviewer edits. The edit replaces the run's relational
 // projection atomically through apply_structured_report_edit; model_runs.notes
@@ -37,18 +36,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       throw error;
     }
 
-    const config = getServiceConfiguration();
-    if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
-    const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
-    const incident = await db.selectOne('incidents', { incident_id: videoId, model_run_id: modelRunId }, 'incident_id');
-    if (!incident) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    const { incidents } = getDbAdapters();
+    const key = { videoId, modelRunId };
+    if (!(await incidents.runExists(key))) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
 
-    const result = await db.rpc('apply_structured_report_edit', {
-      p_incident_id: videoId,
-      p_model_run_id: modelRunId,
-      p_edit: edit,
-      p_edited_by: editedBy,
-    });
+    const result = await incidents.applyStructuredEdit(key, edit, editedBy);
     return NextResponse.json({ saved: true, result });
   } catch (error) {
     return errorResponse(error, 'Could not save the edit');
