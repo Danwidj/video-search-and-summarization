@@ -37,7 +37,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
     if (problems.length || busy) return;
     const editedBy = window.prompt('Your name is required to save a reviewer edit.');
     if (!editedBy?.trim()) return;
-    if (report.review.status === 'verified' && !window.confirm('This report is verified. Save a reviewer edit anyway?')) return;
+    if (report.review.status === 'verified' && !window.confirm('This report is verified. Saving this edit sends it back to under review and clears the verification. Save anyway?')) return;
     setBusy(true);
     setError([]);
     try {
