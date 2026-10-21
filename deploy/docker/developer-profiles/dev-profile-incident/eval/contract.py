@@ -40,9 +40,10 @@ from jsonschema import Draft202012Validator
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 SCHEMA_PATH = CONTRACTS_DIR / "incident_report.schema.json"
-EXTRACTION_PROMPT_PATH = CONTRACTS_DIR / "incident_extraction_prompt.md"
-REPORT_PROMPT_PATH = CONTRACTS_DIR / "report_generation_prompt.md"
+EXTRACTION_PROMPT_PATH = CONTRACTS_DIR / "incident_extraction_prompt.txt"
+REPORT_PROMPT_PATH = CONTRACTS_DIR / "report_generation_prompt.txt"
 VERSION_PATH = CONTRACTS_DIR / "VERSION"
+INFERENCE_PATH = CONTRACTS_DIR / "inference.json"
 
 # Keys describing the schema document itself; stripped from what is sent to the
 # model because some OpenAI-compatible servers reject them inside response_format.
@@ -71,6 +72,11 @@ def extraction_prompt() -> str:
 @cache
 def report_prompt_template() -> str:
     return REPORT_PROMPT_PATH.read_text()
+
+
+@cache
+def load_inference() -> dict[str, Any]:
+    return json.loads(INFERENCE_PATH.read_text())
 
 
 @cache

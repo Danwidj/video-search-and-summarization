@@ -28,7 +28,6 @@ flowchart TB
     subgraph Tunnel["SSH Port Forwarding Tunnel"]
         FwdAgent["localhost:8000 -> VM:8000"]
         FwdHAProxy["localhost:7777 -> VM:7777"]
-        FwdNIM["localhost:30081/30082 -> VM:30081/30082<br/>(Unused in Brev mode)"]
     end
 
     subgraph VM["kwanz-ws Shared Workstation"]
@@ -150,7 +149,7 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777, 30081, 30082<br/>then wait for localhost:8000/health"] --> CheckConsole{--no-console?}
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
     CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
@@ -165,8 +164,6 @@ ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4
 |---|---|---|---|
 | `8000` | `127.0.0.1:8000` (loopback) | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
-| `30081` | `<vm-ip>:30081` | LLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local LLM NIM is deployed |
-| `30082` | `<vm-ip>:30082` | VLM NIM Endpoint | Unused in remote (Brev) mode — nothing listens on the VM; only meaningful if a local VLM NIM is deployed |
 
 ### Two Supabase projects (one per phase)
 

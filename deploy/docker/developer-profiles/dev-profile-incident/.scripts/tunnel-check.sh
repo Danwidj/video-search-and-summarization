@@ -4,9 +4,7 @@
 # `mdx-tunnel-incident-check` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh —
 # same behavior, standalone script). LAPTOP SIDE ONLY, like tunnel.sh.
 #
-# The agent health check must pass; the NIM endpoints only need to answer at
-# HTTP level — any status code proves the forward works (a 4xx from the NIM
-# is still the NIM answering).
+# The agent and proxy health checks must pass.
 
 VSS_VM_IP="${VSS_VM_IP:-the VM}"
 
@@ -24,7 +22,9 @@ else
   echo "search route returned HTTP ${search_code} (expected 200)"
 fi
 
-for port in 30081 30082; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "http://localhost:${port}/v1/models" || echo 000)"
-  echo "nim :${port} -> ${VSS_VM_IP}:${port}: HTTP ${code}"
-done
+if curl -sf -I --max-time 15 http://localhost:7777/storage 2>/dev/null | grep -qi accept-ranges; then
+  echo "proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
+else
+  echo "proxy unreachable - is the tunnel running? (tunnel.sh or start.sh)" >&2
+  exit 1
+fi

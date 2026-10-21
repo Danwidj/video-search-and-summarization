@@ -5,14 +5,14 @@
 # Sourced by shellrc.sh. This file now carries ONLY the generic shell QoL
 # aliases (nothing VSS deploy-lifecycle-specific). The VSS deploy-lifecycle
 # commands that used to live here (ngc-env-on, mdx-ps, mdx-down, mdx-health,
-# mdx-tunnel-incident, mdx-tunnel-incident-check, mdx-logs, mdx-disk,
-# mdx-rebuild-svc, mdx-rebuild, mdx-clean-datalog, gpu) moved to standalone,
+# mdx-tunnel-incident, mdx-tunnel-incident-check, mdx-logs,
+# mdx-rebuild-svc, mdx-clean-datalog, gpu) moved to standalone,
 # executable scripts directly under:
 #
 #   deploy/docker/developer-profiles/dev-profile-incident/scripts/
 #
 # (`status.sh`, `down.sh`, `health.sh`, `tunnel.sh`, `tunnel-check.sh`,
-# `logs.sh`, `disk.sh`, `rebuild-svc.sh`, `rebuild.sh`, `clean-datalog.sh`,
+# `logs.sh`, `rebuild-svc.sh`, `clean-datalog.sh`,
 # `ngc-env.sh`, `gpu.sh`, `resolve-ssh-target.sh`) plus `start.sh` at the top
 # level of `dev-profile-incident/` as the one-command daily entry point. Run
 # those scripts instead of shell aliases.

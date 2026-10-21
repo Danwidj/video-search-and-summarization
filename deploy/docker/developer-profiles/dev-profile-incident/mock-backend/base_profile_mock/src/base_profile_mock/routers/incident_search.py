@@ -6,26 +6,33 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from typing import Literal
 import uuid
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 
 router = APIRouter(prefix="/api/v1")
 
 
 class SearchFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     incident_types: list[str] | None = None
     min_severity: int | None = Field(default=None, ge=1, le=5)
     max_severity: int | None = Field(default=None, ge=1, le=5)
-    item_types: list[str] | None = None
+    item_types: list[Literal["entity", "instrument", "asset"]] | None = None
 
 
 class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(min_length=1, max_length=500)
     top_k: int = Field(default=10, ge=1, le=50)
-    min_similarity: float = Field(default=0.2, ge=0.0, le=1.0)
+    min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
+    hide_rejected: bool = True
     filters: SearchFilters | None = None
 
 
@@ -199,6 +206,8 @@ async def search_incidents(req: SearchRequest) -> dict[str, Any]:
         sim = candidate["similarity_score"]
 
         if sim < req.min_similarity:
+            continue
+        if req.hide_rejected and candidate.get("critic", {}).get("verdict") == "rejected":
             continue
         if item_types and item["item_type"] not in item_types:
             continue

@@ -82,6 +82,7 @@ ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile
 
 The native agent runs out of `/srv/rise-up/vss/services/agent/.venv` using `nat serve`.
 For changes in `services/agent/src` to take effect across native process restarts (`native-services.sh restart vss-agent`), the package must be installed in editable mode (`editable: true` in `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json`).
+Shared contract files are vendored in `services/agent/src/vss_agents/incident_contract/` from `contracts/` and synchronised with `python deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py` (`--check` mode verifies parity without copying).
 
 Environment variables are captured at process start: editing `generated.env.remote` does not take effect until `native-services.sh restart vss-agent` sources the file. Live environment values can be inspected in `/proc/<pid>/environ`.
 
@@ -119,8 +120,6 @@ To verify active tunnel ports:
 Forwarded ports:
 - `localhost:8000` -> `127.0.0.1:8000` on the VM (`vss-agent`: health, always-on search route `POST /api/v1/incidents/search`, and chat route `POST /api/v1/incidents/chat`)
 - `localhost:7777` -> `<vm-ip>:7777` (`vss-haproxy-ingress`)
-- `localhost:30081` -> `<vm-ip>:30081` (LLM inference; unused in Brev mode — nothing listens on VM)
-- `localhost:30082` -> `<vm-ip>:30082` (VLM inference; unused in Brev mode — nothing listens on VM)
 
 Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add `GatewayPorts`). `incident-console-v2` is bound to `127.0.0.1:3200` by `start.sh` and the `dev`/`start` npm scripts, so nothing on the laptop network can reach it.
 
@@ -156,7 +155,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 
 **Troubleshooting Gotchas:**
 - **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host kwanz-ws` entry in `~/.ssh/config` has the correct `HostName` and `User`.
-- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`).
+- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`), and a proxy failure (unreachable `vss-haproxy-ingress` on `${VSS_VM_IP}:7777`).
 - **Wrong User Account:** Each teammate has a provisioned account on `kwanz-ws`. Configure `User <your-vm-username>` under `Host kwanz-ws` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---
@@ -171,8 +170,9 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
    ```bash
    ./.scripts/down.sh
    # Or plain:
-   docker compose down
+   docker compose -p mdx stop
    ```
+   `./.scripts/down.sh` stops native services and runs `docker compose -p mdx stop` to stop containers without removing them (containers and their data are kept; restart is `./start.sh --mode vm`). Note that exited orphan containers are no longer cleaned up by `down.sh`; run `docker compose -p mdx down --remove-orphans` manually when a clean slate is wanted (still never `-v`).
 3. **No Double Agent:**
    Never start the `vss-agent` Docker container when the native `vss-agent` process is already running on port 8000.
    `start.sh` intentionally excludes `vss-agent` from its `docker compose up` command.

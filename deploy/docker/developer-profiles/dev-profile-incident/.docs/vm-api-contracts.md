@@ -10,13 +10,11 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 |---|---|---|---|
 | `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` (VIOS/VST) | video upload and storage API |
-| `30081` | `<vm-ip>:30081` | LLM NIM | unused: nothing listens on the VM (Brev inference) |
-| `30082` | `<vm-ip>:30082` | VLM NIM | unused: nothing listens on the VM (Brev inference) |
 
 - In local mode `7777` is the mock backend instead, and it also serves `POST /api/v1/incidents/search`. There is no tunnel.
 - `VSS_VM_IP`: used as given if set. Otherwise start.sh runs `ip -4 route get 1.1.1.1` on the VM over SSH and takes the `src` address. If that fails it prints `could not detect the VM address; falling back to 10.131.1.5` and uses `10.131.1.5`. Override with `VSS_VM_IP=<lan-ip>` when the tunnel cannot reach the address.
 - A local port already in use stops start.sh before the tunnel opens: `laptop port <p> is already in use by <holder>`.
-- After opening, start.sh polls `localhost:8000/health` for up to 60 s. Ports `7777`, `30081`, `30082` are not health-checked; run `./.scripts/tunnel-check.sh` for a per-port breakdown.
+- After opening, start.sh polls `localhost:8000/health` and `localhost:7777/storage` (HEAD) for up to 60 s each. Run `./.scripts/tunnel-check.sh` to check tunneled routes.
 
 ### When the VM is unreachable
 
@@ -31,7 +29,7 @@ start.sh: cannot reach the VM over SSH ('daniel@kwanz-ws').
 
 Classified causes: Tailscale not logged in, stopped or daemon down, VM offline in the tailnet, host does not resolve, SSH timeout (`VSS_SSH_CONNECT_TIMEOUT`, default 10 s), connection refused, no route, host key changed, permission denied, connection dropped, otherwise unclassified.
 
-When SSH works but the tunnelled health check fails, start.sh says whether the agent is healthy on the VM (SSH forward blocked or `VSS_AGENT_HOST` bound to LAN instead of `127.0.0.1`) or dead on the VM (read `.run/vss-agent.log`), then exits non-zero.
+When SSH works but a tunnelled health check fails, start.sh says whether the agent or proxy is healthy on the VM (SSH forward blocked or wrong host bind) or dead on the VM (crashed agent or stopped vss-haproxy-ingress container), then exits non-zero.
 
 ## Common behaviour
 
@@ -187,6 +185,6 @@ Registered by the same worker; documented upstream. Video: `POST /api/v1/videos`
 | `POST search` `{}` / `top_k: 99` | `422` FastAPI detail list, as documented |
 | `POST analyze` `{}` | `422` missing `video_url`, as documented |
 | `POST chat` | `200`, canned `Assault007` citations |
-| listening ports | `8000`, `7777` yes; `30081`, `30082` no |
+| listening ports | `8000`, `7777` yes; `30081`, `30082` no (dropped from tunnel) |
 
 Differences from main: the VM checkout was at `f7847e1d2` (PR 134), before the evidence loader and embedding changes of PR 138, and its search returned no hits. Hit contents above are therefore documented from main's models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
-# down.sh — Stop both native VM services and the `mdx` compose stack WITHOUT
+# down.sh - Stop both native VM services and the `mdx` compose stack WITHOUT
 # wiping the model-weight cache.
+#
+# Containers are stopped, not removed; containers and their data are kept.
+# Restart is `./start.sh --mode vm`, which starts what is stopped or missing.
 #
 # Deliberately never `-v`: dev-profile.sh's own `down` runs
 # `docker compose -p mdx down -v --remove-orphans` and then deletes the whole
@@ -19,7 +22,8 @@ echo "=== Stopping Native Services ==="
 "${SCRIPT_DIR}/native-services.sh" stop
 
 echo ""
-echo "=== Stopping Docker Containers (mdx) ==="
-(cd "$REPO_ROOT/deploy/docker" && docker compose -p mdx down --remove-orphans)
+echo "=== Stopping Docker Containers (mdx: stopping, not removing) ==="
+(cd "$REPO_ROOT/deploy/docker" && docker compose -p mdx stop)
 
-echo "=== All services stopped ==="
+echo "=== All services stopped (containers stopped, not removed; restart with ./start.sh --mode vm) ==="
+
