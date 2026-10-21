@@ -23,6 +23,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [VM API contracts & tunnel endpoints (frontend)](.docs/vm-api-contracts.md)
 - [Decision log](.docs/decisions.md)
 - [MVP2 natural-language search overview](.docs/mvp2/README.md)
+- [MVP2 evaluation plan (retrieval, critic, detector, embeddings)](.docs/mvp2/eval.md)
 - [incident-console-v2 middle layer (ports and adapters)](.docs/mvp2/console-hexagonal-architecture.md)
 
 **Components**

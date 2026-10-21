@@ -30,7 +30,7 @@ Surveillance Video
        |
        V (Crop Pipeline Service)
        |
-Keyframe @ timestamp_seconds  ──────────────────▶  Open-Vocabulary Detector (Grounding DINO / OWLv2)
+Keyframe @ timestamp_seconds  ──────────────────▶  Detector port (today: remote VLM DefaultDetector)
        |                                                   |
        |   Bounding box [ymin,xmin,ymax,xmax] normalised 0-1000
        V                                                   V
@@ -77,7 +77,7 @@ Search & Retrieval
 
 1. **VLM P1 Extraction** (incident-contract-v3): The VLM returns `timestamp_seconds` and a short searchable **label** for each entity/instrument/asset. **Bounding boxes are NOT requested** from the VLM (0% well-framed in pilot). The incident report schema uses `timestamp_seconds` (INT) and descriptive text per item, whilst `start_timestamp` and `end_timestamp` define incident-level temporal boundaries.
 
-2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then an open-vocabulary detector (Grounding DINO or OWLv2) runs on the single frame with the item name as prompt. The detector produces a tight bounding box (with 5% padding). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
+2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`, whole-frame fallback when no box is found); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](eval.md) §6 ([decisions](../decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
 
 3. **evidence_crops table** (new, unified):
    - Consolidates entities, instruments, and assets into one table
@@ -91,7 +91,7 @@ Search & Retrieval
    - The RPC takes `p_query_embedding`, `top_k`, `min_similarity`, and applies filters (`item_type`, `incident_type`, `severity_level`, `min_similarity`).
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Joins with `videos` (via `selected_model_run_id`) and `incidents` to return candidate metadata.
-   - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the cropped screenshot and item description. Both ranking and critic verdicts are persisted into `query_results` before returning results.
+   - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
    - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose planned adapter calls this route ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
 
 5. **Query Results** (new table):
@@ -109,7 +109,7 @@ Search & Retrieval
 | **incident-contract-v3** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
 | **evidence_crops** (new Supabase table) | Unified table: `(incident_id, model_run_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route, chat endpoint, evidence loader (migration delivered in PR 134) |
 | **query_results** (new Supabase table) | Records: `id, query_id, incident_id, model_run_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
-| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
+| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true), `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
 | **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
 | **chat-contract-v1** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `session_id` (optional), `messages[]` (`{role: "user" | "assistant", content}`), `context` (`{scope: "global" | "incident", incident_id, evidence_crop_ids}`). Returns assistant response with grounded evidence citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`). | PR 118 (frontend chat) |
 | **incident-contract-v3 taxonomy** | Retained from contract-v2: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. `entity type {human, animal, unknown}`. `instrument threat_level 1-5`. Item IDs: sequential `E1..`, `I1..`, `A1..`. | All workstreams |
@@ -136,7 +136,7 @@ The PR workstreams and the VM backend steps form a chain of dependencies. Each w
 | PR | Focus | Depends On | Blocks |
 |---|---|---|---|
 | **PR 118** (frontend) | Search box, results display, chat endpoint, theming | VM backend Step 4 (search REST route), Step 5 (chat REST route) | Cannot display search results or chat without REST API routes |
-| **PR 119** (eval) | System vs one-shot baseline, retrieval benchmarks, critic verdicts | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
+| **PR 119** (eval) | Proposed tracks (pending approval, [`eval.md`](eval.md) P-1): retrieval benchmark (one-shot vs critic), extraction parity, detector and embedding studies; full-system comparison deferred | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
 | **PR 120** (console middle layer) | Hexagonal ports and adapters in `incident-console-v2` (`lib/ports/`, `lib/adapters/supabase/`, `lib/application/`); evidence search port shaped on search-contract-v1 | VM backend Step 4 (search REST route) for the search adapter | Console search needs the port's agent adapter |
 | **PR 126** (data & search layer) | Live RLS & RPC lockdown, connection & VM persistence verification (the `evidence_crops` / `query_results` / `search_evidence_items` migration was delivered in PR 134) | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot verify the live schema without the contract and mock backend |
 
@@ -178,7 +178,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
 - **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
-- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on).
+- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on). [`eval.md`](eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.
 
 ---
@@ -211,13 +211,13 @@ The PR task docs assume the following conventions and environment setup. This se
 
 ### PR 119 - Eval (system vs one-shot baseline, retrieval)
 
-**File:** `.docs/mvp2/eval.md` (to be created by PR assignee)
+**File:** [`eval.md`](eval.md)
 
 > [!IMPORTANT]
 > **TODO [PR 119]: System-Level Benchmarking & Retrieval Suite**
-> - **Missing:** System-level evaluation framework comparing one-shot VLM prompt baseline against the full VSS pipeline, independent non-circular benchmark queries dataset (50+ queries), retrieval benchmark suite (`eval/scripts/eval_retrieval.py` measuring P@K, R@K, MRR, F1), always-on critic utility ablation study, open-vocabulary detector comparative framing evaluation (Grounding DINO, OWLv2, Florence-2), and embedding model comparison.
+> - **Missing:** implementation of the tracks proposed in [`eval.md`](eval.md) (P-1, pending approval): retrieval benchmark and critic ablation (Track R: independent query set of 50+ positive queries, labels, `eval/scripts/eval_retrieval.py` with P@K, returned precision, R@K, F1@K, MRR, coverage and false positives), gateway vs agent extraction parity (Track X), offline detector framing (Track D) and embedding comparison (Track E). Full-system extraction comparison (Track F) waits for a compound pipeline.
 > - **Owner:** PR 119 (`docs(dev-profile-incident): MVP2 eval (system vs one-shot baseline, retrieval) workstream tasks`)
-> - **Stand-in Placeholder:** `eval/eval_data/retrieval_benchmark_sample.json` query set; `eval/scripts/eval_retrieval.py` reporting mock metrics (`P@5=0.80, R@5=0.75, MRR=0.85`).
+> - **Stand-in Placeholder:** none. Metrics computed against the mocks are not results ([`eval.md`](eval.md) §1.2).
 
 **What PR 119 needs from this overview:**
 - The `evidence_crops` table schema (especially `embedding vector(1024)`, `timestamp_seconds`, `bounding_box`) for embedding generation and HNSW indexing
@@ -225,13 +225,12 @@ The PR task docs assume the following conventions and environment setup. This se
 - The `search_evidence_items` RPC and search REST route contracts for running retrieval benchmarks
 - The difference between **one-shot baseline** (retrieval only, no critic) and **system baseline** (retrieval + critic always on)
 - Taxonomy and item type filters (`item_type IN ('entity','instrument','asset')`, `incident_types`)
-- Mock backend: `mock-backend/search_profile_mock` (port 7778) for local eval runs without GPU
+- Mock backends (:7777 launched by `start.sh --mode local`, :7778 standalone) for harness plumbing tests only; they ignore the query text
 - VM backend Steps 3 and 4 must be live: crop service producing embeddings, and search RPC with pgvector
 
 **Key metrics for eval:**
-- Precision@k, Recall@k with critic verdicts aggregated
-- Critic accuracy: % of hits confirmed by the VLM critic
-- One-shot vs system baseline delta (critic rejection rate, ranking shift)
+- Standard P@K, returned precision, R@K, F1@K, MRR, coverage and false positives on one candidate pool ([`eval.md`](eval.md) §3.4-3.5)
+- Paired one-shot vs system differences, with latency and cost ([`eval.md`](eval.md) §3.6); the critic filters but never reorders
 
 ### PR 120 - incident-console-v2 Middle Layer
 
@@ -281,19 +280,19 @@ The following specifications are planned, not final, pending completion of the o
 
 > [!IMPORTANT]
 > **TODO [Contracts / PR 119]: Bounding Box Format & Detector Framing**
-> - **Missing:** Final detector model selection (Grounding DINO vs OWLv2 vs Florence-2) and exact bounding box coordinate constraints in schema.
+> - **Missing:** Framing evaluation of the current remote-VLM `DefaultDetector` against offline candidates (Grounding DINO, OWLv2, Florence-2) ([`eval.md`](eval.md) §6.2), and exact bounding box coordinate constraints in schema.
 > - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 119
 > - **Stand-in Placeholder:** `[ymin, xmin, ymax, xmax]` normalised integers 0–1000 with 5% margin padding.
 
 > [!IMPORTANT]
 > **TODO [Contracts / PR 119]: Critic Model Specification & Verification Prompt**
-> - **Missing:** Final critic model selection (`nvidia/cosmos-3-nano-reasoner` or alternate) and strict structured chat completion prompt.
+> - **Missing:** Final critic model selection (currently `VLM_NAME`, `nvidia/cosmos-3-super-reasoner`) and strict structured chat completion prompt; critic trade-offs come from [`eval.md`](eval.md) §3.6.
 > - **Owner:** Contracts branch `fm/vss-mvp2-contracts` and PR 119
-> - **Stand-in Placeholder:** Structured output schema returning `{verdict: "confirmed" | "rejected", rationale: string}`.
+> - **Stand-in Placeholder:** Structured output schema returning `{verdict: "confirmed" | "rejected" | "unverified", confidence, rationale}`.
 
 > [!IMPORTANT]
 > **TODO [PR 126 / PR 119]: Embedding Model & Vector Dimension**
-> - **Missing:** Benchmark selection between NVIDIA NeMo NIM, OpenAI text-embedding-3, and MiniLM.
+> - **Missing:** Offline comparison of the production `nvidia/llama-nemotron-embed-vl-1b-v2` against callable candidates (other dimensions, MiniLM, OpenAI `text-embedding-3-small` if approved, image or hybrid embeddings) ([`eval.md`](eval.md) §6.3).
 > - **Owner:** PR 126 and PR 119
 > - **Stand-in Placeholder:** `vector(1024)` column definition on `evidence_crops.embedding`. The agent embeds evidence and queries itself; the console never embeds.
 
@@ -329,11 +328,11 @@ The following specifications are planned, not final, pending completion of the o
 | 2 | Evidence Timeline & Crop Gallery | PR 118 | Scrubber markers at `timestamp_seconds` |
 | 3 | Conversational Q&A Chat | Chat Endpoint / PR 118 | `chat-contract-v1`, native `vss-agent` chat endpoint & mock |
 | 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |
-| 5 | Baseline vs Full System Benchmark | PR 119 | One-shot VLM baseline evaluation harness |
-| 6 | Retrieval Benchmark Suite (50+ queries) | PR 119 | `eval/scripts/eval_retrieval.py` |
-| 7 | Always-On Critic Ablation Study | PR 119 | Precision vs latency false-positive report |
-| 8 | Open-Vocab Detector Evaluation | PR 119 | Grounding DINO vs OWLv2 vs Florence-2 report (detector port & CropEvidenceService implemented in services/agent) |
-| 9 | Embedding Model Comparison | PR 119 / PR 126 | NeMo vs OpenAI vs MiniLM benchmark |
+| 5 | Extraction parity (gateway vs agent); full-system comparison deferred (proposed, P-1) | PR 119 | [`eval.md`](eval.md) §4-5 |
+| 6 | Retrieval Benchmark Suite (50+ positive queries) | PR 119 | `eval/scripts/eval_retrieval.py` ([`eval.md`](eval.md) §3) |
+| 7 | Always-On Critic Ablation Study | PR 119 | Paired trade-off report ([`eval.md`](eval.md) §3.6) |
+| 8 | Detector Framing Evaluation | PR 119 | `DefaultDetector` (remote VLM) vs offline candidates through the detector port ([`eval.md`](eval.md) §6.2) |
+| 9 | Embedding Model Comparison | PR 119 / PR 126 | Production embedder vs callable candidates, offline ([`eval.md`](eval.md) §6.3) |
 | 10 | Live DB RLS Lockdown Verification | PR 126 | Verification test suite on migration `20261016000000` |
 | 11 | `evidence_crops` & `query_results` Migration | PR 134 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
 | 12 | `search_evidence_items` Database RPC | PR 134 | Delivered (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to live Supabase) |
