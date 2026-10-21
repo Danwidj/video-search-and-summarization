@@ -68,8 +68,8 @@ def check_judge_ok(eval_result) -> None:
 
 # RP1 (report generation) uses one fixed model/config, identical regardless of
 # which of the three P1 models produced the input JSON - RP1 is never part of
-# the model comparison. Verified reachable and correctly budgeted (4096
-# tokens) before use.
+# the model comparison. The values mirror contracts/inference.json's ``rp1``
+# block; eval/tests/test_contract_fixtures.py fails if the two diverge.
 #
 # chat_template_kwargs.enable_thinking=False: without it, this reasoning model
 # (nemotron-3-nano-30b-a3b) reliably spends its entire max_tokens budget on
