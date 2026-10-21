@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A small in-memory PostgREST for adapter contract tests: eq and like filters,
+// A small in-memory PostgREST for adapter contract tests: eq, like and in filters,
 // limit, upsert with on_conflict, delete, and RPCs and read-only views
 // supplied by the test. Every request is recorded. Embedded selects and
 // cascades are not modelled.
@@ -20,11 +20,17 @@ function likePattern(pattern) {
   return new RegExp(`^${source}$`, 's');
 }
 
+/** The values of a PostgREST in-filter list, `("a","b\"c")` or `(a,b)`. */
+function inValues(list) {
+  return [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map(([, quoted, bare]) => (quoted ?? bare).replace(/\\(.)/g, '$1'));
+}
+
 function matches(row, params) {
   return [...params].every(([key, value]) => {
     if (CONTROL.has(key)) return true;
     if (value.startsWith('eq.')) return String(row[key]) === value.slice(3);
     if (value.startsWith('like.')) return likePattern(value.slice(5)).test(String(row[key] ?? ''));
+    if (value.startsWith('in.')) return inValues(value.slice(3)).includes(String(row[key]));
     throw new Error(`fake PostgREST does not support the filter ${key}=${value}`);
   });
 }

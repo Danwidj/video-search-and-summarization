@@ -130,13 +130,18 @@ export interface IncidentRepository {
    * Moves the run to `status` in one transaction: verifying stamps the
    * verifier, any other status clears it, and the edit stamps are kept.
    * Verifying a report with no reviewer version first copies the AI report
-   * into one. Refuses a run with no incident.
+   * into one. Throws StoreRejection: 'not-found' for a run with no
+   * incident, 'invalid' when verifying an AI report that cannot be a reviewer
+   * version as it stands (e.g. a legacy run with no type or an unrated
+   * instrument; it must be edited first).
    */
   setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition>;
   /**
    * Atomically saves the reviewer's version of the run (created on the first
    * edit) and stamps editedBy/editedAt; an edit of a verified report sends it
    * back to 'under review'. Never touches the AI report or model_runs.notes.
+   * Throws StoreRejection: 'not-found' for a run with no incident, 'invalid'
+   * for an edit the store refuses (e.g. a source_id that names no AI item).
    */
   applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>;
   /** Deletes the run's incident; its evidence, review and report rows cascade. */

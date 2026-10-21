@@ -224,7 +224,7 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. A refusal by `set_review_status` or `save_human_report_edit` (for example verifying a legacy AI report that must be edited first) becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
 - Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
 
@@ -285,7 +285,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
   - runs with an incident for the video;
   - incident-less attempt records whose notes explicitly name the video: failed attempts, and runs whose report was deleted.
 
-  Each entry shows model, time, outcome, failure reasons or repair operations, and any additional instruction. Failed attempts are never reports.
+  Each entry shows model, time, outcome, failure reasons or repair operations, and any additional instruction. Its type and severity come from `effective_incidents`, so a reviewer's edit shows there as on the report page. Failed attempts are never reports.
 - **Re-analysis.** `POST /api/videos/[videoId]/runs {model, additionalInstruction?}` re-analyses the stored R2 object:
   - the same canonical request, strict validation and ID-only recovery as an upload;
   - always a new run;

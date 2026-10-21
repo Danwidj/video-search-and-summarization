@@ -29,13 +29,20 @@ export async function GET(_request: Request, context: { params: Promise<{ videoI
     const { config, db } = database();
     const video = await db.selectOne('videos', { id: videoId });
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    const [incidentRows, attemptCandidates] = await Promise.all([
+    const [runRows, effectiveRows, attemptCandidates] = await Promise.all([
       db.selectMany('incidents', {
         filters: { incident_id: videoId },
-        select: 'model_run_id,type,severity_level,model_runs(id,model_name,prompt_version,run_datetime,notes),reports(id,generated_datetime)',
+        select: 'model_run_id,model_runs(id,model_name,prompt_version,run_datetime,notes),reports(id,generated_datetime)',
       }),
+      // Type and severity as the report shows them: the reviewer's version when the run has one.
+      db.selectMany('effective_incidents', { filters: { incident_id: videoId }, select: 'model_run_id,type,severity_level' }),
       db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,model_name,prompt_version,run_datetime,notes'),
     ]);
+    const effective = new Map(effectiveRows.map((row) => [String(row.model_run_id), row]));
+    const incidentRows = runRows.map((row): Record<string, unknown> => {
+      const shown = effective.get(String(row.model_run_id));
+      return { ...row, type: shown?.type ?? null, severity_level: shown?.severity_level ?? null };
+    });
     const runIds = incidentRows.map((row) => String(row.model_run_id));
     const usage = runIds.length ? await db.selectIn('incidents', 'model_run_id', runIds, 'model_run_id') : [];
     const perRun = new Map<string, number>();

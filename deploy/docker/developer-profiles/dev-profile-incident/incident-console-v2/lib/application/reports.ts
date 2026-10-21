@@ -4,7 +4,7 @@
 // ports only; R2 signing and deletion are passed in as functions, so they never
 // import an adapter, R2 or PostgREST and are tested with in-memory fakes.
 
-import type { DbAdapters, IncidentRepository, ReviewState, RunKey } from '@/lib/ports';
+import type { DbAdapters, IncidentRepository, RunKey } from '@/lib/ports';
 import type { ReportView } from '@/lib/reports/report-view';
 import type { ReviewStatus } from '@/lib/reports/storage';
 import { toReportView } from '@/lib/reports/view';
@@ -21,25 +21,6 @@ export async function getReport(incidents: IncidentRepository, key: RunKey, sign
   if (!record) return null;
   if (!record.video.storageKey) throw new Error('The report has no linked R2 video');
   return toReportView(record, await sign(record.video.storageKey));
-}
-
-/**
- * The review transition rule (set_review_status applies it in the database;
- * the in-memory fake models it with this function): null when the status is
- * unchanged, a run without a review counting as 'unreviewed'; otherwise the
- * reviewer becomes the verifier only when verifying. The edit stamps are kept:
- * they mean "last content edit", and a status change is not one.
- */
-export function nextReviewState(current: ReviewState | null, status: ReviewStatus, reviewer: string, now: string): ReviewState | null {
-  if ((current?.status ?? 'unreviewed') === status) return null;
-  const verified = status === 'verified';
-  return {
-    status,
-    editedBy: current?.editedBy ?? null,
-    editedAt: current?.editedAt ?? null,
-    verifiedBy: verified ? reviewer : null,
-    verifiedAt: verified ? now : null,
-  };
 }
 
 export type ReviewChange = { kind: 'not-found' } | { kind: 'unchanged' } | { kind: 'changed'; at: string };

@@ -99,11 +99,17 @@ test('each item keeps the AI item it came from through a delete, a reorder and a
   assert.doesNotThrow(() => validateStructuredEdit(edit));
 });
 
-test('source_id is optional, may be null and is otherwise a stored AI ID (422)', () => {
+test('every item names its source_id: null for an added item, otherwise a stored AI ID (422)', () => {
   const base = editFromDraft(draftFromView(view(repaired)));
-  const legacy = clone(base);
-  for (const item of [...legacy.entities, ...legacy.instruments]) delete item.source_id;
-  assert.doesNotThrow(() => validateStructuredEdit(legacy), 'an edit from an older console has no source_id');
+  const keylessEntity = clone(base);
+  delete keylessEntity.entities[0].source_id;
+  expectError(keylessEntity, 422, /source_id/);
+  const keylessInstrument = clone(base);
+  delete keylessInstrument.instruments[1].source_id;
+  expectError(keylessInstrument, 422, /source_id/);
+  const keylessAsset = clone(base);
+  keylessAsset.assets = [{ asset_id: 'A1', name: 'bench', description: 'Nearby' }];
+  expectError(keylessAsset, 422, /source_id/);
   const added = clone(base);
   added.entities[0].source_id = null;
   assert.doesNotThrow(() => validateStructuredEdit(added));

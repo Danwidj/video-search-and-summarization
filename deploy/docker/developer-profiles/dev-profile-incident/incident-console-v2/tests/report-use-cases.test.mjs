@@ -12,7 +12,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
-const { changeReviewStatus, deleteReport, getReport, nextReviewState } = await import('../lib/application/reports.ts');
+const { changeReviewStatus, deleteReport, getReport } = await import('../lib/application/reports.ts');
 const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
@@ -36,13 +36,6 @@ test('a review change never claims to be an edit: the last content edit stays', 
   assert.deepEqual(await incidents.getReview(KEY), { ...edited, status: 'unreviewed' });
   await changeReviewStatus(incidents, KEY, 'verified', 'Lead', clock);
   assert.deepEqual([(await incidents.getReview(KEY)).editedBy, (await incidents.getReview(KEY)).editedAt], ['Editor', '2026-10-16T09:00:00']);
-});
-
-test('nextReviewState: a run without a review is unreviewed, and only verifying stamps a verifier', () => {
-  assert.equal(nextReviewState(null, 'unreviewed', 'Lead', 'now'), null);
-  assert.deepEqual(nextReviewState(null, 'verified', 'Lead', 'now'), { status: 'verified', editedBy: null, editedAt: null, verifiedBy: 'Lead', verifiedAt: 'now' });
-  const verified = { status: 'verified', verifiedBy: 'Lead', verifiedAt: 'then', editedBy: 'Editor', editedAt: 'earlier' };
-  assert.deepEqual(nextReviewState(verified, 'under review', 'Other', 'now'), { status: 'under review', editedBy: 'Editor', editedAt: 'earlier', verifiedBy: null, verifiedAt: null });
 });
 
 test('getReport signs the stored key and refuses a run without one', async () => {

@@ -18,7 +18,7 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 const call = (body) => PATCH(new Request('http://localhost/x', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ videoId: 'v1' }) });
 
 /** incidents and review_status reads, and set_review_status as the finals baseline returns it. */
-function database({ incident = { incident_id: 'v1', model_run_id: 'm1' }, review = null } = {}) {
+function database({ incident = { incident_id: 'v1', model_run_id: 'm1' }, review = null, refusal = null } = {}) {
   const writes = [];
   const fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
@@ -27,6 +27,7 @@ function database({ incident = { incident_id: 'v1', model_run_id: 'm1' }, review
       const body = JSON.parse(String(init.body));
       writes.push({ table, body });
       if (table !== 'rpc/set_review_status') return new Response('[]');
+      if (refusal) return new Response(JSON.stringify({ code: 'P0001', details: null, hint: null, message: refusal }), { status: 400 });
       const base = { incidentId: body.p_incident_id, modelRunId: body.p_model_run_id, status: body.p_status };
       if ((review?.status ?? 'unreviewed') === body.p_status) return new Response(JSON.stringify({ ...base, changed: false }));
       const verified = body.p_status === 'verified';
@@ -83,4 +84,13 @@ test('each status change is one set_review_status call; review_status is never w
     else assert.match(payload.reviewedAt, /^\d{4}-\d\d-\d\dT.*Z$/);
     assert.deepEqual(db.writes, [rpcCall(status)]);
   }
+});
+
+test('verifying an AI report the database refuses as it stands is a 422 with its reason, not a 500', async () => {
+  const refusal = 'The AI report of run m1 cannot be verified as it stands (type fighting, window 0:15-1:05, severity 3); edit it first';
+  const db = database({ refusal });
+  globalThis.fetch = db.fetch;
+  const response = await call({ modelRunId: 'm1', status: 'verified', reviewedBy: 'R' });
+  assert.equal(response.status, 422);
+  assert.deepEqual(await response.json(), { error: refusal });
 });

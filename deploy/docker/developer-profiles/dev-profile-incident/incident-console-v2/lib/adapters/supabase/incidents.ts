@@ -4,14 +4,29 @@ import {
   reviewFromRow, reviewTransitionFromRpc, runReportFromRows, structuredEditResultFromRpc,
 } from '@/lib/adapters/supabase/mappers/report';
 import { reportListFromRpc, reportListRpcArgs } from '@/lib/adapters/supabase/mappers/report-library';
-import type {
-  IncidentRepository, ReportList, ReportListQuery, ReviewState, ReviewTransition, RunKey, RunReportRecord, StructuredEditResult,
+import {
+  StoreRejection,
+  type IncidentRepository, type ReportList, type ReportListQuery, type ReviewState, type ReviewTransition, type RunKey, type RunReportRecord,
+  type StructuredEditResult,
 } from '@/lib/ports';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { ReviewStatus } from '@/lib/reports/storage';
 
 const runFilter = (key: RunKey) => ({ incident_id: key.videoId, model_run_id: key.modelRunId });
+
+/**
+ * set_review_status and save_human_report_edit RAISE (SQLSTATE P0001) to refuse a request for a
+ * domain reason: a missing run, an invalid edit, or an AI report that cannot be verified as it
+ * stands. Those become StoreRejection; anything else is rethrown unchanged.
+ */
+function reviewerRefusal(error: unknown): never {
+  const message = error instanceof Error ? error.message : '';
+  if (!/"code":"P0001"/.test(message)) throw error;
+  const match = /"message":"((?:[^"\\]|\\.)*)"/.exec(message);
+  const reason = match ? (JSON.parse(`"${match[1]}"`) as string) : 'The database refused the request';
+  throw new StoreRejection(/^Report not found/.test(reason) ? 'not-found' : 'invalid', reason);
+}
 
 export class SupabaseIncidentAdapter implements IncidentRepository {
   private readonly db: PostgrestClient;
@@ -56,7 +71,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
       p_model_run_id: key.modelRunId,
       p_status: status,
       p_reviewer: reviewer,
-    }), status);
+    }).catch(reviewerRefusal), status);
   }
 
   // save_human_report_edit, not the apply_structured_report_edit shim kept for older consoles, so
@@ -67,7 +82,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
       p_model_run_id: key.modelRunId,
       p_edit: edit,
       p_edited_by: editedBy,
-    });
+    }).catch(reviewerRefusal);
     return structuredEditResultFromRpc(result, key, edit, editedBy);
   }
 

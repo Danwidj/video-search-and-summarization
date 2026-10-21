@@ -45,7 +45,7 @@ test('editing repaired run m811cf2b237f50ff9812 changes only the relational proj
   edit.incident.severity_level = 2;
   edit.incident.end_timestamp = 12;
   edit.entities[1].type = 'unknown';
-  edit.assets.push({ asset_id: 'A1', name: 'white van', description: 'Parked van beside the sidewalk.' });
+  edit.assets.push({ asset_id: 'A1', source_id: null, name: 'white van', description: 'Parked van beside the sidewalk.' });
 
   const calls = [];
   const originalFetch = globalThis.fetch;

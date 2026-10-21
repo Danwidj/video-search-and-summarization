@@ -5,8 +5,9 @@
 // incident properties plus the contract's own entities / instruments / assets
 // item schemas, then the contract's ID and holder rules and the window order.
 // Class B (model-generated) and Class C (provenance) fields are rejected.
-// Each item may also name the AI item it came from (source_id, null for an
-// added item); the database checks it names an AI item of the run, once.
+// Each item also names the AI item it came from (source_id, required; null for
+// an item the reviewer added); the database checks it names an AI item of the
+// run, once.
 
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
@@ -56,7 +57,7 @@ function editValidator(): ValidateFunction {
     items: {
       type: 'object',
       additionalProperties: false,
-      required: [...fields],
+      required: [...fields, 'source_id'],
       properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA },
     },
   });

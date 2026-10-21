@@ -47,7 +47,7 @@ incident-console-v2/
       memory/                     # In-memory fakes of IncidentRepository, VideoRepository and DashboardRepository, for tests
 ```
 
-The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. The adapters and their `mappers/` turn rows and RPC JSON into domain types field by field and domain queries into RPC arguments, and translate database refusals into `StoreRejection` (`videos.ts`).
+The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. The adapters and their `mappers/` turn rows and RPC JSON into domain types field by field and domain queries into RPC arguments, and translate database refusals into `StoreRejection` (`videos.ts`, and `incidents.ts` for `set_review_status` / `save_human_report_edit`).
 
 The search adapter calls the vss-agent rather than Supabase, so it will sit beside the Supabase adapters (`lib/adapters/agent/`) and arrives with the console search route (§7); an adapter is never shipped without a caller.
 
@@ -393,7 +393,7 @@ This round meets these for every route not listed in §7; the callers in §7 sta
 
 Decided 2026-10-17; updated 2026-10-19, when the dashboard and the report library moved onto the ports:
 - **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): untouched; no ground-truth port. Its GET still returns raw rows.
-- **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): unchanged for now; they move into the middle layer later, together with the planned separation of human-verified and AI-generated reports.
+- **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): not on the ports yet; they move into the middle layer later, together with the rest of the separation of human-verified and AI-generated reports. Run history already reads each run's type and severity from `effective_incidents`.
 - **Search adapter and route**: the port is defined to match the agent's search contract (§3.1); the agent-backed adapter and a console search route come in a later PR. No console-side embedding.
 - **Keys built in SQL**: the report library and dashboard responses keep the snake_case keys their RPCs build (`incident_type`, `reviews.under_review`), because the components read them; renaming them means changing the mapper and the components together.
 

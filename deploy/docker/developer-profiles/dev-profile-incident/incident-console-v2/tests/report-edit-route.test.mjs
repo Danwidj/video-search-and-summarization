@@ -28,12 +28,13 @@ const patch = (body, videoId = repaired.videoId) => PATCH(new Request(`http://lo
   method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 }), { params: Promise.resolve({ videoId }) });
 
-function recordingFetch(calls, { incidentExists = true } = {}) {
+function recordingFetch(calls, { incidentExists = true, refusal = null } = {}) {
   return async (url, init = {}) => {
     const parsed = new URL(String(url));
     calls.push({ table: parsed.pathname.replace('/rest/v1/', ''), method: init.method || 'GET', body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (parsed.pathname.endsWith('/incidents')) return new Response(JSON.stringify(incidentExists ? [{ incident_id: repaired.videoId }] : []));
     if (parsed.pathname.endsWith('/rpc/save_human_report_edit')) {
+      if (refusal) return new Response(JSON.stringify({ code: 'P0001', details: null, hint: null, message: refusal }), { status: 400 });
       return new Response(JSON.stringify({ incidentId: repaired.videoId, modelRunId: repaired.modelRunId, editedBy: 'Rev', editedAt: '2026-10-21T01:00:00', duration: 12, revision: 2, status: 'under review' }));
     }
     return new Response('[]');
@@ -96,4 +97,23 @@ test('an edit for a run without an incident is a 404 and nothing is written', as
   const response = await patch({ modelRunId: 'm-failed-attempt', editedBy: 'Rev', edit: baseEdit() });
   assert.equal(response.status, 404);
   assert.ok(!calls.some((c) => c.method !== 'GET'));
+});
+
+test("the database's refusal of an edit is a 422 with its reason", async () => {
+  const calls = [];
+  globalThis.fetch = recordingFetch(calls, { refusal: 'I1 names source_id "I9", which is not an AI instrument of this run' });
+  const response = await patch({ modelRunId: repaired.modelRunId, editedBy: 'Rev', edit: baseEdit() });
+  assert.equal(response.status, 422);
+  assert.deepEqual(await response.json(), { error: 'I1 names source_id "I9", which is not an AI instrument of this run' });
+});
+
+test('an edit item without a source_id is refused with 422 before any database call', async () => {
+  const calls = [];
+  globalThis.fetch = recordingFetch(calls);
+  const edit = baseEdit();
+  delete edit.entities[0].source_id;
+  const response = await patch({ modelRunId: repaired.modelRunId, editedBy: 'Rev', edit });
+  assert.equal(response.status, 422);
+  assert.match((await response.json()).error, /source_id/);
+  assert.equal(calls.length, 0);
 });

@@ -4,18 +4,20 @@
 // the Supabase adapter owns: run scoping, null on a missing run, the reviewer
 // version (an edit or a verification never changes the AI report; the report
 // read is the reviewer's version when there is one; each reviewer item keeps
-// the AI item it came from), atomic review transitions,
-// and the run delete cascading to the review, the reviewer version and the
-// run's library summary.
+// the AI item it came from), atomic review transitions (verifying copies the
+// AI report into a renumbered reviewer version, or refuses one that must be
+// edited first), and the run delete cascading to the review, the reviewer
+// version and the run's library summary.
 // The library is seeded with summaries as list_incident_report_summaries
 // returns them; paging, scope, status and newest/oldest order are modelled,
 // and any other filter is refused rather than ignored.
 
-import { nextReviewState } from '@/lib/application/reports';
-import type {
-  IncidentRepository, ReportList, ReportListQuery, ReviewState, ReviewTransition, RunKey, RunReportRecord, StructuredEditResult,
+import {
+  StoreRejection,
+  type IncidentRepository, type ReportList, type ReportListQuery, type ReviewState, type ReviewTransition, type RunKey, type RunReportRecord,
+  type StructuredEditResult,
 } from '@/lib/ports';
-import type { StructuredEdit } from '@/lib/reports/edit-draft';
+import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type StructuredEdit } from '@/lib/reports/edit-draft';
 import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
 
 const id = (key: RunKey) => `${key.videoId}\u0000${key.modelRunId}`;
@@ -26,9 +28,50 @@ type HumanVersion = Pick<RunReportRecord, 'incident' | 'entities' | 'instruments
 /** Stored timestamps are naive UTC, as Postgres returns them. */
 const storedNow = () => new Date().toISOString().replace('Z', '');
 
-/** An edited item's AI origin: its source_id when sent, else the AI item with the same ID, if any. */
-const sourceOf = (item: { source_id?: string | null }, itemId: string, aiIds: string[]) =>
-  item.source_id !== undefined ? item.source_id : aiIds.includes(itemId) ? itemId : null;
+const rated = (level: number | null) => level !== null && level >= 1 && level <= 5;
+
+/**
+ * set_review_status's transition rule: null when the status is unchanged, a
+ * run without a review counting as 'unreviewed'; otherwise the reviewer
+ * becomes the verifier only when verifying. The edit stamps are kept: they
+ * mean "last content edit", and a status change is not one.
+ */
+function nextReviewState(current: ReviewState | null, status: ReviewStatus, reviewer: string, now: string): ReviewState | null {
+  if ((current?.status ?? 'unreviewed') === status) return null;
+  const verified = status === 'verified';
+  return {
+    status,
+    editedBy: current?.editedBy ?? null,
+    editedAt: current?.editedAt ?? null,
+    verifiedBy: verified ? reviewer : null,
+    verifiedAt: verified ? now : null,
+  };
+}
+
+/**
+ * The reviewer version verifying copies from the AI report (create_human_report_from_ai):
+ * items keep their order, are renumbered E#/I#/A# and name the AI item they came from.
+ * Refused when the AI report is not a valid reviewer version as it stands.
+ */
+function humanVersionFromAi(run: RunReportRecord): HumanVersion {
+  const { incident, entities, instruments, assets } = run;
+  const entityIds = new Map(entities.map((entity, index) => [entity.entityId, `E${index + 1}`]));
+  const valid = (EDITABLE_INCIDENT_TYPES as readonly (string | null)[]).includes(incident.type)
+    && incident.startSeconds !== null && incident.endSeconds !== null && incident.endSeconds >= incident.startSeconds
+    && rated(incident.severityLevel) && incident.description !== null
+    && entities.every((entity) => (EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type))
+    && instruments.every((instrument) => rated(instrument.threatLevel) && (instrument.entityId === null || entityIds.has(instrument.entityId)));
+  if (!valid) throw new StoreRejection('invalid', `The AI report of run ${run.key.modelRunId} cannot be verified as it stands; edit it first`);
+  return {
+    incident,
+    entities: entities.map((entity, index) => ({ ...entity, entityId: `E${index + 1}`, sourceId: entity.entityId })),
+    instruments: instruments.map((instrument, index) => ({
+      ...instrument, instrumentId: `I${index + 1}`, sourceId: instrument.instrumentId, entityId: instrument.entityId === null ? null : entityIds.get(instrument.entityId)!,
+    })),
+    assets: assets.map((asset, index) => ({ ...asset, assetId: `A${index + 1}`, sourceId: asset.assetId })),
+    revision: 1,
+  };
+}
 
 const UNMODELLED_FILTERS = [
   'search', 'type', 'severity', 'generatedAfter', 'generatedBefore', 'timeFrom', 'timeTo',
@@ -88,21 +131,18 @@ export class InMemoryIncidentRepository implements IncidentRepository {
 
   async setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition> {
     const run = this.runs.get(id(key));
-    if (!run) throw new Error('Report not found for this video and model run');
+    if (!run) throw new StoreRejection('not-found', 'Report not found for this video and model run');
     const next = nextReviewState(this.reviews.get(id(key)) ?? null, status, reviewer.trim(), this.now());
     if (!next) return { changed: false, status, verifiedBy: null, verifiedAt: null, humanVersionCreated: false };
     const humanVersionCreated = status === 'verified' && !this.humanVersions.has(id(key));
-    if (humanVersionCreated) {
-      const { incident, entities, instruments, assets } = run;
-      this.humanVersions.set(id(key), { incident, entities, instruments, assets, revision: 1 });
-    }
+    if (humanVersionCreated) this.humanVersions.set(id(key), humanVersionFromAi(run));
     this.reviews.set(id(key), next);
     return { changed: true, status, verifiedBy: next.verifiedBy, verifiedAt: next.verifiedAt, humanVersionCreated };
   }
 
   async applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult> {
     const run = this.runs.get(id(key));
-    if (!run) throw new Error('Report not found for this video and model run');
+    if (!run) throw new StoreRejection('not-found', 'Report not found for this video and model run');
     this.edits.push({ key, edit, editedBy });
     const editor = editedBy.trim();
     const editedAt = this.now();
@@ -115,15 +155,15 @@ export class InMemoryIncidentRepository implements IncidentRepository {
         description: incident.description, severityLevel: incident.severity_level, confidenceScore: run.incident.confidenceScore,
       },
       entities: edit.entities.map((entity) => ({
-        entityId: entity.entity_id, sourceId: sourceOf(entity, entity.entity_id, run.entities.map((e) => e.entityId)),
+        entityId: entity.entity_id, sourceId: entity.source_id,
         type: entity.type, description: entity.description,
       })),
       instruments: edit.instruments.map((instrument) => ({
-        instrumentId: instrument.instrument_id, sourceId: sourceOf(instrument, instrument.instrument_id, run.instruments.map((i) => i.instrumentId)),
+        instrumentId: instrument.instrument_id, sourceId: instrument.source_id,
         entityId: instrument.entity_id, name: instrument.name, description: instrument.description, threatLevel: instrument.threat_level,
       })),
       assets: edit.assets.map((asset) => ({
-        assetId: asset.asset_id, sourceId: sourceOf(asset, asset.asset_id, run.assets.map((a) => a.assetId)),
+        assetId: asset.asset_id, sourceId: asset.source_id,
         name: asset.name, description: asset.description,
       })),
       revision,

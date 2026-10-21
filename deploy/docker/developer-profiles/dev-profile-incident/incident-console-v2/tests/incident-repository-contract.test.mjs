@@ -20,6 +20,7 @@ import { effectiveViews, reviewerRpcs } from './support/finals-database.mjs';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
+const { StoreRejection } = await import('../lib/ports/index.ts');
 const { SupabaseIncidentAdapter } = await import('../lib/adapters/supabase/incidents.ts');
 const { reviewTransitionFromRpc, structuredEditResultFromRpc } = await import('../lib/adapters/supabase/mappers/report.ts');
 const { reportListFromRpc, reportListRpcArgs } = await import('../lib/adapters/supabase/mappers/report-library.ts');
@@ -49,31 +50,41 @@ function listSummaries(args) {
   return { reports: matching.slice(start, start + size), totalItems: matching.length, incidentTypes: summaries.incidentTypes };
 }
 
-/** An edit of the smoke run: a new description and severity, entity E2 dropped, asset A1 renamed. */
+/** An edit of the smoke run: a new description and severity, entity E2 dropped, asset A1 renamed; every item names its AI item. */
 function smokeEdit() {
   return {
     incident: { type: 'assault', start_timestamp: 1, end_timestamp: 9, description: 'Reviewer: one person pushes the other over.', severity_level: 3 },
-    entities: [{ entity_id: 'E1', type: 'human', description: smoke.entities[0].description }],
+    entities: [{ entity_id: 'E1', source_id: 'E1', type: 'human', description: smoke.entities[0].description }],
     instruments: [],
-    assets: smoke.assets.map((asset, index) => ({ asset_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description })),
+    assets: smoke.assets.map((asset, index) => ({
+      asset_id: asset.asset_id, source_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description,
+    })),
   };
 }
 
+/** The smoke run as a legacy analysis stored it: lowercase zero-padded IDs, 'person', a held instrument. */
+const legacySmoke = (threatLevel) => ({
+  ...smoke,
+  entities: smoke.entities.map((entity, index) => ({ ...entity, entity_id: `e0${index + 1}`, type: 'person' })),
+  instruments: [{ incident_id: smoke.videoId, model_run_id: smoke.modelRunId, instrument_id: 'i01', entity_id: 'e02', name: 'bag', description: 'Swung', threat_level: threatLevel, image: null }],
+  assets: smoke.assets.map((asset, index) => ({ ...asset, asset_id: `a0${index + 1}` })),
+});
+
 // Each implementation also exposes the stored AI report, which no edit or verification may change.
 const implementations = {
-  memory: () => {
-    const repo = new InMemoryIncidentRepository([aiRunReport(smoke)], summaries.reports);
+  memory: (rows = smoke) => {
+    const repo = new InMemoryIncidentRepository([aiRunReport(rows)], summaries.reports);
     const ai = () => {
       const { incident, entities, instruments, assets } = repo.runs.get(`${KEY.videoId}\u0000${KEY.modelRunId}`);
       return { incident, entities, instruments, assets };
     };
     return { repo, ai };
   },
-  supabase: () => {
+  supabase: (rows = smoke, rpc = {}) => {
     const db = fakePostgrest({
-      videos: [smoke.video], model_runs: [smoke.modelRun], incidents: [smoke.incident], review_status: [smoke.review],
-      entities: smoke.entities, instruments: smoke.instruments, assets: smoke.assets, reports: [smoke.reportRow],
-    }, { rpc: { list_incident_report_summaries: listSummaries, ...reviewerRpcs }, views: effectiveViews });
+      videos: [rows.video], model_runs: [rows.modelRun], incidents: [rows.incident], review_status: [rows.review],
+      entities: rows.entities, instruments: rows.instruments, assets: rows.assets, reports: [rows.reportRow],
+    }, { rpc: { list_incident_report_summaries: listSummaries, ...reviewerRpcs, ...rpc }, views: effectiveViews });
     globalThis.fetch = db.fetch;
     const ai = () => ({ incident: db.store.incidents, entities: db.store.entities, instruments: db.store.instruments, assets: db.store.assets });
     return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), ai, db };
@@ -130,6 +141,31 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal((await repo.setReviewStatus(KEY, 'verified', 'Lead')).humanVersionCreated, false);
     });
 
+    test('verifying a legacy AI report renumbers its items, each naming the AI item it came from', async () => {
+      const { repo, ai } = make(legacySmoke(3));
+      const aiBefore = structuredClone(ai());
+      await repo.setReviewStatus(KEY, 'verified', 'Lead');
+      const record = await repo.getRunReport(KEY);
+      assert.deepEqual(record.entities.map((entity) => [entity.entityId, entity.sourceId, entity.type]), [['E1', 'e01', 'human'], ['E2', 'e02', 'human']]);
+      assert.deepEqual(record.instruments.map((instrument) => [instrument.instrumentId, instrument.sourceId, instrument.entityId]), [['I1', 'i01', 'E2']], 'the bag stays with e02, now E2');
+      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', 'a01'], ['A2', 'a02']]);
+      assert.deepEqual(ai(), aiBefore);
+    });
+
+    test('verifying an AI report that must be edited first is refused and changes nothing', async () => {
+      const { repo, ai } = make(legacySmoke(null));
+      const before = await repo.getRunReport(KEY);
+      const aiBefore = structuredClone(ai());
+      await assert.rejects(repo.setReviewStatus(KEY, 'verified', 'Lead'), (error) => {
+        assert.ok(error instanceof StoreRejection, `${error}`);
+        assert.equal(error.reason, 'invalid');
+        assert.match(error.message, /cannot be verified as it stands; edit it first/);
+        return true;
+      });
+      assert.deepEqual(await repo.getRunReport(KEY), before);
+      assert.deepEqual(ai(), aiBefore);
+    });
+
     test('an edit saves the reviewer version, which the report then reads; the AI report is unchanged', async () => {
       const { repo, ai } = make();
       const aiBefore = structuredClone(ai());
@@ -158,7 +194,7 @@ for (const [name, make] of Object.entries(implementations)) {
       await repo.applyStructuredEdit(KEY, edit, 'Editor');
       const record = await repo.getRunReport(KEY);
       assert.deepEqual(record.entities.map((entity) => [entity.entityId, entity.sourceId]), [['E1', 'E2']], 'AI E1 was deleted; the reviewer E1 is AI E2');
-      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', null], ['A2', 'A2']], 'without source_id, the AI item with the same ID');
+      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', null], ['A2', 'A2']]);
       // The next edit starts from the reviewer version and keeps the origins.
       const next = smokeEdit();
       next.entities = record.entities.map((entity) => ({ entity_id: entity.entityId, source_id: entity.sourceId, type: entity.type, description: entity.description }));
@@ -178,8 +214,9 @@ for (const [name, make] of Object.entries(implementations)) {
 
     test('a review change or an edit of a missing run is refused', async () => {
       const { repo } = make();
-      await assert.rejects(repo.setReviewStatus(OTHER_RUN, 'verified', 'Lead'), /Report not found/);
-      await assert.rejects(repo.applyStructuredEdit(OTHER_RUN, smokeEdit(), 'Editor'), /Report not found/);
+      const notFound = (error) => error instanceof StoreRejection && error.reason === 'not-found' && /Report not found/.test(error.message);
+      await assert.rejects(repo.setReviewStatus(OTHER_RUN, 'verified', 'Lead'), notFound);
+      await assert.rejects(repo.applyStructuredEdit(OTHER_RUN, smokeEdit(), 'Editor'), notFound);
       assert.equal(await repo.getReview(OTHER_RUN), null);
     });
 
@@ -239,6 +276,19 @@ describe('Supabase adapter: reviewer version', () => {
       method: 'POST', path: 'rpc/save_human_report_edit',
       body: { p_incident_id: KEY.videoId, p_model_run_id: KEY.modelRunId, p_edit: edit, p_edited_by: 'Editor' },
     }]);
+  });
+
+  test("an RPC's RAISE is a StoreRejection with its message; any other failure is rethrown", async () => {
+    const refusing = implementations.supabase(smoke, {
+      save_human_report_edit: () => { throw new Error('E1 names source_id "E9", which is not an AI entity of this run'); },
+    });
+    await assert.rejects(refusing.repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor'), (error) => {
+      assert.ok(error instanceof StoreRejection, `${error}`);
+      assert.deepEqual([error.reason, error.message], ['invalid', 'E1 names source_id "E9", which is not an AI entity of this run']);
+      return true;
+    });
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: '42501', message: 'permission denied for function set_review_status' }), { status: 401 });
+    await assert.rejects(refusing.repo.setReviewStatus(KEY, 'verified', 'Lead'), (error) => !(error instanceof StoreRejection) && /HTTP 401.*permission denied/.test(error.message));
   });
 
   test('malformed RPC results map to safe values', () => {

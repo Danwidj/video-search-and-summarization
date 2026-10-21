@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
 import { StructuredEditError, validateStructuredEdit } from '@/lib/contract/structured-edit';
-import { errorResponse } from '@/lib/http';
+import { errorResponse, rejectionResponse } from '@/lib/http';
 
 // Structured (Class A) reviewer edits. The edit is saved atomically as the
 // run's reviewer version through save_human_report_edit; the AI rows and
@@ -43,6 +43,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     const result = await incidents.applyStructuredEdit(key, edit, editedBy);
     return NextResponse.json({ saved: true, result });
   } catch (error) {
-    return errorResponse(error, 'Could not save the edit');
+    return rejectionResponse(error) ?? errorResponse(error, 'Could not save the edit');
   }
 }

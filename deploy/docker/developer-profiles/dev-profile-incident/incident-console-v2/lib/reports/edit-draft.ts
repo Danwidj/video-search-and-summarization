@@ -15,9 +15,9 @@ export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
 
 export interface StructuredEdit {
   incident: { type: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
-  entities: Array<{ entity_id: string; source_id?: string | null; type: string; description: string }>;
-  instruments: Array<{ instrument_id: string; source_id?: string | null; entity_id: string | null; name: string; description: string; threat_level: number }>;
-  assets: Array<{ asset_id: string; source_id?: string | null; name: string; description: string }>;
+  entities: Array<{ entity_id: string; source_id: string | null; type: string; description: string }>;
+  instruments: Array<{ instrument_id: string; source_id: string | null; entity_id: string | null; name: string; description: string; threat_level: number }>;
+  assets: Array<{ asset_id: string; source_id: string | null; name: string; description: string }>;
 }
 
 /** An in-progress edit: values a legacy run may lack (type, times, threat level) start empty and must be chosen. */
