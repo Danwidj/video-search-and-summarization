@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-10-19.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
+> **As of 2026-10-21.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
 ## 1. What is live
 
@@ -19,8 +19,8 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; timestamp backfill script (`scripts/backfill_official_timestamps.py`).
 - **Live on `kwanz-ws` (verified 2026-10-18):** the evidence loader (`scripts/backfill_official_timestamps.py`: remote VLM grounding and boxes, R2 upload, `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions, upsert) loaded 64 of 69 items from the 13 official reports into `evidence_crops`. 7 items were recovered by PR 141's whole-frame fallback (4 items with no VLM box: `SUV`, `ATM machine`, `Fireball`, and `weapon`) and JSON repair (3 truncated JSON replies). The remaining 5 failures are all from video `v5c609184047f88c720e` and still fail with remote gateway HTTP 500. `POST /api/v1/incidents/search` (`top_k=5`) returns 2-5 hits in about 6-9 s across benchmark queries ("weapon" surfaces the assault weapon at rank 1, similarity 0.331); crop URLs are fetchable via HTTP 206 Partial Content, with critic verdicts (`confirmed`, `rejected`, `unverified`). Rerun the loader only after the remote gateway recovers to fill the remaining 5 items.
-- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval suite and baseline benchmarks; data layer and RLS work.
-- **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark.
+- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer and RLS work.
+- **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
 
 ## 3. Pending approvals (migrations not yet applied to shared Supabase)
 

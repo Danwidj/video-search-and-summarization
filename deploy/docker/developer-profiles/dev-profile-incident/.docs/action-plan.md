@@ -28,7 +28,7 @@ An intelligent, video-driven incident search and reporting system for physical s
 Specification and architecture: [`mvp2/README.md`](mvp2/README.md). A hybrid pipeline, because VLM bounding boxes scored 0% well-framed while timestamps were over 95% accurate:
 
 - **VLM extraction:** reports with item timestamps (`incident-contract-v3`).
-- **Crop pipeline:** keyframes at item timestamps, an open-vocabulary detector (Grounding DINO / OWLv2) for boxes, crops uploaded to R2.
+- **Crop pipeline:** keyframes at item timestamps, a detector port for boxes (today the remote VLM; local open-vocabulary detectors are evaluated offline in [`mvp2/eval.md`](mvp2/eval.md)), crops uploaded to R2.
 - **Search layer:** metadata and 1024-d text embeddings in `evidence_crops` (HNSW index), queried through the `search_evidence_items` RPC (`service_role` only).
 - **Always-on VLM critic:** checks each candidate hit against the query and records verdicts in `query_results`.
 - **Frontend:** search route in `incident-console-v2` with filter chips, hit cards with crops and critic rationales, jump-to-clip, and conversational Q&A.
