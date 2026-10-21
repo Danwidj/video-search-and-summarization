@@ -261,7 +261,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 - **Model:** only the model set in the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`). Changing it is an ask-first VM edit.
 - **Controls:**
   - Same 55 held-out videos.
-  - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. **Current gap:** the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`) and the console (`timeout_seconds` from `inference.json`) use 300 s, but `eval_vlm_client.chat_completion` defaults to a 240 s client timeout, and `analyze_video_with_p1` does not pass the `inference.json` value. Until the Track X implementation aligns arm 1 to 300 s, arm 1 runs are reported with their actual 240 s timeout and timeouts are counted per arm, so a gateway call that would finish between 240 s and 300 s is visible as a `request_failed` rather than hidden.
+  - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. Both the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`), the console (`timeout_seconds` from `inference.json`), and `eval_vlm_client.chat_completion` (defaulting to `DEFAULT_TIMEOUT` read directly from `contracts/inference.json`) use 300 s.
   - The agent's `contract_version` must equal `contracts/VERSION`; otherwise the video is recorded `request_failed`.
 - **Scoring:** the existing scorer, unchanged: `contract.evaluate_policy` → `eval_run.persist_prediction` → `eval_gt.run_evaluation` → `eval/scripts/eval_aggregate.py`.
 - **Reliability:**

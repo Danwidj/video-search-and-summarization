@@ -4,9 +4,17 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+import pytest
 
 from base_profile_mock.app import create_app
+from base_profile_mock.routers.incident_search import SearchRequest
+
+FIXTURES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "search-contract-v1" / "fixtures"
 
 
 def test_search_minimal_request_returns_200():
@@ -72,3 +80,51 @@ def test_search_rejects_missing_query():
     client = TestClient(create_app())
     resp = client.post("/api/v1/incidents/search", json={})
     assert resp.status_code == 422
+
+
+def test_contract_fixture_valid_minimal_request():
+    data = json.loads((FIXTURES_DIR / "valid" / "minimal-request.json").read_text())
+    req = SearchRequest.model_validate(data)
+    assert req.query == "sharp weapon"
+    assert req.top_k == 10
+    assert req.min_similarity == 0.0
+    assert req.hide_rejected is True
+    assert req.filters is None
+
+
+def test_contract_fixture_valid_full_request():
+    data = json.loads((FIXTURES_DIR / "valid" / "full-request.json").read_text())
+    req = SearchRequest.model_validate(data)
+    assert req.query == "person holding machete or knife"
+    assert req.top_k == 5
+    assert req.min_similarity == 0.35
+    assert req.hide_rejected is True
+    assert req.filters is not None
+    assert req.filters.incident_types == ["assault", "burglary"]
+    assert req.filters.item_types == ["entity", "instrument"]
+    assert req.filters.min_severity == 2
+    assert req.filters.max_severity == 5
+
+
+def test_contract_fixture_invalid_requests():
+    for name in ("request-missing-query.json", "request-invalid-top-k.json", "request-invalid-item-type.json"):
+        data = json.loads((FIXTURES_DIR / "invalid" / name).read_text())
+        with pytest.raises(ValidationError):
+            SearchRequest.model_validate(data)
+
+
+def test_search_hide_rejected_filter():
+    client = TestClient(create_app())
+    resp_hidden = client.post("/api/v1/incidents/search", json={"query": "device", "min_similarity": 0.0})
+    assert resp_hidden.status_code == 200
+    hits_hidden = resp_hidden.json()["hits"]
+    assert all(h["critic"]["verdict"] != "rejected" for h in hits_hidden)
+
+    resp_shown = client.post(
+        "/api/v1/incidents/search",
+        json={"query": "device", "min_similarity": 0.0, "hide_rejected": False},
+    )
+    assert resp_shown.status_code == 200
+    hits_shown = resp_shown.json()["hits"]
+    assert any(h["critic"]["verdict"] == "rejected" for h in hits_shown)
+
