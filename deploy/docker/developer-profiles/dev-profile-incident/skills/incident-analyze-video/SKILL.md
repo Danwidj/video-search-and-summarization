@@ -61,7 +61,7 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 
 ## Review lifecycle
 
-`PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`. Re-analysing resets `review_status` to `unreviewed` for that run (via the `insert_incident` RPC).
+`PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`, one `set_review_status` call each; a status change never changes "last edited by". Verifying copies the report into its reviewer version if it has none; a legacy AI report that is not valid as it stands (no contract type, an unrated instrument) is refused with 422 and must be edited first. Editing a report (`PATCH /api/reports/<videoId>/edit`) saves the reviewer version, never the AI rows, and sends a verified report back to `under review`; every edited item must carry `source_id`, the AI item it came from (null for one the reviewer added), or the edit is refused with 422. The report page shows the reviewer version when there is one. Re-analysing resets `review_status` to `unreviewed` for that run (via the `insert_incident` RPC).
 
 On the finals database the AI report rows are never changed: an edit (`PATCH /api/reports/<videoId>/edit`) writes the run's reviewer version and sends a verified report back to `under review`, and verifying a report with no edits copies the AI report into the reviewer version ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#ai-version-and-reviewer-version)). Re-analysis always makes a new run, so it never touches a reviewer version.
 

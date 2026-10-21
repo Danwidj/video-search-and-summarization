@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A small in-memory PostgREST for adapter contract tests: eq and like filters,
-// limit, upsert with on_conflict, delete, and RPCs supplied by the test.
-// Embedded selects and cascades are not modelled.
+// A small in-memory PostgREST for adapter contract tests: eq, like and in filters,
+// limit, upsert with on_conflict, delete, and RPCs and read-only views
+// supplied by the test. Every request is recorded. Embedded selects and
+// cascades are not modelled.
 
 const CONTROL = new Set(['select', 'limit', 'offset', 'on_conflict', 'order']);
 
@@ -19,26 +20,36 @@ function likePattern(pattern) {
   return new RegExp(`^${source}$`, 's');
 }
 
+/** The values of a PostgREST in-filter list, `("a","b\"c")` or `(a,b)`. */
+function inValues(list) {
+  return [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map(([, quoted, bare]) => (quoted ?? bare).replace(/\\(.)/g, '$1'));
+}
+
 function matches(row, params) {
   return [...params].every(([key, value]) => {
     if (CONTROL.has(key)) return true;
     if (value.startsWith('eq.')) return String(row[key]) === value.slice(3);
     if (value.startsWith('like.')) return likePattern(value.slice(5)).test(String(row[key] ?? ''));
+    if (value.startsWith('in.')) return inValues(value.slice(3)).includes(String(row[key]));
     throw new Error(`fake PostgREST does not support the filter ${key}=${value}`);
   });
 }
 
 /**
  * tables: { name: rows[] }. rpc: { name: (args, store) => result }; an RPC
- * refuses like a RAISE EXCEPTION by throwing { message }.
+ * refuses like a RAISE EXCEPTION by throwing { message }. views: { name:
+ * (store) => rows }, computed on every read. requests: { method, path, body }
+ * in order.
  */
-export function fakePostgrest(tables, { rpc = {} } = {}) {
+export function fakePostgrest(tables, { rpc = {}, views = {} } = {}) {
   const store = Object.fromEntries(Object.entries(tables).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]));
+  const requests = [];
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
     const path = parsed.pathname.replace('/rest/v1/', '');
     const method = init.method || 'GET';
+    requests.push({ method, path, body: init.body ? JSON.parse(String(init.body)) : undefined });
     if (path.startsWith('rpc/')) {
       const handler = rpc[path.slice(4)];
       if (!handler) return json({ message: `unknown function ${path}` }, 404);
@@ -47,6 +58,11 @@ export function fakePostgrest(tables, { rpc = {} } = {}) {
       } catch (error) {
         return json({ code: 'P0001', message: error.message }, 400);
       }
+    }
+    if (views[path]) {
+      if (method !== 'GET') return json({ message: `cannot ${method} the view ${path}` }, 405);
+      const found = views[path](store).filter((row) => matches(row, parsed.searchParams));
+      return json(found.slice(0, Number(parsed.searchParams.get('limit') || found.length)));
     }
     const rows = (store[path] ??= []);
     if (method === 'GET') {
@@ -70,5 +86,5 @@ export function fakePostgrest(tables, { rpc = {} } = {}) {
     }
     return json({ message: `unsupported ${method}` }, 405);
   };
-  return { fetch, store };
+  return { fetch, store, requests };
 }

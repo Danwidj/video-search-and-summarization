@@ -26,9 +26,11 @@ export interface StructuredIncident {
   confidenceScore: number | null;
 }
 
-export interface StructuredEntity { entityId: string; type: string; description: string }
-export interface StructuredInstrument { instrumentId: string; entityId: string | null; name: string; description: string; threatLevel: number | null }
-export interface StructuredAsset { assetId: string; name: string; description: string }
+// sourceId: the ID of the AI item this item came from (its own ID in the AI report), or null for
+// an item the reviewer added. Reviewer IDs are renumbered by position, so they cannot carry it.
+export interface StructuredEntity { entityId: string; sourceId: string | null; type: string; description: string }
+export interface StructuredInstrument { instrumentId: string; sourceId: string | null; entityId: string | null; name: string; description: string; threatLevel: number | null }
+export interface StructuredAsset { assetId: string; sourceId: string | null; name: string; description: string }
 
 export interface TimelineEvent {
   startSeconds: number;

@@ -143,7 +143,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
 
       {editing && (
         <section className="print-hidden border-b border-ink/10 px-6 py-5 sm:px-8">
-          <StructuredEditor onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onEdited?.(); }} report={report} />
+          <StructuredEditor onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onEdited?.(); }} report={report} reviewStatus={reviewStatus} />
         </section>
       )}
 

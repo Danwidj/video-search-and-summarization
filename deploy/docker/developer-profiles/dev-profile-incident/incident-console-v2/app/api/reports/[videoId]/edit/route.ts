@@ -5,12 +5,12 @@ import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
 import { StructuredEditError, validateStructuredEdit } from '@/lib/contract/structured-edit';
-import { errorResponse } from '@/lib/http';
+import { errorResponse, rejectionResponse } from '@/lib/http';
 
-// Structured (Class A) reviewer edits. The edit replaces the run's relational
-// projection atomically through apply_structured_report_edit; model_runs.notes
-// (original model output, raw response, repair record, outcome) is never read
-// for writing or modified. Class B model output and Class C provenance are
+// Structured (Class A) reviewer edits. The edit is saved atomically as the
+// run's reviewer version through save_human_report_edit; the AI rows and
+// model_runs.notes (original model output, raw response, repair record,
+// outcome) are never modified. Class B model output and Class C provenance are
 // rejected before anything reaches the database.
 const requestSchema = z.object({
   modelRunId: z.string().min(1),
@@ -43,6 +43,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     const result = await incidents.applyStructuredEdit(key, edit, editedBy);
     return NextResponse.json({ saved: true, result });
   } catch (error) {
-    return errorResponse(error, 'Could not save the edit');
+    return rejectionResponse(error) ?? errorResponse(error, 'Could not save the edit');
   }
 }

@@ -86,6 +86,40 @@ test('the editor renumbers IDs by position and carries holders with their entity
   assert.doesNotThrow(() => validateStructuredEdit(edit));
 });
 
+test('each item keeps the AI item it came from through a delete, a reorder and an added item', () => {
+  const draft = draftFromView(view(repaired));
+  draft.entities.shift();
+  draft.instruments.reverse();
+  draft.instruments.push({ key: 'instrument-new', sourceId: null, holderKey: null, name: 'phone', description: 'Dropped', threat_level: 1 });
+  draft.assets.push({ key: 'asset-new', sourceId: null, name: 'bench', description: 'Nearby' });
+  const edit = editFromDraft(draft);
+  assert.deepEqual(edit.entities.map((e) => [e.entity_id, e.source_id]), [['E1', 'E2']], 'the walker, AI E2, is now E1 and still names E2');
+  assert.deepEqual(edit.instruments.map((i) => [i.instrument_id, i.source_id, i.name]), [['I1', 'I2', 'white van'], ['I2', 'I1', 'bag'], ['I3', null, 'phone']]);
+  assert.deepEqual(edit.assets.map((a) => [a.asset_id, a.source_id]), [['A1', null]]);
+  assert.doesNotThrow(() => validateStructuredEdit(edit));
+});
+
+test('every item names its source_id: null for an added item, otherwise a stored AI ID (422)', () => {
+  const base = editFromDraft(draftFromView(view(repaired)));
+  const keylessEntity = clone(base);
+  delete keylessEntity.entities[0].source_id;
+  expectError(keylessEntity, 422, /source_id/);
+  const keylessInstrument = clone(base);
+  delete keylessInstrument.instruments[1].source_id;
+  expectError(keylessInstrument, 422, /source_id/);
+  const keylessAsset = clone(base);
+  keylessAsset.assets = [{ asset_id: 'A1', name: 'bench', description: 'Nearby' }];
+  expectError(keylessAsset, 422, /source_id/);
+  const added = clone(base);
+  added.entities[0].source_id = null;
+  assert.doesNotThrow(() => validateStructuredEdit(added));
+  for (const value of [7, '', 'x'.repeat(21)]) {
+    const edit = clone(base);
+    edit.entities[0].source_id = value;
+    expectError(edit, 422, /source_id/);
+  }
+});
+
 test('a legacy run is normalised for the edit: contract type, seconds, E#/I# IDs; unmappable values must be chosen', () => {
   const legacyView = buildReportView({
     videoId: 'v-legacy', modelRunId: 'm-legacy', playbackUrl: 'https://signed.example/l.mp4',
@@ -105,6 +139,7 @@ test('a legacy run is normalised for the edit: contract type, seconds, E#/I# IDs
   const edit = editFromDraft(draft);
   assert.deepEqual(edit.entities.map((e) => [e.entity_id, e.type, e.description]), [['E1', 'human', 'A'], ['E2', 'human', 'B']]);
   assert.equal(edit.instruments[0].entity_id, 'E1', 'the bottle stays with legacy e01, now E1');
+  assert.deepEqual([...edit.entities, ...edit.instruments].map((item) => item.source_id), ['e01', 'e02', 'i01'], 'legacy IDs are kept as the source');
   assert.doesNotThrow(() => validateStructuredEdit(edit));
 
   const unknownType = buildReportView({ ...JSON.parse(JSON.stringify({ videoId: 'v', modelRunId: 'm', playbackUrl: 'x', video: {}, modelRun: {}, incident: { type: 'other', start_timestamp: 'soon', end_timestamp: null, description: 'd', severity_level: 2 }, entities: [], instruments: [], assets: [], review: null, reportRow: null })) });

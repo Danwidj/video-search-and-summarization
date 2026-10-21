@@ -89,26 +89,60 @@ export interface RunReportRecord {
   report: { reportId: string | null; generatedAt: string | null } | null;
 }
 
-/** apply_structured_report_edit's result. */
+/** The result of saving the reviewer's version of a run. */
 export interface StructuredEditResult {
   incidentId: string;
   modelRunId: string;
   editedBy: string;
   editedAt: string;
   duration: number;
+  /** 1 for the first saved reviewer version, then +1 per save. */
+  revision: number;
+  /** The review status after the save: an edit sends a verified report back to 'under review'. */
+  status: ReviewStatus;
+}
+
+/** One atomic review transition. Never changes editedBy/editedAt, which mean "last content edit". */
+export interface ReviewTransition {
+  /** False when the run already had the status; nothing was written. */
+  changed: boolean;
+  status: ReviewStatus;
+  /** Set only when the transition verified the report. */
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  /** Verifying a report with no reviewer version first copied the AI report into one. */
+  humanVersionCreated: boolean;
 }
 
 export interface IncidentRepository {
   /** One filtered, sorted page of report summaries (runs with a report). */
   listReports(query: ReportListQuery): Promise<ReportList>;
-  /** Null when the run, its video or its incident is missing. */
+  /**
+   * Null when the run, its video or its incident is missing. The incident and
+   * its evidence are the effective report: the reviewer's version when the run
+   * has one, otherwise the AI's.
+   */
   getRunReport(key: RunKey): Promise<RunReportRecord | null>;
   /** True when the run has an incident row. */
   runExists(key: RunKey): Promise<boolean>;
   getReview(key: RunKey): Promise<ReviewState | null>;
-  /** Writes all five review columns for the run. */
-  saveReview(key: RunKey, review: ReviewState): Promise<void>;
-  /** Atomic Class A edit; never touches model_runs.notes. */
+  /**
+   * Moves the run to `status` in one transaction: verifying stamps the
+   * verifier, any other status clears it, and the edit stamps are kept.
+   * Verifying a report with no reviewer version first copies the AI report
+   * into one. Throws StoreRejection: 'not-found' for a run with no
+   * incident, 'invalid' when verifying an AI report that cannot be a reviewer
+   * version as it stands (e.g. a legacy run with no type or an unrated
+   * instrument; it must be edited first).
+   */
+  setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition>;
+  /**
+   * Atomically saves the reviewer's version of the run (created on the first
+   * edit) and stamps editedBy/editedAt; an edit of a verified report sends it
+   * back to 'under review'. Never touches the AI report or model_runs.notes.
+   * Throws StoreRejection: 'not-found' for a run with no incident, 'invalid'
+   * for an edit the store refuses (e.g. a source_id that names no AI item).
+   */
   applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>;
   /** Deletes the run's incident; its evidence, review and report rows cascade. */
   deleteRun(key: RunKey): Promise<void>;

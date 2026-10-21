@@ -22,7 +22,7 @@ const first = (value: unknown): Row | null => (Array.isArray(value) ? ((value[0]
 
 export interface HistoryInputs {
   videoId: string;
-  /** incidents rows for the video with embedded model_runs, reports and review_status. */
+  /** incidents rows for the video with embedded model_runs and reports, and the effective (reviewer's, else AI's) type and severity_level. */
   incidentRows: Row[];
   /** model_runs rows whose notes mention the videoId (pre-filter). */
   attemptCandidates: Row[];

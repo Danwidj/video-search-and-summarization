@@ -5,6 +5,9 @@
 // incident properties plus the contract's own entities / instruments / assets
 // item schemas, then the contract's ID and holder rules and the window order.
 // Class B (model-generated) and Class C (provenance) fields are rejected.
+// Each item also names the AI item it came from (source_id, required; null for
+// an item the reviewer added); the database checks it names an AI item of the
+// run, once.
 
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
@@ -19,6 +22,8 @@ export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description'] as co
 export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level'] as const;
 export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
+// Not a contract field: AI IDs are kept as stored (legacy runs use e.g. 'e01'), up to the column's 20 characters.
+const SOURCE_ID_SCHEMA = { type: ['string', 'null'], minLength: 1, maxLength: 20 };
 
 export class StructuredEditError extends Error {
   status: 400 | 422;
@@ -52,8 +57,8 @@ function editValidator(): ValidateFunction {
     items: {
       type: 'object',
       additionalProperties: false,
-      required: [...fields],
-      properties: Object.fromEntries(fields.map((field) => [field, items.properties[field]])),
+      required: [...fields, 'source_id'],
+      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA },
     },
   });
   const editSchema = {
