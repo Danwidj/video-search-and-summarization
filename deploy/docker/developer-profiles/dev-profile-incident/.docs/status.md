@@ -6,9 +6,9 @@
 
 | Area | State | Where |
 |---|---|---|
-| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard. API routes reach Supabase through the middle layer (ports and adapters), except ground truth, analysis saving and run history. Needs the finals database (`effective_*` views, `set_review_status`, `save_human_report_edit`) and fails against midterm, so it merges in the cutover window | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
+| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard. API routes reach Supabase through the middle layer (ports and adapters), except ground truth, analysis saving and run history. Merged in PR 149 and runs against the live finals database (`effective_*` views, `set_review_status`, `save_human_report_edit`) | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
-| Storage | Supabase rows plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
+| Storage | Supabase rows (finals project) plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
 | Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777) and `search_profile_mock` (:7778), including search and chat routes | `mock-backend/` |
@@ -19,18 +19,20 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; timestamp backfill script (`scripts/backfill_official_timestamps.py`).
 - **Live on `kwanz-ws` (verified 2026-10-18):** the evidence loader (`scripts/backfill_official_timestamps.py`: remote VLM grounding and boxes, R2 upload, `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions, upsert) loaded 64 of 69 items from the 13 official reports into `evidence_crops`. 7 items were recovered by PR 141's whole-frame fallback (4 items with no VLM box: `SUV`, `ATM machine`, `Fireball`, and `weapon`) and JSON repair (3 truncated JSON replies). The remaining 5 failures are all from video `v5c609184047f88c720e` and still fail with remote gateway HTTP 500. `POST /api/v1/incidents/search` (`top_k=5`) returns 2-5 hits in about 6-9 s across benchmark queries ("weapon" surfaces the assault weapon at rank 1, similarity 0.331); crop URLs are fetchable via HTTP 206 Partial Content, with critic verdicts (`confirmed`, `rejected`, `unverified`). Rerun the loader only after the remote gateway recovers to fill the remaining 5 items.
-- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer and RLS work.
+- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer work.
 - **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
 
-## 3. Pending approvals (migrations not yet applied to shared Supabase)
+## 3. Database status
 
-`20261016120000_mvp2_evidence_search_and_crops.sql` (pgvector, `evidence_crops`, `query_results`, `search_evidence_items`) is already applied.
+The finals Supabase project (baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql)) is the live database; both the laptop console and the VM agent point at it. Midterm (`rfevukimyftzbxlehwel`) is the archived record; cutover copy and freeze procedures are documented in [`supabase/README.md`](../supabase/README.md) and [`incident-manage-database`](../skills/incident-manage-database/SKILL.md).
 
-| Migration | Effect |
-|---|---|
-| `20260928000000_local_time_heatmap_and_time_filters.sql` | `p_timezone` on the dashboard and library RPCs. The console already sends it, so `/api/dashboard` and `/api/reports` fail until it is applied. |
-| `20261016000000_enable_rls_and_lockdown_anon.sql` | RLS on all 22 public tables; `anon` / `authenticated` revoked. Services use `service_role`, so nothing should break. |
-| `20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` | `fighting` to `assault`, `animal` to `animal attack`, `person` to `human`, removes 20 orphaned runs. Query-time folding stays until applied. |
+The finals baseline incorporates all prior migration effects:
+- `p_timezone` parameter on the report library and dashboard RPCs (`list_incident_report_summaries`, `get_incident_dashboard`);
+- Row-Level Security enabled on all 24 public tables, with permissions revoked from `PUBLIC`, `anon` and `authenticated` (services authenticate via `service_role` or `postgres`, both having `BYPASSRLS`);
+- Legacy labels relabelled during copy (`fighting` to `assault`, `animal` to `animal attack`, `person` to `human`), with query-time canonical folding retained as a guard;
+- The four legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) are dropped from the schema.
+
+There are no pending database migrations.
 
 ## 4. Known issues
 
@@ -39,15 +41,13 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 3. **Cosmos models often break the timeline rule** (lead-up or aftermath events outside the incident window). Recorded, never repaired; see [`analysis-schema.md`](analysis-schema.md) section 7.
 4. **One run has no recorded outcome.** `m86a5c319e26659804b0` predates recorded outcomes and shows as `valid_first_pass` (inferred).
 5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no incident row) stays, because attempt notes are immutable.
-6. **Four legacy pre-v1 tables remain**; dropping them is a separate approval.
-7. **`selected_by` / `selected_at` can outlive a cleared selection**; the UI treats a NULL `selected_model_run_id` as no official report.
-8. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
+6. **`selected_by` / `selected_at` can outlive a cleared selection**; the UI treats a NULL `selected_model_run_id` as no official report.
+7. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
 
 ## 5. Follow-ups
 
 - Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates).
 - Consider a contract v4 with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
-- Apply the migrations in section 3 once approved.
 
 ## 6. Live VM configuration (`kwanz-ws`)
 
