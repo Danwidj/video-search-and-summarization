@@ -18,7 +18,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
 | `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
-| `supabase/migrations/` | SQL | Schema authority for new changes; `insert_incident` RPC | Active |
+| `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`), midterm-to-finals copy (`copy/`) | Active. `supabase/midterm/` is the frozen midterm record: never push |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `incident-console/` | Streamlit | v1 console | **Retired.** Fix only; no features. |
 | `services/agent/` (outside this dir) | Python, NAT | `POST /api/v1/incidents/{id}/analyze`, `incident_report_gen`, `utils/incident_db.py` | Follow [`services/agent/AGENTS.md`](../../../../services/agent/AGENTS.md) |
@@ -40,6 +40,9 @@ uv sync && uv run ruff check . && uv run pytest
 # eval (hermetic: no live DB, agent or GPU)
 uv sync && uv run pytest tests/
 
+# supabase (hermetic SQL harness on a throwaway Postgres: no Supabase, no network)
+cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
+
 # services/agent incident code: see services/agent/AGENTS.md (ruff, ruff format, mypy, pytest)
 ```
 
@@ -52,7 +55,7 @@ uv sync && uv run pytest tests/
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
 - **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `lib/adapters/supabase/` builds PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
-- **Reviewer edits change only the relational projection** (`apply_structured_report_edit`). Official reports are explicit (`select_official_report`); never infer "latest run wins".
+- **The AI report rows are never edited.** Reviewer edits and verification write a separate reviewer version (`human_reports`, via `save_human_report_edit` / `set_review_status`); readers meaning "the current report" use the `effective_*` views. Official reports are explicit (`select_official_report`); never infer "latest run wins".
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). All PostgREST writers use `/rpc/insert_incident`.
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
@@ -62,9 +65,10 @@ uv sync && uv run pytest tests/
 ## Boundaries
 
 - **Always:** run the component's checks; add the neighbouring SPDX header; update the affected `.docs/` file and skill in the same PR ([Docs rule](#docs-rule)).
-- **Ask first:** applying a migration to the live Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; adding dependencies.
+- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
+  - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.
   - Run `dev-profile.sh down` or `up` for this profile (it wipes the VM model cache and does not know the profile).
   - Start the Docker `vss-agent` while the native one runs.
   - Add features to the retired `incident-console/`.
@@ -77,7 +81,7 @@ Stale docs are a defect. Update in the same PR:
 | Change | Update |
 |---|---|
 | A command, port, script or API contract | The matching `skills/incident-*/SKILL.md` and [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) |
-| Schema, R2 layout or report fields | [`.docs/data.md`](.docs/data.md), [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
+| Schema, R2 layout or report fields | A new `supabase/migrations/` file after the baseline, `supabase/tests/test_baseline.py`, [`.docs/data.md`](.docs/data.md), [`.docs/analysis-schema.md`](.docs/analysis-schema.md) |
 | Topology, components, sequences | [`.docs/architecture.md`](.docs/architecture.md) |
 | Implementation state, known issues, live VM config | [`.docs/status.md`](.docs/status.md) (rewrite, don't append) |
 | An architectural or tooling decision | New entry at the top of [`.docs/decisions.md`](.docs/decisions.md): Decision / Why / Alternatives rejected / Links |
@@ -90,7 +94,7 @@ Stale docs are a defect. Update in the same PR:
 | [`.docs/status.md`](.docs/status.md) | Starting any task: what is done, known issues, live VM config |
 | [`.docs/action-plan.md`](.docs/action-plan.md) | Checking scope or goals |
 | [`.docs/architecture.md`](.docs/architecture.md) | Touching more than one component, or tracing a request |
-| [`.docs/data.md`](.docs/data.md) | Touching tables, the RPC, cascades or R2 keys |
+| [`.docs/data.md`](.docs/data.md) | Touching tables, the RPCs, cascades, security or R2 keys |
 | [`.docs/analysis-schema.md`](.docs/analysis-schema.md) | Touching report fields, prompts, VLM calls or output parsing |
 | [`.docs/incident-profile-operations.md`](.docs/incident-profile-operations.md) | Anything on `kwanz-ws` |
 | [`.docs/vm-api-contracts.md`](.docs/vm-api-contracts.md) | Calling or changing a `vss-agent` HTTP endpoint or the tunnel ports |

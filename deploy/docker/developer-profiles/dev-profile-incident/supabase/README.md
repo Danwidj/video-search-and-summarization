@@ -1,177 +1,184 @@
-# Supabase migrations — dev-profile-incident
+# Supabase schema — dev-profile-incident
 
-This is a Supabase CLI project directory scoped to the incident-console's own
-Postgres schema (`--workdir` target for the `supabase` CLI). It is not a
-fully initialized Supabase CLI project — there is no `config.toml`, and the
-team has never run `supabase init`/`supabase link` here. `supabase db push
---workdir <this dir> --db-url <url>` works against a bare `migrations/`
-directory with no further setup (verified with the CLI's own `--dry-run`).
+There is one Supabase project per project phase:
 
-## What's in here
+| Project | Role | Schema source |
+|---|---|---|
+| **Finals** (new project) | Live database for every service | [`migrations/`](migrations/): one baseline file, then any later finals migration |
+| **Midterm** (`rfevukimyftzbxlehwel`) | Frozen, read-only record | [`midterm/`](midterm/README.md): the 14 midterm migrations, archived. **Never push** |
 
-`migrations/20260917141225_insert_incident_function.sql` creates the
-`insert_incident` Postgres RPC function. This is live code, not a one-off
-script: `services/agent/src/vss_agents/utils/incident_db.py`'s
-`insert_incident()` calls it at runtime via PostgREST's `/rpc/insert_incident`
-to get atomic delete-then-insert semantics across `incidents` +
-`review_status` — PostgREST has no client-held transactions, so this RPC is
-the only way that operation is atomic. The PostgREST writers in
-`incident-console-v2` (`lib/postgrest/client.ts`), `eval/db_postgrest.py`, and the
-retired `incident-console/db_postgrest.py` call the same
-RPC. Do not delete this file only because nothing in the repo runs
-`supabase db push` automatically; it is the only reason `insert_incident()`
-doesn't corrupt state on every call.
+The decision and its reasons: [`../.docs/decisions.md`](../.docs/decisions.md) ("One Supabase
+project per phase"). Table and RPC reference: [`../.docs/data.md`](../.docs/data.md).
 
-`migrations/20260925031000_schema_defaults_and_precision.sql` adds real
-server-side column defaults (UTC timestamps, `review_status.status`,
-`notifications.acknowledged`) and replaces `insert_incident` so
-`p_confidence_score` is `DOUBLE PRECISION`. See `../.docs/data.md` for the
-resulting schema.
+This directory is the `--workdir` target of the `supabase` CLI
+(`--workdir deploy/docker/developer-profiles/dev-profile-incident`, which reads
+`supabase/migrations/`). It is not a fully initialised CLI project: there is no `config.toml`, and
+nobody runs `supabase init`/`link` here. `supabase db push --workdir <dir> --db-url <url>` works
+against a bare `migrations/` folder.
 
-`migrations/20260926120000_list_incident_report_summaries.sql` creates the
-service-role-only `list_incident_report_summaries` RPC used by the Next.js
-report library for filtered six-item pages. It joins existing tables and does
-not create or maintain a summary table.
+## Layout
 
-`migrations/20260927120000_filter_report_evidence.sql` extends that RPC with
-people/entity, instrument, and asset filters and creates the service-role-only
-`replace_incident_evidence` RPC used to synchronize reviewer edits with the
-normalized evidence tables.
-
-`migrations/20260927130000_dashboard_analytics.sql` creates the service-role-only
-`get_incident_dashboard` RPC for dashboard trends, distributions, evidence
-drill-downs, cross-filters, and previous-period KPI counts.
-
-`migrations/20260927140000_atomic_report_edits_and_exact_dashboard_links.sql`
-adds weekday and low/medium severity filtering to the report summary RPC and
-adds `apply_incident_report_patch`, which atomically applies changed report
-fields while preserving untouched values and evidence categories. This
-migration was applied to shared Supabase on 2026-09-27 and PostgREST's schema
-cache was reloaded. The Supabase management connector recorded it as version
-`20260927075044` (its UTC application timestamp), while the checked-in migration
-filename retains the repository's ordered migration timestamp.
-
-`migrations/20260927150000_report_summaries_contract_v2_title.sql` replaces
-`list_incident_report_summaries` (same signature) so incident-contract-v2 runs
-show and search their model-generated title from
-`model_runs.notes` `incidentConsoleV2.report.incident.title`, returns a null
-confidence as null instead of 0, and sorts null confidences last. Applied to
-shared Supabase on 2026-09-27 after a transactional dry run (and recorded in
-`supabase_migrations.schema_migrations`).
-
-`migrations/20260927160000_apply_structured_report_edit.sql` adds the
-service-role-only `apply_structured_report_edit` RPC used by the console's
-structured (Class A) reviewer editor. In one transaction it replaces a run's
-`incidents` values (type, integer-second start/end, recomputed duration,
-description, severity level) and its `entities` / `instruments` /
-`assets`, and sets `review_status.edited_by` / `edited_at`. It never touches
-`model_runs.notes`, and it rejects any edit that breaks the contract's types,
-ranges, sequential IDs or instrument-holder references (no rules stricter
-than incident-contract-v2). Applied to shared Supabase on 2026-09-27
-after a transactional dry run and approval; live-tested through the UI. `apply_incident_report_patch` is left in place but is no longer
-called by the console.
-
-`migrations/20260927170000_official_report_selection.sql` adds
-`videos.selected_model_run_id/selected_by/selected_at` (composite FK to the
-video's own incidents, `ON DELETE SET NULL (selected_model_run_id)`) and the
-`select_official_report` / `clear_official_report` RPCs for explicit official
-report selection (D6). Additive; applied 2026-09-27. Because `videos` and
-`incidents` now have two relationships, PostgREST embeds between them must name
-`incidents_incident_id_fkey`.
-
-`migrations/20260927180000_official_dashboard_and_library_filters.sql` adds the
-`canonical_incident_type`, `canonical_entity_type`, `normalized_name` and
-`run_outcome` helpers, replaces `list_incident_report_summaries` (adds
-`p_scope`, `p_entity_types`, `p_evidence_match`; returns `outcome` and
-`isOfficial`) and `get_incident_dashboard` (official incidents only). Applied
-2026-09-27 after a dry run with 40 dashboard/library parity checks per period.
-
-All four 2026-09-27 migrations were applied with a single-transaction script
-that also records the version in `supabase_migrations.schema_migrations`.
-
-`migrations/20260928000000_local_time_heatmap_and_time_filters.sql` replaces
-`get_incident_dashboard` and `list_incident_report_summaries` (adds
-`p_timezone TEXT DEFAULT 'UTC'`). When computing weekday/hour groupings and
-filters, `generated_datetime` (stored as naive UTC) is converted to
-`p_timezone` via `AT TIME ZONE 'utc' AT TIME ZONE params.target_tz`. Unapplied.
-
-`migrations/20261016000000_enable_rls_and_lockdown_anon.sql` (pending: not yet
-applied to the live database, so RLS stays disabled until it is) enables
-Row-Level Security on all 22 public tables (18 operational/eval tables and
-4 legacy pre-v1 tables), revokes table and sequence privileges in schema
-`public` from `anon` and `authenticated`, revokes `EXECUTE` on `insert_incident`
-from `PUBLIC, anon, authenticated` (restricted to `service_role`), and adjusts
-default privileges for objects later created by the migrating role (`postgres`):
-no table, sequence or function grants to `anon` or `authenticated` in schema
-`public`, and no `EXECUTE` for `PUBLIC` on new functions in any schema. Objects
-created by other roles are not covered, so each new function should still carry
-its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and
-`GRANT EXECUTE ... TO service_role`, as earlier migrations do. Services authenticate using
-`service_role` (PostgREST) or connect directly as `postgres`, both having
-`BYPASSRLS`.
-
-`migrations/20261016010000_legacy_taxonomy_and_orphan_cleanup.sql` implements
-prompt-contract phase 4 data migration (`incidents.type`: `fighting` ->
-`assault`, `animal` -> `animal attack`; `entities.type`: `person` -> `human`)
-and removes the 20 pre-existing orphaned legacy console `model_runs` rows naming
-videos that no longer exist (status.md known issue 4). Relational `incidents.type`
-has 0 rows with `other`; the one `other` value stays in the immutable
-`model_runs.notes` of run `m5629b0938e679c9873d`. This is a one-time clean-up:
-agent mode still writes legacy values until prompt-contract phase 3, so
-query-time folding (`canonical_incident_type`, `canonical_entity_type` and the
-console's `canonicalIncidentType`) must stay until this migration is applied
-**and** phase 3 is done.
-
-`migrations/20261016120000_mvp2_evidence_search_and_crops.sql` enables the
-pgvector extension (`CREATE EXTENSION IF NOT EXISTS vector;`), creates the
-unified `evidence_crops` table for item-level evidence crops, detector bounding
-boxes, and 1024-dimensional semantic text embeddings (with an HNSW cosine
-distance index and composite lookup index), creates the `query_results` audit
-table for multi-item retrieval logging and VLM critic verdicts, enables
-Row-Level Security on both tables granting access exclusively to `service_role`,
-and creates the service-role-only `search_evidence_items` RPC function scoped
-strictly to official reports (`videos.selected_model_run_id = ec.model_run_id`).
-Unapplied.
-
-## Applying these migrations to a Supabase project
-
-From the repo root, using the same `INCIDENT_DB_DSN` you already have
-configured for local console dev (session-pooler URL, port 5432 — see
-`../incident-console/README.md`'s Supabase section):
-
-```bash
-# 1. Inspect migration status (local vs remote):
-supabase migration list --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN"
-
-# 2. Preview first — prints what would change, touches nothing:
-supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN" --dry-run
-
-# 3. Apply for real:
-supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN"
+```
+supabase/
+  migrations/   20261020000000_finals_baseline.sql — builds finals from empty; later finals migrations follow it
+  tests/        SQL harness (test_baseline.py, test_freeze.py), security_check.sql, supabase_stub.sql,
+                parity_check.py, rehearse.py, probe_api.sh
+  copy/         copy_midterm_to_finals.py + transform.sql: the one-way midterm -> finals copy
+  midterm/      frozen midterm record: migrations/ (14), midterm_base_tables.sql, freeze/unfreeze SQL
 ```
 
-If older-timestamped migrations are pending while a newer one is already recorded as applied, use `--include-all` (with `--dry-run` first):
+## The finals baseline
+
+[`migrations/20261020000000_finals_baseline.sql`](migrations/20261020000000_finals_baseline.sql)
+builds the whole incident schema in one transaction:
+
+1. **pgvector in `extensions`**, not `public`, so none of its functions become REST RPCs.
+2. **Default privileges first:** before any object exists, nothing new in `public` is granted to
+   `anon`/`authenticated`, and new functions get no `EXECUTE` for `PUBLIC`.
+3. **The 20 operational, evaluation and search tables** exactly as on midterm, with midterm's
+   constraint names (PostgREST embed hints such as `incidents_incident_id_fkey` depend on them).
+   The four pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`,
+   `incident_assets`) are not created.
+4. **The reviewer version of a report** (`human_reports`, `human_report_entities`,
+   `human_report_instruments`, `human_report_assets`) next to the immutable AI rows, and the
+   `effective_incidents/entities/instruments/assets` views (reviewer version if there is one,
+   else the AI one; same columns as the AI tables, plus `source_*_id` and `source`).
+5. **Every function still called**, each with `SET search_path = ''`: `insert_incident` (same
+   signature; refuses to re-run a run that has a reviewer version), the library, dashboard and
+   search RPCs (reading the effective views), official selection, and the reviewer RPCs
+   `create_human_report_from_ai`, `save_human_report_edit`, `set_review_status` and the
+   `apply_structured_report_edit` compatibility shim. `apply_incident_report_patch` and
+   `replace_incident_evidence` are gone.
+6. **Security:** RLS on all 24 tables, nothing for `PUBLIC`/`anon`/`authenticated`, everything for
+   `service_role`, views read-only. A self-check block **fails the migration** if anything is still
+   exposed, any function is `SECURITY DEFINER`, or any function lacks a fixed `search_path`.
+
+`insert_incident` is live code: every PostgREST writer (the agent's `utils/incident_db.py`,
+`eval/db_postgrest.py`, the console) calls `/rpc/insert_incident`, because PostgREST has no
+client-held transactions.
+
+## Tests (no Supabase, no network)
+
+The harness runs on a throwaway local Postgres (`pgserver`: Postgres 16 + pgvector).
+`tests/supabase_stub.sql` adds the Supabase API roles and **Supabase's default grants to
+anon/authenticated**, so the lockdown is tested against what a new project starts with.
 
 ```bash
-supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN" --include-all --dry-run
-supabase db push --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN" --include-all
+cd supabase/tests
+# Finals schema: applies every file in ../migrations/ in order, 24 tests (security, behaviour and the copy's guards)
+uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
+# Midterm freeze/unfreeze on a local replica of midterm
+uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
 ```
 
-To update migration history for out-of-band changes without re-executing SQL:
+`tests/rehearse.py <midterm env file>` is the full rehearsal (local Postgres → baseline → copy from
+midterm, read only → security audit → reader parity → re-copy with `--replace`). It needs the
+midterm DSN; it writes only to the local Postgres.
+
+## Building finals (cutover)
+
+The full order of steps, the checklist and the rollback are in the
+[`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill; what points at
+which project is in [`../.docs/architecture.md`](../.docs/architecture.md#two-supabase-projects-one-per-phase). In short, with `FINALS_DSN` the finals session-pooler URL (port
+5432, plain `postgresql://`, no SQLAlchemy suffix):
+
+```bash
+W=deploy/docker/developer-profiles/dev-profile-incident   # run from the repo root
+supabase db push --workdir $W --db-url "$FINALS_DSN" --dry-run
+supabase db push --workdir $W --db-url "$FINALS_DSN"
+psql "$FINALS_DSN" -f $W/supabase/tests/security_check.sql    # expect 0 rows
+FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... $W/supabase/tests/probe_api.sh
+                                       # expect 401/403 for every public-key line, 200 for the service key
+```
+
+**Finals uses the new key types:** the server key is `sb_secret_...` and the public key
+`sb_publishable_...`, not JWTs. They go in the `apikey` header only (`probe_api.sh` does this).
+Before the switch, the VM's `supabase-py` must be proven to accept the `sb_secret_` key (the
+agent's version is not pinned and older 2.x releases reject non-JWT keys), and the console and
+eval must stop sending the key as `Authorization: Bearer` (PR B). The connection test and the
+table of every key sender are in the
+[`incident-manage-database`](../skills/incident-manage-database/SKILL.md#finals-keys-sb_secret_)
+skill.
+
+Then the copy, from a laptop (`kwanz-ws` blocks port 5432). Each env file holds `INCIDENT_DB_DSN`:
+
+```bash
+cd $W/supabase/copy
+uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
+  --source-env <midterm env file> --target-env <finals env file> \
+  --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf   # rehearsal: rolls back
+uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
+  --source-env <midterm env file> --target-env <finals env file> \
+  --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf \
+  --replace --commit                                                         # at cutover
+cd ../tests && uv run --no-project --with 'psycopg[binary]' python parity_check.py \
+  --source-env <midterm env file> --target-env <finals env file>
+```
+
+The copy reads midterm in one `REPEATABLE READ READ ONLY` transaction and writes finals in one
+transaction: rows are streamed into temp tables, [`copy/transform.sql`](copy/transform.sql) builds
+the finals rows, and every check runs (row counts, checksums of every untouched column, official
+selections, labels, reviewer versions, AI rows equal to `model_runs.notes`). Any failed check, or
+no `--commit`, rolls back. It refuses a finals database that already has rows unless `--replace`
+(before go-live only).
+
+What it copies and what it leaves behind:
+
+- **Copies** every real video, run, report, review and official selection; evidence crops with
+  their embeddings; query logs and search results; ground truth (`gt_*`, `*_matches`); evaluation
+  data (`P1-*` runs, `severity_eval_log`); and the seed/fake test reports (`MR-SEED`, `MOCK8`).
+- **Leaves behind** 20 orphan runs whose video was deleted, 15 unlinked test runs (`mock-run-*`,
+  `nmtest0925a`), 8 broken uploads (no incident, ground truth, attempt or playable file) and the
+  4 pre-v1 tables. Guards fail the copy if anything else matches those rules, if a run that
+  names a left-behind video in its notes would be copied, if an edit changed items (their AI
+  source is a guess), or if a run keeps an edit stamp but gets no reviewer version: a person
+  decides each of those by hand.
+- **Item edits are accepted per run.** A contract run whose stored items differ from its notes
+  record stops the copy. After checking it, rerun with `--accept-item-edits <run>`: its stored
+  items become the reviewer version, each linked to the AI item with identical content where that
+  match is unique (no link otherwise: that item shows no crop), and the changed kinds' AI items
+  are put back from notes. The script prints every link it made or left empty. It refuses a run
+  that has evidence crops or eval matches (they would need re-keying). On 2026-10-21 one run reached this:
+  `mcd6cb9073218402f7bf` (video `v5c609184047f88c720e`, official, verified). Its 2 entities and
+  3 assets were removed from midterm after 2026-10-20 (not through the console: its review stamp
+  is still the 2026-10-01 verification), and the captain chose to copy it as it is now. So its
+  reviewer version has no items, and its AI items come back from notes. It is copied as it stands
+  and keeps its midterm labels (verified, with its midterm stamp), by the captain's call that the
+  removed items do not matter during development.
+- **Legacy edit stamps are a person's call.** On a legacy (non-contract) run nothing records what
+  the AI wrote, and the midterm console rewrote `edited_by/at` with the verifier on every status
+  change, so a stamp equal to the verification proves nothing. Such a run stops the copy, naming
+  itself; rerun with `--not-edited <run>` (clear the stamp; a verified run then gets a copy of its
+  rows "verified as the AI wrote it") or `--edited <run>` (its stored rows become the reviewer
+  version, kept stamp and all; the AI original is lost). On 2026-10-20 one run reached this:
+  `m37883594f65802c8a31` (legacy, official, verified; stamp = verification, Presentation reviewer,
+  2026-10-01 08:39:24). Its stored rows equal its legacy notes record, so it was not edited:
+  `--not-edited m37883594f65802c8a31`. A new name in the error means midterm changed: compare that
+  run's stored report with its `model_runs.notes` before choosing.
+- **Changes on the way:** `fighting` → `assault`, `animal` → `animal attack`, `person` → `human`
+  (incidents, entities and entity crop names); a reviewer version for the 3 edited and 6 verified
+  reports (7 in all), with the AI's own text or items put back on the 3 edited runs from
+  `model_runs.notes`; 5 misleading `review_status.edited_by/at` stamps (status changes, not edits)
+  cleared: 4 proven by the rows (contract runs equal to their notes record) and 1 by the
+  `--not-edited` decision (rehearsal of 2026-10-21).
+
+R2 objects stay where they are: same bucket, same keys, nothing to copy.
+
+## Adding a finals migration
+
+Add `migrations/YYYYMMDDHHMMSS_<what>.sql` after the baseline, never edit the baseline once it is
+applied to finals, and never add files to `midterm/`. In the same PR:
+
+- extend `tests/test_baseline.py` (it applies every file in `migrations/` in order);
+- give every new table RLS and every new function `SET search_path = ''` (the harness and
+  `security_check.sql` fail otherwise);
+- update [`../.docs/data.md`](../.docs/data.md);
+- after applying, run `tests/security_check.sql` against finals (expect 0 rows).
+
+Applying to the live database is "ask first" (profile [`AGENTS.md`](../AGENTS.md)). To record an
+out-of-band change without running SQL:
 
 ```bash
 supabase migration repair --workdir deploy/docker/developer-profiles/dev-profile-incident \
-  --db-url "$INCIDENT_DB_DSN" --status applied <YYYYMMDDHHMMSS>
+  --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
-
-If `$INCIDENT_DB_DSN` carries a SQLAlchemy driver suffix (e.g.
-`postgresql+psycopg2://`), strip it to plain `postgresql://` first — `--db-url`
-expects a standard libpq connection string, not a SQLAlchemy one.
-
-Run this once after cloning against a fresh Supabase project, and again any
-time a migration file is added or changed.

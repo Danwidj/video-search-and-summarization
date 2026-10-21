@@ -76,7 +76,7 @@ export class SupabaseVideoAdapter implements VideoRepository {
 
   async selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection> {
     const result = asRow(await this.db.rpc('select_official_report', { p_video_id: videoId, p_model_run_id: modelRunId, p_selected_by: selectedBy }).catch(officialRefusal));
-    // The RPC returns exactly these keys (20260927170000_official_report_selection.sql).
+    // The RPC returns exactly these keys (20261020000000_finals_baseline.sql).
     return {
       videoId: text(result.videoId) ?? videoId,
       officialRunId: text(result.officialRunId) ?? modelRunId,

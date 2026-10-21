@@ -3,7 +3,7 @@ name: incident-operate-vm
 description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (VIOS, HAProxy, Redis, Kafka) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   profile: "dev-profile-incident"
   tags: "incident vm operations native docker troubleshooting"
 ---
@@ -89,6 +89,14 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - Search embeddings use the NVIDIA-hosted endpoint with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from this file; the Brev key cannot call `/v1/embeddings`. Override with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`. The loader and the search route must use the same model.
 - `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
 - `VSS_AGENT_HOST` defaults to `127.0.0.1` (loopback only: the agent has no auth and holds the DB admin key). An old `VSS_AGENT_HOST=0.0.0.0` must be removed or set to `127.0.0.1`.
+- `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` name the **finals** Supabase project, never the frozen midterm one. The native `vss-agent` (search, chat, standalone persistence), the evidence loader and `native-services.sh` read them. To switch: back up the file, set the two values, `./native-services.sh restart vss-agent`, then check the host (never the key) in `/proc/<pid>/environ` and that a search adds a row to finals `queries` (the agent only warns when it cannot record one). Steps and rollback: [`incident-manage-database`](../incident-manage-database/SKILL.md#build-finals-and-switch-over-once). Finals uses an `sb_secret_...` server key, which is not a JWT, and the agent connects through `supabase-py`, whose version on the VM is not pinned (`pyproject.toml` requires only `supabase~=2.0`; `uv.lock` has no entry). Older 2.x releases reject non-JWT keys with `Invalid API key`. **Before switching**, run the one-row connection test in the agent's own environment ([VM key check](../incident-manage-database/SKILL.md#build-finals-and-switch-over-once), step 4):
+  ```bash
+  cd /srv/rise-up/vss
+  read -rp 'finals URL: ' FINALS_URL; read -rsp 'finals sb_secret key: ' FINALS_KEY; echo; export FINALS_URL FINALS_KEY
+  services/agent/.venv/bin/python -c "import os, importlib.metadata as m, supabase; c = supabase.create_client(os.environ['FINALS_URL'], os.environ['FINALS_KEY']); print('supabase', m.version('supabase'), 'ok, rows', len(c.table('videos').select('id').limit(1).execute().data))"
+  unset FINALS_KEY
+  ```
+  If it fails with `Invalid API key` or a JWT error, run `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (ask first: shared VM) and retest. The evidence loader (`scripts/backfill_official_timestamps.py`) uses the same venv and `incident_db.get_db()`, so the same test covers it. Pinning a minimum `supabase` version in `services/agent` is a follow-up.
 - GPU allocation: all Docker appliances and native services pinned strictly to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `FIXED_SHARED_DEVICE_IDS=0`) to protect GPU 1 for co-tenants.
 
 ## Troubleshooting order

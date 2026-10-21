@@ -39,7 +39,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Set up secrets and launch the console, locally or against the VM | [`incident-start`](incident-start/SKILL.md) |
 | Deploy, restart, inspect or fix services on `kwanz-ws` | [`incident-operate-vm`](incident-operate-vm/SKILL.md) |
 | Upload a clip and generate, re-run, review or check an incident report | [`incident-analyze-video`](incident-analyze-video/SKILL.md) |
-| Change or inspect the Supabase schema, apply a migration, find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
+| Change or inspect the Supabase schema, test or apply a migration, build finals and copy midterm, find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
 | Ingest ground truth, run the P1/RP1 VLM benchmark, aggregate results | [`incident-run-eval`](incident-run-eval/SKILL.md) |
 | Natural-language video search & chat (MVP2) | Overview in [`.docs/mvp2/README.md`](../.docs/mvp2/README.md); delivery status in [`.docs/status.md`](../.docs/status.md); `search-contract-v1`, `chat-contract-v1`, mock backend, always-on search route launched via [`start.sh`](../start.sh) in both local and VM modes, and `vss-agent` search and chat routes delivered; workstreams in progress (PR 118, PR 119, PR 120, PR 126). Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
 
@@ -59,7 +59,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | [incident-start](incident-start/SKILL.md) | Prepare `.env.local` and symlinks, then launch via `start.sh --mode local\|vm`. Covers mode choice, SSH preflight, and health checks. |
 | [incident-operate-vm](incident-operate-vm/SKILL.md) | Operate `kwanz-ws`: the native-vs-Docker split, `native-services.sh`, Compose appliances, `generated.env.remote` rules, the agent editable reinstall, and the troubleshooting order. Includes the never-run list. |
 | [incident-analyze-video](incident-analyze-video/SKILL.md) | Upload → analyse → persist → review flow in both modes. Covers agent and console API contracts, error codes, where each row comes from, and verification. |
-| [incident-manage-database](incident-manage-database/SKILL.md) | Supabase schema and `insert_incident` RPC, `supabase db push` with dry-run first, PostgREST vs direct-Postgres access, and the R2 key layout. |
+| [incident-manage-database](incident-manage-database/SKILL.md) | Finals schema (baseline, reviewer version, RPCs), the SQL harness and security check, `supabase db push` with dry-run first, the one-time midterm-to-finals switch, PostgREST vs direct-Postgres access, and the R2 key layout. Never writes to the frozen midterm project. |
 | [incident-run-eval](incident-run-eval/SKILL.md) | Standalone `eval/` pipeline: embedding server, GT ingest, seeded split, batch run, aggregation, and hermetic tests. |
 
 ---
