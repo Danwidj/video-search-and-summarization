@@ -181,16 +181,17 @@ POLICY_FIXTURES = sorted(
 
 @pytest.mark.parametrize("path", POLICY_FIXTURES, ids=lambda path: path.stem)
 def test_core_scored_v1_matches_the_shared_policy_fixtures(path):
-    """Accepted iff core-scored-v1 finds no core violation; the video-length rule is left to the console."""
+    """Accepted iff core-scored-v1 finds no core violation."""
     fixture = json.loads(path.read_text(encoding="utf-8"))
-    accepted = not set(fixture["expected"]["core_codes"]) - {"WINDOW_BEYOND_VIDEO"}
+    accepted = fixture["expected"]["core_ok"]
+    duration = fixture.get("video_duration_seconds")
     if accepted:
-        report = incident_contract.parse_report(fixture["content"])
+        report = incident_contract.parse_report(fixture["content"], video_duration_seconds=duration)
         original = json.loads(fixture["content"])
         assert report["timeline"] == original["timeline"], "enrichment violations are recorded, never repaired"
     else:
         with pytest.raises(IncidentExtractionError):
-            incident_contract.parse_report(fixture["content"])
+            incident_contract.parse_report(fixture["content"], video_duration_seconds=duration)
 
 
 def test_id_only_violation_is_repaired_by_id_normalization():
@@ -261,3 +262,104 @@ def test_p1_request_matches_inference_json():
     assert p1["temperature"] == 0.0
     assert p1["max_tokens"] == 16384
     assert p1["media_io_kwargs"] == {"video": {"num_frames": 64}}
+
+
+def test_video_bounds_violations_and_enrichment_handling():
+    report = _valid()
+    end = report["incident"]["end_timestamp"]  # 11
+    # Beyond video length when duration is known -> rejected
+    with pytest.raises(IncidentExtractionError, match="outside the 10 s video"):
+        incident_contract.validate_report(report, video_duration_seconds=end - 1)
+
+    # Within video length (whole-second rule) -> accepted
+    res_within = incident_contract.validate_report(report, video_duration_seconds=end - 0.5)
+    assert res_within["incident"]["end_timestamp"] == end
+
+    # Unknown video length -> not checked, accepted
+    res_unknown = incident_contract.validate_report(report, video_duration_seconds=None)
+    assert res_unknown["incident"]["end_timestamp"] == end
+
+    # Timeline beyond video is an enrichment violation -> accepted, not fatal
+    report["timeline"][1]["start_seconds"] = 15
+    report["incident"]["end_timestamp"] = 20
+    # Window [3, 20] is beyond 18 s video -> core rejection
+    with pytest.raises(IncidentExtractionError, match="outside the 18 s video"):
+        incident_contract.validate_report(report, video_duration_seconds=18)
+    # Window [3, 20] is within 25 s video, timeline event start 15 is within -> accepted
+    res_enrich = incident_contract.validate_report(report, video_duration_seconds=25)
+    assert res_enrich["timeline"][1]["start_seconds"] == 15
+
+
+def test_id_normalization_instrument_holder_unknown_ineligible_does_not_crash():
+    report = _valid()
+    report["instruments"][0]["entity_id"] = "E9"
+    with pytest.raises(IncidentExtractionError, match="unknown entity_id E9"):
+        incident_contract.validate_report(report)
+
+
+def test_id_normalization_instrument_holder_remapped():
+    report = _valid()
+    for entity, text in zip(report["entities"], ("Attacker.", "Victim."), strict=True):
+        entity["description"] = text
+    report["incident"]["description"] = "The attacker strikes the victim with a bottle."
+    report["timeline"][1]["description"] = "The attacker strikes the victim."
+    report["timeline"][0]["description"] = "The attacker approaches."
+    report["uncertainties"] = []
+    # Both entity and instrument holder use malformed "e1"
+    report["entities"][0]["entity_id"] = "e1"
+    report["instruments"][0]["entity_id"] = "e1"
+    repaired = incident_contract.validate_report(report)
+    assert repaired["entities"][0]["entity_id"] == "E1"
+    assert repaired["instruments"][0]["entity_id"] == "E1"
+
+
+def test_id_normalization_invariance_check_preserves_semantics(monkeypatch):
+    report = _valid()
+    for entity, text in zip(report["entities"], ("Attacker.", "Victim."), strict=True):
+        entity["description"] = text
+    report["incident"]["description"] = "The attacker strikes the victim with a bottle."
+    report["timeline"][1]["description"] = "The attacker strikes the victim."
+    report["timeline"][0]["description"] = "The attacker approaches."
+    report["uncertainties"] = []
+    report["entities"][0]["entity_id"] = "e1"
+    report["instruments"][0]["entity_id"] = "e1"
+    model_report = ContractReport.model_validate(report)
+    violations = incident_contract.cross_field_violations(model_report)
+
+    repaired = incident_contract.normalize_ids(model_report, violations)
+    assert repaired is not None
+    assert [e.entity_id for e in repaired.entities] == ["E1", "E2"]
+    assert repaired.instruments[0].entity_id == "E1"
+    assert repaired.incident == model_report.incident
+    assert repaired.timeline == model_report.timeline
+    assert repaired.uncertainties == model_report.uncertainties
+    assert repaired.assets == model_report.assets
+    assert [(e.type, e.description, e.timestamp_seconds, e.label) for e in repaired.entities] == [
+        ("human", "Attacker.", 3, "attacker"),
+        ("human", "Victim.", 3, "victim"),
+    ]
+    assert (
+        repaired.instruments[0].name,
+        repaired.instruments[0].description,
+        repaired.instruments[0].threat_level,
+        repaired.instruments[0].timestamp_seconds,
+        repaired.instruments[0].label,
+    ) == ("bottle", "Glass.", 3, 5, "bottle")
+
+    assert incident_contract._semantic_projection(model_report) == incident_contract._semantic_projection(repaired)
+
+    mutated_holder = repaired.model_copy(deep=True)
+    mutated_holder.instruments[0].entity_id = "E2"
+    assert incident_contract._semantic_projection(mutated_holder) != incident_contract._semantic_projection(repaired)
+
+    mutated_desc = repaired.model_copy(deep=True)
+    mutated_desc.entities[0].description = "Different person."
+    assert incident_contract._semantic_projection(mutated_desc) != incident_contract._semantic_projection(repaired)
+
+    orig_proj = incident_contract._semantic_projection
+    monkeypatch.setattr(
+        incident_contract,
+        "_semantic_projection",
+        lambda r: orig_proj(r) if r is model_report else orig_proj(r) + "mutation",
+    )
+    assert incident_contract.normalize_ids(model_report, violations) is None

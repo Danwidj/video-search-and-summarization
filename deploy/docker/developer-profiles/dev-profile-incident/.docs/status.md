@@ -43,6 +43,7 @@ There are no pending database migrations.
 5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no incident row) stays, because attempt notes are immutable.
 6. **`selected_by` / `selected_at` can outlive a cleared selection**; the UI treats a NULL `selected_model_run_id` as no official report.
 7. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
+8. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports contextual `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` rules when given `video_duration_seconds`. At runtime, `vss-agent` has no R2 credentials to perform byte-range reads on MP4 headers; in agent mode, the console performs the header read and enforces the video-bounds rule upon receiving agent output.
 
 ## 5. Follow-ups
 
