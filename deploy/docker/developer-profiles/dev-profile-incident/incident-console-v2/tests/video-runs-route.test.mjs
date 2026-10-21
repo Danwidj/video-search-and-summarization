@@ -20,6 +20,11 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/stored.mp4' } });
 
 const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
+const { PATCH: editReport } = await import('../app/api/reports/[videoId]/edit/route.ts');
+const { draftFromView, editFromDraft } = await import('../lib/reports/edit-draft.ts');
+const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
+const { effectiveViews, reviewerRpcs } = await import('./support/finals-database.mjs');
+const { buildReportView } = await import('./support/report-view.mjs');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
@@ -134,6 +139,34 @@ test('history GET combines incident-backed runs with explicitly associated attem
   assert.deepEqual(history.runs.map((run) => [run.modelRunId, run.outcome, Boolean(run.report)]), [['m-cf', 'contract_failed', false], [repaired.modelRunId, 'valid_after_structural_repair', true]]);
   assert.equal(history.counts.withReport, 1);
   assert.equal(history.officialRunId, null);
+});
+
+test("history shows a run's type and severity as the report does: the reviewer's edit, not the AI's", async () => {
+  const run = { ...repaired, incident: { ...repaired.incident, type: 'assault', severity_level: 4 } };
+  // The fake PostgREST does not embed, so the run's model_runs and reports rows sit on its incident row.
+  const db = fakePostgrest({
+    videos: [repaired.video], model_runs: [repaired.modelRun], reports: [repaired.reportRow], review_status: [],
+    incidents: [{ ...run.incident, model_runs: repaired.modelRun, reports: [repaired.reportRow] }],
+    entities: repaired.entities, instruments: repaired.instruments, assets: repaired.assets,
+  }, { rpc: reviewerRpcs, views: effectiveViews });
+  globalThis.fetch = db.fetch;
+  const history = async () => {
+    const response = await GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
+    assert.equal(response.status, 200);
+    return (await response.json()).runs.find((entry) => entry.modelRunId === repaired.modelRunId).report;
+  };
+  assert.deepEqual([(await history()).type, (await history()).severityLevel], ['assault', 4]);
+
+  const edit = editFromDraft(draftFromView(buildReportView({ ...run, playbackUrl: 'x' })));
+  edit.incident.type = 'burglary';
+  edit.incident.severity_level = 2;
+  const saved = await editReport(new Request(`http://localhost/api/reports/${V}/edit`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modelRunId: repaired.modelRunId, editedBy: 'Rev', edit }),
+  }), { params: Promise.resolve({ videoId: V }) });
+  assert.equal(saved.status, 200);
+
+  assert.deepEqual([(await history()).type, (await history()).severityLevel], ['burglary', 2]);
+  assert.deepEqual([db.store.incidents[0].type, db.store.incidents[0].severity_level], ['assault', 4], 'the AI report is unchanged');
 });
 
 test('the videos list names the incident -> video relationship (videos also reference their official incident)', async () => {

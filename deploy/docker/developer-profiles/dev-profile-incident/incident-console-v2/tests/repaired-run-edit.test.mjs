@@ -3,8 +3,9 @@
 // Requested proof for the repaired run m811cf2b237f50ff9812: an edit changes
 // its relational values while its original response, repair operations,
 // repaired report and valid_after_structural_repair outcome stay byte-for-byte
-// unchanged. The database half (the SQL function itself) is exercised by
-// supabase/tests/test_baseline.py against 20261020000000_finals_baseline.sql.
+// unchanged. The database half (save_human_report_edit, which writes the
+// reviewer version and never the AI rows) is exercised by the finals
+// baseline's SQL test harness.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,7 +22,7 @@ const { buildReportView } = await import('./support/report-view.mjs');
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-/** In-memory stand-in for the rows, applying the edit exactly as apply_structured_report_edit does. */
+/** In-memory stand-in for the effective_* rows after save_human_report_edit applies the edit. */
 function applyEditToRows(rows, edit, editedBy) {
   const { incident } = edit;
   return {
@@ -44,7 +45,7 @@ test('editing repaired run m811cf2b237f50ff9812 changes only the relational proj
   edit.incident.severity_level = 2;
   edit.incident.end_timestamp = 12;
   edit.entities[1].type = 'unknown';
-  edit.assets.push({ asset_id: 'A1', name: 'white van', description: 'Parked van beside the sidewalk.' });
+  edit.assets.push({ asset_id: 'A1', source_id: null, name: 'white van', description: 'Parked van beside the sidewalk.' });
 
   const calls = [];
   const originalFetch = globalThis.fetch;

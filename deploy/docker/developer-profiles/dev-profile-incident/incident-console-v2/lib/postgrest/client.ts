@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// A legacy JWT key (anon / service_role) is also a bearer token. A new sb_secret_... key is not a
+// JWT, and the Supabase API gateway rejects it in Authorization: Bearer, so it goes in apikey only.
+const JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+/** The PostgREST auth headers for a Supabase API key: Authorization only for a JWT. */
+export function authHeaders(key: string): Record<string, string> {
+  return JWT.test(key) ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key };
+}
+
 export class PostgrestClient {
   private readonly restUrl: string;
   private readonly serviceRoleKey: string;
@@ -10,11 +19,7 @@ export class PostgrestClient {
   }
 
   private headers(): HeadersInit {
-    return {
-      apikey: this.serviceRoleKey,
-      Authorization: `Bearer ${this.serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    };
+    return { ...authHeaders(this.serviceRoleKey), 'Content-Type': 'application/json' };
   }
 
   async health(signal?: AbortSignal): Promise<boolean> {

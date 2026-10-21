@@ -146,13 +146,13 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 | `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore` and `SupabaseEvidenceStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0` and `uv.lock` does not pin it. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
 | Evidence loader `scripts/backfill_official_timestamps.py` | Same `incident_db.get_db()` in the same `services/agent/.venv` | Same as the agent; the VM key check covers it. Its own `Authorization: Bearer` header goes to the VLM gateway, not Supabase |
 | `mock-backend/base_profile_mock` (local mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
-| `incident-console-v2` `lib/postgrest/client.ts` | `apikey` + always `Authorization: Bearer` | No, until PR B sends Bearer only for JWT-style keys |
-| `eval/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No, until PR B (same fix) |
+| `incident-console-v2` `lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
+| `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | Retired `incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (retired; do not point it at finals) |
 | `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
 | `supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
 
-Follow-ups (not in this change): pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock`; the console and eval header fix is PR B.
+Follow-ups (not in this change): pin a minimum `supabase` version in `services/agent/pyproject.toml` and lock it in `uv.lock`.
 
 ### R2 objects
 

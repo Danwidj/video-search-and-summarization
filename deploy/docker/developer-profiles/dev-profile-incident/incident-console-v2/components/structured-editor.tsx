@@ -15,6 +15,7 @@ import {
 } from '@/lib/reports/edit-draft';
 import { formatClock } from '@/lib/reports/normalize';
 import type { ReportView } from '@/lib/reports/report-view';
+import type { ReviewStatus } from '@/lib/reports/storage';
 
 /**
  * Class A editor: incident type, window, summary, severity level, and the
@@ -22,7 +23,7 @@ import type { ReportView } from '@/lib/reports/report-view';
  * rationale, location, timeline, uncertainties) and provenance are shown
  * read-only on the left and are never part of an edit.
  */
-export function StructuredEditor({ report, onCancel, onSaved }: { report: ReportView; onCancel: () => void; onSaved: () => void }) {
+export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { report: ReportView; reviewStatus: ReviewStatus; onCancel: () => void; onSaved: () => void }) {
   const [draft, setDraft] = useState<EditDraft>(() => draftFromView(report));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string[]>([]);
@@ -37,7 +38,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
     if (problems.length || busy) return;
     const editedBy = window.prompt('Your name is required to save a reviewer edit.');
     if (!editedBy?.trim()) return;
-    if (report.review.status === 'verified' && !window.confirm('This report is verified. Save a reviewer edit anyway?')) return;
+    if (reviewStatus === 'verified' && !window.confirm('This report is verified. Saving this edit sends it back to under review and clears the verification. Save anyway?')) return;
     setBusy(true);
     setError([]);
     try {
@@ -94,7 +95,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
           <textarea className="control mt-1 min-h-[100px]" onChange={(e) => setIncident({ description: e.target.value })} value={draft.incident.description} />
         </label>
 
-        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { key: newKey('entity'), type: 'human', description: '' }] }))}>
+        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { key: newKey('entity'), sourceId: null, type: 'human', description: '' }] }))}>
           {draft.entities.map((entity, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={entity.key}>
               <div className="flex items-center gap-2">
@@ -109,7 +110,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
           ))}
         </Section>
 
-        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { key: newKey('instrument'), holderKey: null, name: '', description: '', threat_level: null }] }))}>
+        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { key: newKey('instrument'), sourceId: null, holderKey: null, name: '', description: '', threat_level: null }] }))}>
           {draft.instruments.map((instrument, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={instrument.key}>
               <div className="flex items-center gap-2">
@@ -132,7 +133,7 @@ export function StructuredEditor({ report, onCancel, onSaved }: { report: Report
           ))}
         </Section>
 
-        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { key: newKey('asset'), name: '', description: '' }] }))}>
+        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { key: newKey('asset'), sourceId: null, name: '', description: '' }] }))}>
           {draft.assets.map((asset, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={asset.key}>
               <div className="flex items-center gap-2">

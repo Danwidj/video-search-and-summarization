@@ -4,20 +4,14 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
-import { errorResponse } from '@/lib/http';
-import { StoreRejection } from '@/lib/ports';
+import { errorResponse, rejectionResponse } from '@/lib/http';
 
 // Explicit official-report selection (D6). Only a reviewer action sets or
 // clears it; analysis never does, and it is independent of review status.
+// The store refuses a run that is not a successful analysis of this video (422).
 
 const selectSchema = z.object({ modelRunId: z.string().min(1).max(20), selectedBy: z.string().trim().min(1).max(256) }).strict();
 const clearSchema = z.object({ clearedBy: z.string().trim().min(1).max(256) }).strict();
-
-/** The store refuses a run that is not a successful analysis of this video; surface that as 422. */
-function rejection(error: unknown): NextResponse | null {
-  if (!(error instanceof StoreRejection)) return null;
-  return NextResponse.json({ error: error.message }, { status: error.reason === 'not-found' ? 404 : 422 });
-}
 
 export async function PUT(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -27,7 +21,7 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
     const result = await getDbAdapters().videos.selectOfficialRun(videoId, parsed.data.modelRunId, parsed.data.selectedBy);
     return NextResponse.json({ official: result });
   } catch (error) {
-    return rejection(error) ?? errorResponse(error, 'Could not select the official report');
+    return rejectionResponse(error) ?? errorResponse(error, 'Could not select the official report');
   }
 }
 
@@ -39,6 +33,6 @@ export async function DELETE(request: Request, context: { params: Promise<{ vide
     const result = await getDbAdapters().videos.clearOfficialRun(videoId, parsed.data.clearedBy);
     return NextResponse.json({ official: result });
   } catch (error) {
-    return rejection(error) ?? errorResponse(error, 'Could not clear the official report');
+    return rejectionResponse(error) ?? errorResponse(error, 'Could not clear the official report');
   }
 }

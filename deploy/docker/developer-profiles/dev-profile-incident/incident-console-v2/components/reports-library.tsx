@@ -208,7 +208,7 @@ export function ReportsLibrary() {
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Review update failed');
-      setReports((current) => current.map((report) => report.reportId === item.reportId ? { ...report, status: nextStatus, editedBy: reviewer, verifiedBy: nextStatus === 'verified' ? reviewer : undefined } : report));
+      setReports((current) => current.map((report) => report.reportId === item.reportId ? { ...report, status: nextStatus, verifiedBy: nextStatus === 'verified' ? reviewer : undefined } : report));
     } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'Review update failed'); }
     finally { setBusy(''); }
   }

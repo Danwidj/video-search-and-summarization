@@ -122,7 +122,8 @@ signed R2 screenshots when available and otherwise use a static skeleton; they n
 and its video are fetched only after opening a report.
 The library supports full-text evidence search; incident type,
 severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
-date sorting. Review transitions are persisted to `review_status`. Re-analysis creates a new model run and preserves
+date sorting. Review transitions are persisted to `review_status` through `set_review_status`, and edits save a reviewer version that
+the report then shows; the AI report is never changed. Re-analysis creates a new model run and preserves
 prior results. Deleting only a report keeps its R2
 video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
 database cascade.

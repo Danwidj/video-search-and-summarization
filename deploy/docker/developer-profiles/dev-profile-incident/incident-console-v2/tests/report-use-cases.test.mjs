@@ -12,36 +12,47 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
-const { runReportFromRows } = await import('../lib/adapters/supabase/mappers/report.ts');
 const { changeReviewStatus, deleteReport, getReport } = await import('../lib/application/reports.ts');
+const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const KEY = { videoId: smoke.videoId, modelRunId: smoke.modelRunId };
 const clock = () => new Date('2026-10-17T02:00:00.000Z');
 
-test('verifying a run records reviewer and time once; repeating it changes nothing', async () => {
-  const incidents = new InMemoryIncidentRepository([runReportFromRows({ ...smoke, review: null })]);
-  assert.deepEqual(await changeReviewStatus(incidents, KEY, 'verified', 'Lead', clock), { kind: 'changed', at: '2026-10-17T02:00:00.000Z' });
-  assert.deepEqual(await incidents.getReview(KEY), { status: 'verified', editedBy: 'Lead', editedAt: '2026-10-17T02:00:00.000Z', verifiedBy: 'Lead', verifiedAt: '2026-10-17T02:00:00.000Z' });
+test('verifying a run records the verifier and the stored time once; repeating it changes nothing', async () => {
+  const incidents = new InMemoryIncidentRepository([aiRunReport({ ...smoke, review: null })]);
+  incidents.now = () => '2026-10-17T02:00:00.123';
+  assert.deepEqual(await changeReviewStatus(incidents, KEY, 'verified', 'Lead', clock), { kind: 'changed', at: '2026-10-17T02:00:00.123' });
+  assert.deepEqual(await incidents.getReview(KEY), { status: 'verified', editedBy: null, editedAt: null, verifiedBy: 'Lead', verifiedAt: '2026-10-17T02:00:00.123' });
   assert.deepEqual(await changeReviewStatus(incidents, KEY, 'verified', 'Someone else', clock), { kind: 'unchanged' });
   assert.deepEqual(await changeReviewStatus(incidents, { ...KEY, modelRunId: 'm-none' }, 'verified', 'Lead', clock), { kind: 'not-found' });
 });
 
+test('a review change never claims to be an edit: the last content edit stays', async () => {
+  const edited = { status: 'under review', verifiedBy: null, verifiedAt: null, editedBy: 'Editor', editedAt: '2026-10-16T09:00:00' };
+  const incidents = new InMemoryIncidentRepository([aiRunReport({ ...smoke, review: null })]);
+  incidents.reviews.set(`${KEY.videoId}\u0000${KEY.modelRunId}`, edited);
+  assert.deepEqual(await changeReviewStatus(incidents, KEY, 'unreviewed', 'Lead', clock), { kind: 'changed', at: '2026-10-17T02:00:00.000Z' });
+  assert.deepEqual(await incidents.getReview(KEY), { ...edited, status: 'unreviewed' });
+  await changeReviewStatus(incidents, KEY, 'verified', 'Lead', clock);
+  assert.deepEqual([(await incidents.getReview(KEY)).editedBy, (await incidents.getReview(KEY)).editedAt], ['Editor', '2026-10-16T09:00:00']);
+});
+
 test('getReport signs the stored key and refuses a run without one', async () => {
-  const incidents = new InMemoryIncidentRepository([runReportFromRows(smoke)]);
+  const incidents = new InMemoryIncidentRepository([aiRunReport(smoke)]);
   const signed = [];
   const view = await getReport(incidents, KEY, async (key) => { signed.push(key); return 'https://signed/x'; });
   assert.deepEqual(signed, [smoke.video.filepath]);
   assert.equal(view.run.playbackUrl, 'https://signed/x');
   assert.equal(await getReport(incidents, { ...KEY, modelRunId: 'm-none' }, async () => 'unused'), null);
 
-  const noVideo = new InMemoryIncidentRepository([runReportFromRows({ ...smoke, video: { ...smoke.video, filepath: '' } })]);
+  const noVideo = new InMemoryIncidentRepository([aiRunReport({ ...smoke, video: { ...smoke.video, filepath: '' } })]);
   await assert.rejects(getReport(noVideo, KEY, async () => 'unused'), /The report has no linked R2 video/);
 });
 
 function stores(storageKey = smoke.video.filepath) {
   return {
-    incidents: new InMemoryIncidentRepository([runReportFromRows(smoke)]),
+    incidents: new InMemoryIncidentRepository([aiRunReport(smoke)]),
     videos: new InMemoryVideoRepository([{ videoId: KEY.videoId, storageKey, uploadedAt: null, source: null, officialRunId: null, runsWithReport: [KEY.modelRunId] }]),
   };
 }

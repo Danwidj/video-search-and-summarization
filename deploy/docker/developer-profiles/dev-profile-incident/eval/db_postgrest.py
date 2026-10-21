@@ -35,6 +35,7 @@ read/delete semantics, HTTP 201/200/204 as expected).
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 
 import httpx
@@ -46,6 +47,20 @@ class PostgrestError(RuntimeError):
 
 def _clean(value: str | None) -> str:
     return (value or "").strip()
+
+
+# A legacy JWT key (anon / service_role) is also a bearer token. A new ``sb_secret_...`` key is
+# not a JWT, and the Supabase API gateway rejects it in ``Authorization: Bearer``, so it goes in
+# ``apikey`` only.
+_JWT = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
+
+
+def auth_headers(key: str) -> dict[str, str]:
+    """The PostgREST auth headers for a Supabase API key: ``Authorization`` only for a JWT."""
+    headers = {"apikey": key}
+    if _JWT.match(key):
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
 
 
 def configured() -> bool:
@@ -64,11 +79,7 @@ class PostgrestIncidentDB:
             raise RuntimeError("INCIDENT_SUPABASE_URL / INCIDENT_SUPABASE_SERVICE_ROLE_KEY not configured")
         self._client = httpx.Client(
             base_url=f"{self.base_url}/rest/v1",
-            headers={
-                "apikey": self.key,
-                "Authorization": f"Bearer {self.key}",
-                "Content-Type": "application/json",
-            },
+            headers={**auth_headers(self.key), "Content-Type": "application/json"},
             timeout=timeout,
         )
 
