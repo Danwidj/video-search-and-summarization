@@ -3,7 +3,8 @@
 """Copy the incident data from the midterm Supabase database into the finals one.
 
     cd supabase/copy && uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
-        --source-env <midterm .env file> --target-env <finals .env file> [--commit] [--replace]
+        --source-env <midterm .env file> --target-env <finals .env file> [--commit] [--replace] \
+        [--not-edited <run id> ...] [--edited <run id> ...]
 
 Both env files hold INCIDENT_DB_DSN (session pooler, port 5432; run from a laptop, kwanz-ws
 blocks 5432). DSNs and keys are never printed.
@@ -14,6 +15,9 @@ blocks 5432). DSNs and keys are never printed.
   the transaction is rolled back: a full rehearsal that leaves finals empty.
 * Idempotent: it refuses a finals database that already has rows unless --replace, which empties
   the copied tables first in the same transaction. A failed run changes nothing.
+* A legacy (non-contract) run that keeps an edit stamp stops the copy: nothing records what the AI
+  wrote, so only a person can say whether its rows hold an edit. --not-edited RUN clears the stamp;
+  --edited RUN makes the stored rows the reviewer version (the AI's original is then lost).
 """
 
 from __future__ import annotations
@@ -96,7 +100,13 @@ def main() -> int:
     parser.add_argument("--target-env", required=True, help="env file with the FINALS INCIDENT_DB_DSN")
     parser.add_argument("--commit", action="store_true", help="commit; without it the run is a rehearsal and rolls back")
     parser.add_argument("--replace", action="store_true", help="empty the copied finals tables first (before go-live only)")
+    parser.add_argument("--not-edited", action="append", default=[], metavar="RUN",
+                        help="a stamped legacy run a person checked was not edited: clear its stamp (repeatable)")
+    parser.add_argument("--edited", action="append", default=[], metavar="RUN",
+                        help="a stamped legacy run a person checked was edited: its stored rows become the reviewer version (repeatable)")
     args = parser.parse_args()
+    if set(args.not_edited) & set(args.edited):
+        raise SystemExit("a run cannot be both --not-edited and --edited")
 
     source_dsn, target_dsn = read_dsn(args.source_env), read_dsn(args.target_env)
     if source_dsn == target_dsn:
@@ -152,6 +162,11 @@ def main() -> int:
             raise SystemExit("raw copy did not match midterm; rolled back")
 
         print("transform")
+        dcur.execute("CREATE TEMP TABLE migration_stamp_decisions (model_run_id TEXT PRIMARY KEY, decision TEXT NOT NULL)")
+        decisions = [(run, "not edited") for run in args.not_edited] + [(run, "edited") for run in args.edited]
+        dcur.executemany("INSERT INTO migration_stamp_decisions VALUES (%s, %s)", decisions)
+        for run, decision in decisions:
+            print(f"  stamp decision: {run} {decision}")
         dcur.execute((HERE / "transform.sql").read_text())
 
         print("checks")

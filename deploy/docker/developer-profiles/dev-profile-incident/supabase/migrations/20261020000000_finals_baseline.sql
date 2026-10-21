@@ -1087,13 +1087,12 @@ END;
 $$;
 
 -- Saves the reviewer's version of one run (created on the first edit, replaced on later ones).
--- Validation is apply_structured_report_edit's (midterm 20260927160000), plus: an item's
--- source_id must name an AI item of the same kind in this run, at most once; an explicit null
--- marks an item the reviewer added. An item without a "source_id" key (a console that predates
--- source ids) keeps the source of the reviewer item it replaces, the one with the same ID, read
--- before the old items are deleted; only a run's first reviewer version falls back to the AI item
--- with the same ID, if any. A content edit sends a verified report back to "under review" and
--- clears the verifier (the captain's decision, 2026-10-20).
+-- Validation is apply_structured_report_edit's (midterm 20260927160000), plus: every item
+-- carries a "source_id" key naming the AI item of the same kind in this run it came from, at most
+-- once, or an explicit null for an item the reviewer added. The editor renumbers items by
+-- position, so an item's own ID says nothing about its origin: an edit with a keyless item (a
+-- console that predates source ids) is refused rather than guessed. A content edit sends a
+-- verified report back to "under review" and clears the verifier (the captain's decision, 2026-10-20).
 CREATE FUNCTION public.save_human_report_edit(
     p_incident_id TEXT,
     p_model_run_id TEXT,
@@ -1111,11 +1110,7 @@ DECLARE
     source_id TEXT;
     entity_ids TEXT[] := ARRAY[]::TEXT[];
     source_ids TEXT[];
-    -- The reviewer version being replaced, if any: item ID -> its AI source.
-    had_version BOOLEAN;
-    old_entity_sources JSONB;
-    old_instrument_sources JSONB;
-    old_asset_sources JSONB;
+    keyless TEXT;
     v_now TIMESTAMP WITHOUT TIME ZONE := now() AT TIME ZONE 'utc';
     v_editor TEXT := btrim(p_edited_by);
     v_revision INTEGER;
@@ -1155,13 +1150,14 @@ BEGIN
         RAISE EXCEPTION 'description must be text';
     END IF;
 
-    had_version := EXISTS (SELECT 1 FROM public.human_reports WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id);
-    SELECT COALESCE(jsonb_object_agg(entity_id, source_entity_id), '{}') INTO old_entity_sources
-    FROM public.human_report_entities WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id;
-    SELECT COALESCE(jsonb_object_agg(instrument_id, source_instrument_id), '{}') INTO old_instrument_sources
-    FROM public.human_report_instruments WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id;
-    SELECT COALESCE(jsonb_object_agg(asset_id, source_asset_id), '{}') INTO old_asset_sources
-    FROM public.human_report_assets WHERE incident_id = p_incident_id AND model_run_id = p_model_run_id;
+    -- Every item names its AI origin (or null); refused before anything is written.
+    SELECT string_agg(COALESCE(x.item->>kind.id_key, '?'), ', ') INTO keyless
+    FROM (VALUES ('entities', 'entity_id'), ('instruments', 'instrument_id'), ('assets', 'asset_id')) AS kind(list, id_key)
+    CROSS JOIN LATERAL jsonb_array_elements(p_edit->kind.list) AS x(item)
+    WHERE jsonb_typeof(x.item->'source_id') IS NULL OR jsonb_typeof(x.item->'source_id') NOT IN ('string', 'null');
+    IF keyless IS NOT NULL THEN
+        RAISE EXCEPTION 'Items % have no source_id (the AI item each came from, null for an added item). Update incident-console-v2 to a version that sends source_id; this database does not guess an item''s origin', keyless;
+    END IF;
 
     INSERT INTO public.human_reports AS h (incident_id, model_run_id, type, start_seconds, end_seconds, description, severity_level,
         revision, created_by, created_at, edited_by, edited_at)
@@ -1189,10 +1185,7 @@ BEGIN
             RAISE EXCEPTION 'Invalid entity type: %', item->>'type';
         END IF;
         IF jsonb_typeof(item->'description') IS DISTINCT FROM 'string' THEN RAISE EXCEPTION 'entity description must be text'; END IF;
-        source_id := CASE WHEN item ? 'source_id' THEN item->>'source_id'
-            WHEN had_version THEN old_entity_sources->>(item->>'entity_id') ELSE (
-            SELECT e.entity_id FROM public.entities e
-            WHERE e.incident_id = p_incident_id AND e.model_run_id = p_model_run_id AND e.entity_id = item->>'entity_id') END;
+        source_id := item->>'source_id';
         IF source_id IS NOT NULL THEN
             IF NOT EXISTS (SELECT 1 FROM public.entities e WHERE e.incident_id = p_incident_id AND e.model_run_id = p_model_run_id AND e.entity_id = source_id) THEN
                 RAISE EXCEPTION '% names source_id %, which is not an AI entity of this run', item->>'entity_id', source_id;
@@ -1223,10 +1216,7 @@ BEGIN
         IF jsonb_typeof(item->'name') IS DISTINCT FROM 'string' OR jsonb_typeof(item->'description') IS DISTINCT FROM 'string' THEN
             RAISE EXCEPTION 'instrument name and description must be text';
         END IF;
-        source_id := CASE WHEN item ? 'source_id' THEN item->>'source_id'
-            WHEN had_version THEN old_instrument_sources->>(item->>'instrument_id') ELSE (
-            SELECT i.instrument_id FROM public.instruments i
-            WHERE i.incident_id = p_incident_id AND i.model_run_id = p_model_run_id AND i.instrument_id = item->>'instrument_id') END;
+        source_id := item->>'source_id';
         IF source_id IS NOT NULL THEN
             IF NOT EXISTS (SELECT 1 FROM public.instruments i WHERE i.incident_id = p_incident_id AND i.model_run_id = p_model_run_id AND i.instrument_id = source_id) THEN
                 RAISE EXCEPTION '% names source_id %, which is not an AI instrument of this run', item->>'instrument_id', source_id;
@@ -1250,10 +1240,7 @@ BEGIN
         IF jsonb_typeof(item->'name') IS DISTINCT FROM 'string' OR jsonb_typeof(item->'description') IS DISTINCT FROM 'string' THEN
             RAISE EXCEPTION 'asset name and description must be text';
         END IF;
-        source_id := CASE WHEN item ? 'source_id' THEN item->>'source_id'
-            WHEN had_version THEN old_asset_sources->>(item->>'asset_id') ELSE (
-            SELECT a.asset_id FROM public.assets a
-            WHERE a.incident_id = p_incident_id AND a.model_run_id = p_model_run_id AND a.asset_id = item->>'asset_id') END;
+        source_id := item->>'source_id';
         IF source_id IS NOT NULL THEN
             IF NOT EXISTS (SELECT 1 FROM public.assets a WHERE a.incident_id = p_incident_id AND a.model_run_id = p_model_run_id AND a.asset_id = source_id) THEN
                 RAISE EXCEPTION '% names source_id %, which is not an AI asset of this run', item->>'asset_id', source_id;
@@ -1287,8 +1274,9 @@ BEGIN
 END;
 $$;
 
--- Compatibility shim: the midterm edit RPC's name, arguments and result keys, so a console that
--- still calls it keeps working. It now writes the reviewer version, never the AI rows.
+-- Compatibility shim: the midterm edit RPC's name, arguments and result keys. It writes the
+-- reviewer version, never the AI rows, and like save_human_report_edit refuses items without
+-- source_id: the midterm console, which sends none, gets the update message, not a guessed link.
 -- Drop it once no deployed console calls it.
 CREATE FUNCTION public.apply_structured_report_edit(
     p_incident_id TEXT,

@@ -65,7 +65,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order, 19 tests (security, behaviour and the copy's guards)
+# Finals schema: applies every file in ../migrations/ in order, 22 tests (security, behaviour and the copy's guards)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
@@ -105,9 +105,11 @@ Then the copy, from a laptop (`kwanz-ws` blocks port 5432). Each env file holds 
 ```bash
 cd $W/supabase/copy
 uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
-  --source-env <midterm env file> --target-env <finals env file>             # rehearsal: rolls back
+  --source-env <midterm env file> --target-env <finals env file> \
+  --not-edited m37883594f65802c8a31                                          # rehearsal: rolls back
 uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
-  --source-env <midterm env file> --target-env <finals env file> --replace --commit   # at cutover
+  --source-env <midterm env file> --target-env <finals env file> \
+  --not-edited m37883594f65802c8a31 --replace --commit                      # at cutover
 cd ../tests && uv run --no-project --with 'psycopg[binary]' python parity_check.py \
   --source-env <midterm env file> --target-env <finals env file>
 ```
@@ -128,12 +130,23 @@ What it copies and what it leaves behind:
   `nmtest0925a`), 8 broken uploads (no incident, ground truth, attempt or playable file) and the
   4 pre-v1 tables. Guards fail the copy if anything else matches those rules, if a run that
   names a left-behind video in its notes would be copied, if an edit changed items (their AI
-  source is a guess), or if a run keeps an edit stamp but gets no reviewer version (a legacy
-  run edited on midterm): a person decides each of those by hand.
+  source is a guess), or if a run keeps an edit stamp but gets no reviewer version: a person
+  decides each of those by hand.
+- **Legacy edit stamps are a person's call.** On a legacy (non-contract) run nothing records what
+  the AI wrote, and the midterm console rewrote `edited_by/at` with the verifier on every status
+  change, so a stamp equal to the verification proves nothing. Such a run stops the copy, naming
+  itself; rerun with `--not-edited <run>` (clear the stamp; a verified run then gets a copy of its
+  rows "verified as the AI wrote it") or `--edited <run>` (its stored rows become the reviewer
+  version, kept stamp and all; the AI original is lost). On 2026-10-20 one run reached this:
+  `m37883594f65802c8a31` (legacy, official, verified; stamp = verification, Presentation reviewer,
+  2026-10-01 08:39:24). Its stored rows equal its legacy notes record, so it was not edited:
+  `--not-edited m37883594f65802c8a31`. A new name in the error means midterm changed: compare that
+  run's stored report with its `model_runs.notes` before choosing.
 - **Changes on the way:** `fighting` → `assault`, `animal` → `animal attack`, `person` → `human`
   (incidents, entities and entity crop names); a reviewer version for the 2 edited and 6 verified
   reports (7 in all), with the AI's own text put back on the 2 edited runs from `model_runs.notes`;
-  6 misleading `review_status.edited_by/at` stamps (status changes, not edits) cleared.
+  6 misleading `review_status.edited_by/at` stamps (status changes, not edits) cleared: 5 proven
+  by the rows (contract runs equal to their notes record) and 1 by the `--not-edited` decision.
 
 R2 objects stay where they are: same bucket, same keys, nothing to copy.
 

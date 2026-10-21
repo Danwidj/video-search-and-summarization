@@ -64,9 +64,9 @@ def one(conn, sql, params=None):
 def edit_payload(description="Edited.", entities=None, instruments=None, assets=None, start=1, end=9):
     return json.dumps({
         "incident": {"type": "assault", "start_timestamp": start, "end_timestamp": end, "description": description, "severity_level": 4},
-        "entities": entities if entities is not None else [{"entity_id": "E1", "type": "human", "description": "Attacker"}],
+        "entities": entities if entities is not None else [{"entity_id": "E1", "source_id": "E1", "type": "human", "description": "Attacker"}],
         "instruments": instruments if instruments is not None else [],
-        "assets": assets if assets is not None else [{"entity_id": None, "asset_id": "A1", "name": "car", "description": "parked"}],
+        "assets": assets if assets is not None else [{"asset_id": "A1", "source_id": "A1", "name": "car", "description": "parked"}],
     })
 
 
@@ -156,12 +156,11 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("edit through the old RPC name writes only the reviewer version and returns the old keys")
     def _():
         result = one(conn, "SELECT public.apply_structured_report_edit('v1', 'r1', %s, ' Kai ')", (edit_payload(
-            instruments=[{"instrument_id": "I1", "entity_id": "E1", "name": "bat", "description": "swung hard", "threat_level": 5}]),))[0]
+            instruments=[{"instrument_id": "I1", "source_id": "I1", "entity_id": "E1", "name": "bat", "description": "swung hard", "threat_level": 5}]),))[0]
         assert {"incidentId", "modelRunId", "editedBy", "editedAt", "duration"} <= set(result), result
         assert result["editedBy"] == "Kai" and result["duration"] == 8 and result["revision"] == 1
         assert ai_rows() == ("AI said this.", 2), ai_rows()
         assert one(conn, "SELECT description, source FROM public.effective_incidents WHERE model_run_id = 'r1'") == ("Edited.", "human")
-        # No source_id key on a first reviewer version: the AI item with the same ID is the source.
         assert conn.execute("SELECT entity_id, source_entity_id FROM public.human_report_entities ORDER BY 1").fetchall() == [("E1", "E1")]
         assert one(conn, "SELECT edited_by FROM public.review_status WHERE model_run_id = 'r1'")[0] == "Kai"
 
@@ -207,7 +206,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 (edit_payload(entities=[{"entity_id": "E1", "type": "human", "description": "x", "source_id": "E1"},
                                         {"entity_id": "E2", "type": "human", "description": "y", "source_id": "E1"}]),), contains="more than one")
         refused(conn, "SELECT public.save_human_report_edit('v1', 'r1', %s, 'Kai')",
-                (edit_payload(entities=[{"entity_id": "E2", "type": "human", "description": "x"}]),), contains="not sequential")
+                (edit_payload(entities=[{"entity_id": "E2", "source_id": "E2", "type": "human", "description": "x"}]),), contains="not sequential")
 
     @test("re-analysing a run that has a reviewer version is refused (it would cascade it away)")
     def _():
@@ -248,26 +247,44 @@ with tempfile.TemporaryDirectory() as tmp:
         conn.execute("INSERT INTO public.reports (id, incident_id, model_run_id) VALUES (%s, %s, %s)", ("rep-" + run, incident_id, run))
         conn.execute("SELECT public.select_official_report(%s, %s, 'rev')", (incident_id, run))
 
-    @test("an edit without source_id keys keeps a verified legacy run's sources, and search keeps its crops")
-    def _():
-        conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('v4', 'uploads/s/v4.mp4')")
-        conn.execute("INSERT INTO public.model_runs (id, model_name) VALUES ('r4', 'm')")
-        conn.execute("SELECT public.insert_incident('v4', 'r4', 'fighting', '0:00', '0:18', 18, 'Legacy.', 3, 0.95)")
+    def legacy_run(incident_id, run):
+        conn.execute("INSERT INTO public.videos (id, filepath) VALUES (%s, %s)", (incident_id, f"uploads/s/{incident_id}.mp4"))
+        conn.execute("INSERT INTO public.model_runs (id, model_name) VALUES (%s, 'm')", (run,))
+        conn.execute("SELECT public.insert_incident(%s, %s, 'fighting', '0:00', '0:18', 18, 'Legacy.', 3, 0.95)", (incident_id, run))
         conn.execute("""INSERT INTO public.entities (incident_id, entity_id, model_run_id, type, description) VALUES
-            ('v4', 'e01', 'r4', 'person', 'first'), ('v4', 'e02', 'r4', 'person', 'second')""")
-        crops("v4", "r4", [("e01", 1.0), ("e02", 0.9)])
-        conn.execute("SELECT public.set_review_status('v4', 'r4', 'verified', 'Lead')")
-        assert sources("r4") == [("E1", "e01"), ("E2", "e02")]
-        # The midterm console renumbers by position and sends no source_id; E3 is one it added.
-        conn.execute("SELECT public.apply_structured_report_edit('v4', 'r4', %s, 'Kai')", (edit_payload(entities=[
-            {"entity_id": "E1", "type": "animal", "description": "first, edited"},
-            {"entity_id": "E2", "type": "human", "description": "second"},
-            {"entity_id": "E3", "type": "human", "description": "added"}]),))
-        assert sources("r4") == [("E1", "e01"), ("E2", "e02"), ("E3", None)], sources("r4")
-        assert search("v4") == [("entity", "e01", "animal", "first, edited", "Edited.", None),
-                                ("entity", "e02", "human", "second", "Edited.", None)], search("v4")
+            (%s, 'e01', %s, 'person', 'first'), (%s, 'e02', %s, 'person', 'second')""", (incident_id, run, incident_id, run))
+        crops(incident_id, run, [("e01", 1.0), ("e02", 0.9)])
 
-    @test("a contract run whose E1 is deleted keeps E2's origin, so search shows E2's crop with E2's text")
+    @test("an edit with an item that has no source_id is refused with the console-update message, through either RPC name")
+    def _():
+        legacy_run("v4", "r4")
+        conn.execute("SELECT public.set_review_status('v4', 'r4', 'verified', 'Lead')")
+        before = sources("r4"), one(conn, "SELECT status, revision FROM public.review_status JOIN public.human_reports USING (incident_id, model_run_id) WHERE model_run_id = 'r4'")
+        assert before[0] == [("E1", "e01"), ("E2", "e02")], before
+        # What the midterm console sends: items renumbered by position, no source_id.
+        keyless = edit_payload(entities=[{"entity_id": "E1", "type": "human", "description": "second"}], assets=[])
+        for rpc in ("save_human_report_edit", "apply_structured_report_edit"):
+            error = refused(conn, f"SELECT public.{rpc}('v4', 'r4', %s, 'Kai')", (keyless,), contains="Items E1 have no source_id")
+            assert "Update incident-console-v2" in error, error
+        # One keyless item is enough, and a source_id that is not text or null counts as missing.
+        refused(conn, "SELECT public.save_human_report_edit('v4', 'r4', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "source_id": "e01", "type": "human", "description": "first"},
+            {"entity_id": "E2", "source_id": 2, "type": "human", "description": "second"}], assets=[]),), contains="Items E2 have no source_id")
+        after = sources("r4"), one(conn, "SELECT status, revision FROM public.review_status JOIN public.human_reports USING (incident_id, model_run_id) WHERE model_run_id = 'r4'")
+        assert after == before, after
+
+    @test("a legacy e01 run's first edit with source ids keeps its crops searchable; a reviewer-added item has no source")
+    def _():
+        legacy_run("v6", "r6")
+        conn.execute("SELECT public.save_human_report_edit('v6', 'r6', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "source_id": "e01", "type": "animal", "description": "first, edited"},
+            {"entity_id": "E2", "source_id": "e02", "type": "human", "description": "second"},
+            {"entity_id": "E3", "source_id": None, "type": "human", "description": "added"}], assets=[]),))
+        assert sources("r6") == [("E1", "e01"), ("E2", "e02"), ("E3", None)], sources("r6")
+        assert search("v6") == [("entity", "e01", "animal", "first, edited", "Edited.", None),
+                                ("entity", "e02", "human", "second", "Edited.", None)], search("v6")
+
+    @test("a contract run whose E1 is deleted stores E2's origin, so search shows E2's crop with E2's text")
     def _():
         conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('v5', 'uploads/s/v5.mp4')")
         conn.execute("INSERT INTO public.model_runs (id, model_name) VALUES ('r5', 'm')")
@@ -275,17 +292,15 @@ with tempfile.TemporaryDirectory() as tmp:
         conn.execute("""INSERT INTO public.entities (incident_id, entity_id, model_run_id, type, description) VALUES
             ('v5', 'E1', 'r5', 'human', 'Attacker'), ('v5', 'E2', 'r5', 'human', 'Bystander')""")
         crops("v5", "r5", [("E1", 1.0), ("E2", 0.9)])
+        # The reviewer deletes E1 on the first edit: the old E2 is renumbered E1 and keeps its origin.
         conn.execute("SELECT public.save_human_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
-            {"entity_id": "E1", "type": "human", "description": "Attacker"}, {"entity_id": "E2", "type": "human", "description": "Bystander"}]),))
-        assert sources("r5") == [("E1", "E1"), ("E2", "E2")]
-        conn.execute("SELECT public.save_human_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
-            {"entity_id": "E1", "type": "human", "description": "Bystander, now E1", "source_id": "E2"},
-            {"entity_id": "E2", "type": "animal", "description": "Dog", "source_id": None}]),))
-        assert sources("r5") == [("E1", "E2"), ("E2", None)], sources("r5")
+            {"entity_id": "E1", "source_id": "E2", "type": "human", "description": "Bystander, now E1"}], assets=[]),))
+        assert sources("r5") == [("E1", "E2")], sources("r5")
         assert search("v5") == [("entity", "E2", "human", "Bystander, now E1", "Edited.", None)], search("v5")
-        # A later edit without keys keeps those links instead of re-guessing E1 -> AI E1.
-        conn.execute("SELECT public.apply_structured_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
-            {"entity_id": "E1", "type": "human", "description": "Bystander again"}, {"entity_id": "E2", "type": "animal", "description": "Dog"}]),))
+        # A later edit that adds an item keeps the link it is sent and gives the new item none.
+        conn.execute("SELECT public.save_human_report_edit('v5', 'r5', %s, 'Kai')", (edit_payload(entities=[
+            {"entity_id": "E1", "source_id": "E2", "type": "human", "description": "Bystander again"},
+            {"entity_id": "E2", "source_id": None, "type": "animal", "description": "Dog"}], assets=[]),))
         assert sources("r5") == [("E1", "E2"), ("E2", None)], sources("r5")
         assert search("v5") == [("entity", "E2", "human", "Bystander again", "Edited.", None)], search("v5")
 
@@ -336,6 +351,37 @@ with tempfile.TemporaryDirectory() as tmp:
                       """'{"incidentConsoleV2": {"contractVersion": "v3"}}'"""):  # a valid run with no report in notes
             error = run_transform(base % notes)
             assert "keep an edit stamp but have no reviewer version (rc (vc, Kai))" in error, error
+
+    # m37883594f65802c8a31 on midterm: a legacy run verified by the same name, at the same instant, as its edit stamp.
+    legacy_stamped = """INSERT INTO src_videos (id, filepath) VALUES ('vl', 'uploads/l.mp4');
+        INSERT INTO src_model_runs (id, model_name, notes) VALUES ('rl', 'm', NULL);
+        INSERT INTO src_incidents (incident_id, model_run_id, type, start_timestamp, end_timestamp, duration, description, severity_level)
+            VALUES ('vl', 'rl', 'fighting', '0:00', '0:18', 18, 'verified, maybe edited first', 3);
+        INSERT INTO src_review_status (incident_id, model_run_id, status, edited_by, edited_at, verified_by, verified_at)
+            VALUES ('vl', 'rl', 'verified', 'Lead', '2026-10-01 08:39:24', 'Lead', '2026-10-01 08:39:24');"""
+
+    def transformed(rows: str, decisions: str = "") -> list[tuple]:
+        sql = "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES)
+        sql += "CREATE TEMP TABLE migration_stamp_decisions (model_run_id TEXT PRIMARY KEY, decision TEXT NOT NULL);" + decisions
+        with conn.transaction(force_rollback=True):
+            conn.execute(sql + rows + transform)
+            return conn.execute("""SELECT rs.edited_by, h.created_by, h.edited_by FROM public.review_status rs
+                LEFT JOIN public.human_reports h USING (incident_id, model_run_id) WHERE rs.model_run_id = 'rl'""").fetchall()
+
+    @test("copy: a legacy run whose edit stamp equals its verification stops the copy until a person decides")
+    def _():
+        error = run_transform(legacy_stamped)
+        assert "keep an edit stamp but have no reviewer version (rl (vl, Lead))" in error, error
+        assert "--not-edited or --edited" in error, error
+
+    @test("copy: --not-edited clears the legacy stamp and verifies a copy; --edited keeps it as the reviewer's edit")
+    def _():
+        assert transformed(legacy_stamped, "INSERT INTO migration_stamp_decisions VALUES ('rl', 'not edited');") == [(None, "Lead", None)]
+        assert transformed(legacy_stamped, "INSERT INTO migration_stamp_decisions VALUES ('rl', 'edited');") == [("Lead", "Lead", "Lead")]
+        error = refused(conn, "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES)
+                        + "CREATE TEMP TABLE migration_stamp_decisions (model_run_id TEXT PRIMARY KEY, decision TEXT NOT NULL);"
+                        + "INSERT INTO migration_stamp_decisions VALUES ('nope', 'not edited');" + legacy_stamped + transform)
+        assert "Stamp decisions name runs that are not stamped non-contract runs: nope" in error, error
 
     conn.close()
 

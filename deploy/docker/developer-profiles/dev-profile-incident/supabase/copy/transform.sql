@@ -14,8 +14,14 @@
 --   split:        a reviewer version for every edited report (from the stored rows) and every
 --                 verified report (copy of the AI rows); edited reports get their AI rows back
 --                 from the immutable notes record;
---   stamps:       review_status.edited_by/at cleared where provably not a content edit.
+--   stamps:       review_status.edited_by/at cleared where provably not a content edit, or where
+--                 a person decided so (migration_stamp_decisions, from the script's flags).
 -- Leaves migration_* temp tables behind for the script's checks; they vanish with the session.
+
+-- A person's decision on a non-contract run whose edit stamp step 4 cannot explain (5b lists them):
+-- 'not edited' clears the stamp, 'edited' makes the stored rows the reviewer version.
+CREATE TEMP TABLE IF NOT EXISTS migration_stamp_decisions (model_run_id TEXT PRIMARY KEY, decision TEXT NOT NULL
+    CHECK (decision IN ('not edited', 'edited')));
 
 -- 1. What stays behind ------------------------------------------------------------------------
 CREATE TEMP TABLE migration_excluded_runs AS
@@ -171,27 +177,51 @@ BEGIN
     END IF;
 END $$;
 
+-- A decision may only name a run step 4 cannot settle: a stamped, non-contract run.
+DO $$
+DECLARE misplaced TEXT;
+BEGIN
+    SELECT string_agg(d.model_run_id, ', ' ORDER BY d.model_run_id) INTO misplaced
+    FROM migration_stamp_decisions d
+    LEFT JOIN src_review_status rs ON rs.model_run_id = d.model_run_id
+    LEFT JOIN src_model_runs mr ON mr.id = d.model_run_id
+    WHERE rs.edited_by IS NULL
+       OR (public.run_outcome(mr.notes) IN ('valid_first_pass', 'valid_after_structural_repair')
+           AND jsonb_typeof(public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report,incident}') = 'object');
+    IF misplaced IS NOT NULL THEN
+        RAISE EXCEPTION 'Stamp decisions name runs that are not stamped non-contract runs: %', misplaced;
+    END IF;
+END $$;
+
 CREATE TEMP TABLE migration_edited_runs AS
 SELECT DISTINCT d.incident_id, d.model_run_id, rs.edited_by, rs.edited_at
 FROM migration_run_diffs d
-LEFT JOIN src_review_status rs USING (incident_id, model_run_id);
+LEFT JOIN src_review_status rs USING (incident_id, model_run_id)
+UNION
+SELECT rs.incident_id, rs.model_run_id, rs.edited_by, rs.edited_at
+FROM migration_stamp_decisions d JOIN src_review_status rs USING (model_run_id)
+WHERE d.decision = 'edited';
 
 -- 4. Review stamps: clear edited_by/at where provably not a content edit -----------------------
 -- (a) contract runs (step 3's test: a valid outcome and a report.incident object in notes) whose
 --     rows equal the AI report: nothing was edited; the stamp came from a status change (the
 --     console writes it on every review change) or a no-op save;
--- (b) other runs whose stamp is exactly the verification stamp (same name, same instant).
+-- (b) runs a person decided were not edited.
+-- Any other stamp stays and stops the copy in 5b. On a non-contract (legacy) run a stamp equal
+-- to the verification stamp proves nothing: the midterm console rewrote edited_by/at with the
+-- verifier on every status change, so an edit followed by a verify looks the same.
 -- Edited runs keep their stamp: it is the only record of who changed the report.
 CREATE TEMP TABLE migration_cleared_stamps AS
 SELECT rs.incident_id, rs.model_run_id, rs.edited_by, rs.edited_at,
-       CASE WHEN cr.model_run_id IS NOT NULL THEN 'rows equal the AI report' ELSE 'stamp equals verification' END AS reason
+       CASE WHEN cr.model_run_id IS NOT NULL THEN 'rows equal the AI report' ELSE 'a person decided: not edited' END AS reason
 FROM public.review_status rs
 JOIN public.model_runs mr ON mr.id = rs.model_run_id
 LEFT JOIN LATERAL (SELECT rs.model_run_id WHERE public.run_outcome(mr.notes) IN ('valid_first_pass', 'valid_after_structural_repair')
     AND jsonb_typeof(public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report,incident}') = 'object') cr ON TRUE
 WHERE rs.edited_by IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM migration_edited_runs e WHERE e.incident_id = rs.incident_id AND e.model_run_id = rs.model_run_id)
-  AND (cr.model_run_id IS NOT NULL OR (rs.edited_by = rs.verified_by AND rs.edited_at = rs.verified_at));
+  AND (cr.model_run_id IS NOT NULL
+       OR EXISTS (SELECT 1 FROM migration_stamp_decisions d WHERE d.model_run_id = rs.model_run_id AND d.decision = 'not edited'));
 
 UPDATE public.review_status rs SET edited_by = NULL, edited_at = NULL
 FROM migration_cleared_stamps c
@@ -199,7 +229,8 @@ WHERE c.incident_id = rs.incident_id AND c.model_run_id = rs.model_run_id;
 
 -- 5. Reviewer versions -------------------------------------------------------------------------
 -- 5a. Edited reports: the reviewer version is what is stored now (the edit); then the AI rows get
---     the AI's own values back from notes.
+--     the AI's own values back from notes (a legacy run decided 'edited' has no notes report: its
+--     AI rows keep the stored text, the AI's original is lost).
 DO $$
 DECLARE r RECORD;
 BEGIN
@@ -230,7 +261,24 @@ FROM migration_edited_runs e
 JOIN LATERAL (SELECT public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report}' AS report FROM public.model_runs mr WHERE mr.id = e.model_run_id) n ON TRUE
 WHERE i.incident_id = e.incident_id AND i.model_run_id = e.model_run_id;
 
--- 5b. Verified reports without a reviewer version: a copy of the AI report, verified as it stands.
+-- 5b. A run that still carries an edit stamp but has no reviewer version was changed where step 3
+--     cannot see it (a legacy run edited on midterm, or a status change on a run with no notes
+--     report): its stored rows may hold the reviewer's text. A person decides (the script's
+--     --not-edited / --edited flags). Checked before 5c, which would otherwise turn a verified
+--     one into a copy "verified as the AI wrote it".
+DO $$
+DECLARE unexplained TEXT;
+BEGIN
+    SELECT string_agg(rs.model_run_id || ' (' || rs.incident_id || ', ' || rs.edited_by || ')', ', ' ORDER BY rs.model_run_id)
+    INTO unexplained FROM public.review_status rs
+    WHERE rs.edited_by IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM public.human_reports h WHERE h.incident_id = rs.incident_id AND h.model_run_id = rs.model_run_id);
+    IF unexplained IS NOT NULL THEN
+        RAISE EXCEPTION 'Runs keep an edit stamp but have no reviewer version (%); decide each by hand (--not-edited or --edited) before copying', unexplained;
+    END IF;
+END $$;
+
+-- 5c. Verified reports without a reviewer version: a copy of the AI report, verified as it stands.
 DO $$
 DECLARE r RECORD;
 BEGIN
@@ -243,21 +291,6 @@ BEGIN
         PERFORM public.create_human_report_from_ai(r.incident_id, r.model_run_id, COALESCE(r.verified_by, 'unknown reviewer'),
             COALESCE(r.verified_at, now() AT TIME ZONE 'utc'));
     END LOOP;
-END $$;
-
--- 5c. A run that still carries an edit stamp but has no reviewer version was changed where step 3
---     cannot see it (a legacy run edited on midterm, or a status change on a run with no notes
---     report): its stored rows may hold the reviewer's text. A person decides, as for item edits.
-DO $$
-DECLARE unexplained TEXT;
-BEGIN
-    SELECT string_agg(rs.model_run_id || ' (' || rs.incident_id || ', ' || rs.edited_by || ')', ', ' ORDER BY rs.model_run_id)
-    INTO unexplained FROM public.review_status rs
-    WHERE rs.edited_by IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM public.human_reports h WHERE h.incident_id = rs.incident_id AND h.model_run_id = rs.model_run_id);
-    IF unexplained IS NOT NULL THEN
-        RAISE EXCEPTION 'Runs keep an edit stamp but have no reviewer version (%); decide by hand before copying', unexplained;
-    END IF;
 END $$;
 
 -- 6. Official selections, now that every incident exists ---------------------------------------
