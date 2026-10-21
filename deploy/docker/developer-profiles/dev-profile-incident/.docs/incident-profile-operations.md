@@ -169,8 +169,9 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
    ```bash
    ./.scripts/down.sh
    # Or plain:
-   docker compose down
+   docker compose -p mdx stop
    ```
+   `./.scripts/down.sh` stops native services and runs `docker compose -p mdx stop` to stop containers without removing them (containers and their data are kept; restart is `./start.sh --mode vm`). Note that exited orphan containers are no longer cleaned up by `down.sh`; run `docker compose -p mdx down --remove-orphans` manually when a clean slate is wanted (still never `-v`).
 3. **No Double Agent:**
    Never start the `vss-agent` Docker container when the native `vss-agent` process is already running on port 8000.
    `start.sh` intentionally excludes `vss-agent` from its `docker compose up` command.
