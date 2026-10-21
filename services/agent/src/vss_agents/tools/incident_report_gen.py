@@ -16,7 +16,7 @@
 """Incident extraction for the incident-console ``/analyze`` path, on the shared incident contract.
 
 Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the ``eval/`` benchmark
-(see ``.docs/prompt-contract-plan.md`` in the incident profile):
+(see ``.docs/analysis-schema.md`` in the incident profile):
 
 1. **P1** - the video as a signed R2 URL first, then the contract extraction prompt, with the
    contract JSON Schema enforced through ``response_format`` and the fixed settings from

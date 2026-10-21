@@ -30,7 +30,7 @@ fatal, and ID-only failures are renumbered. Contextual video-length rules
 
 There is no fence stripping, brace extraction, alias mapping, coercion or any other
 repair: a response either passes the policy or raises :class:`IncidentExtractionError`.
-See ``.docs/prompt-contract-plan.md`` in the incident profile.
+See ``.docs/analysis-schema.md`` in the incident profile.
 """
 
 from __future__ import annotations
