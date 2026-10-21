@@ -302,8 +302,53 @@ def test_id_normalization_instrument_holder_remapped():
     assert repaired["instruments"][0]["entity_id"] == "E1"
 
 
-def test_id_normalization_invariance_check_preserves_semantics():
+def test_id_normalization_invariance_check_preserves_semantics(monkeypatch):
     report = _valid()
+    for entity, text in zip(report["entities"], ("Attacker.", "Victim."), strict=True):
+        entity["description"] = text
+    report["incident"]["description"] = "The attacker strikes the victim with a bottle."
+    report["timeline"][1]["description"] = "The attacker strikes the victim."
+    report["timeline"][0]["description"] = "The attacker approaches."
+    report["uncertainties"] = []
+    report["entities"][0]["entity_id"] = "e1"
+    report["instruments"][0]["entity_id"] = "e1"
     model_report = ContractReport.model_validate(report)
-    violations = [("ID_NOT_SEQUENTIAL_ENTITY", "E1 not sequential")]
-    assert incident_contract.normalize_ids(model_report, violations) is not None
+    violations = incident_contract.cross_field_violations(model_report)
+
+    repaired = incident_contract.normalize_ids(model_report, violations)
+    assert repaired is not None
+    assert [e.entity_id for e in repaired.entities] == ["E1", "E2"]
+    assert repaired.instruments[0].entity_id == "E1"
+    assert repaired.incident == model_report.incident
+    assert repaired.timeline == model_report.timeline
+    assert repaired.uncertainties == model_report.uncertainties
+    assert repaired.assets == model_report.assets
+    assert [(e.type, e.description, e.timestamp_seconds, e.label) for e in repaired.entities] == [
+        ("human", "Attacker.", 3, "attacker"),
+        ("human", "Victim.", 3, "victim"),
+    ]
+    assert (
+        repaired.instruments[0].name,
+        repaired.instruments[0].description,
+        repaired.instruments[0].threat_level,
+        repaired.instruments[0].timestamp_seconds,
+        repaired.instruments[0].label,
+    ) == ("bottle", "Glass.", 3, 5, "bottle")
+
+    assert incident_contract._semantic_projection(model_report) == incident_contract._semantic_projection(repaired)
+
+    mutated_holder = repaired.model_copy(deep=True)
+    mutated_holder.instruments[0].entity_id = "E2"
+    assert incident_contract._semantic_projection(mutated_holder) != incident_contract._semantic_projection(repaired)
+
+    mutated_desc = repaired.model_copy(deep=True)
+    mutated_desc.entities[0].description = "Different person."
+    assert incident_contract._semantic_projection(mutated_desc) != incident_contract._semantic_projection(repaired)
+
+    orig_proj = incident_contract._semantic_projection
+    monkeypatch.setattr(
+        incident_contract,
+        "_semantic_projection",
+        lambda r: orig_proj(r) if r is model_report else orig_proj(r) + "mutation",
+    )
+    assert incident_contract.normalize_ids(model_report, violations) is None
