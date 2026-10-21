@@ -162,12 +162,12 @@ def contract_version() -> str:
 
 @cache
 def extraction_prompt() -> str:
-    return _read("incident_extraction_prompt.md")
+    return _read("incident_extraction_prompt.txt")
 
 
 @cache
 def report_prompt_template() -> str:
-    return _read("report_generation_prompt.md")
+    return _read("report_generation_prompt.txt")
 
 
 def p1_request() -> dict[str, Any]:
