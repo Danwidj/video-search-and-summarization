@@ -72,8 +72,8 @@ Then start a new shell (or `source ~/.bashrc`).
   alias/function set (plus `gpu` and `ngc-env-on`) moved out of `aliases.sh`
   into standalone executable scripts under
   `deploy/docker/developer-profiles/dev-profile-incident/.scripts/`:
-  `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `disk.sh`, `rebuild-svc.sh`,
-  `rebuild.sh`, `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
+  `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `rebuild-svc.sh`,
+  `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
   `tunnel-check.sh`, `resolve-ssh-target.sh` (plus the newer `native-services.sh` and
   `prune-native-images.sh`, see [`../.scripts/README.md`](../.scripts/README.md)), and **`start.sh`** as the one-command daily entry point at the top level of `dev-profile-incident/`.
   They wrap the project's own canonical deploy tooling
@@ -85,5 +85,5 @@ Then start a new shell (or `source ~/.bashrc`).
   where there's no canonical script to wrap (status, logs, disk usage —
   stable, generic Compose surface, not project-specific tooling likely to
   drift), and the native half goes through `native-services.sh`. Each script preserves its own grounding comment (cache-loss
-  warnings, the `rebuild.sh` destructive-action confirmation prompt,
+  warnings,
   subshell-`cd` reasoning, etc.) — see each file's header.

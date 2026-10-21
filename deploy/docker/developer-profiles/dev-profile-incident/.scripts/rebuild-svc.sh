@@ -46,8 +46,14 @@ fi
 if [ "${#docker_svcs[@]}" -gt 0 ]; then
   echo "=== Rebuilding Docker service(s): ${docker_svcs[*]} ==="
   compose_dir="${REPO_ROOT}/deploy/docker"
-  generated_env="$(command ls "${compose_dir}"/developer-profiles/dev-profile-*/generated.env* 2>/dev/null | head -1 || true)"
-  if [ -z "${generated_env}" ]; then
+  profile_dir="${compose_dir}/developer-profiles/dev-profile-incident"
+  if [ -f "${profile_dir}/generated.env.remote" ]; then
+    generated_env="${profile_dir}/generated.env.remote"
+  elif [ -f "${profile_dir}/generated.env" ]; then
+    generated_env="${profile_dir}/generated.env"
+  elif [ -f "${profile_dir}/.env" ]; then
+    generated_env="${profile_dir}/.env"
+  else
     echo "rebuild-svc.sh: no active profile found (no generated.env under" >&2
     echo "  ${compose_dir}/developer-profiles/) — is a profile currently up?" >&2
     exit 1
