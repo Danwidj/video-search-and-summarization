@@ -70,6 +70,10 @@ MODELS = [
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 ]
 
+# The default client timeout is read from contracts/inference.json so eval and
+# the shared inference specification cannot diverge.
+DEFAULT_TIMEOUT: float = float(contract.load_inference()["models"][0]["timeout_seconds"])
+
 
 def _get_env(key: str) -> str:
     if not ENV_LOCAL.exists():
@@ -104,7 +108,7 @@ def chat_completion(
     messages: list[dict],
     *,
     inference_config: dict | None = None,
-    timeout: float = 240.0,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> ChatResult:
     """One ``/v1/chat/completions`` call. Fails soft (``ok=False``), never raises."""
     base_url, api_key = gateway_credentials()
@@ -154,18 +158,20 @@ def p1_request_config() -> dict:
     return {**FIXED_INFERENCE_CONFIG, **P1_INFERENCE_CONFIG, "response_format": contract.response_format()}
 
 
-def analyze_video_with_p1(model: str, video_url: str) -> ChatResult:
+def analyze_video_with_p1(model: str, video_url: str, *, timeout: float = DEFAULT_TIMEOUT) -> ChatResult:
     """One P1 call: the video (signed URL) first, then the contract prompt; schema enforced."""
     content = [
         {"type": "video_url", "video_url": {"url": video_url}},
         {"type": "text", "text": contract.extraction_prompt()},
     ]
     messages = [{"role": "user", "content": content}]
-    return chat_completion(model, messages, inference_config=p1_request_config())
+    return chat_completion(model, messages, inference_config=p1_request_config(), timeout=timeout)
 
 
-def generate_report_with_rp1(model: str, structured_json: dict, *, inference_config: dict | None = None) -> ChatResult:
+def generate_report_with_rp1(
+    model: str, structured_json: dict, *, inference_config: dict | None = None, timeout: float = DEFAULT_TIMEOUT
+) -> ChatResult:
     """One RP1 call: text-only, the validated (derived) P1 JSON as the sole input."""
     prompt = contract.report_prompt_template().format(structured_incident_json=json.dumps(structured_json, indent=2))
     messages = [{"role": "user", "content": prompt}]
-    return chat_completion(model, messages, inference_config=inference_config)
+    return chat_completion(model, messages, inference_config=inference_config, timeout=timeout)

@@ -53,7 +53,7 @@ Paths are relative to the profile directory, except paths starting with `service
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box, the whole frame is stored (`[0,0,1000,1000]`, confidence 0.0). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model is fixed per deployment by `VLM_NAME`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), kept in an in-memory store. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
-| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000`. Both mocks (:7777, launched by `start.sh --mode local`, and standalone :7778) return five canned hits and ignore the query text. :7778 does not implement `hide_rejected`. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
+| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000`. Both mocks (:7777, launched by `start.sh --mode local`, and standalone :7778) return five canned hits and ignore the query text. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks (proposed, P-1)
 
@@ -261,7 +261,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 - **Model:** only the model set in the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`). Changing it is an ask-first VM edit.
 - **Controls:**
   - Same 55 held-out videos.
-  - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. **Current gap:** the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`) and the console (`timeout_seconds` from `inference.json`) use 300 s, but `eval_vlm_client.chat_completion` defaults to a 240 s client timeout, and `analyze_video_with_p1` does not pass the `inference.json` value. Until the Track X implementation aligns arm 1 to 300 s, arm 1 runs are reported with their actual 240 s timeout and timeouts are counted per arm, so a gateway call that would finish between 240 s and 300 s is visible as a `request_failed` rather than hidden.
+  - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. Both the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`), the console (`timeout_seconds` from `inference.json`), and `eval_vlm_client.chat_completion` (defaulting to `DEFAULT_TIMEOUT` read directly from `contracts/inference.json`) use 300 s.
   - The agent's `contract_version` must equal `contracts/VERSION`; otherwise the video is recorded `request_failed`.
 - **Scoring:** the existing scorer, unchanged: `contract.evaluate_policy` → `eval_run.persist_prediction` → `eval_gt.run_evaluation` → `eval/scripts/eval_aggregate.py`.
 - **Reliability:**
@@ -344,7 +344,6 @@ These belong to their owning workstreams. Where this work needs something from t
 | P1-only timing in `/analyze` responses, or a way to skip post-P1 cropping per request | Agent | A P1-only latency comparison in Track X | Report arm 2 as "P1 plus cropping"; budget the crop calls |
 | More official reports in the corpus, and the 5 items from video `v5c609184047f88c720e` that failed to load | VM operations and reviewers | Results beyond pilot grade | State the corpus limits |
 | Changes to dimensions or HNSW settings | Database | Acting on Track E | Recommendation only |
-| `hide_rejected` and the 0.0 `min_similarity` default in the :7778 mock | Mock backends | Mock plumbing tests at contract parity | Test against :7777 |
 | `contracts/search-contract-v1/README.md` says boxes are "never a direct VLM output" and `bounding_box` is nullable, while the code uses VLM boxes and a `NOT NULL` column | Contracts | Doc accuracy | Noted here |
 
 **Search contract facts the harness relies on** (`contracts/search-contract-v1/`):
