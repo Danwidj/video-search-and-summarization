@@ -27,7 +27,7 @@ Heavy media appliances, proprietary toolchains, and backing infrastructure remai
 
 **Policy Rule:** Run a service natively whenever feasible. Containers are reserved for services with proprietary system dependencies or standard off-the-shelf data appliances where native execution yields no development speedup.
 
-Networking: nearly all containers use host networking (network_mode: host); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
+Networking: nearly all containers use host networking (network_mode: host); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (if started; published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
 
 | Category | Service | Port | Description & Execution Rationale |
 |---|---|---|---|
@@ -37,10 +37,10 @@ Networking: nearly all containers use host networking (network_mode: host); exce
 | **Docker (Infeasible Natively)** | `vss-vios-streamprocessing` | `10000` | Hardware video decode/encode core and VST storage/upload API (GPU 0; receives chunked uploads via ingress). Bound to proprietary CUDA, GStreamer, and Triton toolchains. |
 | **Docker (Infeasible Natively)** | `vss-vios-nvstreamer` | `31000` | NvStreamer RTSP file streamer (GPU 0; not in upload path; not routed by ingress/HAProxy). Bound to proprietary GStreamer pipelines. |
 | **Docker (Infeasible Natively)** | `vss-vios-ingress` | `30888` | Nginx gateway for internal VIOS APIs: `/vst/api/v1/sensor` → sensor-ms :30000; other `/vst/api/v1` and `/vst/storage` → streamprocessing :10000. |
-| **Docker (Infeasible Natively)** | `vss-vios-sensor` | `30000` | VST sensor registration service (`sensor-ms`, GPU 0). Ingress routes `/vst/api/v1/sensor/` to it. |
+| **Docker (Infeasible Natively)** | `vss-vios-sensor` | `30000` | VST sensor registration service (`sensor-ms`, GPU 0; pinned in `compose.override.yml`, not started by `start.sh`). Ingress routes `/vst/api/v1/sensor/` to it. |
 | **Docker (Infeasible Natively)** | `vss-vios-postgres` | Internal | VIOS internal database (Unix socket only). Pre-configured schema and user provisioning within VIOS ecosystem. |
-| **Docker (Infeasible Natively)** | `vss-rtvi-cv` | `9000` | Real-time computer vision perception pipeline (GPU 0). DeepStream / CUDA dependency stack. |
-| **Docker (Infeasible Natively)** | `vss-rtvi-embed` | `8017` | Real-time video embedding generation (GPU 0, bridged port 8017→8000; unused in MVP2). Triton / CUDA dependency stack. |
+| **Docker (Infeasible Natively)** | `vss-rtvi-cv` | `9000` | Stock DeepStream perception pipeline (`perception-2d-fusion`, GPU 0; pinned in `compose.override.yml`, but not started by `start.sh` and not used in MVP2). DeepStream / CUDA dependency stack. |
+| **Docker (Infeasible Natively)** | `vss-rtvi-embed` | `8017` | Stock real-time video embedding generation (`rtvi-embed`, GPU 0, bridged port 8017→8000; pinned in `compose.override.yml`, but not started by `start.sh` and unused in MVP2). Triton / CUDA dependency stack. |
 | **Docker (Standard Appliance)** | `redis` | Internal | In-memory cache and pub/sub message broker. Standard off-the-shelf appliance; zero development gain natively. |
 | **Docker (Standard Appliance)** | `phoenix` | `6006` | Tracing, telemetry, and observability UI (bridged `mdx_default`, published 6006:6006). Standard standalone monitoring appliance. |
 | **Docker (Standard Appliance)** | `vss-haproxy-ingress` | `7777` | Public gateway reverse proxy routing traffic to agent (:8000) and VIOS ingress (:30888). |
@@ -198,7 +198,7 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 7. **Client Type Enforcement:** Remote models must use `_type: openai` (`LLM_MODEL_TYPE=openai`, `VLM_MODEL_TYPE=openai`). Never use `_type: nim` against remote endpoints; the `nim_langchain` client leaks proprietary parameters (such as `verify_ssl`) into the HTTP JSON request body, which triggers HTTP 400 Bad Request errors on standard OpenAI-compatible endpoints.
 8. **Search Embedding Credentials:** Search query embeddings and evidence crop loader embeddings use the NVIDIA-hosted endpoint (`https://integrate.api.nvidia.com/v1/embeddings`) with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from `generated.env.remote`; the Brev key cannot call `/v1/embeddings`. Can be overridden with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, and `EVIDENCE_EMBEDDING_API_KEY`. The loader and search route must use the same model (`nvidia/llama-nemotron-embed-vl-1b-v2` at 1024 dimensions).
 9. **Loopback Agent Bind:** `VSS_AGENT_HOST` defaults to `127.0.0.1` because the agent has no authentication and holds the database admin key. An old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or updated to `127.0.0.1`; `vss-haproxy-ingress` reaches it via `VSS_AGENT_BACKEND_HOST=127.0.0.1` in `compose.override.yml`.
-10. **GPU Device Allocation:** All VSS Docker appliances and native processes must be pinned strictly to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `FIXED_SHARED_DEVICE_IDS=0`) to ensure GPU 1 remains completely free for co-tenant training workloads on `kwanz-ws`.
+10. **GPU Device Allocation:** All VSS Docker appliances and native processes must be pinned strictly to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `FIXED_SHARED_DEVICE_IDS=0`) in `compose.override.yml`, `.env`, and scripts to ensure GPU 1 remains completely free for co-tenant training workloads on `kwanz-ws`. The running stack started by `start.sh` uses GPU 0 only (`streamprocessing-ms`, `nvstreamer-2d-fusion`, and native `vss-agent`), while unstarted stock services (`perception-2d-fusion`, `rtvi-embed`, `sensor-ms`) remain pinned to GPU 0 for safety.
 
 > [!NOTE]
 > For the current live environment values and deployed model configurations on `kwanz-ws`, see [Current Status & Known Issues (Live VM Configuration Snapshot)](status.md#6-live-vm-configuration-kwanz-ws).

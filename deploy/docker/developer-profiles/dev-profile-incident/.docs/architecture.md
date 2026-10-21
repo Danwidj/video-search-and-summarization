@@ -41,15 +41,13 @@ flowchart TB
             HAProxy["vss-haproxy-ingress<br/>(Port 7777)"]
             VIOSIngress["vss-vios-ingress<br/>(nginx, Port 30888)"]
             StreamProcessing["vss-vios-streamprocessing<br/>(VST storage API, Port 10000; GPU 0)"]
-            VIOSSensor["vss-vios-sensor<br/>(Port 30000; GPU 0)"]
+            VIOSSensor["vss-vios-sensor<br/>(Port 30000; GPU 0, not started by start.sh)"]
             NvStreamer["vss-vios-nvstreamer<br/>(RTSP streamer, Port 31000; GPU 0)"]
             VIOSPostgres["vss-vios-postgres<br/>(Internal DB, Unix socket only)"]
             Redis["redis<br/>(State Cache)"]
             Phoenix["phoenix<br/>(Telemetry, Port 6006)"]
             Kafka["kafka<br/>(Analytics Bus, always started by start.sh)"]
             Elasticsearch["elasticsearch<br/>(Search Index, Optional)"]
-            RTVICV["vss-rtvi-cv<br/>(DeepStream Perception, Port 9000, GPU 0, MVP2)"]
-            RTVIEmbed["vss-rtvi-embed<br/>(Triton Embeddings, Port 8017, GPU 0, unused in MVP2)"]
         end
     end
 
@@ -98,10 +96,10 @@ flowchart TB
 | `vss-vios-streamprocessing`| `kwanz-ws` | 10000 | Docker container (GPU 0) | `deploy/docker/services/vios/` | VST storage/upload + replay API (receives chunked uploads via the ingress) |
 | `vss-vios-nvstreamer` | `kwanz-ws` | 31000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-alerts/compose.yml` | NvStreamer RTSP file streamer (not in the upload path; not routed by ingress/HAProxy) |
 | `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 |
-| `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor-ms (sensor registration; /vst/api/v1/sensor via ingress) |
+| `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker container (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor registration service (`sensor-ms`; pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh`) |
 | `vss-vios-postgres` | `kwanz-ws` | none (Unix socket only) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
-| `vss-rtvi-cv` | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/services/rtvi/` | DeepStream perception container for real-time video analytics (MVP2) |
-| `vss-rtvi-embed` | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 0, bridged; unused in MVP2) | `deploy/docker/services/rtvi/` | Triton inference server for real-time video embeddings (unused in MVP2; text embeddings and VLM are remote) |
+| `perception-2d-fusion` (`vss-rtvi-cv`) | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-search/video-analytics-2d-app/compose.yml` | Stock DeepStream perception service (pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh` and not used in MVP2) |
+| `rtvi-embed` (`vss-rtvi-embed`) | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 0, bridged) | `deploy/docker/services/rtvi/rtvi-embed/` | Stock Triton inference server for video embeddings (pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh` and unused in MVP2; text embeddings and VLM are remote) |
 | `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
@@ -116,9 +114,9 @@ flowchart TB
 
 Services are split based on feasibility:
 - **Native Processes (High Feasibility):** `vss-agent` (Python/uv), `video-analytics-api` (Node.js), and `behavior-analytics` (Python). Running natively eliminates Docker image rebuilds on code changes (~2s process restart vs multi-minute container build).
-- **Docker Appliances (Infeasible Natively):** Media engines and perception services (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-sensor`, `vss-vios-postgres`, `vss-rtvi-cv`, `vss-rtvi-embed`). These depend on proprietary CUDA, GStreamer, DeepStream, or Triton container toolchains; host installation is infeasible.
+- **Docker Appliances (Infeasible Natively):** Media engines and storage appliances (`vss-vios-streamprocessing`, `vss-vios-nvstreamer`, `vss-vios-ingress`, `vss-vios-postgres`). These depend on proprietary CUDA and GStreamer container toolchains; host installation is infeasible. Stock perception and embedding appliances (`perception-2d-fusion` / `vss-rtvi-cv`, `rtvi-embed` / `vss-rtvi-embed`, `sensor-ms` / `vss-vios-sensor`) are containerized and pinned to GPU 0 in `compose.override.yml`, but are not started by `start.sh`.
 - **Docker Appliances (No Benefit / JVM):** Infrastructure appliances (`redis`, `kafka`, `elasticsearch`, `phoenix`, `vss-haproxy-ingress`). Standard prebuilt containers or heavy JVM runtimes where native execution provides no development benefit.
-- **Networking:** Nearly all containers use host networking (`network_mode: host`); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
+- **Networking:** Nearly all containers use host networking (`network_mode: host`); exceptions are `phoenix` (bridge `mdx_default`, published 6006:6006) and `vss-rtvi-embed` (if started; published `${RTVI_EMBED_PORT}`=8017→8000). Native processes reach all of them on `localhost`.
 
 ---
 
@@ -202,7 +200,7 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
    - **VLM (`nvidia/cosmos-3-super-reasoner`):** Must support base64 MP4 `video_url` inlining (`data:video/mp4;base64,...`) and frame-by-frame JPEG extraction.
 3. **URL Format Rule:** Set `*_BASE_URL` without a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Agent and LangChain client instantiations append `/v1` automatically.
 4. **Authentication Rule:** Set `OPENAI_API_KEY` to the Brev Switchyard key; it is shared across LLM, VLM, and `eval_llm_judge`.
-5. **GPU Device Allocation:** All VSS services and Docker appliances (`nvstreamer`, `streamprocessing-ms`, `sensor-ms`, `vss-rtvi-cv`, and `vss-rtvi-embed`) are pinned strictly to GPU 0 (`device_ids=['0']`, `NVIDIA_VISIBLE_DEVICES=0`, `CUDA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`), leaving GPU 1 completely untouched for co-tenant training workloads on `kwanz-ws`. `vss-rtvi-embed` is pinned to GPU 0 for safety but is not used in MVP2 (MVP2 uses remote `nvidia/llama-nemotron-embed-vl-1b-v2` text embeddings and remote Brev VLM). No local LLM/VLM NIM uses either GPU in remote mode.
+5. **GPU Device Allocation:** The active incident stack started by `start.sh` runs on GPU 0 alone (`streamprocessing-ms`, `nvstreamer-2d-fusion`, and native processes via `CUDA_VISIBLE_DEVICES=0` / `NVIDIA_VISIBLE_DEVICES=0`), leaving GPU 1 completely untouched for co-tenant training workloads on `kwanz-ws`. All other GPU-capable Docker services in the profile (`sensor-ms`, `perception-2d-fusion`, and `rtvi-embed`) are pinned strictly to GPU 0 in `compose.override.yml` (`device_ids=['0']`, `NVIDIA_VISIBLE_DEVICES=0`, `CUDA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`) for safety if ever launched, but `start.sh` never starts them. Neither `perception-2d-fusion` nor `rtvi-embed` is used in MVP2 (MVP2 uses remote `nvidia/llama-nemotron-embed-vl-1b-v2` text embeddings and remote Brev VLM). No local LLM/VLM NIM uses either GPU in remote mode.
 
 ---
 
