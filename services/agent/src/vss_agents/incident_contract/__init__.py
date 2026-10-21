@@ -16,8 +16,9 @@
 """The shared incident contract (``dev-profile-incident/contracts/``) for the agent.
 
 The files next to this module are a vendored copy of the profile's ``contracts/``
-directory (the agent is deployed from ``services/agent``); a unit test fails when
-the two copies differ. The JSON Schema file is what the model is sent as
+directory (the agent is deployed from ``services/agent``); run
+``deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py`` to
+synchronise them. A unit test fails when the two copies differ. The JSON Schema file is what the model is sent as
 ``response_format``. Responses are validated strictly with the Pydantic models below
 (``strict=True``, ``extra="forbid"``), which mirror that schema - another unit test
 checks the two agree - then with the cross-field rules the schema cannot express,
@@ -162,12 +163,12 @@ def contract_version() -> str:
 
 @cache
 def extraction_prompt() -> str:
-    return _read("incident_extraction_prompt.md")
+    return _read("incident_extraction_prompt.txt")
 
 
 @cache
 def report_prompt_template() -> str:
-    return _read("report_generation_prompt.md")
+    return _read("report_generation_prompt.txt")
 
 
 def p1_request() -> dict[str, Any]:

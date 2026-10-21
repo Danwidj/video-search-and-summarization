@@ -2,11 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
-### 2026-10-21: down.sh stops containers instead of removing them (docker compose stop)
-- **Decision:** Change `.scripts/down.sh` to run `docker compose -p mdx stop` instead of `docker compose -p mdx down --remove-orphans`. Native services are still stopped first, and model cache is preserved (never `-v`). Containers and their data are kept. Exited orphan containers are no longer cleaned up automatically; manual `docker compose -p mdx down --remove-orphans` remains available when a clean slate is needed (still never `-v`). Restart is `./start.sh --mode vm` (which detects stopped containers as missing and starts them via `docker compose up -d`).
-- **Why:** `docker compose stop` preserves container state and network metadata, avoiding recreation overhead on restart while ensuring containers and their data are kept intact. `start.sh`'s state detection checks for running containers and starts any stopped/missing containers via `vm-ensure-docker.sh` (`docker compose up -d`).
-- **Rejected:** Keeping `docker compose down --remove-orphans` (destroys container instances unnecessarily on standard teardown).
-- **Links:** [`../.scripts/down.sh`](../.scripts/down.sh); [`../.scripts/README.md`](../.scripts/README.md); [`incident-profile-operations.md`](incident-profile-operations.md); [`skills/incident-operate-vm/SKILL.md`](../skills/incident-operate-vm/SKILL.md).
+### 2026-10-21: Single-source incident contract with sync script and .txt prompts
+- **Decision:**
+  - `dev-profile-incident/contracts/` is the single source of truth for the shared incident contract. Prompt files are renamed from `.md` to `.txt` (`incident_extraction_prompt.txt`, `report_generation_prompt.txt`) with byte-identical contents to preserve content hashes and clarify their plain-text contract role.
+  - `services/agent/src/vss_agents/incident_contract/` maintains a vendored copy of the 5 contract files (`incident_report.schema.json`, `incident_extraction_prompt.txt`, `report_generation_prompt.txt`, `VERSION`, `inference.json`) required for agent deployment.
+  - A standalone sync script (`contracts/sync.py`) regenerates the vendored copy and provides `--check` mode to detect drift and list differing files. The agent unit tests (`test_incident_contract.py`) import and call the exact same drift detection logic, ensuring the script and tests cannot disagree.
+- **Why:** Having contract files duplicated across directories risked silent divergence. Prompt files contain prompt instructions rather than Markdown documentation, so `.txt` accurately reflects their format without changing prompt text or hashes. Single-source sync with shared check logic prevents drift while preserving the standalone deployment packaging of `services/agent`.
+- **Rejected:** Maintaining manual copies; git submodules or symlinks (which break Python packaging and Docker context isolation); bumping contract `VERSION` (the prompt contents and schema are byte-identical).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../contracts/sync.py`](../contracts/sync.py); [`analysis-schema.md`](analysis-schema.md); `services/agent/src/vss_agents/incident_contract/`.
 
 ### 2026-10-21: Health-check tunnelled HAProxy proxy on port 7777 during start.sh vm mode
 - **Decision:** `start.sh --mode vm` adds a bounded health check for `http://localhost:7777/storage` (HEAD, matching `accept-ranges: bytes`) after opening the SSH tunnel, parallel to the existing `localhost:8000/health` check. When the check fails, `start.sh` diagnoses whether `vss-haproxy-ingress` is healthy on the VM (tunnel forward or VM IP issue) or dead on the VM (`docker logs --tail 40 vss-haproxy-ingress`), then cleans up and exits 1. `.scripts/tunnel-check.sh` also verifies port 7777 alongside the agent and search route.
@@ -128,7 +131,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`../contracts/search-contract-v1/`](../contracts/search-contract-v1/); [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`mvp2/README.md`](mvp2/README.md).
 
 ### 2026-10-16: Contract v3 temporal grounding and RP1 on core_ok
-- **Decision:** `incident-contract-v3` adds required `timestamp_seconds` and `label` to entities, instruments and assets; bounding boxes are detector-produced only. Console validation is version-aware, so v2 runs stay viewable. RP1 runs when `core_ok` (not only `full_contract_ok`), receives the unchanged prediction, and `report_generation_prompt.md` says timeline events outside the incident time are context.
+- **Decision:** `incident-contract-v3` adds required `timestamp_seconds` and `label` to entities, instruments and assets; bounding boxes are detector-produced only. Console validation is version-aware, so v2 runs stay viewable. RP1 runs when `core_ok` (not only `full_contract_ok`), receives the unchanged prediction, and `report_generation_prompt.txt` says timeline events outside the incident time are context.
 - **Why:** Cosmos models consistently emit lead-up and aftermath events; gating RP1 on full validity skipped prose for otherwise valid incidents. A two-clip pilot showed the extra line kept the reported window while describing context.
 - **Rejected:** sub-versions in recorded results; clipping timeline events before RP1 (loses narrative context).
 - **Links:** [`../contracts/README.md`](../contracts/README.md); [`analysis-schema.md`](analysis-schema.md).
