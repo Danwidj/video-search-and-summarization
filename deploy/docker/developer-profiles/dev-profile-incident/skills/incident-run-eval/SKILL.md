@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -19,7 +19,7 @@ Canonical facts:
 ## Prerequisites
 
 1. `cd deploy/docker/developer-profiles/dev-profile-incident/eval && uv sync`
-2. `eval/.env.local` is a symlink to `../.env.local`. Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
+2. `eval/.env.local` is a symlink to `../.env.local`. Its Supabase values (`INCIDENT_DB_DSN`, `INCIDENT_SUPABASE_*`) must name the **finals** project, which holds the ground truth (79 `gt_incidents`) and the `P1-*` eval runs copied from midterm; midterm is a frozen read-only record and refuses writes. `init_schema()` is a no-op on finals (every table exists). Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
 3. The ground-truth workbook and all working data stay under `eval/eval_data/`, which `eval/.gitignore` excludes. Never commit it.
 
 ## What a run sends

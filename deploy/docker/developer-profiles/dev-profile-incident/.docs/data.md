@@ -7,21 +7,20 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 ## 1. Supabase PostgreSQL Schema
 
-The database schema is defined authoritatively by versioned SQL migrations under
-[`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`](../supabase/README.md)
-(applied via `supabase db push`). Schema authority is the migrations, not the retired Streamlit console's `incident-console/db.py`. It supports multi-model runs over the same video, a parallel
+There is one Supabase project per project phase ([decision](decisions.md)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is defined authoritatively by the baseline
+[`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) and any later finals migration in the same folder (applied via `supabase db push`; see [`../supabase/README.md`](../supabase/README.md)). Schema authority is the migrations, not the retired Streamlit console's `incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` tests the schema on a throwaway local Postgres. It supports multi-model runs over the same video, a parallel
 ground-truth evaluation structure, human review workflows, and the MVP2 vector search extension
 (`evidence_crops`, `query_results`; see [`mvp2/README.md`](mvp2/README.md)).
 
 ### Report-library summary RPC
 
-`list_incident_report_summaries` (latest: migration `20260928000000`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
-- **Inputs:** it joins `reports`, `incidents`, `model_runs`, `videos` and `review_status` and applies search, filter, sort and pagination in Postgres. Beyond the earlier type, severity, status, date/time/weekday and evidence-substring filters it takes:
+`list_incident_report_summaries` (finals baseline) is a `SECURITY INVOKER`, `STABLE` SQL function exposed only to `service_role`.
+- **Inputs:** it joins `reports`, `effective_incidents` (the [reviewer version](#reviewer-version-and-effective-views) if there is one, else the AI rows), `model_runs`, `videos` and `review_status` and applies search, filter, sort and pagination in Postgres. Beyond the earlier type, severity, status, date/time/weekday and evidence-substring filters it takes:
   - `p_scope`: `'all'` (default: every successful report) or `'official'` (only each video's selected official report);
   - `p_entity_types`: exact canonical entity type;
   - `p_evidence_match`: `'contains'` (default) or `'exact'` (normalised instrument/asset name equality);
   - `p_timezone`: IANA zone for the weekday and time-of-day filters (default `'UTC'`).
-- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. Migration `20261016010000` rewrites the stored values once, but folding stays until the migration is applied.
+- **Folding:** legacy incident types are folded (`fighting` → `assault`, `animal` → `animal attack`) for both filtering and display. The midterm-to-finals copy rewrote every stored legacy value once; folding stays as a guard for any writer that still sends a legacy value.
 
 - **Per-report outputs:**
   - the analysis `outcome`, from `run_outcome(notes)`;
@@ -30,23 +29,26 @@ ground-truth evaluation structure, human review workflows, and the MVP2 vector s
   - the contract-v2 title (`incidentConsoleV2.report.incident.title`), falling back to the legacy title paths.
 - **What it never returns:** notes, evidence arrays, signed URLs or video content. The normal library API fixes `page_size` at 6; `all=true` may request up to 1,000 lightweight summaries.
 
-Helper functions (service role, `20260927180000`):
+Helper functions (service role):
 - `canonical_incident_type`, `canonical_entity_type` (`person` → `human`) and `normalized_name` (lower-case, trimmed, single spaces);
-- `run_outcome(notes)`: `valid_first_pass`, `valid_after_structural_repair`, `contract_failed`, `request_failed` or `legacy`.
+- `run_outcome(notes)`: `valid_first_pass`, `valid_after_structural_repair`, `contract_failed`, `request_failed` or `legacy`;
+- `timestamp_seconds(text)`: integer seconds from `"18"` or `"0:18"`, NULL otherwise;
+- `try_parse_jsonb(text)`: JSON or NULL.
 
-**Reviewer edits.** `apply_structured_report_edit(p_incident_id, p_model_run_id, p_edit, p_edited_by)` (`20260927160000`) replaces one run's structured projection in a single transaction:
-- incident type, integer-second start/end, recomputed duration, description and severity level;
-- that run's `entities` / `instruments` / `assets`;
-- `review_status.edited_by/edited_at`.
+**Reviewer edits and review status.** The AI rows (`incidents`, `entities`, `instruments`, `assets`) are written once by analysis and never edited. Reviewers write a separate [reviewer version](#reviewer-version-and-effective-views). All RPCs below are service-role only and none touches an AI row or `model_runs.notes`:
+- `save_human_report_edit(p_incident_id, p_model_run_id, p_edit, p_edited_by)` saves the reviewer version in one transaction (created on the first edit, replaced on later ones; `revision + 1`). It re-checks the contract's types, ranges, sequential IDs and holder references. **Every item must carry `source_id`**, the AI item it came from: it must name an AI item of the same kind in this run, at most once; an explicit `null` marks a reviewer-added item. The editor renumbers items by position, so an item's own ID says nothing about its origin, and the function never guesses one: an edit with any item lacking the key (text or `null`) is refused, before anything is written, with a message naming those items and asking for the console update that sends `source_id`. The console sends it from the `incident-console-v2` reviewer-version change on (`lib/reports/edit-draft.ts`; it reads each item's origin from the `effective_*` views' `source_*_id`); the midterm console sends none, so its edits are refused on finals. It sets `review_status.edited_by/at`, and **an edit of a verified report sends it back to `under review` and clears the verifier**. Returns `incidentId`, `modelRunId`, `editedBy`, `editedAt`, `duration`, `revision`, `status`.
+- `apply_structured_report_edit` (same arguments) is a compatibility shim over `save_human_report_edit` with the midterm RPC's name and result keys. It refuses keyless edits the same way. It goes once no console calls it.
+- `set_review_status(p_incident_id, p_model_run_id, p_status, p_reviewer)` is one atomic transition (`unreviewed`, `under review`, `verified`). **Verifying a report with no reviewer version first copies the AI report into one** (`create_human_report_from_ai`), so every verified report has a reviewer version. It refuses with a clear message when the AI report is not valid as it stands (for example an unrated instrument); the reviewer edits first. It never writes `edited_by/at`. Returns `status`, `verifiedBy`, `verifiedAt`, `changed`, `humanVersionCreated`.
+- `create_human_report_from_ai(p_incident_id, p_model_run_id, p_created_by, p_created_at)` copies the AI report into a new reviewer version, normalising legacy values the way the console editor does (`e01` → `E1` with `source_entity_id = 'e01'`, `person` → `human`, `fighting` → `assault`, `"0:18"` → 18).
 
-It re-checks the contract's types, ranges, sequential IDs and holder references, and **never touches `model_runs.notes`**. The superseded `apply_incident_report_patch` remains in the database but is no longer called.
+The superseded midterm RPCs `apply_incident_report_patch` and `replace_incident_evidence` do not exist in finals.
 
-**Official report selection (D6).** `select_official_report(p_video_id, p_model_run_id, p_selected_by)` and `clear_official_report(p_video_id, p_cleared_by)` (`20260927170000`):
+**Official report selection (D6).** `select_official_report(p_video_id, p_model_run_id, p_selected_by)` and `clear_official_report(p_video_id, p_cleared_by)`:
 - only a successful analysis of the same video with a `reports` row can be selected;
 - analysis never selects;
 - selection is independent of review status.
 
-**Dashboard.** `get_incident_dashboard` (latest: `20260928000000`) is a service-role-only aggregation RPC over **official incidents only**: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (in the target timezone specified by `p_timezone`, defaulting to UTC). It returns:
+**Dashboard.** `get_incident_dashboard` (finals baseline) is a service-role-only aggregation RPC over **official incidents only**, reading the `effective_*` views: one per video with an official report, filtered by the official report's generation time plus optional type, severity-band, weekday and hour (in the target timezone specified by `p_timezone`, defaulting to UTC). It returns:
 - `total`;
 - all-time `videos` counts: `uploaded`, `withOfficial`, `awaitingSelection` (has reports, none official) and `withoutReport` (no incident);
 - severity, review funnel, types with per-type evidence, daily trend and heatmap;
@@ -59,7 +61,7 @@ Every dashboard count equals the library total for `scope=official` with the sam
 
 ### Relationships
 
-Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `evidence_crops`, `query_results`, `review_status`, `notifications`, `severity_eval_log` and the `*_matches` tables all hang off it. `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. Column-level detail is in the table specifications below and in `supabase/migrations/`.
+Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `human_reports`, `evidence_crops`, `query_results`, `review_status`, `notifications`, `severity_eval_log` and the `*_matches` tables all hang off it. The `human_report_*` item tables hang off `human_reports` (CASCADE), and their `source_*_id` links to the AI items are `ON DELETE SET NULL` (a `NO ACTION` link would make run and video deletes fail, because the delete reaches the reviewer items along two cascade paths). `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. Column-level detail is in the table specifications below and in the finals baseline.
 
 ---
 
@@ -113,7 +115,7 @@ AI-extracted incident intelligence for a specific model run over a video.
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `videos.id` ON DELETE CASCADE | Associated video/incident identifier |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY, FK -> `model_runs.id` ON DELETE CASCADE | Model run identifier |
-| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); contract taxonomy `road accident`, `burglary`, `explosion`, `assault`, `animal attack` (`incident-contract-v2` / `incident-contract-v3`) is not enforced by a DB CHECK constraint. Migration `20261016010000` (awaiting approval to apply) rewrites stored `fighting` → `assault` and `animal` → `animal attack`; 0 rows hold `other`. Consumers fold legacy values until the migration is applied. NULL is allowed. |
+| `type` | `VARCHAR(32)` | NULLABLE | Free text (VARCHAR(32)); contract taxonomy `road accident`, `burglary`, `explosion`, `assault`, `animal attack` (`incident-contract-v2` / `incident-contract-v3`) is not enforced by a DB CHECK constraint. The midterm-to-finals copy relabelled stored `fighting` → `assault` and `animal` → `animal attack` (33 rows); 0 rows hold `other`. The `MOCK8` demo rows keep types outside the taxonomy (`warehouse safety`, `equipment`, ...). Consumers still fold legacy values. NULL is allowed (eval and seed rows). |
 | `start_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `end_timestamp` | `VARCHAR(32)` | NULLABLE | Free text: either a clock string (`M:SS` / `H:MM:SS`, agent & console) or bare seconds (e.g. `"21"`, `"15.6"`, eval/P1 and `gt_*` rows). Consumers must accept both (see `eval_gt._timestamp_seconds`). |
 | `duration` | `INTEGER` | NULLABLE | Incident duration in seconds |
@@ -139,9 +141,9 @@ Observed actors or persons extracted by the model during a specific run.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
-| `entity_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `E1`/`E2` (seed/eval, contract), `e01`/`e02` (console-v2 gateway), `E1`/`E2` (agent standalone), `p...` (mock). |
+| `entity_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `E1`/`E2` (seed/eval, contract, console-v2), `e01`/`e02` (3 legacy console runs), `E1`/`E2` (agent standalone), `p...` (mock). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
-| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): console-v2 gateway mode writes contract entity types (`human`, ...); agent mode writes contract entity types too, and `canonical_entity_type` folds `person` → `human` at query time until migration `20261016010000` is applied. Migration `20261016010000` (awaiting approval to apply) rewrites the stored `person` rows to `human` once; legacy seed/v1 rows may also hold `animal` / `unknown`. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
+| `type` | `VARCHAR(16)` | NULLABLE | Free text (VARCHAR(16)): both analysis modes write contract entity types (`human`, `animal`, `unknown`). The midterm-to-finals copy relabelled the 6 stored `person` rows to `human`; `canonical_entity_type` still folds `person` → `human` at query time. `GET /api/reports/[videoId]` maps every entity row (including legacy `animal` rows) into the report's `persons` list. |
 | `description` | `TEXT` | NULLABLE | Visual description and observed actions |
 | `image` | `VARCHAR(1024)` | NULLABLE | R2 object key for cropped evidence screenshot (schema-only, always NULL today) |
 
@@ -151,7 +153,7 @@ Observed tools, objects, or weapons extracted by the model.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
-| `instrument_id`| `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `I1` (seed/eval, contract), `i01` (console-v2 gateway), `I1` (agent standalone). |
+| `instrument_id`| `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `I1` (seed/eval, contract, console-v2), `i01` (3 legacy console runs), `I1` (agent standalone). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
 | `entity_id` | `VARCHAR(20)` | NULLABLE | Wielding entity identifier (if identified) |
 | `name` | `VARCHAR(256)` | NULLABLE | Instrument name (e.g. `crowbar`, `knife`) |
@@ -165,7 +167,7 @@ Observed physical property, infrastructure, or vehicles extracted by the model.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `incident_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked incident identifier |
-| `asset_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `A1` (seed/eval, contract), `a01` (console-v2 gateway), `A1` (agent standalone). |
+| `asset_id` | `VARCHAR(20)` | PRIMARY KEY | Writer-specific id: `A1` (seed/eval, contract, console-v2), `a01` (3 legacy console runs), `A1` (agent standalone). |
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY; composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Linked model run identifier |
 | `name` | `VARCHAR(256)` | NULLABLE | Asset name (e.g. `cash register`, `sedan`) |
 | `description` | `TEXT` | NULLABLE | Observed physical damage or involvement |
@@ -185,8 +187,8 @@ Carries the reviewer verification state independently of the AI report.
 | `status` | `VARCHAR(32)` | NOT NULL, DEFAULT `'unreviewed'` | State (`unreviewed`, `under review`, `verified`). |
 | `verified_by` | `VARCHAR(256)` | NULLABLE | Reviewer username who verified the report |
 | `verified_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of verification |
-| `edited_by` | `VARCHAR(256)` | NULLABLE | Editor username who modified report fields |
-| `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of last edit |
+| `edited_by` | `VARCHAR(256)` | NULLABLE | Editor of the last **content** edit (`save_human_report_edit`). Status changes never write it. The copy clears a midterm stamp only when it was provably a status change (a contract run whose rows equal its notes record, 4 runs at the 2026-10-21 rehearsal) or when a person decided so for a legacy run (`--not-edited`; `m37883594f65802c8a31` is the one such run) |
+| `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of the last content edit |
 
 ##### `notifications`
 Legacy alert queue retained for compatibility with the retired Streamlit console and evaluation tooling. The active
@@ -216,6 +218,21 @@ Tracks comparative human vs. AI severity scoring for human-in-the-loop evaluatio
 
 ---
 
+##### Reviewer version and effective views
+
+The reviewer's version of one run's report, next to the immutable AI rows. One per run, keyed like `review_status`; created on the first edit (`save_human_report_edit`) or on verification (`set_review_status` copies the AI report), never by analysis. It is always a complete, contract-valid report (CHECKs enforce the taxonomy, 1-5 ranges and sequential `E/I/A` IDs).
+
+| Table | Key | Columns |
+|---|---|---|
+| `human_reports` | `(incident_id, model_run_id)`, FK → `incidents` ON DELETE CASCADE | `type`, `start_seconds`, `end_seconds` (integer seconds), `duration` (generated), `description`, `severity_level`, `revision` (+1 per saved edit), `created_by/at`, `edited_by/at` (last content edit; NULL = verified as the AI wrote it) |
+| `human_report_entities` | `+ entity_id` (`E1..`) | `source_entity_id` (the AI entity it came from; NULL = added by the reviewer; unique per run), `type`, `description` |
+| `human_report_instruments` | `+ instrument_id` (`I1..`) | `source_instrument_id`, `entity_id` (holder: one of this version's entities), `name`, `description`, `threat_level` (1-5, required) |
+| `human_report_assets` | `+ asset_id` (`A1..`) | `source_asset_id`, `name`, `description` |
+
+`insert_incident` refuses to re-run a run that has a reviewer version (it would cascade it away).
+
+**Effective views.** `effective_incidents`, `effective_entities`, `effective_instruments` and `effective_assets` give the report every reader means: the reviewer version if the run has one, otherwise the AI rows. They have the same columns in the same order as the AI tables (timestamps as text; `confidence_score` always from the AI row), plus `source_*_id` and `source` (`'ai'` or `'human'`), so a reader switches by changing only the relation name. They are `security_invoker`, read-only, and `service_role` only. The library, dashboard and search RPCs read them; eval and the crop loader read the AI tables, which are guaranteed model output.
+
 #### 4. Ground-Truth (GT) & Evaluation Matching Tables
 
 ##### `gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`
@@ -238,10 +255,10 @@ Store accepted (above-threshold) similarity pairings produced during Tier 1 grou
 #### 5. MVP2 Vector Search & Evidence Crops Tables
 
 ##### `evidence_crops`
-Unified storage for item-level evidence crops, detector bounding boxes, and pgvector semantic embeddings (`20261016120000_mvp2_evidence_search_and_crops.sql`).
+Unified storage for item-level evidence crops, detector bounding boxes, and pgvector semantic embeddings. Crops belong to **AI items** (which never change); a reviewer item reaches its crop through `source_*_id`, and a reviewer-added item has none.
 - **Primary Key:** `(incident_id, model_run_id, item_type, item_id)`
 - **Foreign Key:** `(incident_id, model_run_id)` -> `incidents(incident_id, model_run_id) ON DELETE CASCADE`
-- **Vector Index:** HNSW cosine distance (`vector_cosine_ops`) index `evidence_crops_embedding_hnsw_idx` with `m = 16, ef_construction = 64` on `embedding`.
+- **Vector Index:** HNSW cosine distance (`extensions.vector_cosine_ops`) index `evidence_crops_embedding_hnsw_idx` with `m = 16, ef_construction = 64` on `embedding`.
 - **Secondary Index:** Composite lookup index `evidence_crops_lookup_idx` on `(incident_id, model_run_id)`.
 - **Row-Level Security:** RLS enabled; all permissions revoked from `anon` and `authenticated`; granted exclusively to `service_role`.
 
@@ -251,18 +268,18 @@ Unified storage for item-level evidence crops, detector bounding boxes, and pgve
 | `model_run_id` | `VARCHAR(20)` | PRIMARY KEY, composite FK -> `incidents` ON DELETE CASCADE | Model run identifier |
 | `item_type` | `VARCHAR(16)` | PRIMARY KEY, CHECK (`item_type IN ('entity', 'instrument', 'asset')`) | Evidence category |
 | `item_id` | `VARCHAR(20)` | PRIMARY KEY | Sequential item identifier (`E1..`, `I1..`, `A1..`) |
-| `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label |
+| `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label (the copy relabelled 3 entity crops `person` → `human`) |
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1 to 5, or NULL for entities/assets) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of holding entity (instruments only) |
 | `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start where item is visible |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalized coordinates `[ymin, xmin, ymax, xmax]` (0–1000) from detector pass |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key: `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` |
-| `embedding` | `vector(1024)` | NULLABLE | 1024-dimensional semantic text embedding for cosine retrieval |
+| `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional semantic text embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion timestamp |
 
 ##### `query_results`
-Audit log and hit persistence for natural-language search queries and always-on VLM critic evaluation (`20261016120000_mvp2_evidence_search_and_crops.sql`).
+Audit log and hit persistence for natural-language search queries and always-on VLM critic evaluation.
 - **Primary Key:** `id` (`VARCHAR(36)`)
 - **Foreign Keys:** `query_id -> queries(id) ON DELETE CASCADE`; `(incident_id, model_run_id) -> incidents(incident_id, model_run_id) ON DELETE CASCADE`.
 - **Secondary Indexes:** `query_results_query_rank_idx` on `(query_id, rank)`; `query_results_incident_item_idx` on `(incident_id, model_run_id, item_type, item_id)`.
@@ -286,10 +303,10 @@ Audit log and hit persistence for natural-language search queries and always-on 
 
 ### The `search_evidence_items` Postgres RPC Function
 
-`search_evidence_items` (`supabase/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`) is a `SECURITY INVOKER`, `STABLE` SQL function exposed strictly to `service_role`. It executes pgvector HNSW cosine distance search over `evidence_crops.embedding`, strictly scoped to official reports (`videos.selected_model_run_id = ec.model_run_id`).
+`search_evidence_items` (finals baseline) is a `SECURITY INVOKER`, `STABLE` SQL function exposed strictly to `service_role`. It executes pgvector HNSW cosine distance search over `evidence_crops.embedding`, strictly scoped to official reports (`videos.selected_model_run_id = ec.model_run_id`). Incident type, severity and description come from `effective_incidents`. When the run has a reviewer version, a crop whose AI item the reviewer removed is not returned, and the item's name (an entity's is its type), description and threat level come from the reviewer item. Ranking still uses the stored embedding of the AI text. Same signature and output columns as on midterm, so the agent's `SupabaseSearchStore` is unchanged.
 
 - **Parameters:**
-  - `p_query_embedding vector(1024)`: Normalized 1024-dimensional query vector.
+  - `p_query_embedding extensions.vector(1024)`: Normalized 1024-dimensional query vector.
   - `p_top_k INTEGER DEFAULT 10`: Maximum candidate hits to retrieve.
   - `p_min_similarity DOUBLE PRECISION DEFAULT 0.2`: Minimum similarity score threshold (`1.0 - cosine_distance`). The search route always passes its own value (default 0.0).
   - `p_item_types TEXT[] DEFAULT ARRAY['entity', 'instrument', 'asset']`: Evidence category filters.
@@ -303,11 +320,11 @@ Audit log and hit persistence for natural-language search queries and always-on 
 
 ### The `insert_incident` Postgres RPC Function
 
-PostgREST has no client-held transactions, so saving an incident is one server-side call: `insert_incident(p_incident_id, p_model_run_id, p_type, p_start_timestamp, p_end_timestamp, p_duration, p_description, p_severity_level, p_confidence_score DOUBLE PRECISION)` (`supabase/migrations/20260917141225_insert_incident_function.sql`, `20260925031000_schema_defaults_and_precision.sql`). It deletes any existing `incidents` and `review_status` rows for the `(incident_id, model_run_id)` pair, inserts the new incident and resets review status to `'unreviewed'`, all in one transaction.
+PostgREST has no client-held transactions, so saving an incident is one server-side call: `insert_incident(p_incident_id, p_model_run_id, p_type, p_start_timestamp, p_end_timestamp, p_duration, p_description, p_severity_level, p_confidence_score DOUBLE PRECISION)` (finals baseline; same signature and behaviour as on midterm, plus a fixed `search_path`). It deletes any existing `incidents` and `review_status` rows for the `(incident_id, model_run_id)` pair, inserts the new incident and resets review status to `'unreviewed'`, all in one transaction. It raises instead when that run already has a reviewer version.
 
 > [!IMPORTANT]
 > **Cascading Deletes on Child Records:**
-> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `notifications`, `severity_eval_log`, and `*_matches` rows for that `(incident_id, model_run_id)`. Re-analyzing under the same `model_run_id` therefore wipes all child evidence, reports, notifications, and GT match records. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
+> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `human_reports` (and its items), `evidence_crops`, `notifications`, `severity_eval_log`, and `*_matches` rows for that `(incident_id, model_run_id)`. Re-analyzing under the same `model_run_id` therefore wipes all child evidence, reports, notifications, and GT match records, which is why the RPC refuses a run that has a reviewer version. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
 
 > [!NOTE]
 > **Cascades on Deleting Videos or Model Runs:**
@@ -337,17 +354,21 @@ Database access is split across two client implementations according to operatio
    - **Transaction Limits & RPC:** PostgREST has no client-held transactions or `SELECT ... FOR UPDATE`; all PostgREST writers
      (`services/agent/src/vss_agents/utils/incident_db.py`, `incident-console-v2/lib/postgrest/client.ts`, `incident-console/db_postgrest.py`,
      and `eval/db_postgrest.py`) call the atomic `insert_incident` Postgres RPC function
-     (`deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` (see [`../supabase/README.md`](../supabase/README.md)
+     (finals baseline in `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` (see [`../supabase/README.md`](../supabase/README.md)
      for how to apply it via `supabase db push`).
 
 ### Row-Level Security (RLS) & Access Control
 
-**Pending:** migration `20261016000000_enable_rls_and_lockdown_anon.sql` has not been applied to the live database yet. Until it is, RLS stays disabled and `anon`/`authenticated` keep full access. Once applied, it enables Row-Level Security on all 22 public schema tables (`relrowsecurity = true`) to close known issue 8, with this effect:
-- **Default-deny:** With RLS enabled and no permissive policies defined, anonymous (`anon`) and standard authenticated (`authenticated`) roles cannot read, insert, update, or delete rows in any table.
-- **Revoked grants:** All table and sequence privileges in schema `public` are explicitly revoked from `anon` and `authenticated`.
-- **RPC protection:** `EXECUTE` on `insert_incident` is revoked from `PUBLIC`, `anon`, and `authenticated` and granted solely to `service_role`. Other stored procedures (`list_incident_report_summaries`, `get_incident_dashboard`, `apply_structured_report_edit`, `select_official_report`, `clear_official_report`, `search_evidence_items`) are likewise restricted to `service_role`.
-- **Default privileges:** These apply only to objects later created by the migrating role (`postgres`). In schema `public` they grant no table, sequence or function privileges to `anon` or `authenticated` and grant all to `service_role`. Globally, new functions get no `EXECUTE` for `PUBLIC` (`ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`), so `anon` and `authenticated` cannot inherit it. Objects created by other roles are not covered, so each new function should still carry its own explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` and `GRANT EXECUTE ... TO service_role`, as earlier migrations do.
-- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold PostgreSQL's `BYPASSRLS` attribute (`rolbypassrls = true`), preserving full access without regression. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it, so it would change nothing.
+**Finals is locked down from its first migration.** The baseline turns off Supabase's default grants before it creates any object, so nothing is ever exposed, even for a moment:
+- **Default-deny:** RLS is on for all 24 tables, with no policies, so `anon` and `authenticated` cannot read, insert, update or delete rows anywhere.
+- **No grants to the public roles:** every privilege on every table, view, sequence and function in `public` is revoked from `PUBLIC`, `anon` and `authenticated`. Every function is `service_role`-only, `SECURITY INVOKER`, with `SET search_path = ''`. The `effective_*` views are `security_invoker` and read-only.
+- **Default privileges:** objects that `postgres` creates in `public` later get nothing for `anon`/`authenticated` and everything for `service_role`; new functions get no `EXECUTE` for `PUBLIC` in any schema. Objects created by other roles are not covered, so a new function should still be checked by `supabase/tests/security_check.sql`.
+- **pgvector lives in `extensions`**, so none of its functions are REST RPCs.
+- **Self-check:** the baseline fails (and rolls back) if any table has RLS off, anything is reachable by `anon`/`authenticated`, or any function is `SECURITY DEFINER` or lacks a fixed `search_path`. Run `supabase/tests/security_check.sql` after every applied migration and after the copy (expect 0 rows), and `supabase/tests/probe_api.sh` to confirm over REST that the public key is refused.
+- **Role bypass:** Application services (`incident-console-v2`, `vss-agent`, `eval`, `mock-backend`) authenticate via HTTPS PostgREST using `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (`service_role`), or connect directly via Postgres wire protocol using `INCIDENT_DB_DSN` (`postgres`). Both roles hold PostgreSQL's `BYPASSRLS` attribute (`rolbypassrls = true`), preserving full access. On Supabase `postgres` is not a superuser; it skips RLS through `BYPASSRLS`, not superuser status. `FORCE ROW LEVEL SECURITY` is not applied: it only subjects table owners (here `postgres`) to RLS, and `BYPASSRLS` overrides it, so it would change nothing.
+- **Signups:** create the finals project with email signups turned off; nobody uses Supabase Auth, and an open signup would let anyone with the public key mint an `authenticated` user (who could still reach nothing).
+
+**Midterm** had RLS on only `evidence_crops` and `query_results` and gave `anon`/`authenticated` full access to the other 20 tables. `supabase/midterm/freeze_midterm.sql` closes that at the cutover and also makes midterm read-only: `service_role` keeps `SELECT` and the read RPCs, every write fails with "permission denied", and direct-DSN sessions start read-only ([`../supabase/midterm/README.md`](../supabase/midterm/README.md)).
 
 ### Fixture CSV Seed Data Quirk
 

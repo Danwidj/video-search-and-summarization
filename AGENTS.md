@@ -24,7 +24,7 @@ This fork adds a video-driven incident search and reporting system (sponsored by
 
 ## Environment Pointers
 
-- **Zero-GPU UI work:** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two).
+- **Zero-GPU UI work:** see [`mock-backend/base_profile_mock/`](deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock/README.md) for the mock server. There is no mock of the Postgres schema (do not conflate the two); the SQL harness in [`supabase/tests/`](deploy/docker/developer-profiles/dev-profile-incident/supabase/README.md) tests the real schema on a throwaway local Postgres.
 - **Automatic environment setup:** [`.githooks/`](.githooks/README.md) keeps untracked `.env` files, `.env.local` copies, symlinks and `uv` virtual environments in sync across worktrees. Run `.githooks/activate.sh` once per clone.
 
 ## Maintaining this file

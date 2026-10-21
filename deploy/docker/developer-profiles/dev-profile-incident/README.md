@@ -32,7 +32,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Mock backends](mock-backend/README.md)
 - [Evaluation pipeline](eval/README.md)
 - [Incident contract (prompt + schema)](contracts/README.md)
-- [Supabase migrations](supabase/README.md)
+- [Supabase schema, SQL harness and midterm-to-finals copy](supabase/README.md); [frozen midterm record](supabase/midterm/README.md)
 - [Lifecycle scripts](.scripts/README.md)
 - [VM dotfiles](.dotfiles/README.md)
 - [Streamlit console (v1, retired)](incident-console/README.md)

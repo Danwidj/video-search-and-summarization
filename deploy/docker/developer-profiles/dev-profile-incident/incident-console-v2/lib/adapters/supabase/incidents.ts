@@ -60,7 +60,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
       p_edit: edit,
       p_edited_by: editedBy,
     }));
-    // The RPC returns exactly these keys, with duration = end - start (20260927160000_apply_structured_report_edit.sql).
+    // The RPC returns these keys, with duration = end - start (apply_structured_report_edit in 20261020000000_finals_baseline.sql).
     return {
       incidentId: text(result.incidentId) ?? key.videoId,
       modelRunId: text(result.modelRunId) ?? key.modelRunId,

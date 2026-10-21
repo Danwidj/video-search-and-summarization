@@ -2,7 +2,7 @@
 
 // Characterisation test for GET /api/reports' response, written against the
 // pre-refactor route: list_incident_report_summaries' result, in the shape its
-// SQL builds (20260928000000_local_time_heatmap_and_time_filters.sql), reaches
+// SQL builds (supabase/migrations/20261020000000_finals_baseline.sql), reaches
 // the browser unchanged apart from the signed thumbnail of an R2 video.
 
 import assert from 'node:assert/strict';

@@ -2,7 +2,7 @@
 
 // get_incident_dashboard: DashboardQuery -> RPC arguments, and its JSON ->
 // DashboardAnalytics field by field. For every result its SQL can build
-// (20260928000000_local_time_heatmap_and_time_filters.sql) the output equals
+// (supabase/migrations/20261020000000_finals_baseline.sql) the output equals
 // the input; the defaults only apply to a malformed result.
 
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';

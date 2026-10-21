@@ -3,7 +3,7 @@ name: incident-analyze-video
 description: Use to upload a video clip and generate, re-run, inspect, review or verify a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (local) or agent (VM) mode. Not for batch scoring against ground truth - use incident-run-eval.
 license: Apache-2.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   profile: "dev-profile-incident"
   tags: "incident analysis vlm report review"
 ---
@@ -62,6 +62,8 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 ## Review lifecycle
 
 `PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`. Re-analysing resets `review_status` to `unreviewed` for that run (via the `insert_incident` RPC).
+
+On the finals database the AI report rows are never changed: an edit (`PATCH /api/reports/<videoId>/edit`) writes the run's reviewer version and sends a verified report back to `under review`, and verifying a report with no edits copies the AI report into the reviewer version ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#ai-version-and-reviewer-version)). Re-analysis always makes a new run, so it never touches a reviewer version.
 
 ## Verify
 

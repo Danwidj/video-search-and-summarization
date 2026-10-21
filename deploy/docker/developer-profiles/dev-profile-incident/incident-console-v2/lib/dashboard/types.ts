@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// get_incident_dashboard (20260927180000): incident statistics come only from
+// get_incident_dashboard (finals baseline): incident statistics come only from
 // each video's explicitly selected official report (D6); videos are counted
 // separately; model coverage counts analysis attempts by outcome.
 

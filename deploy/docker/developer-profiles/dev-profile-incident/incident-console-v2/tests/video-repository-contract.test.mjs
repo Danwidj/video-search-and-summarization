@@ -2,7 +2,7 @@
 
 // One VideoRepository contract, run against the in-memory fake and the Supabase
 // adapter over a fake PostgREST whose RPCs mimic select_official_report /
-// clear_official_report (20260927170000_official_report_selection.sql).
+// clear_official_report (20261020000000_finals_baseline.sql).
 // listVideos' embedded select is covered by tests/videos-route.test.mjs.
 
 import assert from 'node:assert/strict';

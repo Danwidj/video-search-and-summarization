@@ -2,7 +2,7 @@
 
 // list_incident_report_summaries: ReportListQuery -> RPC arguments, and its
 // JSON -> ReportList field by field. Its SQL
-// (20260928000000_local_time_heatmap_and_time_filters.sql) builds every summary
+// (supabase/migrations/20261020000000_finals_baseline.sql) builds every summary
 // with exactly these keys and null for an empty column, so for every result it
 // can build the output equals the input; the defaults only apply to a
 // malformed result.
