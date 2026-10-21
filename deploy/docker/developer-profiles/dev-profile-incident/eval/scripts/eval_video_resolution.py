@@ -43,7 +43,7 @@ import r2_videos  # noqa: E402
 
 EVAL_DATA_DIR = Path(__file__).resolve().parents[1] / "eval_data"
 # Signed per video immediately before its P1 call, so 1 h comfortably covers
-# the call (240 s client timeout) even on a long batch run.
+# the call (300 s client timeout) even on a long batch run.
 SIGNED_URL_TTL_SECONDS = 3600
 
 

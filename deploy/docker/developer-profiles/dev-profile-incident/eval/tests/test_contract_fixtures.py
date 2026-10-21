@@ -70,6 +70,11 @@ def test_inference_json_p1_settings_match_eval():
     assert INFERENCE["p1"] == eval_p1
 
 
+def test_inference_json_timeout_matches_eval():
+    assert all(model["timeout_seconds"] == eval_vlm_client.DEFAULT_TIMEOUT for model in INFERENCE["models"])
+    assert eval_vlm_client.DEFAULT_TIMEOUT == 300.0
+
+
 # --- Validation policy core-scored-v1 -------------------------------------------------
 # contracts/fixtures/policy/ holds recorded model responses and boundary cases with the
 # video length they are judged against; the console's tests/contract-policy.test.mjs

@@ -74,7 +74,7 @@ def _capture(monkeypatch):
     sent = {}
 
     def fake_post(url, *, headers, json, timeout):
-        sent.update(url=url, body=json)
+        sent.update(url=url, body=json, timeout=timeout)
         return _FakeResponse(200, {"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}]})
 
     monkeypatch.setattr(eval_vlm_client, "gateway_credentials", lambda: ("https://gw.example/v1", "key"))
@@ -85,6 +85,7 @@ def _capture(monkeypatch):
 def test_p1_sends_video_url_first_then_contract_prompt_with_strict_schema(monkeypatch):
     sent = _capture(monkeypatch)
     eval_vlm_client.analyze_video_with_p1("m", "https://r2.example/v.mp4?sig")
+    assert sent["timeout"] == 300.0
     body = sent["body"]
     parts = body["messages"][0]["content"]
     assert parts[0] == {"type": "video_url", "video_url": {"url": "https://r2.example/v.mp4?sig"}}
@@ -99,9 +100,15 @@ def test_p1_sends_video_url_first_then_contract_prompt_with_strict_schema(monkey
 def test_rp1_uses_contract_report_prompt_and_no_video_settings(monkeypatch):
     sent = _capture(monkeypatch)
     eval_vlm_client.generate_report_with_rp1("rp1-model", {"incident": {"type": "burglary"}})
+    assert sent["timeout"] == 300.0
     body = sent["body"]
     text = body["messages"][0]["content"]
     assert text.startswith(contract.report_prompt_template().split("{structured_incident_json}")[0])
     assert '"type": "burglary"' in text
     assert "media_io_kwargs" not in body and "response_format" not in body
+
+
+def test_default_timeout_matches_inference_json():
+    assert eval_vlm_client.DEFAULT_TIMEOUT == 300.0
+    assert eval_vlm_client.DEFAULT_TIMEOUT == float(contract.load_inference()["models"][0]["timeout_seconds"])
 
