@@ -18,7 +18,6 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 | Never | Why | Instead |
 |---|---|---|
 | `deploy/docker/scripts/dev-profile.sh down` (or `up`) for this profile | `down` runs `docker compose down -v` and wipes `VSS_DATA_DIR`, including about 35 GB of cached model weights. `dev-profile.sh` does not know the `incident` profile. | `./.scripts/down.sh` or plain `docker compose -p mdx down` |
-| `.scripts/rebuild.sh` without the captain's go-ahead | Full stock-profile rebuild that also wipes the weight cache | `./.scripts/rebuild-svc.sh <service>` |
 | Start the `vss-agent` Docker container | The native agent already owns `:8000` ("no double agent") | `./.scripts/native-services.sh restart vss-agent` |
 | `uv sync` in `services/agent` on the VM | `nvdataset` resolves only from NVIDIA's internal artifactory | The reinstall procedure below |
 | `_type: nim` for remote models, or a `*_BASE_URL` ending in `/v1` | `nim_langchain` leaks `verify_ssl` into the request body (HTTP 400), and clients append `/v1` themselves | `_type: openai`, bare host URL |
