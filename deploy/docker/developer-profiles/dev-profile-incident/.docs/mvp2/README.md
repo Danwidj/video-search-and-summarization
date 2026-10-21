@@ -136,7 +136,7 @@ The PR workstreams and the VM backend steps form a chain of dependencies. Each w
 | PR | Focus | Depends On | Blocks |
 |---|---|---|---|
 | **PR 118** (frontend) | Search box, results display, chat endpoint, theming | VM backend Step 4 (search REST route), Step 5 (chat REST route) | Cannot display search results or chat without REST API routes |
-| **PR 119** (eval) | Retrieval benchmark (one-shot vs critic), extraction parity, detector and embedding studies; full-system comparison deferred ([`eval.md`](eval.md)) | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
+| **PR 119** (eval) | Proposed tracks (pending approval, [`eval.md`](eval.md) P-1): retrieval benchmark (one-shot vs critic), extraction parity, detector and embedding studies; full-system comparison deferred | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
 | **PR 120** (console middle layer) | Hexagonal ports and adapters in `incident-console-v2` (`lib/ports/`, `lib/adapters/supabase/`, `lib/application/`); evidence search port shaped on search-contract-v1 | VM backend Step 4 (search REST route) for the search adapter | Console search needs the port's agent adapter |
 | **PR 126** (data & search layer) | Live RLS & RPC lockdown, connection & VM persistence verification (the `evidence_crops` / `query_results` / `search_evidence_items` migration was delivered in PR 134) | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot verify the live schema without the contract and mock backend |
 
@@ -178,7 +178,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
 - **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
-- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on). Extraction parity (gateway vs agent P1) and full-system extraction are separate tracks; see [`eval.md`](eval.md) §2.
+- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on). [`eval.md`](eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.
 
 ---
@@ -215,7 +215,7 @@ The PR task docs assume the following conventions and environment setup. This se
 
 > [!IMPORTANT]
 > **TODO [PR 119]: System-Level Benchmarking & Retrieval Suite**
-> - **Missing:** implementation of the tracks in [`eval.md`](eval.md): retrieval benchmark and critic ablation (Track R: independent query set of 50+ positive queries, labels, `eval/scripts/eval_retrieval.py` with P@K, returned precision, R@K, F1@K, MRR, coverage and false positives), gateway vs agent extraction parity (Track X), offline detector framing (Track D) and embedding comparison (Track E). Full-system extraction comparison (Track F) waits for a compound pipeline.
+> - **Missing:** implementation of the tracks proposed in [`eval.md`](eval.md) (P-1, pending approval): retrieval benchmark and critic ablation (Track R: independent query set of 50+ positive queries, labels, `eval/scripts/eval_retrieval.py` with P@K, returned precision, R@K, F1@K, MRR, coverage and false positives), gateway vs agent extraction parity (Track X), offline detector framing (Track D) and embedding comparison (Track E). Full-system extraction comparison (Track F) waits for a compound pipeline.
 > - **Owner:** PR 119 (`docs(dev-profile-incident): MVP2 eval (system vs one-shot baseline, retrieval) workstream tasks`)
 > - **Stand-in Placeholder:** none. Metrics computed against the mocks are not results ([`eval.md`](eval.md) §1.2).
 
@@ -328,7 +328,7 @@ The following specifications are planned, not final, pending completion of the o
 | 2 | Evidence Timeline & Crop Gallery | PR 118 | Scrubber markers at `timestamp_seconds` |
 | 3 | Conversational Q&A Chat | Chat Endpoint / PR 118 | `chat-contract-v1`, native `vss-agent` chat endpoint & mock |
 | 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |
-| 5 | Extraction parity (gateway vs agent); full-system comparison deferred | PR 119 | [`eval.md`](eval.md) §4-5 |
+| 5 | Extraction parity (gateway vs agent); full-system comparison deferred (proposed, P-1) | PR 119 | [`eval.md`](eval.md) §4-5 |
 | 6 | Retrieval Benchmark Suite (50+ positive queries) | PR 119 | `eval/scripts/eval_retrieval.py` ([`eval.md`](eval.md) §3) |
 | 7 | Always-On Critic Ablation Study | PR 119 | Paired trade-off report ([`eval.md`](eval.md) §3.6) |
 | 8 | Detector Framing Evaluation | PR 119 | `DefaultDetector` (remote VLM) vs offline candidates through the detector port ([`eval.md`](eval.md) §6.2) |

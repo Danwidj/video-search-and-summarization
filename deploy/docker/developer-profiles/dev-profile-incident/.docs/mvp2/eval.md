@@ -2,7 +2,7 @@
 
 Handoff specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119---eval-system-vs-one-shot-baseline-retrieval)). It states what exists today, what each track measures, how it is scored and what it depends on. Items marked **proposal (P-n)** are not yet agreed; see [§8](#8-proposals-awaiting-approval).
 
-Paths are relative to the profile directory unless they start with `services/` or `scripts/` (repository root).
+Paths are relative to the profile directory, except paths starting with `services/` or `scripts/backfill_`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
 
 ## 1. Where evaluation stands today
 
@@ -11,30 +11,30 @@ Paths are relative to the profile directory unless they start with `services/` o
 - **Models:** the three allowlisted VLMs in `contracts/inference.json`: `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
-  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `scripts/eval_ingest_gt.py` into `gt_*` tables. `eval/db.py` creates them with SQLAlchemy `create_all`, not through `supabase/migrations`.
+  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. `eval/db.py` creates them with SQLAlchemy `create_all`, not through `supabase/migrations`.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
   - 55 held-out videos, seed 42.
-  - `eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate.
-- **Runner:** `scripts/eval_run.py` sends the contract P1 request (`incident-contract-v3`) straight to the upstream model with a signed R2 URL.
+  - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate.
+- **Runner:** `eval/scripts/eval_run.py` sends the contract P1 request (`incident-contract-v3`) straight to the upstream model with a signed R2 URL.
   - It does not go through the `vlm-gateway` service, which is a pure proxy for the same request.
-- **Validation:** `core-scored-v1` (`contract.py`) separates full contract validity (`contract_ok`) from core validity (`core_ok`).
+- **Validation:** `core-scored-v1` (`eval/contract.py`) separates full contract validity (`contract_ok`) from core validity (`core_ok`).
   - Timeline-only defects are scored.
   - Any schema violation is scored as a miss.
-- **Scoring** (`eval_gt.py`, `matching.py`):
+- **Scoring** (`eval/eval_gt.py`, `eval/matching.py`):
 
   | Field | Method |
   |---|---|
   | Type and severity | Exact match |
-  | Start / end / duration | Within ±5 s (`EVAL_TIMESTAMP_TOLERANCE_SECONDS`, a constant in `config.py`), plus mean absolute error in `scripts/eval_aggregate.py` |
+  | Start / end / duration | Within ±5 s (`EVAL_TIMESTAMP_TOLERANCE_SECONDS`, a constant in `eval/config.py`), plus mean absolute error in `eval/scripts/eval_aggregate.py` |
   | Description and item text | LLM judge (`INCIDENT_JUDGE_MODEL`); passes at ≥ 0.5, hard-coded |
   | Entities, instruments, assets | 1-to-1 Hungarian matching at cosine ≥ 0.75 over `sentence-transformers/all-MiniLM-L6-v2`, then precision / recall / F1 |
 
-  - MiniLM is served locally by `scripts/eval_embedding_server.py` (:8811). The model name is hard-coded in that script, `eval_run.py` and `eval_run_lib.py`.
+  - MiniLM is served locally by `eval/scripts/eval_embedding_server.py` (:8811). The model name is hard-coded in that script, `eval/scripts/eval_run.py` and `eval/scripts/eval_run_lib.py`.
 - **What is not captured:**
   - No latency is recorded.
   - Token `usage` is kept only for the P1 call. No cost is recorded.
-  - `eval_vlm_client.chat_completion` has no retry or 429 handling, so a failed request is scored as a miss.
+  - `chat_completion` in `eval/scripts/eval_vlm_client.py` has no retry or 429 handling, so a failed request is scored as a miss.
   - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows ([status](../status.md), known issue 8).
 - **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../decisions.md), 2026-10-16). The pilot report is kept outside the repository.
 - `eval/docs/vlm_benchmark_results.md` is marked superseded (P1-v1 few-shot prompt).
@@ -55,9 +55,9 @@ Paths are relative to the profile directory unless they start with `services/` o
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model is fixed per deployment by `VLM_NAME`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), kept in an in-memory store. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
 | Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000`. Both mocks (:7777, launched by `start.sh --mode local`, and standalone :7778) return five canned hits and ignore the query text. :7778 does not implement `hide_rejected`. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
-## 2. Tracks
+## 2. Tracks (proposed, P-1)
 
-The original MVP2 eval goals are kept, but they are not all implementable today, so they are split by readiness. "One-shot baseline" keeps the meaning in the [overview](README.md#definitions-for-pr-task-doc-consistency): retrieval with the query embedding only, no critic.
+This five-track structure is a proposal awaiting approval (§8, P-1). The original MVP2 eval goals are kept, but they are not all implementable today, so they are split by readiness. "One-shot baseline" keeps the meaning in the [overview](README.md#definitions-for-pr-task-doc-consistency): retrieval with the query embedding only, no critic.
 
 | Track | Readiness | Question | Original goal |
 |---|---|---|---|
@@ -110,17 +110,23 @@ flowchart LR
   | Entity | "person in a red jacket" |
   | Asset | "parked SUV" |
   | Incident scene | "cars colliding" |
-  | Distractor (near miss) | "firearm" where the scene holds a phone |
-  | Negative | Nothing in the corpus is relevant |
+  | Distractor (near miss) | A probe built from a generic confusion pair in the brief, e.g. "firearm" (confusable with a phone or wallet) |
+  | Negative | Assigned after labelling: a query whose exhaustive labels mark no item relevant |
 
-- **Size:** the original target of 50 or more positive queries stands.
-- **Paraphrases** are allowed only as tagged variants of a seed. Statistics resample seeds, not variants.
+- **Class assignment:** authors tag the intended class (instrument, entity, asset, scene or distractor) when writing a query. Whether a query is *positive* (at least one relevant item) or *negative* is decided only by the exhaustive labels in §3.3, never by the author's expectation. If a class falls below 8 seeds after labelling, more blind queries are written for it.
+- **Size:** the original target of 50 or more positive queries stands, counted after labelling.
+- **Paraphrases** are allowed only as tagged variants of a seed. How variants enter metrics and statistics is defined in §3.5.
 - **Versioning:** the set is versioned, and its SHA-256 is recorded with every result.
 - **Sourcing (open question, Q1 in §9):** human-authored, or LLM-proposed then human-verified. Either way it must meet §3.3.
 
 ### 3.3 Leakage and labelling (P-2)
 
-- **Query authoring:** queries are not derived from `gt_*` text **or from the `evidence_crops` descriptions that are embedded**. The critic also reads those descriptions. Authors write from a short scenario brief (the classes plus an object vocabulary) without seeing either text source.
+- **Authoring protocol.** One protocol applies to every class:
+  1. **Brief.** A short scenario brief lists the query classes, the five incident categories and the entity types from `incident-contract-v3`, a generic surveillance object vocabulary and generic confusion pairs (e.g. firearm vs phone, crowbar vs walking stick). Its author must not draw on `gt_*` text, `evidence_crops` descriptions, report text or the corpus crops. The brief is committed with the query set.
+  2. **Authors write blind.** Query authors see only the brief: no ground-truth text, no evidence or report text, no crops and no videos from the corpus. This keeps queries from being tailored to what is retrievable. The critic also reads the evidence descriptions, which is a further reason they stay hidden.
+  3. **LLM assistance** (if chosen under open question 1) gets the same brief and nothing else; a person verifies each proposed query before it enters the set.
+  4. **Labellers judge, they do not author.** Labelling (below) is done from crops and video, ideally by people who did not write the queries. Labelling decides positive vs negative; queries are not edited after labelling, only added.
+  5. **Leakage check** runs on the final set (next bullet).
 - **Leakage report:** for each query, report the highest token-trigram overlap and embedding similarity against every ground-truth and evidence text. Flagged queries are reviewed by a person, and the outcome is recorded.
 - **Relevance labels:**
   - Binary, per (query, item key).
@@ -152,7 +158,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 | Metric | Definition | Edge cases |
 |---|---|---|
 | Standard P@K | `hits / K` | Empty slots count as non-relevant |
-| Returned precision | `hits / \|L\|` | Undefined when `\|L\| = 0`; such queries are excluded and counted |
+| Returned precision | `hits / \|L\|` | Undefined when `\|L\| = 0`; comparisons use only instances where both lists are non-empty, with drop counts reported (below) |
 | R@K | `hits / \|Rel(q)\|` | — |
 | F1@K | Harmonic mean of standard P@K and R@K | 0 when both are 0 |
 | MRR@K | 1 / position of the first relevant item in `L` | 0 when there is none |
@@ -160,8 +166,16 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 | False positives (positive queries) | `\|L\| − hits` | — |
 | False positives (zero-relevant queries) | Mean `\|L\|`, and the share of queries with `\|L\| > 0` | These queries are excluded from P, R, F1 and MRR |
 
-- **Aggregation:** macro-average over seeds, broken down by class.
-- **Uncertainty:** 95% bootstrap intervals over seeds (fixed seed) are descriptive only. The `S_K` − `B_K` and `F_K` − `B_K` differences are paired per query.
+- **Aggregation unit (variants and repeats).** Metrics are first computed per query instance, meaning one variant (the seed text or one paraphrase) in one repeat. Then:
+  1. Each variant's value is the mean over its repeats.
+  2. Each seed's value is the mean over its eligible variants (equal weight per variant). A variant is eligible for P, R, F1 and MRR when it has at least one relevant item; variants with no relevant item contribute only to the zero-relevant false-positive metrics.
+  3. Reported means are macro-averages over seeds, overall and per class. A seed with no eligible variant appears only in the zero-relevant metrics.
+- **Uncertainty.** 95% bootstrap intervals resample seeds with replacement (a cluster bootstrap: a resampled seed brings all its variants and repeats), with a fixed seed. They are descriptive only. Differences such as `S_K` − `B_K` and `F_K` − `B_K` are computed per seed and then bootstrapped, so every difference is paired.
+- **Returned precision is compared only on a shared query set.** It is undefined for an empty list, and `S_K` or `F_K` can be empty where `B_K` is not. For any comparison between two lists, returned precision uses only the query instances where *both* lists are non-empty, and that same set is used for both sides. The report states, for each K and comparison, how many instances were dropped because the first list, the second list or both were empty. Dropped instances are removed before the variant and seed means in the aggregation above. Returned precision is never compared across different query populations or denominators. Empty results stay visible through coverage and the empty-result share, which use every instance.
+- **What post-filtering can and cannot change.** `S_K` keeps a subset of `B_K` (the same top-K candidates minus `rejected` items), so for every query `hits(S_K) ≤ hits(B_K)`:
+  - Standard P@K, R@K and F1@K for `S_K` can never exceed `B_K`; they are equal unless the critic rejected a relevant item. Their `S_K` − `B_K` differences therefore measure the critic's **recall cost**, not a gain.
+  - The critic's possible gains under post-filtering appear only in returned precision, false positives (`|L| − hits` on positive queries; mean `|L|` and the non-empty share on zero-relevant queries), and MRR, which rises when non-relevant items above the first relevant item are removed. MRR can fall, or drop to 0, when the first relevant item is rejected.
+  - `F_K` (hypothetical fill-to-K) draws replacements from deeper in the pool, so it *can* raise standard P@K, R@K and F1@K above `B_K`. Those gains come with more critic calls (§3.6) and describe a configuration production does not run.
 - **Pool exhaustion:** if `C` holds fewer than K survivors, `F_K` is short, and that shows in coverage.
 
 ### 3.6 Critic ablation (from the same runs)
@@ -182,9 +196,10 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
     Tokens are added once the route records them (§7); until then any token figure is an estimate and labelled as one. The measurement call itself makes one critic call per pooled candidate (up to 20); that is the eval's cost (§3.7), not a list's.
   - **Latency:**
-    - The pooled `top_k = 20` call makes 20 critic calls spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart, so its `execution_time_ms` describes neither `B_K` nor `S_K` at production `top_k = K`. It is reported only as the cost of the measurement call.
-    - Per-list latency is not measured by the pooled call. Until separate timing runs at production `top_k = K` are agreed (open question 4 in §9), per-list latency is reported as an estimate derived from the raw-path time plus that list's critic calls and delay, and labelled as an estimate.
-    - Raw path: the harness times query embedding plus the `search_evidence_items` RPC directly, with the same embedder settings.
+    - The methodology stays on the single pooled `top_k = 20` call; no extra paid timing runs are part of this plan.
+    - **Measured latency** is reported in its own table: the pooled call's `execution_time_ms` and wall clock, and the raw path (the harness times query embedding plus the `search_evidence_items` RPC directly, with the same embedder settings). The pooled call makes up to 20 critic calls spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart, so its time describes the measurement call, not `B_K` or `S_K` at production `top_k = K`.
+    - **Estimated latency** per list is reported in a separate table, labelled as estimated: the raw-path time plus that list's critic calls and the delay between them. Estimated and measured figures are never mixed in one table or one difference.
+    - **Optional future experiment:** direct timing runs at production `top_k = K` would measure per-list latency, but they cost more paid critic calls and need budget approval first (§9).
     - Every latency figure states the host it was measured from. `execution_time_ms` is measured inside the agent on the VM; harness timings include the network path from the harness host. Only figures from the same host are compared directly.
     - p50 and p95, with the critic delay value stated.
   - The verdict flip rate across repeats.
@@ -203,6 +218,20 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - corpus manifest hash and query set hash
   - every `query_id`
   - timestamps
+- **Where the metadata comes from.** The search API returns none of the agent git SHA, critic model, critic delay or embedding model. Before each run the operator records them from `kwanz-ws` (read-only):
+  - the git SHA of the VM checkout (`/srv/rise-up/vss`);
+  - the values of `VLM_NAME`, `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, `EVIDENCE_EMBEDDING_MODEL` and `EVIDENCE_EMBEDDING_BASE_URL` that the running agent was started with (environment is captured at process start; see the `incident-operate-vm` skill);
+  - only those named values. Never copy whole environment files, keys or DSNs into results, logs or commits.
+- **Credentials and access the harness needs** (names only; values live in the gitignored `eval/.env.local` and are never printed or recorded):
+
+  | Purpose | Needed | Notes |
+  |---|---|---|
+  | Live search | SSH tunnel to `kwanz-ws` (`start.sh --mode vm` or `.scripts/tunnel.sh`), agent at `http://localhost:8000` | Team VM access; no key in the harness |
+  | Corpus manifest, drift check, raw-path RPC | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | `evidence_crops` and `search_evidence_items` are `service_role` only (RLS) |
+  | Raw-path query embedding | `EVIDENCE_EMBEDDING_API_KEY` (or `NVIDIA_API_KEY`), with `EVIDENCE_EMBEDDING_BASE_URL` and `EVIDENCE_EMBEDDING_MODEL` | The Brev gateway key returns HTTP 403 on `/v1/embeddings`; adding a key to the harness host is ask-first (§6.1) |
+  | Labelling contact sheets, Track D frames, Track X signed video URLs | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | Crop URLs in search responses are presigned for one hour, so labelling reads crops from R2 directly |
+  | Track X arm 1 | `VLM_GATEWAY_API_KEY` | Already used by `eval/` |
+
 - **Storage:** results are written to an immutable run directory, following `eval/eval_data/results/runs/<timestamp>/`.
 - **Repeats (P-7):** N = 3 per query. The critic runs at temperature 0 but is not guaranteed deterministic.
 - **Requests:**
@@ -218,7 +247,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
 ### 3.8 Acceptance criteria
 
-- The query set, labels, κ, leakage report and corpus manifest are committed.
+- The scenario brief, query set, labels, κ, leakage report and corpus manifest are committed.
 - One valid N = 3 run reports all §3.5 metrics for `B_K`, `S_K` and `F_K` at every K, plus the §3.6 differences and latency/cost, broken down by class, with the corpus description and limitations.
 - Hermetic tests in `eval/tests/` cover every edge case in §3.4 and §3.5.
 
@@ -232,9 +261,9 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 - **Model:** only the model set in the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`). Changing it is an ask-first VM edit.
 - **Controls:**
   - Same 55 held-out videos.
-  - Same `inference.json` settings (300 s timeout) and the same retry policy for both arms.
+  - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. **Current gap:** the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`) and the console (`timeout_seconds` from `inference.json`) use 300 s, but `eval_vlm_client.chat_completion` defaults to a 240 s client timeout, and `analyze_video_with_p1` does not pass the `inference.json` value. Until the Track X implementation aligns arm 1 to 300 s, arm 1 runs are reported with their actual 240 s timeout and timeouts are counted per arm, so a gateway call that would finish between 240 s and 300 s is visible as a `request_failed` rather than hidden.
   - The agent's `contract_version` must equal `contracts/VERSION`; otherwise the video is recorded `request_failed`.
-- **Scoring:** the existing scorer, unchanged: `contract.evaluate_policy` → `eval_run.persist_prediction` → `eval_gt.run_evaluation` → `scripts/eval_aggregate.py`.
+- **Scoring:** the existing scorer, unchanged: `contract.evaluate_policy` → `eval_run.persist_prediction` → `eval_gt.run_evaluation` → `eval/scripts/eval_aggregate.py`.
 - **Reliability:**
   - Reported as `contract_ok` / `core_ok` rates, computed the same way for both arms (arm 2 422 responses included, as above).
   - `request_failed` is counted separately and never folded into accuracy.
@@ -329,7 +358,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 | ID | Proposal | Section |
 |---|---|---|
 | P-1 | Track structure: R / X / F / D / E, with Track X framed as a parity check and Track F deferred | §2 |
-| P-2 | Query and labelling rules: no gt or evidence text as a query source, visual binary labels, exhaustive labelling, κ on ≥ 20% | §3.3 |
+| P-2 | Query and labelling protocol: committed brief, blind authoring with no gt, evidence, report text or corpus media, positive/negative decided by labels, visual binary exhaustive labels, κ on ≥ 20% | §3.2, §3.3 |
 | P-3 | Corpus manifest pinning, and refusing to score on drift | §3.1 |
 | P-4 | Run-validity flags (> 5% failed queries, > 20% `unverified`) | §3.7 |
 | P-5 | Separate `model_run_id` namespaces for Track X (ids of 20 characters or fewer) | §4 |
@@ -341,7 +370,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 1. **Query sourcing:** human-written operator queries, or LLM-proposed queries with human verification, within §3.3?
 2. **Track F fairness:** how to normalise token budgets and timeouts between one call and a multi-call pipeline.
 3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that no local GPU model may run on `kwanz-ws`?
-4. **Per-list latency:** should Track R add separate timing runs at production `top_k = K` (more paid critic calls), or is the estimate in §3.6 enough?
+4. **Optional direct timing runs:** not planned. Direct timing at production `top_k = K` (§3.6) may be added later as a separate experiment if its paid critic calls get budget approval.
 
 ## 10. Work order and definition of done
 
