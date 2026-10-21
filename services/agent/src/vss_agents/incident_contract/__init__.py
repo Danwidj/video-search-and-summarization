@@ -180,12 +180,8 @@ def p1_request() -> dict[str, Any]:
 
 def rp1_request() -> dict[str, Any]:
     """Fixed RP1 request: ``model`` plus its inference settings, shared with eval."""
-    return {
-        "model": "nvidia/nemotron-3-nano-30b-a3b",
-        "temperature": 0.0,
-        "max_tokens": 4096,
-        "chat_template_kwargs": {"enable_thinking": False},
-    }
+    rp1: dict[str, Any] = _read_json("inference.json")["rp1"]
+    return rp1
 
 
 def response_format() -> dict[str, Any]:

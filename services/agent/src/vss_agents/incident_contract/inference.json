@@ -1,9 +1,15 @@
 {
-  "description": "Shared P1 (incident extraction) inference settings and the allowlist of VLMs the console may call. eval/ keeps its own constants in eval/scripts/eval_vlm_client.py; eval/tests/test_contract_fixtures.py asserts they match this file.",
+  "description": "Shared P1/RP1 inference settings and the allowlist of VLMs the console may call. The agent reads this file directly; eval/ keeps its own constants in eval/scripts/ and eval/tests/test_contract_fixtures.py asserts they match this file.",
   "p1": {
     "temperature": 0.0,
     "max_tokens": 16384,
     "media_io_kwargs": { "video": { "num_frames": 64 } }
+  },
+  "rp1": {
+    "model": "nvidia/nemotron-3-nano-30b-a3b",
+    "temperature": 0.0,
+    "max_tokens": 4096,
+    "chat_template_kwargs": { "enable_thinking": false }
   },
   "models": [
     {
