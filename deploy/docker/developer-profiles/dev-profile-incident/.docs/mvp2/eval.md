@@ -52,7 +52,7 @@ Paths are relative to the profile directory unless they start with `services/` o
 | Rejected hits | Dropped from the response when `hide_rejected` is true (the default), but always written to `query_results` | `incident_search.py` |
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box, the whole frame is stored (`[0,0,1000,1000]`, confidence 0.0). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
-| `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model is fixed per deployment by `VLM_NAME`. Cropping runs after the report and does not change it. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
+| `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model is fixed per deployment by `VLM_NAME`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), kept in an in-memory store. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
 | Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000`. Both mocks (:7777, launched by `start.sh --mode local`, and standalone :7778) return five canned hits and ignore the query text. :7778 does not implement `hide_rejected`. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks
@@ -133,6 +133,7 @@ flowchart LR
 - **Candidate pool:** one search call per query and repeat, with `top_k = 20`, `min_similarity = 0.0` and `hide_rejected = false`.
   - The response is the candidate pool `C`: items in similarity order, each with a critic verdict.
   - Every list below is cut from the same `C`, so every comparison is paired on identical candidates.
+  - `C[:K]` stands in for a separate `top_k = K` call. The RPC orders by cosine distance and then applies `LIMIT`, and the route ranks candidates in that order, so the two agree except where items have exactly equal distance across the K boundary: `ORDER BY ec.embedding <=> p_query_embedding` has no tie-breaker, so which tied item falls inside K is not guaranteed to match. The harness reports how many queries have an exact similarity tie at position K and K+1 for each K.
 - **Budgets:** for K ∈ {1, 3, 5, 10}:
 
   | List | Definition | Meaning |
@@ -142,7 +143,7 @@ flowchart LR
   | `F_K` fill-to-K | The first K non-`rejected` items of `C` | Retrieving K surviving results by over-fetching. Not current production behaviour; reported as a what-if |
 
 - **`unverified`:** counts as kept (production never drops hits on critic failure). A sensitivity table repeats `S_K` and `F_K` with `unverified` dropped.
-- **Ties:** broken by returned order, never re-sorted.
+- **Ties:** broken by returned order, never re-sorted. Because the RPC has no tie-breaker, the returned order of exactly tied items can differ between repeats; this is a known limitation, reported through the tie count above.
 
 ### 3.5 Metrics
 
@@ -171,11 +172,21 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - R@K and F1@K.
   - False positives, including on distractor and negative queries.
   - Coverage.
+  - **Cost per list,** counted as the critic calls each list would need in production:
+
+    | List | Critic calls |
+    |---|---|
+    | `B_K` | 0 |
+    | `S_K` | K |
+    | `F_K` | Pool position of the K-th surviving item (\|C\| if the pool runs out) |
+
+    Tokens are added once the route records them (§7); until then any token figure is an estimate and labelled as one. The measurement call itself makes one critic call per pooled candidate (up to 20); that is the eval's cost (§3.7), not a list's.
   - **Latency:**
-    - End-to-end: `execution_time_ms` and wall clock.
+    - The pooled `top_k = 20` call makes 20 critic calls spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart, so its `execution_time_ms` describes neither `B_K` nor `S_K` at production `top_k = K`. It is reported only as the cost of the measurement call.
+    - Per-list latency is not measured by the pooled call. Until separate timing runs at production `top_k = K` are agreed (open question 4 in §9), per-list latency is reported as an estimate derived from the raw-path time plus that list's critic calls and delay, and labelled as an estimate.
     - Raw path: the harness times query embedding plus the `search_evidence_items` RPC directly, with the same embedder settings.
-    - p50 and p95, with the critic delay value stated. With a 1.0 s delay, end-to-end time is dominated by delay × `top_k`.
-  - **Cost:** critic calls per query now; tokens once the route records them (§7), or an estimate clearly labelled as one.
+    - Every latency figure states the host it was measured from. `execution_time_ms` is measured inside the agent on the VM; harness timings include the network path from the harness host. Only figures from the same host are compared directly.
+    - p50 and p95, with the critic delay value stated.
   - The verdict flip rate across repeats.
 - **Known confound:** the critic sees the same description that was embedded, so it is not independent of retrieval. Report critic precision separately on whole-frame crops.
 - **Recommendation:** a written judgment of these trade-offs for operator search. There is no pass/fail threshold.
@@ -201,7 +212,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - A query that still fails is recorded `request_failed` and excluded, and the count is reported.
 - **Run validity (P-4):** a run is flagged when more than 5% of queries fail or more than 20% of verdicts are `unverified`. The flag means the critic or upstream degraded, not that the critic performed badly.
 - **Budget:**
-  - Each run states its paid calls up front: queries × N × 20 critic calls, plus embedding calls.
+  - Each run states its paid calls up front: queries × N × up to 20 critic calls, plus embedding calls.
   - A plumbing run against a mock comes before any paid run. Mock numbers are never reported as results.
 - **Side effect:** every live query writes rows into the shared `query_results` table. The harness records its `query_id`s so these rows can be excluded (§7).
 
@@ -216,6 +227,8 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 - **Question:** whether two routes to the *same* one-shot P1 call give equivalent results. This tests transport overhead, reliability and drift between the vendored and shared contracts. It is not a test of a compound system.
 - **Arm 1:** `eval_vlm_client.analyze_video_with_p1`, the same request the console sends through `vlm-gateway`.
 - **Arm 2:** agent `POST /api/v1/incidents/{id}/analyze` with `skip_rp1: true` and a caller-supplied `model_run_id`, on the live VM.
+  - **Response handling** matches the console (`incident-console-v2/lib/analysis/run-contract-analysis.ts`). A 200 response and a 422 response whose `detail` carries a string `raw_output` both go through `contract.evaluate_policy`, so the agent's own rejection never replaces `core-scored-v1`. Only transport failures (no response, timeouts, 504, and other non-422 errors, or a 422 without `raw_output`) are `request_failed`.
+  - **Cropping:** arm 2 responses include post-P1 cropping when the VM's detector is available (§1.2). Arm 2 wall-clock latency is therefore reported as "P1 plus cropping" and is not compared directly with arm 1's P1-only latency; a P1-only figure for arm 2 depends on the agent item in §7. The crop calls count towards the paid-call budget: up to (entities + instruments + assets) × 4 remote VLM calls per video.
 - **Model:** only the model set in the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`). Changing it is an ask-first VM edit.
 - **Controls:**
   - Same 55 held-out videos.
@@ -223,11 +236,11 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - The agent's `contract_version` must equal `contracts/VERSION`; otherwise the video is recorded `request_failed`.
 - **Scoring:** the existing scorer, unchanged: `contract.evaluate_policy` → `eval_run.persist_prediction` → `eval_gt.run_evaluation` → `scripts/eval_aggregate.py`.
 - **Reliability:**
-  - Reported as `contract_ok` / `core_ok` rates.
+  - Reported as `contract_ok` / `core_ok` rates, computed the same way for both arms (arm 2 422 responses included, as above).
   - `request_failed` is counted separately and never folded into accuracy.
   - Wall-clock latency per call.
   - Token usage where the response includes it; agent mode currently does not (§7).
-- **Run ids (P-5):** each arm gets its own `model_run_id` namespace, e.g. `P1X-gw-<model>` and `P1X-agent-<model>`. The eval never calls `select_official_report`.
+- **Run ids (P-5):** each arm gets its own `model_run_id` namespace, e.g. `X-gw-c3super` and `X-ag-c3super`. Ids must be 1-20 characters: `/analyze` validates `model_run_id` with `max_length=20`, and `model_runs.id` and `evidence_crops.model_run_id` are `VARCHAR(20)`. The eval never calls `select_official_report`.
 - **Acceptance:** per-field score differences with paired intervals, reliability and latency tables, and an explanation of any difference outside run-to-run variation.
 
 ## 5. Track F: full-system extraction (deferred)
@@ -299,6 +312,7 @@ These belong to their owning workstreams. Where this work needs something from t
 | Critic per-call token usage and latency (logged or returned) | Search route | Critic cost in §3.6 | Report call counts, or a labelled estimate |
 | A source tag on `query_results` (eval vs user) | Search route and database | Clean search analytics | Harness lists its `query_id`s |
 | Token usage in agent `/analyze` responses | Agent | Track X tokens | Report tokens for arm 1 only |
+| P1-only timing in `/analyze` responses, or a way to skip post-P1 cropping per request | Agent | A P1-only latency comparison in Track X | Report arm 2 as "P1 plus cropping"; budget the crop calls |
 | More official reports in the corpus, and the 5 items from video `v5c609184047f88c720e` that failed to load | VM operations and reviewers | Results beyond pilot grade | State the corpus limits |
 | Changes to dimensions or HNSW settings | Database | Acting on Track E | Recommendation only |
 | `hide_rejected` and the 0.0 `min_similarity` default in the :7778 mock | Mock backends | Mock plumbing tests at contract parity | Test against :7777 |
@@ -318,7 +332,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 | P-2 | Query and labelling rules: no gt or evidence text as a query source, visual binary labels, exhaustive labelling, κ on ≥ 20% | §3.3 |
 | P-3 | Corpus manifest pinning, and refusing to score on drift | §3.1 |
 | P-4 | Run-validity flags (> 5% failed queries, > 20% `unverified`) | §3.7 |
-| P-5 | Separate `model_run_id` namespaces for Track X | §4 |
+| P-5 | Separate `model_run_id` namespaces for Track X (ids of 20 characters or fewer) | §4 |
 | P-6 | Reports go in `eval/docs/mvp2/<track>-<date>.md` | §10 |
 | P-7 | N = 3 repeats per query | §3.7 |
 
@@ -327,6 +341,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 1. **Query sourcing:** human-written operator queries, or LLM-proposed queries with human verification, within §3.3?
 2. **Track F fairness:** how to normalise token budgets and timeouts between one call and a multi-call pipeline.
 3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that no local GPU model may run on `kwanz-ws`?
+4. **Per-list latency:** should Track R add separate timing runs at production `top_k = K` (more paid critic calls), or is the estimate in §3.6 enough?
 
 ## 10. Work order and definition of done
 
