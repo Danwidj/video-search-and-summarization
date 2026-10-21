@@ -383,6 +383,67 @@ with tempfile.TemporaryDirectory() as tmp:
                         + "INSERT INTO migration_stamp_decisions VALUES ('nope', 'not edited');" + legacy_stamped + transform)
         assert "Stamp decisions name runs that are not stamped non-contract runs: nope" in error, error
 
+    # mcd6cb9073218402f7bf on midterm: a verified contract run whose stored items were removed
+    # after the copy plan was made (the AI wrote E1, E2 and A1-A3), stamp = verification.
+    ai_report = {"incident": {"type": "animal attack", "start_timestamp": "0", "end_timestamp": "9", "duration": 9,
+                              "description": "Bear in kitchen.", "severity_level": 4},
+                 "entities": [{"entity_id": "E1", "type": "animal", "description": "bear"},
+                              {"entity_id": "E2", "type": "human", "description": "person at door"}],
+                 "instruments": [],
+                 "assets": [{"asset_id": "A1", "name": "fridge", "description": "steel"},
+                            {"asset_id": "A2", "name": "island", "description": "wood"},
+                            {"asset_id": "A3", "name": "door", "description": "white"}]}
+
+    def item_edited(entities: str, assets: str = "") -> str:
+        notes = json.dumps({"incidentConsoleV2": {"contractVersion": "v2", "report": ai_report}}).replace("'", "''")
+        return f"""INSERT INTO src_videos (id, filepath, selected_model_run_id) VALUES ('vb', 'uploads/b.mp4', 'rb');
+            INSERT INTO src_model_runs (id, model_name, notes) VALUES ('rb', 'm', '{notes}');
+            INSERT INTO src_incidents (incident_id, model_run_id, type, start_timestamp, end_timestamp, duration, description, severity_level)
+                VALUES ('vb', 'rb', 'animal attack', '0', '9', 9, 'Bear in kitchen.', 4);
+            INSERT INTO src_review_status (incident_id, model_run_id, status, edited_by, edited_at, verified_by, verified_at)
+                VALUES ('vb', 'rb', 'verified', 'Lead', '2026-10-01 08:41:40', 'Lead', '2026-10-01 08:41:40');
+            {entities}{assets}"""
+
+    def accepted(rows: str) -> tuple:
+        sql = "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES)
+        sql += "CREATE TEMP TABLE migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY); INSERT INTO migration_accepted_item_edits VALUES ('rb');"
+        with conn.transaction(force_rollback=True):
+            conn.execute(sql + rows + transform)
+            q = lambda s: conn.execute(s).fetchall()
+            return (q("SELECT entity_id, source_entity_id, description FROM public.human_report_entities WHERE model_run_id = 'rb' ORDER BY 1"),
+                    q("SELECT asset_id, source_asset_id FROM public.human_report_assets WHERE model_run_id = 'rb' ORDER BY 1"),
+                    q("SELECT entity_id, description FROM public.entities WHERE model_run_id = 'rb' ORDER BY 1"),
+                    q("SELECT asset_id FROM public.assets WHERE model_run_id = 'rb' ORDER BY 1"),
+                    q("SELECT h.edited_by, rs.status, rs.edited_by FROM public.human_reports h JOIN public.review_status rs USING (incident_id, model_run_id) WHERE h.model_run_id = 'rb'"),
+                    q("SELECT kind, reviewer_id, ai_id FROM migration_item_links ORDER BY 1, 2"))
+
+    @test("copy: a contract run whose items were all removed stops the copy unless --accept-item-edits names it")
+    def _():
+        error = run_transform(item_edited(""))
+        assert "Item-level reviewer edits found (rb:assets, rb:entities)" in error and "--accept-item-edits" in error, error
+        humans, assets, ai_entities, ai_assets, stamps, links = accepted(item_edited(""))
+        assert humans == [] and assets == [] and links == [], (humans, assets, links)  # the reviewer version keeps no items
+        assert ai_entities == [("E1", "bear"), ("E2", "person at door")] and ai_assets == [("A1",), ("A2",), ("A3",)]  # AI rows from notes
+        assert stamps == [("Lead", "verified", "Lead")], stamps
+
+    @test("copy: --accept-item-edits links an item to the AI item with identical content, else leaves it NULL")
+    def _():
+        # E1 deleted (old E2 is now E1), a new E2 added; A2 edited, A3 deleted.
+        rows = item_edited("""INSERT INTO src_entities (incident_id, entity_id, model_run_id, type, description) VALUES
+                ('vb', 'E1', 'rb', 'human', 'person at door'), ('vb', 'E2', 'rb', 'animal', 'a dog');""",
+                           """INSERT INTO src_assets (incident_id, asset_id, model_run_id, name, description) VALUES
+                ('vb', 'A1', 'rb', 'fridge', 'steel'), ('vb', 'A2', 'rb', 'island', 'oak');""")
+        humans, assets, ai_entities, ai_assets, _, links = accepted(rows)
+        assert humans == [("E1", "E2", "person at door"), ("E2", None, "a dog")], humans
+        assert assets == [("A1", "A1"), ("A2", None)], assets
+        assert ai_entities == [("E1", "bear"), ("E2", "person at door")] and ai_assets == [("A1",), ("A2",), ("A3",)]
+        assert links == [("assets", "A1", "A1"), ("assets", "A2", None), ("entities", "E1", "E2"), ("entities", "E2", None)], links
+        # A run without item edits cannot be named.
+        error = refused(conn, "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES)
+                        + "CREATE TEMP TABLE migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY); INSERT INTO migration_accepted_item_edits VALUES ('nope');"
+                        + transform)
+        assert "--accept-item-edits names runs without item-level edits: nope" in error, error
+
     conn.close()
 
 print(f"\n{len(PASSED)} passed")

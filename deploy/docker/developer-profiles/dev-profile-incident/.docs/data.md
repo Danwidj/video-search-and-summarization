@@ -187,7 +187,7 @@ Carries the reviewer verification state independently of the AI report.
 | `status` | `VARCHAR(32)` | NOT NULL, DEFAULT `'unreviewed'` | State (`unreviewed`, `under review`, `verified`). |
 | `verified_by` | `VARCHAR(256)` | NULLABLE | Reviewer username who verified the report |
 | `verified_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of verification |
-| `edited_by` | `VARCHAR(256)` | NULLABLE | Editor of the last **content** edit (`save_human_report_edit`). Status changes never write it. The copy clears a midterm stamp only when it was provably a status change (a contract run whose rows equal its notes record, 5 runs at the 2026-10-20 rehearsal) or when a person decided so for a legacy run (`--not-edited`; `m37883594f65802c8a31` is the one such run) |
+| `edited_by` | `VARCHAR(256)` | NULLABLE | Editor of the last **content** edit (`save_human_report_edit`). Status changes never write it. The copy clears a midterm stamp only when it was provably a status change (a contract run whose rows equal its notes record, 4 runs at the 2026-10-21 rehearsal) or when a person decided so for a legacy run (`--not-edited`; `m37883594f65802c8a31` is the one such run) |
 | `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of the last content edit |
 
 ##### `notifications`

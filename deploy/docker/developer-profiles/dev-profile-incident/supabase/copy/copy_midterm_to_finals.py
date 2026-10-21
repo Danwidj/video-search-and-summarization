@@ -4,7 +4,7 @@
 
     cd supabase/copy && uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
         --source-env <midterm .env file> --target-env <finals .env file> [--commit] [--replace] \
-        [--not-edited <run id> ...] [--edited <run id> ...]
+        [--not-edited <run id> ...] [--edited <run id> ...] [--accept-item-edits <run id> ...]
 
 Both env files hold INCIDENT_DB_DSN (session pooler, port 5432; run from a laptop, kwanz-ws
 blocks 5432). DSNs and keys are never printed.
@@ -18,6 +18,10 @@ blocks 5432). DSNs and keys are never printed.
 * A legacy (non-contract) run that keeps an edit stamp stops the copy: nothing records what the AI
   wrote, so only a person can say whether its rows hold an edit. --not-edited RUN clears the stamp;
   --edited RUN makes the stored rows the reviewer version (the AI's original is then lost).
+* A contract run whose items differ from its notes record also stops the copy (an item's AI origin
+  cannot be proven). --accept-item-edits RUN copies its stored items as the reviewer version, links
+  each to the AI item with identical content where that match is unique (no link otherwise), puts
+  the AI items back from notes, and prints every link it made or left empty.
 """
 
 from __future__ import annotations
@@ -104,6 +108,8 @@ def main() -> int:
                         help="a stamped legacy run a person checked was not edited: clear its stamp (repeatable)")
     parser.add_argument("--edited", action="append", default=[], metavar="RUN",
                         help="a stamped legacy run a person checked was edited: its stored rows become the reviewer version (repeatable)")
+    parser.add_argument("--accept-item-edits", action="append", default=[], metavar="RUN",
+                        help="a contract run whose item-level edits a person accepted as they stand (repeatable)")
     args = parser.parse_args()
     if set(args.not_edited) & set(args.edited):
         raise SystemExit("a run cannot be both --not-edited and --edited")
@@ -167,6 +173,10 @@ def main() -> int:
         dcur.executemany("INSERT INTO migration_stamp_decisions VALUES (%s, %s)", decisions)
         for run, decision in decisions:
             print(f"  stamp decision: {run} {decision}")
+        dcur.execute("CREATE TEMP TABLE migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY)")
+        dcur.executemany("INSERT INTO migration_accepted_item_edits VALUES (%s)", [(run,) for run in args.accept_item_edits])
+        for run in args.accept_item_edits:
+            print(f"  accepted item edits: {run}")
         dcur.execute((HERE / "transform.sql").read_text())
 
         print("checks")
@@ -182,13 +192,17 @@ def main() -> int:
             all_cols = [c for c, _ in columns(dcur, table)]
             kept = [c for c in all_cols if c not in TRANSFORMED.get(table, set())]
             where = "TRUE"
+            both_sides = table in ("entities", "instruments", "assets")
+            if both_sides:  # rows of accepted item edits are rebuilt from notes, checked below
+                where = f"model_run_id NOT IN (SELECT model_run_id FROM migration_restored_items WHERE kind = '{table}')"
             if table == "model_runs":
                 where = "id NOT IN (SELECT id FROM migration_excluded_runs)"
             if table == "videos":
                 where = "id NOT IN (SELECT id FROM migration_excluded_videos)"
             want = digest(dcur, f"src_{table}", kept, order, where)
-            got = digest(dcur, f"public.{table}", kept, order)
-            check(got[0] == expected_rows[table], f"{table}: {got[0]} rows (expected {expected_rows[table]})")
+            got = digest(dcur, f"public.{table}", kept, order, where if both_sides else "TRUE")
+            expected = want[0] if both_sides else expected_rows[table]
+            check(got[0] == expected, f"{table}: {got[0]} rows (expected {expected})")
             check(got == want, f"{table}: untouched columns identical to midterm")
 
         dcur.execute("""SELECT count(*) FILTER (WHERE s.selected_model_run_id IS DISTINCT FROM v.selected_model_run_id)
@@ -207,6 +221,22 @@ def main() -> int:
         dcur.execute("SELECT model_run_id, string_agg(field, ',' ORDER BY field) FROM migration_run_diffs GROUP BY 1 ORDER BY 1")
         edited = dcur.fetchall()
         print(f"  edited reports (AI rows restored from notes): {edited}")
+        dcur.execute("SELECT model_run_id, kind, reviewer_id, ai_id FROM migration_item_links ORDER BY 1, 2, 3")
+        links = dcur.fetchall()
+        dcur.execute("SELECT model_run_id, kind FROM migration_restored_items ORDER BY 1, 2")
+        print(f"  accepted item edits: AI items restored from notes for {dcur.fetchall()}; reviewer item links: {len(links)}")
+        for run, kind, reviewer_id, ai_id in links:
+            print(f"        {run} {kind} {reviewer_id} -> {ai_id or 'NULL (no unique AI item with identical content)'}")
+        for kind, key, cols in (("entities", "entity_id", "x->>'entity_id', CASE x->>'type' WHEN 'person' THEN 'human' ELSE x->>'type' END, x->>'description'"),
+                                ("instruments", "instrument_id", "x->>'instrument_id', x->>'entity_id', x->>'name', x->>'description', (x->>'threat_level')::INT"),
+                                ("assets", "asset_id", "x->>'asset_id', x->>'name', x->>'description'")):
+            stored = {"entities": "entity_id, type, description", "instruments": "instrument_id, entity_id, name, description, threat_level",
+                      "assets": "asset_id, name, description"}[kind]
+            dcur.execute(f"""SELECT count(*) FROM migration_restored_items r WHERE r.kind = '{kind}' AND
+                (SELECT COALESCE(array_agg(ROW({stored})::TEXT ORDER BY {key}), '{{}}') FROM public.{kind} t WHERE t.model_run_id = r.model_run_id)
+                IS DISTINCT FROM
+                (SELECT COALESCE(array_agg(ROW({cols})::TEXT ORDER BY x->>'{key}'), '{{}}') FROM jsonb_array_elements(COALESCE(r.report->'{kind}', '[]')) x)""")
+            check(dcur.fetchone()[0] == 0, f"{kind}: AI rows of accepted item edits equal their notes record")
         dcur.execute("SELECT model_run_id, edited_by, edited_at, reason FROM migration_cleared_stamps ORDER BY model_run_id")
         cleared = dcur.fetchall()
         print(f"  edit stamps cleared: {len(cleared)}")

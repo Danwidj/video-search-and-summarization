@@ -13,7 +13,8 @@
 --                 entity crops' item_name person -> human;
 --   split:        a reviewer version for every edited report (from the stored rows) and every
 --                 verified report (copy of the AI rows); edited reports get their AI rows back
---                 from the immutable notes record;
+--                 from the immutable notes record (items too, for runs accepted with
+--                 --accept-item-edits);
 --   stamps:       review_status.edited_by/at cleared where provably not a content edit, or where
 --                 a person decided so (migration_stamp_decisions, from the script's flags).
 -- Leaves migration_* temp tables behind for the script's checks; they vanish with the session.
@@ -22,6 +23,10 @@
 -- 'not edited' clears the stamp, 'edited' makes the stored rows the reviewer version.
 CREATE TEMP TABLE IF NOT EXISTS migration_stamp_decisions (model_run_id TEXT PRIMARY KEY, decision TEXT NOT NULL
     CHECK (decision IN ('not edited', 'edited')));
+-- Contract runs whose item-level edits a person accepted as they stand (--accept-item-edits): the
+-- stored items become the reviewer version, each linked to the AI item with identical content when
+-- that match is unique (else no link), and the changed kinds' AI items come back from notes (5a).
+CREATE TEMP TABLE IF NOT EXISTS migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY);
 
 -- 1. What stays behind ------------------------------------------------------------------------
 CREATE TEMP TABLE migration_excluded_runs AS
@@ -170,11 +175,19 @@ SELECT incident_id, model_run_id, field, 'item' FROM item_fields;
 DO $$
 DECLARE item_diffs TEXT;
 BEGIN
-    SELECT string_agg(DISTINCT model_run_id || ':' || field, ', ') INTO item_diffs FROM migration_run_diffs WHERE level = 'item';
+    SELECT string_agg(DISTINCT model_run_id || ':' || field, ', ') INTO item_diffs FROM migration_run_diffs d
+    WHERE level = 'item' AND NOT EXISTS (SELECT 1 FROM migration_accepted_item_edits a WHERE a.model_run_id = d.model_run_id);
     IF item_diffs IS NOT NULL THEN
         -- Editors renumber items by position, so the AI source of an edited item is a guess: a person decides.
-        RAISE EXCEPTION 'Item-level reviewer edits found (%); map their source items by hand before copying', item_diffs;
+        RAISE EXCEPTION 'Item-level reviewer edits found (%); check them and accept each run with --accept-item-edits <run> before copying', item_diffs;
     END IF;
+    SELECT string_agg(a.model_run_id, ', ' ORDER BY a.model_run_id) INTO item_diffs FROM migration_accepted_item_edits a
+    WHERE NOT EXISTS (SELECT 1 FROM migration_run_diffs d WHERE d.model_run_id = a.model_run_id AND d.level = 'item');
+    IF item_diffs IS NOT NULL THEN RAISE EXCEPTION '--accept-item-edits names runs without item-level edits: %', item_diffs; END IF;
+    -- Crops are keyed to the stored item IDs; re-keying them to restored AI items is not handled.
+    SELECT string_agg(DISTINCT c.model_run_id, ', ') INTO item_diffs FROM src_evidence_crops c
+    JOIN migration_accepted_item_edits a USING (model_run_id);
+    IF item_diffs IS NOT NULL THEN RAISE EXCEPTION 'Runs with accepted item edits have evidence crops, which this copy cannot re-key: %', item_diffs; END IF;
 END $$;
 
 -- A decision may only name a run step 4 cannot settle: a stamped, non-contract run.
@@ -243,6 +256,88 @@ BEGIN
         WHERE incident_id = r.incident_id AND model_run_id = r.model_run_id;
     END LOOP;
 END $$;
+
+-- Accepted item edits: link each reviewer item (just copied from the stored rows) to the AI item
+-- in notes with identical content, when exactly one AI item matches it and it is that AI item's
+-- only match; otherwise the link stays NULL (the reviewer item shows no crop). Only the changed
+-- kinds are relinked, and their AI rows are rebuilt from notes. Sources are cleared first, so the delete's ON DELETE
+-- SET NULL and the one-item-per-source constraint never fire mid-way.
+CREATE TEMP TABLE migration_restored_items AS
+SELECT DISTINCT d.incident_id, d.model_run_id, d.field AS kind, public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report}' AS report
+FROM migration_run_diffs d
+JOIN migration_accepted_item_edits a USING (model_run_id)
+JOIN public.model_runs mr ON mr.id = d.model_run_id
+WHERE d.level = 'item';
+
+CREATE TEMP TABLE migration_item_links AS
+WITH accepted AS (
+    SELECT i.incident_id, i.model_run_id, public.try_parse_jsonb(mr.notes) #> '{incidentConsoleV2,report}' AS report
+    FROM migration_accepted_item_edits a
+    JOIN public.incidents i ON i.model_run_id = a.model_run_id
+    JOIN public.model_runs mr ON mr.id = a.model_run_id
+),
+reviewer AS (
+    SELECT h.incident_id, h.model_run_id, 'entities' AS kind, h.entity_id AS reviewer_id, jsonb_build_array(h.type, h.description) AS content
+    FROM public.human_report_entities h JOIN accepted USING (incident_id, model_run_id)
+    UNION ALL
+    SELECT h.incident_id, h.model_run_id, 'instruments', h.instrument_id, jsonb_build_array(h.name, h.description, h.threat_level::TEXT)
+    FROM public.human_report_instruments h JOIN accepted USING (incident_id, model_run_id)
+    UNION ALL
+    SELECT h.incident_id, h.model_run_id, 'assets', h.asset_id, jsonb_build_array(h.name, h.description)
+    FROM public.human_report_assets h JOIN accepted USING (incident_id, model_run_id)
+),
+ai AS (
+    SELECT a.incident_id, a.model_run_id, 'entities' AS kind, x->>'entity_id' AS ai_id,
+           jsonb_build_array(public.canonical_entity_type(x->>'type'), x->>'description') AS content
+    FROM accepted a, jsonb_array_elements(COALESCE(a.report->'entities', '[]')) x
+    UNION ALL
+    SELECT a.incident_id, a.model_run_id, 'instruments', x->>'instrument_id', jsonb_build_array(x->>'name', x->>'description', x->>'threat_level')
+    FROM accepted a, jsonb_array_elements(COALESCE(a.report->'instruments', '[]')) x
+    UNION ALL
+    SELECT a.incident_id, a.model_run_id, 'assets', x->>'asset_id', jsonb_build_array(x->>'name', x->>'description')
+    FROM accepted a, jsonb_array_elements(COALESCE(a.report->'assets', '[]')) x
+),
+pairs AS (
+    SELECT r.incident_id, r.model_run_id, r.kind, r.reviewer_id, a.ai_id,
+           count(*) OVER (PARTITION BY r.model_run_id, r.kind, r.reviewer_id) AS per_reviewer,
+           count(*) OVER (PARTITION BY r.model_run_id, r.kind, a.ai_id) AS per_ai
+    FROM reviewer r JOIN ai a USING (incident_id, model_run_id, kind, content)
+)
+SELECT r.incident_id, r.model_run_id, r.kind, r.reviewer_id, p.ai_id
+FROM reviewer r
+LEFT JOIN pairs p ON p.model_run_id = r.model_run_id AND p.kind = r.kind AND p.reviewer_id = r.reviewer_id
+    AND p.per_reviewer = 1 AND p.per_ai = 1
+WHERE EXISTS (SELECT 1 FROM migration_restored_items x WHERE x.model_run_id = r.model_run_id AND x.kind = r.kind);
+
+UPDATE public.human_report_entities h SET source_entity_id = NULL FROM migration_item_links l
+WHERE l.kind = 'entities' AND h.model_run_id = l.model_run_id AND h.entity_id = l.reviewer_id;
+UPDATE public.human_report_instruments h SET source_instrument_id = NULL FROM migration_item_links l
+WHERE l.kind = 'instruments' AND h.model_run_id = l.model_run_id AND h.instrument_id = l.reviewer_id;
+UPDATE public.human_report_assets h SET source_asset_id = NULL FROM migration_item_links l
+WHERE l.kind = 'assets' AND h.model_run_id = l.model_run_id AND h.asset_id = l.reviewer_id;
+
+DELETE FROM public.instruments t USING migration_restored_items r
+WHERE r.kind = 'instruments' AND t.incident_id = r.incident_id AND t.model_run_id = r.model_run_id;
+DELETE FROM public.assets t USING migration_restored_items r
+WHERE r.kind = 'assets' AND t.incident_id = r.incident_id AND t.model_run_id = r.model_run_id;
+DELETE FROM public.entities t USING migration_restored_items r
+WHERE r.kind = 'entities' AND t.incident_id = r.incident_id AND t.model_run_id = r.model_run_id;
+INSERT INTO public.entities (incident_id, entity_id, model_run_id, type, description)
+SELECT r.incident_id, x->>'entity_id', r.model_run_id, CASE x->>'type' WHEN 'person' THEN 'human' ELSE x->>'type' END, x->>'description'
+FROM migration_restored_items r, jsonb_array_elements(COALESCE(r.report->'entities', '[]')) x WHERE r.kind = 'entities';
+INSERT INTO public.instruments (incident_id, instrument_id, model_run_id, entity_id, name, description, threat_level)
+SELECT r.incident_id, x->>'instrument_id', r.model_run_id, x->>'entity_id', x->>'name', x->>'description', (x->>'threat_level')::INTEGER
+FROM migration_restored_items r, jsonb_array_elements(COALESCE(r.report->'instruments', '[]')) x WHERE r.kind = 'instruments';
+INSERT INTO public.assets (incident_id, asset_id, model_run_id, name, description)
+SELECT r.incident_id, x->>'asset_id', r.model_run_id, x->>'name', x->>'description'
+FROM migration_restored_items r, jsonb_array_elements(COALESCE(r.report->'assets', '[]')) x WHERE r.kind = 'assets';
+
+UPDATE public.human_report_entities h SET source_entity_id = l.ai_id FROM migration_item_links l
+WHERE l.kind = 'entities' AND l.ai_id IS NOT NULL AND h.model_run_id = l.model_run_id AND h.entity_id = l.reviewer_id;
+UPDATE public.human_report_instruments h SET source_instrument_id = l.ai_id FROM migration_item_links l
+WHERE l.kind = 'instruments' AND l.ai_id IS NOT NULL AND h.model_run_id = l.model_run_id AND h.instrument_id = l.reviewer_id;
+UPDATE public.human_report_assets h SET source_asset_id = l.ai_id FROM migration_item_links l
+WHERE l.kind = 'assets' AND l.ai_id IS NOT NULL AND h.model_run_id = l.model_run_id AND h.asset_id = l.reviewer_id;
 
 UPDATE public.incidents i SET
     type = COALESCE(CASE WHEN EXISTS (SELECT 1 FROM migration_run_diffs d WHERE d.incident_id = i.incident_id AND d.model_run_id = i.model_run_id AND d.field = 'type')

@@ -65,7 +65,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order, 22 tests (security, behaviour and the copy's guards)
+# Finals schema: applies every file in ../migrations/ in order, 24 tests (security, behaviour and the copy's guards)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
@@ -106,10 +106,11 @@ Then the copy, from a laptop (`kwanz-ws` blocks port 5432). Each env file holds 
 cd $W/supabase/copy
 uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
   --source-env <midterm env file> --target-env <finals env file> \
-  --not-edited m37883594f65802c8a31                                          # rehearsal: rolls back
+  --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf   # rehearsal: rolls back
 uv run --no-project --with 'psycopg[binary]' python copy_midterm_to_finals.py \
   --source-env <midterm env file> --target-env <finals env file> \
-  --not-edited m37883594f65802c8a31 --replace --commit                      # at cutover
+  --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf \
+  --replace --commit                                                         # at cutover
 cd ../tests && uv run --no-project --with 'psycopg[binary]' python parity_check.py \
   --source-env <midterm env file> --target-env <finals env file>
 ```
@@ -132,6 +133,16 @@ What it copies and what it leaves behind:
   names a left-behind video in its notes would be copied, if an edit changed items (their AI
   source is a guess), or if a run keeps an edit stamp but gets no reviewer version: a person
   decides each of those by hand.
+- **Item edits are accepted per run.** A contract run whose stored items differ from its notes
+  record stops the copy. After checking it, rerun with `--accept-item-edits <run>`: its stored
+  items become the reviewer version, each linked to the AI item with identical content where that
+  match is unique (no link otherwise: that item shows no crop), and the changed kinds' AI items
+  are put back from notes. The script prints every link it made or left empty. It refuses a run
+  that has evidence crops (they would need re-keying). On 2026-10-21 one run reached this:
+  `mcd6cb9073218402f7bf` (video `v5c609184047f88c720e`, official, verified). Its 2 entities and
+  3 assets were removed from midterm after 2026-10-20 (not through the console: its review stamp
+  is still the 2026-10-01 verification), and the captain chose to copy it as it is now. So its
+  reviewer version has no items, and its AI items come back from notes.
 - **Legacy edit stamps are a person's call.** On a legacy (non-contract) run nothing records what
   the AI wrote, and the midterm console rewrote `edited_by/at` with the verifier on every status
   change, so a stamp equal to the verification proves nothing. Such a run stops the copy, naming
@@ -143,10 +154,11 @@ What it copies and what it leaves behind:
   `--not-edited m37883594f65802c8a31`. A new name in the error means midterm changed: compare that
   run's stored report with its `model_runs.notes` before choosing.
 - **Changes on the way:** `fighting` → `assault`, `animal` → `animal attack`, `person` → `human`
-  (incidents, entities and entity crop names); a reviewer version for the 2 edited and 6 verified
-  reports (7 in all), with the AI's own text put back on the 2 edited runs from `model_runs.notes`;
-  6 misleading `review_status.edited_by/at` stamps (status changes, not edits) cleared: 5 proven
-  by the rows (contract runs equal to their notes record) and 1 by the `--not-edited` decision.
+  (incidents, entities and entity crop names); a reviewer version for the 3 edited and 6 verified
+  reports (7 in all), with the AI's own text or items put back on the 3 edited runs from
+  `model_runs.notes`; 5 misleading `review_status.edited_by/at` stamps (status changes, not edits)
+  cleared: 4 proven by the rows (contract runs equal to their notes record) and 1 by the
+  `--not-edited` decision (rehearsal of 2026-10-21).
 
 R2 objects stay where they are: same bucket, same keys, nothing to copy.
 
