@@ -408,7 +408,7 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.equal(body.messages.length, 1);
   const [videoPart, promptPart, ...rest] = body.messages[0].content;
   assert.deepEqual(videoPart, { type: 'video_url', video_url: { url: 'https://signed.r2.test/uploads/sensor-1/video.mp4' } });
-  assert.equal(promptPart.text, readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.md'), 'utf8'));
+  assert.equal(promptPart.text, readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.txt'), 'utf8'));
   assert.deepEqual(rest, [], 'no additional instruction part unless one is given');
 
   const writes = supabaseWrites(recordedCalls);

@@ -40,8 +40,8 @@ from jsonschema import Draft202012Validator
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 SCHEMA_PATH = CONTRACTS_DIR / "incident_report.schema.json"
-EXTRACTION_PROMPT_PATH = CONTRACTS_DIR / "incident_extraction_prompt.md"
-REPORT_PROMPT_PATH = CONTRACTS_DIR / "report_generation_prompt.md"
+EXTRACTION_PROMPT_PATH = CONTRACTS_DIR / "incident_extraction_prompt.txt"
+REPORT_PROMPT_PATH = CONTRACTS_DIR / "report_generation_prompt.txt"
 VERSION_PATH = CONTRACTS_DIR / "VERSION"
 
 # Keys describing the schema document itself; stripped from what is sent to the
