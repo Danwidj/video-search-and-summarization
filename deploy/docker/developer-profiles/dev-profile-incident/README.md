@@ -69,4 +69,4 @@ Run `start.sh` with your chosen mode:
   ```bash
   ./start.sh --mode vm
   ```
-  Connects to `kwanz-ws` over SSH (explaining the cause if the VM is unreachable), checks running services, automatically deploys or self-heals missing Docker appliances and native services (`vss-agent`, cloning/pulling what is missing under timeouts), opens the backgrounded SSH port tunnel (8000, 7777, 30081, 30082), and launches `incident-console-v2` on `127.0.0.1:3200` (`--no-console` stops after the tunnel).
+  Connects to `kwanz-ws` over SSH (explaining the cause if the VM is unreachable), checks running services, automatically deploys or self-heals missing Docker appliances and native services (`vss-agent`, cloning/pulling what is missing under timeouts), opens the backgrounded SSH port tunnel (8000, 7777), and launches `incident-console-v2` on `127.0.0.1:3200` (`--no-console` stops after the tunnel).

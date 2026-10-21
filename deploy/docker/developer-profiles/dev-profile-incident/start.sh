@@ -347,7 +347,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-  for port in 8000 30081 30082 7777; do
+  for port in 8000 7777; do
     if holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
       echo "start.sh: laptop port $port is already in use by $holder, so the tunnel cannot forward it." >&2
       echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
@@ -357,8 +357,6 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   TUNNEL_LOG="$(mktemp)"
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
     -L 8000:127.0.0.1:8000 \
-    -L 30081:"$VSS_VM_IP":30081 \
-    -L 30082:"$VSS_VM_IP":30082 \
     -L 7777:"$VSS_VM_IP":7777 \
     "$VSS_SSH_TARGET" 2>"$TUNNEL_LOG" &
   TUNNEL_PID=$!
