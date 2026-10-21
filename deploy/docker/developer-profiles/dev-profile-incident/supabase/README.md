@@ -142,7 +142,9 @@ What it copies and what it leaves behind:
   `mcd6cb9073218402f7bf` (video `v5c609184047f88c720e`, official, verified). Its 2 entities and
   3 assets were removed from midterm after 2026-10-20 (not through the console: its review stamp
   is still the 2026-10-01 verification), and the captain chose to copy it as it is now. So its
-  reviewer version has no items, and its AI items come back from notes.
+  reviewer version has no items, and its AI items come back from notes. It is copied as it stands
+  and keeps its midterm labels (verified, with its midterm stamp), by the captain's call that the
+  removed items do not matter during development.
 - **Legacy edit stamps are a person's call.** On a legacy (non-contract) run nothing records what
   the AI wrote, and the midterm console rewrote `edited_by/at` with the verifier on every status
   change, so a stamp equal to the verification proves nothing. Such a run stops the copy, naming
