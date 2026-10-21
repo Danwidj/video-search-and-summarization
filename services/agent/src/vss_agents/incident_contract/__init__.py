@@ -25,12 +25,13 @@ checks the two agree - then with the cross-field rules the schema cannot express
 under validation policy ``core-scored-v1`` with the ``id-normalization-v1`` recovery,
 exactly as ``incident-console-v2`` applies them (``lib/contract/validate.ts`` and
 ``lib/contract/repair.ts``): a cross-field failure confined to the timeline is not
-fatal, and ID-only failures are renumbered. The video-length rules need the video's
-length, which only the console reads, so the console applies them.
+fatal, and ID-only failures are renumbered. Contextual video-length rules
+(``WINDOW_BEYOND_VIDEO``, ``TIMELINE_BEYOND_VIDEO``) are evaluated whenever
+``video_duration_seconds`` is provided.
 
 There is no fence stripping, brace extraction, alias mapping, coercion or any other
 repair: a response either passes the policy or raises :class:`IncidentExtractionError`.
-See ``.docs/prompt-contract-plan.md`` in the incident profile.
+See ``.docs/analysis-schema.md`` in the incident profile.
 """
 
 from __future__ import annotations
@@ -193,15 +194,64 @@ def response_format() -> dict[str, Any]:
     return {"type": "json_schema", "json_schema": {"name": "incident_report", "schema": schema, "strict": True}}
 
 
+WHOLE_SECOND_RESOLUTION = 1
+
 ENRICHMENT_CODES = frozenset(
-    {"TIMELINE_START_OUTSIDE_WINDOW", "TIMELINE_END_OUTSIDE_WINDOW", "TIMELINE_NOT_CHRONOLOGICAL"}
+    {
+        "TIMELINE_START_OUTSIDE_WINDOW",
+        "TIMELINE_END_OUTSIDE_WINDOW",
+        "TIMELINE_NOT_CHRONOLOGICAL",
+        "TIMELINE_BEYOND_VIDEO",
+    }
 )
-REPAIRABLE_CODES = frozenset({"ID_NOT_SEQUENTIAL_ENTITY", "ID_NOT_SEQUENTIAL_INSTRUMENT", "ID_NOT_SEQUENTIAL_ASSET"})
+REPAIRABLE_CODES = frozenset(
+    {
+        "ID_NOT_SEQUENTIAL_ENTITY",
+        "ID_NOT_SEQUENTIAL_INSTRUMENT",
+        "ID_NOT_SEQUENTIAL_ASSET",
+        "INSTRUMENT_HOLDER_UNKNOWN",
+    }
+)
 _ID_COLLECTIONS = (
     ("ID_NOT_SEQUENTIAL_ENTITY", "E", "entity_id", "entities"),
     ("ID_NOT_SEQUENTIAL_INSTRUMENT", "I", "instrument_id", "instruments"),
     ("ID_NOT_SEQUENTIAL_ASSET", "A", "asset_id", "assets"),
 )
+
+
+def timestamp_within_video(seconds: float, video_duration_seconds: float) -> bool:
+    """Whether an integer-second timestamp can name a moment of a ``video_duration_seconds`` video."""
+    return 0 <= seconds < video_duration_seconds + WHOLE_SECOND_RESOLUTION
+
+
+def video_bounds_violations(report: ContractReport, video_duration_seconds: float) -> list[tuple[str, str]]:
+    """Contextual rules (runtime input, not the schema): timestamps must lie within the video."""
+    violations: list[tuple[str, str]] = []
+    start, end = report.incident.start_timestamp, report.incident.end_timestamp
+    if not timestamp_within_video(start, video_duration_seconds):
+        violations.append(
+            ("WINDOW_BEYOND_VIDEO", f"start_timestamp {start} is outside the {video_duration_seconds:g} s video")
+        )
+    if not timestamp_within_video(end, video_duration_seconds):
+        violations.append(
+            ("WINDOW_BEYOND_VIDEO", f"end_timestamp {end} is outside the {video_duration_seconds:g} s video")
+        )
+    for index, event in enumerate(report.timeline):
+        if not timestamp_within_video(event.start_seconds, video_duration_seconds):
+            violations.append(
+                (
+                    "TIMELINE_BEYOND_VIDEO",
+                    f"timeline[{index}].start_seconds {event.start_seconds} is outside the {video_duration_seconds:g} s video",
+                )
+            )
+        if event.end_seconds is not None and not timestamp_within_video(event.end_seconds, video_duration_seconds):
+            violations.append(
+                (
+                    "TIMELINE_BEYOND_VIDEO",
+                    f"timeline[{index}].end_seconds {event.end_seconds} is outside the {video_duration_seconds:g} s video",
+                )
+            )
+    return violations
 
 
 def cross_field_violations(report: ContractReport) -> list[tuple[str, str]]:
@@ -249,9 +299,12 @@ def cross_field_violations(report: ContractReport) -> list[tuple[str, str]]:
     return violations
 
 
-def core_violations(report: ContractReport) -> list[tuple[str, str]]:
+def core_violations(report: ContractReport, video_duration_seconds: float | None = None) -> list[tuple[str, str]]:
     """The cross-field violations that decide the outcome under core-scored-v1."""
-    return [violation for violation in cross_field_violations(report) if violation[0] not in ENRICHMENT_CODES]
+    violations = list(cross_field_violations(report))
+    if video_duration_seconds is not None and video_duration_seconds > 0:
+        violations.extend(video_bounds_violations(report, video_duration_seconds))
+    return [violation for violation in violations if violation[0] not in ENRICHMENT_CODES]
 
 
 def _free_texts(report: ContractReport) -> list[str]:
@@ -274,11 +327,40 @@ def _mentioned(token: str, texts: list[str]) -> bool:
     return any(pattern.search(text) for text in texts)
 
 
+def _semantic_projection(report: ContractReport) -> str:
+    """Semantic projection used by the invariance check: everything except identifiers and list order."""
+    entity_by_id = {entity.entity_id: entity for entity in report.entities}
+
+    def _sorted(items: list[dict[str, Any]]) -> list[str]:
+        return sorted(json.dumps(item, sort_keys=True) for item in items)
+
+    entities = _sorted([entity.model_dump(mode="json", exclude={"entity_id"}) for entity in report.entities])
+    instruments_proj: list[dict[str, Any]] = []
+    for instrument in report.instruments:
+        item = instrument.model_dump(mode="json", exclude={"instrument_id", "entity_id"})
+        holder = instrument.entity_id
+        entity = entity_by_id.get(holder) if holder is not None else None
+        item["holder"] = {"type": entity.type, "description": entity.description} if entity is not None else holder
+        instruments_proj.append(item)
+    instruments = _sorted(instruments_proj)
+    assets = _sorted([asset.model_dump(mode="json", exclude={"asset_id"}) for asset in report.assets])
+
+    projection = {
+        "incident": report.incident.model_dump(mode="json"),
+        "timeline": [t.model_dump(mode="json") for t in report.timeline],
+        "uncertainties": list(report.uncertainties),
+        "entities": entities,
+        "instruments": instruments,
+        "assets": assets,
+    }
+    return json.dumps(projection, sort_keys=True)
+
+
 def normalize_ids(report: ContractReport, violations: list[tuple[str, str]]) -> ContractReport | None:
     """id-normalization-v1: renumber E/I/A ids, remap instrument holders and reorder; ``None`` when ineligible.
 
-    Eligible only when every core violation is an ID sequence one, no list has duplicate
-    ids, and no renamed or target id appears in free text. Nothing else is changed.
+    Eligible only when every core violation is an ID sequence one or conditionally eligible holder reference,
+    no list has duplicate ids, no renamed or target id appears in free text, and semantic invariance holds.
     """
     if not violations or any(code not in REPAIRABLE_CODES for code, _ in violations):
         return None
@@ -305,8 +387,17 @@ def normalize_ids(report: ContractReport, violations: list[tuple[str, str]]) -> 
             entity_mapping = mapping
     for instrument in data["instruments"]:
         if instrument["entity_id"] is not None:
-            instrument["entity_id"] = entity_mapping[instrument["entity_id"]]
-    return ContractReport.model_validate(data)
+            target = entity_mapping.get(instrument["entity_id"])
+            if target is None:
+                return None
+            instrument["entity_id"] = target
+    try:
+        repaired = ContractReport.model_validate(data)
+    except ValidationError:
+        return None
+    if _semantic_projection(repaired) != _semantic_projection(report):
+        return None
+    return repaired
 
 
 def with_derived_fields(report: ContractReport) -> dict[str, Any]:
@@ -316,7 +407,7 @@ def with_derived_fields(report: ContractReport) -> dict[str, Any]:
     return data
 
 
-def validate_report(value: Any) -> dict[str, Any]:
+def validate_report(value: Any, video_duration_seconds: float | None = None) -> dict[str, Any]:
     """Validate an already-decoded model output under core-scored-v1, applying id-normalization-v1 when eligible.
 
     Raises :class:`IncidentExtractionError` listing every violation of a schema-invalid or core-invalid report.
@@ -328,16 +419,16 @@ def validate_report(value: Any) -> dict[str, Any]:
             f"{'/'.join(str(part) for part in error['loc']) or '<root>'}: {error['msg']}" for error in exc.errors()
         )
         raise IncidentExtractionError(f"schema violation: {details}") from exc
-    violations = core_violations(report)
+    violations = core_violations(report, video_duration_seconds=video_duration_seconds)
     if not violations:
         return with_derived_fields(report)
     repaired = normalize_ids(report, violations)
-    if repaired is not None and not core_violations(repaired):
+    if repaired is not None and not core_violations(repaired, video_duration_seconds=video_duration_seconds):
         return with_derived_fields(repaired)
     raise IncidentExtractionError(f"core violation: {'; '.join(message for _, message in violations)}")
 
 
-def parse_report(content: str | None) -> dict[str, Any]:
+def parse_report(content: str | None, video_duration_seconds: float | None = None) -> dict[str, Any]:
     """Strictly decode and validate a model's message content, then add derived fields."""
     if not content:
         raise IncidentExtractionError("empty response content")
@@ -345,7 +436,7 @@ def parse_report(content: str | None) -> dict[str, Any]:
         decoded = json.loads(content)
     except json.JSONDecodeError as exc:
         raise IncidentExtractionError(f"content is not a single JSON document: {exc}") from exc
-    return validate_report(decoded)
+    return validate_report(decoded, video_duration_seconds=video_duration_seconds)
 
 
 def report_prompt(report: dict[str, Any]) -> str:
