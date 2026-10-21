@@ -264,6 +264,14 @@ def test_p1_request_matches_inference_json():
     assert p1["media_io_kwargs"] == {"video": {"num_frames": 64}}
 
 
+def test_rp1_request_matches_inference_json():
+    rp1 = incident_contract.rp1_request()
+    assert rp1["model"] == "nvidia/nemotron-3-nano-30b-a3b"
+    assert rp1["temperature"] == 0.0
+    assert rp1["max_tokens"] == 4096
+    assert rp1["chat_template_kwargs"] == {"enable_thinking": False}
+
+
 def test_video_bounds_violations_and_enrichment_handling():
     report = _valid()
     end = report["incident"]["end_timestamp"]  # 11

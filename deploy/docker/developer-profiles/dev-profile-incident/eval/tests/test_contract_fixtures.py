@@ -17,8 +17,8 @@
 
 ``contracts/fixtures/`` is validated by both this suite and incident-console-v2's
 ``tests/contract-validate.test.mjs``, so the Python and TypeScript validators must
-agree on every fixture. ``contracts/inference.json`` is the console's copy of the
-P1 settings and model list; it must stay equal to eval's own constants.
+agree on every fixture. ``contracts/inference.json`` is the shared copy of the
+P1/RP1 settings and model list; it must stay equal to eval's own constants.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import contract  # noqa: E402
+import eval_run_lib
 import eval_vlm_client  # noqa: E402
 
 FIXTURES = contract.CONTRACTS_DIR / "fixtures"
@@ -68,6 +69,11 @@ def test_inference_json_models_match_eval():
 def test_inference_json_p1_settings_match_eval():
     eval_p1 = {**eval_vlm_client.FIXED_INFERENCE_CONFIG, **eval_vlm_client.P1_INFERENCE_CONFIG}
     assert INFERENCE["p1"] == eval_p1
+
+
+def test_inference_json_rp1_settings_match_eval():
+    eval_rp1 = {"model": eval_run_lib.RP1_MODEL, **eval_run_lib.RP1_INFERENCE_CONFIG}
+    assert INFERENCE["rp1"] == eval_rp1
 
 
 def test_inference_json_timeout_matches_eval():
