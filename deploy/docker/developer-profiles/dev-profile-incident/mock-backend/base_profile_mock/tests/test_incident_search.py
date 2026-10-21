@@ -127,4 +127,3 @@ def test_search_hide_rejected_filter():
     assert resp_shown.status_code == 200
     hits_shown = resp_shown.json()["hits"]
     assert any(h["critic"]["verdict"] == "rejected" for h in hits_shown)
-
