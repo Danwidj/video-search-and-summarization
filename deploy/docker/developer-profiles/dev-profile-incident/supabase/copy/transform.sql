@@ -188,6 +188,11 @@ BEGIN
     SELECT string_agg(DISTINCT c.model_run_id, ', ') INTO item_diffs FROM src_evidence_crops c
     JOIN migration_accepted_item_edits a USING (model_run_id);
     IF item_diffs IS NOT NULL THEN RAISE EXCEPTION 'Runs with accepted item edits have evidence crops, which this copy cannot re-key: %', item_diffs; END IF;
+    SELECT string_agg(DISTINCT m.model_run_id, ', ') INTO item_diffs FROM (
+        SELECT model_run_id FROM src_entity_matches UNION ALL SELECT model_run_id FROM src_instrument_matches
+        UNION ALL SELECT model_run_id FROM src_asset_matches) m
+    JOIN migration_accepted_item_edits a USING (model_run_id);
+    IF item_diffs IS NOT NULL THEN RAISE EXCEPTION 'Runs with accepted item edits have eval matches, which this copy cannot re-key: %', item_diffs; END IF;
 END $$;
 
 -- A decision may only name a run step 4 cannot settle: a stamped, non-contract run.

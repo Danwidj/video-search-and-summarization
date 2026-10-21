@@ -138,7 +138,7 @@ What it copies and what it leaves behind:
   items become the reviewer version, each linked to the AI item with identical content where that
   match is unique (no link otherwise: that item shows no crop), and the changed kinds' AI items
   are put back from notes. The script prints every link it made or left empty. It refuses a run
-  that has evidence crops (they would need re-keying). On 2026-10-21 one run reached this:
+  that has evidence crops or eval matches (they would need re-keying). On 2026-10-21 one run reached this:
   `mcd6cb9073218402f7bf` (video `v5c609184047f88c720e`, official, verified). Its 2 entities and
   3 assets were removed from midterm after 2026-10-20 (not through the console: its review stamp
   is still the 2026-10-01 verification), and the captain chose to copy it as it is now. So its
