@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 from pathlib import Path
 
@@ -30,13 +31,15 @@ from vss_agents.incident_contract import IncidentExtractionError
 PROFILE_CONTRACTS = (
     Path(__file__).resolve().parents[5] / "deploy/docker/developer-profiles/dev-profile-incident/contracts"
 )
-VENDORED_FILES = [
-    "incident_report.schema.json",
-    "incident_extraction_prompt.md",
-    "report_generation_prompt.md",
-    "VERSION",
-    "inference.json",
-]
+
+_sync_spec = importlib.util.spec_from_file_location("contract_sync", PROFILE_CONTRACTS / "sync.py")
+if _sync_spec is None or _sync_spec.loader is None:
+    raise ImportError(f"Could not load sync script from {PROFILE_CONTRACTS / 'sync.py'}")
+_sync_module = importlib.util.module_from_spec(_sync_spec)
+_sync_spec.loader.exec_module(_sync_module)
+VENDORED_FILES = _sync_module.VENDORED_FILES
+check_file = _sync_module.check_file
+check_drift = _sync_module.check_drift
 
 VALID = {
     "incident": {
@@ -88,9 +91,17 @@ def _valid() -> dict:
 
 @pytest.mark.parametrize("name", VENDORED_FILES)
 def test_vendored_file_matches_profile_contracts(name):
-    assert (incident_contract.CONTRACT_DIR / name).read_bytes() == (PROFILE_CONTRACTS / name).read_bytes(), (
+    assert check_file(name, PROFILE_CONTRACTS, incident_contract.CONTRACT_DIR), (
         f"services/agent/src/vss_agents/incident_contract/{name} differs from the profile contracts/ copy; "
-        "copy the profile file over it"
+        "run deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py to update it"
+    )
+
+
+def test_no_vendored_contract_drift():
+    differing = check_drift(PROFILE_CONTRACTS, incident_contract.CONTRACT_DIR)
+    assert not differing, (
+        f"Contract files differ: {differing}; "
+        "run deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py to update it"
     )
 
 

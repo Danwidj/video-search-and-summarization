@@ -15,7 +15,7 @@ const {
   normalizeAdditionalInstruction,
 } = await import('../lib/analysis/build-request.ts');
 
-const canonicalPrompt = readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.md'), 'utf8');
+const canonicalPrompt = readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.txt'), 'utf8');
 const expectedResponseFormat = JSON.parse(readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'response_format.json'), 'utf8'));
 
 test('without an instruction the request matches eval P1: video, canonical prompt, strict schema, shared settings', () => {

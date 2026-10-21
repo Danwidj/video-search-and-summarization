@@ -47,7 +47,7 @@ export function contractVersion(): string {
 }
 
 export function extractionPrompt(): string {
-  return readContractFile('incident_extraction_prompt.md');
+  return readContractFile('incident_extraction_prompt.txt');
 }
 
 export function schemaText(): string {
