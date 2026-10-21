@@ -95,7 +95,7 @@ FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... $W/supabase/tests/pr
 `sb_publishable_...`, not JWTs. They go in the `apikey` header only (`probe_api.sh` does this).
 Before the switch, the VM's `supabase-py` must be proven to accept the `sb_secret_` key (the
 agent's version is not pinned and older 2.x releases reject non-JWT keys), and the console and
-eval must stop sending the key as `Authorization: Bearer` (PR B). The connection test and the
+eval stop sending the key as `Authorization: Bearer` (merged in PR 149). The connection test and the
 table of every key sender are in the
 [`incident-manage-database`](../skills/incident-manage-database/SKILL.md#finals-keys-sb_secret_)
 skill.
