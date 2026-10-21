@@ -70,7 +70,7 @@ Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, 
 | Search route (always-on): `curl -s -X POST 127.0.0.1:7777/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"test","top_k":1}'` | yes | - |
 | Chat route: `curl -s -X POST 127.0.0.1:7777/api/v1/incidents/chat -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"test"}]}'` | yes | - |
 | Gateway: `curl -s 127.0.0.1:8600/health` returns `{"status":"ok"}` | yes | - |
-| Tunnel, agent and search: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
+| Tunnel, agent, proxy and search: `./.scripts/tunnel-check.sh` or `curl -s localhost:8000/health` | - | yes |
 
 In vm mode the console's health check leaves out gateway readiness. HTTP 503 from the VM for the first 60-90 s after a cold start is normal.
 
@@ -82,7 +82,7 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 |---|---|
 | `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
 | `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and Kafka logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
-| Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent is down on the VM. |
+| Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent or proxy is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |
 | Port 3200, 7777, 8000 or 8600 already in use | A previous run is still alive. Stop it, or find it with `lsof -i :<port>`. |
 | Console health shows Supabase or R2 not configured | A missing variable or broken symlink. Re-run the prerequisite checks. |

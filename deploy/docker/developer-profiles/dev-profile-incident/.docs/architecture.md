@@ -149,7 +149,7 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health"] --> CheckConsole{--no-console?}
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
     CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
