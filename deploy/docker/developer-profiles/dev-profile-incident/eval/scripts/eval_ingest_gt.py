@@ -27,9 +27,11 @@ eval-workflow plan):
 1. ``gt_incidents`` has 1015 raw rows but only 80 are real data - the rest are
    empty except a stray ``0`` in the Duration column (an Excel formatting
    artifact). Filtered by requiring a non-empty ``Type``.
-2. The GT label ``Animal`` is renamed to ``Animal Attack`` here so it reads
-   identically to P1's own permitted value (P1 says "animal attack"; every
-   other category already matches P1 after case-folding).
+2. ``gt_incidents.type`` is stored as the canonical lowercase incident type
+   (``incident_report.INCIDENT_TYPES``): trimmed, lowercased, with the
+   retired ``Fighting`` -> ``assault`` and the short ``Animal`` ->
+   ``animal attack``. A value outside the five is printed as a warning and
+   still stored (normalised), so no labelled row is lost.
 3. ``gt_entities``/``gt_instruments``/``gt_assets`` are read by explicit
    column name only - this naturally drops the two ``gt_assets`` rows'
    (Burglary004, Burglary005) stray trailing cells past the documented
@@ -64,6 +66,7 @@ from db_postgrest import PostgrestIncidentDB  # noqa: E402
 from db_postgrest import configured as postgrest_configured  # noqa: E402
 from eval_video_resolution import ResolutionError, build_basename_index, resolve_filename  # noqa: E402
 import r2_videos  # noqa: E402
+from incident_report import INCIDENT_TYPES, canonical_incident_type  # noqa: E402
 
 
 def _get_db():
@@ -112,9 +115,22 @@ def _sheet_rows(workbook, sheet_name: str) -> list[dict]:
 
 
 def _fix_type_label(type_value: str | None) -> str | None:
+    """Display label for a category (split manifests, CLI, reports) - not the stored type."""
     if type_value is None:
         return None
     return _LABEL_FIXES.get(type_value.strip().lower(), type_value)
+
+
+def gt_incident_type(type_value: str | None, incident_id: str = "") -> str | None:
+    """The canonical type stored in ``gt_incidents.type``; warns on an unknown value."""
+    canonical = canonical_incident_type(type_value)
+    if canonical is not None and canonical not in INCIDENT_TYPES:
+        print(
+            f"WARNING: {incident_id or 'GT row'} has incident type {type_value!r}, not one of "
+            f"{INCIDENT_TYPES}; storing it as {canonical!r}",
+            file=sys.stderr,
+        )
+    return canonical
 
 
 def load_gt_incidents(workbook) -> list[dict]:
@@ -164,7 +180,7 @@ def ingest(*, dry_run: bool = False) -> dict:
             r2_key = None
 
         gt_fields = {
-            "type": _fix_type_label(row.get("Type")),
+            "type": gt_incident_type(row.get("Type"), incident_id),
             "start_timestamp": row.get("Start_Timestamp"),
             "end_timestamp": row.get("End_Timestamp"),
             "duration": row.get("Duration"),

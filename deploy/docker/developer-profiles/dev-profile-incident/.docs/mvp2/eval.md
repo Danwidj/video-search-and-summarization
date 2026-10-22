@@ -12,6 +12,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
   - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`; on finals they are part of the baseline `supabase/migrations/20261020000000_finals_baseline.sql`.
+  - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
   - 55 held-out videos, seed 42.

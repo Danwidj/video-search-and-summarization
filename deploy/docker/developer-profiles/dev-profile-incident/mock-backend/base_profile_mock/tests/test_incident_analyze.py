@@ -61,7 +61,7 @@ def test_analyze_persists_mock_report_and_evidence(monkeypatch):
     body = response.json()
     assert body["status"] == "completed" and body["mock"] is True
     assert body["video_filepath"] == "anomaly/fighting/clip.mp4"
-    assert body["incident_type"] in {"road accident", "fighting", "animal", "burglary", "explosion"}
+    assert body["incident_type"] in {"road accident", "assault", "animal attack", "burglary", "explosion"}
     assert [call[0] for call in fake.calls] == ["video", "run", "incident", "entity", "report"]
     assert fake.calls[0][2] == {"filepath": "anomaly/fighting/clip.mp4"}
     assert "MOCK" in fake.calls[2][2]["fields"]["description"]
@@ -150,3 +150,8 @@ def test_mock_upload_key_is_neutral_unique_and_keeps_safe_extension(monkeypatch)
 
     unsafe = Stream(stream_id="sensor-1", name="clip", filename="clip.not-valid!", bytes_total=1, content=b"x")
     assert vst_storage._upload_key(unsafe, "sensor-1") == "uploads/sensor-1/fallback-id.mp4"
+
+
+def test_mock_categories_use_standard_incident_types() -> None:
+    standard = {"road accident", "burglary", "explosion", "assault", "animal attack"}
+    assert {category["type"] for category in incident_analyze._MOCK_CATEGORIES} == standard
