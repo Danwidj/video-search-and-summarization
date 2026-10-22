@@ -155,6 +155,7 @@ check() {
   fi
 }
 
+# shellcheck disable=SC2001
 check_empty() {
   if [ -z "$2" ]; then
     pass=$((pass + 1))
