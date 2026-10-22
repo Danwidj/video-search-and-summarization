@@ -41,7 +41,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
-- **Cascades are real.** Deleting a `videos` or `model_runs` row, or re-running `insert_incident` under the same `model_run_id`, cascades through the evidence, review, reviewer-version, notification and match tables. `insert_incident` refuses a run that has a reviewer version. Callers must re-insert evidence after the RPC.
+- **Cascades are real.** Deleting a `videos` or `model_runs` row, or re-running `insert_incident` under the same `model_run_id`, cascades through the evidence, review, reviewer-version, and severity-eval tables. `insert_incident` refuses a run that has a reviewer version. Callers must re-insert evidence after the RPC.
 - **Changing a function signature:** drop the old signature in the same migration. PostgREST rejects ambiguous overloads that share parameter names.
 - **Never** print or commit the service-role key, public key or DSN. Backend code uses the service role server-side only.
 
