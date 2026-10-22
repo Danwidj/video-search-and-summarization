@@ -2,9 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-23: Console chat route calls POST /api/v1/incidents/chat
+- **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`lib/chat/agent-chat.ts`, types in `lib/ports/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.
+- **Why:** The route called the generic NAT `/chat`, so the cited-evidence chat was unreachable from the UI (chat model audit, finding 5). The agent answers from stored evidence, which is still canned seed data (see [`vm-api-contracts.md`](vm-api-contracts.md)).
+- **Rejected:** keeping the report context in a system message (the contract's strict models accept it but the agent ignores it); a new port and repository (one adapter function is enough until a second caller exists).
+- **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).
+
 ### 2026-10-22: Strict chat models matching chat-contract-v1
 - **Decision:** The agent and mock chat models use `Literal` types for `role`, `scope` and `item_type`, `extra="forbid"`, `min_length=1` on ids, `ge=0` on `timestamp_seconds`, and `AssistantMessage.citations` has no default. Fixture tests feed the contract fixtures to both sets of models. The hand-written scope check is gone; pydantic returns the `422`.
-- **Why:** The models accepted values the schemas reject (`request-invalid-scope.json`, `response-invalid-role.json`). The contract requires `citations`, and the route always sends it. No console or eval code calls the chat route, so no current sender is rejected.
+- **Why:** The models accepted values the schemas reject (`request-invalid-scope.json`, `response-invalid-role.json`). The contract requires `citations`, and the route always sends it. No console or eval code called the chat route then, so no current sender was rejected.
 - **Rejected:** relaxing the contract; sharing one model module between agent and mock (the mock stays standalone).
 - **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`vm-api-contracts.md`](vm-api-contracts.md).
 

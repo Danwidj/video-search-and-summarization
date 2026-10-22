@@ -135,8 +135,8 @@ application. The report library remembers filters, scroll position, and its orig
 `/dashboard` summarizes report volume, review progress, confidence, severity, and incident types with drill-down
 links.
 
-Each report provides human-attributed structured corrections, non-streaming report-grounded follow-up chat through
-the agent `/chat` contract, model-run history and side-by-side comparison, and a ground-truth/severity evaluation
+Each report provides human-attributed structured corrections, non-streaming follow-up chat through
+the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the report's video and showing the cited evidence, model-run history and side-by-side comparison, and a ground-truth/severity evaluation
 form. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
 provenance.
 
