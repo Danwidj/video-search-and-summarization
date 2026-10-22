@@ -21,7 +21,7 @@ An intelligent, video-driven incident search and reporting system for physical s
 - **Ingestion:** VST/NvStreamer chunked upload with a direct-to-R2 fallback; durable playback links generated on demand.
 - **Analysis:** either the credential-holding `vlm-gateway` or the native `vss-agent` (`POST /api/v1/incidents/{incident_id}/analyze`), on `incident-contract-v3`, with any of three allowlisted VLMs, strict validation and ID-only recovery. Every attempt is recorded; failures stay in a per-video history.
 - **Review UI (`incident-console-v2`):** upload workspace, report view with timestamp seeking and evidence cards, review lifecycle `unreviewed` / `under review` / `verified`, structured reviewer editing that leaves model output immutable, run history and re-analysis, explicit official report per video, and a dashboard that counts official incidents only.
-- **Tier 1 ground-truth evaluation:** `gt_*` tables from human annotations; exact match for type and severity, LLM-judge scoring for the description, temporal tolerance for start/end/duration, and precision / recall / F1 for entities, instruments and assets via embedding similarity and Hungarian matching.
+- **Tier 1 ground-truth evaluation (removed):** Formerly `gt_*` tables from human annotations; exact match for type and severity, LLM-judge scoring for the description, temporal tolerance for start/end/duration, and precision / recall / F1 for entities, instruments and assets via embedding similarity and Hungarian matching. The ground-truth evaluation screen and tables have been removed.
 
 ### MVP2: natural-language incident search
 

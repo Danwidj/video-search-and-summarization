@@ -61,7 +61,7 @@ Every dashboard count equals the library total for `scope=official` with the sam
 
 ### Relationships
 
-Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `human_reports`, `evidence_crops`, `query_results`, `review_status`, and `severity_eval_log` all hang off it. The `human_report_*` item tables hang off `human_reports` (CASCADE), and their `source_*_id` links to the AI items are `ON DELETE SET NULL` (a `NO ACTION` link would make run and video deletes fail, because the delete reaches the reviewer items along two cascade paths). `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. (The retired `notifications`, `entity_matches`, `instrument_matches`, and `asset_matches` tables have been dropped from the live finals database). Column-level detail is in the table specifications below and in the finals baseline.
+Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `human_reports`, `evidence_crops`, `query_results`, and `review_status` all hang off it. The `human_report_*` item tables hang off `human_reports` (CASCADE), and their `source_*_id` links to the AI items are `ON DELETE SET NULL` (a `NO ACTION` link would make run and video deletes fail, because the delete reaches the reviewer items along two cascade paths). `incidents` references `videos` and `model_runs` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. (The retired `notifications`, `entity_matches`, `instrument_matches`, `asset_matches`, `severity_eval_log`, `gt_incidents`, `gt_entities`, `gt_instruments`, and `gt_assets` tables have been dropped from the live finals database; formerly `gt_incidents` referenced `videos` and `gt_entities`, `gt_instruments` and `gt_assets` referenced `gt_incidents`). Column-level detail is in the table specifications below and in the finals baseline.
 
 ---
 
@@ -193,8 +193,8 @@ Carries the reviewer verification state independently of the AI report.
 ##### `notifications` (dropped)
 Dropped from the live finals database; formerly used by the archived Streamlit v1 console.
 
-##### `severity_eval_log`
-Tracks comparative human vs. AI severity scoring for human-in-the-loop evaluation.
+##### `severity_eval_log` (dropped)
+Dropped from the live finals database; formerly tracked comparative human vs. AI severity scoring for human-in-the-loop evaluation.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
@@ -223,16 +223,16 @@ The reviewer's version of one run's report, next to the immutable AI rows. One p
 
 **Effective views.** `effective_incidents`, `effective_entities`, `effective_instruments` and `effective_assets` give the report every reader means: the reviewer version if the run has one, otherwise the AI rows. They have the same columns in the same order as the AI tables (timestamps as text; `confidence_score` always from the AI row), plus `source_*_id` and `source` (`'ai'` or `'human'`), so a reader switches by changing only the relation name. They are `security_invoker`, read-only, and `service_role` only. The library, dashboard and search RPCs read them; eval and the crop loader read the AI tables, which are guaranteed model output.
 
-#### 4. Ground-Truth (GT) & Evaluation Matching Tables
+#### 4. Ground-Truth (GT) & Evaluation Matching Tables (dropped)
 
-##### `gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`
-Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, but without
-`model_run_id`. They store verified human annotations.
-- `gt_incidents.type`: Free text (`VARCHAR(32)`), not CHECK-constrained. `eval/scripts/eval_ingest_gt.py` writes the canonical lowercase type (one of the five standard types); rows ingested earlier may still be capitalised (`Assault`, `Animal Attack`).
+##### `gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets` (dropped)
+Dropped from the live finals database; formerly parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, but without
+`model_run_id`, storing verified human annotations.
+- `gt_incidents.type`: Free text (`VARCHAR(32)`), not CHECK-constrained. `eval/scripts/eval_ingest_gt.py` wrote the canonical lowercase type (one of the five standard types); rows ingested earlier may still have been capitalised (`Assault`, `Animal Attack`).
 - `gt_incidents.start_timestamp` / `end_timestamp`: Free text (`VARCHAR(32)`), storing bare seconds (e.g. `"21"`, `"15.6"`).
-- `gt_incidents` includes `labelled_by` and `labelled_datetime` (naive UTC) instead of AI confidence/model fields.
-- `gt_entities`, `gt_instruments`, and `gt_assets` reference `gt_incidents(incident_id)` with `ON DELETE CASCADE` (they reference `gt_incidents`, not `videos` or `incidents`).
-- `image` columns in `gt_*` tables are schema-only and always NULL today.
+- `gt_incidents` included `labelled_by` and `labelled_datetime` (naive UTC) instead of AI confidence/model fields.
+- `gt_entities`, `gt_instruments`, and `gt_assets` referenced `gt_incidents(incident_id)` with `ON DELETE CASCADE` (they referenced `gt_incidents`, not `videos` or `incidents`).
+- `image` columns in `gt_*` tables were schema-only and always NULL.
 
 ##### `entity_matches`, `instrument_matches`, `asset_matches` (dropped)
 Dropped from the live finals database; formerly stored accepted similarity pairings during v1 ground-truth evaluation.
@@ -310,11 +310,11 @@ PostgREST has no client-held transactions, so saving an incident is one server-s
 
 > [!IMPORTANT]
 > **Cascading Deletes on Child Records:**
-> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `human_reports` (and its items), `evidence_crops`, and `severity_eval_log` rows for that `(incident_id, model_run_id)`. Re-analyzing under the same `model_run_id` therefore wipes all child evidence and reports, which is why the RPC refuses a run that has a reviewer version. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
+> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `human_reports` (and its items), and `evidence_crops` rows for that `(incident_id, model_run_id)` (as it formerly did for `severity_eval_log`). Re-analyzing under the same `model_run_id` therefore wipes all child evidence and reports, which is why the RPC refuses a run that has a reviewer version. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
 
 > [!NOTE]
 > **Cascades on Deleting Videos or Model Runs:**
-> Foreign keys `videos -> incidents` and `videos -> gt_incidents` are `ON DELETE CASCADE`. Deleting a `videos` row (e.g. via `incident-console-v2/app/api/reports/[videoId]/delete/route.ts`) cascades to delete all model runs, evidence, GT rows, and evaluation matches for that video. Similarly, `model_runs -> incidents` is `ON DELETE CASCADE`; deleting a `model_runs` row wipes every incident scored under it (`insert_model_run` deliberately upserts for that reason).
+> Foreign keys `videos -> incidents` (and formerly `videos -> gt_incidents`) are `ON DELETE CASCADE`. Deleting a `videos` row (e.g. via `incident-console-v2/app/api/reports/[videoId]/delete/route.ts`) cascades to delete all model runs, evidence, and evaluation matches for that video. Similarly, `model_runs -> incidents` is `ON DELETE CASCADE`; deleting a `model_runs` row wipes every incident scored under it (`insert_model_run` deliberately upserts for that reason).
 
 ---
 

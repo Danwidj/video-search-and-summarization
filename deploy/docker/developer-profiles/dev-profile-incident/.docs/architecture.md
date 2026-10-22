@@ -287,7 +287,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
   - it never writes the `videos` row (the upload time is kept);
   - it never selects the official report.
 - **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `select_official_report` / `clear_official_report`, used from the report page and the video history.
-- **Where it appears:** pages `/videos`, `/videos/[id]` and `/videos/[id]/ground-truth`. The report page's analysis card combines re-analysis with a compact history.
+- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-analysis with a compact history.
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 

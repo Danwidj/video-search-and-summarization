@@ -2,8 +2,6 @@
 
 'use client';
 
-import Link from 'next/link';
-
 import { ReanalysisCard } from '@/components/reanalysis-card';
 import { RunHistoryList, useRunHistory } from '@/components/run-history';
 import { formatTimestamp } from '@/lib/time';
@@ -28,7 +26,6 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
             {video.playbackUrl ? <video className="aspect-video w-full rounded-2xl bg-black object-contain" controls src={video.playbackUrl} /> : <p className="rounded-xl border border-dashed border-ink/15 p-6 text-sm text-ink/45">This video has no playable stored object.</p>}
             <h2 className="mt-6 text-sm font-bold uppercase tracking-[0.12em] text-ink/45">Analyse again</h2>
             <div className="mt-2"><ReanalysisCard onAttempted={() => void reload()} videoId={videoId} /></div>
-            <Link className="mt-6 inline-block text-xs font-semibold text-moss" href={`/videos/${encodeURIComponent(videoId)}/ground-truth`}>Ground truth for this video →</Link>
           </div>
           <div className="p-6">
             <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-ink/45">Analysis history</h2>

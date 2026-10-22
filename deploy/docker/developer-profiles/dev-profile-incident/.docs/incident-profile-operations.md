@@ -242,9 +242,7 @@ Verify deployment health against this checklist before declaring a build ready:
       Verify that reviewer attribution and timestamps persist.
 - [ ] **Filtering & Dashboard:** Filter report library by incident type, severity, and date range. Confirm that
       counts match database records and clearing filters restores the full catalog.
-- [ ] **Ground-Truth Evaluation:** Open the evaluation interface for an incident with ground truth (`gt_incidents`).
-      Confirm that exact type/severity match, LLM-judge description evaluation, and entity/instrument/asset
-      matching metrics display correctly.
+- [ ] **Ground-Truth Evaluation (removed):** Formerly opened the evaluation interface for an incident with ground truth (`gt_incidents`). Ground-truth UI and tables have been removed.
 
 ---
 
