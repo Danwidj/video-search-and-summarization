@@ -11,7 +11,12 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
+from pydantic import ValidationError
+import pytest
 
+from vss_agents.api.incident_chat import AssistantMessage
+from vss_agents.api.incident_chat import ChatRequest
+from vss_agents.api.incident_chat import ChatResponse
 from vss_agents.api.incident_chat import register_incident_chat_routes
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[5] / "deploy/docker/developer-profiles/dev-profile-incident/contracts"
@@ -210,3 +215,45 @@ def test_chat_multi_turn_history_uses_latest_user_message():
     )
     assert resp.status_code == 200
     assert fake_client.last_query == "Second question about crowbars"
+
+
+FIXTURES_DIR = CONTRACTS_DIR / "chat-contract-v1" / "fixtures"
+
+
+def _fixtures(kind: str, prefix: str) -> list[Path]:
+    return sorted((FIXTURES_DIR / kind).glob(f"{prefix}*.json"))
+
+
+def _fixture_id(path: Path) -> str:
+    return path.name
+
+
+@pytest.mark.parametrize(
+    "path", _fixtures("valid", "full-request") + _fixtures("valid", "minimal-request"), ids=_fixture_id
+)
+def test_models_accept_valid_request_fixtures(path: Path):
+    ChatRequest.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize("path", _fixtures("invalid", "request-"), ids=_fixture_id)
+def test_models_reject_invalid_request_fixtures(path: Path):
+    with pytest.raises(ValidationError):
+        ChatRequest.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize(
+    "path", _fixtures("valid", "full-response") + _fixtures("valid", "empty-response"), ids=_fixture_id
+)
+def test_models_accept_valid_response_fixtures(path: Path):
+    ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+@pytest.mark.parametrize("path", _fixtures("invalid", "response-"), ids=_fixture_id)
+def test_models_reject_invalid_response_fixtures(path: Path):
+    with pytest.raises(ValidationError):
+        ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def test_assistant_message_requires_citations():
+    with pytest.raises(ValidationError):
+        AssistantMessage.model_validate({"role": "assistant", "content": "hi"})
