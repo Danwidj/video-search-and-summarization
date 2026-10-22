@@ -265,4 +265,49 @@ class PostgrestIncidentDB:
             params["model_run_id"] = f"eq.{model_run_id}"
         return self._get("assets", params)
 
+    # -- similarity match persistence (matching.py) -------------------------- #
 
+    def record_entity_match(self, *, incident_id: str, model_run_id: str, entity_id: str, gt_entity_id: str,
+                             similarity_score: float) -> None:
+        self._delete(
+            "entity_matches",
+            {"incident_id": f"eq.{incident_id}", "model_run_id": f"eq.{model_run_id}", "entity_id": f"eq.{entity_id}"},
+        )
+        self._post(
+            "entity_matches",
+            {
+                "incident_id": incident_id, "model_run_id": model_run_id, "entity_id": entity_id,
+                "gt_entity_id": gt_entity_id, "similarity_score": similarity_score,
+            },
+        )
+
+    def record_instrument_match(self, *, incident_id: str, model_run_id: str, instrument_id: str,
+                                 gt_instrument_id: str, similarity_score: float) -> None:
+        self._delete(
+            "instrument_matches",
+            {
+                "incident_id": f"eq.{incident_id}", "model_run_id": f"eq.{model_run_id}",
+                "instrument_id": f"eq.{instrument_id}",
+            },
+        )
+        self._post(
+            "instrument_matches",
+            {
+                "incident_id": incident_id, "model_run_id": model_run_id, "instrument_id": instrument_id,
+                "gt_instrument_id": gt_instrument_id, "similarity_score": similarity_score,
+            },
+        )
+
+    def record_asset_match(self, *, incident_id: str, model_run_id: str, asset_id: str, gt_asset_id: str,
+                            similarity_score: float) -> None:
+        self._delete(
+            "asset_matches",
+            {"incident_id": f"eq.{incident_id}", "model_run_id": f"eq.{model_run_id}", "asset_id": f"eq.{asset_id}"},
+        )
+        self._post(
+            "asset_matches",
+            {
+                "incident_id": incident_id, "model_run_id": model_run_id, "asset_id": asset_id,
+                "gt_asset_id": gt_asset_id, "similarity_score": similarity_score,
+            },
+        )

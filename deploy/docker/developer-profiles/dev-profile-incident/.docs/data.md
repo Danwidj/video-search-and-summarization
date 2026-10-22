@@ -236,7 +236,7 @@ Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, 
 
 ##### `entity_matches`, `instrument_matches`, `asset_matches` (dropped)
 Dropped from the live finals database; formerly stored accepted similarity pairings during v1 ground-truth evaluation.
-The evaluation tool in `eval/` computes matching in memory without persisting to these tables.
+Evaluation code in `eval/` still contains match persistence routines against these tables, which is out of scope here and handled separately.
 
 #### 5. MVP2 Vector Search & Evidence Crops Tables
 
