@@ -25,6 +25,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** DB CHECK constraints on type/severity, plus auto-mapping in `insert_incident`.
 - **Links:** [`../eval/incident_report.py`](../eval/incident_report.py); [`../eval/scripts/eval_ingest_gt.py`](../eval/scripts/eval_ingest_gt.py); [`data.md`](data.md).
 
+### 2026-10-22: Consolidate incident lifecycle helpers and publish search operations
+- **Decision:** Delete the incident profile's datalog cleanup wrapper; merge GPU reporting into `.scripts/status.sh`; merge non-interactive SSH target resolution into `.scripts/vm-preflight.sh`; and keep native-image pruning with the `incident-operate-vm` skill, with an explicit `--non-interactive` option. Add `incident-search` as the operational entry point for search, grounded chat and evidence-crop loading.
+- **Why:** The cleanup wrapper selected stock profiles and could erase the shared VM's cache, while the helper pairs were always sourced or used together. Keeping the pruning helper beside its VM-operation procedure makes its shared-host safety context explicit, and the search procedure had no dedicated skill despite the routes and crop pipeline being delivered.
+- **Rejected:** retaining the profile-rejecting cleanup command; preserving duplicate helper files; making pruning implicitly non-interactive; and leaving search/chat/crop procedures scattered across status and architecture documents.
+- **Links:** [`../.scripts/status.sh`](../.scripts/status.sh); [`../.scripts/vm-preflight.sh`](../.scripts/vm-preflight.sh); [`../skills/incident-operate-vm/`](../skills/incident-operate-vm/); [`../skills/incident-search/`](../skills/incident-search/).
 
 ### 2026-10-21: Single-source incident contract with sync script and .txt prompts
 - **Decision:**
