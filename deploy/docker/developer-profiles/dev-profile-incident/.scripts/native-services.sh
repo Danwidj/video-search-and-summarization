@@ -221,9 +221,10 @@ _start_vss_agent() {
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${REPO_ROOT}"
     # shellcheck disable=SC2086
-    nohup "${nat_bin}" serve --config_file "${cfg}" --host "${host}" --port "${port}" > "${log_file}" 2>&1 &
+    nohup "${nat_bin}" serve --config_file "${cfg}" --host "${host}" --port "${port}" > "${log_file}" 2>&1 200>&- &
     write_pid_atomic "${svc}" "$!"
   )
 
@@ -318,8 +319,9 @@ _start_video_analytics_api() {
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${app_dir}"
-    nohup "${node_bin}" index.js --config "${cfg}" > "${log_file}" 2>&1 &
+    nohup "${node_bin}" index.js --config "${cfg}" > "${log_file}" 2>&1 200>&- &
     write_pid_atomic "${svc}" "$!"
   )
 
@@ -408,8 +410,9 @@ _start_behavior_analytics() {
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${app_dir}"
-    nohup env PYTHONPATH="src:${PYTHONPATH:-}" "${py_bin}" "${app_script}" --config "${cfg}" > "${log_file}" 2>&1 &
+    nohup env PYTHONPATH="src:${PYTHONPATH:-}" "${py_bin}" "${app_script}" --config "${cfg}" > "${log_file}" 2>&1 200>&- &
     write_pid_atomic "${svc}" "$!"
   )
 

@@ -255,9 +255,39 @@ if command -v flock >/dev/null 2>&1; then
   # Order must be: start 1, end 1, start 2, end 2
   expected=$'start 1\nend 1\nstart 2\nend 2'
   assert_eq "$expected" "$lines" "flock properly serialized concurrent executions"
+
+  # Test that background process does not leak fd 200 and hold lock after with_lock exits
+  bg_lock_done="$TMP/bg_lock_done"
+  rm -f "$bg_lock_done"
+  (
+    # shellcheck disable=SC1090,SC1091
+    source "$SUT" status >/dev/null
+    with_lock bash -c "( exec 200>&- 2>/dev/null || true; sleep 2 200>&- & )"
+  )
+  (
+    # shellcheck disable=SC1090,SC1091
+    source "$SUT" status >/dev/null
+    with_lock touch "$bg_lock_done"
+  )
+  assert_eq "true" "$([ -f "$bg_lock_done" ] && echo true || echo false)" "lock re-acquired without delay when background process runs"
 else
   echo "INFO: flock command not available in this environment, skipping live flock serialization test"
 fi
+
+# Verify fd 200 is closed in daemon launch subshell
+fd_leak_check="$TMP/fd_leak_check"
+rm -f "$fd_leak_check"
+(
+  (
+    exec 200>&- 2>/dev/null || true
+    if [ -e /dev/fd/200 ]; then
+      echo "leaked" > "$fd_leak_check"
+    else
+      echo "closed" > "$fd_leak_check"
+    fi
+  )
+) 200>>"$RUN_DIR/native-services.lock"
+assert_eq "closed" "$(cat "$fd_leak_check")" "fd 200 is closed in daemon launch subshell"
 
 echo ""
 echo "=== Summary ==="
