@@ -28,9 +28,9 @@ The finals Supabase project (baseline [`supabase/migrations/20261020000000_final
 
 The finals baseline incorporates all prior migration effects:
 - `p_timezone` parameter on the report library and dashboard RPCs (`list_incident_report_summaries`, `get_incident_dashboard`);
-- Row-Level Security enabled on all 24 public tables, with permissions revoked from `PUBLIC`, `anon` and `authenticated` (services authenticate via `service_role` or `postgres`, both having `BYPASSRLS`);
+- Row-Level Security enabled on all 20 public tables, with permissions revoked from `PUBLIC`, `anon` and `authenticated` (services authenticate via `service_role` or `postgres`, both having `BYPASSRLS`);
 - Legacy labels relabelled during copy (`fighting` to `assault`, `animal` to `animal attack`, `person` to `human`), with query-time canonical folding retained as a guard;
-- The four legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) are dropped from the schema.
+- The four legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) and the four retired v1 tables (`asset_matches`, `entity_matches`, `instrument_matches`, `notifications`) are dropped from the schema.
 
 There are no pending database migrations.
 

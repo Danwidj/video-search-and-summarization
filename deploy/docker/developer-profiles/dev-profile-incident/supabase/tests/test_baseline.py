@@ -85,13 +85,14 @@ with tempfile.TemporaryDirectory() as tmp:
         "SELECT p.oid::regprocedure::TEXT FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'public' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') ORDER BY 1").fetchall()]
 
-    @test(f"schema: 24 tables, 4 views, {len(functions)} functions, no legacy or superseded objects")
+    @test(f"schema: 20 tables, 4 views, {len(functions)} functions, no legacy or superseded objects")
     def _():
         kinds = dict(conn.execute("SELECT relkind::TEXT, count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                   "WHERE n.nspname = 'public' AND relkind IN ('r','v') GROUP BY 1").fetchall())
-        assert kinds == {"r": 24, "v": 4}, kinds
+        assert kinds == {"r": 20, "v": 4}, kinds
         names = " ".join(tables + functions)
-        for gone in ("incident_reports", "incident_entities", "apply_incident_report_patch", "replace_incident_evidence"):
+        for gone in ("incident_reports", "incident_entities", "apply_incident_report_patch", "replace_incident_evidence",
+                     "asset_matches", "entity_matches", "instrument_matches", "notifications"):
             assert gone not in names, gone
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
 
@@ -443,13 +444,6 @@ with tempfile.TemporaryDirectory() as tmp:
                         + "CREATE TEMP TABLE migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY); INSERT INTO migration_accepted_item_edits VALUES ('nope');"
                         + transform)
         assert "--accept-item-edits names runs without item-level edits: nope" in error, error
-        # An accepted run with eval matches is refused rather than losing them to the AI-row rebuild.
-        error = refused(conn, "".join(f"CREATE TEMP TABLE src_{t} (LIKE public.{t});" for t in copy_script.TABLES)
-                        + "CREATE TEMP TABLE migration_accepted_item_edits (model_run_id TEXT PRIMARY KEY); INSERT INTO migration_accepted_item_edits VALUES ('rb');"
-                        + rows + "INSERT INTO src_gt_incidents (incident_id) VALUES ('vb'); INSERT INTO src_gt_entities (incident_id, entity_id) VALUES ('vb', 'G1');"
-                        + "INSERT INTO src_entity_matches (incident_id, model_run_id, entity_id, gt_entity_id, similarity_score) VALUES ('vb', 'rb', 'E1', 'G1', 0.9);"
-                        + transform)
-        assert "Runs with accepted item edits have eval matches, which this copy cannot re-key: rb" in error, error
 
     conn.close()
 

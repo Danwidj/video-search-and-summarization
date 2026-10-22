@@ -14,7 +14,7 @@ metadata:
 Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
 - Methodology and recorded 3-model results: [`eval/docs/vlm_benchmark_results.md`](../../eval/docs/vlm_benchmark_results.md)
-- `gt_*` and `*_matches` tables: [`.docs/data.md`](../../.docs/data.md)
+- `gt_*` tables: [`.docs/data.md`](../../.docs/data.md)
 
 ## Prerequisites
 
