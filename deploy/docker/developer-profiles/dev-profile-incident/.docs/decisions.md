@@ -4,8 +4,8 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-10-22: Concurrency-safe native service startup across shared VM users
 - **Decision:**
-  - Serialise native service check-then-start via `flock` on `.run/native-services.lock` (group-writable).
-  - Add `umask 002` near the top of `.scripts/native-services.sh` and ensure `.run/`, lock files, PID files and log files are group-writable so concurrent/subsequent starts by different VM users do not fail with "Permission denied".
+  - Serialise native service check-then-start via `flock` on `.run/native-services.lock` (group-writable); close descriptor 200 before daemonizing background processes so `flock` is released when the launcher exits.
+  - Add `umask 002` near the top of `.scripts/native-services.sh` and ensure `.run/`, lock files, PID files and log files are group-writable so concurrent/subsequent starts by different VM users do not fail with "Permission denied". Clear pre-existing unwritable log or lock files before launching.
   - Treat a healthy `/health` response (`isAlive`) on the service port as already running even when the PID file is missing or unreadable; print that it is already running and skip start.
   - Write PID files atomically (`mktemp` then `mv`) and remove PID files on failed start only when matching this run's own PID.
   - Make `status` (and `status --porcelain`) list only expected services: `vss-agent` by default, including `video-analytics-api` and `behavior-analytics` only when `ENABLE_ANALYTICS=true` or named explicitly. Keep the porcelain format start.sh relies on unchanged.
