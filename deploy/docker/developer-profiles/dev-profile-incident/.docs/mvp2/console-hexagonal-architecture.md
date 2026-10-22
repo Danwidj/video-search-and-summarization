@@ -7,7 +7,7 @@ This workstream restructures `incident-console-v2` using hexagonal architecture 
 ### Context
 Before this workstream, Next.js API route handlers in `incident-console-v2/app/api/*` directly instantiated `PostgrestClient` (from `lib/postgrest/client.ts`), passed raw PostgREST parameters (`select=...` with embedded resources, `eq.` / `in.(...)` / `like.` filters, `order=...`) and RPC argument names (`p_*`), and mapped table rows directly within HTTP route handlers. `PostgrestClient` is a hand-written `fetch` client (`selectOne`, `selectMany`, `selectPage`, `selectIn`, `selectContaining`, `upsert`, `insertIfAbsent`, `deleteWhere`, `rpc`, `insertIncident`); there is no supabase-js `.from()` builder and supabase-js is not a dependency. This couples the presentation layer directly to Supabase PostgREST transport and database schema specifics, and some routes return rows or RPC JSON to the browser with only a TypeScript cast, so the API does not translate data properly.
 
-Components (`components/*`) are client code that only call `/api/*`; they never touch the database and keep consuming domain types over HTTP.
+Components (`components/*`) are client code: they never touch the database. Most still call `/api/*` and consume domain types over HTTP; read pages are moving to Server Components that load through the same use cases and pass the domain types as props (§8).
 
 ### Objectives
 1. **Decouple UI from Database Transport:** Define clean domain ports (`lib/ports/`) representing the business capabilities required by the console (incidents, dashboard analytics, video management, search, and health).
@@ -24,6 +24,7 @@ The ports, use cases and adapters together are the console's middle layer betwee
 ```
 incident-console-v2/
   app/api/**/route.ts             # Driving adapter: HTTP parsing/validation and status codes only
+  app/**/page.tsx                 # Driving adapter too when it is a Server Component that loads data (§8)
   lib/
     ports/                        # Domain types and driven-port interfaces (route handlers depend on these)
       common.ts                   # RunKey, Page<T>, StoreRejection (domain refusal)
@@ -52,7 +53,7 @@ The adapters as a whole own the translation: only `lib/adapters/supabase/**` kno
 The search adapter calls the vss-agent rather than Supabase, so it will sit beside the Supabase adapters (`lib/adapters/agent/`) and arrives with the console search route (§7); an adapter is never shipped without a caller.
 
 **Dependency rules** (conventions upheld in review; no test or lint tool checks them):
-1. `app/api/**` reaches the database only through `@/lib/adapters/supabase` (the factory), never `@/lib/postgrest/*` or another adapter module.
+1. `app/api/**` and server-rendered pages (`app/**/page.tsx`) reach the database only through `@/lib/adapters/supabase` (the factory), never `@/lib/postgrest/*` or another adapter module. Client components (`'use client'`) never import the factory, an adapter, a use case or `lib/env`.
 2. `lib/ports/**` holds type-only imports (apart from the `StoreRejection` class in `common.ts`), so ports stay browser-safe.
 3. `lib/application/**` never imports `lib/adapters`, `lib/postgrest`, `lib/r2` or `lib/gateway`; R2 work is passed in as functions.
 4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value. The callers not yet migrated are listed in §7; remove an entry when its caller moves.
@@ -404,3 +405,25 @@ Files outside `lib/adapters/supabase/**` that still import `lib/postgrest/client
 | `app/api/videos/[videoId]/runs/route.ts` | the verified/AI report split |
 | `lib/analysis/run-contract-analysis.ts` | the verified/AI report split |
 | `lib/analysis/persistence.ts` | the verified/AI report split |
+
+---
+
+## 8. Read pages as Server Components
+
+Next.js App Router pages can load their data on the server instead of mounting a client screen that fetches our own `/api/*` in `useEffect`. A converted page is a Server Component that builds the ports with `getDbAdapters()`, calls the use case (or a single port method), signs R2 URLs on the server and passes the domain types to the existing interactive client component as props. Pages move one per PR; write actions stay on their `/api/*` routes, and a GET route is deleted only once nothing calls it (the skills also curl several of them).
+
+| Page | State | Loads through |
+|---|---|---|
+| `/reports/[videoId]?run=` | Server Component | `getReport` (`lib/application/reports.ts`) |
+| `/reports/[videoId]/compare` | client fetch of `GET /api/reports/[videoId]` per run | planned |
+| `/reports` (library) | client fetch of `GET /api/reports` | planned; needs the viewer's time zone on the server |
+| `/videos`, `/videos/[videoId]` | client fetch of `GET /api/videos`, `GET /api/videos/[videoId]/runs` | planned; run history waits for its port (§7) |
+| `/dashboard` | client fetch of `GET /api/dashboard` | planned; needs the viewer's time zone on the server |
+| `/videos/[videoId]/ground-truth` | client fetch of `/api/reports/[videoId]` and its ground-truth route | planned; ground truth waits for its port (§7) |
+
+Conventions for a converted page (the report page is the reference, `app/reports/[videoId]/(report)/`):
+- `export const dynamic = 'force-dynamic'`: review state changes between visits, so the page is never served from a cache.
+- A route group keeps the page's `loading.tsx`, `error.tsx` and `not-found.tsx` from wrapping sibling routes (`compare/`).
+- A missing record calls `notFound()`; a load failure the page expects (unconfigured store, unreachable PostgREST, unsignable video) renders its message in place, as the API route returns it; `error.tsx` catches the rest, with the message redacted in production.
+- After a write through `/api/*`, the client component calls `router.refresh()`, which renders the page on the server again with the stored state.
+
