@@ -4,6 +4,7 @@
 // adapter backs each port. Built per call (a client is two strings), so the
 // configuration is read at request time and never cached at module load.
 
+import { SupabaseAnalysisRunAdapter } from '@/lib/adapters/supabase/analysis-runs';
 import { createPostgrestClient } from '@/lib/adapters/supabase/client';
 import { SupabaseDashboardAdapter } from '@/lib/adapters/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
@@ -16,6 +17,7 @@ import type { DbAdapters, HealthRepository } from '@/lib/ports';
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
   const db = createPostgrestClient(config);
   return {
+    analysisRuns: new SupabaseAnalysisRunAdapter(db),
     dashboard: new SupabaseDashboardAdapter(db),
     incidents: new SupabaseIncidentAdapter(db),
     videos: new SupabaseVideoAdapter(db),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Reads model_runs.notes, which holds either the immutable incident-contract-v2
-// attempt record (lib/analysis/persistence.ts attemptNotes) or a legacy console
+// attempt record (lib/adapters/supabase/analysis-runs.ts attemptNotes) or a legacy console
 // report. Nothing here writes notes.
 
 import type { DerivedContractReport } from '@/lib/contract/types';

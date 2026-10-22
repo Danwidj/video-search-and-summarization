@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // A small in-memory PostgREST for adapter contract tests: eq, like and in filters,
-// limit, upsert with on_conflict, delete, and RPCs and read-only views
+// limit, upsert with on_conflict (merging, or ignoring duplicates when the
+// request prefers resolution=ignore-duplicates), delete, and RPCs and read-only views
 // supplied by the test. Every request is recorded. Embedded selects and
 // cascades are not modelled.
 
@@ -76,9 +77,11 @@ export function fakePostgrest(tables, { rpc = {}, views = {} } = {}) {
     }
     if (method === 'POST') {
       const keys = (parsed.searchParams.get('on_conflict') || '').split(',').filter(Boolean);
+      const ignoreDuplicates = (new Headers(init.headers).get('prefer') || '').includes('resolution=ignore-duplicates');
       const incoming = [].concat(JSON.parse(String(init.body)));
       for (const row of incoming) {
         const index = keys.length ? rows.findIndex((existing) => keys.every((key) => existing[key] === row[key])) : -1;
+        if (index >= 0 && ignoreDuplicates) continue;
         if (index >= 0) rows[index] = { ...rows[index], ...row };
         else rows.push({ ...row });
       }

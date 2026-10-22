@@ -2,16 +2,22 @@
 
 // In-memory VideoRepository for use-case tests. It mirrors the rules the
 // database enforces through the official-report RPCs (only a run with a report
-// can be official; a reviewer name is required) and the list filters.
+// can be official; a reviewer name is required), the list filters, and the
+// run history's order, counts and official mark.
 
 import {
   StoreRejection,
   type OfficialClearance, type OfficialSelection, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type VideoRuns,
 } from '@/lib/ports';
+import { summarizeRuns } from '@/lib/runs/history';
+import type { RunHistoryEntry } from '@/lib/runs/types';
 
 export interface InMemoryVideo extends VideoRecord {
   /** Runs of this video that have an incident and a report. */
   runsWithReport: string[];
+  /** The video's analysis history as stored, in any order; none when absent. */
+  history?: RunHistoryEntry[];
 }
 
 const ONLY_REPORTED_RUNS = 'Only a successful analysis of this video that has a report can be the official report';
@@ -20,7 +26,7 @@ export class InMemoryVideoRepository implements VideoRepository {
   readonly videos = new Map<string, InMemoryVideo>();
 
   constructor(videos: InMemoryVideo[] = []) {
-    for (const video of videos) this.videos.set(video.videoId, { ...video, runsWithReport: [...video.runsWithReport] });
+    for (const video of videos) this.videos.set(video.videoId, { ...video, runsWithReport: [...video.runsWithReport], history: video.history?.map((run) => ({ ...run })) });
   }
 
   async listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>> {
@@ -44,8 +50,15 @@ export class InMemoryVideoRepository implements VideoRepository {
   async getVideo(videoId: string): Promise<VideoRecord | null> {
     const video = this.videos.get(videoId);
     if (!video) return null;
-    const { runsWithReport: _runs, ...record } = video;
+    const { runsWithReport: _runs, history: _history, ...record } = video;
     return record;
+  }
+
+  async listRuns(videoId: string): Promise<VideoRuns | null> {
+    const video = await this.getVideo(videoId);
+    if (!video) return null;
+    const { runs, counts } = summarizeRuns(this.videos.get(videoId)!.history ?? []);
+    return { video, runs: runs.map((run) => ({ ...run, isOfficial: run.modelRunId === video.officialRunId })), counts };
   }
 
   async selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection> {

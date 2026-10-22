@@ -8,7 +8,7 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildRunHistory } = await import('../lib/runs/history.ts');
+const { buildRunHistory } = await import('../lib/adapters/supabase/mappers/run-history.ts');
 const { describeCode } = await import('../lib/runs/labels.ts');
 const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone } = await import('../lib/time.ts');
 

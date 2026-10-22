@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
+import { getDbAdapters } from '@/lib/adapters/supabase';
 import { analysisErrorResponse } from '@/lib/analysis/responses';
 import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
         newVideo: { sensorId: input.sensorId, uploadedAt: new Date().toISOString() },
       },
       config,
+      getDbAdapters(config).analysisRuns,
     );
 
     const report: AnalysisRunSummary = {

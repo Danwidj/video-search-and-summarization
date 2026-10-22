@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// VideoRepository: the video registry, its official-report selection, and
-// whole-video deletion. R2 objects are never touched here.
+// VideoRepository: the video registry, each video's analysis history, its
+// official-report selection, and whole-video deletion. R2 objects are never
+// touched here.
 
 import type { Page } from '@/lib/ports/common';
+import type { OutcomeCounts, RunHistoryEntry } from '@/lib/runs/types';
 
 export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection';
 
@@ -27,6 +29,14 @@ export interface VideoRecord {
   officialRunId: string | null;
 }
 
+/** A video and every analysis of it: successful runs, failed attempts and runs whose report was deleted. */
+export interface VideoRuns {
+  video: VideoRecord;
+  /** Newest first; isOfficial marks the video's official run. */
+  runs: RunHistoryEntry[];
+  counts: OutcomeCounts;
+}
+
 export interface OfficialSelection {
   videoId: string;
   officialRunId: string;
@@ -43,6 +53,8 @@ export interface OfficialClearance {
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
+  /** Null for an unknown video. Each run's type and severity are the report's as shown: the reviewer's version when it has one. */
+  listRuns(videoId: string): Promise<VideoRuns | null>;
   /** Throws StoreRejection: 'not-found' for an unknown video, 'invalid' for a run that cannot be official. */
   selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection>;
   clearOfficialRun(videoId: string, clearedBy: string): Promise<OfficialClearance>;

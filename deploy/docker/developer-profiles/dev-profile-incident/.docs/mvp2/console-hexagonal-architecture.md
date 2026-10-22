@@ -10,7 +10,7 @@ Before this workstream, Next.js API route handlers in `incident-console-v2/app/a
 Components (`components/*`) are client code that only call `/api/*`; they never touch the database and keep consuming domain types over HTTP.
 
 ### Objectives
-1. **Decouple UI from Database Transport:** Define clean domain ports (`lib/ports/`) representing the business capabilities required by the console (incidents, dashboard analytics, video management, search, and health).
+1. **Decouple UI from Database Transport:** Define clean domain ports (`lib/ports/`) representing the business capabilities required by the console (incidents, dashboard analytics, video management and run history, analysis saving, search, and health).
 2. **Implement Supabase PostgREST Adapters:** Implement secondary adapters (`lib/adapters/supabase/`) that encapsulate `PostgrestClient`, query parameter construction, error translation, and data mapping (snake_case rows and RPC JSON to camelCase domain types, and back).
 3. **Refactor Route Handlers:** Update `app/api/*` route handlers to interact exclusively with domain ports via the adapter factory `getDbAdapters()`. Routes that combine several steps (report detail, review status change, delete) go through thin use cases in `lib/application/`; single-call routes call a port directly.
 4. **Prepare Extension Points for MVP2:** Define the search port for MVP2 evidence search. Search runs in the vss-agent (`POST /api/v1/incidents/search`, search-contract-v1) over the `evidence_crops` / `query_results` tables and the `search_evidence_items` RPC that PR 134 delivered (midterm `supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; in finals, the baseline); the port mirrors that contract (§3.1).
@@ -29,7 +29,8 @@ incident-console-v2/
       common.ts                   # RunKey, Page<T>, StoreRejection (domain refusal)
       incidents.ts                # IncidentRepository (run reports, reviews, structured edits, run deletes)
       dashboard.ts                # DashboardRepository (full get_incident_dashboard query and result)
-      videos.ts                   # VideoRepository (video listings, official selection, whole-video delete)
+      videos.ts                   # VideoRepository (video listings, run history, official selection, whole-video delete)
+      analysis.ts                 # AnalysisRunRepository and the attempt-record types (saving an analysis)
       search.ts                   # EvidenceSearchRepository (MVP2 evidence search: the agent's search-contract-v1)
       health.ts                   # HealthRepository (database liveness)
       index.ts                    # Barrel exports and DbAdapters
@@ -40,11 +41,12 @@ incident-console-v2/
         incidents.ts              # SupabaseIncidentAdapter implements IncidentRepository
         dashboard.ts              # SupabaseDashboardAdapter implements DashboardRepository
         videos.ts                 # SupabaseVideoAdapter implements VideoRepository
+        analysis-runs.ts          # SupabaseAnalysisRunAdapter implements AnalysisRunRepository (owns the model_runs.notes encoding)
         health.ts                 # SupabaseHealthAdapter implements HealthRepository
-        mappers/                  # row and RPC JSON <-> domain translation: report.ts (one run's rows), report-library.ts, dashboard.ts
+        mappers/                  # row and RPC JSON <-> domain translation: report.ts (one run's rows), report-library.ts, dashboard.ts, run-history.ts
         client.ts                 # PostgrestClient wrapper and service-role configuration
         index.ts                  # Factory functions getDbAdapters() and getDbHealth()
-      memory/                     # In-memory fakes of IncidentRepository, VideoRepository and DashboardRepository, for tests
+      memory/                     # In-memory fakes of every port getDbAdapters() returns, for tests
 ```
 
 The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. The adapters and their `mappers/` turn rows and RPC JSON into domain types field by field and domain queries into RPC arguments, and translate database refusals into `StoreRejection` (`videos.ts`, and `incidents.ts` for `set_review_status` / `save_human_report_edit`).
@@ -54,8 +56,8 @@ The search adapter calls the vss-agent rather than Supabase, so it will sit besi
 **Dependency rules** (conventions upheld in review; no test or lint tool checks them):
 1. `app/api/**` reaches the database only through `@/lib/adapters/supabase` (the factory), never `@/lib/postgrest/*` or another adapter module.
 2. `lib/ports/**` holds type-only imports (apart from the `StoreRejection` class in `common.ts`), so ports stay browser-safe.
-3. `lib/application/**` never imports `lib/adapters`, `lib/postgrest`, `lib/r2` or `lib/gateway`; R2 work is passed in as functions.
-4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value. The callers not yet migrated are listed in §7; remove an entry when its caller moves.
+3. `lib/application/**` never imports `lib/adapters`, `lib/postgrest`, `lib/r2` or `lib/gateway`; R2 work is passed in as functions. `lib/analysis/**` (the analysis orchestration, which does call R2, the gateway and the agent) never imports `lib/adapters` or `lib/postgrest` either: its route passes in `getDbAdapters(config).analysisRuns`.
+4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value, and no file under `app/` or `components/` names a table. Every caller has migrated (§7).
 5. incident-contract-v3 shapes (`lib/contract/types.ts`, `StructuredEdit`) keep their snake_case keys: they mirror the JSON Schema shared with eval and the agent. Translation applies to database shapes, not to that contract.
 
 ---
@@ -227,9 +229,14 @@ export interface VideoRecord {
 export interface OfficialSelection { videoId: string; officialRunId: string; selectedBy: string; selectedAt: string }
 export interface OfficialClearance { videoId: string; officialRunId: null; clearedBy: string }
 
+/** A video and every analysis of it (RunHistoryEntry and OutcomeCounts from lib/runs/types.ts). */
+export interface VideoRuns { video: VideoRecord; runs: RunHistoryEntry[]; counts: OutcomeCounts }
+
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
+  /** Newest first, counted by outcome, official run marked; each run's type and severity from effective_incidents. Null for an unknown video. */
+  listRuns(videoId: string): Promise<VideoRuns | null>;
   /** Throws StoreRejection: 'not-found' for an unknown video, 'invalid' for a run that cannot be official. */
   selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection>;
   clearOfficialRun(videoId: string, clearedBy: string): Promise<OfficialClearance>;
@@ -239,6 +246,22 @@ export interface VideoRepository {
 ```
 
 Official selection is explicit and needs a reviewer name (`select_official_report` / `clear_official_report`); analysis never sets it.
+
+Run history combines runs with an incident and attempt records with none (failed attempts, and runs whose report was deleted). The adapter finds the latter with a text pre-filter on `model_runs.notes` and confirms each from its parsed notes (`mappers/run-history.ts`); order and counts are `lib/runs/history.ts` `summarizeRuns`, shared with the in-memory fake.
+
+#### `lib/ports/analysis.ts`
+```typescript
+// AttemptStatus, AttemptStage, AttemptRepair, AnalysisAttemptRecord and ContractRunRecord: the immutable attempt record (moved from lib/analysis/persistence.ts)
+export interface UploadedVideo { videoId: string; r2Key: string; sensorId: string; uploadedAt: string }
+
+export interface AnalysisRunRepository {
+  recordUploadedVideo(video: UploadedVideo): Promise<void>;          // once; never resets an existing video
+  saveFailedAttempt(attempt: AnalysisAttemptRecord): Promise<void>;  // contract_failed / request_failed: the run record only
+  saveRun(run: ContractRunRecord, onStep?: (step: string) => void): Promise<void>; // run record, insert_incident, evidence, report, then read-back
+}
+```
+
+`runContractAnalysis(input, config, store)` takes the port; the routes pass `getDbAdapters(config).analysisRuns`. The Supabase adapter keeps the write sequence the console has always used: separate requests, not one transaction. A single transactional `save_analysis_run` RPC (review of 2026-10-22) would remove the partial-write risk, but it is a database change and is on hold while the finals schema may still change.
 
 #### `lib/ports/search.ts` (MVP2 Extension Port)
 ```typescript
@@ -367,7 +390,7 @@ export interface HealthRepository {
   - [x] Refactor `app/api/videos/route.ts` and `app/api/videos/[videoId]/official/route.ts`.
   - [x] Refactor `app/api/reports/route.ts`.
   - [x] Refactor `app/api/reports/[videoId]/route.ts`, `review`, `edit` and `delete`.
-  - [ ] `app/api/videos/[videoId]/runs`, `app/api/analysis` and `lib/analysis/*` (deferred, §7; ground truth removed).
+  - [x] `app/api/videos/[videoId]/runs` (`VideoRepository.listRuns`), `app/api/analysis` and `lib/analysis/*` (`AnalysisRunRepository`); ground truth removed.
 - [x] **Testing & Quality Assurance:**
   - [x] Characterisation tests for responses no test pinned (report detail, review, the videos list, the full dashboard and report-library responses), written against the unrefactored routes.
   - [x] Contract suites that run the same cases against the in-memory fake and the Supabase adapter (over `tests/support/fake-postgrest.mjs`).
@@ -385,22 +408,16 @@ For the whole workstream:
 - Every route test that existed before the refactor passes unmodified apart from import paths; characterisation tests exist for routes that had none; each port has a contract suite; §7's list of callers not yet migrated is empty.
 - `npm run typecheck`, `npm test` and `npm run build` pass without errors.
 
-This round meets these for every route not listed in §7; the callers in §7 stay listed there until they move.
+Every database caller now meets these; §7 lists what is still open.
 
 ---
 
 ## 7. Deferred in this round
 
-Decided 2026-10-17; updated 2026-10-19, when the dashboard and the report library moved onto the ports:
+Decided 2026-10-17; updated 2026-10-19, when the dashboard and the report library moved onto the ports, and 2026-10-23, when analysis saving and run history did:
 - **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): removed from console and database.
-- **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): not on the ports yet; they move into the middle layer later, together with the rest of the separation of human-verified and AI-generated reports. Run history already reads each run's type and severity from `effective_incidents`.
+- **Atomic analysis save**: `AnalysisRunRepository.saveRun` is still separate PostgREST writes, so a failure part-way leaves earlier rows. The fix is one transactional `save_analysis_run` RPC behind the same port method; it is a database change and is on hold while the finals schema may still change.
 - **Search adapter and route**: the port is defined to match the agent's search contract (§3.1); the agent-backed adapter and a console search route come in a later PR. No console-side embedding.
 - **Keys built in SQL**: the report library and dashboard responses keep the snake_case keys their RPCs build (`incident_type`, `reviews.under_review`), because the components read them; renaming them means changing the mapper and the components together.
 
-Files outside `lib/adapters/supabase/**` that still import `lib/postgrest/client` as a value (dependency rule 4), each with the reason it waits:
-
-| File | Waits for |
-|---|---|
-| `app/api/videos/[videoId]/runs/route.ts` | the verified/AI report split |
-| `lib/analysis/run-contract-analysis.ts` | the verified/AI report split |
-| `lib/analysis/persistence.ts` | the verified/AI report split |
+No file outside `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value (dependency rule 4), and no file under `app/` or `components/` names a table.

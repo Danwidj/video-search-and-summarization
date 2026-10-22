@@ -113,3 +113,53 @@ describe('SupabaseVideoAdapter', () => {
     await assert.rejects(repo.selectOfficialRun('v1', 'm1', 'Lead'), (error) => !(error instanceof StoreRejection) && /HTTP 401/.test(error.message));
   });
 });
+
+// listRuns: the fake PostgREST does not embed, so the run's model_runs and
+// reports rows sit on its incident row; effective_incidents comes from
+// tests/support/finals-database.mjs. The fake video stores the same history
+// as entries, so both are held to one order, count and official mark.
+const { effectiveViews } = await import('./support/finals-database.mjs');
+const failedNotes = { recordType: 'analysis_attempt', status: 'contract_failed', contractVersion: 'incident-contract-v3', videoId: 'v1', attemptedAt: '2026-10-02T09:00:00.000Z', stage: 'contract_validation', failure: { code: 'WINDOW_END_BEFORE_START', message: 'x' }, request: { model: 'nvidia/cosmos-3-super-reasoner', additionalInstruction: null }, response: null, validation: { firstPass: [] }, repair: null };
+const historyEntry = (modelRunId, outcome, attemptedAt, report) => ({
+  modelRunId, model: 'nvidia/cosmos-3-super-reasoner', attemptedAt, outcome, outcomeInferred: outcome === 'legacy', source: 'other', report, reportRemoved: false,
+  additionalInstruction: null, failure: null, repair: null,
+});
+
+const runHistoryImplementations = {
+  memory: () => new InMemoryVideoRepository([{
+    ...VIDEO, officialRunId: 'm1', runsWithReport: ['m1'],
+    history: [
+      historyEntry('m1', 'legacy', '2026-10-01T09:00:00', { reportId: 'r1', type: 'assault', severityLevel: 3 }),
+      historyEntry('m-failed', 'contract_failed', '2026-10-02T09:00:00.000Z', null),
+    ],
+  }]),
+  supabase: () => {
+    const modelRun = { id: 'm1', model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-10-01T09:00:00', notes: null };
+    const db = fakePostgrest({
+      videos: [{ id: 'v1', filepath: VIDEO.storageKey, uploaded_datetime: VIDEO.uploadedAt, source: VIDEO.source, selected_model_run_id: 'm1' }],
+      incidents: [{ incident_id: 'v1', model_run_id: 'm1', type: 'assault', severity_level: 3, model_runs: modelRun, reports: [{ id: 'r1', generated_datetime: '2026-10-01T09:00:00' }] }],
+      model_runs: [modelRun, { id: 'm-failed', model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-10-02T09:00:00', notes: JSON.stringify({ incidentConsoleV2: failedNotes }) }, attempt('m-other', 'v2', 'contract_failed')],
+    }, { views: effectiveViews });
+    globalThis.fetch = db.fetch;
+    return new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k'));
+  },
+};
+
+for (const [name, make] of Object.entries(runHistoryImplementations)) {
+  describe(`VideoRepository.listRuns contract: ${name}`, () => {
+    test("a video's runs are newest first, counted by outcome, with the official run marked", async () => {
+      const found = await make().listRuns('v1');
+      assert.deepEqual(found.video, { ...VIDEO, officialRunId: 'm1' });
+      assert.deepEqual(found.runs.map((run) => [run.modelRunId, run.outcome, run.report?.reportId ?? null, run.isOfficial]), [
+        ['m-failed', 'contract_failed', null, false],
+        ['m1', 'legacy', 'r1', true],
+      ]);
+      assert.deepEqual(found.runs[1].report, { reportId: 'r1', type: 'assault', severityLevel: 3 });
+      assert.deepEqual(found.counts, { attempts: 2, withReport: 1, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 1, request_failed: 0, legacy: 1 });
+    });
+
+    test('an unknown video has no history', async () => {
+      assert.equal(await make().listRuns('v-none'), null);
+    });
+  });
+}

@@ -3,6 +3,9 @@
 export { StoreRejection } from '@/lib/ports/common';
 export type { Page, RunKey } from '@/lib/ports/common';
 export type { ChatCitation, ChatContext, ChatMessage, ChatRequest, ChatResponse, ChatRole } from '@/lib/ports/chat';
+export type {
+  AnalysisAttemptRecord, AnalysisRunRepository, AttemptRepair, AttemptStage, AttemptStatus, ContractRunRecord, UploadedVideo,
+} from '@/lib/ports/analysis';
 export type { DashboardQuery, DashboardRepository, DashboardSeverity } from '@/lib/ports/dashboard';
 export type { DatabaseHealth, HealthRepository } from '@/lib/ports/health';
 export type {
@@ -12,14 +15,18 @@ export type {
 export type {
   CriticVerdict, EvidenceItemType, EvidenceSearchFilters, EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult,
 } from '@/lib/ports/search';
-export type { OfficialClearance, OfficialSelection, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';
+export type {
+  OfficialClearance, OfficialSelection, VideoListFilter, VideoListItem, VideoRecord, VideoRepository, VideoRuns,
+} from '@/lib/ports/videos';
 
+import type { AnalysisRunRepository } from '@/lib/ports/analysis';
 import type { DashboardRepository } from '@/lib/ports/dashboard';
 import type { IncidentRepository } from '@/lib/ports/incidents';
 import type { VideoRepository } from '@/lib/ports/videos';
 
 /** What getDbAdapters() returns: one implementation per driven port in use. */
 export interface DbAdapters {
+  analysisRuns: AnalysisRunRepository;
   dashboard: DashboardRepository;
   incidents: IncidentRepository;
   videos: VideoRepository;

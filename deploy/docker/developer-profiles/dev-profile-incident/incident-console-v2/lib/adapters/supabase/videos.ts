@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { buildRunHistory } from '@/lib/adapters/supabase/mappers/run-history';
 import {
   StoreRejection,
   type OfficialClearance, type OfficialSelection, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type VideoRuns,
 } from '@/lib/ports';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import { explicitVideoId } from '@/lib/reports/run-notes';
@@ -23,6 +25,16 @@ function officialRefusal(error: unknown): never {
     throw new StoreRejection(/Video not found/.test(match[1]) ? 'not-found' : 'invalid', match[1]);
   }
   throw error;
+}
+
+function videoRecord(videoId: string, row: Row): VideoRecord {
+  return {
+    videoId,
+    storageKey: text(row.filepath),
+    uploadedAt: text(row.uploaded_datetime),
+    source: text(row.source),
+    officialRunId: text(row.selected_model_run_id),
+  };
 }
 
 function videoListItem(row: Row): VideoListItem {
@@ -64,14 +76,37 @@ export class SupabaseVideoAdapter implements VideoRepository {
 
   async getVideo(videoId: string): Promise<VideoRecord | null> {
     const row = await this.db.selectOne('videos', { id: videoId });
+    return row ? videoRecord(videoId, row) : null;
+  }
+
+  async listRuns(videoId: string): Promise<VideoRuns | null> {
+    const row = await this.db.selectOne('videos', { id: videoId });
     if (!row) return null;
-    return {
-      videoId,
-      storageKey: text(row.filepath),
-      uploadedAt: text(row.uploaded_datetime),
-      source: text(row.source),
-      officialRunId: text(row.selected_model_run_id),
-    };
+    const video = videoRecord(videoId, row);
+    const [runRows, effectiveRows, attemptCandidates] = await Promise.all([
+      this.db.selectMany('incidents', {
+        filters: { incident_id: videoId },
+        select: 'model_run_id,model_runs(id,model_name,prompt_version,run_datetime,notes),reports(id,generated_datetime)',
+      }),
+      // Type and severity as the report shows them: the reviewer's version when the run has one.
+      this.db.selectMany('effective_incidents', { filters: { incident_id: videoId }, select: 'model_run_id,type,severity_level' }),
+      // Attempts with no incident (failed, or whose report was deleted) are found
+      // by their notes; the text match is only a pre-filter (buildRunHistory).
+      this.db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,model_name,prompt_version,run_datetime,notes'),
+    ]);
+    const effective = new Map(effectiveRows.map((effectiveRow) => [String(effectiveRow.model_run_id), effectiveRow]));
+    const incidentRows = runRows.map((runRow): Row => {
+      const shown = effective.get(String(runRow.model_run_id));
+      return { ...runRow, type: shown?.type ?? null, severity_level: shown?.severity_level ?? null };
+    });
+    const runIds = incidentRows.map((runRow) => String(runRow.model_run_id));
+    const usage = runIds.length ? await this.db.selectIn('incidents', 'model_run_id', runIds, 'model_run_id') : [];
+    const perRun = new Map<string, number>();
+    for (const usageRow of usage) perRun.set(String(usageRow.model_run_id), (perRun.get(String(usageRow.model_run_id)) ?? 0) + 1);
+    const sharedRunIds = new Set([...perRun].filter(([, count]) => count > 1).map(([id]) => id));
+
+    const { runs, counts } = buildRunHistory({ videoId, incidentRows, attemptCandidates, sharedRunIds });
+    return { video, runs: runs.map((run) => ({ ...run, isOfficial: run.modelRunId === video.officialRunId })), counts };
   }
 
   async selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection> {
