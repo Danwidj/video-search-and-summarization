@@ -70,7 +70,7 @@
 #                            SSH is never resolved or touched.
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is. If unset, the VM username is
-#                            resolved non-interactively by resolve-ssh-target.sh:
+#                            resolved non-interactively by vm-preflight.sh:
 #                            VSS_SSH_USER env var, else ~/.ssh/config User,
 #                            else $USER/whoami. No prompt is ever shown.
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
@@ -185,8 +185,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [ "$VSS_START_MODE" = "vm" ]; then
-  # shellcheck source=.scripts/resolve-ssh-target.sh
-  source "${SCRIPT_DIR}/.scripts/resolve-ssh-target.sh"
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 

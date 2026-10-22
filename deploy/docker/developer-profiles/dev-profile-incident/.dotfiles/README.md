@@ -27,8 +27,8 @@ box, not a personal daily-driver machine.
   starship/fzf shell hooks.
 - Adds the four generic shell QoL aliases (`bat`, `vim=nvim`, `cat=bat`,
   `htop=btop`) via the managed `aliases.sh`. The VSS deploy-lifecycle
-  commands that used to live in `aliases.sh` (old `mdx-*`, `ngc-env-on`,
-  `gpu`) moved to standalone executable scripts under
+  commands that used to live in `aliases.sh` (old `mdx-*`, `ngc-env-on`)
+  moved to standalone executable scripts under
   `deploy/docker/developer-profiles/dev-profile-incident/.scripts/` — see below — so
   this bootstrap no longer generates any VSS-specific aliases.
 - Appends **one** marker-guarded include block to `~/.bashrc` that sources
@@ -69,20 +69,16 @@ Then start a new shell (or `source ~/.bashrc`).
   account, not box-wide: each teammate who runs the bootstrap gets nicer
   diffs in their own git config, and nobody who hasn't opted in is affected.
 - **`dev-profile-incident/.scripts/*.sh` deploy-lifecycle scripts** — the old `mdx-*`
-  alias/function set (plus `gpu` and `ngc-env-on`) moved out of `aliases.sh`
+  alias/function set (plus `ngc-env-on`) moved out of `aliases.sh`
   into standalone executable scripts under
   `deploy/docker/developer-profiles/dev-profile-incident/.scripts/`:
   `status.sh`, `down.sh`, `health.sh`, `logs.sh`, `rebuild-svc.sh`,
-  `clean-datalog.sh`, `gpu.sh`, `ngc-env.sh`, `tunnel.sh`,
-  `tunnel-check.sh`, `resolve-ssh-target.sh` (plus the newer `native-services.sh` and
-  `prune-native-images.sh`, see [`../.scripts/README.md`](../.scripts/README.md)), and **`start.sh`** as the one-command daily entry point at the top level of `dev-profile-incident/`.
-  They wrap the project's own canonical deploy tooling
-  (`deploy/docker/scripts/dev-profile.sh` and `cleanup_all_datalog.sh`)
-  rather than hardcoding raw `docker`/`docker compose` invocations,
-  specifically because **the deployment command will change over time**: when
-  `dev-profile.sh`'s interface changes, only the wrapper needs updating, not
-  everyone's muscle memory. Plain `docker compose -p mdx ...` is used only
-  where there's no canonical script to wrap (status, logs, disk usage —
+  `ngc-env.sh`, `tunnel.sh`, and `tunnel-check.sh` (plus
+  `native-services.sh`, and the `prune-native-images.sh` helper under
+  [`../skills/incident-operate-vm/scripts/`](../skills/incident-operate-vm/scripts/)), and **`start.sh`** as the one-command daily entry point at the top level of `dev-profile-incident/`.
+  They use the profile's supported lifecycle helpers rather than exposing
+  destructive generic cleanup commands. Plain `docker compose -p mdx ...` is
+  used only where there's no canonical script to wrap (status, logs, disk usage —
   stable, generic Compose surface, not project-specific tooling likely to
   drift), and the native half goes through `native-services.sh`. Each script preserves its own grounding comment (cache-loss
   warnings,

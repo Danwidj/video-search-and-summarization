@@ -10,8 +10,20 @@
 #                      host key) and print the reason plus the next step.
 #   vm_detect_ip       VM LAN address from its default route (VSS_VM_IP wins).
 #
-# Needs VSS_SSH_TARGET and VSS_SSH_HOST (see resolve-ssh-target.sh). Tests put a
-# fake `ssh` / `tailscale` first on PATH (.scripts/test-vm-preflight.sh).
+# Resolves VSS_SSH_TARGET without prompting before the preflight helpers use it.
+# Tests put a fake `ssh` / `tailscale` first on PATH (.scripts/test-vm-preflight.sh).
+
+# Resolution order (non-interactive, no prompt ever):
+#   1. VSS_SSH_TARGET already set (full "user@host" override) -> used as-is.
+#   2. VSS_SSH_USER set -> used as the VM username.
+#   3. ~/.ssh/config User for VSS_SSH_HOST (via `ssh -G`).
+#   4. Fall back to $USER / $(whoami).
+VSS_SSH_HOST="${VSS_SSH_HOST:-kwanz-ws}"
+if [ -z "${VSS_SSH_TARGET:-}" ]; then
+  ssh_config_user="$(ssh -G "${VSS_SSH_HOST}" 2>/dev/null | awk '/^user / {print $2}' || true)"
+  vm_user="${VSS_SSH_USER:-${ssh_config_user:-${USER:-$(whoami)}}}"
+  VSS_SSH_TARGET="${vm_user}@${VSS_SSH_HOST}"
+fi
 
 VSS_SSH_CONNECT_TIMEOUT="${VSS_SSH_CONNECT_TIMEOUT:-10}"
 # Keep-alives turn a silently dead connection into an ssh exit instead of a hang.

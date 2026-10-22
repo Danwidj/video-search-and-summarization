@@ -22,7 +22,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 | `uv sync` in `services/agent` on the VM | `nvdataset` resolves only from NVIDIA's internal artifactory | The reinstall procedure below |
 | `_type: nim` for remote models, or a `*_BASE_URL` ending in `/v1` | `nim_langchain` leaks `verify_ssl` into the request body (HTTP 400), and clients append `/v1` themselves | `_type: openai`, bare host URL |
 
-**Ask first:** stopping services teammates may be using, editing `generated.env.remote`, pruning images, or running `.scripts/clean-datalog.sh`.
+**Ask first:** stopping services teammates may be using, editing `generated.env.remote`, or pruning images.
 
 ## Service split
 
@@ -42,9 +42,8 @@ Paths on the VM: repo `/srv/rise-up/vss`, scripts `/srv/rise-up/vss/deploy/docke
 ```bash
 ssh kwanz-ws
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
-./status.sh                       # docker compose -p mdx ps + native status
+./status.sh                       # docker compose -p mdx ps + native status + GPU status
 ./health.sh                       # agent :8000/health
-./gpu.sh                          # nvidia-smi
 ```
 
 ### 2. Common operations
@@ -58,7 +57,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` (native stop + `docker compose -p mdx stop`, no `-v`). Containers and data are kept; restart is `./start.sh --mode vm`. Exited orphan containers are no longer cleaned up by `down.sh`; use manual `docker compose -p mdx down --remove-orphans` when a clean slate is wanted (still never `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
 | Load NGC credentials | `source ./ngc-env.sh` |
-| Populate or refresh search evidence (`evidence_crops`) | In `/srv/rise-up/vss`: `set -a; . deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote; set +a; services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --dry-run`, then rerun without `--dry-run` (add `--concurrency 2`; the Brev gateway rate-limits at 4). Idempotent: it skips rows already present. All model calls are remote (Brev VLM, NVIDIA-hosted embeddings). Restart `vss-agent` afterwards only if `services/agent/src` changed. |
+| Populate or refresh search evidence (`evidence_crops`) | Use [`incident-search`](../incident-search/SKILL.md). |
 
 A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` deploys fresh or self-heals a partial state (clones a missing checkout, fixes a stale `HOST_IP` in `generated.env.remote` with a backup, pulls missing images, bounded `compose up`; see `.scripts/vm-ensure-docker.sh`).
 
@@ -88,7 +87,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - Search embeddings use the NVIDIA-hosted endpoint with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from this file; the Brev key cannot call `/v1/embeddings`. Override with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, `EVIDENCE_EMBEDDING_API_KEY`. The loader and the search route must use the same model.
 - `incident_report_gen` reads `VLM_BASE_URL` + `VLM_NAME` (P1), `LLM_BASE_URL` (RP1; the model comes from the contract) and `OPENAI_API_KEY`. Changing `VLM_NAME` changes the agent-mode P1 model; ask first.
 - `VSS_AGENT_HOST` defaults to `127.0.0.1` (loopback only: the agent has no auth and holds the DB admin key). An old `VSS_AGENT_HOST=0.0.0.0` must be removed or set to `127.0.0.1`.
-- `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` name the **finals** Supabase project, never the frozen midterm one. The native `vss-agent` (search, chat, standalone persistence), the evidence loader and `native-services.sh` read them. To switch: back up the file, set the two values, `./native-services.sh restart vss-agent`, then check the host (never the key) in `/proc/<pid>/environ` and that a search adds a row to finals `queries` (the agent only warns when it cannot record one). Steps and rollback: [`incident-manage-database`](../incident-manage-database/SKILL.md#build-finals-and-switch-over-once). Finals uses an `sb_secret_...` server key, which is not a JWT, and the agent connects through `supabase-py`, whose version on the VM is not pinned (`pyproject.toml` requires only `supabase~=2.0`; `uv.lock` has no entry). Older 2.x releases reject non-JWT keys with `Invalid API key`. **Before switching**, run the one-row connection test in the agent's own environment ([VM key check](../incident-manage-database/SKILL.md#build-finals-and-switch-over-once), step 4):
+- `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` name the **finals** Supabase project, never the frozen midterm one. The native `vss-agent` (search, chat, standalone persistence), the evidence loader and `native-services.sh` read them. To switch: back up the file, set the two values, `./native-services.sh restart vss-agent`, then check the host (never the key) in `/proc/<pid>/environ` and that a search adds a row to finals `queries` (the agent only warns when it cannot record one). The schema and copy procedure are in [`supabase/README.md`](../../supabase/README.md#building-finals-cutover), and the key compatibility check is in [`incident-manage-database`](../incident-manage-database/SKILL.md#finals-keys-sb_secret_). Finals uses an `sb_secret_...` server key, which is not a JWT, and the agent connects through `supabase-py`, whose version on the VM is not pinned (`pyproject.toml` requires only `supabase~=2.0`; `uv.lock` has no entry). Older 2.x releases reject non-JWT keys with `Invalid API key`. **Before switching**, run the one-row connection test in the agent's own environment ([VM key check](../incident-manage-database/SKILL.md#finals-keys-sb_secret_), below):
   ```bash
   cd /srv/rise-up/vss
   read -rp 'finals URL: ' FINALS_URL; read -rsp 'finals sb_secret key: ' FINALS_KEY; echo; export FINALS_URL FINALS_KEY

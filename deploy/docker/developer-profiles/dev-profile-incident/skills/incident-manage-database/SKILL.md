@@ -1,6 +1,6 @@
 ---
 name: incident-manage-database
-description: Use to inspect or change the incident Supabase Postgres schema, write, test and apply a migration under supabase/migrations/, run the SQL harness or security check, build the finals database and copy midterm into it, query incident/review/ground-truth tables, or locate and validate video objects in Cloudflare R2. Not for running an analysis (use incident-analyze-video) or scoring ground truth (use incident-run-eval).
+description: Use to inspect or change the incident Supabase Postgres schema, write, test and apply a migration under supabase/migrations/, run the SQL harness or security check, query incident/review/ground-truth tables, or locate and validate video objects in Cloudflare R2. Not for running an analysis (use incident-analyze-video), searching evidence (use incident-search), or scoring ground truth (use incident-run-eval).
 license: Apache-2.0
 metadata:
   version: "0.2.1"
@@ -74,58 +74,6 @@ To record an out-of-band change on finals without re-executing SQL:
 ```bash
 supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <YYYYMMDDHHMMSS>
 ```
-
-### Build finals and switch over (once)
-
-People: someone with **Supabase account access** (the organisation owner who created midterm) creates the project and hands over its keys; someone with **`kwanz-ws` access** does the VM step; the captain applies the baseline and runs the copy. The cutover window is about 30 to 60 minutes, and nobody analyses, edits or verifies during it.
-
-Preparation (no downtime):
-
-1. **Supabase owner:** create the finals project in the same organisation and region as midterm, Postgres 17. Turn **off** email signups; keep SSL enforced. Hand over the URL, the server key, the session-pooler DSN and the public key (for the probe only) through the team's secret channel, never the repo. **Finals uses the new key types:** the server key is an `sb_secret_...` key and the public key an `sb_publishable_...` key. Neither is a JWT (see [Keys](#finals-keys-sb_secret_)), so every client that sends the key must accept that.
-2. **Console and eval support (merged in PR 149):** the `incident-console-v2` and `eval/` change satisfies the three things finals needs: the console reads the `effective_*` views and changes status through `set_review_status`; **it sends `source_id` on every edited item** (`save_human_report_edit` refuses an edit without it, so the midterm console cannot edit on finals); and the console (`lib/postgrest/client.ts`) and eval (`eval/db_postgrest.py`) send an `sb_` key in `apikey` only, not as `Authorization: Bearer` (see [Keys](#finals-keys-sb_secret_)). Without it, every laptop console call at step 11 and the eval ground-truth read in the checklist fail.
-3. **Captain:** apply the baseline (`db push --dry-run`, then for real, as above), then `security_check.sql` (0 rows) and `FINALS_URL=... FINALS_PUBLIC_KEY=... FINALS_SERVICE_KEY=... supabase/tests/probe_api.sh` (401/403 for every public-key line, 200 for the server key).
-4. **VM key check** (someone with `kwanz-ws` access, before the cutover): the agent and the evidence loader connect through `supabase-py` (`utils/incident_db.py`, `acreate_client`), and `services/agent/pyproject.toml` only requires `supabase~=2.0` while `uv.lock` does not pin it, so the installed version on the VM is unknown. Test the agent's own environment against finals with the `sb_secret_` key (reads one row of `videos`; `rows 0` is a pass while finals is still empty):
-
-   ```bash
-   cd /srv/rise-up/vss
-   read -rp 'finals URL: ' FINALS_URL; read -rsp 'finals sb_secret key: ' FINALS_KEY; echo; export FINALS_URL FINALS_KEY
-   services/agent/.venv/bin/python -c "import os, importlib.metadata as m, supabase; c = supabase.create_client(os.environ['FINALS_URL'], os.environ['FINALS_KEY']); print('supabase', m.version('supabase'), 'ok, rows', len(c.table('videos').select('id').limit(1).execute().data))"
-   unset FINALS_KEY
-   ```
-
-   If it fails with `Invalid API key`, a JWT error or a 401, upgrade in the agent's environment, `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (tell the team first: the VM is shared), then retest until it passes. The evidence loader (`scripts/backfill_official_timestamps.py`) runs with the same `services/agent/.venv` and connects through the same `incident_db.get_db()`, so this one test covers it too.
-5. **Captain:** rehearse against the real finals: `supabase/copy/copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env> --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf` (rolls back; every check must pass). The guards added after the 2026-10-20 rehearsal (a stamped run with no reviewer version, a run naming a left-behind video) have only run on hand-made rows, so if one fires here, stop and decide the named runs by hand before going on.
-   - **Manual stamp decision, known in advance:** a stamped legacy run stops the copy ("Runs keep an edit stamp but have no reviewer version"), because the midterm console rewrote `edited_by/at` with the verifier on every status change, so a stamp equal to the verification does not prove there was no edit. On 2026-10-20 (read only) exactly one run reaches it: **`m37883594f65802c8a31`** (legacy, official, verified; stamp = verification, `Presentation reviewer`, 2026-10-01 08:39:24). Its stored rows equal its legacy notes record, so it was not edited: pass `--not-edited m37883594f65802c8a31`.
-   - **Accepted item edit, known in advance:** a contract run whose stored items differ from its notes record stops the copy ("Item-level reviewer edits found"). On 2026-10-21 exactly one does: **`mcd6cb9073218402f7bf`** (video `v5c609184047f88c720e`, official, verified), whose 2 entities and 3 assets were removed on midterm after 2026-10-20 outside the console. The captain chose to copy it as it is now: `--accept-item-edits mcd6cb9073218402f7bf` makes the stored items (none) its reviewer version, links each item to the AI item with identical content where unique (NULL otherwise, printed), and puts the AI items back from notes. The run is copied as it stands and keeps its midterm labels (verified, with its midterm stamp): the captain's call, since the removed items do not matter during development.
-   - **How to decide any other run the error names:** compare its stored report (`incidents`, `entities`, `instruments`, `assets`) with what the AI wrote in its `model_runs.notes`; equal means `--not-edited <run>`, different means `--edited <run>` (the stored rows become the reviewer version; the AI's original text is lost). For a new run in "Item-level reviewer edits found", compare its stored items with the notes record and accept it with `--accept-item-edits <run>` only if the stored items are what should be kept.
-   - **Then, every time:** run it once more with `--commit`, run `supabase/tests/parity_check.py` with the same arguments, and smoke-test a local console pointed at finals, read only. These rows are replaced at the cutover.
-
-Cutover window:
-
-6. Everyone stops local consoles and eval runs. No VM service has to stop.
-7. **Freeze midterm:** run `supabase/midterm/freeze_midterm.sql` in the midterm SQL editor. Expect the check row `rls_off 0, anon_readable 0, service_reads true, service_writes false`.
-8. **Captain:** `copy_midterm_to_finals.py --source-env <midterm env> --target-env <finals env> --not-edited m37883594f65802c8a31 --accept-item-edits mcd6cb9073218402f7bf --replace --commit` (plus any decision step 5 added). Keep its output as the record.
-9. Re-check finals: `security_check.sql` (0 rows), `probe_api.sh`, `parity_check.py` (only the expected differences: uploaded videos 196 → 188 and without-report 55 → 47; 5 cleared `editedBy/editedAt`; the legacy official run `m37883594f65802c8a31` reads `assault` and `0`/`18`; 3 entity crops say `human`).
-10. **VM:** back up `generated.env.remote`, set `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (the `sb_secret_` key) to finals, restart `vss-agent` ([`incident-operate-vm`](../incident-operate-vm/SKILL.md)), and check the host (never the key) in `/proc/<pid>/environ`. If step 4 was not done, do it now, before the restart.
-11. **Laptops:** set the 3 values in `.env.local`, refresh the `.env.local` copies in other worktrees, `git pull`, `./start.sh`.
-12. Run the checklist below, announce that finals is live, and rewrite `.docs/status.md`.
-
-Checklist:
-
-- [ ] VM key check (step 4) passes in the agent's environment with the finals `sb_secret_` key.
-- [ ] Security: `security_check.sql` 0 rows; `probe_api.sh` public key 401/403 on every table, view and RPC, server key 200; midterm refuses a server-key `POST /rest/v1/videos` and a public-key `GET`.
-- [ ] Console (pointed at finals): `/api/health` 200 with `postgrest.reachable: true`; dashboard 13 official reports, uploaded 188, withOfficial 13, withoutReport 47, reviews 6 verified and 7 unreviewed; library 24 reports (13 official); `/reports/v18c252bf933457bc737?run=mb2484aa55750392701c` shows the reviewer's description; a video with failed attempts shows them in run history.
-- [ ] On a test video: select and clear the official report; an edit leaves the AI row unchanged, adds a `human_reports` row whose items' `source_*_id` name their AI items, and bumps `revision`; verifying leaves `edited_by` unchanged; a second edit sends the report back to `under review`.
-- [ ] Agent write (`./start.sh --mode vm`): one short clip in agent mode adds `model_runs`, `incidents`, `reports` and `review_status` rows on finals; midterm row counts unchanged.
-- [ ] Search: `POST localhost:8000/api/v1/incidents/search {"query":"weapon","top_k":5}` returns hits with fetchable crop URLs, and **`queries` on finals grows** (the agent only warns when it cannot record a query, so a stale agent loses logs silently).
-- [ ] Loader and eval: on `kwanz-ws`, `scripts/backfill_official_timestamps.py --dry-run` reads 13 official reports from finals; `eval` hermetic tests pass and a live ground-truth read finds 79 incidents.
-
-Rollback:
-
-- **Before step 10** (nothing points at finals yet): run `unfreeze_midterm.sql` and stop. Finals keeps its rows for the next attempt (`--replace`).
-- **After step 10:** restore the backed-up `generated.env.remote` and restart the agent; put the midterm values back in `.env.local`; run `unfreeze_midterm.sql`; check out the console commit from before PR 149 (midterm has no effective views or `set_review_status`). The copy is one way: list anything written to finals after the cutover by `run_datetime` and `generated_datetime` and carry it back by hand.
-
-After the switch, take a full `pg_dump` of midterm (Postgres 17 client, schema and data) for the course files. Pause midterm only when the finals phase is over; never delete it before the course ends.
 
 ### Read via PostgREST (works from anywhere with HTTPS)
 

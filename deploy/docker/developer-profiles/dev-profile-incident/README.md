@@ -11,7 +11,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 
 **For agents**
 - [AGENTS.md](AGENTS.md): components, checks, architecture rules, boundaries, docs rule
-- [Skills router](skills/README.md): operational skills (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-manage-database`, `incident-run-eval`)
+- [Skills router](skills/README.md): operational skills (`incident-start`, `incident-operate-vm`, `incident-analyze-video`, `incident-search`, `incident-manage-database`, `incident-run-eval`)
 
 **Reference (`.docs/`)**
 - [Current status & known issues](.docs/status.md)

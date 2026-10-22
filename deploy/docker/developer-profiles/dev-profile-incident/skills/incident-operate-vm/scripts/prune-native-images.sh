@@ -12,11 +12,31 @@
 # image layers can be freed cleanly.
 #
 # Runs on the VM against the local docker daemon.
+#
+# Usage: ./prune-native-images.sh [--non-interactive]
 
 set -euo pipefail
 
+NON_INTERACTIVE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --non-interactive|--yes)
+      NON_INTERACTIVE=1
+      shift
+      ;;
+    -h|--help)
+      echo "usage: prune-native-images.sh [--non-interactive]"
+      exit 0
+      ;;
+    *)
+      echo "usage: prune-native-images.sh [--non-interactive]" >&2
+      exit 2
+      ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../../../.." && pwd)"
 
 echo "=== VM Docker Image Pruning (Native Services Split) ==="
 echo "Disk space before pruning:"
@@ -31,10 +51,14 @@ nat_bin="${REPO_ROOT}/services/agent/.venv/bin/nat"
 if [ ! -x "${nat_bin}" ]; then
   echo "WARNING: ${nat_bin} does not exist or is not executable." >&2
   echo "  vss-agent should have a valid local .venv before removing its Docker image." >&2
-  read -r -p "Proceed with pruning anyway? [y/N] " confirm
-  if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
+  if [ "${NON_INTERACTIVE}" -eq 1 ]; then
+    echo "  Continuing because --non-interactive was supplied." >&2
+  else
+    read -r -p "Proceed with pruning anyway? [y/N] " confirm
+    if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
+      echo "Aborted."
+      exit 1
+    fi
   fi
 fi
 

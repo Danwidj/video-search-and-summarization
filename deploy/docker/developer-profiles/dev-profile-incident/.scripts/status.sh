@@ -15,3 +15,7 @@ echo "=== Docker Appliance Containers (mdx) ==="
 
 echo ""
 "${SCRIPT_DIR}/native-services.sh" status
+
+echo ""
+echo "=== GPU ==="
+nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv

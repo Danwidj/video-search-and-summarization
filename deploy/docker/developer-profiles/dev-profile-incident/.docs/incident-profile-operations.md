@@ -68,14 +68,21 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 ./native-services.sh logs vss-agent
 ```
 
-### Pruning Retired Docker Images (`.scripts/prune-native-images.sh`)
+### Pruning Retired Docker Images (`incident-operate-vm/scripts/prune-native-images.sh`)
 
 Because `vss-agent`, `video-analytics-api`, and `behavior-analytics` run natively, their old container images
-are dead weight on disk. Running `.scripts/prune-native-images.sh` on the VM safely removes these unused images
+are dead weight on disk. Running `skills/incident-operate-vm/scripts/prune-native-images.sh` on the VM safely removes these unused images
 and stopped containers after confirming the native virtual environment (`services/agent/.venv/bin/nat`) exists:
 
 ```bash
-ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts/prune-native-images.sh"
+ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh"
+```
+
+If the native agent virtual environment is not present, the script prompts before proceeding. Use
+`--non-interactive` only in an already-authorized automation context:
+
+```bash
+ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh --non-interactive"
 ```
 
 ### Virtual Environment & Editable Agent Reinstall (`services/agent`)
@@ -127,7 +134,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 
 ### SSH Username Resolution & Troubleshooting
 
-`start.sh` (in `vm` mode) and `.scripts/tunnel.sh` resolve the SSH login target using `.scripts/resolve-ssh-target.sh` non-interactively with no prompts:
+`start.sh` (in `vm` mode) and `.scripts/tunnel.sh` source `.scripts/vm-preflight.sh`, which resolves the SSH login target non-interactively with no prompts:
 1. **Explicit Target:** If `VSS_SSH_TARGET` is set (e.g. `user@kwanz-ws.tailf3aa43.ts.net`), it is used directly.
 2. **Explicit User:** If `VSS_SSH_USER` is set, it overrides the username while using `VSS_SSH_HOST` (default: `kwanz-ws`).
 3. **SSH Config User:** If neither is set, the scripts inspect `~/.ssh/config` for `Host kwanz-ws` (via `ssh -G "${VSS_SSH_HOST}"`).

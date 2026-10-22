@@ -68,6 +68,18 @@ unset VSS_VM_IP
 out="$(FAKE_SSH_OUT='1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.77 uid 1000' vm_detect_ip 2>/dev/null)"; check "ip detect" "10.0.0.77" "$out"
 out="$(FAKE_SSH_ERR='boom' vm_detect_ip 2>/dev/null)"; check "ip fallback" "10.131.1.5" "$out"
 
+# The merged helper resolves the SSH target when callers do not provide one.
+unset VSS_SSH_TARGET VSS_SSH_USER
+source "$SCRIPT_DIR/vm-preflight.sh"
+check "ssh config target" "daniel@kwanz-ws" "$VSS_SSH_TARGET"
+VSS_SSH_USER=alice
+unset VSS_SSH_TARGET
+source "$SCRIPT_DIR/vm-preflight.sh"
+check "ssh user target" "alice@kwanz-ws" "$VSS_SSH_TARGET"
+VSS_SSH_TARGET=carol@custom-host
+source "$SCRIPT_DIR/vm-preflight.sh"
+check "explicit target" "carol@custom-host" "$VSS_SSH_TARGET"
+
 # vm_ssh_limited: passes stdin through, returns ssh's exit code, enforces the limit.
 out="$(echo hi | vm_ssh_limited 5 host cmd; echo "rc=$?")"; check "limited ok" "rc=0" "$out"
 SECONDS=0; FAKE_SSH_SLEEP=30 vm_ssh_limited 2 host cmd; rc=$?
