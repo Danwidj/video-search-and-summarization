@@ -238,7 +238,7 @@ The reviewer's version of one run's report, next to the immutable AI rows. One p
 ##### `gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`
 Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, but without
 `model_run_id`. They store verified human annotations.
-- `gt_incidents.type`: Free text (`VARCHAR(32)`).
+- `gt_incidents.type`: Free text (`VARCHAR(32)`), not CHECK-constrained. `eval/scripts/eval_ingest_gt.py` writes the canonical lowercase type (one of the five standard types); rows ingested earlier may still be capitalised (`Assault`, `Animal Attack`).
 - `gt_incidents.start_timestamp` / `end_timestamp`: Free text (`VARCHAR(32)`), storing bare seconds (e.g. `"21"`, `"15.6"`).
 - `gt_incidents` includes `labelled_by` and `labelled_datetime` (naive UTC) instead of AI confidence/model fields.
 - `gt_entities`, `gt_instruments`, and `gt_assets` reference `gt_incidents(incident_id)` with `ON DELETE CASCADE` (they reference `gt_incidents`, not `videos` or `incidents`).

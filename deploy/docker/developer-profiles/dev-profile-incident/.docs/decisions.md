@@ -2,11 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
-### 2026-10-22: start.sh runtime modes are named `vm` and `mock`; `local` is a deprecated alias
-- **Decision:** `start.sh --mode` (and `VSS_START_MODE`) accepts `vm` (default) and `mock`. `mock` is the old `local` mode with identical behaviour: mock-backend :7777 + vlm-gateway :8600 on the laptop, `ANALYSIS_MODE=gateway`. `local` still works but prints a deprecation warning and runs `mock`. `ANALYSIS_MODE` keeps its values (`agent` for vm, `gateway` for mock), and the console's "gateway analysis mode" wording is unchanged because it names `ANALYSIS_MODE`, not the runtime mode.
-- **Why:** The team calls the zero-GPU mode "mock"; one name across the launcher, skills and docs avoids confusion between "local" (the laptop) and the mode that runs mocks.
-- **Rejected:** Renaming `ANALYSIS_MODE` to `vm`/`mock` (a different concept: which analysis path the console calls; the mock-backend-v2 migration will change the gateway path anyway). Removing `local` outright (breaks shell history and muscle memory for no gain). Adding a runtime-mode badge to the console (scope growth).
-- **Links:** [`../start.sh`](../start.sh); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md); [`../eval/tests/test_start_script.py`](../eval/tests/test_start_script.py).
+### 2026-10-22: Standard incident types enforced at the writers, not by a DB CHECK
+- **Decision:** `incidents.type`, `gt_incidents.type` and `severity_level` stay unconstrained in Postgres. The writers emit only the five standard types (`road accident`, `burglary`, `explosion`, `assault`, `animal attack`): the zero-GPU mock (`mock-backend/base_profile_mock`) emits only standard types and `E#` entity IDs, and `eval/` stores ground truth through `incident_report.canonical_incident_type` (trim, lowercase, `fighting` → `assault`, `animal` → `animal attack`). An unknown GT type is warned about and stored normalised, not dropped. GT-side scoring folds the retired names, so older ground-truth rows still score. The retired Streamlit `incident-console/` keeps its own old `INCIDENT_TYPES` copy and is deliberately not synced.
+- **Why:** With a CHECK rule, the database would reject AI output that uses a wrong name, and that output would be lost. The captain prefers keeping the row and fixing the writers.
+- **Rejected:** DB CHECK constraints on type/severity, plus auto-mapping in `insert_incident`.
+- **Links:** [`../eval/incident_report.py`](../eval/incident_report.py); [`../eval/scripts/eval_ingest_gt.py`](../eval/scripts/eval_ingest_gt.py); [`data.md`](data.md).
+
 
 ### 2026-10-21: Single-source incident contract with sync script and .txt prompts
 - **Decision:**

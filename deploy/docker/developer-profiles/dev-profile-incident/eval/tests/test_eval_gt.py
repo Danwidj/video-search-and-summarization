@@ -18,7 +18,9 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +30,7 @@ import eval_gt
 import matching
 from db import IncidentDB
 from eval_gt import Result, compare_incident_fields, prf1, resolve_holder, run_evaluation, score_matched_pair
+from incident_report import canonical_incident_type
 
 # --------------------------------------------------------------------------- #
 # compare_incident_fields
@@ -63,6 +66,40 @@ def test_compare_incident_fields_type_mismatch_and_missing_severity():
     fields = compare_incident_fields(gt, model)
     assert fields["type"]["pass"] is False
     assert fields["severity_level"]["pass"] is False
+
+
+def test_compare_incident_fields_maps_retired_gt_type_names():
+    # GT rows ingested before the rename can still hold "Fighting"/"Animal".
+    assert compare_incident_fields({"type": "Fighting"}, {"type": "assault"})["type"]["pass"] is True
+    assert compare_incident_fields({"type": "Animal"}, {"type": "animal attack"})["type"]["pass"] is True
+    assert compare_incident_fields({"type": "assault"}, {"type": "fighting"})["type"]["pass"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Road Accident", "road accident"),
+        ("  Assault ", "assault"),
+        ("Fighting", "assault"),
+        ("Animal", "animal attack"),
+        ("Animal  Attack", "animal attack"),
+        ("Shooting", "shooting"),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_canonical_incident_type(raw, expected):
+    assert canonical_incident_type(raw) == expected
+
+
+def test_gt_incident_type_warns_but_keeps_unknown_value(capsys):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from eval_ingest_gt import gt_incident_type
+
+    assert gt_incident_type("Burglary", "Burglary001") == "burglary"
+    assert capsys.readouterr().err == ""
+    assert gt_incident_type("Shooting", "Shooting001") == "shooting"
+    assert "Shooting001" in capsys.readouterr().err
 
 
 def test_compare_incident_fields_timestamp_tolerance_boundary_inside():
