@@ -40,9 +40,9 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
      grep -q "^${v}=." .env.local && echo "ok      $v" || echo "MISSING $v"
    done
    ```
-3. **Symlinks:** every service reads its own `.env.local`. Local mode reads `incident-console/.env.local` for the mock backend, so all four links are required:
+3. **Symlinks:** every service reads its own `.env.local`; local mode passes `mock-backend/.env.local` to the mock backend and `vlm-gateway/.env.local` to the gateway, and stops with the fix command if either is missing. All three links are required:
    ```bash
-   for d in incident-console incident-console-v2 vlm-gateway mock-backend; do ln -sfn ../.env.local "$d/.env.local"; done
+   for d in incident-console-v2 vlm-gateway mock-backend; do ln -sfn ../.env.local "$d/.env.local"; done
    ```
    If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees. It never overwrites an existing `.env.local` copy, so a worktree made before the finals switch still holds the midterm values: refresh it.
 

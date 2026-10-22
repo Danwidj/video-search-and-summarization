@@ -8,7 +8,7 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 ## 1. Supabase PostgreSQL Schema
 
 There is one Supabase project per project phase ([decision](decisions.md)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is defined authoritatively by the baseline
-[`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) and any later finals migration in the same folder (applied via `supabase db push`; see [`../supabase/README.md`](../supabase/README.md)). Schema authority is the migrations, not the retired Streamlit console's `incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` tests the schema on a throwaway local Postgres. It supports multi-model runs over the same video, a parallel
+[`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) and any later finals migration in the same folder (applied via `supabase db push`; see [`../supabase/README.md`](../supabase/README.md)). Schema authority is the migrations, not the archived Streamlit v1 console's `archived/incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` tests the schema on a throwaway local Postgres. It supports multi-model runs over the same video, a parallel
 ground-truth evaluation structure, human review workflows, and the MVP2 vector search extension
 (`evidence_crops`, `query_results`; see [`mvp2/README.md`](mvp2/README.md)).
 
@@ -191,7 +191,7 @@ Carries the reviewer verification state independently of the AI report.
 | `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of the last content edit |
 
 ##### `notifications`
-Legacy alert queue retained for compatibility with the retired Streamlit console and evaluation tooling. The active
+Legacy alert queue retained for compatibility with the archived Streamlit v1 console and evaluation tooling. The active
 `incident-console-v2` application neither reads nor writes this table.
 
 | Column | Type | Constraints | Description |
@@ -246,7 +246,7 @@ Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, 
 
 ##### `entity_matches`, `instrument_matches`, `asset_matches`
 Store accepted (above-threshold) similarity pairings produced during Tier 1 ground-truth evaluation
-(`incident-console/matching.py`).
+(`eval/matching.py`; originally `incident-console/matching.py`, now archived under `archived/incident-console/`).
 - **Composite Primary Key:** `(incident_id, model_run_id, <item>_id)`
 - **Foreign Keys:** References model items (`entities`/`instruments`/`assets`) and ground-truth items (`gt_*`)
   with `ON DELETE CASCADE`. The `gt_*_id` foreign key columns (`gt_entity_id`, `gt_instrument_id`, `gt_asset_id`) are `NOT NULL`.
@@ -336,23 +336,23 @@ PostgREST has no client-held transactions, so saving an incident is one server-s
 
 Database access is split across two client implementations according to operational requirements:
 
-1. **Tooling & Retired v1 Console (Direct Postgres):**
-   The retired v1 console (`incident-console/db.py`) historically used direct Postgres via SQLAlchemy Core and `psycopg2` (`INCIDENT_DB_DSN`). Active UI development in `incident-console-v2` uses Supabase PostgREST (`lib/postgrest/client.ts`). The console is database-backed only; there is no offline CSV-preview UI mode.
+1. **Tooling & Archived v1 Console (Direct Postgres):**
+   The archived v1 console (`archived/incident-console/db.py`) historically used direct Postgres via SQLAlchemy Core and `psycopg2` (`INCIDENT_DB_DSN`). Active UI development in `incident-console-v2` uses Supabase PostgREST (`lib/postgrest/client.ts`). The console is database-backed only; there is no offline CSV-preview UI mode.
 
 2. **Agent Side & Service Writers (Supabase PostgREST):**
    `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase
    PostgREST CRUD helper (`supabase-py`'s `AsyncClient`/`acreate_client`, not `asyncpg`/direct-Postgres) against
-   the same schema, mirroring `incident-console/db.py`'s tables and columns for the subset an agent-side caller plausibly writes
+   the same schema, mirroring the archived v1 `archived/incident-console/db.py`'s tables and columns for the subset an agent-side caller plausibly writes
    (`model_runs`, `incidents`, `entities`, `instruments`, `assets`, `reports`, `review_status`, `notifications`; the agent never writes `videos`; the `gt_*` and
    `*_matches` tables stay console/eval-only).
    - **Configuration:** `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`
-     (deliberately NOT `INCIDENT_DB_DSN`, which stays owned by the console's own `incident-console/db.py`); unset means the feature is
+     (deliberately NOT `INCIDENT_DB_DSN`, which the direct-Postgres tooling uses, as the archived v1 `archived/incident-console/db.py` did); unset means the feature is
      unavailable, no fallback.
    - **Network Constraint / DPI Blocking Rationale:** This split exists because the deployment VM (`kwanz-ws`) DPI-blocks raw Postgres wire
      protocol on port 5432, so only the HTTPS-based PostgREST route works for the agent from there — a direct-Postgres
      driver on the agent side breaks Analyze on `kwanz-ws`.
    - **Transaction Limits & RPC:** PostgREST has no client-held transactions or `SELECT ... FOR UPDATE`; all PostgREST writers
-     (`services/agent/src/vss_agents/utils/incident_db.py`, `incident-console-v2/lib/postgrest/client.ts`, `incident-console/db_postgrest.py`,
+     (`services/agent/src/vss_agents/utils/incident_db.py`, `incident-console-v2/lib/postgrest/client.ts`, the archived v1 `archived/incident-console/db_postgrest.py`,
      and `eval/db_postgrest.py`) call the atomic `insert_incident` Postgres RPC function
      (finals baseline in `deploy/docker/developer-profiles/dev-profile-incident/supabase/migrations/`) via `/rpc/insert_incident` (see [`../supabase/README.md`](../supabase/README.md)
      for how to apply it via `supabase db push`).
@@ -372,9 +372,9 @@ Database access is split across two client implementations according to operatio
 
 ### Fixture CSV Seed Data Quirk
 
-Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/incident-console/fixtures/data/*.csv`
+Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/fixtures/data/*.csv` (archived v1)
 (72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
-(`deploy/docker/developer-profiles/dev-profile-incident/incident-console/scripts/seed_supabase.py` via `incident-console/scripts/seed_data.py`), which drops the `SYN-`-prefixed rows and seeds only the
+(`deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/scripts/seed_supabase.py` via `scripts/seed_data.py`, both archived), which drops the `SYN-`-prefixed rows and seeds only the
 36 real incidents under one shared `model_run_id`.
 
 ---

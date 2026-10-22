@@ -22,7 +22,7 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, reviewer v
 |---|---|---|
 | Agent on `kwanz-ws` (port 5432 DPI-blocked) | PostgREST over HTTPS (`supabase-py`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` |
 | `incident-console-v2` and `eval/` writers | PostgREST (console: adapters in `lib/adapters/supabase/` plus the not-yet-migrated callers listed in §7 of [`.docs/mvp2/console-hexagonal-architecture.md`](../../.docs/mvp2/console-hexagonal-architecture.md), all over `lib/postgrest/client.ts`; `eval/db_postgrest.py`) | same |
-| Laptop tooling, `supabase` CLI, copy and parity scripts, v1 console | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
+| Laptop tooling, `supabase` CLI, copy and parity scripts | Direct Postgres | `INCIDENT_DB_DSN` (session pooler, 5432). Strip any `+psycopg2` suffix for the CLI. |
 
 Only `service_role` and `postgres` reach anything: the public (`anon`) key is refused everywhere on finals, and on midterm after the freeze.
 
@@ -148,7 +148,7 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 | `mock-backend/base_profile_mock` (local mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
 | `incident-console-v2` `lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
-| Retired `incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (retired; do not point it at finals) |
+| Archived `archived/incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (archived; never point it at finals) |
 | `supabase/tests/probe_api.sh` | `apikey`; Bearer only for `eyJ...` keys | Yes |
 | `supabase/copy/`, `parity_check.py`, `supabase` CLI | Direct DSN, no key | Not affected |
 

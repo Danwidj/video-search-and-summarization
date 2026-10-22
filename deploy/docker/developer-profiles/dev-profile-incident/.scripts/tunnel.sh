@@ -4,7 +4,7 @@
 # `mdx-tunnel-incident` shell alias from deploy/docker/developer-profiles/dev-profile-incident/dotfiles/aliases.sh — same
 # behavior, standalone script).
 #
-# The laptop-local incident-console reaches the real kwanz-ws backend (agent
+# The laptop-local incident-console-v2 reaches the real kwanz-ws backend (agent
 # :8000, ingress :7777) through this SSH tunnel instead of the mock
 # (see deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md). Phase 4 design: the console never deploys
 # to the VM; the VM runs only the backend stack. Unlike every other script
