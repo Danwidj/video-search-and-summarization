@@ -450,7 +450,7 @@ class IncidentDB:
     async def set_review_status(
         self, incident_id: str, model_run_id: str, *, status: str, reviewed_by: str, notify_threshold: int
     ) -> dict[str, Any]:
-        """Persist a review-status transition; raise a notification on verify above threshold.
+        """Persist a review-status transition; return whether notification threshold was met on verify.
 
         Mirrors ``db.py``'s ``set_review_status`` semantics, but as sequential
         PostgREST calls rather than one server-side transaction - see the

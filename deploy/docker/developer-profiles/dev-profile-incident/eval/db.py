@@ -56,7 +56,6 @@ from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Float,
