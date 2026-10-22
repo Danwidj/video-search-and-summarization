@@ -18,7 +18,8 @@ const OUTCOME_STYLES: Record<RunOutcome, string> = {
   legacy: 'bg-ink/5 text-ink/60',
 };
 
-export function useRunHistory(videoId: string) {
+/** A video's run history; it loads again whenever `revision` changes (a server render with a changed report). */
+export function useRunHistory(videoId: string, revision = '') {
   const [history, setHistory] = useState<VideoRunHistory | null>(null);
   const [error, setError] = useState('');
   const reload = useCallback(() => {
@@ -31,7 +32,7 @@ export function useRunHistory(videoId: string) {
       })
       .catch((cause: Error) => setError(cause.message));
   }, [videoId]);
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload, revision]);
   return { history, error, reload };
 }
 

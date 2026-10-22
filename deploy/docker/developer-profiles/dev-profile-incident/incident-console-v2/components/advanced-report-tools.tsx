@@ -37,7 +37,8 @@ function FollowUpChat({ report }: { report: ReportView }) {
 
 /** Re-analysis of this video plus its analysis history. */
 function AnalysisHistoryCard({ report }: { report: ReportView }) {
-  const { history, error, reload } = useRunHistory(report.videoId);
+  const { official, review } = report;
+  const { history, error, reload } = useRunHistory(report.videoId, [official.officialRunId, review.status, review.editedAt, review.verifiedAt].join('|'));
   return (
     <section className="rounded-3xl border border-ink/10 bg-white p-6" data-testid="analysis-history-card">
       <p className="font-mono text-xs uppercase tracking-[.15em] text-moss">Analysis</p>

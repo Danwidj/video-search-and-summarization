@@ -427,4 +427,5 @@ Conventions for a converted page (the report page is the reference, `app/reports
 - A route group keeps the page's `loading.tsx`, `error.tsx` and `not-found.tsx` from wrapping sibling routes (`compare/`).
 - A missing record calls `notFound()`; a load failure the page expects (unconfigured store, unreachable PostgREST, unsignable video) renders its message in place, as the API route returns it; `error.tsx` catches the rest, with the message redacted in production.
 - After a write through `/api/*`, the client component calls `router.refresh()`, which renders the page on the server again with the stored state.
+- `router.refresh()` keeps client components mounted, so a panel that still fetches its own `/api/*` data must reload when the refreshed props change (the report page's analysis history reloads when the official run, review status or edit time changes).
 
