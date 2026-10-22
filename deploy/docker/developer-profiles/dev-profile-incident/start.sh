@@ -92,10 +92,6 @@
 #                            behavior-analytics natively, plus elasticsearch/kafka in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
-#   VSS_STOP_ON_LAST_EXIT    stop VM backend services on last exit when true (default: true).
-#                            Set to 'false' to leave backend running when exiting.
-#   --keep-backend           CLI convenience flag equivalent to VSS_STOP_ON_LAST_EXIT=false
-
 set -euo pipefail
 
 # Pin all local processes and defaults to GPU 0 to protect GPU 1 for co-tenants
@@ -107,7 +103,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Parse --mode / --no-console flags (--no-console: bring the backend and tunnel up, skip the Next.js console)
 NO_CONSOLE=0
 VSS_START_MODE="${VSS_START_MODE:-vm}"
-VSS_STOP_ON_LAST_EXIT="${VSS_STOP_ON_LAST_EXIT:-true}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)
@@ -122,13 +117,9 @@ while [[ $# -gt 0 ]]; do
       NO_CONSOLE=1
       shift
       ;;
-    --keep-backend)
-      VSS_STOP_ON_LAST_EXIT="false"
-      shift
-      ;;
     *)
       echo "start.sh: unknown argument '$1'" >&2
-      echo "Usage: ./start.sh [--mode mock|vm] [--no-console] [--keep-backend]" >&2
+      echo "Usage: ./start.sh [--mode mock|vm] [--no-console]" >&2
       exit 1
       ;;
   esac
@@ -211,23 +202,16 @@ cleanup() {
 
   # Stop backend services on the VM if this was the last active session
   if [ "${VSS_START_MODE:-}" = "vm" ] && [ "${LOCK_HELD:-0}" = "1" ]; then
-    case "${VSS_STOP_ON_LAST_EXIT:-true}" in
-      false|0|no)
-        echo "start.sh: VSS_STOP_ON_LAST_EXIT is disabled; leaving backend running on the VM."
-        ;;
-      *)
-        if [ -n "${VSS_SSH_TARGET:-}" ]; then
-          echo "start.sh: checking active sessions on $VSS_SSH_TARGET..."
-          stop_rc=0
-          remote_cmd="bash -s -- $(printf '%q ' "$VSS_LOCK_FILE" "$VSS_REPO_ROOT" "${INCIDENT_DOCKER_SERVICES:-}" "${INCIDENT_NATIVE_SERVICES:-}")"
-          # shellcheck disable=SC2029
-          ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$remote_cmd" < "${SCRIPT_DIR}/.scripts/vm-stop-backend.sh" || stop_rc=$?
-          if [ "$stop_rc" -ne 0 ]; then
-            echo "start.sh: warning: failed to check or stop VM backend services (exit $stop_rc)." >&2
-          fi
-        fi
-        ;;
-    esac
+    if [ -n "${VSS_SSH_TARGET:-}" ]; then
+      echo "start.sh: checking active sessions on $VSS_SSH_TARGET..."
+      stop_rc=0
+      remote_cmd="bash -s -- $(printf '%q ' "$VSS_LOCK_FILE" "$VSS_REPO_ROOT" "${INCIDENT_DOCKER_SERVICES:-}" "${INCIDENT_NATIVE_SERVICES:-}")"
+      # shellcheck disable=SC2029
+      ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$remote_cmd" < "${SCRIPT_DIR}/.scripts/vm-stop-backend.sh" || stop_rc=$?
+      if [ "$stop_rc" -ne 0 ]; then
+        echo "start.sh: warning: failed to check or stop VM backend services (exit $stop_rc)." >&2
+      fi
+    fi
   fi
 }
 trap cleanup EXIT INT TERM
@@ -272,12 +256,12 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   lock_cmd="
     target='$VSS_LOCK_FILE'
     dir=\"\$(dirname \"\$target\")\"
-    if ! mkdir -p \"\$dir\" 2>/dev/null || ! touch \"\$target\" 2>/dev/null; then
-      target='/tmp/vss-active-runs.lock'
+    if [ ! -r \"\$target\" ]; then
+      mkdir -p \"\$dir\" 2>/dev/null || true
       touch \"\$target\" 2>/dev/null || true
+      chmod 777 \"\$dir\" 2>/dev/null || true
+      chmod 666 \"\$target\" 2>/dev/null || true
     fi
-    chmod 777 \"\$(dirname \"\$target\")\" 2>/dev/null || true
-    chmod 666 \"\$target\" 2>/dev/null || true
     exec 200<\"\$target\"
     flock -s 200 || exit 1
     echo \"LOCKED:\$target\"
@@ -291,8 +275,6 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   while [ "$SECONDS" -lt "$lock_deadline" ]; do
     if grep -q "^LOCKED:" "$LOCK_LOG" 2>/dev/null; then
       LOCK_HELD=1
-      resolved_lock="$(sed -n 's/^LOCKED://p' "$LOCK_LOG" | head -n 1)"
-      [ -n "$resolved_lock" ] && VSS_LOCK_FILE="$resolved_lock"
       break
     fi
     if ! kill -0 "$LOCK_SSH_PID" 2>/dev/null; then

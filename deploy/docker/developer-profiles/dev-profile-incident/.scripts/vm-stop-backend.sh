@@ -25,7 +25,7 @@ DOCKER_SERVICES="${3:-}"
 NATIVE_SERVICES="${4:-}"
 
 # Ensure lock file and directory exist with group-writable permissions
-if [ ! -f "$LOCK_FILE" ]; then
+if [ ! -r "$LOCK_FILE" ]; then
   mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
   touch "$LOCK_FILE" 2>/dev/null || true
   chmod 777 "$(dirname "$LOCK_FILE")" 2>/dev/null || true
@@ -84,18 +84,6 @@ if [ -n "$DOCKER_SERVICES" ]; then
     while read -r cid; do
       [ -n "$cid" ] && containers_to_stop+=("$cid")
     done < <(cd "$REPO_ROOT/deploy/docker" && "${DOCKER[@]}" compose -p mdx ps -q "${compose_svcs[@]}" 2>/dev/null || true)
-  fi
-
-  if [ ${#containers_to_stop[@]} -eq 0 ]; then
-    # Fallback: scan docker ps for container names matching any expected service
-    for c in $("${DOCKER[@]}" ps --format '{{.Names}}' 2>/dev/null || true); do
-      for svc in ${DOCKER_SERVICES} "${compose_svcs[@]}"; do
-        if echo "$c" | grep -Eq "(^|[-_])${svc}([-_0-9]|$)"; then
-          containers_to_stop+=("$c")
-          break
-        fi
-      done
-    done
   fi
 
   if [ ${#containers_to_stop[@]} -gt 0 ]; then

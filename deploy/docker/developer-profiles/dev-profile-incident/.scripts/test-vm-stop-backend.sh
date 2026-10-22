@@ -88,6 +88,9 @@ case "$1" in
   info)
     [ -z "${FAKE_DOCKER_DOWN:-}" ] ;;
   compose)
+    if [ -n "${FAKE_COMPOSE_EMPTY:-}" ]; then
+      exit 0
+    fi
     for a in "$@"; do
       case "$a" in
         ps)
@@ -96,11 +99,6 @@ case "$1" in
           ;;
       esac
     done
-    ;;
-  ps)
-    echo "mdx-redis-1"
-    echo "vss-haproxy-ingress"
-    exit 0
     ;;
   stop)
     [ -n "${FAKE_STOP_FAIL:-}" ] && exit 1
@@ -211,33 +209,34 @@ out="$(bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)
 check "missing lock file rc" "0" "$rc"
 check "lock file recreated" "true" "$([ -f "$LOCK_FILE" ] && echo true || echo false)"
 
-# Test 5: Non-fatal error handling when stop commands fail
+# Test 5: Existing read-only lock file can be locked without touching/modifying permissions
+RO_LOCK="$TMP/readonly.lock"
+: >"$RO_LOCK"
+chmod 444 "$RO_LOCK"
+: >"$FAKE_DOCKER_LOG"; : >"$FAKE_NATIVE_LOG"
+out="$(bash "$SUT" "$RO_LOCK" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)"; rc=$?
+check "read-only lock file rc" "0" "$rc"
+check "read-only lock file stops backend" "last active session exited; stopping backend services on the VM..." "$out"
+
+# Test 6: Empty compose ps does not trigger arbitrary container scan
+: >"$FAKE_DOCKER_LOG"; : >"$FAKE_NATIVE_LOG"
+out="$(FAKE_COMPOSE_EMPTY=1 bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)"; rc=$?
+check "empty compose ps rc" "0" "$rc"
+check "empty compose ps message" "no expected Docker containers are currently running." "$out"
+check "no docker stop when compose ps empty" "" "$(grep '^stop' "$FAKE_DOCKER_LOG" || true)"
+
+# Test 7: Non-fatal error handling when stop commands fail
 : >"$FAKE_DOCKER_LOG"; : >"$FAKE_NATIVE_LOG"
 out="$(FAKE_STOP_FAIL=1 FAKE_NATIVE_FAIL=1 bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)"; rc=$?
 check "failure is non-fatal rc" "0" "$rc"
 check "docker stop warning" "warning: docker stop exited with" "$out"
 check "native stop warning" "warning: native-services.sh stop exited with" "$out"
 
-# Test 6: start.sh cleanup behaviour and opt-out
+# Test 8: start.sh usage output and cleanup behaviour
 START_SH="$SCRIPT_DIR/../start.sh"
 # Test unknown argument usage output
 out="$(bash "$START_SH" --unknown-flag 2>&1 || true)"
-check "usage mentions keep-backend" "--keep-backend" "$out"
-
-# Test cleanup opt-out via VSS_STOP_ON_LAST_EXIT=false
-out="$(bash -c "
-  VSS_START_MODE=vm
-  VSS_STOP_ON_LAST_EXIT=false
-  LOCK_HELD=1
-  LOCK_SSH_PID=''
-  TUNNEL_LOG=''
-  TUNNEL_PID=''
-  VLM_GATEWAY_PID=''
-  MOCK_BACKEND_PID=''
-  $(sed -n '/^cleanup() {/,/^}/p' "$START_SH")
-  cleanup
-" 2>&1)"
-check "opt-out message" "VSS_STOP_ON_LAST_EXIT is disabled; leaving backend running" "$out"
+check "usage output" "Usage: ./start.sh [--mode mock|vm] [--no-console]" "$out"
 
 # Test cleanup when stop fails over SSH (must be non-fatal)
 cat >"$TMP/bin/ssh" <<'FAKE'
@@ -250,7 +249,6 @@ chmod +x "$TMP/bin/ssh"
 out="$(bash -c "
   export PATH='$TMP/bin:\$PATH'
   VSS_START_MODE=vm
-  VSS_STOP_ON_LAST_EXIT=true
   LOCK_HELD=1
   LOCK_SSH_PID=''
   TUNNEL_LOG=''
