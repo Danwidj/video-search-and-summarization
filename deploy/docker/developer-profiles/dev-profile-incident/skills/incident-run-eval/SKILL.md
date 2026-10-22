@@ -54,6 +54,7 @@ uv run python scripts/eval_aggregate.py
 ## Verify
 
 - `uv run pytest tests/` passes. The tests are hermetic: no live Postgres, agent or GPU.
+- `eval_ingest_gt.py` prints no `WARNING: ... has incident type` line. If it does, a workbook `Type` is not one of the five standard types. The row is still stored, normalised to lowercase; fix the workbook and re-ingest.
 - The smoke run writes `eval_data/results/<category>__<model>.json` with non-null field scores.
 
 ## Scoring (what the numbers mean)

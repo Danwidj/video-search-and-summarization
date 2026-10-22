@@ -127,7 +127,7 @@ incidents = Table(
     metadata,
     Column("incident_id", String(20), primary_key=True),
     Column("model_run_id", String(20), primary_key=True),
-    Column("type", String(32)),  # road accident / burglary / explosion / fighting / animal
+    Column("type", String(32)),  # road accident / burglary / explosion / assault / animal attack
     Column("start_timestamp", String(32)),  # HH:MM:SS
     Column("end_timestamp", String(32)),  # HH:MM:SS
     Column("duration", Integer),  # seconds

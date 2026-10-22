@@ -33,14 +33,14 @@ _MOCK_CATEGORIES = (
         "confidence": 0.88,
     },
     {
-        "type": "fighting",
+        "type": "assault",
         "folder": "fighting",
         "description": "MOCK incident report: two people are involved in a physical altercation.",
         "severity": 3,
         "confidence": 0.91,
     },
     {
-        "type": "animal",
+        "type": "animal attack",
         "folder": "animal_attacks",
         "description": "MOCK incident report: an animal-related safety incident is visible.",
         "severity": 2,
@@ -177,7 +177,7 @@ async def analyze_incident(
             await tx.add_incident_entity(
                 incident_id,
                 model_run_id,
-                entity_id="person-1",
+                entity_id="E1",
                 type="human",
                 description="MOCK detected person involved in the incident.",
             )
