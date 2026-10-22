@@ -39,15 +39,14 @@ Schema overview (multi-model-run + ground-truth evaluation):
   the same video without overwriting each other.
 - ``gt_incidents`` / ``gt_entities`` / ``gt_instruments`` / ``gt_assets`` hold
   the parallel human ground-truth set (no ``model_run_id``).
-- ``entity_matches`` / ``instrument_matches`` / ``asset_matches`` hold accepted
-  (above-threshold) similarity pairings between one model run's evidence and
-  ground truth; see ``matching.py``. An absent row means "no accepted match".
 - ``review_status`` is an additional table (not part of the binding 12) that
   carries the human review workflow (unreviewed / under review / verified)
   keyed the same way as ``incidents``, so the ``incidents`` table itself stays
   exactly as specified.
-- ``notifications`` / ``severity_eval_log`` are existing tables, re-pointed at
-  ``(incident_id, model_run_id)`` instead of the old integer report id.
+- ``severity_eval_log`` is an existing table, re-pointed at
+  ``(incident_id, model_run_id)`` instead of the old integer report id. (Retired
+  tables ``notifications``, ``entity_matches``, ``instrument_matches``, and
+  ``asset_matches`` have been dropped).
 """
 
 from __future__ import annotations
@@ -251,71 +250,8 @@ gt_assets = Table(
 )
 
 # --------------------------------------------------------------------------- #
-# Similarity-match results (matching.py) - only accepted (above-threshold)
-# pairings are ever written. An absent row means "no accepted match".
-# --------------------------------------------------------------------------- #
-entity_matches = Table(
-    "entity_matches",
-    metadata,
-    Column("incident_id", String(20), primary_key=True),
-    Column("model_run_id", String(20), primary_key=True),
-    Column("entity_id", String(20), primary_key=True),
-    Column("gt_entity_id", String(20), nullable=False),
-    Column("similarity_score", Float, nullable=False),
-    Column("matched_at", DateTime, default=_utcnow),
-    ForeignKeyConstraint(
-        ["incident_id", "entity_id", "model_run_id"],
-        ["entities.incident_id", "entities.entity_id", "entities.model_run_id"],
-        ondelete="CASCADE",
-    ),
-    ForeignKeyConstraint(
-        ["incident_id", "gt_entity_id"], ["gt_entities.incident_id", "gt_entities.entity_id"], ondelete="CASCADE"
-    ),
-)
-
-instrument_matches = Table(
-    "instrument_matches",
-    metadata,
-    Column("incident_id", String(20), primary_key=True),
-    Column("model_run_id", String(20), primary_key=True),
-    Column("instrument_id", String(20), primary_key=True),
-    Column("gt_instrument_id", String(20), nullable=False),
-    Column("similarity_score", Float, nullable=False),
-    Column("matched_at", DateTime, default=_utcnow),
-    ForeignKeyConstraint(
-        ["incident_id", "instrument_id", "model_run_id"],
-        ["instruments.incident_id", "instruments.instrument_id", "instruments.model_run_id"],
-        ondelete="CASCADE",
-    ),
-    ForeignKeyConstraint(
-        ["incident_id", "gt_instrument_id"],
-        ["gt_instruments.incident_id", "gt_instruments.instrument_id"],
-        ondelete="CASCADE",
-    ),
-)
-
-asset_matches = Table(
-    "asset_matches",
-    metadata,
-    Column("incident_id", String(20), primary_key=True),
-    Column("model_run_id", String(20), primary_key=True),
-    Column("asset_id", String(20), primary_key=True),
-    Column("gt_asset_id", String(20), nullable=False),
-    Column("similarity_score", Float, nullable=False),
-    Column("matched_at", DateTime, default=_utcnow),
-    ForeignKeyConstraint(
-        ["incident_id", "asset_id", "model_run_id"],
-        ["assets.incident_id", "assets.asset_id", "assets.model_run_id"],
-        ondelete="CASCADE",
-    ),
-    ForeignKeyConstraint(
-        ["incident_id", "gt_asset_id"], ["gt_assets.incident_id", "gt_assets.asset_id"], ondelete="CASCADE"
-    ),
-)
-
-# --------------------------------------------------------------------------- #
 # Review workflow (additional table, not one of the literal 12 - see the
-# module docstring) + existing notification / eval tables, re-pointed.
+# module docstring) + existing eval table, re-pointed.
 # --------------------------------------------------------------------------- #
 review_status = Table(
     "review_status",
@@ -327,20 +263,6 @@ review_status = Table(
     Column("verified_at", DateTime),
     Column("edited_by", String(256)),
     Column("edited_at", DateTime),
-    ForeignKeyConstraint(
-        ["incident_id", "model_run_id"], ["incidents.incident_id", "incidents.model_run_id"], ondelete="CASCADE"
-    ),
-)
-
-notifications = Table(
-    "notifications",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("incident_id", String(20)),
-    Column("model_run_id", String(20)),
-    Column("severity", Integer),
-    Column("created_at", DateTime, default=_utcnow),
-    Column("acknowledged", Boolean, nullable=False, default=False),
     ForeignKeyConstraint(
         ["incident_id", "model_run_id"], ["incidents.incident_id", "incidents.model_run_id"], ondelete="CASCADE"
     ),
@@ -760,16 +682,6 @@ class IncidentDB:
                 )
             )
             notified = status == "verified" and severity is not None and severity >= notify_threshold
-            if notified:
-                conn.execute(
-                    notifications.insert().values(
-                        incident_id=incident_id,
-                        model_run_id=model_run_id,
-                        severity=severity,
-                        created_at=now,
-                        acknowledged=False,
-                    )
-                )
             return {"notified": notified, "severity": severity}
 
     # -- entities / instruments / assets (model output) ------------------ #
@@ -1031,93 +943,6 @@ class IncidentDB:
             stmt = select(gt_assets).where(gt_assets.c.incident_id == incident_id).order_by(gt_assets.c.asset_id)
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
-    # -- similarity matches (matching.py) ------------------------------- #
-    def record_entity_match(
-        self, *, incident_id: str, model_run_id: str, entity_id: str, gt_entity_id: str, similarity_score: float
-    ) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(
-                delete(entity_matches).where(
-                    (entity_matches.c.incident_id == incident_id)
-                    & (entity_matches.c.model_run_id == model_run_id)
-                    & (entity_matches.c.entity_id == entity_id)
-                )
-            )
-            conn.execute(
-                entity_matches.insert().values(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    entity_id=entity_id,
-                    gt_entity_id=gt_entity_id,
-                    similarity_score=similarity_score,
-                    matched_at=_utcnow(),
-                )
-            )
-
-    def record_instrument_match(
-        self, *, incident_id: str, model_run_id: str, instrument_id: str, gt_instrument_id: str, similarity_score: float
-    ) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(
-                delete(instrument_matches).where(
-                    (instrument_matches.c.incident_id == incident_id)
-                    & (instrument_matches.c.model_run_id == model_run_id)
-                    & (instrument_matches.c.instrument_id == instrument_id)
-                )
-            )
-            conn.execute(
-                instrument_matches.insert().values(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    instrument_id=instrument_id,
-                    gt_instrument_id=gt_instrument_id,
-                    similarity_score=similarity_score,
-                    matched_at=_utcnow(),
-                )
-            )
-
-    def record_asset_match(
-        self, *, incident_id: str, model_run_id: str, asset_id: str, gt_asset_id: str, similarity_score: float
-    ) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(
-                delete(asset_matches).where(
-                    (asset_matches.c.incident_id == incident_id)
-                    & (asset_matches.c.model_run_id == model_run_id)
-                    & (asset_matches.c.asset_id == asset_id)
-                )
-            )
-            conn.execute(
-                asset_matches.insert().values(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    asset_id=asset_id,
-                    gt_asset_id=gt_asset_id,
-                    similarity_score=similarity_score,
-                    matched_at=_utcnow(),
-                )
-            )
-
-    def list_entity_matches(self, incident_id: str, model_run_id: str) -> list[dict]:
-        stmt = select(entity_matches).where(
-            (entity_matches.c.incident_id == incident_id) & (entity_matches.c.model_run_id == model_run_id)
-        )
-        with self.read_engine.connect() as conn:
-            return [_row_to_dict(r) for r in conn.execute(stmt)]
-
-    def list_instrument_matches(self, incident_id: str, model_run_id: str) -> list[dict]:
-        stmt = select(instrument_matches).where(
-            (instrument_matches.c.incident_id == incident_id) & (instrument_matches.c.model_run_id == model_run_id)
-        )
-        with self.read_engine.connect() as conn:
-            return [_row_to_dict(r) for r in conn.execute(stmt)]
-
-    def list_asset_matches(self, incident_id: str, model_run_id: str) -> list[dict]:
-        stmt = select(asset_matches).where(
-            (asset_matches.c.incident_id == incident_id) & (asset_matches.c.model_run_id == model_run_id)
-        )
-        with self.read_engine.connect() as conn:
-            return [_row_to_dict(r) for r in conn.execute(stmt)]
 
     # -- generated report documents (reports table) ----------------- #
     def insert_generated_report(
@@ -1155,17 +980,6 @@ class IncidentDB:
         with self.read_engine.connect() as conn:
             return [_row_to_dict(r) for r in conn.execute(stmt)]
 
-    # -- notifications --------------------------------------------- #
-    def list_notifications(self, *, only_unacknowledged: bool = False) -> list[dict]:
-        stmt = select(notifications).order_by(notifications.c.created_at.desc())
-        if only_unacknowledged:
-            stmt = stmt.where(notifications.c.acknowledged.is_(False))
-        with self.read_engine.connect() as conn:
-            return [_row_to_dict(r) for r in conn.execute(stmt)]
-
-    def acknowledge_notification(self, notification_id: int) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(update(notifications).where(notifications.c.id == notification_id).values(acknowledged=True))
 
     # -- severity_eval_log --------------------------------------- #
     def insert_severity_eval(

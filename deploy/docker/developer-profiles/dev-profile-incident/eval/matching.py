@@ -22,10 +22,9 @@ embedding similarity over the fields that actually identify the object
 instruments/assets - not arbitrary free text). The resulting similarity matrix
 is solved as an optimal one-to-one assignment (Hungarian algorithm, via
 ``scipy.optimize.linear_sum_assignment``), and only pairings clearing
-``config.MIN_MATCH_SIMILARITY`` are persisted: a forced low-similarity pairing
-is a miss (missed detection or false positive), not a match. An absent row in
-``entity_matches`` / ``instrument_matches`` / ``asset_matches`` means exactly
-that - "no accepted match".
+``config.MIN_MATCH_SIMILARITY`` are returned: a forced low-similarity pairing
+is a miss (missed detection or false positive), not a match. Matching is
+computed in memory; pairings are not persisted to database tables.
 
 ``solve_assignment`` is a pure function over a plain similarity matrix so the
 assignment logic is testable without an embedding endpoint or a database.
@@ -86,28 +85,27 @@ def _named_text(row: dict) -> str:
     return f"{row.get('name') or ''} {row.get('description') or ''}".strip()
 
 
-# Per-kind: (identifying-text builder, id column, list method, gt-list method, record method).
+# Per-kind: (identifying-text builder, id column, list method, gt-list method).
 _KIND_CONFIG = {
-    "entities": (_entity_text, "entity_id", "list_incident_entities", "list_gt_entities", "record_entity_match"),
+    "entities": (_entity_text, "entity_id", "list_incident_entities", "list_gt_entities"),
     "instruments": (
         _named_text,
         "instrument_id",
         "list_incident_instruments",
         "list_gt_instruments",
-        "record_instrument_match",
     ),
-    "assets": (_named_text, "asset_id", "list_incident_assets", "list_gt_assets", "record_asset_match"),
+    "assets": (_named_text, "asset_id", "list_incident_assets", "list_gt_assets"),
 }
 
 
 def match_kind(db, kind: str, incident_id: str, model_run_id: str, *, threshold: float | None = None) -> list[dict]:
-    """Match and persist one evidence kind for one incident + model run.
+    """Match one evidence kind for one incident + model run.
 
     Returns the accepted matches as plain dicts (``{<id>, gt_<id>, similarity_score}``).
     Fails soft to ``[]`` when either side is empty or the embedding endpoint is
-    unavailable - nothing is persisted in that case.
+    unavailable - nothing is matched in that case.
     """
-    text_fn, id_field, list_method, gt_list_method, record_method = _KIND_CONFIG[kind]
+    text_fn, id_field, list_method, gt_list_method = _KIND_CONFIG[kind]
     model_rows = getattr(db, list_method)(incident_id, model_run_id)
     gt_rows = getattr(db, gt_list_method)(incident_id)
     if not model_rows or not gt_rows:
@@ -120,22 +118,15 @@ def match_kind(db, kind: str, incident_id: str, model_run_id: str, *, threshold:
     model_vectors, gt_vectors = vectors[: len(model_rows)], vectors[len(model_rows) :]
     similarity = _cosine_similarity_matrix(model_vectors, gt_vectors)
 
-    record = getattr(db, record_method)
     gt_id_field = f"gt_{id_field}"
-    persisted: list[dict] = []
+    matches: list[dict] = []
     for assignment in solve_assignment(similarity.tolist(), threshold=threshold):
         model_id = model_rows[assignment.index][id_field]
         gt_id = gt_rows[assignment.gt_index][id_field]
-        record(
-            incident_id=incident_id,
-            model_run_id=model_run_id,
-            **{id_field: model_id, gt_id_field: gt_id},
-            similarity_score=assignment.similarity,
-        )
-        persisted.append({id_field: model_id, gt_id_field: gt_id, "similarity_score": assignment.similarity})
-    return persisted
+        matches.append({id_field: model_id, gt_id_field: gt_id, "similarity_score": assignment.similarity})
+    return matches
 
 
 def match_incident(db, incident_id: str, model_run_id: str, *, threshold: float | None = None) -> dict[str, list[dict]]:
-    """Match and persist all three evidence kinds for one incident + model run."""
+    """Match all three evidence kinds for one incident + model run."""
     return {kind: match_kind(db, kind, incident_id, model_run_id, threshold=threshold) for kind in _KIND_CONFIG}

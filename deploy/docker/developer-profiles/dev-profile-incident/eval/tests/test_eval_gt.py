@@ -252,6 +252,22 @@ def test_run_evaluation_description_judge_failure_fails_soft(incident_db: Incide
     assert result.fields["description"]["pass"] is False
 
 
+def test_matching_does_not_persist_to_dropped_tables(incident_db: IncidentDB):
+    from sqlalchemy import inspect
+    tables = inspect(incident_db.read_engine).get_table_names()
+    for dropped in ("entity_matches", "instrument_matches", "asset_matches", "notifications"):
+        assert dropped not in tables
+
+    incident_id, model_run_id = _seed_evaluation_fixture(incident_db)
+    with patch.object(matching, "embed_texts", side_effect=_fake_embed):
+        matches = matching.match_incident(incident_db, incident_id, model_run_id)
+
+    assert len(matches["entities"]) == 1
+    assert matches["entities"][0]["entity_id"] == "E1"
+    assert matches["entities"][0]["gt_entity_id"] == "GE1"
+    assert not hasattr(incident_db, "record_entity_match")
+
+
 # --------------------------------------------------------------------------- #
 # resolve_holder - never influences match/no-match, three outcomes only
 # --------------------------------------------------------------------------- #
