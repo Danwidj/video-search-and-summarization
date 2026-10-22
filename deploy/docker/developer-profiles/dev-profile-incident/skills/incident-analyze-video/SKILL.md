@@ -1,9 +1,9 @@
 ---
 name: incident-analyze-video
-description: Use to upload a video clip and generate, re-run, inspect, review or verify a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (local) or agent (VM) mode. Not for batch scoring against ground truth - use incident-run-eval.
+description: Use to upload a video clip and generate, re-run, inspect, review or verify a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (mock) or agent (vm) mode. Not for batch scoring against ground truth - use incident-run-eval.
 license: Apache-2.0
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
   profile: "dev-profile-incident"
   tags: "incident analysis vlm report review"
 ---
@@ -24,7 +24,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
-| `gateway` | `start.sh --mode local` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
+| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes everything: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports` |
 | `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | Console writes everything, as in gateway mode: `videos`, `model_runs`, `insert_incident` RPC, evidence, `reports`. The agent persists nothing when the console passes `model_run_id`. Additional instructions are gateway-only (400 in agent mode). |
 
 ## Instructions
