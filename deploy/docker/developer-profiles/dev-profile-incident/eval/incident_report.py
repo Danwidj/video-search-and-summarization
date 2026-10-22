@@ -37,9 +37,24 @@ INCIDENT_TYPES: list[str] = [
     "road accident",
     "burglary",
     "explosion",
-    "fighting",
-    "animal",
+    "assault",
+    "animal attack",
 ]
+
+# Retired names (and the GT workbook's short label) for a current incident type.
+_INCIDENT_TYPE_ALIASES: dict[str, str] = {"fighting": "assault", "animal": "animal attack"}
+
+
+def canonical_incident_type(value: str | None) -> str | None:
+    """Trim, lowercase and map retired names onto ``INCIDENT_TYPES``.
+
+    A value outside the taxonomy comes back normalised, not dropped; callers
+    decide whether to warn. Blank input returns ``None``.
+    """
+    text = " ".join((value or "").split()).lower()
+    if not text:
+        return None
+    return _INCIDENT_TYPE_ALIASES.get(text, text)
 
 REPORT_STATUSES: list[str] = ["unreviewed", "verified"]
 
@@ -308,11 +323,11 @@ def canned_incident_report(prompt: str = "") -> IncidentReport:
         report.severity = 5
         report.confidence = 0.55
     elif any(k in text for k in ("fight", "assault", "punch", "brawl", "attack")):
-        report.incident_type = "fighting"
+        report.incident_type = "assault"
         report.severity = 3
         report.confidence = 0.7
     elif any(k in text for k in ("animal", "dog", "wildlife", "stray")):
-        report.incident_type = "animal"
+        report.incident_type = "animal attack"
         report.severity = 2
         report.confidence = 0.9
     return report

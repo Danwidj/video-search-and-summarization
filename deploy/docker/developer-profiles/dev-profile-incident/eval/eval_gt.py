@@ -38,7 +38,11 @@ import httpx
 
 import config
 import matching
-from incident_report import extract_message_content, timestamp_to_seconds
+from incident_report import (
+    canonical_incident_type,
+    extract_message_content,
+    timestamp_to_seconds,
+)
 
 # --------------------------------------------------------------------------- #
 # Pure scoring helpers
@@ -70,7 +74,9 @@ def compare_incident_fields(gt: dict, model: dict) -> dict:
     or the database itself; the caller supplies the description score.
     """
     tolerance = config.EVAL_TIMESTAMP_TOLERANCE_SECONDS
-    gt_type, model_type = _normalized_type(gt.get("type")), _normalized_type(model.get("type"))
+    # GT rows ingested before the rename may still say "Fighting"/"Animal".
+    gt_type = canonical_incident_type(gt.get("type")) or ""
+    model_type = _normalized_type(model.get("type"))
     gt_severity, model_severity = gt.get("severity_level"), model.get("severity_level")
 
     return {

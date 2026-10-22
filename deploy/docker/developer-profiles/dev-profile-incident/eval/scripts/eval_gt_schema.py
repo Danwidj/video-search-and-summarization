@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import openpyxl
 
 from eval_ingest_gt import WORKBOOK_PATH, _fix_type_label, _sheet_rows, load_gt_incidents
+from incident_report import canonical_incident_type
 
 
 def _int_or_none(value):
@@ -75,7 +76,7 @@ def load_gt_index(workbook_path: Path = WORKBOOK_PATH) -> dict:
 
         p1_shaped = {
             "incident": {
-                "type": category.lower() if category else None,
+                "type": canonical_incident_type(category),
                 "start_timestamp": _int_or_none(row.get("Start_Timestamp")),
                 "end_timestamp": _int_or_none(row.get("End_Timestamp")),
                 "duration": _int_or_none(row.get("Duration")),
