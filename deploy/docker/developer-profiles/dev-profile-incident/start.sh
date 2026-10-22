@@ -63,6 +63,10 @@
 #      `cd incident-console-v2 && npm run dev -- -H 127.0.0.1 --port 3200` (see
 #      incident-console-v2/README.md). It occupies the foreground; Ctrl-C when
 #      you're done.
+#   5. Cleanup on exit (Ctrl-C, SIGTERM, normal exit): tears down local
+#      processes and the SSH tunnel, releases the VM active-run flock, and if
+#      this run was the last active session on kwanz-ws, stops VM native
+#      services and Docker containers in-place (.scripts/vm-stop-backend.sh).
 #
 # Overrides:
 #   VSS_START_MODE           'vm' or 'mock' ('local' is a deprecated alias for
@@ -82,6 +86,8 @@
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
 #   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
 #                            clone's `origin`)
+#   VSS_LOCK_FILE            VM lock file for active runs (default:
+#                            $VSS_REPO_ROOT/.run/active-runs.lock)
 #   VSS_SSH_CONNECT_TIMEOUT  SSH connect timeout in seconds (default: 10)
 #   VSS_PULL_TIMEOUT         image pull/clone timeout on the VM, seconds (default: 1800)
 #   VSS_COMPOSE_UP_TIMEOUT   `docker compose up` timeout on the VM, seconds (default: 600)

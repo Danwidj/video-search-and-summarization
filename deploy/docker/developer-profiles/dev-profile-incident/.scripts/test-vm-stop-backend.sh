@@ -292,6 +292,7 @@ VSS_SSH_OPTS=()
 SCRIPT_DIR='$SCRIPT_DIR'
 EOF
 sed -n '/^  # Register active run via long-lived SSH/,/LOCK_SSH_PID=\$!/p' "$START_SH" >>"$TEST_LOCK_SCRIPT"
+# shellcheck disable=SC2016
 echo 'wait "$LOCK_SSH_PID" 2>/dev/null || true' >>"$TEST_LOCK_SCRIPT"
 
 bash "$TEST_LOCK_SCRIPT" >/dev/null 2>&1 || true
