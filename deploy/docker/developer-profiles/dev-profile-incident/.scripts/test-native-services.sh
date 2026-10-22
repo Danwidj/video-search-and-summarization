@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+#
+# Hermetic test for native-services.sh
+# Tests concurrency, flock serialisation, health check detection, atomic pid file,
+# and status filtering.
+#
+# Usage:
+#   bash deploy/docker/developer-profiles/dev-profile-incident/.scripts/test-native-services.sh
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUT="${SCRIPT_DIR}/native-services.sh"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+RUN_DIR="$TMP/.run"
+mkdir -p "$RUN_DIR"
+export VSS_RUN_DIR="$RUN_DIR"
+export ENV_FILE="$TMP/empty.env"
+touch "$ENV_FILE"
+
+PASSED=0
+FAILED=0
+
+assert_eq() {
+  local expected="$1"
+  local actual="$2"
+  local msg="$3"
+  if [ "$expected" != "$actual" ]; then
+    echo "FAIL: $msg"
+    echo "  Expected: $expected"
+    echo "  Actual:   $actual"
+    FAILED=$((FAILED + 1))
+  else
+    echo "PASS: $msg"
+    PASSED=$((PASSED + 1))
+  fi
+}
+
+assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local msg="$3"
+  if ! echo "$haystack" | grep -q "$needle"; then
+    echo "FAIL: $msg"
+    echo "  Did not find '$needle' in:"
+    echo "$haystack"
+    FAILED=$((FAILED + 1))
+  else
+    echo "PASS: $msg"
+    PASSED=$((PASSED + 1))
+  fi
+}
+
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local msg="$3"
+  if echo "$haystack" | grep -q "$needle"; then
+    echo "FAIL: $msg"
+    echo "  Unexpectedly found '$needle' in:"
+    echo "$haystack"
+    FAILED=$((FAILED + 1))
+  else
+    echo "PASS: $msg"
+    PASSED=$((PASSED + 1))
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Test 1: Status default (ENABLE_ANALYTICS unset/false) lists only vss-agent
+# -----------------------------------------------------------------------------
+echo "=== Test 1: Status defaults to only vss-agent ==="
+# Use an inactive port to ensure vss-agent is stopped for this test
+export VSS_AGENT_PORT="19876"
+out="$(bash "$SUT" status)"
+assert_contains "$out" "vss-agent" "status lists vss-agent by default"
+assert_not_contains "$out" "video-analytics-api" "status omits video-analytics-api by default"
+assert_not_contains "$out" "behavior-analytics" "status omits behavior-analytics by default"
+
+porcelain_out="$(bash "$SUT" status --porcelain)"
+lines_count="$(echo "$porcelain_out" | grep -c . || true)"
+assert_eq "1" "$lines_count" "porcelain status has exactly 1 line"
+assert_contains "$porcelain_out" "^vss-agent:stopped:none:19876" "porcelain status shows vss-agent stopped"
+
+# -----------------------------------------------------------------------------
+# Test 2: Status with ENABLE_ANALYTICS=true includes all 3 services
+# -----------------------------------------------------------------------------
+echo "=== Test 2: Status with ENABLE_ANALYTICS=true ==="
+out_analytics="$(ENABLE_ANALYTICS=true bash "$SUT" status)"
+assert_contains "$out_analytics" "vss-agent" "status lists vss-agent"
+assert_contains "$out_analytics" "video-analytics-api" "status lists video-analytics-api when analytics enabled"
+assert_contains "$out_analytics" "behavior-analytics" "status lists behavior-analytics when analytics enabled"
+
+porcelain_analytics="$(ENABLE_ANALYTICS=true bash "$SUT" status --porcelain)"
+lines_analytics="$(echo "$porcelain_analytics" | grep -c . || true)"
+assert_eq "3" "$lines_analytics" "porcelain status has 3 lines when analytics enabled"
+
+# Explicit service target
+out_explicit="$(bash "$SUT" status video-analytics-api)"
+assert_contains "$out_explicit" "video-analytics-api" "explicit service status works"
+assert_not_contains "$out_explicit" "vss-agent" "explicit status targets only named service"
+
+# -----------------------------------------------------------------------------
+# Test 3: Lock file creation and permissions (umask 002)
+# -----------------------------------------------------------------------------
+echo "=== Test 3: Umask and group-writable lock file ==="
+[ -f "$RUN_DIR/native-services.lock" ]
+# shellcheck disable=SC2012
+perms="$(ls -ld "$RUN_DIR/native-services.lock" | awk '{print $1}')"
+assert_contains "$perms" "rw" "lock file is writable"
+
+# -----------------------------------------------------------------------------
+# Test 4: Healthy /health treated as already running (missing/unreadable pid)
+# -----------------------------------------------------------------------------
+echo "=== Test 4: Healthy /health response treated as running ==="
+port_file="$TMP/mock_port.txt"
+rm -f "$port_file"
+
+# Start a simple mock HTTP server in python responding with {"status": "isAlive"}
+# Bind to port 0 so the OS assigns an ephemeral free port
+python3 -c "
+import http.server, socketserver, sys
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{\"status\": \"isAlive\"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    def log_message(self, format, *args):
+        pass
+
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(('127.0.0.1', 0), Handler) as httpd:
+    port = httpd.server_address[1]
+    with open(sys.argv[1], 'w') as f:
+        f.write(str(port) + '\n')
+    httpd.serve_forever()
+" "$port_file" &
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+
+# Wait for server to write its port
+for _ in $(seq 1 30); do
+  if [ -s "$port_file" ]; then
+    break
+  fi
+  sleep 0.1
+done
+
+PORT="$(cat "$port_file")"
+export VSS_AGENT_PORT="$PORT"
+rm -f "$RUN_DIR/vss-agent.pid"
+
+status_running="$(bash "$SUT" status)"
+assert_contains "$status_running" "vss-agent" "vss-agent listed in status"
+assert_contains "$status_running" "RUNNING" "vss-agent reported as RUNNING"
+assert_contains "$status_running" "(healthy)" "vss-agent reported as (healthy)"
+
+status_porcelain_running="$(bash "$SUT" status --porcelain)"
+assert_contains "$status_porcelain_running" "^vss-agent:running:unknown:$PORT" "porcelain reports running with unknown pid"
+
+start_skip_out="$(bash "$SUT" start vss-agent)"
+assert_contains "$start_skip_out" "is already running" "start prints already running and skips start"
+
+# -----------------------------------------------------------------------------
+# Test 5: Atomic pid writes and removal only on matching pid
+# -----------------------------------------------------------------------------
+echo "=== Test 5: Atomic pid file write and removal on match ==="
+# Source helper functions to unit-test them
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$SUT" status >/dev/null
+
+  write_pid_atomic "test-svc" "12345"
+  assert_eq "12345" "$(cat "$RUN_DIR/test-svc.pid")" "write_pid_atomic wrote correct pid"
+
+  # Attempt removal with non-matching pid (should NOT remove)
+  remove_pid_if_match "test-svc" "99999"
+  assert_eq "12345" "$(cat "$RUN_DIR/test-svc.pid" 2>/dev/null || true)" "remove_pid_if_match did not remove non-matching pid"
+
+  # Attempt removal with matching pid (SHOULD remove)
+  remove_pid_if_match "test-svc" "12345"
+  [ ! -f "$RUN_DIR/test-svc.pid" ]
+  assert_eq "not_found" "$([ -f "$RUN_DIR/test-svc.pid" ] && echo exists || echo not_found)" "remove_pid_if_match removed matching pid"
+)
+
+# Clean up mock server
+kill "$SERVER_PID" 2>/dev/null || true
+wait "$SERVER_PID" 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# Test 6: Concurrency and flock serialization
+# -----------------------------------------------------------------------------
+echo "=== Test 6: Concurrency and lock serialization ==="
+if command -v flock >/dev/null 2>&1; then
+  log_concurrency="$TMP/concurrency.log"
+  rm -f "$log_concurrency"
+
+  # Run two locked blocks concurrently
+  (
+    # shellcheck disable=SC1090,SC1091
+    source "$SUT" status >/dev/null
+    with_lock bash -c "echo 'start 1' >> '$log_concurrency'; sleep 0.3; echo 'end 1' >> '$log_concurrency'"
+  ) &
+  P1=$!
+
+  # Small sleep to ensure P1 enters first
+  sleep 0.05
+
+  (
+    # shellcheck disable=SC1090,SC1091
+    source "$SUT" status >/dev/null
+    with_lock bash -c "echo 'start 2' >> '$log_concurrency'; echo 'end 2' >> '$log_concurrency'"
+  ) &
+  P2=$!
+
+  wait "$P1"
+  wait "$P2"
+
+  lines="$(cat "$log_concurrency")"
+  # Order must be: start 1, end 1, start 2, end 2
+  expected=$'start 1\nend 1\nstart 2\nend 2'
+  assert_eq "$expected" "$lines" "flock properly serialized concurrent executions"
+else
+  echo "INFO: flock command not available in this environment, skipping live flock serialization test"
+fi
+
+echo ""
+echo "=== Summary ==="
+echo "Passed: $PASSED"
+echo "Failed: $FAILED"
+
+if [ "$FAILED" -gt 0 ]; then
+  exit 1
+fi
+exit 0
