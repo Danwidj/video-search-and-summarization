@@ -17,9 +17,10 @@
 #
 # Specifying "all" targets all 3 services.
 # Specifying "analytics" targets video-analytics-api and behavior-analytics.
-# Default 'start' without arguments starts vss-agent (plus analytics if ENABLE_ANALYTICS=true).
+# Default 'start', 'restart', and 'status' without arguments target vss-agent (plus analytics if ENABLE_ANALYTICS=true).
 
 set -euo pipefail
+umask 002
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
@@ -34,6 +35,70 @@ export NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-0}"
 # Directory for PID files and log output
 RUN_DIR="${VSS_RUN_DIR:-${REPO_ROOT}/.run}"
 mkdir -p "${RUN_DIR}"
+chmod g+rwx "${RUN_DIR}" 2>/dev/null || true
+
+LOCK_FILE="${RUN_DIR}/native-services.lock"
+if [ -f "${LOCK_FILE}" ] && [ ! -w "${LOCK_FILE}" ]; then
+  rm -f "${LOCK_FILE}"
+fi
+touch "${LOCK_FILE}" 2>/dev/null || true
+chmod g+rw "${LOCK_FILE}" 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# Concurrency & Locking Helpers
+# -----------------------------------------------------------------------------
+with_lock() {
+  local lock_file="${LOCK_FILE:-${RUN_DIR}/native-services.lock}"
+  if [ "${_VSS_LOCK_HELD:-0}" = "1" ]; then
+    "$@"
+    return $?
+  fi
+
+  if [ -f "${lock_file}" ] && [ ! -w "${lock_file}" ]; then
+    rm -f "${lock_file}"
+  fi
+  if [ ! -f "${lock_file}" ]; then
+    touch "${lock_file}" 2>/dev/null || true
+  fi
+  chmod g+rw "${lock_file}" 2>/dev/null || true
+
+  if command -v flock >/dev/null 2>&1; then
+    (
+      # shellcheck disable=SC2030
+      export _VSS_LOCK_HELD=1
+      flock -x 200
+      "$@"
+    ) 200>>"${lock_file}"
+  else
+    # shellcheck disable=SC2031
+    export _VSS_LOCK_HELD=1
+    "$@"
+  fi
+}
+
+write_pid_atomic() {
+  local svc="$1"
+  local pid="$2"
+  local pid_file="${RUN_DIR}/${svc}.pid"
+  local tmp_file
+  tmp_file="$(mktemp "${RUN_DIR}/${svc}.pid.XXXXXX" 2>/dev/null || echo "${pid_file}.$$.${RANDOM}")"
+  echo "${pid}" > "${tmp_file}"
+  chmod 664 "${tmp_file}" 2>/dev/null || chmod g+rw "${tmp_file}" 2>/dev/null || true
+  mv -f "${tmp_file}" "${pid_file}"
+}
+
+remove_pid_if_match() {
+  local svc="$1"
+  local expected_pid="$2"
+  local pid_file="${RUN_DIR}/${svc}.pid"
+  if [ -f "${pid_file}" ]; then
+    local current_pid
+    current_pid="$(cat "${pid_file}" 2>/dev/null || true)"
+    if [ "${current_pid}" = "${expected_pid}" ]; then
+      rm -f "${pid_file}"
+    fi
+  fi
+}
 
 # -----------------------------------------------------------------------------
 # Environment loading
@@ -70,9 +135,11 @@ get_pid() {
   if [ -f "${pid_file}" ]; then
     local pid
     pid="$(cat "${pid_file}" 2>/dev/null || true)"
-    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
-      echo "${pid}"
-      return 0
+    if [ -n "${pid}" ]; then
+      if kill -0 "${pid}" 2>/dev/null || ps -p "${pid}" >/dev/null 2>&1; then
+        echo "${pid}"
+        return 0
+      fi
     fi
   fi
   echo ""
@@ -82,14 +149,41 @@ is_running() {
   local svc="$1"
   local pid
   pid="$(get_pid "${svc}")"
-  [ -n "${pid}" ]
+  if [ -n "${pid}" ]; then
+    return 0
+  fi
+  if [ "${svc}" = "vss-agent" ]; then
+    local port="${VSS_AGENT_PORT:-8000}"
+    if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
+      return 0
+    fi
+  fi
+  return 1
 }
 
 # -----------------------------------------------------------------------------
 # vss-agent
 # -----------------------------------------------------------------------------
 start_vss_agent() {
+  with_lock _start_vss_agent
+}
+
+_start_vss_agent() {
   local svc="vss-agent"
+  local host="${VSS_AGENT_HOST:-127.0.0.1}"
+  local port="${VSS_AGENT_PORT:-8000}"
+
+  if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
+    local pid
+    pid="$(get_pid "${svc}")"
+    if [ -n "${pid}" ]; then
+      echo "  ${svc} is already running (pid ${pid})"
+    else
+      echo "  ${svc} is already running (healthy on port ${port})"
+    fi
+    return 0
+  fi
+
   if is_running "${svc}"; then
     echo "  ${svc} is already running (pid $(get_pid "${svc}"))"
     return 0
@@ -113,20 +207,25 @@ start_vss_agent() {
 
   # Loopback by default: the agent has no auth. vss-haproxy-ingress (host network) reaches it at
   # 127.0.0.1 via VSS_AGENT_BACKEND_HOST (compose.override.yml); the laptop uses the SSH tunnel.
-  local host="${VSS_AGENT_HOST:-127.0.0.1}"
-  local port="${VSS_AGENT_PORT:-8000}"
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
+
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
+  touch "${log_file}" 2>/dev/null || true
+  chmod g+rw "${log_file}" 2>/dev/null || true
 
   echo "  Starting ${svc} (host=${host}, port=${port})..."
   echo "    command: ${nat_bin} serve --config_file ${cfg} --host ${host} --port ${port}"
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${REPO_ROOT}"
     # shellcheck disable=SC2086
-    nohup "${nat_bin}" serve --config_file "${cfg}" --host "${host}" --port "${port}" > "${log_file}" 2>&1 &
-    echo $! > "${pid_file}"
+    nohup "${nat_bin}" serve --config_file "${cfg}" --host "${host}" --port "${port}" > "${log_file}" 2>&1 200>&- &
+    write_pid_atomic "${svc}" "$!"
   )
 
   local pid
@@ -135,10 +234,10 @@ start_vss_agent() {
 
   local healthy=""
   for _ in $(seq 1 45); do
-    if ! kill -0 "${pid}" 2>/dev/null; then
+    if ! kill -0 "${pid}" 2>/dev/null && ! ps -p "${pid}" >/dev/null 2>&1; then
       echo "ERROR: ${svc} process (pid ${pid}) exited unexpectedly. Log tail:" >&2
       tail -n 20 "${log_file}" >&2
-      rm -f "${pid_file}"
+      remove_pid_if_match "${svc}" "${pid}"
       return 1
     fi
     if curl -sf --max-time 3 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
@@ -151,6 +250,7 @@ start_vss_agent() {
   if [ -z "${healthy}" ]; then
     echo "ERROR: ${svc} did not pass healthcheck on port ${port} within timeout. Log tail:" >&2
     tail -n 30 "${log_file}" >&2
+    remove_pid_if_match "${svc}" "${pid}"
     return 1
   fi
 
@@ -161,6 +261,10 @@ start_vss_agent() {
 # video-analytics-api
 # -----------------------------------------------------------------------------
 start_video_analytics_api() {
+  with_lock _start_video_analytics_api
+}
+
+_start_video_analytics_api() {
   local svc="video-analytics-api"
   if is_running "${svc}"; then
     echo "  ${svc} is already running (pid $(get_pid "${svc}"))"
@@ -204,14 +308,21 @@ start_video_analytics_api() {
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
+  touch "${log_file}" 2>/dev/null || true
+  chmod g+rw "${log_file}" 2>/dev/null || true
+
   echo "  Starting ${svc} on port ${port}..."
   echo "    command: ${node_bin} index.js --config ${cfg}"
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${app_dir}"
-    nohup "${node_bin}" index.js --config "${cfg}" > "${log_file}" 2>&1 &
-    echo $! > "${pid_file}"
+    nohup "${node_bin}" index.js --config "${cfg}" > "${log_file}" 2>&1 200>&- &
+    write_pid_atomic "${svc}" "$!"
   )
 
   local pid
@@ -220,10 +331,10 @@ start_video_analytics_api() {
 
   local healthy=""
   for _ in $(seq 1 15); do
-    if ! kill -0 "${pid}" 2>/dev/null; then
+    if ! kill -0 "${pid}" 2>/dev/null && ! ps -p "${pid}" >/dev/null 2>&1; then
       echo "ERROR: ${svc} process (pid ${pid}) exited unexpectedly. Log tail:" >&2
       tail -n 20 "${log_file}" >&2
-      rm -f "${pid_file}"
+      remove_pid_if_match "${svc}" "${pid}"
       return 1
     fi
     if curl -sf --max-time 2 "http://localhost:${port}/" >/dev/null 2>&1 || curl -sf --max-time 2 "http://localhost:${port}/livez" >/dev/null 2>&1 || grep -q "Listening on port: ${port}" "${log_file}" 2>/dev/null; then
@@ -244,6 +355,10 @@ start_video_analytics_api() {
 # behavior-analytics
 # -----------------------------------------------------------------------------
 start_behavior_analytics() {
+  with_lock _start_behavior_analytics
+}
+
+_start_behavior_analytics() {
   local svc="behavior-analytics"
   if is_running "${svc}"; then
     echo "  ${svc} is already running (pid $(get_pid "${svc}"))"
@@ -284,14 +399,21 @@ start_behavior_analytics() {
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
+  touch "${log_file}" 2>/dev/null || true
+  chmod g+rw "${log_file}" 2>/dev/null || true
+
   echo "  Starting ${svc} (port=${port})..."
   echo "    command: PYTHONPATH=src ${py_bin} ${app_script} --config ${cfg}"
   echo "    logging: ${log_file}"
 
   (
+    exec 200>&- 2>/dev/null || true
     cd "${app_dir}"
-    nohup env PYTHONPATH="src:${PYTHONPATH:-}" "${py_bin}" "${app_script}" --config "${cfg}" > "${log_file}" 2>&1 &
-    echo $! > "${pid_file}"
+    nohup env PYTHONPATH="src:${PYTHONPATH:-}" "${py_bin}" "${app_script}" --config "${cfg}" > "${log_file}" 2>&1 200>&- &
+    write_pid_atomic "${svc}" "$!"
   )
 
   local pid
@@ -299,10 +421,10 @@ start_behavior_analytics() {
   echo "    launched with pid ${pid}; checking process health..."
 
   sleep 3
-  if ! kill -0 "${pid}" 2>/dev/null; then
+  if ! kill -0 "${pid}" 2>/dev/null && ! ps -p "${pid}" >/dev/null 2>&1; then
     echo "ERROR: ${svc} process (pid ${pid}) exited immediately. Log tail:" >&2
     tail -n 25 "${log_file}" >&2
-    rm -f "${pid_file}"
+    remove_pid_if_match "${svc}" "${pid}"
     return 1
   fi
 
@@ -364,23 +486,35 @@ status_service() {
     behavior-analytics) port="8080" ;;
   esac
 
+  local healthy=false
+  if [ "${svc}" = "vss-agent" ]; then
+    if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
+      healthy=true
+    fi
+  fi
+
+  local running=false
+  if [ -n "${pid}" ] || [ "${healthy}" = "true" ]; then
+    running=true
+  fi
+
   if [ "${porcelain}" = "true" ]; then
-    if [ -n "${pid}" ]; then
-      echo "${svc}:running:${pid}:${port}"
+    if [ "${running}" = "true" ]; then
+      echo "${svc}:running:${pid:-unknown}:${port}"
     else
       echo "${svc}:stopped:none:${port}"
     fi
   else
-    if [ -n "${pid}" ]; then
+    if [ "${running}" = "true" ]; then
       local health_note=""
       if [ "${svc}" = "vss-agent" ]; then
-        if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
+        if [ "${healthy}" = "true" ]; then
           health_note=" (healthy)"
         else
           health_note=" (unresponsive)"
         fi
       fi
-      printf "  %-22s RUNNING  (pid %-7s port %-5s)%s\n" "${svc}" "${pid}" "${port}" "${health_note}"
+      printf "  %-22s RUNNING  (pid %-7s port %-5s)%s\n" "${svc}" "${pid:-unknown}" "${port}" "${health_note}"
     else
       printf "  %-22s STOPPED  (port %s)\n" "${svc}" "${port}"
     fi
@@ -424,6 +558,19 @@ resolve_services() {
   echo "${resolved[@]}"
 }
 
+_start_all_targets() {
+  for svc in "${TARGETS[@]}"; do
+    case "${svc}" in
+      vss-agent) start_vss_agent ;;
+      video-analytics-api) start_video_analytics_api ;;
+      behavior-analytics) start_behavior_analytics ;;
+      *)
+        echo "WARNING: Unknown native service '${svc}' (supported: vss-agent, video-analytics-api, behavior-analytics)" >&2
+        ;;
+    esac
+  done
+}
+
 case "${ACTION}" in
   start)
     if [ "${#SERVICES[@]}" -eq 0 ]; then
@@ -436,16 +583,7 @@ case "${ACTION}" in
     fi
 
     echo "=== Starting Native Services ==="
-    for svc in "${TARGETS[@]}"; do
-      case "${svc}" in
-        vss-agent) start_vss_agent ;;
-        video-analytics-api) start_video_analytics_api ;;
-        behavior-analytics) start_behavior_analytics ;;
-        *)
-          echo "WARNING: Unknown native service '${svc}' (supported: vss-agent, video-analytics-api, behavior-analytics)" >&2
-          ;;
-      esac
-    done
+    with_lock _start_all_targets
     ;;
 
   stop)
@@ -484,7 +622,10 @@ case "${ACTION}" in
 
   status)
     if [ "${#SERVICES[@]}" -eq 0 ]; then
-      TARGETS=("vss-agent" "video-analytics-api" "behavior-analytics")
+      TARGETS=("vss-agent")
+      if [ "${ENABLE_ANALYTICS:-false}" = "true" ]; then
+        TARGETS+=("video-analytics-api" "behavior-analytics")
+      fi
     else
       read -r -a TARGETS <<< "$(resolve_services "${SERVICES[@]}")"
     fi

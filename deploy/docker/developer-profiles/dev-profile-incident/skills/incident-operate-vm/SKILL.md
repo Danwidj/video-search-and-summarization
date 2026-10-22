@@ -28,7 +28,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 
 | Kind | Services | Manage with |
 |---|---|---|
-| Native (fast restart, about 2 s) | `vss-agent` :8000; optional `video-analytics-api` :8081 and `behavior-analytics` (`ENABLE_ANALYTICS=true`) | `.scripts/native-services.sh start\|stop\|restart\|status\|logs <svc\|all\|analytics>` |
+| Native (fast restart, about 2 s) | `vss-agent` :8000; optional `video-analytics-api` :8081 and `behavior-analytics` (`ENABLE_ANALYTICS=true`). `status` lists only expected services (analytics excluded unless `ENABLE_ANALYTICS=true`). Concurrency-safe across multi-user VM starts via `flock` and `umask 002`. | `.scripts/native-services.sh start\|stop\|restart\|status\|logs <svc\|all\|analytics>` |
 | Docker appliances | VIOS (`vss-vios-*`), `vss-haproxy-ingress` :7777, `redis`, `phoenix`, `kafka`; optional `elasticsearch` | `docker compose -p mdx ...` with `generated.env.remote` |
 
 Full port and rationale table: [operations §2](../../.docs/incident-profile-operations.md#2-native-vs-docker-service-split).
