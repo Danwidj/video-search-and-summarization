@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
+import { officialSelectionWrites } from './support/official-selection.mjs';
 
 let headContentLength = 1024;
 // The stored video's bytes for ranged reads (the MP4 length reader); null = unreadable.
@@ -270,7 +271,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.equal(agentBody.skip_rp1, true, 'agent mode runs P1 only, like gateway mode');
   assert.equal(agentBody.video_url, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
 
-  // Database persistence verification: records via persistContractRun
+  // Database persistence verification: records via AnalysisRunRepository.saveRun
   const supabaseWrites = recordedCalls
     .filter((c) => c.url.includes('supabase.test') && c.options.method === 'POST')
     .map((c) => ({
@@ -374,6 +375,12 @@ function gatewayFetch(recordedCalls, content, r2Key) {
   };
 }
 
+function supabaseRequests(recordedCalls) {
+  return recordedCalls
+    .filter((c) => c.url.includes('supabase.test'))
+    .map((c) => ({ method: c.options.method ?? 'GET', path: new URL(c.url).pathname.replace('/rest/v1/', ''), body: c.options.body ? JSON.parse(c.options.body) : undefined }));
+}
+
 function supabaseWrites(recordedCalls) {
   return recordedCalls
     .filter((c) => c.url.includes('supabase.test') && c.options.method === 'POST')
@@ -456,6 +463,7 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.equal(video.source, 'sensor-cam-02');
   assert.ok(!('duration' in video), 'the incident duration is not the video duration');
   assert.ok(writes.find((w) => w.table === 'reports'));
+  assert.deepEqual(officialSelectionWrites(supabaseRequests(recordedCalls)), [], 'analysis never sets or clears the official report');
 
   // The upload flow only needs the run's identity to open its report page.
   assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'reportId', 'videoId']);

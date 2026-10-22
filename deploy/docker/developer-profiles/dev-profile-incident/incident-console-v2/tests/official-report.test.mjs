@@ -57,12 +57,3 @@ test('the report view marks the official run explicitly and never infers it from
   assert.equal(official.official.isOfficial, true);
   assert.equal(official.official.selectedBy, 'Reviewer');
 });
-
-test('analysis code never writes the official-selection columns', async () => {
-  const { readFile } = await import('node:fs/promises');
-  for (const file of ['lib/adapters/supabase/analysis-runs.ts', 'lib/analysis/run-contract-analysis.ts', 'app/api/analysis/route.ts', 'app/api/videos/[videoId]/runs/route.ts']) {
-    const source = await readFile(join(process.cwd(), file), 'utf8');
-    // No object key assigning the column (reads such as `video.selected_model_run_id` are fine) and no selection RPC.
-    assert.doesNotMatch(source, /[{,]\s*selected_(model_run_id|by|at):|select_official_report/, file);
-  }
-});

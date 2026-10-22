@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
 
 import { fakePostgrest } from './support/fake-postgrest.mjs';
+import { officialSelectionWrites } from './support/official-selection.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -141,6 +142,19 @@ describe('SupabaseAnalysisRunAdapter', () => {
     await repo.saveRun(validRun('m1', { report: { ...report, entities: [], instruments: [], assets: [] } }));
     const writes = db.requests.filter((request) => request.method === 'POST').map((request) => request.path);
     assert.deepEqual(writes, ['videos', 'model_runs', 'rpc/insert_incident', 'reports']);
+  });
+
+  test('recording a video, failed attempts and a valid run never sets or clears the official report', async () => {
+    const { repo, db } = implementations.supabase();
+    db.store.videos.push({ id: 'v0', filepath: 'uploads/sensor-1/old.mp4', selected_model_run_id: 'm0', selected_by: 'Reviewer', selected_at: '2026-10-21T08:00:00.000Z' });
+    await repo.recordUploadedVideo(VIDEO);
+    await repo.recordUploadedVideo({ ...VIDEO, videoId: 'v0', r2Key: 'uploads/sensor-1/old.mp4' });
+    await repo.saveFailedAttempt(attempt('m-cf', 'contract_failed'));
+    await repo.saveFailedAttempt(attempt('m-rf', 'request_failed', { response: null }));
+    await repo.saveRun(validRun('m1'));
+    await repo.saveRun(validRun('m2', { videoId: 'v0', r2Key: 'uploads/sensor-1/old.mp4' }));
+    assert.deepEqual(officialSelectionWrites(db.requests), []);
+    assert.deepEqual(db.store.videos.map((row) => [row.id, row.selected_model_run_id ?? null]), [['v0', 'm0'], ['v1', null]]);
   });
 
   test('a failed attempt is stored with its attempt time and notes', async () => {

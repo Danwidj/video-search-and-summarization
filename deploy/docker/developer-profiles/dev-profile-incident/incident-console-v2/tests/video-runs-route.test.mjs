@@ -25,6 +25,7 @@ const { draftFromView, editFromDraft } = await import('../lib/reports/edit-draft
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { effectiveViews, reviewerRpcs } = await import('./support/finals-database.mjs');
 const { buildReportView } = await import('./support/report-view.mjs');
+const { officialSelectionWrites } = await import('./support/official-selection.mjs');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
@@ -79,6 +80,7 @@ test('re-analysis uses the stored video object, creates a new run and never writ
   assert.equal(notes.request.additionalInstruction, 'Pay particular attention to the person entering from the left side of the frame.');
   assert.equal(notes.videoId, V);
   assert.ok(writes.some((c) => c.path === 'rpc/insert_incident'), 'a successful re-run gets its own report rows');
+  assert.deepEqual(officialSelectionWrites(calls), [], 're-analysis never sets or clears the official report');
 });
 
 test('a failed re-run is recorded in history only and returns its reason', async () => {
@@ -91,6 +93,7 @@ test('a failed re-run is recorded in history only and returns its reason', async
   assert.deepEqual(payload.codes, ['WINDOW_END_BEFORE_START'], 'the failure names the core violation only');
   const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions')).map((c) => c.path);
   assert.deepEqual(writes, ['model_runs'], 'only the attempt record; no report, incident, evidence, review or video rows');
+  assert.deepEqual(officialSelectionWrites(calls), []);
 });
 
 test('a re-run whose only problem is its timeline gets its own report rows (core-scored-v1)', async () => {
