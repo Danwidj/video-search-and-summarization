@@ -38,7 +38,7 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md). A hybrid pip
 
 1. **Profile tag:** reuses NVIDIA's `bp_developer_search` compose tag (`BP_PROFILE` stays `bp_developer_search`), so the stack is a superset of the base and search pipelines.
 2. **Dual analysis modes:** `ANALYSIS_MODE=gateway` (Next.js to `vlm-gateway` :8600 to the hosted Brev endpoint; zero GPU) and `ANALYSIS_MODE=agent` (Next.js over an SSH tunnel to the native `vss-agent` :8000 on `kwanz-ws`).
-3. **Storage:** R2 is the permanent store for videos and evidence images; Supabase Postgres holds reports, review, ground truth and evaluations; the VIOS disk is only a working cache.
+3. **Storage:** R2 is the permanent store for videos and evidence images; Supabase Postgres holds reports, review and evaluations; the VIOS disk is only a working cache.
 4. **1 video = 1 incident:** `incidents.incident_id` equals `videos.id`; there is no `video_id` column.
 5. **Multi-run support:** `incidents`, `entities`, `instruments` and `assets` are keyed by `model_run_id` as well, so several runs over one video do not collide.
 6. **Isolated review state:** `review_status` is keyed by `(incident_id, model_run_id)`, leaving `incidents` an immutable record of model output.

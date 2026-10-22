@@ -9,7 +9,7 @@ This document defines the relational database schema (Supabase PostgreSQL), the 
 
 There is one Supabase project per project phase ([decision](decisions.md)): **finals** is the live database and **midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. The finals schema is defined authoritatively by the baseline
 [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql) and any later finals migration in the same folder (applied via `supabase db push`; see [`../supabase/README.md`](../supabase/README.md)). Schema authority is the migrations, not the archived Streamlit v1 console's `archived/incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` tests the schema on a throwaway local Postgres. It supports multi-model runs over the same video, a parallel
-ground-truth evaluation structure, human review workflows, and the MVP2 vector search extension
+evaluation structure, human review workflows, and the MVP2 vector search extension
 (`evidence_crops`, `query_results`; see [`mvp2/README.md`](mvp2/README.md)).
 
 ### Report-library summary RPC
