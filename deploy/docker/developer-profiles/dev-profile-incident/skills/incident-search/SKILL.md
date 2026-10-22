@@ -1,0 +1,107 @@
+---
+name: incident-search
+description: Use to search incident evidence, ask grounded follow-up questions, inspect critic verdicts, or populate and verify evidence crops through the incident profile's local mock or VM agent. Not for generating a report (use incident-analyze-video), batch evaluation (use incident-run-eval), or database migrations (use incident-manage-database).
+license: Apache-2.0
+metadata:
+  version: "0.1.0"
+  profile: "dev-profile-incident"
+  tags: "incident search chat evidence crops retrieval"
+---
+# Incident Search
+
+Use this skill for MVP2 natural-language search across the incident archive, grounded chat about search results, and the evidence-crop loader. Search and chat are always-on in the profile; there is no `--search` startup flag.
+
+Canonical facts:
+
+- Architecture, storage and contracts: [`.docs/mvp2/README.md`](../../.docs/mvp2/README.md)
+- Current corpus and live status: [`.docs/status.md`](../../.docs/status.md)
+- Search request/response: [`search-contract-v1`](../../contracts/search-contract-v1/README.md)
+- Chat request/response: [`chat-contract-v1`](../../contracts/chat-contract-v1/README.md)
+- Crop implementation and R2 layout: [`.docs/data.md`](../../.docs/data.md) and [`.docs/incident-profile-operations.md`](../../.docs/incident-profile-operations.md)
+
+## Prerequisites
+
+1. Start the profile with [`incident-start`](../incident-start/SKILL.md):
+   - `./start.sh --mode local` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
+   - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
+2. For live search or crop loading, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
+3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
+
+## Search evidence
+
+Send a natural-language query to the backend. The route embeds the query with the same 1024-dimensional text embedding model used for crop metadata, queries `search_evidence_items`, and runs the VLM critic for every returned candidate.
+
+```bash
+# VM mode
+curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"weapon used during a burglary","top_k":5}' | jq .
+
+# Local mode (the mock uses the same route shape)
+curl -sS -X POST http://localhost:7777/api/v1/incidents/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"crowbar used in burglary","top_k":3}' | jq .
+```
+
+The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, and `max_severity`. Each hit includes:
+
+- `item`: entity, instrument or asset metadata, `timestamp_seconds`, optional normalized `bounding_box`, and `crop_image_url`;
+- `incident`: the parent incident, model run, playback URL and incident window; and
+- `critic`: `confirmed`, `rejected`, or `unverified`, with confidence and rationale.
+
+Treat similarity as retrieval ranking, not proof. The critic verdict is the visual check. A crop URL is a signed/private object URL and may expire; use the parent playback URL and `timestamp_seconds` to inspect the source video when needed. `hide_rejected` is true by default.
+
+The route persists the query and ranked verdicts in `queries` and `query_results`. It does not reorder hits after critic evaluation. The VM critic is rate-limited by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1 second; zero disables the delay); change that only as an explicit VM operations decision.
+
+## Grounded chat
+
+Use chat for a follow-up question rather than treating a free-form answer as an ungrounded report. Send the full conversation history and, when narrowing the question, the incident or evidence crop IDs in `context`.
+
+```bash
+curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages":[
+      {"role":"user","content":"Which incidents show a weapon?"},
+      {"role":"assistant","content":"I found several evidence items."},
+      {"role":"user","content":"What does the crop at the first timestamp show?"}
+    ],
+    "context":{"scope":"global"}
+  }' | jq .
+```
+
+Use `context.scope: "incident"` with `incident_id` for one incident, or include `evidence_crop_ids` to focus the answer. A successful response contains an assistant message and structured citations with `incident_id`, `item_id`, `item_type`, `timestamp_seconds`, and `crop_image_url`. When no evidence is relevant, the grounded response has `citations: []`; do not invent a citation. Invalid or empty messages are client errors (400/422).
+
+## Populate evidence crops
+
+The loader is idempotent and resumable: it reads official reports, asks the remote VLM for item timestamps and detector labels, extracts and uploads crops to R2, creates 1024-dimensional text embeddings, and upserts `evidence_crops`. It never rewrites reviewed report text.
+
+Run from the VM checkout after checking the finals environment and VM status:
+
+```bash
+cd /srv/rise-up/vss
+set -a; . deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote; set +a
+services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --dry-run
+services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --concurrency 2
+```
+
+The dry run must pass before the write run. The Brev gateway is rate-limited; keep concurrency at 2 or lower unless the operations owner approves a change. A failed item is isolated and can be retried later. Do not run the loader during a demo, and do not rerun it solely to improve search scores while the remote gateway is unhealthy. Verify the live remaining-failure note in [`.docs/status.md`](../../.docs/status.md) first.
+
+## Verify
+
+```bash
+# Agent health and a bounded search smoke test
+curl -sS http://localhost:8000/health | jq .
+curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
+  -H 'Content-Type: application/json' -d '{"query":"weapon","top_k":5}' | jq '{total_hits, hits: [.hits[] | {rank, timestamp: .item.timestamp_seconds, verdict: .critic.verdict}]}'
+
+# Local mock smoke test instead: replace :8000 with :7777.
+```
+
+For a live run, confirm that crop URLs return an image response, the timestamp seeks into the parent playback window, and `queries`/`query_results` grow in finals. If the route returns hits but query persistence warns, stop and hand off to [`incident-operate-vm`](../incident-operate-vm/SKILL.md); do not silently treat the search as fully verified.
+
+## Boundaries
+
+- Do not change search/chat contracts, Supabase migrations, embedding dimensions, or R2 keys here; those are database or owning-service changes.
+- Do not use the search route as a substitute for `incident-analyze-video`; it searches existing evidence only.
+- Do not run `supabase db push`, apply a migration, or modify live data without the database procedure and required approval.

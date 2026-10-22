@@ -65,7 +65,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Boundaries
 
 - **Always:** run the component's checks; add the neighbouring SPDX header; update the affected `.docs/` file and skill in the same PR ([Docs rule](#docs-rule)).
-- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; adding dependencies.
+- **Ask first:** applying a migration to the live (finals) Supabase DB; restarting or stopping shared services on `kwanz-ws`; editing `generated.env.remote`; pruning native-service images; adding dependencies.
 - **Never:**
   - Commit or print `.env.local`, keys or DSNs.
   - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.

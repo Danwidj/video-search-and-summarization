@@ -24,7 +24,7 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 ## 3. Database status
 
-The finals Supabase project (baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql)) is the live database; both the laptop console and the VM agent point at it. Midterm (`rfevukimyftzbxlehwel`) is the archived record; cutover copy and freeze procedures are documented in [`supabase/README.md`](../supabase/README.md) and [`incident-manage-database`](../skills/incident-manage-database/SKILL.md).
+The finals Supabase project (baseline [`supabase/migrations/20261020000000_finals_baseline.sql`](../supabase/migrations/20261020000000_finals_baseline.sql)) is the live database; both the laptop console and the VM agent point at it. Midterm (`rfevukimyftzbxlehwel`) is the archived record; the historical copy and freeze procedures are in [`supabase/README.md`](../supabase/README.md).
 
 The finals baseline incorporates all prior migration effects:
 - `p_timezone` parameter on the report library and dashboard RPCs (`list_incident_report_summaries`, `get_incident_dashboard`);

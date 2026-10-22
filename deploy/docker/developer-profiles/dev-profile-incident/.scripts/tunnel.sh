@@ -30,12 +30,10 @@
 # when the console exits.
 #
 # VM username resolution (VSS_SSH_TARGET / VSS_SSH_USER / VSS_SSH_HOST) is
-# non-interactive (no prompt) — see resolve-ssh-target.sh for the full order.
+# non-interactive (no prompt) — see vm-preflight.sh for the full order.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=resolve-ssh-target.sh
-source "${SCRIPT_DIR}/resolve-ssh-target.sh"
 # shellcheck source=vm-preflight.sh
 source "${SCRIPT_DIR}/vm-preflight.sh"
 
