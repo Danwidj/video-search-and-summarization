@@ -103,15 +103,11 @@ FROM src_entities;
 INSERT INTO public.instruments SELECT * FROM src_instruments;
 INSERT INTO public.assets SELECT * FROM src_assets;
 INSERT INTO public.review_status SELECT * FROM src_review_status;
-INSERT INTO public.notifications SELECT * FROM src_notifications;
 INSERT INTO public.severity_eval_log SELECT * FROM src_severity_eval_log;
 INSERT INTO public.gt_incidents SELECT * FROM src_gt_incidents;
 INSERT INTO public.gt_entities SELECT * FROM src_gt_entities;
 INSERT INTO public.gt_instruments SELECT * FROM src_gt_instruments;
 INSERT INTO public.gt_assets SELECT * FROM src_gt_assets;
-INSERT INTO public.entity_matches SELECT * FROM src_entity_matches;
-INSERT INTO public.instrument_matches SELECT * FROM src_instrument_matches;
-INSERT INTO public.asset_matches SELECT * FROM src_asset_matches;
 
 INSERT INTO public.evidence_crops (incident_id, model_run_id, item_type, item_id, item_name, description, threat_level,
     holder_entity_id, timestamp_seconds, bounding_box, image, embedding, created_at)
@@ -188,11 +184,7 @@ BEGIN
     SELECT string_agg(DISTINCT c.model_run_id, ', ') INTO item_diffs FROM src_evidence_crops c
     JOIN migration_accepted_item_edits a USING (model_run_id);
     IF item_diffs IS NOT NULL THEN RAISE EXCEPTION 'Runs with accepted item edits have evidence crops, which this copy cannot re-key: %', item_diffs; END IF;
-    SELECT string_agg(DISTINCT m.model_run_id, ', ') INTO item_diffs FROM (
-        SELECT model_run_id FROM src_entity_matches UNION ALL SELECT model_run_id FROM src_instrument_matches
-        UNION ALL SELECT model_run_id FROM src_asset_matches) m
-    JOIN migration_accepted_item_edits a USING (model_run_id);
-    IF item_diffs IS NOT NULL THEN RAISE EXCEPTION 'Runs with accepted item edits have eval matches, which this copy cannot re-key: %', item_diffs; END IF;
+
 END $$;
 
 -- A decision may only name a run step 4 cannot settle: a stamped, non-contract run.
@@ -399,7 +391,5 @@ FROM src_videos s
 WHERE s.id = v.id AND s.selected_model_run_id IS NOT NULL;
 
 -- 7. Sequences continue after the copied ids ---------------------------------------------------
-SELECT setval('public.notifications_id_seq', COALESCE((SELECT max(id) FROM public.notifications), 1),
-              (SELECT max(id) FROM public.notifications) IS NOT NULL);
 SELECT setval('public.severity_eval_log_id_seq', COALESCE((SELECT max(id) FROM public.severity_eval_log), 1),
               (SELECT max(id) FROM public.severity_eval_log) IS NOT NULL);
