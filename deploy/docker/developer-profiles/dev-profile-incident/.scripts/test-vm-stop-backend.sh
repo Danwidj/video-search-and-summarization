@@ -266,5 +266,37 @@ out="$(bash -c "
 check "ssh failure in cleanup is non-fatal rc" "0" "$rc"
 check "ssh failure warning" "warning: failed to check or stop VM backend services" "$out"
 
+# Test 9: Lock registration allocates a pseudo-terminal (-tt) to avoid orphaned remote lock holders
+SSH_INVOCATIONS="$TMP/ssh_invocations.log"
+cat >"$TMP/bin/ssh" <<FAKE
+#!/usr/bin/env bash
+echo "\$*" >>"$SSH_INVOCATIONS"
+for arg in "\$@"; do
+  if [[ "\$arg" == *"flock -s 200"* ]]; then
+    echo "LOCKED:/tmp/test.lock"
+    exit 0
+  fi
+done
+exit 0
+FAKE
+chmod +x "$TMP/bin/ssh"
+
+TEST_LOCK_SCRIPT="$TMP/test_lock.sh"
+cat >"$TEST_LOCK_SCRIPT" <<EOF
+export PATH="$TMP/bin:\$PATH"
+VSS_START_MODE=vm
+VSS_LOCK_FILE='/tmp/test.lock'
+VSS_REPO_ROOT='/srv/vss'
+VSS_SSH_TARGET='test@vm'
+VSS_SSH_OPTS=()
+SCRIPT_DIR='$SCRIPT_DIR'
+EOF
+sed -n '/^  # Register active run via long-lived SSH/,/LOCK_SSH_PID=\$!/p' "$START_SH" >>"$TEST_LOCK_SCRIPT"
+echo 'wait "$LOCK_SSH_PID" 2>/dev/null || true' >>"$TEST_LOCK_SCRIPT"
+
+bash "$TEST_LOCK_SCRIPT" >/dev/null 2>&1 || true
+
+check "lock ssh uses -tt for pty" "-tt" "$(cat "$SSH_INVOCATIONS" 2>/dev/null || true)"
+
 echo "vm-stop-backend: ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]

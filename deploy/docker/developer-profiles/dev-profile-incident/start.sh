@@ -268,7 +268,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     exec sleep infinity
   "
   # shellcheck disable=SC2029
-  ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$lock_cmd" >"$LOCK_LOG" 2>&1 &
+  ssh -tt "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$lock_cmd" >"$LOCK_LOG" 2>&1 &
   LOCK_SSH_PID=$!
 
   lock_deadline=$((SECONDS + 10))
