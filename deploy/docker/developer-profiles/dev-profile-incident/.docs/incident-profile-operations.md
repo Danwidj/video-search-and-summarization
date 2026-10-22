@@ -54,7 +54,7 @@ It daemonizes processes with `nohup`, stores PID files under `/srv/rise-up/vss/.
 standard streams to `/srv/rise-up/vss/.run/<service>.log`, and polls health endpoints before reporting success.
 
 **Multi-user concurrency & permissions:**
-- Start operations serialise on `.run/native-services.lock` using `flock`, preventing TOCTOU startup races between teammates. Background daemonized processes close file descriptor 200 so the advisory lock is released upon launcher exit.
+- Start operations serialise on `.run/native-services.lock` using `flock`, preventing TOCTOU startup races between teammates. Background daemonised processes close file descriptor 200 so the advisory lock is released upon launcher exit.
 - Uses `umask 002` so created log files, PID files, and lock files are group-writable by any teammate in the shared VM group; pre-existing unwritable log and lock files are replaced before launching.
 - A healthy `/health` response (`isAlive`) on the service port is treated as already running even if the PID file is missing or unreadable; startup is safely skipped and reported as already running.
 - PID files are written atomically (`mktemp` then `mv`) and failed starts only remove the PID file if it matches the current run's PID.
