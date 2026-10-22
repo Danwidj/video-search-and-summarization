@@ -3,7 +3,7 @@ name: incident-manage-database
 description: Use to inspect or change the incident Supabase Postgres schema, write, test and apply a migration under supabase/migrations/, run the SQL harness or security check, build the finals database and copy midterm into it, query incident/review/ground-truth tables, or locate and validate video objects in Cloudflare R2. Not for running an analysis (use incident-analyze-video) or scoring ground truth (use incident-run-eval).
 license: Apache-2.0
 metadata:
-  version: "0.2.0"
+  version: "0.2.1"
   profile: "dev-profile-incident"
   tags: "incident supabase postgres migration postgrest r2"
 ---
@@ -145,7 +145,7 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 |---|---|---|
 | `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore` and `SupabaseEvidenceStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0` and `uv.lock` does not pin it. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
 | Evidence loader `scripts/backfill_official_timestamps.py` | Same `incident_db.get_db()` in the same `services/agent/.venv` | Same as the agent; the VM key check covers it. Its own `Authorization: Bearer` header goes to the VLM gateway, not Supabase |
-| `mock-backend/base_profile_mock` (local mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
+| `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
 | `incident-console-v2` `lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | Archived `archived/incident-console/db_postgrest.py` | `apikey` + always `Authorization: Bearer` | No (archived; never point it at finals) |

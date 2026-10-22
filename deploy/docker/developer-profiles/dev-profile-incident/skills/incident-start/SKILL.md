@@ -3,7 +3,7 @@ name: incident-start
 description: Use to set up secrets and launch the incident profile from a laptop with start.sh, either fully local (mock-backend + vlm-gateway, zero GPU) or against the kwanz-ws VM over an SSH tunnel. Not for changing or repairing services on the VM itself - use incident-operate-vm.
 license: Apache-2.0
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
   profile: "dev-profile-incident"
   tags: "incident startup local vm tunnel"
 ---
@@ -17,7 +17,7 @@ metadata:
 
 | User says | Mode | Why |
 |---|---|---|
-| "run it locally", "no GPU", "frontend work", "offline from the VM" | `--mode local` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. |
+| "run it locally", "no GPU", "frontend work", "offline from the VM" | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
 | "run against the VM", "real agent", "full stack", "demo", no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#2-deployment--connectivity).
@@ -32,7 +32,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
    | console, mock-backend, eval | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (the **finals** project) |
    | eval, database scripts | `INCIDENT_DB_DSN` (finals session pooler, port 5432) |
    | console, mock-backend, eval | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` |
-   | vlm-gateway (local mode) | `VLM_GATEWAY_API_KEY`, optional `VLM_GATEWAY_BASE_URL` |
+   | vlm-gateway (mock mode) | `VLM_GATEWAY_API_KEY`, optional `VLM_GATEWAY_BASE_URL` |
 
    Check names only, without echoing values:
    ```bash
@@ -46,13 +46,13 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
    ```
    If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees. It never overwrites an existing `.env.local` copy, so a worktree made before the finals switch still holds the midterm values: refresh it.
 
-   The Supabase values must name the finals project. Midterm (`rfevukimyftzbxlehwel`) is a frozen read-only record ([`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase)). Local mode passes these credentials to the mock backend too, and its analyse route writes `mock-run-*` rows into that database.
+   The Supabase values must name the finals project. Midterm (`rfevukimyftzbxlehwel`) is a frozen read-only record ([`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase)). Mock mode passes these credentials to the mock backend too, and its analyse route writes `mock-run-*` rows into that database.
 4. **vm mode only: SSH identity.** Set up `Host kwanz-ws` with `HostName` and your own `User` in `~/.ssh/config`, or export `VSS_SSH_USER` or `VSS_SSH_TARGET`. Resolution is non-interactive. See [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
 ## Instructions
 
 ```bash
-./start.sh --mode local     # zero-GPU loop
+./start.sh --mode mock      # zero-GPU loop
 ./start.sh --mode vm        # VM backend (default when --mode is omitted)
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```

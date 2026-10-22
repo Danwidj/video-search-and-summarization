@@ -58,8 +58,8 @@ flowchart TB
     end
 
     %% Laptop connections
-    UI -->|Local Mode Inference| Gateway
-    UI -->|Local Mode Upload| Mock
+    UI -->|Mock Mode Inference| Gateway
+    UI -->|Mock Mode Upload| Mock
     UI -->|VM Mode HTTP /analyze| FwdAgent
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
@@ -87,7 +87,7 @@ flowchart TB
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
 | `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, review workflow, eval form, report display |
-| `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for local mode |
+| `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for mock mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, base profile responses, search, and chat |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
@@ -122,14 +122,14 @@ Services are split based on feasibility:
 
 ## 2. Deployment & Connectivity
 
-The one-command entry point for setting up and launching the system is `start.sh` (`./start.sh --mode local` or `./start.sh --mode vm`), executed directly from developer laptops. It automates backend checks, self-healing service deployment, port tunneling, and UI initialization.
+The one-command entry point for setting up and launching the system is `start.sh` (`./start.sh --mode mock` or `./start.sh --mode vm`; `--mode local` is a deprecated alias for `mock`), executed directly from developer laptops. It automates backend checks, self-healing service deployment, port tunneling, and UI initialization.
 
 ```mermaid
 flowchart TD
-    Start["./start.sh --mode local|vm"] --> CheckMode{Mode?}
+    Start["./start.sh --mode mock|vm"] --> CheckMode{Mode?}
 
-    %% Local Mode Path
-    CheckMode -->|local| StartMock["Start mock-backend (127.0.0.1:7777)"]
+    %% Mock Mode Path
+    CheckMode -->|mock|  StartMock["Start mock-backend (127.0.0.1:7777)"]
     StartMock --> StartGateway["Start vlm-gateway (127.0.0.1:8600)"]
     StartGateway --> LocalInit["Export INCIDENT_AGENT_BASE_URL=http://127.0.0.1:7777,<br/>VLM_GATEWAY_URL=http://127.0.0.1:8600,<br/>ANALYSIS_MODE=gateway"]
     LocalInit --> RunV2Local["Launch incident-console-v2 (Port 3200)"]

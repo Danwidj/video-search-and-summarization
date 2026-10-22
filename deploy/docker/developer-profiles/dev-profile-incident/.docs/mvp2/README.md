@@ -129,7 +129,7 @@ The PR workstreams and the VM backend steps form a chain of dependencies. Each w
 | **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
 | **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic (configurable delay spacing via `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, default 1.0s, 0 disables), query persistence, and hexagonal `SearchStore` port (`InMemorySearchStore` and `SupabaseSearchStore` calling `search_evidence_items` RPC with Cloudflare R2 presigned crop URL resolution) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
 | **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Delivered (`services/agent/src/vss_agents/api/incident_chat.py`, `chat-contract-v1`) |
-| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both VM and local modes with always-on critic and persisted ranking/verdicts) |
+| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both vm and mock modes with always-on critic and persisted ranking/verdicts) |
 
 ### PR Workstreams (in this repo, building docs + UI/code):
 
@@ -225,7 +225,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - The `search_evidence_items` RPC and search REST route contracts for running retrieval benchmarks
 - The difference between **one-shot baseline** (retrieval only, no critic) and **system baseline** (retrieval + critic always on)
 - Taxonomy and item type filters (`item_type IN ('entity','instrument','asset')`, `incident_types`)
-- Mock backends (:7777 launched by `start.sh --mode local`, :7778 standalone) for harness plumbing tests only; they ignore the query text
+- Mock backends (:7777 launched by `start.sh --mode mock`, :7778 standalone) for harness plumbing tests only; they ignore the query text
 - VM backend Steps 3 and 4 must be live: crop service producing embeddings, and search RPC with pgvector
 
 **Key metrics for eval:**
@@ -270,7 +270,7 @@ The DDL, RLS and RPC items below are delivered and applied (`supabase/midterm/mi
 6. Same RLS policies for `query_results`
 7. Create or replace `search_evidence_items` RPC function
 8. Lock down RPC execution permissions: `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`
-9. Verify `start.sh --mode local` launches search in <5 seconds
+9. Verify `start.sh --mode mock` launches search in <5 seconds
 
 ---
 

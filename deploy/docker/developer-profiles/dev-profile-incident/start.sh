@@ -11,10 +11,11 @@
 #           /analyze endpoint directly. No local vlm-gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
 #           with an always-on VLM critic and persisted ranking/verdicts.
-#   local — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
+#   mock  — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
 #           and vlm-gateway (127.0.0.1:8600) locally. Exports
 #           ANALYSIS_MODE=gateway so v2 calls the local gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on mock-backend (:7777).
+#           'local' is a deprecated alias for 'mock'.
 #
 # Both modes start and mount the search route automatically with NO opt-in
 # --search flag (search is always on).
@@ -64,7 +65,8 @@
 #      you're done.
 #
 # Overrides:
-#   VSS_START_MODE           'vm' or 'local'. Default: 'vm'. In 'local' mode,
+#   VSS_START_MODE           'vm' or 'mock' ('local' is a deprecated alias for
+#                            'mock'). Default: 'vm'. In 'mock' mode,
 #                            SSH is never resolved or touched.
 #   VSS_SSH_TARGET           full "user@host" SSH login for the VM. If set,
 #                            used as-is. If unset, the VM username is
@@ -118,16 +120,20 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "start.sh: unknown argument '$1'" >&2
-      echo "Usage: ./start.sh [--mode local|vm] [--no-console]" >&2
+      echo "Usage: ./start.sh [--mode mock|vm] [--no-console]" >&2
       exit 1
       ;;
   esac
 done
 
 case "$VSS_START_MODE" in
-  vm|local) ;;
+  vm|mock) ;;
+  local)
+    echo "start.sh: mode 'local' is deprecated; use 'mock' (running as --mode mock)." >&2
+    VSS_START_MODE=mock
+    ;;
   *)
-    echo "start.sh: VSS_START_MODE must be 'vm' or 'local' (got '$VSS_START_MODE')." >&2
+    echo "start.sh: VSS_START_MODE must be 'vm' or 'mock' (got '$VSS_START_MODE')." >&2
     exit 1
     ;;
 esac

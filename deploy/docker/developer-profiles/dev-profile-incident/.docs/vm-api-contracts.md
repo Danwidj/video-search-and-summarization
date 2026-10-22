@@ -11,7 +11,7 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 | `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` (VIOS/VST) | video upload and storage API |
 
-- In local mode `7777` is the mock backend instead, and it also serves `POST /api/v1/incidents/search`. There is no tunnel.
+- In mock mode `7777` is the mock backend instead, and it also serves `POST /api/v1/incidents/search`. There is no tunnel.
 - `VSS_VM_IP`: used as given if set. Otherwise start.sh runs `ip -4 route get 1.1.1.1` on the VM over SSH and takes the `src` address. If that fails it prints `could not detect the VM address; falling back to 10.131.1.5` and uses `10.131.1.5`. Override with `VSS_VM_IP=<lan-ip>` when the tunnel cannot reach the address.
 - A local port already in use stops start.sh before the tunnel opens: `laptop port <p> is already in use by <holder>`.
 - After opening, start.sh polls `localhost:8000/health` and `localhost:7777/storage` (HEAD) for up to 60 s each. Run `./.scripts/tunnel-check.sh` to check tunneled routes.

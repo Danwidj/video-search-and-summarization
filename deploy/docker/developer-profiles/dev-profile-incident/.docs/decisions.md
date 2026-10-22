@@ -19,6 +19,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** DB CHECK constraints on type/severity, plus auto-mapping in `insert_incident`.
 - **Links:** [`../eval/incident_report.py`](../eval/incident_report.py); [`../eval/scripts/eval_ingest_gt.py`](../eval/scripts/eval_ingest_gt.py); [`data.md`](data.md).
 
+
 ### 2026-10-21: Single-source incident contract with sync script and .txt prompts
 - **Decision:**
   - `dev-profile-incident/contracts/` is the single source of truth for the shared incident contract. Prompt files are renamed from `.md` to `.txt` (`incident_extraction_prompt.txt`, `report_generation_prompt.txt`) with byte-identical contents to preserve content hashes and clarify their plain-text contract role.
