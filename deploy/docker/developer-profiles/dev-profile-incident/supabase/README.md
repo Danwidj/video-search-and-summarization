@@ -77,9 +77,8 @@ midterm DSN; it writes only to the local Postgres.
 
 ## Building finals (cutover)
 
-The full order of steps, the checklist and the rollback are in the
-[`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill; what points at
-which project is in [`../.docs/architecture.md`](../.docs/architecture.md#two-supabase-projects-one-per-phase). In short, with `FINALS_DSN` the finals session-pooler URL (port
+The schema push and copy commands are below; what points at which project is in
+[`../.docs/architecture.md`](../.docs/architecture.md#two-supabase-projects-one-per-phase). In short, with `FINALS_DSN` the finals session-pooler URL (port
 5432, plain `postgresql://`, no SQLAlchemy suffix):
 
 ```bash
