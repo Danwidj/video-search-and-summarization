@@ -159,15 +159,17 @@ Request:
 
 | Field | Type | Notes |
 |---|---|---|
-| `messages[]` | `{role, content}` | required, at least one; `content` min 1 char; the last `user` message is the query |
-| `session_id` | string | optional, max 128; generated (`session_<12 hex>`) if absent |
+| `messages[]` | `{role, content}` | required, at least one; `role` is `user`, `assistant` or `system`; `content` min 1 char; the last `user` message is the query |
+| `session_id` | string | optional, 1 to 128 chars; generated (`session_<12 hex>`) if absent |
 | `context.scope` | `"global"\|"incident"` | default `global` |
 | `context.incident_id` | string | filters to one incident when scope is `incident` |
 | `context.evidence_crop_ids` | string[] | accepted, unused |
 
 Response `200`: `{"session_id", "message": {"role": "assistant", "content", "citations": [{"incident_id","item_id","item_type","timestamp_seconds","crop_image_url"}]}}`. No match gives a "No matching incidents..." message with empty `citations`.
 
-Errors: `422` invalid scope (string `detail`) or validation, `400` no `user` message, `502` search client failure. Synchronous and fast (no model call).
+Models are strict (`extra="forbid"`): unknown fields, an invalid `role` or `scope` and an empty `session_id` are `422`. Response citations require `item_type` of `entity`, `instrument` or `asset`, non-empty ids and `timestamp_seconds` >= 0, and `citations` is always present.
+
+Errors: `422` validation (including invalid scope), `400` no `user` message, `502` search client failure. Synchronous and fast (no model call).
 
 Example: `{"messages":[{"role":"user","content":"edged weapon"}]}` returns `200` with 2 citations from the canned `Assault007` data.
 
