@@ -16,7 +16,7 @@
 """Cloudflare R2 storage helpers for signing and generating accessible URLs.
 
 Provides helpers for building presigned or public Cloudflare R2 URLs for video
-files and evidence crops, mirroring deploy/docker/developer-profiles/dev-profile-incident/incident-console/r2_videos.py.
+files and evidence crops, mirroring deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/r2_videos.py (archived v1).
 """
 
 from __future__ import annotations

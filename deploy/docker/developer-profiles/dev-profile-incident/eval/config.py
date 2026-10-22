@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 # that the previous bare load_dotenv() + find_dotenv() caused.
 #
 # This file lives at dev-profile-incident/eval/ (same nesting depth as
-# incident-console/ and incident-console-v2/), so one parent reaches this
+# incident-console-v2/), so one parent reaches this
 # directory and a second reaches dev-profile-incident/.env; .env.local
 # resolves next to this file (dev-profile-incident/eval/.env.local, a
 # symlink to the shared ../.env.local - see eval/README.md).

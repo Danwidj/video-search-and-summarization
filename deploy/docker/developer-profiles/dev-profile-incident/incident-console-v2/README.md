@@ -1,7 +1,7 @@
 # Incident Console v2
 
 Next.js App Router frontend for video-first incident analysis. This application is intentionally independent of the
-Streamlit incident console and uses the existing services only through their HTTP contracts.
+archived Streamlit v1 console (`../archived/incident-console/`) and uses the existing services only through their HTTP contracts.
 
 ## Local development
 

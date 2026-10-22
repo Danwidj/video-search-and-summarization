@@ -33,23 +33,26 @@ the env is current.
    itself) is a missing `.env.local` seeded from the tracked `.env` template
    (blank/placeholder values, ready for the developer to fill in).
 2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
-   found in the main worktree (pruning `node_modules`, `.venv`, `.git`)
+   found in the main worktree (pruning `node_modules`, `.venv`, `.git` and
+   `dev-profile-incident/archived/`, whose retired code is never set up)
    into the same relative path here, but only when the destination file
    does not already exist - never overwrites. No-ops inside the main
    worktree itself (the copy source). `generated.env` never matches the
    patterns and is never copied.
 3. **dev-profile-incident symlink self-heal.** In every worktree (including
    the main worktree), explicitly verify each of the 3 known subfolder paths
-   (`incident-console/.env.local`, `incident-console-v2/.env.local`,
-   `vlm-gateway/.env.local`) is a symlink pointing at `../.env.local`. If a
+   read by the active services (`incident-console-v2/.env.local`,
+   `vlm-gateway/.env.local`, `mock-backend/.env.local`) is a symlink pointing
+   at `../.env.local`. If a
    path is missing, is a real file, or points anywhere else, replace it with
    the correct relative symlink. Logs one line per path fixed. This targeted
    check runs in addition to (not instead of) the generic propagation above.
-4. **incident-console uv venv.** Runs `uv sync` in
-   `deploy/docker/developer-profiles/dev-profile-incident/incident-console`
-   (which creates `.venv` on first run), skipped when `.venv` is newer
-   than `pyproject.toml` and `uv.lock`. Warns and continues when `uv` is
-   missing or `uv sync` fails - a broken env never blocks a git operation.
+
+No `uv` venv is prepared: `start.sh` runs `uv sync` for `mock-backend` and
+`vlm-gateway` and `npm install` for `incident-console-v2` on every launch.
+(A former fourth step synced the v1 console's venv; v1 is archived under
+`dev-profile-incident/archived/incident-console/`.) Every step warns and
+continues on failure - a broken env never blocks a git operation.
 
 The git-lfs invocations are preserved from the original VM hook; on
 machines without `git-lfs` they warn instead of failing the git command.

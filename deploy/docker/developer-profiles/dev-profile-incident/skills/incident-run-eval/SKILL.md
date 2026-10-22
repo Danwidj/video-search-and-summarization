@@ -9,7 +9,7 @@ metadata:
 ---
 # Incident Run Eval
 
-`eval/` is its own `uv` project. It shares no runtime with other services. Its scoring code is a verbatim copy of `incident-console`'s modules.
+`eval/` is its own `uv` project. It shares no runtime with other services. Its scoring code began as a verbatim copy of the v1 console's modules (v1 is archived under `archived/incident-console/`).
 
 Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
@@ -69,4 +69,4 @@ uv run python scripts/eval_aggregate.py
 ## After changing anything
 
 - If methodology or results change, update `eval/docs/vlm_benchmark_results.md`.
-- If scoring code changes, remember `incident-console/` holds the original copy. Record whether the two are meant to stay in sync in [`.docs/decisions.md`](../../.docs/decisions.md).
+- `eval/` is the only maintained copy of the scoring code. Never update `archived/incident-console/` to match it.

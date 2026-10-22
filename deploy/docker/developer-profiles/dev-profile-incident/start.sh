@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# start.sh — the one-command daily entry point for the incident-console
+# start.sh — the one-command daily entry point for the incident-console-v2
 # workflow. RUN FROM YOUR LAPTOP:
 #
 #   cd deploy/docker/developer-profiles/dev-profile-incident && ./start.sh
@@ -20,9 +20,9 @@
 # Both modes start and mount the search route automatically with NO opt-in
 # --search flag (search is always on).
 #
-# Both modes launch incident-console-v2 (Next.js, port 3200). The Streamlit
-# v1 console is no longer started by this script — see local-start.sh or
-# incident-console/README.md if you need it.
+# Both modes launch incident-console-v2 (Next.js, port 3200), the only active
+# console. The Streamlit v1 console is archived under archived/incident-console/
+# and is never started.
 #
 # Architecture (Native vs Docker Split):
 #   - DOCKER SERVICES: Foundational appliance containers (VIOS/VST, HAProxy,
@@ -430,12 +430,22 @@ if [ "$VSS_START_MODE" = "vm" ]; then
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
   export ANALYSIS_MODE="agent"
-elif [ "$VSS_START_MODE" = "mock" ]; then
+elif [ "$VSS_START_MODE" = "local" ]; then
+  # Each local service reads its own .env.local symlink to the shared
+  # ../.env.local (README.md §1, kept in place by .githooks/setup-worktree.sh).
+  for env_link in mock-backend/.env.local vlm-gateway/.env.local; do
+    if [ ! -f "${SCRIPT_DIR}/${env_link}" ]; then
+      echo "start.sh: ${env_link} is missing or does not resolve to the shared .env.local." >&2
+      echo "  Fix: (cd \"${SCRIPT_DIR}\" && ln -sfn ../.env.local ${env_link})" >&2
+      exit 1
+    fi
+  done
+
   echo "=== Starting local mock backend (mock-backend/base_profile_mock, :7777) ==="
   (
     cd "${SCRIPT_DIR}/mock-backend/base_profile_mock"
     uv sync
-    exec uv run --env-file "${SCRIPT_DIR}/incident-console/.env.local" \
+    exec uv run --env-file "${SCRIPT_DIR}/mock-backend/.env.local" \
       uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777
   ) &
   MOCK_BACKEND_PID=$!

@@ -15,9 +15,9 @@
 
 """Async Supabase PostgREST helper for CRUD against the incident-console schema.
 
-The schema itself is owned by, and created by,
-``deploy/docker/developer-profiles/dev-profile-incident/incident-console/db.py``
-(module docstring there is the authoritative table list - do not redesign the
+The schema itself was originally owned by, and created by, the v1 console's
+``deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/db.py``
+(now archived; module docstring there is the authoritative table list - do not redesign the
 schema here, only mirror its tables/columns). That module also does the
 ``CREATE TABLE IF NOT EXISTS`` bootstrap on startup; this helper assumes the
 schema already exists and only reads/writes rows.
@@ -40,8 +40,8 @@ When either is unset, :func:`is_configured` returns ``False`` and
 optional feature and degrade gracefully, matching the console's own
 "database not configured" stance. There is no fallback DSN.
 
-Note: ``INCIDENT_DB_DSN`` is intentionally NOT used here — the console
-(``incident-console/db.py``) continues to use that for its direct-Postgres
+Note: ``INCIDENT_DB_DSN`` is intentionally NOT used here — the archived v1 console
+(``archived/incident-console/db.py``) used that for its direct-Postgres
 SQLAlchemy connection. The two config surfaces are independently maintained.
 
 This module uses ``supabase-py``'s async client (``acreate_client``) rather than

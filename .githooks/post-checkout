@@ -1,6 +1,6 @@
 #!/bin/bash
 # post-checkout: run the shared working-tree setup (.env propagation +
-# incident-console uv venv) on every checkout, branch switch and
+# dev-profile-incident .env.local symlinks) on every checkout, branch switch and
 # `git worktree add` (which performs a checkout internally). See
 # setup-worktree.sh for the full behavior description.
 #

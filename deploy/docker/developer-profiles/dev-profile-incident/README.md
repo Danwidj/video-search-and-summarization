@@ -35,7 +35,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Supabase schema, SQL harness and midterm-to-finals copy](supabase/README.md); [frozen midterm record](supabase/midterm/README.md)
 - [Lifecycle scripts](.scripts/README.md)
 - [VM dotfiles](.dotfiles/README.md)
-- [Streamlit console (v1, retired)](incident-console/README.md)
+- [Archived components](archived/README.md), including the [Streamlit console (v1)](archived/incident-console/README.md)
 
 ## Steps to set up and deploy
 
@@ -49,7 +49,6 @@ Full procedure, checks and troubleshooting: [`incident-start`](skills/incident-s
 2. Symlink `.env.local` to the sub-services:
 
 ```bash
-ln -sfn ../.env.local incident-console/.env.local
 ln -sfn ../.env.local incident-console-v2/.env.local
 ln -sfn ../.env.local vlm-gateway/.env.local
 ln -sfn ../.env.local mock-backend/.env.local
