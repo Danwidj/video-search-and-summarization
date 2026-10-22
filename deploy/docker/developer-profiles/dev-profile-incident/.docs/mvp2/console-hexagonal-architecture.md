@@ -414,7 +414,7 @@ Next.js App Router pages can load their data on the server instead of mounting a
 
 | Page | State | Loads through |
 |---|---|---|
-| `/reports/[videoId]?run=` | Server Component | `getReport` (`lib/application/reports.ts`) |
+| `/reports/[videoId]?run=` | Server Component | `getReport` (`lib/application/reports.ts`), via `loadReportPage` in the route's `load-report.ts` |
 | `/reports/[videoId]/compare` | client fetch of `GET /api/reports/[videoId]` per run | planned |
 | `/reports` (library) | client fetch of `GET /api/reports` | planned; needs the viewer's time zone on the server |
 | `/videos`, `/videos/[videoId]` | client fetch of `GET /api/videos`, `GET /api/videos/[videoId]/runs` | planned; run history waits for its port (§7) |
@@ -423,6 +423,7 @@ Next.js App Router pages can load their data on the server instead of mounting a
 
 Conventions for a converted page (the report page is the reference, `app/reports/[videoId]/(report)/`):
 - `export const dynamic = 'force-dynamic'`: review state changes between visits, so the page is never served from a cache.
+- The server-side load (configuration, `getDbAdapters()`, the use case, R2 signing) lives in a `.ts` module beside the page that returns the outcome (found, not found, failed with its message); `page.tsx` only maps it to elements. Node's test runner cannot load `.tsx`, so the load is tested behaviourally over the fake PostgREST (`tests/report-page.test.mjs`).
 - A route group keeps the page's `loading.tsx`, `error.tsx` and `not-found.tsx` from wrapping sibling routes (`compare/`).
 - A missing record calls `notFound()`; a load failure the page expects (unconfigured store, unreachable PostgREST, unsignable video) renders its message in place, as the API route returns it; `error.tsx` catches the rest, with the message redacted in production.
 - After a write through `/api/*`, the client component calls `router.refresh()`, which renders the page on the server again with the stored state.
