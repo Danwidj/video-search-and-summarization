@@ -59,11 +59,11 @@ ln -sfn ../.env.local mock-backend/.env.local
 
 Run `start.sh` with your chosen mode:
 
-- **Local Mode (Zero-GPU development):**
+- **Mock Mode (Zero-GPU development):**
   ```bash
-  ./start.sh --mode local
+  ./start.sh --mode mock
   ```
-  Starts the local mock backend (`mock-backend/base_profile_mock` on `127.0.0.1:7777`), the local VLM gateway (`vlm-gateway` on `127.0.0.1:8600`), and launches `incident-console-v2` on `127.0.0.1:3200` (never touches SSH).
+  Starts the local mock backend (`mock-backend/base_profile_mock` on `127.0.0.1:7777`), the local VLM gateway (`vlm-gateway` on `127.0.0.1:8600`), and launches `incident-console-v2` on `127.0.0.1:3200` (never touches SSH). `--mode local` is a deprecated alias for `--mode mock`.
 
 - **VM Mode (Full blueprint stack on kwanz-ws):**
   ```bash

@@ -31,7 +31,7 @@ def test_start_script_rejects_search_flag():
     )
     assert res.returncode == 1
     assert "unknown argument '--search'" in res.stderr
-    assert "Usage: ./start.sh [--mode local|vm]" in res.stderr
+    assert "Usage: ./start.sh [--mode mock|vm]" in res.stderr
 
 
 def test_start_script_rejects_unknown_argument():
@@ -43,7 +43,7 @@ def test_start_script_rejects_unknown_argument():
     )
     assert res.returncode == 1
     assert "unknown argument '--unknown-flag'" in res.stderr
-    assert "Usage: ./start.sh [--mode local|vm]" in res.stderr
+    assert "Usage: ./start.sh [--mode mock|vm]" in res.stderr
 
 
 def test_start_script_rejects_invalid_mode():
@@ -54,7 +54,52 @@ def test_start_script_rejects_invalid_mode():
         check=False,
     )
     assert res.returncode == 1
-    assert "VSS_START_MODE must be 'vm' or 'local'" in res.stderr
+    assert "VSS_START_MODE must be 'vm' or 'mock'" in res.stderr
+
+
+def _run_on_fake_vm(tmp_path: Path, args: list[str], extra_env: dict[str, str] | None = None):
+    """Run start.sh with `hostname` faked to kwanz-ws so it exits at the laptop guard, after mode validation."""
+    fake_bin_dir = tmp_path / "bin"
+    fake_bin_dir.mkdir()
+    fake_hostname = fake_bin_dir / "hostname"
+    fake_hostname.write_text("#!/bin/sh\necho kwanz-ws\n")
+    fake_hostname.chmod(0o755)
+
+    env = os.environ.copy()
+    env.pop("VSS_START_MODE", None)
+    env["PATH"] = f"{fake_bin_dir}:{env.get('PATH', '')}"
+    env.update(extra_env or {})
+
+    return subprocess.run(
+        [str(START_SH_PATH), *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "extra_env"),
+    [(["--mode", "mock"], None), (["--mode=mock"], None), (["--mode", "vm"], None), ([], {"VSS_START_MODE": "mock"})],
+)
+def test_start_script_accepts_canonical_modes(tmp_path: Path, args: list[str], extra_env: dict[str, str] | None):
+    res = _run_on_fake_vm(tmp_path, args, extra_env)
+    assert res.returncode == 1
+    assert "must be 'vm' or 'mock'" not in res.stderr
+    assert "deprecated" not in res.stderr
+    assert "run this from your laptop, not on kwanz-ws" in res.stderr
+
+
+@pytest.mark.parametrize(("args", "extra_env"), [(["--mode", "local"], None), ([], {"VSS_START_MODE": "local"})])
+def test_start_script_local_is_deprecated_alias_for_mock(
+    tmp_path: Path, args: list[str], extra_env: dict[str, str] | None
+):
+    res = _run_on_fake_vm(tmp_path, args, extra_env)
+    assert res.returncode == 1
+    assert "mode 'local' is deprecated; use 'mock'" in res.stderr
+    assert "must be 'vm' or 'mock'" not in res.stderr
+    assert "run this from your laptop, not on kwanz-ws" in res.stderr
 
 
 def test_start_script_refuses_to_run_on_kwanz_ws(tmp_path: Path):

@@ -30,8 +30,8 @@ executable scripts, ready to run individually. Since the native split (see the p
 `tunnel.sh`, `tunnel-check.sh`, and top-level `start.sh` are **laptop-side only** (SSH tunnel from developer laptops to the `kwanz-ws` backend); never run them on `kwanz-ws` itself.
 
 `start.sh` (at the top level of `dev-profile-incident/`) is the laptop-side one-command daily entry point for **incident-console-v2** (it no longer launches the Streamlit v1 console — see [`../incident-console/README.md`](../incident-console/README.md) for that):
-- **Modes:** Accepts `--mode local|vm` (or `VSS_START_MODE` env var, default `vm`) to select the backend.
+- **Modes:** Accepts `--mode mock|vm` (or `VSS_START_MODE` env var, default `vm`) to select the backend.
   - **`vm` mode:** Probes SSH first (explaining the cause if the VM is unreachable), checks the remote deployment state on `kwanz-ws` over SSH (deploying fresh if nothing is running, starting missing services for a partial deploy, cloning/pulling what is missing, every step under a timeout), opens the background SSH tunnel, and exports `ANALYSIS_MODE=agent`. `--no-console` stops after the tunnel is up. The search route (`POST /api/v1/incidents/search`) is always mounted.
-  - **`local` mode:** Skips SSH, starts `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file .env.local`, verifies health readiness (<5s), and exports `ANALYSIS_MODE=gateway`. The search route (`POST /api/v1/incidents/search`) is always mounted.
+  - **`mock` mode:** Skips SSH, starts `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file .env.local`, verifies health readiness (<5s), and exports `ANALYSIS_MODE=gateway`. The search route (`POST /api/v1/incidents/search`) is always mounted. `local` is a deprecated alias that prints a warning and runs `mock`.
 - **Frontend execution:** Both modes launch `incident-console-v2` via `npm run dev -- -H 127.0.0.1 --port 3200`, so the console listens on loopback only (it holds database and storage admin keys and has no authentication).
 - **Process cleanup:** A cleanup trap stops local background processes on exit.

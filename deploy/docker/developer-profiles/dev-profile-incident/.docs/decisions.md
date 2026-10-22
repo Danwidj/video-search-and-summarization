@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-22: start.sh runtime modes are named `vm` and `mock`; `local` is a deprecated alias
+- **Decision:** `start.sh --mode` (and `VSS_START_MODE`) accepts `vm` (default) and `mock`. `mock` is the old `local` mode with identical behaviour: mock-backend :7777 + vlm-gateway :8600 on the laptop, `ANALYSIS_MODE=gateway`. `local` still works but prints a deprecation warning and runs `mock`. `ANALYSIS_MODE` keeps its values (`agent` for vm, `gateway` for mock), and the console's "gateway analysis mode" wording is unchanged because it names `ANALYSIS_MODE`, not the runtime mode.
+- **Why:** The team calls the zero-GPU mode "mock"; one name across the launcher, skills and docs avoids confusion between "local" (the laptop) and the mode that runs mocks.
+- **Rejected:** Renaming `ANALYSIS_MODE` to `vm`/`mock` (a different concept: which analysis path the console calls; the mock-backend-v2 migration will change the gateway path anyway). Removing `local` outright (breaks shell history and muscle memory for no gain). Adding a runtime-mode badge to the console (scope growth).
+- **Links:** [`../start.sh`](../start.sh); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md); [`../eval/tests/test_start_script.py`](../eval/tests/test_start_script.py).
+
 ### 2026-10-21: Single-source incident contract with sync script and .txt prompts
 - **Decision:**
   - `dev-profile-incident/contracts/` is the single source of truth for the shared incident contract. Prompt files are renamed from `.md` to `.txt` (`incident_extraction_prompt.txt`, `report_generation_prompt.txt`) with byte-identical contents to preserve content hashes and clarify their plain-text contract role.

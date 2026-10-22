@@ -134,7 +134,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 4. **Local Fallback:** Falls back to your local machine `$USER` / `whoami`.
 
 **Mode Isolation & Preflight Check:**
-- **Local Mode (`--mode local`):** Never sources `resolve-ssh-target.sh` and never touches SSH at all.
+- **Mock Mode (`--mode mock`; `local` is a deprecated alias):** Never sources `resolve-ssh-target.sh` and never touches SSH at all.
 - **VM Mode (`--mode vm`):** Runs a fast SSH preflight check (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`, one retry on a timeout) before any tunnel, deploy check, env generation, npm install, or UI start. If it fails, `start.sh` aborts with a non-zero exit status, the raw SSH error, the classified cause and the next step (`.scripts/vm-preflight.sh`).
 
 **VM unreachable: causes `start.sh` reports**
@@ -163,7 +163,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 ## 4. Safe Deployment Principles
 
 1. **Deploy Exclusively via `start.sh` (or Direct Compose on VM):**
-   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode local` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `kwanz-ws` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
+   `deploy/docker/scripts/dev-profile.sh` recognizes only stock profiles (`base`, `search`, `lvs`, `alerts`) and must NOT be used directly for the incident profile. `./start.sh --mode mock` and `./start.sh --mode vm` are THE standard way to set up and launch everything from your laptop. On `kwanz-ws` itself, backend appliances are managed via Docker Compose (`docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>`) and native services via `.scripts/native-services.sh`.
 2. **NEVER Run `dev-profile.sh down` on `kwanz-ws`:**
    `deploy/docker/scripts/dev-profile.sh down` executes `docker compose down -v` and deletes the entire persistent data directory
    (`VSS_DATA_DIR`), destroying tens of gigabytes of cached model weights. Always use:
