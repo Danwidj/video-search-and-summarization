@@ -110,7 +110,21 @@ echo "=== Test 3: Umask and group-writable lock file ==="
 [ -f "$RUN_DIR/native-services.lock" ]
 # shellcheck disable=SC2012
 perms="$(ls -ld "$RUN_DIR/native-services.lock" | awk '{print $1}')"
-assert_contains "$perms" "rw" "lock file is writable"
+assert_contains "$perms" "^.....w" "lock file permissions include group write"
+
+group_writable="$(python3 -c "import os, stat, sys; print('yes' if (os.stat(sys.argv[1]).st_mode & stat.S_IWGRP) else 'no')" "$RUN_DIR/native-services.lock")"
+assert_eq "yes" "$group_writable" "lock file is group-writable"
+
+# Test pre-existing unwriteable lock and log file recovery
+chmod 444 "$RUN_DIR/native-services.lock"
+[ ! -w "$RUN_DIR/native-services.lock" ]
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$SUT" status >/dev/null
+  with_lock true
+)
+group_writable_after="$(python3 -c "import os, stat, sys; print('yes' if (os.stat(sys.argv[1]).st_mode & stat.S_IWGRP) else 'no')" "$RUN_DIR/native-services.lock")"
+assert_eq "yes" "$group_writable_after" "unwritable lock file replaced with group-writable lock file"
 
 # -----------------------------------------------------------------------------
 # Test 4: Healthy /health treated as already running (missing/unreadable pid)
@@ -189,6 +203,19 @@ echo "=== Test 5: Atomic pid file write and removal on match ==="
   remove_pid_if_match "test-svc" "12345"
   [ ! -f "$RUN_DIR/test-svc.pid" ]
   assert_eq "not_found" "$([ -f "$RUN_DIR/test-svc.pid" ] && echo exists || echo not_found)" "remove_pid_if_match removed matching pid"
+
+  # Test pre-existing unwritable log file replacement
+  log_file="$RUN_DIR/test-svc.log"
+  touch "$log_file"
+  chmod 444 "$log_file"
+  [ ! -w "$log_file" ]
+  if [ -f "$log_file" ] && [ ! -w "$log_file" ]; then
+    rm -f "$log_file"
+  fi
+  touch "$log_file" 2>/dev/null || true
+  chmod g+rw "$log_file" 2>/dev/null || true
+  log_writable="$(python3 -c "import os, stat, sys; print('yes' if (os.stat(sys.argv[1]).st_mode & stat.S_IWGRP) else 'no')" "$log_file")"
+  assert_eq "yes" "$log_writable" "unwritable log file replaced and group-writable"
 )
 
 # Clean up mock server

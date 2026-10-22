@@ -38,6 +38,9 @@ mkdir -p "${RUN_DIR}"
 chmod g+rwx "${RUN_DIR}" 2>/dev/null || true
 
 LOCK_FILE="${RUN_DIR}/native-services.lock"
+if [ -f "${LOCK_FILE}" ] && [ ! -w "${LOCK_FILE}" ]; then
+  rm -f "${LOCK_FILE}"
+fi
 touch "${LOCK_FILE}" 2>/dev/null || true
 chmod g+rw "${LOCK_FILE}" 2>/dev/null || true
 
@@ -51,6 +54,9 @@ with_lock() {
     return $?
   fi
 
+  if [ -f "${lock_file}" ] && [ ! -w "${lock_file}" ]; then
+    rm -f "${lock_file}"
+  fi
   if [ ! -f "${lock_file}" ]; then
     touch "${lock_file}" 2>/dev/null || true
   fi
@@ -204,6 +210,9 @@ _start_vss_agent() {
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
   touch "${log_file}" 2>/dev/null || true
   chmod g+rw "${log_file}" 2>/dev/null || true
 
@@ -298,6 +307,9 @@ _start_video_analytics_api() {
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
   touch "${log_file}" 2>/dev/null || true
   chmod g+rw "${log_file}" 2>/dev/null || true
 
@@ -385,6 +397,9 @@ _start_behavior_analytics() {
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 
+  if [ -f "${log_file}" ] && [ ! -w "${log_file}" ]; then
+    rm -f "${log_file}"
+  fi
   touch "${log_file}" 2>/dev/null || true
   chmod g+rw "${log_file}" 2>/dev/null || true
 
