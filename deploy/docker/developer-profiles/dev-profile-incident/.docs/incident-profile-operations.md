@@ -189,6 +189,8 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
    configuration.
 5. **Permanent `unless-stopped` Restart Policy:**
    Upstream compose files configure several core appliances (`redis`, `vss-haproxy-ingress`, `centralizedb`, `vst-ingress`, `vss-ui`, `elasticsearch`, `logstash`, `kibana`) with `restart: always`. `streamprocessing-ms` has upstream `restart: unless-stopped`, but its `deploy.restart_policy.condition: always` takes precedence over `restart`. Both cause Docker to resurrect them on every host reboot even after a deliberate stop. In `dev-profile-incident/compose.override.yml`, the persistent appliances and stack services are set to `restart: unless-stopped`, and `streamprocessing-ms` also gets `deploy.restart_policy.condition: unless-stopped`. `nvstreamer-2d-fusion` keeps its upstream `on-failure` deploy policy, which already leaves it stopped after a reboot. When the stack is deliberately stopped (via `./.scripts/down.sh` or `docker compose -p mdx stop`), containers stay stopped across VM reboots.
+6. **Stop on Last Exit (`start.sh` VM Mode):**
+   Exiting `start.sh` on the laptop (Ctrl-C, SIGTERM, normal exit) checks whether the session is the last active run on `kwanz-ws` using a kernel flock held over a background SSH connection. If no other active runs remain, `start.sh` runs `.scripts/vm-stop-backend.sh` over SSH, stopping native services (`native-services.sh stop`) and Docker appliance containers in-place via `docker stop`. Containers and data are kept; restart is `./start.sh --mode vm`. To leave services running when exiting, pass `--keep-backend` or set `VSS_STOP_ON_LAST_EXIT=false`.
 
 ---
 

@@ -92,6 +92,9 @@
 #                            behavior-analytics natively, plus elasticsearch/kafka in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
+#   VSS_STOP_ON_LAST_EXIT    stop VM backend services on last exit when true (default: true).
+#                            Set to 'false' to leave backend running when exiting.
+#   --keep-backend           CLI convenience flag equivalent to VSS_STOP_ON_LAST_EXIT=false
 
 set -euo pipefail
 
@@ -104,6 +107,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Parse --mode / --no-console flags (--no-console: bring the backend and tunnel up, skip the Next.js console)
 NO_CONSOLE=0
 VSS_START_MODE="${VSS_START_MODE:-vm}"
+VSS_STOP_ON_LAST_EXIT="${VSS_STOP_ON_LAST_EXIT:-true}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)
@@ -118,9 +122,13 @@ while [[ $# -gt 0 ]]; do
       NO_CONSOLE=1
       shift
       ;;
+    --keep-backend)
+      VSS_STOP_ON_LAST_EXIT="false"
+      shift
+      ;;
     *)
       echo "start.sh: unknown argument '$1'" >&2
-      echo "Usage: ./start.sh [--mode mock|vm] [--no-console]" >&2
+      echo "Usage: ./start.sh [--mode mock|vm] [--no-console] [--keep-backend]" >&2
       exit 1
       ;;
   esac
@@ -148,6 +156,10 @@ TUNNEL_PID=""
 TUNNEL_LOG=""
 MOCK_BACKEND_PID=""
 VLM_GATEWAY_PID=""
+LOCK_SSH_PID=""
+LOCK_LOG=""
+LOCK_HELD=0
+CLEANUP_RUNNING=""
 
 # Laptop-side name -> compose service name for the Docker appliances.
 map_docker_service() {
@@ -161,6 +173,11 @@ map_docker_service() {
 }
 
 cleanup() {
+  if [ -n "$CLEANUP_RUNNING" ]; then
+    return
+  fi
+  CLEANUP_RUNNING=1
+
   if [ -n "${VM_SSH_PID:-}" ] && kill -0 "$VM_SSH_PID" 2>/dev/null; then
     kill "$VM_SSH_PID" 2>/dev/null || true
     VM_SSH_PID=""
@@ -180,6 +197,37 @@ cleanup() {
     kill "$TUNNEL_PID" 2>/dev/null || true
     echo "start.sh: closed the backgrounded SSH tunnel (pid $TUNNEL_PID)."
     TUNNEL_PID=""
+  fi
+
+  # Release this run's shared flock on the VM
+  if [ -n "$LOCK_SSH_PID" ]; then
+    if kill -0 "$LOCK_SSH_PID" 2>/dev/null; then
+      kill "$LOCK_SSH_PID" 2>/dev/null || true
+      wait "$LOCK_SSH_PID" 2>/dev/null || true
+    fi
+    LOCK_SSH_PID=""
+  fi
+  [ -n "$LOCK_LOG" ] && rm -f "$LOCK_LOG"
+
+  # Stop backend services on the VM if this was the last active session
+  if [ "${VSS_START_MODE:-}" = "vm" ] && [ "${LOCK_HELD:-0}" = "1" ]; then
+    case "${VSS_STOP_ON_LAST_EXIT:-true}" in
+      false|0|no)
+        echo "start.sh: VSS_STOP_ON_LAST_EXIT is disabled; leaving backend running on the VM."
+        ;;
+      *)
+        if [ -n "${VSS_SSH_TARGET:-}" ]; then
+          echo "start.sh: checking active sessions on $VSS_SSH_TARGET..."
+          stop_rc=0
+          remote_cmd="bash -s -- $(printf '%q ' "$VSS_LOCK_FILE" "$VSS_REPO_ROOT" "${INCIDENT_DOCKER_SERVICES:-}" "${INCIDENT_NATIVE_SERVICES:-}")"
+          # shellcheck disable=SC2029
+          ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$remote_cmd" < "${SCRIPT_DIR}/.scripts/vm-stop-backend.sh" || stop_rc=$?
+          if [ "$stop_rc" -ne 0 ]; then
+            echo "start.sh: warning: failed to check or stop VM backend services (exit $stop_rc)." >&2
+          fi
+        fi
+        ;;
+    esac
   fi
 }
 trap cleanup EXIT INT TERM
@@ -216,6 +264,48 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_NATIVE_START_TIMEOUT="${VSS_NATIVE_START_TIMEOUT:-300}"
   VSS_REPO_URL="${VSS_REPO_URL:-$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || true)}"
   vm_profile_dir="$VSS_REPO_ROOT/deploy/docker/developer-profiles/dev-profile-incident"
+
+  # Register active run via long-lived SSH connection holding a shared flock on kwanz-ws
+  VSS_LOCK_FILE="${VSS_LOCK_FILE:-$VSS_REPO_ROOT/.run/active-runs.lock}"
+  echo "=== Registering active run on $VSS_SSH_TARGET ==="
+  LOCK_LOG="$(mktemp)"
+  lock_cmd="
+    target='$VSS_LOCK_FILE'
+    dir=\"\$(dirname \"\$target\")\"
+    if ! mkdir -p \"\$dir\" 2>/dev/null || ! touch \"\$target\" 2>/dev/null; then
+      target='/tmp/vss-active-runs.lock'
+      touch \"\$target\" 2>/dev/null || true
+    fi
+    chmod 777 \"\$(dirname \"\$target\")\" 2>/dev/null || true
+    chmod 666 \"\$target\" 2>/dev/null || true
+    exec 200<\"\$target\"
+    flock -s 200 || exit 1
+    echo \"LOCKED:\$target\"
+    exec sleep infinity
+  "
+  # shellcheck disable=SC2029
+  ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$lock_cmd" >"$LOCK_LOG" 2>&1 &
+  LOCK_SSH_PID=$!
+
+  lock_deadline=$((SECONDS + 10))
+  while [ "$SECONDS" -lt "$lock_deadline" ]; do
+    if grep -q "^LOCKED:" "$LOCK_LOG" 2>/dev/null; then
+      LOCK_HELD=1
+      resolved_lock="$(sed -n 's/^LOCKED://p' "$LOCK_LOG" | head -n 1)"
+      [ -n "$resolved_lock" ] && VSS_LOCK_FILE="$resolved_lock"
+      break
+    fi
+    if ! kill -0 "$LOCK_SSH_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 0.2
+  done
+
+  if [ "$LOCK_HELD" = "1" ]; then
+    echo "  active run lock registered ($VSS_LOCK_FILE)"
+  else
+    echo "start.sh: warning: could not confirm VM active run lock ($(cat "$LOCK_LOG" 2>/dev/null || echo "timeout"))." >&2
+  fi
 
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
 
