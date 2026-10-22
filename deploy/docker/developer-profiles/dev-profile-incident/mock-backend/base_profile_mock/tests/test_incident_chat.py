@@ -4,9 +4,18 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+import pytest
 
 from base_profile_mock.app import create_app
+from base_profile_mock.routers.incident_chat import ChatRequest
+from base_profile_mock.routers.incident_chat import ChatResponse
+
+FIXTURES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "chat-contract-v1" / "fixtures"
 
 
 def test_mock_chat_minimal_request_returns_200():
@@ -68,3 +77,37 @@ def test_mock_chat_rejects_empty_messages():
     client = TestClient(create_app())
     resp = client.post("/api/v1/incidents/chat", json={"messages": []})
     assert resp.status_code == 422
+
+
+def test_mock_chat_rejects_invalid_scope():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/v1/incidents/chat",
+        json={
+            "messages": [{"role": "user", "content": "weapons?"}],
+            "context": {"scope": "interstellar"},
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_mock_chat_rejects_unknown_fields():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "weapons?"}], "extra": 1},
+    )
+    assert resp.status_code == 422
+
+
+def test_mock_models_match_contract_fixtures():
+    for path in sorted((FIXTURES_DIR / "valid").glob("*request.json")):
+        ChatRequest.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    for path in sorted((FIXTURES_DIR / "valid").glob("*response.json")):
+        ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    for path in sorted((FIXTURES_DIR / "invalid").glob("request-*.json")):
+        with pytest.raises(ValidationError):
+            ChatRequest.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    for path in sorted((FIXTURES_DIR / "invalid").glob("response-*.json")):
+        with pytest.raises(ValidationError):
+            ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))

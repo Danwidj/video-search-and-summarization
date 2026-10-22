@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from typing import Literal
 import uuid
 
 from fastapi import APIRouter
 from fastapi import HTTPException
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 
 from base_profile_mock.routers.incident_search import _CANNED_HITS
@@ -21,38 +23,54 @@ router = APIRouter(prefix="/api/v1")
 
 
 class ChatMessage(BaseModel):
-    role: str = Field(..., description="Role of message author ('user', 'assistant', 'system')")
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant", "system"] = Field(
+        ..., description="Role of message author ('user', 'assistant', 'system')"
+    )
     content: str = Field(..., min_length=1, description="Message text content")
 
 
 class ChatContext(BaseModel):
-    scope: str = Field(default="global", description="Scope of conversation: 'global' or 'incident'")
+    model_config = ConfigDict(extra="forbid")
+
+    scope: Literal["global", "incident"] = Field(
+        default="global", description="Scope of conversation: 'global' or 'incident'"
+    )
     incident_id: str | None = Field(default=None, description="Optional incident_id for incident scope")
     evidence_crop_ids: list[str] | None = Field(default=None, description="Optional evidence item IDs")
 
 
 class ChatRequest(BaseModel):
-    session_id: str | None = Field(default=None, max_length=128, description="Optional session ID")
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str | None = Field(default=None, min_length=1, max_length=128, description="Optional session ID")
     messages: list[ChatMessage] = Field(..., min_length=1, description="Sequential message history")
     context: ChatContext | None = Field(default=None, description="Optional context")
 
 
 class EvidenceCitation(BaseModel):
-    incident_id: str
-    item_id: str
-    item_type: str
-    timestamp_seconds: float
+    model_config = ConfigDict(extra="forbid")
+
+    incident_id: str = Field(..., min_length=1)
+    item_id: str = Field(..., min_length=1)
+    item_type: Literal["entity", "instrument", "asset"]
+    timestamp_seconds: float = Field(..., ge=0)
     crop_image_url: str
 
 
 class AssistantMessage(BaseModel):
-    role: str = "assistant"
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["assistant"] = "assistant"
     content: str
-    citations: list[EvidenceCitation] = Field(default_factory=list)
+    citations: list[EvidenceCitation]
 
 
 class ChatResponse(BaseModel):
-    session_id: str
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(..., min_length=1)
     message: AssistantMessage
 
 
@@ -64,12 +82,6 @@ class ChatResponse(BaseModel):
 )
 async def chat_incidents(req: ChatRequest) -> ChatResponse:
     session_id = req.session_id or f"session_{uuid.uuid4().hex[:12]}"
-
-    if req.context and req.context.scope not in ("global", "incident"):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid scope '{req.context.scope}'; must be 'global' or 'incident'",
-        )
 
     # Extract latest user message
     user_msg: ChatMessage | None = None

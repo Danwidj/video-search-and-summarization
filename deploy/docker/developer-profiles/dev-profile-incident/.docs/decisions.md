@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-22: Strict chat models matching chat-contract-v1
+- **Decision:** The agent and mock chat models use `Literal` types for `role`, `scope` and `item_type`, `extra="forbid"`, `min_length=1` on ids, `ge=0` on `timestamp_seconds`, and `AssistantMessage.citations` has no default. Fixture tests feed the contract fixtures to both sets of models. The hand-written scope check is gone; pydantic returns the `422`.
+- **Why:** The models accepted values the schemas reject (`request-invalid-scope.json`, `response-invalid-role.json`). The contract requires `citations`, and the route always sends it. No console or eval code calls the chat route, so no current sender is rejected.
+- **Rejected:** relaxing the contract; sharing one model module between agent and mock (the mock stays standalone).
+- **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`vm-api-contracts.md`](vm-api-contracts.md).
+
 ### 2026-10-22: Drop retired v1 tables (matches and notifications) from finals schema
 - **Decision:** Drop `asset_matches`, `entity_matches`, `instrument_matches`, and `notifications` via migration `20261022123252_drop_unused_tables.sql`. The unused notification methods in `services/agent/src/vss_agents/utils/incident_db.py` are removed. Evaluation match persistence in `eval/` is left alone and handled separately. Ground-truth tables (`gt_*`) and `severity_eval_log` remain intact.
 - **Why:** These tables were only used by the retired v1 Streamlit console. The live finals Supabase database already dropped them. Removing them brings repository migrations, tests, and documentation in sync with the live database.
