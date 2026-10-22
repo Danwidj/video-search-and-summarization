@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-10-21.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
+> **As of 2026-10-22.** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
 ## 1. What is live
 
@@ -10,7 +10,7 @@
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Supabase rows (finals project) plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
-| Launcher | `./start.sh --mode mock\|vm` with SSH preflight, self-healing VM deploy and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
+| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy and an always-on search route. Launches `incident-console-v2`, the only console; the Streamlit v1 console is archived under `archived/incident-console/` and never started | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777) and `search_profile_mock` (:7778), including search and chat routes | `mock-backend/` |
 
 ## 2. MVP2: natural-language evidence search

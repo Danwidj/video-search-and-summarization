@@ -2,8 +2,19 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-22: Archive the Streamlit v1 console under `archived/incident-console/`
+- **Decision:** Move the retired v1 console with `git mv` from `incident-console/` to `archived/incident-console/` (history kept) and treat everything under `archived/` as read-only: never launched, set up by `.githooks`, tested or changed. `incident-console-v2/` is the only console. The two active dependencies on the v1 path move to the services that use them. `start.sh --mode local` passes `mock-backend/.env.local` (was `incident-console/.env.local`) to the mock backend, and stops early with a fix command if that link or `vlm-gateway/.env.local` is missing. `.githooks/setup-worktree.sh` self-heals the `incident-console-v2`, `vlm-gateway` and `mock-backend` links, no longer syncs a v1 venv, and never copies env files or symlinks into `archived/`.
+- **Why:** v1 has been retired since 2026-09-24, but its directory still sat beside the active services. `start.sh` and the hooks still depended on it, so v1 could not be removed without breaking local mode. All four `.env.local` links point at the same shared `../.env.local`, so the env-file switch is the same variables with the same values; `mock-backend/.env.local` was already a documented required link, and using it keeps `mock-backend/base_profile_mock/` untouched.
+- **Rejected:**
+  - Deleting v1: it is still the provenance of `eval/`'s scoring code and of fixture data, and git history alone is harder to browse.
+  - Pointing the mock at `incident-console-v2/.env.local`: that couples the mock to the console's file.
+  - Pointing it at the root `.env.local` directly: that breaks the one-link-per-service convention the hooks maintain.
+  - A `base_profile_mock/.env.local`: teammates are actively changing that directory.
+  - Leaving a compatibility symlink at `incident-console/`: it keeps the old path alive.
+- **Links:** [`../archived/README.md`](../archived/README.md); [`../start.sh`](../start.sh); [`../../../../../.githooks/README.md`](../../../../../.githooks/README.md); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md).
+
 ### 2026-10-22: Standard incident types enforced at the writers, not by a DB CHECK
-- **Decision:** `incidents.type`, `gt_incidents.type` and `severity_level` stay unconstrained in Postgres. The writers emit only the five standard types (`road accident`, `burglary`, `explosion`, `assault`, `animal attack`): the zero-GPU mock (`mock-backend/base_profile_mock`) emits only standard types and `E#` entity IDs, and `eval/` stores ground truth through `incident_report.canonical_incident_type` (trim, lowercase, `fighting` → `assault`, `animal` → `animal attack`). An unknown GT type is warned about and stored normalised, not dropped. GT-side scoring folds the retired names, so older ground-truth rows still score. The retired Streamlit `incident-console/` keeps its own old `INCIDENT_TYPES` copy and is deliberately not synced.
+- **Decision:** `incidents.type`, `gt_incidents.type` and `severity_level` stay unconstrained in Postgres. The writers emit only the five standard types (`road accident`, `burglary`, `explosion`, `assault`, `animal attack`): the zero-GPU mock (`mock-backend/base_profile_mock`) emits only standard types and `E#` entity IDs, and `eval/` stores ground truth through `incident_report.canonical_incident_type` (trim, lowercase, `fighting` → `assault`, `animal` → `animal attack`). An unknown GT type is warned about and stored normalised, not dropped. GT-side scoring folds the retired names, so older ground-truth rows still score. The archived Streamlit v1 console (`archived/incident-console/`) keeps its own old `INCIDENT_TYPES` copy and is deliberately not synced.
 - **Why:** With a CHECK rule, the database would reject AI output that uses a wrong name, and that output would be lost. The captain prefers keeping the row and fixing the writers.
 - **Rejected:** DB CHECK constraints on type/severity, plus auto-mapping in `insert_incident`.
 - **Links:** [`../eval/incident_report.py`](../eval/incident_report.py); [`../eval/scripts/eval_ingest_gt.py`](../eval/scripts/eval_ingest_gt.py); [`data.md`](data.md).
@@ -82,7 +93,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** Remove `./incident-console/compose.yml` from `deploy/docker/developer-profiles/dev-profile-incident/compose.yml` and correct the comments stating it is the profile-exclusive service.
 - **Why:** The Streamlit v1 console is retired (`incident-console-v2` is the sole UI). Nothing depends on including `vss-incident-console` in the profile's compose stack.
 - **Rejected:** keeping the inactive include in `compose.yml`.
-- **Links:** [`compose.yml`](../compose.yml); [`../incident-console/README.md`](../incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
+- **Links:** [`compose.yml`](../compose.yml); [`../archived/incident-console/README.md`](../archived/incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
 
 ### 2026-10-18: Console and agent bind loopback
 - **Decision:** `incident-console-v2` runs with `-H 127.0.0.1` (npm `dev`/`start` scripts and `start.sh`). `VSS_AGENT_HOST` defaults to `127.0.0.1`; haproxy's agent backend uses `VSS_AGENT_BACKEND_HOST=127.0.0.1` (profile override of a new shared-template variable defaulting to `HOST_IP`) and the tunnel forwards to the VM loopback.

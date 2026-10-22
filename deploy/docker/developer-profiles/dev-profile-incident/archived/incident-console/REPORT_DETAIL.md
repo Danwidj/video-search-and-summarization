@@ -1,7 +1,7 @@
-# Incident Reports and Dashboard (Retired v1 Console)
+# Incident Reports and Dashboard (Archived v1 Console)
 
 > [!NOTE]
-> This note documents the retired Streamlit v1 console. Active UI development is in [`incident-console-v2`](../incident-console-v2/README.md).
+> This note documents the archived Streamlit v1 console (`archived/incident-console/`); it is a historical reference only. Active UI development is in [`incident-console-v2`](../../incident-console-v2/README.md).
 
 Run `.venv/bin/streamlit run app.py`. This note covers two of the app's pages:
 Incident Reports and Analytics Dashboard (see the [incident-console README](README.md) for

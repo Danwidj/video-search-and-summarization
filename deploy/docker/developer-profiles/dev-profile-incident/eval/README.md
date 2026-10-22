@@ -1,7 +1,7 @@
 # P1/RP1 evaluation pipeline
 
 This is a standalone **Python** subproject, living at the `dev-profile-incident` profile root alongside
-`incident-console/`, `incident-console-v2/`, and `vlm-gateway/` - not nested inside any of them. It runs as its own
+`incident-console-v2/`, `mock-backend/` and `vlm-gateway/` - not nested inside any of them. It runs as its own
 separate Python process with its own virtual environment and shares no code or runtime with any other service in
 this profile beyond the copied modules below.
 
@@ -10,14 +10,14 @@ scored) a human-readable report per prediction. The recorded benchmark in
 [`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md) predates the incident contract (it used P1-v1 with
 few-shot and base64 video), so it is superseded until the contract run is recorded.
 
-## Why it needs incident-console's modules
+## Why it carries the v1 console's modules
 
 The scoring/matching/DB-access code this pipeline depends on (`matching.py`, `eval_gt.py`, `config.py`, `db.py`,
 `db_connection.py`, `embed_client.py`, `incident_report.py`, `r2_videos.py`) is copied verbatim from
-`incident-console` - it is the same scoring and data-access code, not a reimplementation, and not wired back to the
-original (no shared imports, no shared `sys.path` entry). The original `incident-console` copy is unaffected by
-this and continues to work independently. Two files carry a small, deliberate path-resolution note for their
-directory depth (one level under `dev-profile-incident/`, the same depth as `incident-console/`) - see the comments
+the v1 `incident-console` (now archived under `archived/incident-console/`) - it is the same scoring and data-access code, not a reimplementation, and not wired back to the
+original (no shared imports, no shared `sys.path` entry). The archived v1 copy is read-only history; `eval/` is
+the maintained copy. Two files carry a small, deliberate path-resolution note for their
+directory depth (one level under `dev-profile-incident/`, the same depth v1 had before it was archived) - see the comments
 in `config.py` (`.env` loading) and `scripts/eval_vlm_client.py` (`ENV_LOCAL`).
 
 The Streamlit UI itself (`app.py`, `report_detail.py`, and the other page modules) was **not** copied - this
