@@ -546,12 +546,7 @@ async def test_set_review_status_notifies_above_threshold():
     db = IncidentDB(mock_client)
     result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
     assert result == {"notified": True, "severity": 5}
-    mock_client.table.assert_any_call("notifications")
-    insert_call = mock_client.table().insert
-    insert_call.assert_called_once()
-    args, _ = insert_call.call_args
-    assert args[0]["incident_id"] == "vid-1"
-    assert args[0]["severity"] == 5
+    mock_client.table().insert.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -567,30 +562,6 @@ async def test_set_review_status_below_threshold_does_not_notify():
     result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
     assert result == {"notified": False, "severity": 2}
     mock_client.table().insert.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_list_notifications_filters_unacknowledged():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(
-        return_value=MagicMock(data=[{"id": 1, "acknowledged": False}])
-    )
-    db = IncidentDB(mock_client)
-    result = await db.list_notifications(only_unacknowledged=True)
-    assert result == [{"id": 1, "acknowledged": False}]
-    select_mock = mock_client.table().select()
-    select_mock.eq.assert_called_with("acknowledged", False)
-
-
-@pytest.mark.asyncio
-async def test_acknowledge_notification_calls_update():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.acknowledge_notification(42)
-    mock_client.table.assert_called_with("notifications")
-    update_call = mock_client.table().update({"acknowledged": True})
-    update_call.eq.assert_called_with("id", 42)
-    update_call.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio

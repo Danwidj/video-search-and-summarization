@@ -61,7 +61,7 @@ Every dashboard count equals the library total for `scope=official` with the sam
 
 ### Relationships
 
-Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `human_reports`, `evidence_crops`, `query_results`, `review_status`, `notifications`, `severity_eval_log` and the `*_matches` tables all hang off it. The `human_report_*` item tables hang off `human_reports` (CASCADE), and their `source_*_id` links to the AI items are `ON DELETE SET NULL` (a `NO ACTION` link would make run and video deletes fail, because the delete reaches the reviewer items along two cascade paths). `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. Column-level detail is in the table specifications below and in the finals baseline.
+Composite FKs `(incident_id, model_run_id)` to `incidents` (ON DELETE CASCADE) are the spine: `reports`, `entities`, `instruments`, `assets`, `human_reports`, `evidence_crops`, `query_results`, `review_status`, and `severity_eval_log` all hang off it. The `human_report_*` item tables hang off `human_reports` (CASCADE), and their `source_*_id` links to the AI items are `ON DELETE SET NULL` (a `NO ACTION` link would make run and video deletes fail, because the delete reaches the reviewer items along two cascade paths). `incidents` references `videos` and `model_runs` (CASCADE). `gt_incidents` references `videos` (CASCADE); `gt_entities`, `gt_instruments` and `gt_assets` reference `gt_incidents` (CASCADE). `reports.query_id` and `query_results.query_id` reference `queries`. (The retired `notifications`, `entity_matches`, `instrument_matches`, and `asset_matches` tables have been dropped from the live finals database). Column-level detail is in the table specifications below and in the finals baseline.
 
 ---
 
@@ -190,18 +190,8 @@ Carries the reviewer verification state independently of the AI report.
 | `edited_by` | `VARCHAR(256)` | NULLABLE | Editor of the last **content** edit (`save_human_report_edit`). Status changes never write it. The copy clears a midterm stamp only when it was provably a status change (a contract run whose rows equal its notes record, 4 runs at the 2026-10-21 rehearsal) or when a person decided so for a legacy run (`--not-edited`; `m37883594f65802c8a31` is the one such run) |
 | `edited_at` | `TIMESTAMP` | NULLABLE | Naive UTC timestamp of the last content edit |
 
-##### `notifications`
-Legacy alert queue retained for compatibility with the archived Streamlit v1 console and evaluation tooling. The active
-`incident-console-v2` application neither reads nor writes this table.
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | `INTEGER` | PRIMARY KEY, AUTOINCREMENT | Unique notification identifier |
-| `incident_id` | `VARCHAR(20)` | composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Associated incident |
-| `model_run_id` | `VARCHAR(20)` | composite FK `(incident_id, model_run_id)` -> `incidents` ON DELETE CASCADE | Associated model run |
-| `severity` | `INTEGER` | NULLABLE | Triggering severity rating (typically >= 4) |
-| `created_at` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Alert creation timestamp (naive UTC) |
-| `acknowledged` | `BOOLEAN` | NOT NULL, DEFAULT FALSE | Reviewer acknowledgement status |
+##### `notifications` (dropped)
+Dropped from the live finals database; formerly used by the archived Streamlit v1 console.
 
 ##### `severity_eval_log`
 Tracks comparative human vs. AI severity scoring for human-in-the-loop evaluation.
@@ -244,13 +234,9 @@ Parallel tables mirroring `incidents`, `entities`, `instruments`, and `assets`, 
 - `gt_entities`, `gt_instruments`, and `gt_assets` reference `gt_incidents(incident_id)` with `ON DELETE CASCADE` (they reference `gt_incidents`, not `videos` or `incidents`).
 - `image` columns in `gt_*` tables are schema-only and always NULL today.
 
-##### `entity_matches`, `instrument_matches`, `asset_matches`
-Store accepted (above-threshold) similarity pairings produced during Tier 1 ground-truth evaluation
-(`eval/matching.py`; originally `incident-console/matching.py`, now archived under `archived/incident-console/`).
-- **Composite Primary Key:** `(incident_id, model_run_id, <item>_id)`
-- **Foreign Keys:** References model items (`entities`/`instruments`/`assets`) and ground-truth items (`gt_*`)
-  with `ON DELETE CASCADE`. The `gt_*_id` foreign key columns (`gt_entity_id`, `gt_instrument_id`, `gt_asset_id`) are `NOT NULL`.
-- **Columns:** `similarity_score` (`FLOAT`, NOT NULL), `matched_at` (`TIMESTAMP`, naive UTC, `DEFAULT (now() AT TIME ZONE 'utc')`).
+##### `entity_matches`, `instrument_matches`, `asset_matches` (dropped)
+Dropped from the live finals database; formerly stored accepted similarity pairings during v1 ground-truth evaluation.
+Evaluation code in `eval/` still contains match persistence routines against these tables, which is out of scope here and handled separately.
 
 #### 5. MVP2 Vector Search & Evidence Crops Tables
 
@@ -324,7 +310,7 @@ PostgREST has no client-held transactions, so saving an incident is one server-s
 
 > [!IMPORTANT]
 > **Cascading Deletes on Child Records:**
-> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `human_reports` (and its items), `evidence_crops`, `notifications`, `severity_eval_log`, and `*_matches` rows for that `(incident_id, model_run_id)`. Re-analyzing under the same `model_run_id` therefore wipes all child evidence, reports, notifications, and GT match records, which is why the RPC refuses a run that has a reviewer version. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
+> Because every child table's composite foreign key `(incident_id, model_run_id)` to `incidents` is configured with `ON DELETE CASCADE`, the RPC's initial `DELETE FROM incidents` also silently cascades and deletes all related `entities`, `instruments`, `assets`, `reports`, `review_status`, `human_reports` (and its items), `evidence_crops`, and `severity_eval_log` rows for that `(incident_id, model_run_id)`. Re-analyzing under the same `model_run_id` therefore wipes all child evidence and reports, which is why the RPC refuses a run that has a reviewer version. Callers must re-insert evidence rows after calling the RPC (both the agent's `_persist_incident` and `incident-console-v2`'s `/api/analysis` do so explicitly).
 
 > [!NOTE]
 > **Cascades on Deleting Videos or Model Runs:**
@@ -343,8 +329,8 @@ Database access is split across two client implementations according to operatio
    `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async Supabase
    PostgREST CRUD helper (`supabase-py`'s `AsyncClient`/`acreate_client`, not `asyncpg`/direct-Postgres) against
    the same schema, mirroring the archived v1 `archived/incident-console/db.py`'s tables and columns for the subset an agent-side caller plausibly writes
-   (`model_runs`, `incidents`, `entities`, `instruments`, `assets`, `reports`, `review_status`, `notifications`; the agent never writes `videos`; the `gt_*` and
-   `*_matches` tables stay console/eval-only).
+   (`model_runs`, `incidents`, `entities`, `instruments`, `assets`, `reports`, and `review_status`; the agent never writes `videos`; the `gt_*`
+   tables stay eval-only; `notifications` and `*_matches` are dropped).
    - **Configuration:** `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`
      (deliberately NOT `INCIDENT_DB_DSN`, which the direct-Postgres tooling uses, as the archived v1 `archived/incident-console/db.py` did); unset means the feature is
      unavailable, no fallback.
@@ -360,7 +346,7 @@ Database access is split across two client implementations according to operatio
 ### Row-Level Security (RLS) & Access Control
 
 **Finals is locked down from its first migration.** The baseline turns off Supabase's default grants before it creates any object, so nothing is ever exposed, even for a moment:
-- **Default-deny:** RLS is on for all 24 tables, with no policies, so `anon` and `authenticated` cannot read, insert, update or delete rows anywhere.
+- **Default-deny:** RLS is on for all 20 tables, with no policies, so `anon` and `authenticated` cannot read, insert, update or delete rows anywhere.
 - **No grants to the public roles:** every privilege on every table, view, sequence and function in `public` is revoked from `PUBLIC`, `anon` and `authenticated`. Every function is `service_role`-only, `SECURITY INVOKER`, with `SET search_path = ''`. The `effective_*` views are `security_invoker` and read-only.
 - **Default privileges:** objects that `postgres` creates in `public` later get nothing for `anon`/`authenticated` and everything for `service_role`; new functions get no `EXECUTE` for `PUBLIC` in any schema. Objects created by other roles are not covered, so a new function should still be checked by `supabase/tests/security_check.sql`.
 - **pgvector lives in `extensions`**, so none of its functions are REST RPCs.

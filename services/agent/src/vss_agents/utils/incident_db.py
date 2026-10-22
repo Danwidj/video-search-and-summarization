@@ -25,10 +25,10 @@ schema already exists and only reads/writes rows.
 Covers the tables an agent-side caller plausibly writes while generating and
 persisting an incident report: ``videos``, ``model_runs``, ``incidents`` (plus
 per-incident ``entities``/``instruments``/``assets`` evidence), ``reports``,
-``review_status``, and ``notifications``. The human ground-truth (``gt_*``)
-and similarity-match (``entity_matches``/``instrument_matches``/
-``asset_matches``) tables are console/eval-workflow specific and are out of
-scope for this helper.
+and ``review_status``. The human ground-truth (``gt_*``)
+tables are eval-workflow specific and are out of scope for this helper.
+Retired tables (``notifications``, ``entity_matches``, ``instrument_matches``,
+``asset_matches``) have been dropped.
 
 Configuration is via two environment variables:
 - ``INCIDENT_SUPABASE_URL`` — e.g. ``https://<project_ref>.supabase.co``
@@ -450,7 +450,7 @@ class IncidentDB:
     async def set_review_status(
         self, incident_id: str, model_run_id: str, *, status: str, reviewed_by: str, notify_threshold: int
     ) -> dict[str, Any]:
-        """Persist a review-status transition; raise a notification on verify above threshold.
+        """Persist a review-status transition; return whether notification threshold was met on verify.
 
         Mirrors ``db.py``'s ``set_review_status`` semantics, but as sequential
         PostgREST calls rather than one server-side transaction - see the
@@ -505,32 +505,7 @@ class IncidentDB:
             and isinstance(severity, (int, float))
             and severity >= notify_threshold
         )
-        if notified:
-            await (
-                self.client.table("notifications")
-                .insert(
-                    {
-                        "incident_id": incident_id,
-                        "model_run_id": model_run_id,
-                        "severity": severity,
-                        "created_at": now.isoformat(),
-                        "acknowledged": False,
-                    }
-                )
-                .execute()
-            )
         return {"notified": notified, "severity": severity}
-
-    # -- notifications --------------------------------------------------#
-    async def list_notifications(self, *, only_unacknowledged: bool = False) -> list[dict[str, Any]]:
-        query = self.client.table("notifications").select("*").order("created_at", desc=True)
-        if only_unacknowledged:
-            query = query.eq("acknowledged", False)
-        result = await query.execute()
-        return result.data or []  # type: ignore[return-value]
-
-    async def acknowledge_notification(self, notification_id: int) -> None:
-        await self.client.table("notifications").update({"acknowledged": True}).eq("id", notification_id).execute()
 
     # -- generated report documents (reports table) ----------------------#
     async def insert_generated_report(
