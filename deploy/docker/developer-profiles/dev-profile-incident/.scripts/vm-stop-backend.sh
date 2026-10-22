@@ -24,7 +24,7 @@ REPO_ROOT="${2:?repo root}"
 DOCKER_SERVICES="${3:-}"
 NATIVE_SERVICES="${4:-}"
 
-# Ensure lock file and directory exist with group-writable permissions
+# Ensure lock file and directory exist with world-writable permissions
 if [ ! -r "$LOCK_FILE" ]; then
   mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
   touch "$LOCK_FILE" 2>/dev/null || true

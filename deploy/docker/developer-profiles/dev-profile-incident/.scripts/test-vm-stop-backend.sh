@@ -94,7 +94,8 @@ case "$1" in
     for a in "$@"; do
       case "$a" in
         ps)
-          echo "c_streamprocessing c_redis"
+          echo "c_streamprocessing"
+          echo "c_redis"
           exit 0
           ;;
       esac
@@ -154,6 +155,16 @@ check() {
   fi
 }
 
+check_empty() {
+  if [ -z "$2" ]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL $1: expected empty, got:"
+    echo "$2" | sed 's/^/    /'
+  fi
+}
+
 DOCKER_SVCS="vss-vios-streamprocessing redis vss-haproxy-ingress"
 NATIVE_SVCS="vss-agent"
 
@@ -178,8 +189,8 @@ rm -f "$HOLDER_PIPE"
 out="$(bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)"; rc=$?
 check "shared lock held rc" "0" "$rc"
 check "shared lock message" "other active sessions remain on the VM; leaving backend running." "$out"
-check "no docker stop when shared lock held" "" "$(cat "$FAKE_DOCKER_LOG")"
-check "no native stop when shared lock held" "" "$(cat "$FAKE_NATIVE_LOG")"
+check_empty "no docker stop when shared lock held" "$(cat "$FAKE_DOCKER_LOG")"
+check_empty "no native stop when shared lock held" "$(cat "$FAKE_NATIVE_LOG")"
 
 kill "$HOLDER_PID" 2>/dev/null || true
 wait "$HOLDER_PID" 2>/dev/null || true
@@ -223,7 +234,7 @@ check "read-only lock file stops backend" "last active session exited; stopping 
 out="$(FAKE_COMPOSE_EMPTY=1 bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)"; rc=$?
 check "empty compose ps rc" "0" "$rc"
 check "empty compose ps message" "no expected Docker containers are currently running." "$out"
-check "no docker stop when compose ps empty" "" "$(grep '^stop' "$FAKE_DOCKER_LOG" || true)"
+check_empty "no docker stop when compose ps empty" "$(grep '^stop' "$FAKE_DOCKER_LOG" || true)"
 
 # Test 7: Non-fatal error handling when stop commands fail
 : >"$FAKE_DOCKER_LOG"; : >"$FAKE_NATIVE_LOG"
@@ -298,6 +309,33 @@ echo 'wait "$LOCK_SSH_PID" 2>/dev/null || true' >>"$TEST_LOCK_SCRIPT"
 bash "$TEST_LOCK_SCRIPT" >/dev/null 2>&1 || true
 
 check "lock ssh uses -tt for pty" "-tt" "$(cat "$SSH_INVOCATIONS" 2>/dev/null || true)"
+
+# Test 10: Registration failure aborts start.sh with retry instruction
+cat >"$TMP/bin/ssh" <<'FAKE'
+#!/usr/bin/env bash
+exit 1
+FAKE
+chmod +x "$TMP/bin/ssh"
+
+TEST_LOCK_TIMEOUT_SCRIPT="$TMP/test_lock_timeout.sh"
+cat >"$TEST_LOCK_TIMEOUT_SCRIPT" <<EOF
+export PATH="$TMP/bin:\$PATH"
+VSS_START_MODE=vm
+VSS_LOCK_FILE='/tmp/test.lock'
+VSS_REPO_ROOT='/srv/vss'
+VSS_SSH_TARGET='test@vm'
+VSS_SSH_OPTS=()
+SCRIPT_DIR='$SCRIPT_DIR'
+CLEANUP_RUNNING=''
+LOCK_HELD=0
+$(sed -n '/^cleanup() {/,/^}/p' "$START_SH")
+trap cleanup EXIT INT TERM
+EOF
+sed -n '/^  # Register active run via long-lived SSH/,/STEP 1\/3/ { /STEP 1\/3/d; p; }' "$START_SH" >>"$TEST_LOCK_TIMEOUT_SCRIPT"
+
+out="$(bash "$TEST_LOCK_TIMEOUT_SCRIPT" 2>&1)"; rc=$?
+check "lock registration abort rc" "1" "$rc"
+check "lock registration abort message" "The backend may currently be stopping; please retry once the stop has finished." "$out"
 
 echo "vm-stop-backend: ${pass} passed, ${fail} failed"
 [ "$fail" -eq 0 ]

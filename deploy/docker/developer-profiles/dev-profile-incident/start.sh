@@ -292,7 +292,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   if [ "$LOCK_HELD" = "1" ]; then
     echo "  active run lock registered ($VSS_LOCK_FILE)"
   else
-    echo "start.sh: warning: could not confirm VM active run lock ($(cat "$LOCK_LOG" 2>/dev/null || echo "timeout"))." >&2
+    echo "start.sh: error: could not register active run lock on $VSS_SSH_TARGET within 10s ($(cat "$LOCK_LOG" 2>/dev/null || echo "timeout")). The backend may currently be stopping; please retry once the stop has finished." >&2
+    exit 1
   fi
 
   echo "=== STEP 1/3 — Checking backend deploy state on $VSS_SSH_TARGET ==="
