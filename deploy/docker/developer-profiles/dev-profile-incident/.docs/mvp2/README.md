@@ -37,7 +37,7 @@ Keyframe @ timestamp_seconds  ────────────────�
  Cropped JPEG (evidence image)                        High-precision box
        |                                                   |
        V                                                   V
-  R2: evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg  Supabase evidence_crops table
+  R2: evidence/<videoId>/<batchId>/<itemId>.jpg  Supabase evidence_crops table
                                                  (embedding vector(1024), timestamp_seconds, bounding_box)
        |
        | (Text Embedding Model generates vector(1024) from item description)
@@ -168,7 +168,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **RLS and RPC lockdown:** New MVP2 tables (`evidence_crops`, `query_results`) enable RLS; privileges revoked from `anon`/`authenticated`; granted to `service_role` only. RPC execution permissions restricted to `service_role` via `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`.
 - **pgvector:** Supabase Postgres `vector` extension enabled. HNSW index `m=16, ef_construction=64` on `evidence_crops.embedding` for cosine distance (`<=>`).
 - **Critic always on:** Every search candidate is evaluated by the VLM critic; both ranking and verdict are persisted. No opt-in `--search` flag; search starts automatically with `start.sh`.
-- **R2 key layout:** `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` (e.g. `evidence/Explosion001/MR001/entities/E1.jpg`).
+- **R2 key layout:** `evidence/<videoId>/<batchId>/<itemId>.jpg` (e.g. `evidence/Explosion001/1f9c2a7b4e6d8035a1c2e4f6b8d0a2c4/E1.jpg`), where `<batchId>` is a fresh UUID per analysis run and item ids (`E#`, `I#`, `A#`) are unique across types.
 - **Search parameters:**
   - REST route: `query` (natural-language string), `top_k DEFAULT 10`, `min_similarity DEFAULT 0.0`, `hide_rejected DEFAULT true`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
   - Database RPC: `p_query_embedding vector(1024)`, `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
@@ -193,7 +193,7 @@ The PR task docs assume the following conventions and environment setup. This se
 > **TODO [PR 118]: Frontend Console Search UI & Interactive Intelligence**
 > - **Missing:** Implementation of `/search` route, natural-language query input with filter chips, search hit cards rendering crop image with threat and critic badges, jump-to-clip video scrubber integration, user relevance feedback persisting to `query_results`, evidence timeline with crop drawer on report page, saved searches drawer, theme token loader for dynamic styling, and conversational Q&A chat panel.
 > - **Owner:** PR 118 (`docs(dev-profile-incident): MVP2 frontend (search, chat, theming) workstream tasks`)
-> - **Stand-in Placeholder:** `incident-console-v2/app/search/page.tsx` rendering mock results via `search-contract-v1` against `mock-backend` on port 7778; `components/chat-drawer.tsx` connecting to mock chat route.
+> - **Stand-in Placeholder:** the report page's follow-up chat ships as `incident-console-v2/components/advanced-report-tools.tsx`, posting to `incident-console-v2/app/api/chat/route.ts` (agent adapter `lib/chat/agent-chat.ts`); there is no `/search` page in the console yet.
 
 **What PR 118 needs from this overview:**
 - The `POST /api/v1/incidents/search` REST contract (query text, filter parameters, return shape, critic verdict format)
@@ -329,7 +329,7 @@ The following specifications are planned, not final, pending completion of the o
 | 3 | Conversational Q&A Chat | Chat Endpoint / PR 118 | `chat-contract-v1`, native `vss-agent` chat endpoint & mock |
 | 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |
 | 5 | Extraction parity (gateway vs agent); full-system comparison deferred (proposed, P-1) | PR 119 | [`eval.md`](eval.md) §4-5 |
-| 6 | Retrieval Benchmark Suite (50+ positive queries) | PR 119 | `eval/scripts/eval_retrieval.py` ([`eval.md`](eval.md) §3) |
+| 6 | Retrieval Benchmark Suite (50+ positive queries) | PR 119 | `eval/scripts/eval_retrieval.py` (not yet written; [`eval.md`](eval.md) §3) |
 | 7 | Always-On Critic Ablation Study | PR 119 | Paired trade-off report ([`eval.md`](eval.md) §3.6) |
 | 8 | Detector Framing Evaluation | PR 119 | `DefaultDetector` (remote VLM) vs offline candidates through the detector port ([`eval.md`](eval.md) §6.2) |
 | 9 | Embedding Model Comparison | PR 119 / PR 126 | Production embedder vs callable candidates, offline ([`eval.md`](eval.md) §6.3) |

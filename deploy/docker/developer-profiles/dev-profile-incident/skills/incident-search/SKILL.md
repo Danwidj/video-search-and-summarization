@@ -22,7 +22,7 @@ Canonical facts:
 ## Prerequisites
 
 1. Start the profile with [`incident-start`](../incident-start/SKILL.md):
-   - `./start.sh --mode local` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
+   - `./start.sh --mode mock` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
    - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
 2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
 3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
