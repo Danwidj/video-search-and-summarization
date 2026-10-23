@@ -2,11 +2,20 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+<<<<<<< HEAD
 ### 2026-10-23: Console chat route calls POST /api/v1/incidents/chat
 - **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`lib/chat/agent-chat.ts`, types in `lib/ports/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.
 - **Why:** The route called the generic NAT `/chat`, so the cited-evidence chat was unreachable from the UI (chat model audit, finding 5). The agent answers from stored evidence, which is still canned seed data (see [`vm-api-contracts.md`](vm-api-contracts.md)).
 - **Rejected:** keeping the report context in a system message (the contract's strict models accept it but the agent ignores it); a new port and repository (one adapter function is enough until a second caller exists).
 - **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).
+=======
+### 2026-10-22: Remove ground-truth features from incident-console-v2 and mark GT tables removed
+- **Decision:** Remove all ground-truth features from `incident-console-v2` (the `/videos/[videoId]/ground-truth` page, `GroundTruthScreen` component, `/api/reports/[videoId]/ground-truth` route, links from video history and report tools, and corresponding tests). The ground-truth tables (`gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`) and `severity_eval_log` have been deleted from Supabase and are marked removed across documentation.
+- **Why:** The ground-truth evaluation screen and tables are no longer used by the incident console; evaluation is handled independently and the tables have been dropped from the live Supabase database.
+- **Rejected:** Retaining dead UI links or mock routes in the console.
+- **Links:** [`data.md`](data.md); [`status.md`](status.md); [`architecture.md`](architecture.md).
+
+>>>>>>> origin/main
 ### 2026-10-22: Concurrency-safe native service startup across shared VM users
 - **Decision:**
   - Serialise native service check-then-start via `flock` on `.run/native-services.lock` (group-writable); close descriptor 200 before daemonising background processes so `flock` is released when the launcher exits.
@@ -23,6 +32,16 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** The models accepted values the schemas reject (`request-invalid-scope.json`, `response-invalid-role.json`). The contract requires `citations`, and the route always sends it. No console or eval code called the chat route then, so no current sender was rejected.
 - **Rejected:** relaxing the contract; sharing one model module between agent and mock (the mock stays standalone).
 - **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/); [`vm-api-contracts.md`](vm-api-contracts.md).
+
+### 2026-10-22: Stop VM backend services on last exit via shared flock over SSH
+- **Decision:** `start.sh --mode vm` registers active sessions by holding a shared flock on a world-writable lock file on the VM (`$VSS_REPO_ROOT/.run/active-runs.lock`) through a long-lived SSH connection with pseudo-terminal allocation (`-tt` so remote lock processes terminate when the client disconnects). If registration cannot be confirmed within 10s (e.g. while an exclusive stop lock is held during backend shutdown), `start.sh` aborts with a retry prompt rather than continuing unregistered. On exit (Ctrl+C, SIGTERM, normal exit), `start.sh` releases its shared lock and executes `.scripts/vm-stop-backend.sh` over SSH. `vm-stop-backend.sh` attempts a non-blocking exclusive flock; only when it succeeds (proving the exiting session is the last active user on the shared VM) does it stop the native services (`native-services.sh stop`) and expected Docker containers via `docker stop`. Docker containers are only stopped, never removed or deleted (`docker rm`, `compose down`, `-v` are never used). A failure to stop is non-fatal with a clear warning. Hermetic tests live in `.scripts/test-vm-stop-backend.sh`.
+- **Why:** Teammates share `kwanz-ws`. Exiting `start.sh` previously left VM containers and native processes running indefinitely, consuming GPU and memory. Stopping unconditionally on Ctrl+C would disrupt teammates running concurrent sessions. Tracking active runs with a kernel-managed shared flock through a long-lived SSH session ensures that locks disappear automatically if a laptop crashes or disconnects without leaving stale state, and exclusive locking cleanly coordinates last-user shutdown.
+- **Rejected:**
+  - Unconditional shutdown on exit: takes the backend away from concurrent teammates.
+  - Disk PID or registry files on the VM: leave stale entries after laptop crashes, killing future auto-stops.
+  - `docker compose down` or `dev-profile.sh down`: removes containers and wipes model caches.
+  - Server-side cron or idle timeouts: complex and disconnected from active client sessions.
+- **Links:** [`../start.sh`](../start.sh); [`../.scripts/vm-stop-backend.sh`](../.scripts/vm-stop-backend.sh); [`../.scripts/test-vm-stop-backend.sh`](../.scripts/test-vm-stop-backend.sh); [`incident-profile-operations.md`](incident-profile-operations.md); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md).
 
 ### 2026-10-22: Drop retired v1 tables (matches and notifications) from finals schema
 - **Decision:** Drop `asset_matches`, `entity_matches`, `instrument_matches`, and `notifications` via migration `20261022123252_drop_unused_tables.sql`. The unused notification methods in `services/agent/src/vss_agents/utils/incident_db.py` are removed. Evaluation match persistence in `eval/` is left alone and handled separately. Ground-truth tables (`gt_*`) and `severity_eval_log` remain intact.

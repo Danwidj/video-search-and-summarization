@@ -6,11 +6,11 @@
 
 | Area | State | Where |
 |---|---|---|
-| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard. API routes reach Supabase through the middle layer (ports and adapters), except ground truth, analysis saving and run history. Merged in PR 149 and runs against the live finals database (`effective_*` views, `set_review_status`, `save_human_report_edit`) | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
+| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v3` with a three-model picker, run history and re-analysis, structured reviewer edits, explicit official report, official-incident dashboard. API routes reach Supabase through the middle layer (ports and adapters), except analysis saving and run history. Merged in PR 149 and runs against the live finals database (`effective_*` views, `set_review_status`, `save_human_report_edit`) | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Supabase rows (finals project) plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
-| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy and an always-on search route. Launches `incident-console-v2`, the only console; the Streamlit v1 console is archived under `archived/incident-console/` and never started | [`incident-profile-operations.md`](incident-profile-operations.md) |
+| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy, stop-on-last-exit coordination via VM flock, and an always-on search route. Launches `incident-console-v2`, the only console; the Streamlit v1 console is archived under `archived/incident-console/` and never started | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777) and `search_profile_mock` (:7778), including search and chat routes | `mock-backend/` |
 
 ## 2. MVP2: natural-language evidence search
@@ -30,7 +30,7 @@ The finals baseline incorporates all prior migration effects:
 - `p_timezone` parameter on the report library and dashboard RPCs (`list_incident_report_summaries`, `get_incident_dashboard`);
 - Row-Level Security enabled on all 20 public tables, with permissions revoked from `PUBLIC`, `anon` and `authenticated` (services authenticate via `service_role` or `postgres`, both having `BYPASSRLS`);
 - Legacy labels relabelled during copy (`fighting` to `assault`, `animal` to `animal attack`, `person` to `human`), with query-time canonical folding retained as a guard;
-- The four legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`) and the four retired v1 tables (`asset_matches`, `entity_matches`, `instrument_matches`, `notifications`) are dropped from the schema.
+- The four legacy pre-v1 tables (`incident_reports`, `incident_entities`, `incident_instruments`, `incident_assets`), four retired v1 tables (`asset_matches`, `entity_matches`, `instrument_matches`, `notifications`), and ground-truth / eval tables (`gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`, `severity_eval_log`) are dropped from the schema.
 
 There are no pending database migrations.
 

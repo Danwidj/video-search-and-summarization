@@ -35,7 +35,7 @@ function FollowUpChat({ report }: { report: ReportView }) {
   return <section className="flex min-h-[420px] flex-col rounded-3xl border border-ink/10 bg-white p-6"><p className="font-mono text-xs uppercase tracking-[.15em] text-moss">Evidence-grounded</p><h2 className="mt-2 text-xl font-semibold">Ask a follow-up</h2><div className="mt-4 flex-1 space-y-3 overflow-auto">{messages.length === 0 && <p className="text-sm leading-6 text-ink/45">Ask about timestamps, people, objects, evidence, or uncertainty. Answers cite evidence from this incident.</p>}{messages.map((m, i) => <div className={`rounded-2xl p-3 text-sm leading-6 ${m.role === 'user' ? 'ml-8 bg-ink text-white' : 'mr-8 bg-canvas text-ink/70'}`} key={i}>{m.content}{!!m.citations?.length && <ul className="mt-2 flex flex-wrap gap-2 text-xs" data-testid="chat-citations">{m.citations.map((c) => <li key={`${c.incidentId}-${c.itemId}`}><a className="font-semibold text-moss" href={c.cropImageUrl} rel="noreferrer" target="_blank">{c.itemId} ({c.itemType}) at {c.timestampSeconds}s</a></li>)}</ul>}</div>)}</div>{error && <p className="mt-2 text-xs text-clay">{error}</p>}<form className="mt-4 flex gap-2" onSubmit={ask}><input aria-label="Follow-up question" className="control" onChange={(e) => setQuestion(e.target.value)} placeholder="What happened before…?" value={question} /><button className="rounded-full bg-moss px-4 text-xs font-semibold text-white disabled:opacity-50" disabled={busy} type="submit">{busy ? 'Thinking…' : 'Ask'}</button></form></section>;
 }
 
-/** Re-analysis of this video plus its analysis history (replaces the former evaluation / ground-truth card). */
+/** Re-analysis of this video plus its analysis history. */
 function AnalysisHistoryCard({ report }: { report: ReportView }) {
   const { history, error, reload } = useRunHistory(report.videoId);
   return (
@@ -49,7 +49,6 @@ function AnalysisHistoryCard({ report }: { report: ReportView }) {
         {history ? <div className="mt-2"><RunHistoryList compact currentRunId={report.modelRunId} history={history} /></div> : !error && <p className="mt-2 text-xs text-ink/45">Loading…</p>}
         <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold">
           <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}`}>Full analysis history →</Link>
-          <Link className="text-moss" href={`/videos/${encodeURIComponent(report.videoId)}/ground-truth?run=${encodeURIComponent(report.modelRunId)}`}>Ground truth for this video →</Link>
         </div>
       </div>
     </section>
