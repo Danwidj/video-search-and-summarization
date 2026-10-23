@@ -25,6 +25,7 @@ supabase/
                 20261023000000_report_revisions_schema.sql — versioned JSONB reports
                 20261023000100_report_revisions_functions.sql — revision RPCs
                 20261023000200_searchable_latest_revision.sql — crops for the newest revision, official_since, card fields
+                20261023120000_report_revision_embeddings.sql — revision summary vectors, HNSW index, search RPC
   tests/        SQL harness (test_baseline.py, test_freeze.py), security_check.sql, supabase_stub.sql,
                 parity_check.py, rehearse.py, probe_api.sh
   copy/         copy_midterm_to_finals.py + transform.sql: the one-way midterm -> finals copy (historical)
@@ -69,6 +70,7 @@ constraints: [`../.docs/data.md`](../.docs/data.md).
   `p_kind` (`ai`/`human`), type, severity, evidence and text; cards carry `officialSince`,
   `versionCount`, `evidenceCount` and `thumbnail`.
 - `get_incident_dashboard` — aggregates official revisions only.
+- `search_report_revisions` — cosine search over each revision's summary `embedding` (all revisions with a vector, not only official ones), returning title, facets and similarity.
 
 Every function is `SECURITY INVOKER`, pins `SET search_path = ''`, and is executable by
 `service_role` only.
@@ -90,7 +92,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order; 16 tests (security and behaviour)
+# Finals schema: applies every file in ../migrations/ in order; 17 tests (security and behaviour)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py

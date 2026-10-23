@@ -272,11 +272,14 @@ class IncidentDB:
         payload: dict[str, Any],
         evidence: list[dict[str, Any]],
         note: str | None = None,
+        embedding: list[float] | None = None,
     ) -> dict[str, Any]:
         """Append a new ``kind='ai'`` revision and return the inserted row (with its ``id``).
 
         A re-generation is a new branch (``parent_id`` NULL) and copies nothing from earlier
         revisions. The facet columns are filled from ``payload`` (:func:`revision_facets`).
+        ``embedding`` is the summary vector (:func:`revision_summary_text`), written in the same
+        insert because the table rejects UPDATE; ``None`` stores NULL, which search skips.
         ``revision_no`` is ``max + 1``; a concurrent writer taking the same number makes the
         unique key reject the insert, which is retried with the next number.
         """
@@ -291,6 +294,7 @@ class IncidentDB:
                 "payload": payload,
                 "evidence": evidence,
                 **revision_facets(payload),
+                "embedding": embedding,
                 "created_by": None,
                 "created_at": _utcnow().isoformat(),
                 "note": note,
@@ -318,12 +322,38 @@ class IncidentDB:
         )
         return result.data or []  # type: ignore[return-value]
 
+    async def search_revisions(
+        self,
+        query_embedding: list[float],
+        *,
+        top_k: int = 10,
+        min_similarity: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Cosine search over revision summary vectors (``search_report_revisions`` RPC), best first."""
+        result = await self.client.rpc(
+            "search_report_revisions",
+            {"p_query_embedding": query_embedding, "p_top_k": top_k, "p_min_similarity": min_similarity},
+        ).execute()
+        return result.data or []  # type: ignore[return-value]
+
 
 def _whole_seconds(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     seconds: float = value
     return round(seconds)
+
+
+def revision_summary_text(payload: dict[str, Any]) -> str:
+    """The text embedded for a revision: ``incident.title`` then ``incident.description``.
+
+    Missing parts are left out; an empty string means there is nothing to embed.
+    """
+    incident = payload.get("incident") if isinstance(payload, dict) else None
+    if not isinstance(incident, dict):
+        return ""
+    parts = [incident.get("title"), incident.get("description")]
+    return "\n".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
 
 
 def revision_facets(payload: dict[str, Any]) -> dict[str, Any]:

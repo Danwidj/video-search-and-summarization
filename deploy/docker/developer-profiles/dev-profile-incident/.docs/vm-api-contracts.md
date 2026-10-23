@@ -125,6 +125,12 @@ Called by the console when a revision becomes a video's searchable revision (mad
 
 Request: `{"revision_id": <int >= 1>}`. Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when the revision has no items). Errors: `404` unknown revision, `502` embedding service failed, `503` database or embedding key not configured.
 
+## `POST /api/v1/incidents/revisions/search`
+
+Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only revisions with a stored vector are searched: AI revisions saved with an embedding; human revisions and AI revisions saved while the embedding endpoint was unavailable are not. The mock backend does not serve this route.
+
+Request: `{"query": <1-1000 chars>, "top_k": <1-50, default 10>, "min_similarity": <-1.0 to 1.0, default 0.0>}`. Response `200`: a list, best first, of `{revision_id, video_id, revision_no, kind, model_run_id, title, description, incident_type, severity_level, start_seconds, end_seconds, similarity_score}`; empty when nothing matches. Errors: `422` invalid body, `502` embedding service failed, `503` database or query embedding key not configured.
+
 ## `POST /api/v1/incidents/{incident_id}/analyze`
 
 Runs the `incident_report_gen` tool (P1 extraction, then RP1 prose report) on an uploaded video. Called by `incident-console-v2` in agent mode; `incident_id` is the console's `videos.id`. Field-level report schema: [analysis-schema.md](analysis-schema.md).
