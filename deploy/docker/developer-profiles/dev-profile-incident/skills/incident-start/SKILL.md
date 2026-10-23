@@ -24,7 +24,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 
 ## Prerequisites
 
-1. **Tools:** `uv` and Node.js/npm on the laptop. For vm mode, add Tailscale (connected) and `ssh`.
+1. **Tools:** `uv`, Node.js/npm and `ffmpeg` (the console reads video frames for evidence crops) on the laptop. For vm mode, add Tailscale (connected) and `ssh`.
 2. **Secrets file:** `dev-profile-incident/.env.local`, which is untracked and supplied by the captain. Never commit it and never print its values. Check that it holds non-empty values for the names the services read:
 
    | Needed by | Variables |
