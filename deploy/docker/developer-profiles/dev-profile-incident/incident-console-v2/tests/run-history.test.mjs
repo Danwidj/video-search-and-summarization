@@ -8,9 +8,9 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildRunHistory } = await import('../lib/runs/history.ts');
-const { describeCode } = await import('../lib/runs/labels.ts');
-const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone } = await import('../lib/time.ts');
+const { buildRunHistory } = await import('../src/lib/runs/history.ts');
+const { describeCode } = await import('../src/lib/runs/labels.ts');
+const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone } = await import('../src/lib/time.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));
 const repaired = fixture('contract-v2-repaired-run.json');

@@ -8,10 +8,10 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { createEvidenceCrop, getVideoFrame } = await import('../lib/application/evidence-frames.ts');
-const { FrameRequestError, parseRegion, parseSeconds } = await import('../lib/evidence/frame-request.ts');
-const { ffmpegFrameArguments } = await import('../lib/video/ffmpeg-frame.ts');
-const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
+const { createEvidenceCrop, getVideoFrame } = await import('../src/lib/application/evidence-frames.ts');
+const { FrameRequestError, parseRegion, parseSeconds } = await import('../src/lib/evidence/frame-request.ts');
+const { ffmpegFrameArguments } = await import('../src/lib/video/ffmpeg-frame.ts');
+const { InMemoryVideoRepository } = await import('../src/lib/adapters/memory/videos.ts');
 
 const V = 'vid-1';
 const video = (storageKey) => ({ videoId: V, storageKey, uploadedAt: null, source: null, officialRevisionId: null, revisionIds: [] });

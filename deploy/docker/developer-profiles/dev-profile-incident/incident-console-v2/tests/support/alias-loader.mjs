@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const projectRoot = new URL('../../', import.meta.url);
+const projectRoot = new URL('../../src/', import.meta.url);
 
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === 'next/server') {

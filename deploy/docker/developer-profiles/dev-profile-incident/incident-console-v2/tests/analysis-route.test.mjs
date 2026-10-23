@@ -69,10 +69,10 @@ mock.module('@aws-sdk/s3-request-presigner', {
   },
 });
 
-const { POST } = await import('../app/api/analysis/route.ts');
+const { POST } = await import('../src/app/api/analysis/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
-const { getServiceConfiguration } = await import('../lib/env.ts');
-const { contractVersion } = await import('../lib/contract/load.ts');
+const { getServiceConfiguration } = await import('../src/lib/env.ts');
+const { contractVersion } = await import('../src/lib/contract/load.ts');
 
 // The in-memory PostgREST every test's Supabase calls land on; replaced before each test.
 let testDb;
@@ -198,7 +198,7 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
 
-const { compactId } = await import('../lib/ids.ts');
+const { compactId } = await import('../src/lib/ids.ts');
 const compactVideoId = (sensorId) => compactId('v', sensorId);
 
 const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');

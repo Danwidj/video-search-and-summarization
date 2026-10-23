@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { mock, test } from 'node:test';
 
-import { isValidR2Key, thumbnailKeyForVideo } from '../lib/r2/key.ts';
+import { isValidR2Key, thumbnailKeyForVideo } from '../src/lib/r2/key.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -52,10 +52,10 @@ mock.module('@aws-sdk/client-s3', {
   },
 });
 
-const { POST } = await import('../app/api/uploads/r2/route.ts');
-const { POST: POST_THUMBNAIL } = await import('../app/api/uploads/thumbnail/route.ts');
-const { putR2Video, MAX_R2_PUT_BYTES } = await import('../lib/r2/config.ts');
-const { getServiceConfiguration } = await import('../lib/env.ts');
+const { POST } = await import('../src/app/api/uploads/r2/route.ts');
+const { POST: POST_THUMBNAIL } = await import('../src/app/api/uploads/thumbnail/route.ts');
+const { putR2Video, MAX_R2_PUT_BYTES } = await import('../src/lib/r2/config.ts');
+const { getServiceConfiguration } = await import('../src/lib/env.ts');
 
 function multipartRequest(fields) {
   const form = new FormData();

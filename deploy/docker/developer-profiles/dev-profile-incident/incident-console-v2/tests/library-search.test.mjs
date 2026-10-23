@@ -15,9 +15,9 @@ mock.module('@aws-sdk/s3-request-presigner', {
   namedExports: { getSignedUrl: async (_client, command) => `https://signed.r2.test/${command.input.Key}` },
 });
 
-const { fromAgentSearchResponse, toAgentSearchBody } = await import('../lib/adapters/agent/search.ts');
-const { filterHits, groupByIncident, hitsInFrame, relationshipOf } = await import('../lib/library/search.ts');
-const { POST } = await import('../app/api/search/route.ts');
+const { fromAgentSearchResponse, toAgentSearchBody } = await import('../src/lib/adapters/agent/search.ts');
+const { filterHits, groupByIncident, hitsInFrame, relationshipOf } = await import('../src/lib/library/search.ts');
+const { POST } = await import('../src/app/api/search/route.ts');
 
 const contractDir = join(process.cwd(), '..', 'contracts', 'search-contract-v1', 'fixtures', 'valid');
 const full = JSON.parse(readFileSync(join(contractDir, 'full-response.json'), 'utf8'));
@@ -108,14 +108,14 @@ test('/api/search refuses empty text and a missing agent, and reports an agent f
 });
 
 test('the viewer cuts its frame through the report frame route and falls back to the crop', () => {
-  const viewer = readFileSync(join(process.cwd(), 'components', 'library', 'hit-viewer.tsx'), 'utf8');
+  const viewer = readFileSync(join(process.cwd(), 'src', 'components', 'library', 'hit-viewer.tsx'), 'utf8');
   assert.match(viewer, /\/api\/reports\/\$\{encodeURIComponent\(hit\.incident\.videoId\)\}\/frame\?t=/);
   assert.match(viewer, /<FrameViewer/);
   assert.match(viewer, /<EvidenceFrame/);
 });
 
 test('rejected hits are hidden unless the switch shows them', async () => {
-  const { withoutRejected } = await import('../lib/library/search.ts');
+  const { withoutRejected } = await import('../src/lib/library/search.ts');
   const hits = [{ critic: { verdict: 'confirmed' } }, { critic: { verdict: 'rejected' } }, { critic: { verdict: 'unverified' } }];
   assert.deepEqual(withoutRejected(hits, false).map((hit) => hit.critic.verdict), ['confirmed', 'unverified']);
   assert.equal(withoutRejected(hits, true).length, 3);

@@ -10,7 +10,7 @@ import { afterEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { PostgrestClient, authHeaders } = await import('../lib/postgrest/client.ts');
+const { PostgrestClient, authHeaders } = await import('../src/lib/postgrest/client.ts');
 
 const JWT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2lnbmF0dXJlLV8';
 const SECRET_KEY = 'sb_secret_AbCdEf0123456789_-xyz';

@@ -7,8 +7,8 @@ import test from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { boxRegion, boxStyle, cropImageStyle, cropRegion, evidenceFrameState } = await import('../lib/evidence/frame-geometry.ts');
-const components = new URL('../components/', import.meta.url);
+const { boxRegion, boxStyle, cropImageStyle, cropRegion, evidenceFrameState } = await import('../src/lib/evidence/frame-geometry.ts');
+const components = new URL('../src/components/', import.meta.url);
 
 test('a [ymin, xmin, ymax, xmax] box on the 0-1000 grid becomes frame fractions and CSS percentages', () => {
   assert.deepEqual(boxRegion([100, 200, 300, 600]), { x: 0.2, y: 0.1, w: 0.4, h: 0.2 });

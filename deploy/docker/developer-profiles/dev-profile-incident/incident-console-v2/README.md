@@ -58,8 +58,8 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 Both gateway and agent modes analyse with the shared **`incident-contract-v4`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
-- strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
-- ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);
+- strict validation (`src/lib/contract/validate.ts`, Ajv on the schema file);
+- ID-only recovery (`src/lib/contract/repair.ts`, `id-normalization-v1`);
 - every attempt recorded immutably in `model_runs.notes` with outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`.
 
 See [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md).
@@ -96,12 +96,12 @@ synchronous.
 
 Real VST/NvStreamer's chunk-upload response never includes a durable R2 object key (`filePath`) — only
 `mock-backend`'s own reimplementation (`../mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py`) fakes that field by doing its own R2 upload. Since
-`incident-console-v2`'s analysis flow (`app/api/analysis/route.ts`) hard-requires that key, `components/analysis-workspace.tsx`
+`incident-console-v2`'s analysis flow (`src/app/api/analysis/route.ts`) hard-requires that key, `src/components/analysis-workspace.tsx`
 checks the chunk-upload response for a valid key and, when missing (the real-VST case), uploads the file itself
-through a new server-side-only route, `app/api/uploads/r2/route.ts` (R2 `PutObject` via `lib/r2/config.ts`'s
+through a new server-side-only route, `src/app/api/uploads/r2/route.ts` (R2 `PutObject` via `src/lib/r2/config.ts`'s
 `putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key
 going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
-flow for obtaining `sensorId` (`lib/upload/chunked-upload.ts`) is unchanged.
+flow for obtaining `sensorId` (`src/lib/upload/chunked-upload.ts`) is unchanged.
 
 For each new upload, the browser also attempts to capture the frame 25% into the already-local file, scale it to at most
 640×360, and upload it through `/api/uploads/thumbnail` to `thumbnails/<video-key>.webp`. Thumbnail failure never blocks
@@ -121,7 +121,7 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
 
 - **Find incidents** lists one card per video as server-paginated pages of six lightweight summaries
   (`list_incident_report_summaries`): the official revision, else the newest. A text search asks the agent
-  (`POST /api/v1/incidents/revisions/search`, `lib/adapters/agent/revision-search.ts`) for the revisions it ranks, keeps
+  (`POST /api/v1/incidents/revisions/search`, `src/lib/adapters/agent/revision-search.ts`) for the revisions it ranks, keeps
   the incidents they belong to under the other filters and the chosen sort, and reads up to 1000 incidents to do it.
   When the agent fails or finds nothing, the store's text match (ILIKE) is used and a note says so. Cards show the severity, the
   "Official vN" marker with when it was made official or "No official version", the summary, and the evidence and
@@ -131,7 +131,7 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
   links and refresh all land on the same list). "Search evidence" on a card scopes the other tab to that incident
   for the visit only.
 - **Find evidence** posts the text to `POST /api/search`, which asks the agent (`POST /api/v1/incidents/search`,
-  `search-contract-v1`, `lib/adapters/agent/search.ts`) for the top 20 ranked hits with no similarity cutoff and the
+  `search-contract-v1`, `src/lib/adapters/agent/search.ts`) for the top 20 ranked hits with no similarity cutoff and the
   critic's verdict on each hit, then adds each video's searched version from the same summaries. Hits show the crop,
   match percentage, critic verdict (confirmed, rejected or unverified), video time, kind, threat and relationship (held
   by / holds). Rejected hits are hidden until "Show N rejected" is pressed; kind, threat and incident-type
@@ -183,4 +183,4 @@ A reviewer replacing or adding evidence picks a frame and draws a rectangle on i
   - The scrolling pane shows the version being compared (A, read-only, left) beside the editable draft (B, right), field by field and one evidence row per entity, with the instruments it holds as sub-rows.
   - Delete removes a draft item (deleting an entity also deletes the instruments it holds); Revert puts an edited or deleted item back exactly as A has it (an instrument whose holder is deleted stays blocked until the holder is reverted).
   - The bottom bar's "Save as new version" always appends a new human revision and requires a note (`PATCH /api/reports/<videoId>/edit`). There is no Restore. Replacing or adding evidence images comes with the frame picker and is not in this pane yet.
-- **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.
+- **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`src/lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.

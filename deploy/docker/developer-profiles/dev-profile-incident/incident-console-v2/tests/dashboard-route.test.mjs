@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { afterEach, beforeEach, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
-const { GET } = await import('../app/api/dashboard/route.ts');
+const { GET } = await import('../src/app/api/dashboard/route.ts');
 const originalEnv = { ...process.env }; const originalFetch = globalThis.fetch;
 beforeEach(() => { process.env.INCIDENT_SUPABASE_URL = 'https://supabase.test'; process.env.INCIDENT_SUPABASE_SERVICE_ROLE_KEY = 'test-key'; });
 afterEach(() => { for (const key of Object.keys(process.env)) { if (!(key in originalEnv)) delete process.env[key]; else process.env[key] = originalEnv[key]; } globalThis.fetch = originalFetch; });
@@ -28,7 +28,7 @@ test('dashboard rejects invalid heatmap coordinates before Supabase', async () =
 });
 
 test('dashboard period bounds are read as UTC whatever the server time zone', async () => {
-  const { GET: dashboard } = await import('../app/api/dashboard/route.ts');
+  const { GET: dashboard } = await import('../src/app/api/dashboard/route.ts');
   let body;
   globalThis.fetch = async (_url, init) => { body = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ total: 0 })); };
   const response = await dashboard(new Request('http://localhost/api/dashboard?days=30&after=2026-08-28T11:00:00.000&before=2026-09-27T11:00:00.000'));

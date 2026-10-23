@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EMPTY_FILTERS, activeFilters, filterParams, parseFilters, presetAfter } from '../lib/library/filters.ts';
+import { EMPTY_FILTERS, activeFilters, filterParams, parseFilters, presetAfter } from '../src/lib/library/filters.ts';
 
 test('a dashboard link round-trips through the filters', () => {
   const query = new URLSearchParams('scope=official&after=2026-09-01T00:00:00&before=2026-09-30T00:00:00&day=2&entityType=vehicle&instrument=Knife&match=exact&fromTime=09:00&toTime=09:59:59.999');

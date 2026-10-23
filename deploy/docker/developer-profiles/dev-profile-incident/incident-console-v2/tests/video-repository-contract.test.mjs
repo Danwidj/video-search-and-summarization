@@ -14,10 +14,10 @@ import { revisionRpcs } from './support/revisions-database.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
-const { SupabaseVideoAdapter } = await import('../lib/adapters/supabase/videos.ts');
-const { StoreRejection } = await import('../lib/ports/common.ts');
-const { PostgrestClient } = await import('../lib/postgrest/client.ts');
+const { InMemoryVideoRepository } = await import('../src/lib/adapters/memory/videos.ts');
+const { SupabaseVideoAdapter } = await import('../src/lib/adapters/supabase/videos.ts');
+const { StoreRejection } = await import('../src/lib/ports/common.ts');
+const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });

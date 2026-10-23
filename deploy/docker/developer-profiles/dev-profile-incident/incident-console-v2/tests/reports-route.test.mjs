@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { afterEach, beforeEach, mock, test } from 'node:test';
-import { href } from '../lib/dashboard/links.ts';
-import { reportThumbnailView, thumbnailCaptureTime } from '../lib/reports/thumbnail.ts';
+import { href } from '../src/lib/dashboard/links.ts';
+import { reportThumbnailView, thumbnailCaptureTime } from '../src/lib/reports/thumbnail.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -22,7 +22,7 @@ mock.module('@aws-sdk/s3-request-presigner', {
   namedExports: { getSignedUrl: async (_client, command) => `https://signed.r2.test/${command.input.Key}` },
 });
 
-const { GET } = await import('../app/api/reports/route.ts');
+const { GET } = await import('../src/app/api/reports/route.ts');
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 

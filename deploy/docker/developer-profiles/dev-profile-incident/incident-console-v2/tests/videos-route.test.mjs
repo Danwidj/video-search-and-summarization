@@ -9,7 +9,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { GET } = await import('../app/api/videos/route.ts');
+const { GET } = await import('../src/app/api/videos/route.ts');
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 beforeEach(() => { Object.assign(process.env, { INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k' }); });

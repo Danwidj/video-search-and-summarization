@@ -3,9 +3,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { href } from '../lib/dashboard/links.ts';
+import { href } from '../src/lib/dashboard/links.ts';
 
-const components = new URL('../components/', import.meta.url);
+const components = new URL('../src/components/', import.meta.url);
 
 test('dashboard numbers link to the library page with official scope and exact filters (URL is the state)', async () => {
   const link = new URL(href({ entityType: 'vehicle', instrument: 'Knife', day: '2', hour: '9' }, { after: '2026-09-01T00:00:00', before: '2026-09-30T00:00:00' }), 'http://localhost');
@@ -16,7 +16,7 @@ test('dashboard numbers link to the library page with official scope and exact f
   assert.doesNotMatch(dashboard, /clearFilters|dashboard: '1'/, 'no hidden dashboard-only filter markers');
   assert.match(dashboard, /href="\/videos\?filter=awaiting-selection"/);
   assert.match(dashboard, /href="\/videos\?filter=without-report"/);
-  const filters = await readFile(new URL('../lib/library/filters.ts', import.meta.url), 'utf8');
+  const filters = await readFile(new URL('../src/lib/library/filters.ts', import.meta.url), 'utf8');
   for (const key of ['scope', 'entityType', 'match', 'type', 'instrument', 'asset', 'after', 'before']) {
     assert.match(filters, new RegExp(`FILTER_KEYS = \\[[^\\]]*'${key}'`), key);
   }

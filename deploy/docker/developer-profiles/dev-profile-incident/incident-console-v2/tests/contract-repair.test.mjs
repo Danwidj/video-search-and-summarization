@@ -8,9 +8,9 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { attemptIdNormalization, REPAIR_RULE_SET } = await import('../lib/contract/repair.ts');
-const { ContractError, validateReport } = await import('../lib/contract/validate.ts');
-const { evaluateContent } = await import('../lib/analysis/run-contract-analysis.ts');
+const { attemptIdNormalization, REPAIR_RULE_SET } = await import('../src/lib/contract/repair.ts');
+const { ContractError, validateReport } = await import('../src/lib/contract/validate.ts');
+const { evaluateContent } = await import('../src/lib/analysis/run-contract-analysis.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', name), 'utf8'));
 const validReport = () => JSON.parse(readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8'));

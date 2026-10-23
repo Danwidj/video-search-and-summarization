@@ -21,7 +21,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/video.mp4' } });
 
-const { GET } = await import('../app/api/reports/[videoId]/route.ts');
+const { GET } = await import('../src/app/api/reports/[videoId]/route.ts');
 const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));

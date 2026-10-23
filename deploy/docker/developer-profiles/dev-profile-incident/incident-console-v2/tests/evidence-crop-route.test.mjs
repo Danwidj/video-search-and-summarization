@@ -50,8 +50,8 @@ mock.module('node:child_process', {
   },
 });
 
-const { GET } = await import('../app/api/reports/[videoId]/frame/route.ts');
-const { POST } = await import('../app/api/reports/[videoId]/evidence-crop/route.ts');
+const { GET } = await import('../src/app/api/reports/[videoId]/frame/route.ts');
+const { POST } = await import('../src/app/api/reports/[videoId]/evidence-crop/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 
 const originalFetch = globalThis.fetch;
