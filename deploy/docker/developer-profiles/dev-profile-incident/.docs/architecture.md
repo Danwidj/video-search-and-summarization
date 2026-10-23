@@ -104,7 +104,7 @@ flowchart TB
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
 | `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
-| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals); `supabase/midterm/` (frozen record) | Relational store for reports, incidents, evidence, reviews, and ground truth. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
+| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals); `supabase/midterm/` (frozen record) | Relational store for reports, incidents, evidence, and reviews. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
 
@@ -221,7 +221,7 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
 - Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. A refusal by `set_review_status` or `save_human_report_edit` (for example verifying a legacy AI report that must be edited first) becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
-- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): ground truth, analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
 
 ### Report library pagination and deferred report loading
 
@@ -287,7 +287,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
   - it never writes the `videos` row (the upload time is kept);
   - it never selects the official report.
 - **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `select_official_report` / `clear_official_report`, used from the report page and the video history.
-- **Where it appears:** pages `/videos`, `/videos/[id]` and `/videos/[id]/ground-truth`. The report page's analysis card combines re-analysis with a compact history.
+- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-analysis with a compact history.
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 

@@ -2,6 +2,23 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-22: Remove ground-truth features from incident-console-v2 and mark GT tables removed
+- **Decision:** Remove all ground-truth features from `incident-console-v2` (the `/videos/[videoId]/ground-truth` page, `GroundTruthScreen` component, `/api/reports/[videoId]/ground-truth` route, links from video history and report tools, and corresponding tests). The ground-truth tables (`gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`) and `severity_eval_log` have been deleted from Supabase and are marked removed across documentation.
+- **Why:** The ground-truth evaluation screen and tables are no longer used by the incident console; evaluation is handled independently and the tables have been dropped from the live Supabase database.
+- **Rejected:** Retaining dead UI links or mock routes in the console.
+- **Links:** [`data.md`](data.md); [`status.md`](status.md); [`architecture.md`](architecture.md).
+
+### 2026-10-22: Concurrency-safe native service startup across shared VM users
+- **Decision:**
+  - Serialise native service check-then-start via `flock` on `.run/native-services.lock` (group-writable); close descriptor 200 before daemonising background processes so `flock` is released when the launcher exits.
+  - Add `umask 002` near the top of `.scripts/native-services.sh` and ensure `.run/`, lock files, PID files and log files are group-writable so concurrent/subsequent starts by different VM users do not fail with "Permission denied". Clear pre-existing unwritable log or lock files before launching.
+  - Treat a healthy `/health` response (`isAlive`) on the service port as already running even when the PID file is missing or unreadable; print that it is already running and skip start.
+  - Write PID files atomically (`mktemp` then `mv`) and remove PID files on failed start only when matching this run's own PID.
+  - Make `status` (and `status --porcelain`) list only expected services: `vss-agent` by default, including `video-analytics-api` and `behavior-analytics` only when `ENABLE_ANALYTICS=true` or named explicitly. Keep the porcelain format start.sh relies on unchanged.
+- **Why:** Multiple teammates running `./start.sh` concurrently or sequentially under different user accounts on `kwanz-ws` crashed with "Permission denied" on `.run/vss-agent.log` and `.pid` while another user's agent was already healthy on port 8000; `native-services.sh status` reported STOPPED because it trusted only its own user's PID file; and `status` listed optional analytics services as STOPPED by default, adding noise.
+- **Rejected:** Running all native services under a single system daemon or dedicated VM service account (heavier, out of scope, complicates local git/venv development); trusting only PID files without HTTP endpoint health checks; changing `start.sh`'s porcelain parsing contract.
+- **Links:** [`../.scripts/native-services.sh`](../.scripts/native-services.sh); [`../.scripts/test-native-services.sh`](../.scripts/test-native-services.sh); [`incident-profile-operations.md`](incident-profile-operations.md#managing-native-services-scriptsnative-servicessh).
+
 ### 2026-10-22: Strict chat models matching chat-contract-v1
 - **Decision:** The agent and mock chat models use `Literal` types for `role`, `scope` and `item_type`, `extra="forbid"`, `min_length=1` on ids, `ge=0` on `timestamp_seconds`, and `AssistantMessage.citations` has no default. Fixture tests feed the contract fixtures to both sets of models. The hand-written scope check is gone; pydantic returns the `422`.
 - **Why:** The models accepted values the schemas reject (`request-invalid-scope.json`, `response-invalid-role.json`). The contract requires `citations`, and the route always sends it. No console or eval code calls the chat route, so no current sender is rejected.

@@ -53,6 +53,13 @@ Networking: nearly all containers use host networking (network_mode: host); exce
 It daemonizes processes with `nohup`, stores PID files under `/srv/rise-up/vss/.run/<service>.pid`, redirects
 standard streams to `/srv/rise-up/vss/.run/<service>.log`, and polls health endpoints before reporting success.
 
+**Multi-user concurrency & permissions:**
+- Start operations serialise on `.run/native-services.lock` using `flock`, preventing TOCTOU startup races between teammates. Background daemonised processes close file descriptor 200 so the advisory lock is released upon launcher exit.
+- Uses `umask 002` so created log files, PID files, and lock files are group-writable by any teammate in the shared VM group; pre-existing unwritable log and lock files are replaced before launching.
+- A healthy `/health` response (`isAlive`) on the service port is treated as already running even if the PID file is missing or unreadable; startup is safely skipped and reported as already running.
+- PID files are written atomically (`mktemp` then `mv`) and failed starts only remove the PID file if it matches the current run's PID.
+- `status` and `status --porcelain` list only expected services: `vss-agent` by default, with `video-analytics-api` and `behavior-analytics` included only when `ENABLE_ANALYTICS=true` or when explicitly targeted. Output porcelain formatting is preserved for `start.sh` parsing. Tests: `.scripts/test-native-services.sh`.
+
 ```bash
 # SSH into the workstation
 ssh kwanz-ws
@@ -244,9 +251,7 @@ Verify deployment health against this checklist before declaring a build ready:
       Verify that reviewer attribution and timestamps persist.
 - [ ] **Filtering & Dashboard:** Filter report library by incident type, severity, and date range. Confirm that
       counts match database records and clearing filters restores the full catalog.
-- [ ] **Ground-Truth Evaluation:** Open the evaluation interface for an incident with ground truth (`gt_incidents`).
-      Confirm that exact type/severity match, LLM-judge description evaluation, and entity/instrument/asset
-      matching metrics display correctly.
+- [ ] **Ground-Truth Evaluation (removed):** Formerly opened the evaluation interface for an incident with ground truth (`gt_incidents`). Ground-truth UI and tables have been removed.
 
 ---
 
