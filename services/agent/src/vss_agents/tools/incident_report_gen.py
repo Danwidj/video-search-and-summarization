@@ -61,6 +61,7 @@ from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
+from vss_agents.utils.embeddings import RemoteTextEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +253,24 @@ async def collect_evidence(*, video_url: str, incident_id: str, report: dict[str
         ]
 
 
+async def revision_embedding(report: dict[str, Any]) -> list[float] | None:
+    """The summary vector stored with the AI revision. Never raises: None means the row is saved without one.
+
+    Uses the passage embedder that the evidence embeddings use, so a revision and a search query share
+    one model. Unconfigured or failed embedding is logged and leaves the revision searchable only by
+    its other data, which is what a NULL vector gives.
+    """
+    try:
+        embedder = RemoteTextEmbedder()
+        text = incident_db.revision_summary_text(report)
+        if not text or not embedder.is_configured():
+            return None
+        return await embedder.embed_passage(text)
+    except Exception as exc:
+        logger.warning("incident_report_gen: revision embedding failed, saving without a vector: %s", exc)
+        return None
+
+
 async def persist_revision(
     *,
     incident_id: str,
@@ -283,7 +302,12 @@ async def persist_revision(
                 model_run_id, model_name=model_name, prompt_version=incident_contract.contract_version()
             )
         row = await db.insert_ai_revision(
-            incident_id, model_run_id=model_run_id, payload=report, evidence=evidence, note=note
+            incident_id,
+            model_run_id=model_run_id,
+            payload=report,
+            evidence=evidence,
+            note=note,
+            embedding=await revision_embedding(report),
         )
         return int(row["id"])
     except Exception as exc:

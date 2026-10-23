@@ -13,6 +13,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023000000_report_revisions_schema.sql` — drops the relational report tables and retires `videos.selected_*`; creates `report_revisions`, the revision-keyed `evidence_crops` and `query_results`, and `videos.official_revision_id`.
 - `20261023000100_report_revisions_functions.sql` — `save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`.
 - `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
+- `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 
 Schema authority is the migrations, not the archived Streamlit v1 console's `archived/incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
@@ -101,13 +102,14 @@ Append-only report snapshots. This is the source of truth for every AI and human
 | `created_by` | `VARCHAR(256)` | NULLABLE; CHECK required when `kind='human'` | Reviewer name for a human revision; NULL for AI |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC creation time |
 | `note` | `TEXT` | NULLABLE | Free-text note attached to a human revision (empty/blank stored as NULL) |
+| `embedding` | `extensions.vector(1024)` | NULLABLE | Summary vector of `incident.title` and `incident.description`, written by the agent in the same insert as an AI revision. NULL for human revisions (`save_human_revision` computes none) and when the embedding endpoint was unavailable. Never updated. |
 
 Constraints and indexes:
 
 - `report_revisions_pkey` on `id`; `report_revisions_video_rev_key` unique on `(video_id, revision_no)`; `report_revisions_video_id_id_key` unique on `(video_id, id)` (target of the official pointer and the parent link).
 - `report_revisions_video_id_fkey` (CASCADE), `report_revisions_model_run_id_fkey` (no cascade: a revision needs its run row first), `report_revisions_parent_fkey`.
 - `report_revisions_kind_check`, `report_revisions_ai_run_check`, `report_revisions_human_by_check`.
-- Indexes: `(video_id, revision_no DESC)`, `incident_type`, `severity_level`.
+- Indexes: `(video_id, revision_no DESC)`, `incident_type`, `severity_level`, and `report_revisions_embedding_hnsw_idx` (HNSW cosine on `embedding`, `m = 16, ef_construction = 64`).
 - Trigger `report_revisions_no_update_delete` (BEFORE UPDATE OR DELETE, `report_revisions_append_only()`): raises `report_revisions is append-only`. It permits a delete made by the video's `ON DELETE CASCADE` (trigger depth > 1), so deleting a video still removes its revisions.
 
 #### `evidence_crops`
@@ -301,6 +303,10 @@ AI revisions).
 
 ---
 
+### Revision search (`search_report_revisions`)
+
+Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches crops of official revisions only.
+
 ### Agent report writes (`report_revisions`)
 
 PostgREST has no client-held transactions, so the agent's report write is one `INSERT` into
@@ -310,7 +316,7 @@ and the facet columns copied from the payload. `revision_no` is `max + 1` for th
 concurrent writer takes the number first, the unique `(video_id, revision_no)` key rejects the
 insert (SQLSTATE 23505) and the agent retries with the next number, five attempts at most with
 jittered backoff. Rows are append-only, so a re-generation is a new row and never changes an earlier
-revision.
+revision. The same insert carries `embedding`: the agent embeds the summary first, and an embedding failure stores NULL rather than failing the write.
 
 > **Insertion order for agent writes:**
 > In console agent mode the console upserts the run (with its `notes` record) only after the agent

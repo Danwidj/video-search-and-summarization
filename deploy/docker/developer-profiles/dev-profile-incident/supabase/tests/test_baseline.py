@@ -24,7 +24,7 @@ from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
 MIGRATIONS = sorted((HERE.parent / "migrations").glob("*.sql"))
-REVISION_MIGRATIONS = [path for path in MIGRATIONS if path.name.startswith("2026102300")]
+REVISION_MIGRATIONS = [path for path in MIGRATIONS if path.name.startswith("20261023")]
 PASSED: list[str] = []
 
 
@@ -418,6 +418,22 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("the revisions of other videos are never touched by a crop write")
     def _():
         assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
+    @test("search_report_revisions ranks embedded revisions and skips NULL vectors")
+    def _():
+        conn.execute("INSERT INTO public.videos (id) VALUES ('v8'), ('v9')")
+        embedded = one(conn, """
+            INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+                incident_type, severity_level, start_seconds, end_seconds, embedding)
+            VALUES ('v8', 1, 'ai', 'm1', %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector) RETURNING id""",
+            (json.dumps(report(title="Vector hit")), vector_literal(7)))[0]
+        ai_revision("v9", 1, "m1", report(title="No vector"), [])
+        rows = conn.execute("""SELECT revision_id, video_id, title, similarity_score FROM public.search_report_revisions(%s::extensions.vector, 5, 0.0)""",
+                            (vector_literal(7),)).fetchall()
+        assert rows == [(embedded, "v8", "Vector hit", 1.0)], rows
+        assert conn.execute("SELECT count(*) FROM public.search_report_revisions(%s::extensions.vector, 5, 1.1)",
+                            (vector_literal(7),)).fetchone()[0] == 0
+        refused(conn, "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s", (embedded,), contains="append-only")
+        assert one(conn, "SELECT count(*) FROM pg_indexes WHERE indexname = 'report_revisions_embedding_hnsw_idx'")[0] == 1
 
     @test("deleting a video removes its revisions, crops and query results")
     def _():
