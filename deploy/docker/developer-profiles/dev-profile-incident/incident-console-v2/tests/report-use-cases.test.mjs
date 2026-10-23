@@ -13,7 +13,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
 const { StoreRejection } = await import('../lib/ports/index.ts');
-const { deleteVideoAndReports, getReport, listRevisions, restoreRevision, saveHumanEdit, setOfficialRevision } = await import('../lib/application/reports.ts');
+const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision } = await import('../lib/application/reports.ts');
 const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
@@ -86,17 +86,6 @@ test('a replaced image is a new upload entry; an image from another video is ref
 test('saving against a missing revision is a not-found rejection', async () => {
   const incidents = new InMemoryIncidentRepository([aiRunReport(smoke)]);
   await assert.rejects(saveHumanEdit(incidents, { videoId: V, parentId: 7, edit: editOf(aiRunReport(smoke)), createdBy: 'Editor' }), (error) => error instanceof StoreRejection && error.reason === 'not-found');
-});
-
-test('restoring copies an earlier revision into a new human revision with that revision as parent', async () => {
-  const record = withImage('evidence/v/u/E1.jpg');
-  const incidents = new InMemoryIncidentRepository([record]);
-  await saveHumanEdit(incidents, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' });
-  const restored = await restoreRevision(incidents, { videoId: V, revisionId: 1, createdBy: 'Lead' });
-  assert.deepEqual([restored.revisionNo, restored.kind, restored.parentId, restored.createdBy, restored.note], [3, 'human', 1, 'Lead', 'Restored revision 1']);
-  const copy = await incidents.getRevision(V, 3);
-  assert.deepEqual([copy.payload, copy.evidence], [record.payload, record.evidence]);
-  await assert.rejects(restoreRevision(incidents, { videoId: V, revisionId: 99, createdBy: 'Lead' }), (error) => error instanceof StoreRejection && error.reason === 'not-found');
 });
 
 function official(revisionRecords) {

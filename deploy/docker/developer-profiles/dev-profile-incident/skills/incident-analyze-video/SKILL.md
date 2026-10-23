@@ -73,7 +73,6 @@ There is no verify step and no review status. A report is its list of revisions;
 >>>>>>> origin/main
 
 - **Save** (`PATCH /api/reports/<videoId>/edit` with `{"parentId", "editedBy", "edit", "note"?}`) validates the structured edit, then appends a `human` revision whose parent is the revision that was opened. Every edited item keeps the id of the item it came from, so its evidence and image follow it; the AI revision and `model_runs.notes` are never changed.
-- **Restore** (`POST /api/reports/<videoId>/restore` with `{"revisionId", "restoredBy"}`) appends a `human` revision with the content of an earlier one; it does not delete anything.
 - **Evidence image** (`POST /api/reports/<videoId>/evidence-image`) uploads a replacement to a new R2 key and returns it for the edit; no existing object is overwritten or deleted.
 - **Official** (`PUT`/`DELETE /api/videos/<videoId>/official`) sets or clears `videos.official_revision_id`. Marking asks the agent for the revision's evidence embeddings and rebuilds `evidence_crops`; if the agent is unreachable the mark fails and nothing changes.
 - **Re-generation** always makes a new AI revision and copies no earlier edits ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#report-revisions-ai-and-human)).

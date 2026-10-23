@@ -40,7 +40,7 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   assert.match(report, /RevisionHistory/);
   assert.match(report, /OfficialControls/);
   const history = await readFile(new URL('revision-history.tsx', components), 'utf8');
-  assert.match(history, /api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/restore/);
+  assert.doesNotMatch(history, /restore/i);
   const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
