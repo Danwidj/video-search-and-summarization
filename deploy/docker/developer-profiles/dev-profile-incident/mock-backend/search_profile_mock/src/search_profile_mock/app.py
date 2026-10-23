@@ -23,6 +23,7 @@ from search_profile_mock.routers import agent_video
 from search_profile_mock.routers import analytics_frames
 from search_profile_mock.routers import elastic
 from search_profile_mock.routers import health
+from search_profile_mock.routers import incident_revision_search
 from search_profile_mock.routers import incident_search
 from search_profile_mock.routers import kibana
 from search_profile_mock.routers import vst_replay
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(incident_revision_search.router)
     app.include_router(incident_search.router)
     app.include_router(agent_video.router)
     app.include_router(agent_rtsp.router)

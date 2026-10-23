@@ -96,7 +96,10 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
 - `POST /api/v1/incidents/search` - natural-language evidence search conforming to
   `search-contract-v1` with canned hits, crop URLs, and critic verdicts.
 - `POST /api/v1/incidents/chat` - conversational evidence Q&A conforming to
-  `chat-contract-v1` with multi-turn support and grounded evidence citations.
+  `chat-contract-v1` with multi-turn support and grounded evidence citations. Accepts
+  `version_id` and `draft_report` (the answer names the version; evidence is the same canned set).
+- `POST /api/v1/incidents/revisions/search` - canned incident-level report revision hits
+  shaped like the agent's `RevisionSearchHit`.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,
