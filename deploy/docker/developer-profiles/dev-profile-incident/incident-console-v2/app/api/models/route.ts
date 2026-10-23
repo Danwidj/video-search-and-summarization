@@ -14,7 +14,7 @@ export async function GET() {
     const config = getServiceConfiguration();
     const models = allowedModels().map(({ id, label }) => ({ id, label }));
     const defaultModel = models.some((model) => model.id === config.vlmModel) ? config.vlmModel : models[0]?.id;
-    return NextResponse.json({ models, defaultModel, modelSelection: config.analysisMode === 'gateway' });
+    return NextResponse.json({ models, defaultModel });
   } catch (error) {
     return errorResponse(error, 'Could not load the available models');
   }

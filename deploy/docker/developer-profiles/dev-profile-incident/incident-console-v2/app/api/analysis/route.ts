@@ -67,11 +67,6 @@ export async function POST(request: Request) {
       throw new Error(`validating service configuration failed: ${detail}`);
     }
 
-    // In agent mode, the agent runs the configured model; model selection is gateway-only.
-    if (config.analysisMode === 'agent' && input.model && input.model !== config.vlmModel) {
-      return NextResponse.json({ error: 'Model selection is only available in gateway analysis mode' }, { status: 409 });
-    }
-
     const { run, revisionId } = await runContractAnalysis(
       {
         videoId: compactId('v', input.sensorId),

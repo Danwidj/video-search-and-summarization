@@ -150,17 +150,15 @@ export function AnalysisWorkspace() {
   const [dragging, setDragging] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
-  const [modelSelection, setModelSelection] = useState(true);
 
   useEffect(() => {
     let active = true;
     void fetch('/api/models', { cache: 'no-store' })
-      .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string; modelSelection?: boolean }>)
+      .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string }>)
       .then((payload) => {
         if (!active) return;
         setModels(payload.models || []);
         setModel(payload.defaultModel || payload.models?.[0]?.id || '');
-        setModelSelection(payload.modelSelection !== false);
       })
       .catch(() => undefined);
     return () => { active = false; };
@@ -243,7 +241,7 @@ export function AnalysisWorkspace() {
         sensorId: uploaded.sensorId,
         filepath: filePath,
         filename,
-        ...(modelSelection && model ? { model } : {}),
+        ...(model ? { model } : {}),
       });
       setStage('saving');
       setStage('complete');
@@ -270,7 +268,7 @@ export function AnalysisWorkspace() {
         type="file"
       />
 
-      {modelSelection && models.length > 0 && (
+      {models.length > 0 && (
         <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
           {/* The select keeps its natural width (the longest model name) and never shrinks; the note wraps below it instead. */}
           <label className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3" htmlFor="analysis-model">

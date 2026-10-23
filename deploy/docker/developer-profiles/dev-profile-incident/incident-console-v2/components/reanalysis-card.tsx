@@ -21,7 +21,6 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
   const router = useRouter();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
-  const [available, setAvailable] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -30,18 +29,17 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
 
   useEffect(() => {
     void fetch('/api/models', { cache: 'no-store' })
-      .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string; modelSelection?: boolean }>)
+      .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string }>)
       .then((payload) => {
         setModels(payload.models || []);
         setModel(payload.defaultModel || payload.models?.[0]?.id || '');
-        setAvailable(payload.modelSelection !== false);
       })
       .catch(() => undefined);
     return () => { if (timer.current) window.clearInterval(timer.current); };
   }, []);
 
   async function run() {
-    if (busy || (available && !model)) return;
+    if (busy || !model) return;
     setBusy(true);
     setResult(null);
     setElapsed(0);
@@ -51,7 +49,7 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
       const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(available ? { model } : {}), ...(prompt.trim() ? { additionalInstruction: prompt } : {}) }),
+        body: JSON.stringify({ model, ...(prompt.trim() ? { additionalInstruction: prompt } : {}) }),
       });
       const payload = (await response.json()) as { run?: { videoId: string; revisionId: number }; error?: string; outcome?: string; code?: string; codes?: string[] };
       if (response.ok && payload.run) {
@@ -76,18 +74,16 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
   return (
     <div data-testid="reanalysis-card">
       <p className="text-xs text-ink/55">Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by the new run; the new version is not made official automatically.</p>
-      {available && (
-        <label className="mt-3 block text-xs font-bold">Model
-          <select className="control mt-1" disabled={busy} onChange={(event) => setModel(event.target.value)} value={model}>
-            {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-          </select>
-        </label>
-      )}
+      <label className="mt-3 block text-xs font-bold">Model
+        <select className="control mt-1" disabled={busy} onChange={(event) => setModel(event.target.value)} value={model}>
+          {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+      </label>
       <label className="mt-3 block text-xs font-bold">Reviewer prompt (optional)
         <textarea className="control mt-1 min-h-[80px]" disabled={busy} maxLength={MAX_PROMPT} onChange={(event) => setPrompt(event.target.value)} placeholder="e.g. Pay particular attention to the person entering from the left side of the frame." value={prompt} />
       </label>
       <p className="mt-1 flex justify-between text-[11px] text-ink/45"><span>Adds context for this run; it can’t change the report format.</span><span>{prompt.length}/{MAX_PROMPT}</span></p>
-      <button className="mt-3 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" disabled={busy || (available && !model)} onClick={() => void run()} type="button">
+      <button className="mt-3 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" disabled={busy || !model} onClick={() => void run()} type="button">
         {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
       </button>
       {result && <div aria-live="polite" className={`mt-3 rounded-xl p-3 text-xs ${result.tone === 'error' ? 'bg-[#fff6f2] text-[#8c3d25]' : 'bg-signal/10 text-moss'}`}>{result.lines.map((line, index) => <p key={index}>{line}</p>)}</div>}
