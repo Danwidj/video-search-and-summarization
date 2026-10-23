@@ -22,9 +22,9 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /First-pass violations/);
   assert.match(report, /Valid after structural repair/);
   assert.match(report, /confidenceScore !== null/, 'no confidence percentage when the model returned none');
-  assert.doesNotMatch(report, /<input|<textarea/, 'the report view itself has no inputs; editing happens in the structured editor');
   assert.doesNotMatch(report, /createdBy/, 'human versions show no author name');
-  assert.match(report, /StructuredEditor/);
+  assert.match(report, /ReportEditPane/, 'editing opens the side-by-side pane');
+  assert.match(report, /Edit from v/, 'the report opens edit mode from the shown version');
   assert.match(report, /Model classified this as/);
   assert.match(report, /model window/);
   assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
@@ -45,7 +45,7 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'report-versions.tsx', 'official-controls.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'advanced-report-tools.tsx', 'report-edit-pane.tsx', 'report-versions.tsx', 'official-controls.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
   }
@@ -59,7 +59,7 @@ test('library incident cards show no confidence percentage', async () => {
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
   const clientOnly = await readFile(new URL('../lib/reports/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'analysis-workspace.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'report-edit-pane.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'analysis-workspace.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -68,14 +68,27 @@ test('browser components import only browser-safe report modules', async () => {
   }
 });
 
-test('the structured editor edits Class A only and shows the original model output read-only', async () => {
-  const editor = await readFile(new URL('structured-editor.tsx', components), 'utf8');
-  assert.match(editor, /Original model output · read-only/);
-  assert.match(editor, /Model severity rationale/);
-  for (const classB of ['severity_reason', 'title:', 'location:', 'uncertainties:', 'timeline:']) {
-    assert.ok(!new RegExp(`setIncident\\(\\{ ${classB.replace(':', '')}`).test(editor), `${classB} must not be editable`);
+test('edit mode pairs every evidence row with A and saves the whole draft as a new version', async () => {
+  const editor = await readFile(new URL('report-edit-pane.tsx', components), 'utf8');
+  assert.match(editor, /pairReport/);
+  assert.match(editor, /ReadCard/);
+  assert.match(editor, /EditCard/);
+  assert.match(editor, /New in B/);
+  assert.match(editor, /Deleted/);
+  assert.match(editor, /Revert to v/);
+  assert.match(editor, /Delete/);
+  assert.doesNotMatch(editor, /createdBy/, 'the pane never shows author names');
+
+  const page = await readFile(new URL('report-page.tsx', components), 'utf8');
+  assert.match(page, /draftFromView/);
+  assert.match(page, /editFromDraft/);
+  assert.match(page, /draftProblems/);
+  assert.match(page, /parentId: editBase\.revisionId/, 'the new version is parented on the version being edited');
+  assert.match(page, /note\.trim\(\)/, 'a note is required before saving');
+  assert.match(page, /Save as new version/);
+  for (const classB of ['severity_reason', 'uncertainties', 'timeline']) {
+    assert.ok(!new RegExp(`${classB}:`).test(editor), `${classB} must not be editable`);
   }
-  assert.match(editor, /editFromDraft/);
 });
 
 test('the report page offers re-analysis and history', async () => {
@@ -91,7 +104,7 @@ test('the report page offers re-analysis and history', async () => {
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
-  for (const name of ['report-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx', 'library/hit-card.tsx']) {
+  for (const name of ['report-pane.tsx', 'report-edit-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx', 'library/hit-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
