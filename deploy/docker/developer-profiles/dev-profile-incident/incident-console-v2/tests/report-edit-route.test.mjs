@@ -10,7 +10,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { PATCH } = await import('../app/api/reports/[videoId]/edit/route.ts');
+const { PATCH } = await import('../src/app/api/reports/[videoId]/edit/route.ts');
 const { aiRevisionRow, unchangedEdit } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');

@@ -7,10 +7,10 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildTimelineLanes, timelineDuration, axisPercent, axisTicks } = await import('../lib/reports/timeline-lanes.ts');
-const { layoutVersions } = await import('../lib/reports/version-graph.ts');
-const { markOfficial, clearOfficial } = await import('../lib/reports/official-client.ts');
-const { structuredFromPayload } = await import('../lib/reports/payload-view.ts');
+const { buildTimelineLanes, timelineDuration, axisPercent, axisTicks } = await import('../src/lib/reports/timeline-lanes.ts');
+const { layoutVersions } = await import('../src/lib/reports/version-graph.ts');
+const { markOfficial, clearOfficial } = await import('../src/lib/reports/official-client.ts');
+const { structuredFromPayload } = await import('../src/lib/reports/payload-view.ts');
 
 const entity = (id, first, last, extra = {}) => ({ entityId: id, type: 'person', label: 'Guard', description: '', timestampSeconds: 5, firstSeenSeconds: first, lastSeenSeconds: last, evidence: null, ...extra });
 const instrument = (id, entityId) => ({ instrumentId: id, entityId, name: id, description: '', threatLevel: 2, timestampSeconds: 7, evidence: null });
@@ -71,7 +71,7 @@ test('the entity seen span is mapped into the report view', () => {
 });
 
 test('the report page has a mark-official star, no Restore, and keeps the layout while loading', async () => {
-  const components = new URL('../components/', import.meta.url);
+  const components = new URL('../src/components/', import.meta.url);
   const versions = await readFile(new URL('report-versions.tsx', components), 'utf8');
   const page = await readFile(new URL('report-page.tsx', components), 'utf8');
   assert.match(versions, /Mark v\$\{revision\.revisionNo\} official/);
@@ -81,7 +81,7 @@ test('the report page has a mark-official star, no Restore, and keeps the layout
 });
 
 test('a search hit links to its report at the hit second, and the page reads that second back', async () => {
-  const { reportHref, parseStartSeconds } = await import('../lib/library/search.ts');
+  const { reportHref, parseStartSeconds } = await import('../src/lib/library/search.ts');
   const hit = { resultId: 'q1', item: { timestampSeconds: 42.7 }, incident: { videoId: 'Assault 007' } };
   assert.equal(reportHref(hit), '/reports/Assault%20007?t=42');
   assert.equal(reportHref(hit, { revisionId: 9, revisionNo: 2, isOfficial: true }), '/reports/Assault%20007?revision=9&t=42');
@@ -92,7 +92,7 @@ test('a search hit links to its report at the hit second, and the page reads tha
 });
 
 test('the report page seeks to ?t once, when the player has loaded its metadata', async () => {
-  const page = await readFile(new URL('../components/report-page.tsx', import.meta.url), 'utf8');
+  const page = await readFile(new URL('../src/components/report-page.tsx', import.meta.url), 'utf8');
   assert.match(page, /startSeconds = null/);
   assert.match(page, /if \(startSeconds !== null && !startedAt\.current\) \{ startedAt\.current = true; event\.currentTarget\.currentTime = startSeconds; \}/);
   assert.match(page, /id="back-to-library"[^>]*>← Library</);

@@ -13,7 +13,7 @@ const {
   MAX_ADDITIONAL_INSTRUCTION_LENGTH,
   buildP1Request,
   normalizeAdditionalInstruction,
-} = await import('../lib/analysis/build-request.ts');
+} = await import('../src/lib/analysis/build-request.ts');
 
 const canonicalPrompt = readFileSync(join(process.cwd(), '..', 'contracts', 'incident_extraction_prompt.txt'), 'utf8');
 const expectedResponseFormat = JSON.parse(readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'response_format.json'), 'utf8'));

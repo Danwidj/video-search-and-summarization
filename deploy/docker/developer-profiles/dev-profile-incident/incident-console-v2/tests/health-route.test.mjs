@@ -6,7 +6,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { GET } = await import('../app/api/health/route.ts');
+const { GET } = await import('../src/app/api/health/route.ts');
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;

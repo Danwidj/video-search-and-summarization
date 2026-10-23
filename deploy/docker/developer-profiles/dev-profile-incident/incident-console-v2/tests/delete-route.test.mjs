@@ -18,7 +18,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.test/x' } });
 
-const { DELETE } = await import('../app/api/reports/[videoId]/delete/route.ts');
+const { DELETE } = await import('../src/app/api/reports/[videoId]/delete/route.ts');
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 

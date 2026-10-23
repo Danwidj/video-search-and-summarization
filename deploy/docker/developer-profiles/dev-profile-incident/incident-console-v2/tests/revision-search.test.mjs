@@ -22,8 +22,8 @@ mock.module('@aws-sdk/s3-request-presigner', {
   namedExports: { getSignedUrl: async (_client, command) => `https://signed.r2.test/${command.input.Key}` },
 });
 
-const { fromAgentRevisionSearchResponse, toAgentRevisionSearchBody } = await import('../lib/adapters/agent/revision-search.ts');
-const { GET } = await import('../app/api/reports/route.ts');
+const { fromAgentRevisionSearchResponse, toAgentRevisionSearchBody } = await import('../src/lib/adapters/agent/revision-search.ts');
+const { GET } = await import('../src/app/api/reports/route.ts');
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 

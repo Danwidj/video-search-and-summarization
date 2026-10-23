@@ -19,11 +19,11 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/stored.mp4' } });
 
-const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
+const { GET, POST } = await import('../src/app/api/videos/[videoId]/runs/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
-const { contractVersion } = await import('../lib/contract/load.ts');
+const { contractVersion } = await import('../src/lib/contract/load.ts');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
