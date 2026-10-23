@@ -20,7 +20,7 @@ import { revisionRpcs } from './support/revisions-database.mjs';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../src/lib/adapters/memory/incidents.ts');
-const { StoreRejection } = await import('../src/lib/ports/index.ts');
+const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
 const { SupabaseIncidentAdapter } = await import('../src/lib/adapters/supabase/incidents.ts');
 const { savedRevisionFromRpc } = await import('../src/lib/adapters/supabase/mappers/report.ts');
 const { reportListFromRpc, reportListRpcArgs } = await import('../src/lib/adapters/supabase/mappers/report-library.ts');

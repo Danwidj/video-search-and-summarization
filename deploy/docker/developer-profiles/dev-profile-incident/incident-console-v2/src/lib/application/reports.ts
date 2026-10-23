@@ -5,11 +5,13 @@
 // passed in as functions, so they never import an adapter, R2 or PostgREST and
 // are tested with in-memory fakes.
 
-import type { DbAdapters, IncidentRepository, OfficialChange, RevisionRecord, VideoRepository } from '@/lib/ports';
-import { StoreRejection } from '@/lib/ports';
+import type { DbAdapters } from '@/modules/shared/domain/adapters';
+import type { IncidentRepository, RevisionRecord } from '@/lib/ports/incidents';
+import type { OfficialChange, VideoRepository } from '@/lib/ports/videos';
+import { StoreRejection } from '@/modules/shared/domain/common';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { ReportView } from '@/lib/reports/report-view';
-import { missingItemFields } from '@/lib/contract/validate';
+import { missingItemFields } from '@/modules/contract/domain/validate';
 import { humanRevisionContent, isEvidenceKeyOfVideo, officialCrops, type EvidenceEmbedding, type RevisionSummary } from '@/lib/reports/revision';
 import { toReportView } from '@/lib/reports/view';
 

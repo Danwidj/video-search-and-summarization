@@ -72,7 +72,7 @@ mock.module('@aws-sdk/s3-request-presigner', {
 const { POST } = await import('../src/app/api/analysis/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { getServiceConfiguration } = await import('../src/lib/env.ts');
-const { contractVersion } = await import('../src/lib/contract/load.ts');
+const { contractVersion } = await import('../src/modules/contract/infrastructure/loader.ts');
 
 // The in-memory PostgREST every test's Supabase calls land on; replaced before each test.
 let testDb;

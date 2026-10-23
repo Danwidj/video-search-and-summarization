@@ -4,8 +4,8 @@
 // Its input is the translated RevisionRecord (lib/ports/incidents.ts); the
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
-import { timestampWithinVideo } from '@/lib/contract/validate';
-import type { RevisionRecord } from '@/lib/ports';
+import { timestampWithinVideo } from '@/modules/contract/domain/validate';
+import type { RevisionRecord } from '@/lib/ports/incidents';
 import { canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/lib/reports/report-view';
 

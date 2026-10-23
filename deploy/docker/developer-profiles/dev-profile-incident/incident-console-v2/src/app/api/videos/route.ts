@@ -2,9 +2,9 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { errorResponse } from '@/lib/http';
-import type { VideoListFilter } from '@/lib/ports';
+import type { VideoListFilter } from '@/lib/ports/videos';
 
 export const dynamic = 'force-dynamic';
 

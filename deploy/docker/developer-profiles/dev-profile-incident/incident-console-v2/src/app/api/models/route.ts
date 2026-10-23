@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { allowedModels } from '@/lib/contract/load';
+import { allowedModels } from '@/modules/contract/infrastructure/loader';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 

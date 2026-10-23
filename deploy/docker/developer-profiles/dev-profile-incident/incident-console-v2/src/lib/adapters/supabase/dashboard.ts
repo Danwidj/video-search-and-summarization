@@ -2,7 +2,7 @@
 
 import { dashboardFromRpc, dashboardRpcArgs } from '@/lib/adapters/supabase/mappers/dashboard';
 import type { DashboardAnalytics } from '@/lib/dashboard/types';
-import type { DashboardQuery, DashboardRepository } from '@/lib/ports';
+import type { DashboardQuery, DashboardRepository } from '@/lib/ports/dashboard';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 
 export class SupabaseDashboardAdapter implements DashboardRepository {

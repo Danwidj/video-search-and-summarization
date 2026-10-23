@@ -6,7 +6,7 @@
 // incident-contract-v3 report, read leniently: a human revision may hold what
 // a reviewer typed.
 
-import type { RevisionRecord } from '@/lib/ports';
+import type { RevisionRecord } from '@/lib/ports/incidents';
 import { structuredFromPayload } from '@/lib/reports/payload-view';
 import { evidenceEntries, type RevisionKind, type RevisionSummary } from '@/lib/reports/revision';
 import { parseRunNotes } from '@/lib/reports/run-notes';

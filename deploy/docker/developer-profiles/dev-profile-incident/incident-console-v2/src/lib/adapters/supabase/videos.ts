@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
-  StoreRejection,
-  type OfficialChange, type Page, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
-} from '@/lib/ports';
+  type OfficialChange, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+} from '@/lib/ports/videos';
 import type { OfficialCrop } from '@/lib/reports/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import { explicitVideoId } from '@/lib/reports/run-notes';

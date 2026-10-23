@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
 import { storeSearchableCrops } from '@/lib/application/reports';
 import { analysisErrorResponse } from '@/lib/analysis/responses';

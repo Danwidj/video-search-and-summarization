@@ -25,7 +25,7 @@ This directory is the single source of truth for incident extraction: one prompt
   - it passes the cross-field rules below.
 
   This is **full contract validity** (`full_contract_ok` in eval, `fullContractValid` in console records). What consumers persist and score is decided by the validation policy below; nothing is ever repaired except by the application's ID-only rule (`id-normalization-v1`, in the console and `vss-agent`).
-- **Cross-field rules** (in `eval/contract.py` `cross_field_errors`, ported to `incident-console-v2/lib/contract/validate.ts` `crossFieldErrors` and `services/agent/src/vss_agents/incident_contract/` `cross_field_violations`):
+- **Cross-field rules** (in `eval/contract.py` `cross_field_errors`, ported to `incident-console-v2/src/modules/contract/domain/validate.ts` `crossFieldErrors` and `services/agent/src/vss_agents/incident_contract/` `cross_field_violations`):
   - `end_timestamp >= start_timestamp`;
   - IDs run in sequence: `E1..En`, `I1..In`, `A1..An`;
   - every `instruments[].entity_id` is `null` or an existing entity;

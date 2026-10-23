@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 import { EvidenceFrame } from '@/components/evidence-frame';
 import { RunDetailsPanel } from '@/components/report-run-details';
-import { timestampWithinVideo } from '@/lib/contract/video-bounds';
+import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView, type StructuredEntity, type StructuredInstrument } from '@/lib/reports/report-view';
 import { formatTimestamp } from '@/lib/time';
