@@ -7,7 +7,7 @@ import { readUpstream } from '@/lib/http';
 import type { ChatCitation, ChatRequest, ChatResponse } from '@/lib/ports/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
-  const { sessionId, messages, context } = request;
+  const { sessionId, messages, context, versionId, draftReport } = request;
   return {
     ...(sessionId ? { session_id: sessionId } : {}),
     messages: messages.map(({ role, content }) => ({ role, content })),
@@ -18,6 +18,8 @@ export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
         ...(context.evidenceCropIds != null ? { evidence_crop_ids: context.evidenceCropIds } : {}),
       },
     } : {}),
+    ...(versionId != null ? { version_id: versionId } : {}),
+    ...(draftReport != null ? { draft_report: draftReport } : {}),
   };
 }
 
