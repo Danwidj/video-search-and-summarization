@@ -27,6 +27,9 @@ export function embeddingsFromResponse(body: unknown): EvidenceEmbedding[] {
   });
 }
 
+/** The agent did not answer at all (connection refused, DNS, timeout); the caller can say so in plain words. */
+export class AgentUnreachableError extends Error {}
+
 /** Asks the agent to embed the evidence of one stored revision. */
 export async function fetchEvidenceEmbeddings(config: ServiceConfiguration, revisionId: number, signal?: AbortSignal): Promise<EvidenceEmbedding[]> {
   if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured; the agent embeds the evidence of an official report');
@@ -35,7 +38,7 @@ export async function fetchEvidenceEmbeddings(config: ServiceConfiguration, revi
   try {
     response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision_id: revisionId }), signal: signal ?? AbortSignal.timeout(120_000) });
   } catch (error) {
-    throw new Error(`Could not reach the agent to embed the evidence: ${error instanceof Error ? error.message : String(error)}`);
+    throw new AgentUnreachableError(`Could not reach the agent to embed the evidence: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!response.ok) throw new Error(`The agent returned HTTP ${response.status} embedding the evidence: ${(await response.text().catch(() => '')).slice(0, 300)}`);
   return embeddingsFromResponse(await response.json());

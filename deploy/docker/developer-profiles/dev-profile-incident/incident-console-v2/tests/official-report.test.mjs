@@ -93,6 +93,15 @@ test('an agent failure or a malformed embedding leaves the incident without an o
   }
 });
 
+test('an unreachable agent is a 503 with a plain-language message and leaves the incident without an official revision', async () => {
+  const { db } = services({ agent: async () => { throw new TypeError('fetch failed'); } });
+  const response = await call(PUT, { revisionId: 1 });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /^The agent service is not reachable, so this report could not be made official\. /);
+  assert.equal(db.store.videos[0].official_revision_id, null);
+  assert.deepEqual(db.store.evidence_crops, []);
+});
+
 test('the report view marks the official revision explicitly and never infers it from recency', () => {
   const none = buildReportView(repaired);
   assert.deepEqual(none.official, { officialRevisionId: null, isOfficial: false });
