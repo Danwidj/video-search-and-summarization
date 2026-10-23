@@ -93,6 +93,89 @@ class TestRemoteTextEmbedder:
         assert calls["n"] == 2
 
     @pytest.mark.asyncio
+    async def test_retries_token_limit_400(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def no_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr("vss_agents.utils.embeddings.asyncio.sleep", no_sleep)
+        calls = {"n": 0}
+        token_limit = httpx.Response(400, json={"error": "Input length 9461 exceeds maximum allowed token size 8192"})
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return token_limit if calls["n"] == 1 else _embedding_response(1)
+
+        embedder = RemoteTextEmbedder(api_key="k", http_client=_client(httpx.MockTransport(handler)))
+
+        assert len(await embedder.embed_query("white SUV")) == EMBEDDING_DIMENSIONS
+        assert calls["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_read_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def no_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr("vss_agents.utils.embeddings.asyncio.sleep", no_sleep)
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise httpx.ReadTimeout("timed out", request=request)
+            return _embedding_response(1)
+
+        embedder = RemoteTextEmbedder(api_key="k", http_client=_client(httpx.MockTransport(handler)))
+
+        assert len(await embedder.embed_query("car")) == EMBEDDING_DIMENSIONS
+        assert calls["n"] == 2
+
+    @pytest.mark.asyncio
+    async def test_gives_up_after_last_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def no_sleep(_: float) -> None:
+            return None
+
+        monkeypatch.setattr("vss_agents.utils.embeddings.asyncio.sleep", no_sleep)
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        embedder = RemoteTextEmbedder(api_key="k", http_client=_client(httpx.MockTransport(handler)))
+
+        with pytest.raises(httpx.ReadTimeout):
+            await embedder.embed_query("person")
+        assert calls["n"] == 3
+
+    @pytest.mark.asyncio
+    async def test_error_includes_response_body_for_client_error(self) -> None:
+        calls = {"n": 0}
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(401, text='{"error": "invalid api key"}')
+
+        embedder = RemoteTextEmbedder(api_key="k", http_client=_client(httpx.MockTransport(handler)))
+
+        with pytest.raises(httpx.HTTPStatusError, match=r"HTTP 401: .*invalid api key"):
+            await embedder.embed_query("x")
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_other_400(self) -> None:
+        calls = {"n": 0}
+
+        def handler(_: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(400, text='{"error": "Input list must be non-empty"}')
+
+        embedder = RemoteTextEmbedder(api_key="k", http_client=_client(httpx.MockTransport(handler)))
+
+        with pytest.raises(httpx.HTTPStatusError, match="non-empty"):
+            await embedder.embed_query("x")
+        assert calls["n"] == 1
+
+    @pytest.mark.asyncio
     async def test_requires_api_key(self) -> None:
         with pytest.raises(ValueError, match="API key is not configured"):
             await RemoteTextEmbedder(api_key="").embed_query("x")
