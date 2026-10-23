@@ -55,7 +55,7 @@ function smokeEdit() {
   const details = (sourceId) => ({ source_id: sourceId, timestamp_seconds: 1, label: '', image: null });
   return {
     incident: { type: 'assault', start_timestamp: 1, end_timestamp: 9, description: 'Reviewer: one person pushes the other over.', severity_level: 3 },
-    entities: [{ entity_id: 'E1', type: 'human', description: smoke.entities[0].description, ...details('E1') }],
+    entities: [{ entity_id: 'E1', type: 'human', description: smoke.entities[0].description, first_seen_seconds: 1, last_seen_seconds: 3, ...details('E1') }],
     instruments: [],
     assets: smoke.assets.map((asset, index) => ({
       asset_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description, ...details(asset.asset_id),

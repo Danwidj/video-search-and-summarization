@@ -30,7 +30,7 @@ function editOf(record) {
   const details = (sourceId, image = null) => ({ source_id: sourceId, timestamp_seconds: 2, label: '', image });
   return {
     incident: { type: 'assault', start_timestamp: 1, end_timestamp: 11, description: 'Edited summary.', severity_level: 4 },
-    entities: [{ entity_id: 'E1', type: 'human', description: 'A person.', ...details('E1', record.evidence[0]?.image ?? null) }],
+    entities: [{ entity_id: 'E1', type: 'human', description: 'A person.', first_seen_seconds: 1, last_seen_seconds: 3, ...details('E1', record.evidence[0]?.image ?? null) }],
     instruments: [],
     assets: [{ asset_id: 'A1', name: 'white van', description: 'A van.', ...details('A1') }],
   };
@@ -174,4 +174,25 @@ test('a video without a stored object is refused and nothing is deleted', async 
   await assert.rejects(deleteVideoAndReports(videos, V, async () => assert.fail('nothing to remove')), /Video has no R2 object key/);
   assert.notEqual(await videos.getVideo(V), null);
   await assert.rejects(deleteVideoAndReports(videos, 'v-none', async () => undefined), /Video has no R2 object key/);
+});
+
+test('a saved human revision keeps each entity\'s first and last seen, and a drawn image keeps its second and box', async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  const incidents = new InMemoryIncidentRepository([record]);
+  const edit = editOf(record);
+  Object.assign(edit.entities[0], { first_seen_seconds: 2, last_seen_seconds: 5, image: `evidence/${V}/new-uuid/E1.jpg`, image_timestamp_seconds: 3, image_box: [100, 200, 300, 400] });
+  await saveHumanEdit(incidents, { videoId: V, parentId: 1, edit, createdBy: 'Editor' });
+  const stored = await incidents.getRevision(V, 2);
+  assert.deepEqual(stored.payload.entities.map((e) => [e.first_seen_seconds, e.last_seen_seconds]), [[2, 5]]);
+  assert.ok(!('image_box' in stored.payload.entities[0]) && !('image_timestamp_seconds' in stored.payload.entities[0]), 'the crop details live in evidence only');
+  assert.deepEqual(stored.evidence.map((e) => [e.source, e.timestamp_seconds, e.bounding_box]), [['upload', 3, [100, 200, 300, 400]]]);
+});
+
+test('a saved item missing a contract v4 required field is rejected before anything is written', async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  const incidents = new InMemoryIncidentRepository([record]);
+  const edit = editOf(record);
+  delete edit.entities[0].last_seen_seconds;
+  await assert.rejects(saveHumanEdit(incidents, { videoId: V, parentId: 1, edit, createdBy: 'Editor' }), (error) => error instanceof StoreRejection && error.reason === 'invalid' && /last_seen_seconds/.test(error.message));
+  assert.equal((await listRevisions(incidents, V)).length, 1);
 });

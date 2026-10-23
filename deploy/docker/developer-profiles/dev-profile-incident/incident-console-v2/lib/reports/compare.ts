@@ -176,8 +176,12 @@ function entityFromSaved(item: StructuredEntity, key: string): DraftEntity {
     label: item.label,
     image: item.evidence?.image ?? null,
     imageUrl: item.evidence?.imageUrl ?? null,
+    imageTimestampSeconds: null,
+    imageBox: null,
     type: editableEntityType(item.type),
     description: item.description,
+    firstSeenSeconds: item.firstSeenSeconds ?? item.timestampSeconds,
+    lastSeenSeconds: item.lastSeenSeconds ?? item.timestampSeconds,
   };
 }
 
@@ -189,6 +193,8 @@ function instrumentFromSaved(item: StructuredInstrument, key: string, holderKey:
     label: item.label,
     image: item.evidence?.image ?? null,
     imageUrl: item.evidence?.imageUrl ?? null,
+    imageTimestampSeconds: null,
+    imageBox: null,
     holderKey,
     name: item.name,
     description: item.description,
@@ -204,6 +210,8 @@ function assetFromSaved(item: StructuredAsset, key: string): DraftAsset {
     label: item.label,
     image: item.evidence?.image ?? null,
     imageUrl: item.evidence?.imageUrl ?? null,
+    imageTimestampSeconds: null,
+    imageBox: null,
     name: item.name,
     description: item.description,
   };
@@ -260,8 +268,8 @@ export function draftToStructured(draft: EditDraft): Structured {
       type: entity.type,
       description: entity.description,
       timestampSeconds: entity.timestampSeconds,
-      firstSeenSeconds: null,
-      lastSeenSeconds: null,
+      firstSeenSeconds: entity.firstSeenSeconds,
+      lastSeenSeconds: entity.lastSeenSeconds,
       label: entity.label,
       evidence: evidence(entity.image, entity.imageUrl, entity.timestampSeconds),
     })),
