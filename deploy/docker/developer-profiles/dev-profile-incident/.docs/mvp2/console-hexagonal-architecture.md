@@ -64,7 +64,7 @@ The search adapter calls the vss-agent rather than Supabase, so it will sit besi
 
 ### 3.1 Domain Ports (`lib/ports/`)
 
-Existing browser-safe domain types are reused rather than duplicated: `ReportView` (`lib/reports/report-view.ts`), `ReportLibraryItem` and `ReviewStatus` (`lib/reports/storage.ts`), `DashboardAnalytics` (`lib/dashboard/types.ts`), `StructuredEdit` (`lib/reports/edit-draft.ts`) and `RunNotes` (`lib/reports/run-notes.ts`).
+Existing browser-safe domain types are reused rather than duplicated: `ReportView` (`lib/reports/report-view.ts`), `ReportLibraryItem` (`lib/reports/storage.ts`), `DashboardAnalytics` (`lib/dashboard/types.ts`), `StructuredEdit` (`lib/reports/edit-draft.ts`) and `RunNotes` (`lib/reports/run-notes.ts`).
 
 #### `lib/ports/common.ts`
 ```typescript
@@ -91,7 +91,7 @@ import type { Page, RunKey } from '@/lib/ports/common';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
 import type { RunNotes } from '@/lib/reports/run-notes';
-import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
+import type { ReportLibraryItem } from '@/lib/reports/storage';
 
 export type ReportSort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 
@@ -123,14 +123,7 @@ export interface ReportList extends Page<ReportLibraryItem> {
   incidentTypes: string[];
 }
 
-/** One review_status row: three statuses plus who verified and edited the report, and when. */
-export interface ReviewState {
-  status: ReviewStatus;            // 'unreviewed' | 'under review' | 'verified'
-  verifiedBy: string | null;
-  verifiedAt: string | null;
-  editedBy: string | null;
-  editedAt: string | null;
-}
+// ReviewState (review_status) was removed on 2026-10-23: a reviewer's save is a human revision (kind='human', created_by, created_at).
 
 /** Everything stored for one run, already translated; the use case builds the ReportView from it. */
 export interface RunReportRecord {
@@ -288,7 +281,7 @@ export interface EvidenceSearchRepository {
 }
 ```
 
-Console search goes through the vss-agent (decided 2026-10-19). The agent embeds the query, ranks `evidence_crops` with `search_evidence_items`, runs the always-on critic and writes `queries` / `query_results`, so the console needs no embedding model and never writes those tables. The port is search-contract-v1 in camelCase (`services/agent/src/vss_agents/api/incident_search.py`, `SearchRequest` / `SearchResponse`); the planned adapter POSTs to `POST /api/v1/incidents/search` as documented in [`../vm-api-contracts.md`](../vm-api-contracts.md) and maps the snake_case. Evidence crops for one run, user feedback and query history are not part of that contract (and `query_results` has no feedback columns); they join the port when a backend serves them.
+Console search goes through the vss-agent (decided 2026-10-19). The agent embeds the query, ranks `evidence_crops` with `search_evidence_items`, runs the always-on critic and writes `queries` / `query_results`, so the console needs no embedding model and never writes those tables. The port is search-contract-v1 in camelCase (`services/agent/src/vss_agents/api/incident_search.py`, `SearchRequest` / `SearchResponse`); the agent adapter (`lib/adapters/agent/search.ts`) POSTs to `POST /api/v1/incidents/search` as documented in [`../vm-api-contracts.md`](../vm-api-contracts.md) and maps the snake_case. Evidence crops for one run, user feedback and query history are not part of that contract (and `query_results` has no feedback columns); they join the port when a backend serves them.
 
 #### `lib/ports/health.ts`
 ```typescript
@@ -393,8 +386,8 @@ This round meets these for every route not listed in §7; the callers in §7 sta
 
 Decided 2026-10-17; updated 2026-10-19, when the dashboard and the report library moved onto the ports:
 - **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): removed from console and database.
-- **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): not on the ports yet; they move into the middle layer later, together with the rest of the separation of human-verified and AI-generated reports. Run history already reads each run's type and severity from `effective_incidents`.
-- **Search adapter and route**: the port is defined to match the agent's search contract (§3.1); the agent-backed adapter and a console search route come in a later PR. No console-side embedding.
+- **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): not on the ports yet; they move into the middle layer later, together with the rest of the separation of human-verified and AI-generated reports.
+- **Search adapter and route**: done (`lib/adapters/agent/search.ts`, `POST /api/search`, #185). No console-side embedding.
 - **Keys built in SQL**: the report library and dashboard responses keep the snake_case keys their RPCs build (`incident_type`, `reviews.under_review`), because the components read them; renaming them means changing the mapper and the components together.
 
 Files outside `lib/adapters/supabase/**` that still import `lib/postgrest/client` as a value (dependency rule 4), each with the reason it waits:

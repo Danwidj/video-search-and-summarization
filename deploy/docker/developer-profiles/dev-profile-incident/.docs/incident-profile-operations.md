@@ -247,8 +247,8 @@ Verify deployment health against this checklist before declaring a build ready:
       History while earlier revisions remain openable.
 - [ ] **Pipeline Error Handling:** Induce an invalid video or disconnect the tunnel; verify that the frontend surfaces
       descriptive error messaging without crashing.
-- [ ] **Human Revisions:** Edit a report and Save, open an older revision in History and Restore it, then make one revision
-      official. Verify each creates a new revision with the reviewer's name and time, and that only one is official.
+- [ ] **Human Revisions:** Edit a report and Save as new version with a note, open an older revision in History and Edit from it, then make one revision
+      official. Verify each save creates a new revision with the reviewer's name and time, and that only one is official.
 - [ ] **Filtering & Dashboard:** Filter report library by incident type, severity, and date range. Confirm that
       counts match database records and clearing filters restores the full catalog.
 

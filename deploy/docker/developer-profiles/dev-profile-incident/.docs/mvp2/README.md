@@ -92,7 +92,7 @@ Search & Retrieval
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Joins with `videos` (via `selected_model_run_id`) and `incidents` to return candidate metadata.
    - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
-   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose planned adapter calls this route ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
+   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`lib/adapters/agent/search.ts`) calls this route ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
 
 5. **Query Results** (new table):
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
@@ -190,10 +190,7 @@ The PR task docs assume the following conventions and environment setup. This se
 **File:** `.docs/mvp2/frontend.md` (to be created by PR assignee)
 
 > [!IMPORTANT]
-> **TODO [PR 118]: Frontend Console Search UI & Interactive Intelligence**
-> - **Missing:** Implementation of `/search` route, natural-language query input with filter chips, search hit cards rendering crop image with threat and critic badges, jump-to-clip video scrubber integration, user relevance feedback persisting to `query_results`, evidence timeline with crop drawer on report page, saved searches drawer, theme token loader for dynamic styling, and conversational Q&A chat panel.
-> - **Owner:** PR 118 (`docs(dev-profile-incident): MVP2 frontend (search, chat, theming) workstream tasks`)
-> - **Stand-in Placeholder:** the report page's follow-up chat ships as `incident-console-v2/components/advanced-report-tools.tsx`, posting to `incident-console-v2/app/api/chat/route.ts` (agent adapter `lib/chat/agent-chat.ts`); there is no `/search` page in the console yet.
+> **Status (2026-10-23): console search and chat are merged.** There is no separate `/search` page: `/library` (`app/library/page.tsx`) holds Find incidents and Find evidence. Find evidence posts to `POST /api/search`, which calls the agent's `POST /api/v1/incidents/search` through `lib/adapters/agent/search.ts`. The report page's chat (`components/report-chat.tsx`) posts to `POST /api/chat` (agent adapter `lib/chat/agent-chat.ts`) and follows the selected version. Find incidents text search runs the agent's revision search (`POST /api/v1/incidents/revisions/search`) and a hit's link seeks the report to its second. The frame picker (Edit mode, Replace image) is merged. Not yet built: the theme tokens and saved searches. Versions and endpoints are in [`../architecture.md`](../architecture.md#report-versions-view-edit-and-history).
 
 **What PR 118 needs from this overview:**
 - The `POST /api/v1/incidents/search` REST contract (query text, filter parameters, return shape, critic verdict format)
@@ -236,7 +233,7 @@ The PR task docs assume the following conventions and environment setup. This se
 
 **File:** [`.docs/mvp2/console-hexagonal-architecture.md`](console-hexagonal-architecture.md)
 
-Hexagonal ports and adapters between the console's API routes and Supabase (no database migrations). Console evidence search goes through `EvidenceSearchRepository`, shaped on search-contract-v1; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search` ([`../vm-api-contracts.md`](../vm-api-contracts.md)), and the adapter and a console search route come later.
+Hexagonal ports and adapters between the console's API routes and Supabase (no database migrations). Console evidence search goes through `EvidenceSearchRepository`, shaped on search-contract-v1; its agent adapter calls the vss-agent's `POST /api/v1/incidents/search` ([`../vm-api-contracts.md`](../vm-api-contracts.md)), served to `/library` by `POST /api/search`.
 
 ### PR 126 - Data and Search Layer
 
@@ -324,7 +321,7 @@ The following specifications are planned, not final, pending completion of the o
 
 | Item | Missing Component | Owning Workstream | Stand-in Placeholder |
 |---|---|---|---|
-| 1 | Search Route, UI & Hit Cards | PR 118 | `/search` mock route & cards |
+| 1 | Search Route, UI & Hit Cards | PR 118 | Done: `/library` Find evidence (#185); mock routes in both mocks (#191) |
 | 2 | Evidence Timeline & Crop Gallery | PR 118 | Scrubber markers at `timestamp_seconds` |
 | 3 | Conversational Q&A Chat | Chat Endpoint / PR 118 | `chat-contract-v1`, native `vss-agent` chat endpoint & mock |
 | 4 | External Style Guide Theming | PR 118 | JSON tokens to CSS variables fallback |

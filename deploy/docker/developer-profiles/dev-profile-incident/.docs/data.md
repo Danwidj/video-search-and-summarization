@@ -316,7 +316,7 @@ and the facet columns copied from the payload. `revision_no` is `max + 1` for th
 concurrent writer takes the number first, the unique `(video_id, revision_no)` key rejects the
 insert (SQLSTATE 23505) and the agent retries with the next number, five attempts at most with
 jittered backoff. Rows are append-only, so a re-generation is a new row and never changes an earlier
-revision. The same insert carries `embedding`: the agent embeds the summary first, and an embedding failure stores NULL rather than failing the write.
+revision. The same insert carries `embedding`: the agent embeds `incident.title` and `incident.description` first, and an embedding failure stores NULL rather than failing the write.
 
 > **Insertion order for agent writes:**
 > In console agent mode the console upserts the run (with its `notes` record) only after the agent

@@ -2,6 +2,49 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-23: Save as new version keeps the entity seen span and the drawn image's second and box
+- **Decision:** Edit mode saves only as a new `human` revision, with a required note (no Restore). Entities keep `first_seen_seconds` and `last_seen_seconds`. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry, not in the payload. `saveHumanEdit` checks the built entities, instruments and assets against contract v4 required fields and returns 422 when one is missing. A draft from a v2 or v3 revision, which has no span, starts from the item's most-visible second.
+- **Why:** Without these fields a save dropped the span the report timeline draws and the time and box the frame view needs (gap G3). Edit mode opens the chosen version as the read-only A side, so copying an older version back needs no Restore.
+- **Rejected:** keeping Restore beside Edit (a second way to write a version, removed in #181); optional span fields in a save (contract v4 requires them).
+- **Links:** [pull/193](https://github.com/Danwidj/video-search-and-summarization/pull/193); [pull/189](https://github.com/Danwidj/video-search-and-summarization/pull/189); [`analysis-schema.md`](analysis-schema.md#report-revisions-ai-and-human).
+
+### 2026-10-23: The console cuts evidence frames with ffmpeg on its own host
+- **Decision:** `GET /api/reports/[videoId]/frame?t=` decodes one frame, and `POST /api/reports/[videoId]/evidence-crop` cuts a reviewer-dragged rectangle from it and stores the image under a new `evidence/<videoId>/<uuid>/<itemId>.jpg` key. Both run `ffmpeg` on the console host's PATH over a signed R2 URL (range reads). No npm dependency is added. Existing images are never overwritten.
+- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md) known issue 7); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
+- **Rejected:** a new npm video library (ffmpeg is already the standard tool and needs no dependency); cutting crops in the agent (it has no R2 credentials).
+- **Links:** [pull/183](https://github.com/Danwidj/video-search-and-summarization/pull/183); [`architecture.md`](architecture.md#report-versions-view-edit-and-history); [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-10-23: The console writes searchable crops for a newly saved revision
+- **Decision:** After an analysis, a re-run or an Edit save, a video with no official revision gets its newest revision made searchable by the console: `storeSearchableCrops` asks the agent for the revision's embeddings and calls `set_revision_crops`. A crop failure is logged and returned as `searchable.error`; the save still succeeds.
+- **Why:** The revision is already saved, so a failed crop write should not lose it or fail the request. The database cannot compute embeddings, so a writer must, and the agent already serves them for marking official.
+- **Rejected:** failing the save when crops fail; the agent writing crops for every revision (see the searchable-revision entry below).
+- **Links:** [pull/192](https://github.com/Danwidj/video-search-and-summarization/pull/192); [`data.md`](data.md) (`set_revision_crops`).
+
+### 2026-10-23: /library replaces the reports listing and carries both searches
+- **Decision:** `/library` has two tabs, Find incidents (one card per video, its official version else its newest) and Find evidence (`POST /api/search`, which the console sends to the agent's `POST /api/v1/incidents/search`, top 20, critic rejections kept). `/reports` redirects to `/library` with its query string, and dashboard links point there. `EvidenceSearchRepository` now has its agent adapter, `lib/adapters/agent/search.ts`.
+- **Why:** One page holds incident and evidence search with shared filters. Old `/reports` links and the dashboard keep working through the redirect.
+- **Rejected:** a separate `/search` page (the PR 118 plan); the mockup's "Find similar" and "Download crop", and the "No report yet" card, were left out for now.
+- **Links:** [pull/185](https://github.com/Danwidj/video-search-and-summarization/pull/185); [`mvp2/README.md`](mvp2/README.md).
+
+### 2026-10-23: Find incidents text search reads the agent's revision search and filters in the console
+- **Decision:** The Find incidents text search calls `POST /api/v1/incidents/revisions/search` through `RevisionSearchRepository`, keeps the incidents the agent matched that pass the other filters, and keeps the user's sort (not similarity order). Zero hits also fall back to the library's ILIKE search, because revisions without a stored vector are invisible to the agent. No similarity threshold is sent (the agent's default is 0).
+- **Why:** The library RPC has no text filter, and the agent already embeds each AI revision. A console-side filter keeps the library's other filters working on the same list.
+- **Rejected:** a new RPC with a text filter (a migration for one search); ordering by similarity (it would hide the sort the library already offers).
+- **Trade-off:** the console reads up to 1000 incidents and filters them, so a library over 1000 incidents drops matches. Revisit with a text filter in the RPC.
+- **Links:** [pull/196](https://github.com/Danwidj/video-search-and-summarization/pull/196); [`vm-api-contracts.md`](vm-api-contracts.md).
+
+### 2026-10-23: Model choice applies in agent mode, and the run records the agent's reported model
+- **Decision:** The re-run and upload model picker works in agent mode as well as gateway mode. The console sends the chosen allowlisted `model` to the agent's `/analyze`; the run records the model the agent reports.
+- **Why:** The agent accepts an allowlisted `model` since #188, so the gateway-only guard had no reason left. Recording the agent's model keeps `model_runs` true to the model that ran.
+- **Rejected:** keeping the 409 guard for agent mode (the console would offer a choice it then refused).
+- **Links:** [pull/194](https://github.com/Danwidj/video-search-and-summarization/pull/194); [`vm-api-contracts.md`](vm-api-contracts.md).
+
+### 2026-10-23: The agent's field is reviewer_prompt, not additional_instruction
+- **Decision:** `/analyze` keeps `reviewer_prompt` (max 1000 characters). The console's request field `additionalInstruction` on `POST /api/videos/[videoId]/runs` is unchanged; it is passed to the agent as `reviewer_prompt`.
+- **Why:** The name already existed in the agent, the vendored docs and the console request. A second name would add a mapping for one value.
+- **Rejected:** a second field `additional_instruction` on the agent.
+- **Links:** [pull/188](https://github.com/Danwidj/video-search-and-summarization/pull/188); [`vm-api-contracts.md`](vm-api-contracts.md).
+
 ### 2026-10-23: Incident-level search embeds each AI revision in a column on report_revisions
 - **Decision:** Store one summary embedding per AI revision as `report_revisions.embedding vector(1024)` with an HNSW cosine index (migration `20261023120000_report_revision_embeddings.sql`). The agent embeds `incident.title` and `incident.description` before the insert and writes the vector in the same row; an embedding failure inserts NULL. Search is `search_report_revisions` over all revisions with a vector, exposed as `POST /api/v1/incidents/revisions/search`.
 - **Why:** `report_revisions` rejects UPDATE, so the vector has to be known at insert time, and one row per saved version keeps the vector, its payload and its facets together with no join. The embedding is non-fatal, so a down endpoint cannot stop a report from saving.
@@ -22,14 +65,14 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-10-23: Versioned report revisions as JSONB snapshots
 - **Decision:**
-  - A report is a list of immutable **revisions** per incident (video), `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, and facet columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`) written by the caller. `kind='ai'` revisions are made by an analysis; `kind='human'` ones by Save or Restore, with `parent_id` the revision that was opened. A trigger rejects any UPDATE or DELETE (a video's cascade may remove them).
+  - A report is a list of immutable **revisions** per incident (video), `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, and facet columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`) written by the caller. `kind='ai'` revisions are made by an analysis; `kind='human'` ones by Save as new version, with `parent_id` the revision that was opened. A trigger rejects any UPDATE or DELETE (a video's cascade may remove them).
   - Re-generating with another model (and an optional reviewer prompt typed in the console) makes a new AI revision. It does not carry earlier edits across.
   - One revision per incident is **official**: `videos.official_revision_id` (NULL = none). Marking it rebuilds that incident's `evidence_crops` (the only rows search reads) from the revision, with embeddings from the agent's `POST /api/v1/incidents/evidence-embeddings`; un-marking clears them. There is no verification status and no audit of who marked it: `kind='human'` with `created_by` and `created_at` says a person saved it.
   - Evidence edits (description, detail, a replacement image) are part of a new human revision. A replacement image gets a fresh R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg`; R2 objects a revision references are never overwritten or deleted.
   - The console writes `model_runs` and the AI revision in gateway mode, and only `model_runs` in agent mode, where the agent inserts the revision and returns `revision_id`. The functions that need a transaction (`save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`) ship with the versioned-report schema in `supabase/migrations/`, produced by the schema task; this console change does not add a migration.
 - **Why:** The team wants each upload to give an AI report with evidence, a human to edit it and keep every version, re-generation with a different model, and exactly one official version. Snapshots keep each version whole and make restore a copy, where the previous design (relational AI rows plus one reviewer copy per run) could keep only one reviewer version and needed `effective_*` views, `source_*_id` links and a review status machine.
 - **Rejected:** a draft status (unsaved edits live in the form only; a refresh reloads the database version); a migration script in this change (the schema task owns the schema); deleting individual revisions or R2 images (an old revision may reference them); inferring the official report as "latest" (one explicit mark per incident); incident-level vector search (search stays on item crops of the official revision).
-- **Links:** [`data.md`](data.md); [`architecture.md`](architecture.md#report-versions-editing-history-and-restore); [`analysis-schema.md`](analysis-schema.md#report-revisions-ai-and-human); [`../supabase/README.md`](../supabase/README.md).
+- **Links:** [`data.md`](data.md); [`architecture.md`](architecture.md#report-versions-view-edit-and-history); [`analysis-schema.md`](analysis-schema.md#report-revisions-ai-and-human); [`../supabase/README.md`](../supabase/README.md).
 
 ### 2026-10-23: Hand-applied report schema is recorded as finals migrations
 - **Decision:** Add `20261023000000_report_revisions_schema.sql` and `20261023000100_report_revisions_functions.sql` to reproduce the revision schema the captain applied out of band, and make them safe to apply to the live database that already has it (`IF NOT EXISTS`, `CREATE OR REPLACE`, guarded `DO` blocks, conditional drops). The schema migration also drops the retired relational report tables, functions and `videos.selected_*` columns, and the test harness reapplies both files over the built schema to prove idempotence.

@@ -115,18 +115,18 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 ### Report revisions (AI and human)
 
-A report is a list of immutable revisions in `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, the facet columns, `kind` (`ai` or `human`) and `parent_id` (the revision that was opened). The AI report is written once by analysis; a reviewer's Save or Restore appends a `human` revision and never touches the AI one. The schema and the append-only trigger are in [`data.md`](data.md#agent-report-writes-report_revisions); the console's writer is `save_human_revision`.
+A report is a list of immutable revisions in `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, the facet columns, `kind` (`ai` or `human`) and `parent_id` (the revision that was opened). The AI report is written once by analysis; a reviewer's Save as new version appends a `human` revision and never touches the AI one. Entities carry `first_seen_seconds` and `last_seen_seconds` (contract v4), which a save keeps. The schema and the append-only trigger are in [`data.md`](data.md#agent-report-writes-report_revisions); the console's writer is `save_human_revision`.
 
 | Event | Revision written |
 |---|---|
 | Successful analysis | `kind='ai'`, `parent_id` NULL, `model_run_id` set |
-| First Save or Restore | `kind='human'`, `parent_id` = the revision opened, complete payload and evidence, `created_by` |
-| Later Save or Restore | another `human` revision on the current one |
+| First Save as new version | `kind='human'`, `parent_id` = the revision opened, complete payload and evidence, `created_by` |
+| Later saves | another `human` revision on the current one |
 | Re-generation | a new `ai` revision with `parent_id` NULL; it copies no earlier edits |
 | Mark official | none; `videos.official_revision_id` changes and `evidence_crops` is rebuilt |
 | Delete video | cascade removes every revision |
 
-- **One official revision per video** (`videos.official_revision_id`, NULL = none), chosen explicitly. It is the version statistics count and the only version search reads (`evidence_crops` are rebuilt from it).
+- **One official revision per video** (`videos.official_revision_id`, NULL = none), chosen explicitly. It is the version statistics count. Search reads the video's searchable revision: the official one, else the newest (`evidence_crops` belong to it).
 - **The report page** opens `?revision=<id>`, else the official revision, else the newest one. History lists every revision newest first; opening one loads it into the editor.
 - **Edits** (`save_human_revision`) are validated against the contract's own sub-schemas and the ID/holder/window rules before the call. Each item keeps the id of the item it came from through the editor's renumbering, so its evidence and image follow it.
 - **Evidence images** are never overwritten or deleted. An edit or a replacement uploads to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg`; an item without an image records an `image_gap` reason.
