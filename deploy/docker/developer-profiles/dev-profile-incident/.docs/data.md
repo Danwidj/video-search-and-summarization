@@ -306,7 +306,7 @@ Audit log and hit persistence for natural-language search queries and always-on 
 
 ### Agent report writes (`report_revisions`)
 
-PostgREST has no client-held transactions, so the agent's report write is one `INSERT` into `report_revisions` (`IncidentDB.insert_ai_revision`): `kind='ai'`, `model_run_id` (a required foreign key), `parent_id` NULL, the full contract report as `payload`, the crop list as `evidence`, and the facet columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`) copied from the payload. `revision_no` is `max + 1` for the video; if a concurrent writer takes the number first, the unique `(video_id, revision_no)` key rejects the insert (SQLSTATE 23505) and the agent retries with the next number, three attempts at most. Rows are append-only (a trigger blocks updates and deletes), so a re-generation is a new row and never changes an earlier revision.
+PostgREST has no client-held transactions, so the agent's report write is one `INSERT` into `report_revisions` (`IncidentDB.insert_ai_revision`): `kind='ai'`, `model_run_id` (a required foreign key), `parent_id` NULL, the full contract report as `payload`, the crop list as `evidence`, and the facet columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`) copied from the payload. `revision_no` is `max + 1` for the video; if a concurrent writer takes the number first, the unique `(video_id, revision_no)` key rejects the insert (SQLSTATE 23505) and the agent retries with the next number, five attempts at most with jittered backoff between retries. Rows are append-only (a trigger blocks updates and deletes), so a re-generation is a new row and never changes an earlier revision.
 
 > [!IMPORTANT]
 > **Cascading Deletes on Child Records:**

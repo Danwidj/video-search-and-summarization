@@ -54,6 +54,7 @@ import datetime as _dt
 import logging
 import math
 import os
+import random
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -69,7 +70,7 @@ logger = logging.getLogger(__name__)
 _SUPABASE_URL_ENV_VAR = "INCIDENT_SUPABASE_URL"
 _SUPABASE_KEY_ENV_VAR = "INCIDENT_SUPABASE_SERVICE_ROLE_KEY"
 _UNIQUE_VIOLATION = "23505"
-_REVISION_INSERT_ATTEMPTS = 3
+_REVISION_INSERT_ATTEMPTS = 5
 
 
 def _url_from_env() -> str:
@@ -280,7 +281,7 @@ class IncidentDB:
         unique key reject the insert, which is retried with the next number.
         """
         last_exc: Exception | None = None
-        for _ in range(_REVISION_INSERT_ATTEMPTS):
+        for attempt in range(_REVISION_INSERT_ATTEMPTS):
             row = {
                 "video_id": video_id,
                 "revision_no": await self.next_revision_no(video_id),
@@ -300,6 +301,8 @@ class IncidentDB:
                 if exc.code != _UNIQUE_VIOLATION:
                     raise
                 last_exc = exc
+                if attempt < _REVISION_INSERT_ATTEMPTS - 1:
+                    await asyncio.sleep(0.1 * (attempt + 1) + 0.05 * random.random())
                 continue
             inserted = (result.data or [row])[0]
             return dict(inserted)  # type: ignore[arg-type]

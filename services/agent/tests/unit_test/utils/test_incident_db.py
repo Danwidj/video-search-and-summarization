@@ -368,9 +368,39 @@ async def test_insert_ai_revision_retries_a_revision_no_taken_by_a_concurrent_wr
 
 
 @pytest.mark.asyncio
+async def test_insert_ai_revision_three_concurrent_inserts_succeed_with_distinct_revision_nos():
+    """3+ concurrent inserts against unique (video_id, revision_no) all succeed with distinct numbers.
+
+    With 5 attempts and jittered backoff, concurrent writers retry on SQLSTATE 23505 and eventually
+    each gets a distinct revision_no instead of all aborting after 3 attempts.
+    """
+    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
+    client, _table = _revision_client(
+        last_revision_nos=[2, 3, 4, 5, 6, 7],
+        insert_results=[
+            clash,
+            MagicMock(data=[{"id": 1, "revision_no": 3}]),
+            clash,
+            MagicMock(data=[{"id": 2, "revision_no": 5}]),
+            clash,
+            MagicMock(data=[{"id": 3, "revision_no": 7}]),
+        ],
+    )
+    rows = await asyncio.gather(
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r1", payload=REPORT_PAYLOAD, evidence=[]),
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r2", payload=REPORT_PAYLOAD, evidence=[]),
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r3", payload=REPORT_PAYLOAD, evidence=[]),
+    )
+    assert len(rows) == 3
+    revision_nos = [row["revision_no"] for row in rows]
+    assert len(set(revision_nos)) == 3
+    assert set(revision_nos) == {3, 5, 7}
+
+
+@pytest.mark.asyncio
 async def test_insert_ai_revision_gives_up_after_repeated_clashes():
     clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
-    client, _ = _revision_client(last_revision_nos=[1, 2, 3], insert_results=[clash, clash, clash])
+    client, _ = _revision_client(last_revision_nos=[1, 2, 3, 4, 5], insert_results=[clash] * 5)
     with pytest.raises(RuntimeError, match="revision_no"):
         await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
 
