@@ -135,8 +135,8 @@ application. The report library remembers filters, scroll position, and its orig
 `/dashboard` summarizes report volume, review progress, confidence, severity, and incident types with drill-down
 links.
 
-Each report provides human-attributed structured corrections, non-streaming report-grounded follow-up chat through
-the agent `/chat` contract, and model-run history and side-by-side comparison. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
+Each report provides human-attributed structured corrections, non-streaming follow-up chat through
+the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the report's video and showing cited evidence, and model-run history and side-by-side comparison. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
 provenance.
 
 ## Videos, run history and official reports (2026-09-27)
@@ -152,4 +152,3 @@ provenance.
   - read-only model output (title, "Model severity rationale", timeline, uncertainties);
   - a "Run & model output details" panel.
 - **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.
-

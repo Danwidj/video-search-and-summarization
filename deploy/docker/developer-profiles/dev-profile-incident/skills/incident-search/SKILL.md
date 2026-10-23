@@ -57,6 +57,8 @@ The route persists the query and ranked verdicts in `queries` and `query_results
 
 Use chat for a follow-up question rather than treating a free-form answer as an ungrounded report. Send the full conversation history and, when narrowing the question, the incident or evidence crop IDs in `context`.
 
+The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`.
+
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \
   -H 'Content-Type: application/json' \
