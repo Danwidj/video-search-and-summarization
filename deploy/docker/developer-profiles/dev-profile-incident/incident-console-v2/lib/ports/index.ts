@@ -2,6 +2,7 @@
 
 export { StoreRejection } from '@/lib/ports/common';
 export type { Page, RunKey } from '@/lib/ports/common';
+export type { ChatCitation, ChatContext, ChatMessage, ChatRequest, ChatResponse, ChatRole } from '@/lib/ports/chat';
 export type { DashboardQuery, DashboardRepository, DashboardSeverity } from '@/lib/ports/dashboard';
 export type { DatabaseHealth, HealthRepository } from '@/lib/ports/health';
 export type {
