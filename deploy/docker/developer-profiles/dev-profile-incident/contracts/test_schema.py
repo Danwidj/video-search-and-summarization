@@ -166,7 +166,7 @@ def test_chat_contract_v1_version():
 # --- Incident Contract v3 ---
 
 
-def test_incident_contract_v3_schema_has_required_fields():
+def test_incident_contract_v4_schema_has_required_fields():
     """incident_report.schema.json has timestamp_seconds and label in entities/instruments/assets."""
     schema = _load("incident_report.schema.json")
 
@@ -177,6 +177,11 @@ def test_incident_contract_v3_schema_has_required_fields():
     assert entity_schema["timestamp_seconds"]["minimum"] == 0, (
         "timestamp_seconds min must be 0"
     )
+    entity_required = schema["properties"]["entities"]["items"]["required"]
+    for key in ("first_seen_seconds", "last_seen_seconds"):
+        assert entity_schema[key]["type"] == "integer", f"entities {key} must be an integer"
+        assert entity_schema[key]["minimum"] == 0, f"entities {key} min must be 0"
+        assert key in entity_required, f"entities {key} must be required"
 
     # Check instruments have timestamp_seconds and label
     instrument_schema = schema["properties"]["instruments"]["items"]["properties"]
@@ -196,14 +201,14 @@ def test_incident_contract_v3_schema_has_required_fields():
     for sch_name in ["entities", "instruments", "assets"]:
         assert "bounding_box" not in schema["properties"][sch_name]["items"].get(
             "properties", {}
-        ), f"incident-contract-v3 must NOT have bounding_box in {sch_name}"
+        ), f"incident-contract-v4 must NOT have bounding_box in {sch_name}"
 
 
 def test_incident_contract_v3_version():
-    """VERSION file matches incident-contract-v3."""
+    """VERSION file matches incident-contract-v4."""
     version = (CONTRACTS_DIR / "VERSION").read_text().strip()
-    assert version == "incident-contract-v3", (
-        f"Expected incident-contract-v3, got {version}"
+    assert version == "incident-contract-v4", (
+        f"Expected incident-contract-v4, got {version}"
     )
 
 

@@ -1,4 +1,4 @@
-# Incident contract (`incident-contract-v3`)
+# Incident contract (`incident-contract-v4`)
 
 This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. This directory is the only place to edit shared contract files; run `python sync.py` (or `python sync.py --check`) to regenerate the agent's vendored copy in `services/agent/src/vss_agents/incident_contract/`. Decisions: [`../.docs/decisions.md`](../.docs/decisions.md).
 
@@ -32,6 +32,7 @@ This directory is the single source of truth for incident extraction: one prompt
   - timeline events fall within `[start_timestamp, end_timestamp]` and are in chronological order.
 - **Derived fields are computed by code, never requested from the model.** `incident.duration` is not in the schema. Every consumer sets it to `end_timestamp - start_timestamp` after validation (`eval/contract.py`, `with_derived_fields`), and RP1 receives the derived JSON. A model that sends `duration` fails the schema.
 - **Temporal and visual grounding (`incident-contract-v3`):** `entities`, `instruments`, and `assets` items require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localisation. Per the VLM Bounding Box Accuracy Pilot, spatial bounding boxes are never requested from or emitted by VLMs; they are optional, detector-produced outputs in search hits.
+- **Entity seen span (`incident-contract-v4`):** every entity also requires `first_seen_seconds` and `last_seen_seconds` (integer >= 0, seconds from video start). The prompt asks for `first_seen_seconds <= timestamp_seconds <= last_seen_seconds`; the schema cannot express that and no cross-field rule enforces it. They are required in the schema because strict mode lists every property in `required`. Reports stored before v4 lack them, so readers fall back to `timestamp_seconds` and the console validates an older report against its own version's schema.
 - **Validation policy `core-scored-v1`** (a layer on top of these rules; `eval/contract.py` `evaluate_policy`, console `lib/contract/validate.ts` `validateCore`, agent `vss_agents/incident_contract/` `core_violations`). Only the database-backed fields decide whether a response is persisted and how the model scores:
   - incident type, window, description, severity and confidence;
   - entities, instruments and assets.

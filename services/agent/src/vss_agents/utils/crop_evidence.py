@@ -508,15 +508,17 @@ class R2EvidenceStore(EvidenceStore):
 
 
 def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
-    """The entities, instruments and assets of an incident-contract-v3 report as evidence entries.
+    """The entities, instruments and assets of an incident-contract-v4 report as evidence entries.
 
     Each entry carries the ``evidence_crops`` item columns (``item_type``, ``item_id``,
     ``item_name``, ``description``, ``threat_level``, ``holder_entity_id``, ``timestamp_seconds``)
-    plus the detector ``label``; :meth:`CropEvidenceService.process_incident_report` adds
+    plus the detector ``label``. Entities also carry ``first_seen_seconds`` and ``last_seen_seconds``
+    (reports stored before ``incident-contract-v4`` lack them, so they fall back to ``timestamp_seconds``); :meth:`CropEvidenceService.process_incident_report` adds
     ``bounding_box``, ``image`` and ``image_gap``.
     """
     items: list[dict[str, Any]] = []
     for entity in report.get("entities") or []:
+        seen_at = _whole_seconds(entity.get("timestamp_seconds"))
         items.append(
             {
                 "item_type": "entity",
@@ -525,7 +527,9 @@ def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "description": str(entity.get("description") or ""),
                 "threat_level": None,
                 "holder_entity_id": None,
-                "timestamp_seconds": _whole_seconds(entity.get("timestamp_seconds")),
+                "timestamp_seconds": seen_at,
+                "first_seen_seconds": _whole_seconds(entity.get("first_seen_seconds", seen_at)),
+                "last_seen_seconds": _whole_seconds(entity.get("last_seen_seconds", seen_at)),
                 "label": str(entity.get("label") or entity.get("description") or entity.get("type") or "person"),
             }
         )

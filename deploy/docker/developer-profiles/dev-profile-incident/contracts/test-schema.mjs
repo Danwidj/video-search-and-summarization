@@ -98,6 +98,10 @@ const entityProps = incidentSchema.properties.entities.items.properties;
 assert.ok('timestamp_seconds' in entityProps, 'entities must have timestamp_seconds');
 assert.ok('label' in entityProps, 'entities must have label');
 assert.ok(entityProps.timestamp_seconds.minimum === 0, 'timestamp_seconds min must be 0');
+for (const key of ['first_seen_seconds', 'last_seen_seconds']) {
+  assert.ok(entityProps[key]?.type === 'integer' && entityProps[key].minimum === 0, `entities must have integer ${key} >= 0`);
+  assert.ok(incidentSchema.properties.entities.items.required.includes(key), `${key} must be required`);
+}
 
 // Check instruments have timestamp_seconds and label
 const instrumentProps = incidentSchema.properties.instruments.items.properties;
@@ -115,15 +119,15 @@ assert.ok(assetProps.timestamp_seconds.minimum === 0, 'timestamp_seconds min mus
 for (const key of ['entities', 'instruments', 'assets']) {
   const bbKey = 'bounding_box';
   assert.ok(!(bbKey in incidentSchema.properties[key].items.properties), (
-    `${key} must NOT have bounding_box in incident-contract-v3`
+    `${key} must NOT have bounding_box in incident-contract-v4`
   ));
 }
-console.log('  PASS: incident-contract-v3 schema has required fields, no bounding_box');
+console.log('  PASS: incident-contract-v4 schema has required fields, no bounding_box');
 
 // VERSION file
 console.log('=== VERSION file ===');
 const version = fs.readFileSync(path.join(contractsDir, 'VERSION'), 'utf8').trim();
-assert.strictEqual(version, 'incident-contract-v3', 'VERSION must be incident-contract-v3');
-console.log('  PASS: VERSION = incident-contract-v3');
+assert.strictEqual(version, 'incident-contract-v4', 'VERSION must be incident-contract-v4');
+console.log('  PASS: VERSION = incident-contract-v4');
 
 console.log('\n=== ALL TESTS PASSED ===');

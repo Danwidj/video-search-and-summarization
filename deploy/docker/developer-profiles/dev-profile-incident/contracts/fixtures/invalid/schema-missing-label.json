@@ -15,13 +15,17 @@
       "entity_id": "E1",
       "type": "human",
       "description": "Person in a dark jacket attacking.",
-      "timestamp_seconds": 4
+      "timestamp_seconds": 4,
+      "first_seen_seconds": 4,
+      "last_seen_seconds": 4
     },
     {
       "entity_id": "E2",
       "type": "human",
       "description": "Person at the counter being struck.",
       "timestamp_seconds": 4,
+      "first_seen_seconds": 4,
+      "last_seen_seconds": 4,
       "label": "person at counter"
     }
   ],

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Strict validator for incident-contract-v3, equivalent to eval/contract.py:
+// Strict validator for incident-contract-v4, equivalent to eval/contract.py:
 // JSON.parse of the raw content (no fence stripping, brace extraction, alias
 // mapping or default filling), JSON Schema validation against the shared
 // schema file, then the cross-field rules the schema cannot express. Derived
@@ -117,17 +117,21 @@ export class ContractError extends Error {
   }
 }
 
-function v2Schema(): Record<string, unknown> {
+// Fields an older contract version lacks. Reports stored under it are validated against the
+// current schema minus these (v3 predates first/last seen; v2 also predates timestamp and label).
+const V3_FIELDS = ['first_seen_seconds', 'last_seen_seconds'];
+const V2_FIELDS = ['timestamp_seconds', 'label', ...V3_FIELDS];
+
+function olderSchema(omitted: string[]): Record<string, unknown> {
   const base = JSON.parse(JSON.stringify(schema())) as Record<string, any>;
   for (const collection of ['entities', 'instruments', 'assets']) {
     const itemSchema = base.properties?.[collection]?.items;
     if (itemSchema) {
       if (itemSchema.properties) {
-        delete itemSchema.properties.timestamp_seconds;
-        delete itemSchema.properties.label;
+        for (const key of omitted) delete itemSchema.properties[key];
       }
       if (Array.isArray(itemSchema.required)) {
-        itemSchema.required = itemSchema.required.filter((r: string) => r !== 'timestamp_seconds' && r !== 'label');
+        itemSchema.required = itemSchema.required.filter((r: string) => !omitted.includes(r));
       }
     }
   }
@@ -136,13 +140,14 @@ function v2Schema(): Record<string, unknown> {
 
 const compiledValidators = new Map<string, ValidateFunction>();
 
-export function validator(version = 'incident-contract-v3'): ValidateFunction {
+export function validator(version = 'incident-contract-v4'): ValidateFunction {
   let v = compiledValidators.get(version);
   if (!v) {
     // strict:false only relaxes Ajv's authoring lint (e.g. minimum on a
     // ["number","null"] union); validation semantics are standard draft 2020-12.
     const ajv = new Ajv2020({ allErrors: true, strict: false });
-    const targetSchema = version === 'incident-contract-v2' ? v2Schema() : schema();
+    const targetSchema = version === 'incident-contract-v2' ? olderSchema(V2_FIELDS)
+      : version === 'incident-contract-v3' ? olderSchema(V3_FIELDS) : schema();
     v = ajv.compile(targetSchema);
     compiledValidators.set(version, v);
   }
@@ -209,7 +214,7 @@ export function crossFieldErrors(report: IncidentContractReport): string[] {
 }
 
 /** Validate an already-decoded report; throws ContractError listing every violation. */
-export function validateReport(report: unknown, version = 'incident-contract-v3'): IncidentContractReport {
+export function validateReport(report: unknown, version = 'incident-contract-v4'): IncidentContractReport {
   const validate = validator(version);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])]
