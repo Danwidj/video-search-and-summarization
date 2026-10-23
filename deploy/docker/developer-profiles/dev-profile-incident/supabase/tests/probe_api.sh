@@ -24,7 +24,7 @@ probe() { # label key method path [body]
   printf '%-14s %-6s %-62s %s\n' "$label" "$method" "$path" "$code"
 }
 
-for table in videos model_runs incidents entities review_status gt_incidents evidence_crops query_results human_reports effective_incidents; do
+for table in videos model_runs incidents entities review_status evidence_crops query_results human_reports effective_incidents; do
   probe "public key" "$FINALS_PUBLIC_KEY" GET "/rest/v1/$table?select=*&limit=1"
 done
 probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/videos" '{"id":"probe-anon"}'

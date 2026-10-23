@@ -46,6 +46,6 @@ export interface VideoRepository {
   /** Throws StoreRejection: 'not-found' for an unknown video, 'invalid' for a run that cannot be official. */
   selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection>;
   clearOfficialRun(videoId: string, clearedBy: string): Promise<OfficialClearance>;
-  /** Deletes the video row (incidents, evidence, reviews, reports and gt_* cascade), then the run records that name only this video. */
+  /** Deletes the video row (incidents, evidence, reviews and reports cascade), then the run records that name only this video. */
   deleteVideo(videoId: string): Promise<void>;
 }
