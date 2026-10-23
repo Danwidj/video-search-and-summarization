@@ -1,27 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import Link from 'next/link';
-
 import { AppHeader } from '@/components/app-header';
 import { ReportPage as ReportView } from '@/components/report-page';
+import { parseStartSeconds } from '@/lib/library/search';
 
 export default async function ReportPage({
   params,
   searchParams,
 }: {
   params: Promise<{ videoId: string }>;
-  searchParams: Promise<{ revision?: string }>;
+  searchParams: Promise<{ revision?: string; t?: string }>;
 }) {
-  const [{ videoId }, { revision }] = await Promise.all([params, searchParams]);
+  const [{ videoId }, { revision, t }] = await Promise.all([params, searchParams]);
 
   const parsed = revision === undefined ? null : Number(revision);
   const revisionId = parsed !== null && Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  const startSeconds = parseStartSeconds(t);
 
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <AppHeader active="library" subtitle="Report workspace" />
-      <div className="print-hidden mx-auto max-w-[1500px] px-6 pt-1 lg:px-12"><Link className="text-sm font-semibold text-moss" href="/library" id="back-to-reports">← Back to the library</Link></div>
-      <ReportView revisionId={revisionId} videoId={videoId} />
+      <ReportView revisionId={revisionId} startSeconds={startSeconds} videoId={videoId} />
     </main>
   );
 }

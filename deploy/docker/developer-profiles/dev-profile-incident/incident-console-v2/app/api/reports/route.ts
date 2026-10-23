@@ -2,10 +2,11 @@
 
 import { NextResponse } from 'next/server';
 
+import { AgentRevisionSearchRepository } from '@/lib/adapters/agent/revision-search';
 import { getDbAdapters } from '@/lib/adapters/supabase';
-import { getServiceConfiguration } from '@/lib/env';
+import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import type { ReportListQuery, ReportSort } from '@/lib/ports';
+import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/lib/ports';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import { isValidTimeZone } from '@/lib/time';
@@ -13,6 +14,11 @@ import { isValidTimeZone } from '@/lib/time';
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 6;
+/** The most incidents one list reads, so a text search can filter them in memory (the RPC's own cap). */
+const MAX_LIST_SIZE = 1000;
+/** Revision hits asked for per text search; the agent ranks best first. */
+const REVISION_TOP_K = 50;
+const REVISION_SEARCH_TIMEOUT_MS = 30_000;
 const SORTS = new Set(['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
 const SEVERITIES = new Set(['all', 'low', 'medium', 'high', '1', '2', '3', '4', '5']);
 
@@ -37,6 +43,29 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
     throw new RangeError(`Invalid ${key} filter`);
   }
   return values.length ? values : null;
+}
+
+/**
+ * The videos whose saved revisions the agent ranks for the text. Null when the
+ * agent is not configured, fails or finds nothing, so the caller keeps the
+ * ILIKE text filter (the store's own search).
+ */
+async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<Set<string> | null> {
+  if (!config.agentUrl) return null;
+  try {
+    const hits = await new AgentRevisionSearchRepository(config.agentUrl, AbortSignal.timeout(REVISION_SEARCH_TIMEOUT_MS))
+      .search({ query: text, topK: REVISION_TOP_K });
+    return hits.length ? new Set(hits.map((hit) => hit.videoId)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The incidents the other filters allow, narrowed to the ones the agent matched; the sort is kept. */
+async function listMatchingIncidents(incidents: IncidentRepository, query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>, videoIds: Set<string>, page: number, pageSize: number): Promise<ReportList> {
+  const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
+  const matched = all.items.filter((item) => videoIds.has(item.videoId));
+  return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
 }
 
 export async function GET(request: Request) {
@@ -67,10 +96,8 @@ export async function GET(request: Request) {
     if (!SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid report severity' }, { status: 400 });
     if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
 
-    const { items: summaries, totalItems, incidentTypes } = await incidents.listReports({
-      page,
-      pageSize,
-      search: optional(params, 'search'),
+    const search = optional(params, 'search');
+    const filters: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'> = {
       type: optional(params, 'type'),
       severity: optional(params, 'severity'),
       kind,
@@ -87,7 +114,11 @@ export async function GET(request: Request) {
       entityTypes: entityTypes.length ? entityTypes : null,
       evidenceMatch: match,
       timezone,
-    });
+    };
+    const videoIds = search === null ? null : await videosMatchingText(config, search);
+    const { items: summaries, totalItems, incidentTypes } = videoIds
+      ? await listMatchingIncidents(incidents, filters, videoIds, page, pageSize)
+      : await incidents.listReports({ ...filters, search, page, pageSize });
     const sign = async (key: string) => { try { return await createR2PlaybackUrl(config, key); } catch { return undefined; } };
     const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
       const [thumbnailUrl, evidenceThumbnailUrl] = await Promise.all([
@@ -100,6 +131,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       reports,
       incidentTypes,
+      /** With text: 'semantic' when the agent ranked it, 'text' for the store's ILIKE filter. */
+      ...(search === null ? {} : { searchMode: videoIds ? 'semantic' : 'text' }),
       pagination: {
         page,
         pageSize,

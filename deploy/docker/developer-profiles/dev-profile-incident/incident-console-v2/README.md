@@ -120,7 +120,10 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
 `/library` (the old `/reports` listing redirects there, keeping its query string) has two tabs.
 
 - **Find incidents** lists one card per video as server-paginated pages of six lightweight summaries
-  (`list_incident_report_summaries`): the official revision, else the newest. Cards show the severity, the
+  (`list_incident_report_summaries`): the official revision, else the newest. A text search asks the agent
+  (`POST /api/v1/incidents/revisions/search`, `lib/adapters/agent/revision-search.ts`) for the revisions it ranks, keeps
+  the incidents they belong to under the other filters and the chosen sort, and reads up to 1000 incidents to do it.
+  When the agent fails or finds nothing, the store's text match (ILIKE) is used and a note says so. Cards show the severity, the
   "Official vN" marker with when it was made official or "No official version", the summary, and the evidence and
   version counts. Thumbnails are small signed R2 screenshots (falling back to the first evidence image, then a
   skeleton); the library never requests video. Filters: text, incident type, official-only status, severity band, added
@@ -129,10 +132,11 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
   for the visit only.
 - **Find evidence** posts the text to `POST /api/search`, which asks the agent (`POST /api/v1/incidents/search`,
   `search-contract-v1`, `lib/adapters/agent/search.ts`) for the top 20 ranked hits with no similarity cutoff and the
-  critic's rejections kept, then adds each video's searched version from the same summaries. Hits show the crop,
-  match percentage, video time, kind, threat and relationship (held by / holds); kind, threat and incident-type
+  critic's verdict on each hit, then adds each video's searched version from the same summaries. Hits show the crop,
+  match percentage, critic verdict (confirmed, rejected or unverified), video time, kind, threat and relationship (held
+  by / holds). Rejected hits are hidden until "Show N rejected" is pressed; kind, threat and incident-type
   filters and "Group by incident" work on the returned hits without a new search. Clicking a crop opens the viewer
-  with the item's details and a link to its report. The viewer shows the full frame (`FrameViewer`, cut by `GET /api/reports/<id>/frame`) with every box found
+  with the item's details and a link to its report, which opens at the hit's second (`?t=`). The viewer shows the full frame (`FrameViewer`, cut by `GET /api/reports/<id>/frame`) with every box found
   at that second, or the enlarged crop when the frame cannot be cut.
 
 Every save appends a `human` revision; the AI revision is never changed, and each video has at most one official

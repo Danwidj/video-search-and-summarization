@@ -28,8 +28,8 @@ interface EditBase { revisionId: number; revisionNo: number; report: ReportView 
 // Human revisions still record who saved them; the mockup removed names from the UI, so the console sends a neutral one.
 const SAVE_AUTHOR = 'Reviewer';
 
-/** revisionId null opens the incident's official version, else its newest. */
-export function ReportPage({ videoId, revisionId }: { videoId: string; revisionId: number | null }) {
+/** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
+export function ReportPage({ videoId, revisionId, startSeconds = null }: { videoId: string; revisionId: number | null; startSeconds?: number | null }) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -40,6 +40,7 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
   // The player's own length, a second guard (besides the recorded length) before jumping to a time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const startedAt = useRef(false);
 
   const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState<EditDraft | null>(null);
@@ -228,7 +229,7 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-2 sm:px-6 lg:px-12">
       <article className="report-sheet overflow-clip rounded-[2rem] border border-ink/10 bg-white shadow-panel" data-testid="report-page">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-ink/10 px-5 py-3 text-sm">
-          <Link className="font-semibold text-moss" href="/reports" id="back-to-reports">← Reports</Link>
+          <Link className="font-semibold text-moss" href="/library" id="back-to-library">← Library</Link>
           <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>{heading}<span className="ml-2 font-normal text-ink/45">{filename}</span></h1>
           <button aria-expanded={chatOpen} className="rounded-full border border-ink/15 px-3 py-1 text-xs font-semibold text-moss" data-testid="chat-toggle" onClick={() => setChatOpen((open) => !open)} type="button">Ask about this incident</button>
           <div aria-label="Report mode" className="flex shrink-0 rounded-full border border-ink/15 p-0.5 text-xs font-semibold" role="tablist">
@@ -241,7 +242,11 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
           <video
             className="aspect-video w-full bg-black object-contain lg:h-full"
             controls
-            onLoadedMetadata={(event) => { const length = event.currentTarget.duration; setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null); }}
+            onLoadedMetadata={(event) => {
+              const length = event.currentTarget.duration;
+              setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
+              if (startSeconds !== null && !startedAt.current) { startedAt.current = true; event.currentTarget.currentTime = startSeconds; }
+            }}
             onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
             ref={videoRef}
             src={report.run.playbackUrl}

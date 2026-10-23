@@ -106,6 +106,7 @@ test('the full export (all=true) asks for up to 1000 reports and signs no thumbn
     reports: summaries.reports,
     incidentTypes: summaries.incidentTypes,
     pagination: { page: 1, pageSize: 1000, totalItems: 13, totalPages: 1 },
+    searchMode: 'text',
   });
   assert.deepEqual(bodies, [{ ...DEFAULT_ARGS, p_page_size: 1000, p_search: 'blade', p_kind: 'human', p_sort: 'oldest' }]);
 });

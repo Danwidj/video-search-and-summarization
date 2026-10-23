@@ -79,3 +79,21 @@ test('the report page has a mark-official star, no Restore, and keeps the layout
   assert.match(page, /Try again/);
   assert.match(page, /No official version has been selected/);
 });
+
+test('a search hit links to its report at the hit second, and the page reads that second back', async () => {
+  const { reportHref, parseStartSeconds } = await import('../lib/library/search.ts');
+  const hit = { resultId: 'q1', item: { timestampSeconds: 42.7 }, incident: { videoId: 'Assault 007' } };
+  assert.equal(reportHref(hit), '/reports/Assault%20007?t=42');
+  assert.equal(reportHref(hit, { revisionId: 9, revisionNo: 2, isOfficial: true }), '/reports/Assault%20007?revision=9&t=42');
+  assert.equal(parseStartSeconds('42'), 42);
+  assert.equal(parseStartSeconds('0'), 0);
+  assert.equal(parseStartSeconds('3.5'), 3.5);
+  for (const bad of [null, undefined, '', ' ', '-1', 'soon', 'NaN', 'Infinity']) assert.equal(parseStartSeconds(bad), null, `rejects ${bad}`);
+});
+
+test('the report page seeks to ?t once, when the player has loaded its metadata', async () => {
+  const page = await readFile(new URL('../components/report-page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /startSeconds = null/);
+  assert.match(page, /if \(startSeconds !== null && !startedAt\.current\) \{ startedAt\.current = true; event\.currentTarget\.currentTime = startSeconds; \}/);
+  assert.match(page, /id="back-to-library"[^>]*>← Library</);
+});

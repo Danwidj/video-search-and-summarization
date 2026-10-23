@@ -29,6 +29,7 @@ export function Library() {
   const [incidentTypes, setIncidentTypes] = useState<string[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [searchMode, setSearchMode] = useState<'semantic' | 'text' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -70,11 +71,11 @@ export function Library() {
     try {
       const params = filterParams(filters);
       const response = await fetch(`/api/reports?${new URLSearchParams([...params, ['page', String(filters.page)], ['sort', filters.sort], ['timezone', timeZone]])}`, { cache: 'no-store', signal });
-      const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
+      const payload = (await response.json()) as { reports?: ReportLibraryItem[]; incidentTypes?: string[]; pagination?: { totalItems: number; totalPages: number }; searchMode?: 'semantic' | 'text' | null; error?: string };
       if (!response.ok || !payload.reports) throw new Error(payload.error || 'Could not load incidents');
       if (sequence !== loadSequence.current) return;
       setReports(payload.reports); setIncidentTypes(payload.incidentTypes || []);
-      setTotalItems(payload.pagination?.totalItems || 0); setTotalPages(payload.pagination?.totalPages || 0);
+      setTotalItems(payload.pagination?.totalItems || 0); setTotalPages(payload.pagination?.totalPages || 0); setSearchMode(payload.searchMode ?? null);
       if (activeFilters(filters).length === 0) setLibrary(payload.reports.length ? 'has-reports' : 'empty');
       else setLibrary((current) => (payload.reports?.length ? 'has-reports' : current));
       router.replace(`/library?${new URLSearchParams([...(tab === 'evidence' ? [['tab', 'evidence']] : []), ...params])}`, { scroll: false });
@@ -180,6 +181,7 @@ export function Library() {
             {filters.fromTime || filters.toTime ? <p className="mt-1 text-xs text-ink/50">Times are in {timeZone}.</p> : null}
 
             <div className="mt-5 text-sm text-ink/50">{totalItems} {totalItems === 1 ? 'incident' : 'incidents'}</div>
+            {searchMode === 'text' && <p className="mt-1 text-xs text-ink/50" data-testid="search-mode">Matched on incident text: meaning search is unavailable or found nothing.</p>}
             {loading ? <CardSkeleton label="Loading incidents" />
               : error ? <ErrorPanel message={error} onRetry={() => void load()} />
               : reports.length === 0 ? (

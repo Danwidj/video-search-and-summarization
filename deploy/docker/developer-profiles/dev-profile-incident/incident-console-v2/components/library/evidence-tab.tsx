@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { HitCard } from '@/components/library/hit-card';
 import { HitViewer } from '@/components/library/hit-viewer';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/components/library/shared';
-import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf } from '@/lib/library/search';
+import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf, withoutRejected } from '@/lib/library/search';
 import type { EvidenceItemType, EvidenceSearchHit } from '@/lib/ports/search';
 
 export interface EvidenceScope { videoId: string; title: string }
@@ -31,6 +31,7 @@ export function EvidenceTab({ query, onQuery, scope, onScope, submitted, onSubmi
   const [incidentType, setIncidentType] = useState('');
   const [grouped, setGrouped] = useState(false);
   const [viewing, setViewing] = useState<EvidenceSearchHit | null>(null);
+  const [showRejected, setShowRejected] = useState(false);
 
   const hits = result?.hits ?? [];
   const incidentTypes = useMemo(() => [...new Set(hits.map((hit) => hit.incident.incidentType).filter(Boolean))].sort(), [hits]);
@@ -38,6 +39,8 @@ export function EvidenceTab({ query, onQuery, scope, onScope, submitted, onSubmi
     () => filterHits(hits, { minThreat, videoId: scope?.videoId ?? null }).filter((hit) => (kind === 'all' || hit.item.itemType === kind) && (!incidentType || hit.incident.incidentType === incidentType)),
     [hits, minThreat, scope, kind, incidentType],
   );
+  const rejected = visible.length - withoutRejected(visible, false).length;
+  const shown = useMemo(() => withoutRejected(visible, showRejected), [visible, showRejected]);
   const versions = result?.versions ?? {};
   const card = (hit: EvidenceSearchHit) => <HitCard hit={hit} key={hitKey(hit)} onView={() => setViewing(hit)} relationship={relationshipOf(hit, hits)} version={versions[hit.incident.videoId]} />;
 
@@ -59,12 +62,15 @@ export function EvidenceTab({ query, onQuery, scope, onScope, submitted, onSubmi
       {loading ? <CardSkeleton count={6} label="Searching evidence" />
         : error ? <ErrorPanel message={error} onRetry={onSubmit} />
         : !result ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">Search the evidence in every incident</h2><p className="mt-2 text-sm text-ink/50">Describe a person, object or place. Every ranked match is shown with its video time.</p></div>
-        : visible.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No evidence found.</h2><p className="mt-2 text-sm text-ink/50">Try fewer words or a different kind filter.</p></div>
+        : shown.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No evidence found.</h2><p className="mt-2 text-sm text-ink/50">Try fewer words or a different kind filter.</p>{rejected > 0 && <button aria-pressed={showRejected} className="action mt-4" onClick={() => setShowRejected(true)} type="button">Show {rejected} rejected</button>}</div>
         : <>
-          <p className="mt-5 text-sm text-ink/50" data-testid="hit-count">{visible.length} {visible.length === 1 ? 'match' : 'matches'} for &ldquo;{submitted}&rdquo;</p>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-ink/50" data-testid="hit-count">{shown.length} {shown.length === 1 ? 'match' : 'matches'} for &ldquo;{submitted}&rdquo;</p>
+            {rejected > 0 && <button aria-pressed={showRejected} className="action" data-testid="rejected-toggle" onClick={() => setShowRejected((value) => !value)} type="button">{showRejected ? `Hide ${rejected} rejected` : `Show ${rejected} rejected`}</button>}
+          </div>
           {grouped
-            ? <div className="mt-4 space-y-8">{groupByIncident(visible).map((group) => <section key={group.videoId}><h2 className="text-lg font-semibold">{group.incident.title || group.incident.incidentType} <span className="font-mono text-xs font-normal text-ink/45">{group.videoId}</span></h2><div className="mt-3 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div></section>)}</div>
-            : <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map(card)}</div>}
+            ? <div className="mt-4 space-y-8">{groupByIncident(shown).map((group) => <section key={group.videoId}><h2 className="text-lg font-semibold">{group.incident.title || group.incident.incidentType} <span className="font-mono text-xs font-normal text-ink/45">{group.videoId}</span></h2><div className="mt-3 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div></section>)}</div>
+            : <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{shown.map(card)}</div>}
         </>}
       {viewing && <HitViewer hit={viewing} hits={hits} onClose={() => setViewing(null)} versions={versions} />}
     </div>
