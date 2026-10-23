@@ -47,7 +47,7 @@ incident-console-v2/
       memory/                     # In-memory fakes of IncidentRepository, VideoRepository and DashboardRepository, for tests
 ```
 
-The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. The adapters and their `mappers/` turn rows and RPC JSON into domain types field by field and domain queries into RPC arguments, and translate database refusals into `StoreRejection` (`videos.ts`, and `incidents.ts` for `set_review_status` / `save_human_report_edit`).
+The adapters as a whole own the translation: only `lib/adapters/supabase/**` knows table names, column filters, RPC argument names (`p_*`) and snake_case columns. The adapters and their `mappers/` turn rows and RPC JSON into domain types field by field and domain queries into RPC arguments, and translate database refusals into `StoreRejection` (`videos.ts`, and `incidents.ts` for revision write functions). See `.docs/data.md` for the current schema.
 
 The search adapter calls the vss-agent rather than Supabase, so it will sit beside the Supabase adapters (`lib/adapters/agent/`) and arrives with the console search route (§7); an adapter is never shipped without a caller.
 
@@ -169,8 +169,8 @@ export interface IncidentRepository {
   getRunReport(key: RunKey): Promise<RunReportRecord | null>;   // the effective report (reviewer version, else AI); null when the run, its video or its incident is missing
   runExists(key: RunKey): Promise<boolean>;
   getReview(key: RunKey): Promise<ReviewState | null>;
-  setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition>;    // set_review_status
-  applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>; // save_human_report_edit
+  setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition>;    // revision-based review transition
+  applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult>; // save_human_revision
   deleteRun(key: RunKey): Promise<void>;                         // evidence, review and report rows cascade
 }
 ```
@@ -238,7 +238,7 @@ export interface VideoRepository {
 }
 ```
 
-Official selection is explicit and needs a reviewer name (`select_official_report` / `clear_official_report`); analysis never sets it.
+Official selection is explicit and needs a reviewer name (`set_official_revision`); analysis never sets it.
 
 #### `lib/ports/search.ts` (MVP2 Extension Port)
 ```typescript

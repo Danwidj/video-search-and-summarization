@@ -63,8 +63,8 @@ flowchart TB
     UI -->|VM Mode HTTP /analyze| FwdAgent
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
-    UI -->|REST /rpc/insert_incident| Supabase
-    UI -->|/rpc/save_human_report_edit, /rpc/set_review_status| Supabase
+    UI -->|REST report_revisions insert| Supabase
+    UI -->|/rpc/save_human_revision, set_official_revision| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -219,7 +219,7 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. A refusal by `set_review_status` or `save_human_report_edit` (for example verifying a legacy AI report that must be edited first) becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the revision model (the reviewer version when the run has one, else the AI's latest `report_revisions` row), and a review change invokes the revision write functions. See `.docs/data.md` for the current schema. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
 - Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
 
@@ -268,9 +268,9 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
 - **Provenance:** never editable.
 
-`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `save_human_report_edit`. In one transaction that function saves the run's reviewer version (`human_reports` and its items; created on the first edit, `revision` +1 per save) and stamps `review_status.edited_by/edited_at`; an edit of a verified report sends it back to `under review` and clears the verifier. It never touches the AI rows or `model_runs.notes`. The console calls it directly, not the `apply_structured_report_edit` shim the finals database keeps for older consoles.
+`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `save_human_revision`. In one transaction that function saves the run's reviewer version (`report_revisions` human revision, revision No. max + 1, inheriting the parent's `model_run_id`) and stamps `review_status.edited_by/edited_at`; an edit of a verified report sends it back to `under review` and clears the verifier. It never touches the AI rows or `model_runs.notes`. The console calls it directly, not the `apply_structured_report_edit` shim the finals database keeps for older consoles.
 
-`PATCH /api/reports/[videoId]/review` calls `set_review_status`, one transaction that never writes `edited_by/edited_at` (they mean the last content edit). Verifying a report with no reviewer version first copies the AI report into one, so every verified report has a reviewer version.
+`PATCH /api/reports/[videoId]/review` calls `the revision-based review transition`, one transaction that never writes `edited_by/edited_at` (they mean the last content edit). Verifying a report with no reviewer version first copies the AI report into one, so every verified report has a reviewer version.
 
 The report then shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
 
@@ -286,7 +286,7 @@ The report then shows "Reviewer-edited after generation", "Model assessed N/5; r
   - always a new run;
   - it never writes the `videos` row (the upload time is kept);
   - it never selects the official report.
-- **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `select_official_report` / `clear_official_report`, used from the report page and the video history.
+- **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `set_official_revision`, used from the report page and the video history.
 - **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-analysis with a compact history.
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
@@ -323,7 +323,7 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules; id-normalization-v1 only if every violation is ID-only, then re-validate
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
-        UI->>DB: /rpc/insert_incident, entities (E#), instruments (I#, holder), assets (A#), reports
+        UI->>DB: /rpc/report_revisions_insert, entities (E#), instruments (I#, holder), assets (A#), reports
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?run=[modelRunId]
     else contract_failed / request_failed
@@ -390,7 +390,7 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
-        UI->>DB: /rpc/insert_incident, entities (E#), instruments (I#, holder), assets (A#), reports
+        UI->>DB: /rpc/report_revisions_insert, entities (E#), instruments (I#, holder), assets (A#), reports
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?run=[modelRunId]
     else contract_failed / request_failed
