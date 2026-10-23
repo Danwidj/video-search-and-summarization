@@ -260,7 +260,7 @@ Unified storage for item-level evidence crops, detector bounding boxes, and pgve
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of holding entity (instruments only) |
 | `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start where item is visible |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalized coordinates `[ymin, xmin, ymax, xmax]` (0–1000) from detector pass |
-| `image` | `VARCHAR(1024)` | NOT NULL | R2 object key: `evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg` |
+| `image` | `VARCHAR(1024)` | NOT NULL | R2 object key: `evidence/<videoId>/<batchId>/<itemId>.jpg` |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional semantic text embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion timestamp |
 
@@ -388,7 +388,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/<sensor>/<uuid>.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # canonical R2 layout for MVP2 crop evidence (CropEvidenceService)
-    └── <videoId>/<modelRunId>/{entities,instruments,assets}/<id>.jpg
+    └── <videoId>/<batchId>/<itemId>.jpg
 ```
 
 > [!NOTE]
@@ -410,9 +410,10 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    `uploads/${encodeURIComponent(sensorId.trim())}/${randomUUID()}${ext}`.
    Thumbnail keys are deterministic: `thumbnailKeyForVideo(videoKey)` returns
    `thumbnails/${videoKey}.webp`; no database column is required.
-   Evidence crop keys are deterministic: `evidence_key(videoId, modelRunId, collection, itemId)`
+   Evidence crop keys are deterministic: `evidence_key(video_id, batch_id, item_id)`
    (in `services/agent/src/vss_agents/utils/crop_evidence.py`) returns
-   `evidence/${videoId}/${modelRunId}/${collection}/${itemId}.jpg` where collection is `entities`, `instruments`, or `assets`.
+   `evidence/${video_id}/${batch_id}/${item_id}.jpg`. `batch_id` is a fresh UUID per analysis run;
+   item ids (`E#`, `I#`, `A#`) are unique across the three collections, so there is no collection folder.
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.

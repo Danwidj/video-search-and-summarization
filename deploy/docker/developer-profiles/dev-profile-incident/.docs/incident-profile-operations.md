@@ -148,7 +148,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 4. **Local Fallback:** Falls back to your local machine `$USER` / `whoami`.
 
 **Mode Isolation & Preflight Check:**
-- **Mock Mode (`--mode mock`; `local` is a deprecated alias):** Never sources `resolve-ssh-target.sh` and never touches SSH at all.
+- **Mock Mode (`--mode mock`; `local` is a deprecated alias):** Never sources `.scripts/vm-preflight.sh` and never touches SSH at all.
 - **VM Mode (`--mode vm`):** Runs a fast SSH preflight check (`ssh -o BatchMode=yes -o ConnectTimeout=10 "$VSS_SSH_TARGET" true`, one retry on a timeout) before any tunnel, deploy check, env generation, npm install, or UI start. If it fails, `start.sh` aborts with a non-zero exit status, the raw SSH error, the classified cause and the next step (`.scripts/vm-preflight.sh`).
 
 **VM unreachable: causes `start.sh` reports**
