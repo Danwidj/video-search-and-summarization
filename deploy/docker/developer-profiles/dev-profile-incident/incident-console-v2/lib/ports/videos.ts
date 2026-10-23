@@ -35,6 +35,13 @@ export interface OfficialChange {
   crops: number;
 }
 
+export interface RevisionCropsChange {
+  videoId: string;
+  revisionId: number;
+  /** evidence_crops rows now stored for the revision (0 when it has none). */
+  crops: number;
+}
+
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
@@ -45,6 +52,13 @@ export interface VideoRepository {
    * video or a revision that is not one of its own.
    */
   setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange>;
+  /**
+   * Replaces the video's evidence_crops with the given crops for revisionId, which must be the
+   * video's searchable revision (the official one, else the newest), without changing the
+   * official pointer. Throws StoreRejection: 'not-found' for an unknown video, 'invalid' for a
+   * revision that is not the searchable one.
+   */
+  setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange>;
   /** Deletes the video row (its revisions, evidence crops and query results cascade), then the run records that name only this video. */
   deleteVideo(videoId: string): Promise<void>;
 }

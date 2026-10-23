@@ -4,8 +4,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
-import { saveHumanEdit } from '@/lib/application/reports';
+import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
+import { saveHumanEdit, storeSearchableCrops } from '@/lib/application/reports';
 import { StructuredEditError, validateStructuredEdit } from '@/lib/contract/structured-edit';
+import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 
 // Save: structured (Class A) reviewer edits become a new human revision whose
@@ -37,8 +39,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       throw error;
     }
 
-    const revision = await saveHumanEdit(getDbAdapters().incidents, { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note });
-    return NextResponse.json({ saved: true, revision });
+    const config = getServiceConfiguration();
+    const adapters = getDbAdapters(config);
+    const revision = await saveHumanEdit(adapters.incidents, { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note });
+    // With no official revision the new revision is the searched one: give it crops now.
+    const searchable = await storeSearchableCrops(adapters, videoId, revision.revisionId, (id) => fetchEvidenceEmbeddings(config, id));
+    return NextResponse.json({ saved: true, revision, searchable });
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not save the edit');
   }

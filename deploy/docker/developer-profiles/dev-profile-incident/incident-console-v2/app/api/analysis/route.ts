@@ -2,6 +2,9 @@
 
 import { NextResponse } from 'next/server';
 
+import { getDbAdapters } from '@/lib/adapters/supabase';
+import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
+import { storeSearchableCrops, type SearchableCropsResult } from '@/lib/application/reports';
 import { analysisErrorResponse } from '@/lib/analysis/responses';
 import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
@@ -38,6 +41,8 @@ interface AnalysisRunSummary {
   promptVersion: string;
   /** valid_first_pass or valid_after_structural_repair; failures are returned as errors. */
   outcome: string;
+  /** Evidence crops stored so the video is searchable before it has an official revision. */
+  searchable: SearchableCropsResult;
 }
 
 export async function POST(request: Request) {
@@ -78,6 +83,7 @@ export async function POST(request: Request) {
       config,
     );
 
+    const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
     const report: AnalysisRunSummary = {
       videoId: run.videoId,
       modelRunId: run.modelRunId,
@@ -85,6 +91,7 @@ export async function POST(request: Request) {
       model: run.request.model,
       promptVersion: run.contractVersion,
       outcome: run.status,
+      searchable,
     };
 
     return NextResponse.json({ report });

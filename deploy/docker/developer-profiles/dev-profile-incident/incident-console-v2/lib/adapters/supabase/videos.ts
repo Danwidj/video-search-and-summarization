@@ -2,7 +2,7 @@
 
 import {
   StoreRejection,
-  type OfficialChange, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type OfficialChange, type Page, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
 } from '@/lib/ports';
 import type { OfficialCrop } from '@/lib/reports/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
@@ -15,13 +15,13 @@ const numberOrNull = (value: unknown): number | null => (typeof value === 'numbe
 const asRow = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
 
 /**
- * set_official_revision RAISEs plain exceptions; its domain refusals become StoreRejection,
+ * set_official_revision and set_revision_crops RAISE plain exceptions; its domain refusals become StoreRejection,
  * anything else is rethrown unchanged.
  */
 function officialRefusal(error: unknown): never {
   const message = error instanceof Error ? error.message : '';
   const match = /"message":"([^"]+)"/.exec(message);
-  if (match && /not found|embedding/i.test(match[1])) {
+  if (match && /not found|embedding|searchable revision/i.test(match[1])) {
     throw new StoreRejection(/not found/i.test(match[1]) ? 'not-found' : 'invalid', match[1]);
   }
   throw error;
@@ -89,6 +89,15 @@ export class SupabaseVideoAdapter implements VideoRepository {
       officialRevisionId: numberOrNull(result.officialRevisionId),
       crops: numberOrNull(result.crops) ?? 0,
     };
+  }
+
+  async setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange> {
+    const result = asRow(await this.db.rpc('set_revision_crops', {
+      p_video_id: videoId,
+      p_revision_id: revisionId,
+      p_crops: crops,
+    }).catch(officialRefusal));
+    return { videoId: text(result.videoId) ?? videoId, revisionId: numberOrNull(result.revisionId) ?? revisionId, crops: numberOrNull(result.crops) ?? 0 };
   }
 
   async deleteVideo(videoId: string): Promise<void> {
