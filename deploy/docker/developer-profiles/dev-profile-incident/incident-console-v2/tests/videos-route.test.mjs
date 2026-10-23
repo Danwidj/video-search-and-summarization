@@ -17,14 +17,14 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 
 const ROWS = [
   {
-    id: 'v1', filepath: 'uploads/sensor-1/clip.mp4', uploaded_datetime: '2026-10-01T08:00:00', source: 'sensor-1', selected_model_run_id: 'm1',
-    incidents: [{ model_run_id: 'm1', reports: [{ id: 'r1' }] }, { model_run_id: 'm2', reports: [] }, { model_run_id: 'm3', reports: [{ id: 'r3' }] }],
+    id: 'v1', filepath: 'uploads/sensor-1/clip.mp4', uploaded_datetime: '2026-10-01T08:00:00', source: 'sensor-1', official_revision_id: 3,
+    report_revisions: [{ id: 1 }, { id: 2 }, { id: 3 }],
   },
-  { id: 'v2', filepath: null, uploaded_datetime: null, source: null, selected_model_run_id: null, incidents: [] },
-  { id: 'v3', filepath: 'anomaly/burglary/', uploaded_datetime: '2026-09-01T00:00:00', source: 7, selected_model_run_id: null },
+  { id: 'v2', filepath: null, uploaded_datetime: null, source: null, official_revision_id: null, report_revisions: [] },
+  { id: 'v3', filepath: 'anomaly/burglary/', uploaded_datetime: '2026-09-01T00:00:00', source: 7, official_revision_id: null },
 ];
 
-test('videos are listed with their report count, official run and pagination', async () => {
+test('videos are listed with their revision count, official revision and pagination', async () => {
   let request;
   globalThis.fetch = async (url) => {
     request = new URL(String(url));
@@ -36,11 +36,12 @@ test('videos are listed with their report count, official run and pagination', a
   assert.equal(request.searchParams.get('limit'), '20');
   assert.equal(request.searchParams.get('offset'), '20');
   assert.equal(request.searchParams.get('order'), 'uploaded_datetime.desc.nullslast,id.asc');
+  assert.equal(request.searchParams.get('select'), 'id,filepath,uploaded_datetime,source,official_revision_id,report_revisions!report_revisions_video_id_fkey(id)');
   assert.deepEqual(await response.json(), {
     videos: [
-      { videoId: 'v1', filename: 'clip.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', analysesWithReport: 2, officialRunId: 'm1' },
-      { videoId: 'v2', filename: 'v2', uploadedAt: null, source: null, analysesWithReport: 0, officialRunId: null },
-      { videoId: 'v3', filename: 'v3', uploadedAt: '2026-09-01T00:00:00', source: null, analysesWithReport: 0, officialRunId: null },
+      { videoId: 'v1', filename: 'clip.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', revisions: 3, officialRevisionId: 3 },
+      { videoId: 'v2', filename: 'v2', uploadedAt: null, source: null, revisions: 0, officialRevisionId: null },
+      { videoId: 'v3', filename: 'v3', uploadedAt: '2026-09-01T00:00:00', source: null, revisions: 0, officialRevisionId: null },
     ],
     pagination: { page: 2, pageSize: 20, totalItems: 43, totalPages: 3 },
     filter: 'all',

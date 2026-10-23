@@ -110,43 +110,52 @@ analysis. Existing videos without this derived object retain the report-card ske
 ## Phase 3 report workspace
 
 Completed analyses navigate to a durable route shaped like
-`/reports/<video-id>?run=<model-run-id>`. Reloading or sharing that route reads the stored model-run notes from
-PostgREST and creates a fresh one-hour R2 playback URL; it does not depend on browser local storage. Newly generated
+`/reports/<video-id>?revision=<revision-id>`. Reloading or sharing that route reads the stored `report_revisions` row
+and its model run from PostgREST and creates a fresh one-hour R2 playback URL; it does not depend on browser local storage. Newly generated
 reports retain raw and normalized model output for diagnostics alongside model, prompt, run, and generation metadata.
 The report provides timestamp seeking, explicit empty states, a copy-link action, and print-specific presentation.
 
-## Phase 4 report library and review
+## Phase 4 report library
 
 `/reports` lists persisted v2 reports as server-paginated pages of six lightweight summaries. Cards lazy-load small,
 signed R2 screenshots when available and otherwise use a static skeleton; they never request video. The full report
 and its video are fetched only after opening a report.
 The library supports full-text evidence search; incident type,
+<<<<<<< HEAD
+severity, and official filters; generated-date presets and custom date/time ranges; and severity, confidence, or
+date sorting. Every save or restore appends a `human` revision; the AI revision is never changed, and each video has at
+most one official revision. Re-generation creates a new model run and a new AI revision and preserves prior results.
+Deleting only a report keeps its R2 video; deleting the video is a separate, explicit confirmation and removes all
+revisions for that video through the database cascade.
+=======
 severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
 date sorting. Review transitions are persisted through revision writes, and edits save a reviewer version that
 the report then shows; the AI report is never changed. Re-analysis creates a new model run and preserves
 prior results. Deleting only a report keeps its R2
 video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
 database cascade.
+>>>>>>> origin/main
 
 ## Phase 5 review and operations workspace
 
 The global header keeps Analyze, Reports, Dashboard, and service health consistent throughout the
 application. The report library remembers filters, scroll position, and its originating card when a report is opened.
-`/dashboard` summarizes report volume, review progress, confidence, severity, and incident types with drill-down
-links.
+`/dashboard` summarizes report volume, confidence, severity, and incident types with drill-down links, counting the
+official revision only.
 
-Each report provides human-attributed structured corrections, non-streaming follow-up chat through
-the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the report's video and showing cited evidence, and model-run history and side-by-side comparison. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
-provenance.
+Each report provides human-attributed structured corrections as new revisions, a History panel with Save and Restore,
+non-streaming follow-up chat through the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the
+report's video and showing cited evidence, and model-run history and side-by-side comparison. Retained raw VLM output
+in `model_runs.notes` remains unchanged as provenance.
 
-## Videos, run history and official reports (2026-09-27)
+## Videos, run history and the official revision
 
 - **Pages:**
   - `/videos` lists uploaded videos, with "Awaiting official report" and "Without a report" views.
-  - `/videos/<id>` shows the video, a re-analysis card (any allowlisted model, optional additional instruction) and the full analysis history: every attempt with its model, time, outcome, failure reasons or repair operations. Failed attempts never appear as reports.
-- **Re-analysis** always creates a new run, never changes the video's upload time, and never makes the new report official.
-- **Official report:** a reviewer explicitly chooses it on the report page or in the history.
-- **Dashboard:** it counts official incidents only, and every number links to `/reports?scope=official&...`. The reports page treats the URL as its filter state.
+  - `/videos/<id>` shows the video, a re-generation card (any allowlisted model, optional reviewer prompt) and the full analysis history: every attempt with its model, time, outcome, failure reasons or repair operations. Failed attempts never appear as reports.
+- **Re-generation** always creates a new run and a new AI revision, never changes the video's upload time, and never changes the official revision.
+- **Official revision:** a reviewer explicitly chooses it on the report page or in the history; marking it rebuilds the incident's `evidence_crops`.
+- **Dashboard:** it counts official revisions only, and every number links to `/reports?scope=official&...`. The reports page treats the URL as its filter state.
 - **Report page:**
   - structured fields (editable through the structured editor);
   - read-only model output (title, "Model severity rationale", timeline, uncertainties);

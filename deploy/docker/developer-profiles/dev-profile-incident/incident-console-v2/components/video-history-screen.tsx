@@ -19,7 +19,7 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-moss">Video · analysis history</p>
           <h1 className="mt-3 break-all text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{video.filename}</h1>
           <p className="mt-2 text-sm text-ink/55">Uploaded {formatTimestamp(video.uploadedAt)}{video.source ? ` · ${video.source}` : ''} · {video.videoId}</p>
-          <p className="mt-1 text-xs text-ink/45">{history.officialRunId ? 'An official report has been selected for this video.' : 'No official report has been selected for this video.'}</p>
+          <p className="mt-1 text-xs text-ink/45">{history.officialRevisionId !== null ? 'An official report has been selected for this video.' : 'No official report has been selected for this video.'}</p>
         </header>
         <div className="grid gap-0 lg:grid-cols-[1fr_1fr]">
           <div className="border-b border-ink/10 p-6 lg:border-b-0 lg:border-r">

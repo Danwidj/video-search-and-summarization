@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Server-only builder for the report view (types in lib/reports/report-view.ts).
-// Its input is the translated RunReportRecord (lib/ports/incidents.ts); the
+// Its input is the translated RevisionRecord (lib/ports/incidents.ts); the
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/lib/contract/validate';
-import type { RunReportRecord } from '@/lib/ports';
+import type { RevisionRecord } from '@/lib/ports';
 import { canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/lib/reports/report-view';
 
@@ -31,7 +31,7 @@ function timelineCodes(codes: string[]): string[] {
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
 
-export function toReportView(record: RunReportRecord, playbackUrl: string): ReportView {
+export function toReportView(record: RevisionRecord, playbackUrl: string): ReportView {
   const structured: ReportView['structured'] = {
     incident: record.incident,
     entities: record.entities,
@@ -39,7 +39,9 @@ export function toReportView(record: RunReportRecord, playbackUrl: string): Repo
     assets: record.assets,
   };
 
-  const { notes } = record.modelRun;
+  // The model's own report and the run's request/response, from the immutable run notes; a
+  // revision whose run is not recorded has none.
+  const notes = record.modelRun?.notes ?? { kind: 'none' as const };
   let modelOutput: ModelOutput | null = null;
   if (notes.kind === 'contract') {
     const { report } = notes;
@@ -113,16 +115,16 @@ export function toReportView(record: RunReportRecord, playbackUrl: string): Repo
     }
   }
 
-  const { videoId, modelRunId } = record.key;
+  const { videoId } = record.revision;
+  const modelRunId = record.revision.modelRunId;
   const run: RunDetails = {
     videoId,
     modelRunId,
-    reportId: record.report?.reportId ?? `${videoId}-${modelRunId}`,
     filename: record.video.filename,
     playbackUrl,
-    model: record.modelRun.modelName ?? 'Unknown model',
-    promptVersion: record.modelRun.promptVersion,
-    generatedAt: record.report?.generatedAt ?? record.modelRun.runAt ?? '',
+    model: record.modelRun?.modelName ?? 'Unknown model',
+    promptVersion: record.modelRun?.promptVersion ?? null,
+    generatedAt: record.revision.createdAt ?? record.modelRun?.runAt ?? '',
     notesKind: notes.kind,
   };
   if (notes.kind === 'contract' || notes.kind === 'invalid-contract') {
@@ -149,21 +151,15 @@ export function toReportView(record: RunReportRecord, playbackUrl: string): Repo
     run.legacyReviewerEdits = notes.legacyReviewerEdits;
   }
 
-  const { official } = record.video;
   return {
     videoId,
+    revisionId: record.revision.revisionId,
     modelRunId,
     structured,
     modelOutput,
     run,
-    official: { ...official, isOfficial: official.officialRunId === modelRunId },
-    review: {
-      status: record.review?.status ?? 'unreviewed',
-      verifiedBy: record.review?.verifiedBy ?? undefined,
-      verifiedAt: record.review?.verifiedAt ?? undefined,
-      editedBy: record.review?.editedBy ?? undefined,
-      editedAt: record.review?.editedAt ?? undefined,
-    },
+    revision: record.revision,
+    official: { officialRevisionId: record.video.officialRevisionId, isOfficial: record.revision.isOfficial },
     differences,
   };
 }

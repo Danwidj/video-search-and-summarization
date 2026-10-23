@@ -70,9 +70,12 @@ mock.module('@aws-sdk/s3-request-presigner', {
 });
 
 const { POST } = await import('../app/api/analysis/route.ts');
+const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { getServiceConfiguration } = await import('../lib/env.ts');
 const { contractVersion } = await import('../lib/contract/load.ts');
 
+// The in-memory PostgREST every test's Supabase calls land on; replaced before each test.
+let testDb;
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
@@ -95,24 +98,9 @@ function jsonRequest(body) {
   });
 }
 
-function successfulPostgrestResponse(url, expectedR2Key) {
-  const parsed = new URL(String(url));
-  const table = parsed.pathname.replace('/rest/v1/', '');
-  const filterValue = (name) => parsed.searchParams.get(name)?.replace(/^eq\./, '');
-  const rows = {
-    videos: [{ id: filterValue('id'), filepath: expectedR2Key }],
-    model_runs: [{ id: filterValue('id') }],
-    incidents: [{ incident_id: filterValue('incident_id'), model_run_id: filterValue('model_run_id') }],
-    reports: [{ id: filterValue('id'), incident_id: 'verified', model_run_id: 'verified' }],
-  }[table];
-  return new Response(JSON.stringify(rows ?? [{ id: 'ok' }]), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
 beforeEach(() => {
   setBaseEnv();
+  testDb = fakePostgrest({ report_revisions: [] }, { identity: { report_revisions: 'id' } });
   headContentLength = 1024;
   videoBytes = null;
 });
@@ -240,7 +228,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    return successfulPostgrestResponse(url, 'uploads/sensor-camera-01/clip.mp4');
+    return testDb.fetch(url, options);
   };
 
   const response = await POST(
@@ -279,8 +267,8 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
     }));
   const writtenTables = new Set(supabaseWrites.map((w) => w.table));
   assert.ok(writtenTables.has('model_runs'));
-  assert.ok(writtenTables.has('rpc/insert_incident'));
-  assert.ok(writtenTables.has('reports'));
+  assert.ok(writtenTables.has('report_revisions'), 'the console stores the AI revision when the agent did not');
+  assert.ok(!writtenTables.has('rpc/insert_incident'));
   const modelRun = supabaseWrites.find((w) => w.table === 'model_runs').body;
   assert.equal(modelRun.model_name, 'agent/vlm-on-the-vm');
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
@@ -291,7 +279,7 @@ function agentFetch(recordedCalls, reply, r2Key) {
   return async (url, options = {}) => {
     recordedCalls.push({ url: String(url), options });
     if (String(url).includes('/api/v1/incidents/')) return reply();
-    return successfulPostgrestResponse(url, r2Key);
+    return testDb.fetch(url, options);
   };
 }
 
@@ -344,16 +332,48 @@ for (const [label, version] of [['an older', 'incident-contract-v1'], ['a missin
   });
 }
 
-test('agent mode: a non-empty additional instruction is rejected before anything is called', async () => {
+function agentReply(extra = {}) {
+  const raw = validContractReport();
+  return () => new Response(JSON.stringify({
+    report: raw, model: 'agent/vlm-on-the-vm', contract_version: contractVersion(), raw_output: JSON.stringify(raw), finish_reason: 'stop', ...extra,
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt and recorded; none is sent when empty', async () => {
   process.env.ANALYSIS_MODE = 'agent';
+  videoBytes = mp4Bytes(30);
   const recordedCalls = [];
-  globalThis.fetch = agentFetch(recordedCalls, () => new Response('{}', { status: 200 }), 'uploads/s-ai/clip.mp4');
+  globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-ai/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4', additionalInstruction: 'Focus on the van.' }));
+  const response = await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4', additionalInstruction: '  Focus on the van.  ' }));
+  assert.equal(response.status, 200);
+  const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
+  assert.equal(JSON.parse(agentCall.options.body).reviewer_prompt, 'Focus on the van.');
+  const { notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(notes.request.additionalInstruction, 'Focus on the van.');
 
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /only available in gateway analysis mode/);
-  assert.equal(recordedCalls.length, 0);
+  const again = [];
+  globalThis.fetch = agentFetch(again, agentReply(), 'uploads/s-ai/clip.mp4');
+  assert.equal((await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4' }))).status, 200);
+  assert.ok(!('reviewer_prompt' in JSON.parse(again.find((c) => c.url.includes('/api/v1/incidents/')).options.body)));
+});
+
+test('agent mode: a revision the agent already stored is verified, not inserted twice', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  videoBytes = mp4Bytes(30);
+  const recordedCalls = [];
+  globalThis.fetch = agentFetch(recordedCalls, () => {
+    const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
+    // The agent writes its AI revision against the console's model run before it answers.
+    testDb.store.report_revisions.push({ id: 41, video_id: compactVideoId('s-ag'), revision_no: 1, kind: 'ai', model_run_id: body.model_run_id });
+    return agentReply({ revision_id: 41 })();
+  }, 'uploads/s-ag/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-ag', filepath: 'uploads/s-ag/clip.mp4', filename: 'clip.mp4' }));
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.report.revisionId, 41);
+  assert.ok(!supabaseWrites(recordedCalls).some((w) => w.table === 'report_revisions'), 'the console does not insert a second revision');
 });
 
 function completion(content, extra = {}) {
@@ -370,7 +390,7 @@ function gatewayFetch(recordedCalls, content, r2Key) {
     const urlStr = String(url);
     recordedCalls.push({ url: urlStr, options });
     if (urlStr.includes('/v1/chat/completions')) return completion(content);
-    return successfulPostgrestResponse(url, r2Key);
+    return testDb.fetch(url, options);
   };
 }
 
@@ -434,31 +454,28 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.equal(notes.response.finishReason, 'stop');
   assert.deepEqual(notes.response.usage, { prompt_tokens: 100, completion_tokens: 50 });
 
-  const incident = writes.find((w) => w.table === 'rpc/insert_incident').body;
-  assert.deepEqual(incident, {
-    p_incident_id: report.videoId,
-    p_model_run_id: report.modelRunId,
-    p_type: 'assault',
-    p_start_timestamp: '3',
-    p_end_timestamp: '11',
-    p_duration: 8,
-    p_description: 'E1 approaches E2 and strikes E2 with a bottle.',
-    p_severity_level: 3,
-    p_confidence_score: null,
-  });
-  assert.deepEqual(writes.find((w) => w.table === 'entities').body.map((row) => [row.entity_id, row.type]), [['E1', 'human'], ['E2', 'human']]);
-  assert.deepEqual(writes.find((w) => w.table === 'instruments').body.map((row) => [row.instrument_id, row.entity_id, row.threat_level]), [['I1', 'E1', 3]]);
-  assert.deepEqual(writes.find((w) => w.table === 'assets').body.map((row) => row.asset_id), ['A1']);
+  assert.ok(!writes.some((w) => w.table === 'rpc/insert_incident'), 'no legacy report rows');
+  const revisionWrite = writes.find((w) => w.table === 'report_revisions').body;
+  assert.deepEqual(
+    { ...revisionWrite, payload: undefined, evidence: undefined },
+    {
+      video_id: report.videoId, revision_no: 1, kind: 'ai', model_run_id: report.modelRunId, parent_id: null, payload: undefined, evidence: undefined,
+      incident_type: 'assault', severity_level: 3, start_seconds: 3, end_seconds: 11,
+    },
+  );
+  assert.deepEqual(revisionWrite.payload.entities.map((row) => [row.entity_id, row.type]), [['E1', 'human'], ['E2', 'human']]);
+  assert.deepEqual(revisionWrite.payload.instruments.map((row) => [row.instrument_id, row.entity_id, row.threat_level]), [['I1', 'E1', 3]]);
+  assert.deepEqual(revisionWrite.payload.assets.map((row) => row.asset_id), ['A1']);
+  assert.deepEqual(revisionWrite.evidence.map((entry) => [entry.item_type, entry.item_id]), [['entity', 'E1'], ['entity', 'E2'], ['instrument', 'I1'], ['asset', 'A1']]);
   const videoCall = recordedCalls.find((c) => c.url.includes('/rest/v1/videos') && c.options.method === 'POST');
   assert.match(videoCall.options.headers.Prefer, /resolution=ignore-duplicates/, 'an existing video row is never updated (upload time preserved)');
   const video = writes.find((w) => w.table === 'videos').body;
   assert.equal(video.filepath, 'uploads/sensor-cam-02/night.mp4');
   assert.equal(video.source, 'sensor-cam-02');
   assert.ok(!('duration' in video), 'the incident duration is not the video duration');
-  assert.ok(writes.find((w) => w.table === 'reports'));
 
   // The upload flow only needs the run's identity to open its report page.
-  assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'reportId', 'videoId']);
+  assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'revisionId', 'videoId']);
   assert.equal(report.outcome, 'valid_first_pass');
   assert.equal(report.model, 'nvidia/cosmos-3-super-reasoner');
   assert.equal(report.promptVersion, 'incident-contract-v4');
@@ -489,7 +506,7 @@ test('gateway mode: rejects a model outside the allowlist before calling anythin
   assert.equal(recordedCalls.length, 0);
 });
 
-const REPORT_TABLES = ['rpc/insert_incident', 'incidents', 'entities', 'instruments', 'assets', 'reports', 'review_status'];
+const REPORT_TABLES = ['report_revisions', 'evidence_crops', 'rpc/set_official_revision'];
 
 function attemptNotesFrom(recordedCalls) {
   const runs = supabaseWrites(recordedCalls).filter((w) => w.table === 'model_runs');
@@ -551,7 +568,7 @@ test('gateway mode: a timeline outside the incident window is recorded, not fata
 
     assert.equal(response.status, 200, fixture);
     const tables = supabaseWrites(recordedCalls).map((w) => w.table);
-    for (const table of ['rpc/insert_incident', 'reports']) assert.ok(tables.includes(table), `${fixture}: the database-backed fields are persisted (${table})`);
+    assert.ok(tables.includes('report_revisions'), `${fixture}: the AI revision is stored`);
     const { notes } = attemptNotesFrom(recordedCalls);
     assert.equal(notes.status, 'valid_first_pass');
     assert.equal(notes.response.content, content, 'the original response is stored unaltered');
@@ -615,10 +632,10 @@ test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and 
   assert.deepEqual(notes.repair.revalidation, []);
   assert.equal(notes.repair.operations.length, 2);
   assert.deepEqual(notes.report.entities.map((e) => e.entity_id), ['E1', 'E2']);
-  const writes = supabaseWrites(recordedCalls);
-  assert.deepEqual(writes.find((w) => w.table === 'entities').body.map((row) => row.entity_id), ['E1', 'E2']);
-  assert.deepEqual(writes.find((w) => w.table === 'instruments').body.map((row) => [row.instrument_id, row.entity_id, row.name]), [['I1', 'E1', 'bag'], ['I2', null, 'white van']]);
-  assert.ok(writes.find((w) => w.table === 'rpc/insert_incident'));
+  const [revision] = testDb.store.report_revisions;
+  assert.deepEqual(revision.payload.entities.map((e) => e.entity_id), ['E1', 'E2']);
+  assert.deepEqual(revision.payload.instruments.map((i) => [i.instrument_id, i.entity_id, i.name]), [['I1', 'E1', 'bag'], ['I2', null, 'white van']]);
+  assert.equal(revision.kind, 'ai');
 });
 
 test('gateway mode: request failures are recorded as request_failed with only the provenance that exists', async () => {
@@ -655,7 +672,7 @@ test('gateway mode: request failures are recorded as request_failed with only th
     globalThis.fetch = async (url, options = {}) => {
       recordedCalls.push({ url: String(url), options });
       if (String(url).includes('/v1/chat/completions')) return scenario.reply();
-      return successfulPostgrestResponse(url, 'uploads/s-req/clip.mp4');
+      return testDb.fetch(url, options);
     };
 
     const response = await POST(jsonRequest({ sensorId: 's-req', filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
@@ -722,5 +739,5 @@ test('gateway mode: does not report success when persistence read-back is incomp
   assert.equal(response.status, 500);
   const payload = await response.json();
   assert.match(payload.error, /verifying the persisted report/);
-  assert.match(payload.error, /videos, model_runs, incidents, reports/);
+  assert.match(payload.error, /videos, model_runs, report_revisions/);
 });

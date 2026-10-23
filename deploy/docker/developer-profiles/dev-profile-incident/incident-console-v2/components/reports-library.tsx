@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
+import type { ReportLibraryItem } from '@/lib/reports/storage';
 import { reportThumbnailView } from '@/lib/reports/thumbnail';
 import { formatTimestamp, getViewerTimeZone } from '@/lib/time';
 
@@ -14,16 +14,12 @@ type Sort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence
 type DatePreset = 'all' | 'today' | '7d' | '30d' | 'custom';
 
 const SORT_VALUES: Sort[] = ['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low'];
-const FILTER_KEYS = ['search', 'type', 'severity', 'status', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page'];
+const FILTER_KEYS = ['search', 'type', 'severity', 'kind', 'entity', 'instrument', 'asset', 'scope', 'entityType', 'match', 'after', 'before', 'fromTime', 'toTime', 'day', 'sort', 'page'];
 
 function severityClass(level: number) {
   if (level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
   if (level === 3) return 'bg-[#fff1c7] text-[#765300]';
   return 'bg-signal/15 text-moss';
-}
-
-function statusLabel(status: ReviewStatus) {
-  return status === 'under review' ? 'Under review' : status[0].toUpperCase() + status.slice(1);
 }
 
 export function ReportsLibrary() {
@@ -39,7 +35,7 @@ export function ReportsLibrary() {
   const [search, setSearch] = useState('');
   const [type, setType] = useState('all');
   const [severity, setSeverity] = useState('all');
-  const [status, setStatus] = useState('all');
+  const [kind, setKind] = useState('all');
   const [entity, setEntity] = useState('');
   const [instrument, setInstrument] = useState('');
   const [asset, setAsset] = useState('');
@@ -110,7 +106,7 @@ export function ReportsLibrary() {
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
       if (type !== 'all') params.set('type', type);
       if (severity !== 'all') params.set('severity', severity);
-      if (status !== 'all') params.set('status', status);
+      if (kind !== 'all') params.set('kind', kind);
       if (entity.trim()) params.append('entity', entity.trim());
       if (instrument.trim()) params.append('instrument', instrument.trim());
       if (asset.trim()) params.append('asset', asset.trim());
@@ -148,7 +144,7 @@ export function ReportsLibrary() {
     if (FILTER_KEYS.some((key) => query.has(key))) {
       const after = query.get('after') || '';
       const before = query.get('before') || '';
-      setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setStatus(query.get('status') || 'all');
+      setSearch(query.get('search') || ''); setType(query.get('type') || 'all'); setSeverity(query.get('severity') || 'all'); setKind(query.get('kind') || 'all');
       setEntity(query.get('entity') || ''); setInstrument(query.get('instrument') || ''); setAsset(query.get('asset') || '');
       setScope(query.get('scope') === 'official' ? 'official' : 'all'); setEntityType(query.get('entityType') || ''); setMatch(query.get('match') === 'exact' ? 'exact' : 'contains');
       setRangeAfter(after); setRangeBefore(before); setDatePreset(after || before ? 'custom' : 'all');
@@ -160,7 +156,7 @@ export function ReportsLibrary() {
     try {
       const state = JSON.parse(window.sessionStorage.getItem('report-library-state') || 'null') as Record<string, string | number> | null;
       if (state) {
-        setSearch(String(state.search || '')); setType(String(state.type || 'all')); setSeverity(String(state.severity || 'all')); setStatus(String(state.status || 'all'));
+        setSearch(String(state.search || '')); setType(String(state.type || 'all')); setSeverity(String(state.severity || 'all')); setKind(String(state.kind || 'all'));
         setEntity(String(state.entity || '')); setInstrument(String(state.instrument || '')); setAsset(String(state.asset || ''));
         setScope(state.scope === 'official' ? 'official' : 'all'); setEntityType(String(state.entityType || '')); setMatch(state.match === 'exact' ? 'exact' : 'contains');
         setDatePreset((state.datePreset || 'all') as DatePreset); setFromDate(String(state.fromDate || '')); setToDate(String(state.toDate || ''));
@@ -181,45 +177,26 @@ export function ReportsLibrary() {
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [ready, page, debouncedSearch, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, timeZone]);
+  }, [ready, page, debouncedSearch, type, severity, kind, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, timeZone]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
     restoredPosition.current = true;
     try {
-      const state = JSON.parse(window.sessionStorage.getItem('report-library-state') || '{}') as { scrollY?: number; reportId?: string };
-      window.requestAnimationFrame(() => { if (state.reportId) document.getElementById(`report-${state.reportId}`)?.focus({ preventScroll: true }); window.scrollTo({ top: state.scrollY || 0 }); });
+      const state = JSON.parse(window.sessionStorage.getItem('report-library-state') || '{}') as { scrollY?: number; revisionId?: string };
+      window.requestAnimationFrame(() => { if (state.revisionId) document.getElementById(`report-${state.revisionId}`)?.focus({ preventScroll: true }); window.scrollTo({ top: state.scrollY || 0 }); });
     } catch { /* ignore stale state */ }
   }, [loading]);
 
   function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, status, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, reportId: item.reportId }));
-  }
-
-  async function updateStatus(item: ReportLibraryItem, nextStatus: ReviewStatus) {
-    const reviewer = window.prompt(`Your name is required to mark this report ${statusLabel(nextStatus).toLowerCase()}.`);
-    if (!reviewer?.trim()) return;
-    if (nextStatus === 'verified' && !window.confirm('Verify this report as reviewed and accurate?')) return;
-    setBusy(item.reportId);
-    try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/review`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelRunId: item.modelRunId, status: nextStatus, reviewedBy: reviewer }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Review update failed');
-      setReports((current) => current.map((report) => report.reportId === item.reportId ? { ...report, status: nextStatus, verifiedBy: nextStatus === 'verified' ? reviewer : undefined } : report));
-    } catch (cause) { window.alert(cause instanceof Error ? cause.message : 'Review update failed'); }
-    finally { setBusy(''); }
+    window.sessionStorage.setItem('report-library-state', JSON.stringify({ search, type, severity, kind, entity, instrument, asset, scope, entityType, match, datePreset, fromDate, toDate, fromTime, toTime, day, rangeAfter, rangeBefore, sort, page, scrollY: window.scrollY, revisionId: String(item.revisionId) }));
   }
 
   async function deleteReport(item: ReportLibraryItem) {
-    const deleteVideo = window.confirm('Delete the stored R2 video too?\n\nOK deletes the video and every report for it. Cancel keeps the video and deletes only this report.');
-    const message = deleteVideo ? 'Permanently delete this video and all of its reports?' : 'Delete only this report? The R2 video will be kept.';
-    if (!window.confirm(message)) return;
-    setBusy(item.reportId);
+    if (!window.confirm('Permanently delete this video and every version of its report? Versions are never deleted one by one.')) return;
+    setBusy(item.videoId);
     try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete?run=${encodeURIComponent(item.modelRunId)}&deleteVideo=${deleteVideo}`, { method: 'DELETE' });
+      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete`, { method: 'DELETE' });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Delete failed');
       if (reports.length === 1 && page > 1) setPage((current) => current - 1);
@@ -231,7 +208,7 @@ export function ReportsLibrary() {
   return (
     <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div><p className="font-mono text-xs uppercase tracking-[0.22em] text-moss">Decision history</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Incident reports</h1><p className="mt-3 text-ink/55">Find, review, verify, and revisit every generated analysis.</p></div>
+        <div><p className="font-mono text-xs uppercase tracking-[0.22em] text-moss">Decision history</p><h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">Incident reports</h1><p className="mt-3 text-ink/55">Find, edit, and revisit every incident report.</p></div>
         <Link className="w-fit rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white" href="/">+ Analyze video</Link>
       </div>
 
@@ -240,7 +217,7 @@ export function ReportsLibrary() {
           <label className="xl:col-span-2"><span className="sr-only">Search reports</span><input className="control" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search reports and evidence…" type="search" value={search} /></label>
           <Select label="Incident type" onChange={(value) => { setType(value); setPage(1); }} value={type} options={[['all', 'All incident types'], ...incidentTypes.map((value) => [value, value])]} />
           <Select label="Severity" onChange={(value) => { setSeverity(value); setPage(1); }} value={severity} options={ [['all', 'All severities'], ['low', 'Low (1–2)'], ['medium', 'Medium (3)'], ['high', 'High (4–5)'], ...[5, 4, 3, 2, 1].map((value) => [String(value), `Severity ${value}`])] } />
-          <Select label="Review status" onChange={(value) => { setStatus(value); setPage(1); }} value={status} options={[['all', 'All review states'], ['unreviewed', 'Unreviewed'], ['under review', 'Under review'], ['verified', 'Verified']]} />
+          <Select label="Version kind" onChange={(value) => { setKind(value); setPage(1); }} value={kind} options={[['all', 'AI and human versions'], ['ai', 'AI versions'], ['human', 'Human versions']]} />
           <Select label="Sort reports" onChange={(value) => { setSort(value as Sort); setPage(1); }} value={sort} options={[['newest', 'Newest first'], ['oldest', 'Oldest first'], ['severity-high', 'Highest severity'], ['severity-low', 'Lowest severity'], ['confidence-high', 'Highest confidence'], ['confidence-low', 'Lowest confidence']]} />
         </div>
         <div className="mt-3 grid gap-3 border-t border-ink/8 pt-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -263,26 +240,26 @@ export function ReportsLibrary() {
         </div>
       </section>
 
-      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || status !== 'all' || entity || instrument || asset || scope !== 'all' || entityType || match !== 'contains' || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setStatus('all'); setEntity(''); setInstrument(''); setAsset(''); setScope('all'); setEntityType(''); setMatch('contains'); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
-      {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.reportId} item={item} key={item.reportId} onDelete={deleteReport} onOpen={rememberPosition} onStatus={updateStatus} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
+      <div className="mt-6 flex items-center justify-between text-sm text-ink/50"><span>{totalItems} {totalItems === 1 ? 'report' : 'reports'}</span>{(search || type !== 'all' || severity !== 'all' || kind !== 'all' || entity || instrument || asset || scope !== 'all' || entityType || match !== 'contains' || datePreset !== 'all' || fromTime || toTime || day || rangeAfter || rangeBefore) && <button className="font-semibold text-moss" onClick={() => { setSearch(''); setType('all'); setSeverity('all'); setKind('all'); setEntity(''); setInstrument(''); setAsset(''); setScope('all'); setEntityType(''); setMatch('contains'); setDatePreset('all'); setFromDate(''); setToDate(''); setFromTime(''); setToTime(''); setDay(''); setRangeAfter(''); setRangeBefore(''); setPage(1); }} type="button">Clear filters</button>}</div>
+      {loading ? <LibrarySkeleton /> : error ? <div className="mt-8 rounded-2xl border border-clay/30 bg-white p-8 text-center"><p className="text-clay">{error}</p><button className="mt-4 font-semibold text-moss" onClick={() => void load()} type="button">Try again</button></div> : reports.length === 0 ? <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center"><h2 className="text-xl font-semibold">No reports match these filters.</h2><p className="mt-2 text-sm text-ink/50">Clear the filters or analyze another video.</p></div> : <><div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{reports.map((item) => <ReportCard busy={busy === item.videoId} item={item} key={item.videoId} onDelete={deleteReport} onOpen={rememberPosition} />)}</div><Pagination page={page} totalItems={totalItems} totalPages={totalPages} onPage={setPage} /></>}
     </div>
   );
 }
 
-function ReportCard({ item, busy, onStatus, onDelete, onOpen }: { item: ReportLibraryItem; busy: boolean; onStatus: (item: ReportLibraryItem, status: ReviewStatus) => void; onDelete: (item: ReportLibraryItem) => void; onOpen: (item: ReportLibraryItem) => void }) {
-  const href = `/reports/${encodeURIComponent(item.videoId)}?run=${encodeURIComponent(item.modelRunId)}`;
+function ReportCard({ item, busy, onDelete, onOpen }: { item: ReportLibraryItem; busy: boolean; onDelete: (item: ReportLibraryItem) => void; onOpen: (item: ReportLibraryItem) => void }) {
+  const href = `/reports/${encodeURIComponent(item.videoId)}?revision=${item.revisionId}`;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
-  return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.reportId}`} tabIndex={-1}>
-    <ReportThumbnail failed={thumbnailFailed} onError={() => setThumbnailFailed(true)} severity={item.severity} status={item.status} thumbnailUrl={item.thumbnailUrl} />
-    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {formatTimestamp(item.generatedAt)}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.model}</p>{item.isOfficial && <p className="mr-2 mt-2 inline-block rounded-full bg-moss px-2.5 py-0.5 text-[11px] font-bold text-white" data-testid="library-official-marker">Official report</p>}{item.outcome === 'valid_after_structural_repair' && <p className="mt-2 inline-block rounded-full bg-[#fff1c7] px-2.5 py-0.5 text-[11px] font-bold text-[#765300]" data-testid="library-repair-marker">Contract repair applied (IDs only)</p>}
-      <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><Link className="action" href={`/videos/${encodeURIComponent(item.videoId)}`} onClick={() => onOpen(item)}>Re-analyze / history</Link><select aria-label={`Change review status for ${item.title}`} className="action bg-white" disabled={busy} onChange={(event) => onStatus(item, event.target.value as ReviewStatus)} value={item.status}><option value="unreviewed">Unreviewed</option><option value="under review">Under review</option><option value="verified">Verified</option></select><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
+  return <article className="overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal" id={`report-${item.revisionId}`} tabIndex={-1}>
+    <ReportThumbnail failed={thumbnailFailed} onError={() => setThumbnailFailed(true)} kind={item.kind} severity={item.severity} thumbnailUrl={item.thumbnailUrl} />
+    <div className="p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p><h2 className="mt-2 line-clamp-2 text-xl font-semibold tracking-[-0.025em]">{item.title}</h2></div>{item.confidence !== null && <span className="shrink-0 text-sm font-semibold text-ink/55">{Math.round(item.confidence * 100)}%</span>}</div><p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/60">{item.description}</p><p className="mt-4 truncate text-xs text-ink/40">{item.filename} · {formatTimestamp(item.generatedAt)}</p><p className="mt-1 truncate text-[11px] text-ink/35">{item.kind === 'human' ? `Human version by ${item.createdBy ?? 'unknown reviewer'}` : item.model} · v{item.revisionNo}</p>{item.isOfficial && <p className="mr-2 mt-2 inline-block rounded-full bg-moss px-2.5 py-0.5 text-[11px] font-bold text-white" data-testid="library-official-marker">Official report</p>}{item.outcome === 'valid_after_structural_repair' && <p className="mt-2 inline-block rounded-full bg-[#fff1c7] px-2.5 py-0.5 text-[11px] font-bold text-[#765300]" data-testid="library-repair-marker">Contract repair applied (IDs only)</p>}
+      <div className="mt-5 flex flex-wrap gap-2"><Link className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white" href={href} onClick={() => onOpen(item)}>Open report</Link><Link className="action" href={`/videos/${encodeURIComponent(item.videoId)}`} onClick={() => onOpen(item)}>Re-analyze / history</Link><button className="action text-clay" disabled={busy} onClick={() => onDelete(item)} type="button">Delete</button></div>
     </div>
   </article>;
 }
 
-function ReportThumbnail({ thumbnailUrl, failed = false, onError, severity, status }: { thumbnailUrl?: string; failed?: boolean; onError?: () => void; severity: number; status: ReviewStatus }) {
+function ReportThumbnail({ thumbnailUrl, failed = false, onError, severity, kind }: { thumbnailUrl?: string; failed?: boolean; onError?: () => void; severity: number; kind: ReportLibraryItem['kind'] }) {
   const view = reportThumbnailView(thumbnailUrl, failed);
-  return <div className="relative aspect-video overflow-hidden bg-[#dfe3dc]" aria-label="Video screenshot preview">{view.kind === 'image' ? <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={onError} src={view.src} /> : <><div className="absolute inset-0 bg-gradient-to-br from-white/35 to-transparent" /><div className="absolute inset-x-8 bottom-8 space-y-3"><div className="h-3 w-2/3 rounded-full bg-ink/15" /><div className="h-3 w-full rounded-full bg-ink/10" /><div className="h-3 w-4/5 rounded-full bg-ink/10" /></div><div className="absolute left-1/2 top-1/2 h-14 w-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/55 shadow-sm"><div className="absolute left-1/2 top-1/2 h-0 w-0 -translate-x-1/3 -translate-y-1/2 border-y-[10px] border-l-[16px] border-y-transparent border-l-ink/25" /></div></>}<span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(severity)}`}>Severity {severity}</span><span className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink">{statusLabel(status)}</span></div>;
+  return <div className="relative aspect-video overflow-hidden bg-[#dfe3dc]" aria-label="Video screenshot preview">{view.kind === 'image' ? <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={onError} src={view.src} /> : <><div className="absolute inset-0 bg-gradient-to-br from-white/35 to-transparent" /><div className="absolute inset-x-8 bottom-8 space-y-3"><div className="h-3 w-2/3 rounded-full bg-ink/15" /><div className="h-3 w-full rounded-full bg-ink/10" /><div className="h-3 w-4/5 rounded-full bg-ink/10" /></div><div className="absolute left-1/2 top-1/2 h-14 w-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/55 shadow-sm"><div className="absolute left-1/2 top-1/2 h-0 w-0 -translate-x-1/3 -translate-y-1/2 border-y-[10px] border-l-[16px] border-y-transparent border-l-ink/25" /></div></>}<span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(severity)}`}>Severity {severity}</span><span className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink">{kind === 'human' ? 'Human' : 'AI'}</span></div>;
 }
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) { return <label><span className="sr-only">{label}</span><select aria-label={label} className="control" onChange={(event) => onChange(event.target.value)} value={value}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>; }

@@ -8,7 +8,7 @@ import { ReanalysisCard } from '@/components/reanalysis-card';
 import { RunHistoryList, useRunHistory } from '@/components/run-history';
 import type { ChatCitation, ChatResponse } from '@/lib/ports/chat';
 import type { ReportView } from '@/lib/reports/report-view';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { RevisionSummary } from '@/lib/reports/revision';
 
 export function AdvancedReportTools({ report }: { report: ReportView }) {
   return (
@@ -23,10 +23,10 @@ export function AdvancedReportTools({ report }: { report: ReportView }) {
 }
 
 function RunComparisonLauncher({ report }: { report: ReportView }) {
-  const [other, setOther] = useState<ReportLibraryItem | null>(null);
-  useEffect(() => { void fetch('/api/reports?all=true').then((r) => r.json()).then((p: { reports?: ReportLibraryItem[] }) => { setOther((p.reports || []).find((item) => item.videoId === report.videoId && item.modelRunId !== report.modelRunId) || null); }); }, [report]);
+  const [other, setOther] = useState<RevisionSummary | null>(null);
+  useEffect(() => { void fetch(`/api/reports/${encodeURIComponent(report.videoId)}/revisions`).then((r) => r.json()).then((p: { revisions?: RevisionSummary[] }) => { setOther((p.revisions || []).find((item) => item.kind === 'ai' && item.revisionId !== report.revisionId) || null); }).catch(() => setOther(null)); }, [report]);
   if (!other) return null;
-  return <div className="print-hidden mt-6 rounded-2xl border border-signal/25 bg-signal/5 p-5 text-sm"><strong>Another model run is available for this video.</strong><Link className="ml-3 font-bold text-moss" href={`/reports/${encodeURIComponent(report.videoId)}/compare?left=${encodeURIComponent(report.modelRunId)}&right=${encodeURIComponent(other.modelRunId)}`}>Compare runs side by side →</Link></div>;
+  return <div className="print-hidden mt-6 rounded-2xl border border-signal/25 bg-signal/5 p-5 text-sm"><strong>Another AI version is available for this video.</strong><Link className="ml-3 font-bold text-moss" href={`/reports/${encodeURIComponent(report.videoId)}/compare?left=${report.revisionId}&right=${other.revisionId}`}>Compare versions side by side →</Link></div>;
 }
 
 function FollowUpChat({ report }: { report: ReportView }) {

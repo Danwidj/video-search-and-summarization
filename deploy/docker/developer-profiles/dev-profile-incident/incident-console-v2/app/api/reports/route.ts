@@ -55,6 +55,8 @@ export async function GET(request: Request) {
     const tzParam = params.get('timezone');
     if (tzParam !== null && !isValidTimeZone(tzParam)) return NextResponse.json({ error: 'Invalid report timezone' }, { status: 400 });
     const timezone = tzParam || 'UTC';
+    const kind = optional(params, 'kind');
+    if (kind !== null && kind !== 'ai' && kind !== 'human') return NextResponse.json({ error: 'Invalid revision kind' }, { status: 400 });
     const scope = params.get('scope') || 'all';
     const match = params.get('match') || 'contains';
     const entityTypes = [...new Set(params.getAll('entityType').map((value) => value.trim().toLowerCase()).filter(Boolean))];
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
       search: optional(params, 'search'),
       type: optional(params, 'type'),
       severity: optional(params, 'severity'),
-      status: optional(params, 'status'),
+      kind,
       generatedAfter: optional(params, 'after'),
       generatedBefore: optional(params, 'before'),
       timeFrom: optional(params, 'fromTime'),

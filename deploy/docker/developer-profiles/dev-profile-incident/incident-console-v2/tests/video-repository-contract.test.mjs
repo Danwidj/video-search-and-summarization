@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // One VideoRepository contract, run against the in-memory fake and the Supabase
-// adapter over a fake PostgREST whose RPCs mimic select_official_report /
-// clear_official_report (20261020000000_finals_baseline.sql).
+// adapter over a fake PostgREST whose set_official_revision RPC mimics
+// supabase/functions-final.sql (tests/support/revisions-database.mjs).
 // listVideos' embedded select is covered by tests/videos-route.test.mjs.
 
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ import { register } from 'node:module';
 import { afterEach, describe, test } from 'node:test';
 
 import { fakePostgrest } from './support/fake-postgrest.mjs';
+import { revisionRpcs } from './support/revisions-database.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
@@ -21,43 +22,28 @@ const { PostgrestClient } = await import('../lib/postgrest/client.ts');
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
-const VIDEO = { videoId: 'v1', storageKey: 'uploads/sensor-1/v1.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', officialRunId: null };
+const VIDEO = { videoId: 'v1', storageKey: 'uploads/sensor-1/v1.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', officialRevisionId: null };
 const attempt = (id, videoId, status) => ({ id, notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, videoId } }) });
-
-function officialRpcs() {
-  const reviewer = (name) => { if (!name || !name.trim()) throw new Error('A reviewer name is required'); return name.trim(); };
-  return {
-    select_official_report: ({ p_video_id, p_model_run_id, p_selected_by }, store) => {
-      const selectedBy = reviewer(p_selected_by);
-      const video = store.videos.find((row) => row.id === p_video_id);
-      if (!video) throw new Error('Video not found');
-      const reported = store.reports.some((row) => row.incident_id === p_video_id && row.model_run_id === p_model_run_id)
-        && store.incidents.some((row) => row.incident_id === p_video_id && row.model_run_id === p_model_run_id);
-      if (!reported) throw new Error('Only a successful analysis of this video that has a report can be the official report');
-      Object.assign(video, { selected_model_run_id: p_model_run_id, selected_by: selectedBy, selected_at: '2026-10-17T02:00:00' });
-      return { videoId: p_video_id, officialRunId: p_model_run_id, selectedBy, selectedAt: '2026-10-17T02:00:00' };
-    },
-    clear_official_report: ({ p_video_id, p_cleared_by }, store) => {
-      const clearedBy = reviewer(p_cleared_by);
-      const video = store.videos.find((row) => row.id === p_video_id);
-      if (!video) throw new Error('Video not found');
-      Object.assign(video, { selected_model_run_id: null, selected_by: null, selected_at: null });
-      return { videoId: p_video_id, officialRunId: null, clearedBy };
-    },
-  };
-}
+const CROPS = [{
+  item_type: 'entity', item_id: 'E1', image: 'evidence/v1/u/E1.jpg', bounding_box: [1, 2, 3, 4], timestamp_seconds: 2,
+  item_name: 'human', description: 'A person.', threat_level: null, holder_entity_id: null, embedding: [0.1, 0.2],
+}];
+const REVISIONS = [
+  { id: 1, video_id: 'v1', revision_no: 1, kind: 'ai', model_run_id: 'm1', evidence: [{ item_type: 'entity', item_id: 'E1', image: 'evidence/v1/u/E1.jpg' }, { item_type: 'asset', item_id: 'A1', image: null }] },
+  { id: 2, video_id: 'v2', revision_no: 1, kind: 'ai', model_run_id: 'm-other', evidence: [] },
+];
 
 const implementations = {
-  memory: () => ({ repo: new InMemoryVideoRepository([{ ...VIDEO, runsWithReport: ['m1'] }]) }),
+  memory: () => ({ repo: new InMemoryVideoRepository([{ ...VIDEO, revisionIds: [1] }]) }),
   supabase: () => {
     const db = fakePostgrest({
-      videos: [{ id: 'v1', filepath: VIDEO.storageKey, uploaded_datetime: VIDEO.uploadedAt, source: VIDEO.source, selected_model_run_id: null }],
-      incidents: [{ incident_id: 'v1', model_run_id: 'm1' }],
-      reports: [{ id: 'r1', incident_id: 'v1', model_run_id: 'm1' }],
+      videos: [{ id: 'v1', filepath: VIDEO.storageKey, uploaded_datetime: VIDEO.uploadedAt, source: VIDEO.source, official_revision_id: null }],
+      report_revisions: REVISIONS,
+      evidence_crops: [],
       model_runs: [attempt('m-failed', 'v1', 'contract_failed'), attempt('m-other', 'v2', 'contract_failed'), attempt('m1', 'v1', 'valid_first_pass')],
-    }, { rpc: officialRpcs() });
+    }, { rpc: revisionRpcs });
     globalThis.fetch = db.fetch;
-    return { repo: new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k')), store: db.store };
+    return { repo: new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k')), store: db.store, db };
   },
 };
 
@@ -71,24 +57,20 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal(await repo.getVideo('v-none'), null);
     });
 
-    test('a run with a report becomes official and can be cleared', async () => {
+    test('a revision of the video becomes official and can be cleared', async () => {
       const { repo } = make();
-      const selection = await repo.selectOfficialRun('v1', 'm1', ' Lead ');
-      assert.equal(selection.videoId, 'v1');
-      assert.equal(selection.officialRunId, 'm1');
-      assert.equal(selection.selectedBy, 'Lead');
-      assert.match(selection.selectedAt, /^\d{4}-\d\d-\d\dT/);
-      assert.equal((await repo.getVideo('v1')).officialRunId, 'm1');
-      assert.deepEqual(await repo.clearOfficialRun('v1', 'Lead'), { videoId: 'v1', officialRunId: null, clearedBy: 'Lead' });
-      assert.equal((await repo.getVideo('v1')).officialRunId, null);
+      assert.deepEqual(await repo.setOfficialRevision('v1', 1, CROPS), { videoId: 'v1', officialRevisionId: 1, crops: 1 });
+      assert.equal((await repo.getVideo('v1')).officialRevisionId, 1);
+      assert.deepEqual(await repo.setOfficialRevision('v1', null, []), { videoId: 'v1', officialRevisionId: null, crops: 0 });
+      assert.equal((await repo.getVideo('v1')).officialRevisionId, null);
     });
 
     test('refusals are domain rejections, not transport errors', async () => {
       const { repo } = make();
-      await assert.rejects(repo.selectOfficialRun('v1', 'm-failed', 'Lead'), rejection('invalid', /successful analysis/));
-      await assert.rejects(repo.selectOfficialRun('v-none', 'm1', 'Lead'), rejection('not-found', /Video not found/));
-      await assert.rejects(repo.selectOfficialRun('v1', 'm1', '  '), rejection('invalid', /reviewer name/));
-      await assert.rejects(repo.clearOfficialRun('v-none', 'Lead'), rejection('not-found', /Video not found/));
+      await assert.rejects(repo.setOfficialRevision('v-none', 1, []), rejection('not-found', /Video not found/));
+      await assert.rejects(repo.setOfficialRevision('v1', 2, []), rejection('not-found', /Revision not found/), "another video's revision");
+      await assert.rejects(repo.setOfficialRevision('v1', 99, []), rejection('not-found', /Revision not found/));
+      assert.equal((await repo.getVideo('v1')).officialRevisionId, null);
     });
 
     test('a deleted video is gone', async () => {
@@ -100,16 +82,31 @@ for (const [name, make] of Object.entries(implementations)) {
 }
 
 describe('SupabaseVideoAdapter', () => {
-  test('deleting a video removes only the incident-less run records that name it', async () => {
+  test('marking official is one set_official_revision call with the crops in the RPC shape', async () => {
+    const { repo, db, store } = implementations.supabase();
+    await repo.setOfficialRevision('v1', 1, CROPS);
+    assert.deepEqual(db.requests, [{
+      method: 'POST', path: 'rpc/set_official_revision',
+      body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
+    }]);
+    assert.deepEqual(store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]), [[1, 'E1', [0.1, 0.2]]]);
+    await repo.setOfficialRevision('v1', null, []);
+    assert.deepEqual(store.evidence_crops, []);
+  });
+
+  test('deleting a video removes only the run records that name it and that no revision uses', async () => {
     const { repo, store } = implementations.supabase();
-    store.incidents = [];
     await repo.deleteVideo('v1');
-    assert.deepEqual(store.model_runs.map((row) => row.id), ['m-other']);
+    // m1 is still used by revision 1 in this fake, which does not cascade; m-failed is not.
+    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other', 'm1']);
+    store.report_revisions = [];
+    await repo.deleteVideo('v1');
+    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other']);
   });
 
   test('other PostgREST failures are not turned into rejections', async () => {
     globalThis.fetch = async () => new Response('{"message":"permission denied"}', { status: 401 });
     const repo = new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k'));
-    await assert.rejects(repo.selectOfficialRun('v1', 'm1', 'Lead'), (error) => !(error instanceof StoreRejection) && /HTTP 401/.test(error.message));
+    await assert.rejects(repo.setOfficialRevision('v1', 1, []), (error) => !(error instanceof StoreRejection) && /HTTP 401/.test(error.message));
   });
 });

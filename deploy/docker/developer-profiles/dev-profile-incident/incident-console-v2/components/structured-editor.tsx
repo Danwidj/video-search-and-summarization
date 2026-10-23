@@ -10,20 +10,22 @@ import {
   draftFromView,
   draftProblems,
   editFromDraft,
-  newKey,
+  newItemDetails,
   type EditDraft,
 } from '@/lib/reports/edit-draft';
 import { formatClock } from '@/lib/reports/normalize';
 import type { ReportView } from '@/lib/reports/report-view';
-import type { ReviewStatus } from '@/lib/reports/storage';
 
 /**
  * Class A editor: incident type, window, summary, severity level, and the
- * entities / instruments / assets. Model-generated fields (title, severity
- * rationale, location, timeline, uncertainties) and provenance are shown
- * read-only on the left and are never part of an edit.
+ * entities / instruments / assets with their details and evidence image.
+ * Model-generated fields (title, severity rationale, location, timeline,
+ * uncertainties) and provenance are shown read-only on the left and are never
+ * part of an edit. The form starts from the opened revision; saving appends a
+ * new human revision whose parent is that revision. Unsaved changes live only
+ * in this form.
  */
-export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { report: ReportView; reviewStatus: ReviewStatus; onCancel: () => void; onSaved: () => void }) {
+export function StructuredEditor({ report, onCancel, onSaved }: { report: ReportView; onCancel: () => void; onSaved: (revisionId: number) => void }) {
   const [draft, setDraft] = useState<EditDraft>(() => draftFromView(report));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string[]>([]);
@@ -38,21 +40,22 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
     if (problems.length || busy) return;
     const editedBy = window.prompt('Your name is required to save a reviewer edit.');
     if (!editedBy?.trim()) return;
-    if (reviewStatus === 'verified' && !window.confirm('This report is verified. Saving this edit sends it back to under review and clears the verification. Save anyway?')) return;
+    const note = window.prompt('Add a note for this version (optional).')?.trim() || null;
     setBusy(true);
     setError([]);
     try {
       const response = await fetch(`/api/reports/${encodeURIComponent(report.videoId)}/edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelRunId: report.modelRunId, editedBy: editedBy.trim(), edit: editFromDraft(draft) }),
+        body: JSON.stringify({ parentId: report.revisionId, editedBy: editedBy.trim(), note, edit: editFromDraft(draft) }),
       });
-      const payload = (await response.json()) as { error?: string; violations?: Array<{ message: string }> };
+      const payload = (await response.json()) as { error?: string; violations?: Array<{ message: string }>; revision?: { revisionId: number } };
       if (!response.ok) {
         setError(payload.violations?.length ? payload.violations.map((violation) => violation.message) : [payload.error || 'Save failed']);
         return;
       }
-      onSaved();
+      if (!payload.revision) throw new Error('The save returned no revision');
+      onSaved(payload.revision.revisionId);
     } catch (cause) {
       setError([cause instanceof Error ? cause.message : 'Save failed']);
     } finally {
@@ -68,7 +71,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
       <div className="rounded-2xl border border-moss/25 bg-white p-4 shadow-sm">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-moss">Reviewer edit · structured fields</p>
         <p className="mt-1 text-xs text-ink/50">
-          Changes the report&apos;s structured values only. The model&apos;s original output, its title, severity rationale, timeline and uncertainties stay unchanged.
+          Saving creates a new human version from revision {report.revision.revisionNo}; earlier versions are kept. The model&apos;s original output, its title, severity rationale, timeline and uncertainties stay unchanged.
           {legacy ? ' Saving this earlier-format report stores its values in the current format (seconds, contract types, sequential IDs).' : ''}
         </p>
 
@@ -95,7 +98,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
           <textarea className="control mt-1 min-h-[100px]" onChange={(e) => setIncident({ description: e.target.value })} value={draft.incident.description} />
         </label>
 
-        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { key: newKey('entity'), sourceId: null, type: 'human', description: '' }] }))}>
+        <Section itemLabel="entity" title="Entities" onAdd={() => setDraft((d) => ({ ...d, entities: [...d.entities, { ...newItemDetails('entity', d), type: 'human', description: '' }] }))}>
           {draft.entities.map((entity, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={entity.key}>
               <div className="flex items-center gap-2">
@@ -106,11 +109,12 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
                 <Remove onClick={() => setDraft((d) => ({ ...d, entities: d.entities.filter((x) => x.key !== entity.key), instruments: d.instruments.map((i) => i.holderKey === entity.key ? { ...i, holderKey: null } : i) }))} />
               </div>
               <textarea aria-label={`Entity E${index + 1} description`} className="control mt-2" onChange={(e) => setDraft((d) => ({ ...d, entities: d.entities.map((x) => x.key === entity.key ? { ...x, description: e.target.value } : x) }))} value={entity.description} />
+              <ItemDetails idLabel={`Entity E${index + 1}`} item={entity} onChange={(patch) => setDraft((d) => ({ ...d, entities: d.entities.map((x) => x.key === entity.key ? { ...x, ...patch } : x) }))} videoId={report.videoId} />
             </div>
           ))}
         </Section>
 
-        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { key: newKey('instrument'), sourceId: null, holderKey: null, name: '', description: '', threat_level: null }] }))}>
+        <Section itemLabel="instrument" title="Instruments" onAdd={() => setDraft((d) => ({ ...d, instruments: [...d.instruments, { ...newItemDetails('instrument', d), holderKey: null, name: '', description: '', threat_level: null }] }))}>
           {draft.instruments.map((instrument, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={instrument.key}>
               <div className="flex items-center gap-2">
@@ -119,6 +123,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
                 <Remove onClick={() => setDraft((d) => ({ ...d, instruments: d.instruments.filter((x) => x.key !== instrument.key) }))} />
               </div>
               <textarea aria-label={`Instrument I${index + 1} description`} className="control mt-2" onChange={(e) => setDraft((d) => ({ ...d, instruments: d.instruments.map((x) => x.key === instrument.key ? { ...x, description: e.target.value } : x) }))} value={instrument.description} />
+              <ItemDetails idLabel={`Instrument I${index + 1}`} item={instrument} onChange={(patch) => setDraft((d) => ({ ...d, instruments: d.instruments.map((x) => x.key === instrument.key ? { ...x, ...patch } : x) }))} videoId={report.videoId} />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <select aria-label={`Instrument I${index + 1} threat level`} className="control" onChange={(e) => setDraft((d) => ({ ...d, instruments: d.instruments.map((x) => x.key === instrument.key ? { ...x, threat_level: e.target.value ? Number(e.target.value) : null } : x) }))} value={instrument.threat_level ?? ''}>
                   <option value="">Threat level…</option>
@@ -133,7 +138,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
           ))}
         </Section>
 
-        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { key: newKey('asset'), sourceId: null, name: '', description: '' }] }))}>
+        <Section itemLabel="asset" title="Assets" onAdd={() => setDraft((d) => ({ ...d, assets: [...d.assets, { ...newItemDetails('asset', d), name: '', description: '' }] }))}>
           {draft.assets.map((asset, index) => (
             <div className="rounded-xl border border-ink/10 p-3" key={asset.key}>
               <div className="flex items-center gap-2">
@@ -142,6 +147,7 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
                 <Remove onClick={() => setDraft((d) => ({ ...d, assets: d.assets.filter((x) => x.key !== asset.key) }))} />
               </div>
               <textarea aria-label={`Asset A${index + 1} description`} className="control mt-2" onChange={(e) => setDraft((d) => ({ ...d, assets: d.assets.map((x) => x.key === asset.key ? { ...x, description: e.target.value } : x) }))} value={asset.description} />
+              <ItemDetails idLabel={`Asset A${index + 1}`} item={asset} onChange={(patch) => setDraft((d) => ({ ...d, assets: d.assets.map((x) => x.key === asset.key ? { ...x, ...patch } : x) }))} videoId={report.videoId} />
             </div>
           ))}
         </Section>
@@ -149,10 +155,60 @@ export function StructuredEditor({ report, reviewStatus, onCancel, onSaved }: { 
         {problems.length > 0 && <ul className="mt-4 list-disc pl-5 text-xs text-clay">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>}
         {error.length > 0 && <ul aria-live="polite" className="mt-4 list-disc pl-5 text-xs text-clay">{error.map((message, index) => <li key={index}>{message}</li>)}</ul>}
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" disabled={busy || problems.length > 0} onClick={() => void save()} type="button">{busy ? 'Saving…' : 'Save reviewer edit'}</button>
+          <button className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" disabled={busy || problems.length > 0} onClick={() => void save()} type="button">{busy ? 'Saving…' : 'Save as new version'}</button>
           <button className="action" disabled={busy} onClick={onCancel} type="button">Cancel</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+type ItemDetailsPatch = Partial<Pick<EditDraft['entities'][number], 'timestampSeconds' | 'label' | 'image' | 'imageUrl'>>;
+
+/**
+ * An item's time, label and evidence image. A replacement image is uploaded
+ * under a new R2 key at once (nothing is overwritten) and only becomes part of
+ * the report when the edit is saved.
+ */
+function ItemDetails({ idLabel, item, onChange, videoId }: { idLabel: string; item: { key: string; timestampSeconds: number | null; label: string; image: string | null; imageUrl: string | null }; onChange: (patch: ItemDetailsPatch) => void; videoId: string }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function replaceImage(file: File) {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const form = new FormData();
+      form.set('file', file);
+      form.set('itemId', item.key.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64));
+      const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/evidence-image`, { method: 'POST', body: form });
+      const payload = (await response.json()) as { image?: string; error?: string };
+      if (!response.ok || !payload.image) throw new Error(payload.error || 'Image upload failed');
+      onChange({ image: payload.image, imageUrl: URL.createObjectURL(file) });
+    } catch (cause) {
+      setUploadError(cause instanceof Error ? cause.message : 'Image upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 grid grid-cols-[1fr_1fr] gap-2" data-testid="item-details">
+      <label className="text-[11px] font-bold">Visible at (seconds)
+        <input aria-label={`${idLabel} time in seconds`} className="control mt-1" inputMode="numeric" min={0} onChange={(e) => onChange({ timestampSeconds: e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value))) })} step={1} type="number" value={item.timestampSeconds ?? ''} />
+      </label>
+      <label className="text-[11px] font-bold">Label
+        <input aria-label={`${idLabel} label`} className="control mt-1" onChange={(e) => onChange({ label: e.target.value })} value={item.label} />
+      </label>
+      <div className="col-span-2 flex items-center gap-3">
+        {item.imageUrl ? <img alt={`${idLabel} evidence`} className="h-16 w-24 rounded-lg border border-ink/10 object-cover" src={item.imageUrl} /> : <span className="text-[11px] italic text-ink/40">{item.image ? 'Image stored, preview unavailable' : 'No evidence image'}</span>}
+        <label className="text-[11px] font-semibold text-moss">
+          {uploading ? 'Uploading…' : item.image ? 'Replace image' : 'Add image'}
+          <input accept="image/jpeg,image/png,image/webp" aria-label={`${idLabel} replacement image`} className="mt-1 block text-[11px] font-normal text-ink/60" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void replaceImage(file); e.target.value = ''; }} type="file" />
+        </label>
+        {item.image && <button className="text-[11px] font-semibold text-clay" onClick={() => onChange({ image: null, imageUrl: null })} type="button">Remove image</button>}
+      </div>
+      {uploadError && <p className="col-span-2 text-[11px] text-clay" role="alert">{uploadError}</p>}
     </div>
   );
 }

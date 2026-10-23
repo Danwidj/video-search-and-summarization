@@ -1,33 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // In-memory VideoRepository for use-case tests. It mirrors the rules the
-// database enforces through the official-report RPCs (only a run with a report
-// can be official; a reviewer name is required) and the list filters.
+// database enforces through set_official_revision (only a revision of the
+// video can be official; null clears it) and the list filters.
 
 import {
   StoreRejection,
-  type OfficialClearance, type OfficialSelection, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type OfficialChange, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
 } from '@/lib/ports';
+import type { OfficialCrop } from '@/lib/reports/revision';
 
 export interface InMemoryVideo extends VideoRecord {
-  /** Runs of this video that have an incident and a report. */
-  runsWithReport: string[];
+  /** Ids of this video's report revisions. */
+  revisionIds: number[];
 }
-
-const ONLY_REPORTED_RUNS = 'Only a successful analysis of this video that has a report can be the official report';
 
 export class InMemoryVideoRepository implements VideoRepository {
   readonly videos = new Map<string, InMemoryVideo>();
+  /** Each setOfficialRevision call, for tests to assert on the crops passed. */
+  readonly officialCalls: Array<{ videoId: string; revisionId: number | null; crops: OfficialCrop[] }> = [];
 
   constructor(videos: InMemoryVideo[] = []) {
-    for (const video of videos) this.videos.set(video.videoId, { ...video, runsWithReport: [...video.runsWithReport] });
+    for (const video of videos) this.videos.set(video.videoId, { ...video, revisionIds: [...video.revisionIds] });
   }
 
   async listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>> {
     const all = [...this.videos.values()]
       .filter((video) => filter === 'all'
-        || (filter === 'without-report' && video.runsWithReport.length === 0)
-        || (filter === 'awaiting-selection' && video.runsWithReport.length > 0 && !video.officialRunId))
+        || (filter === 'without-report' && video.revisionIds.length === 0)
+        || (filter === 'awaiting-selection' && video.revisionIds.length > 0 && video.officialRevisionId === null))
       .sort((a, b) => (a.uploadedAt === b.uploadedAt ? a.videoId.localeCompare(b.videoId)
         : a.uploadedAt === null ? 1 : b.uploadedAt === null ? -1 : b.uploadedAt.localeCompare(a.uploadedAt)));
     const items = all.slice((page - 1) * pageSize, page * pageSize).map((video) => ({
@@ -35,8 +36,8 @@ export class InMemoryVideoRepository implements VideoRepository {
       filename: (video.storageKey ?? '').split('/').pop() || video.videoId,
       uploadedAt: video.uploadedAt,
       source: video.source,
-      analysesWithReport: video.runsWithReport.length,
-      officialRunId: video.officialRunId,
+      revisions: video.revisionIds.length,
+      officialRevisionId: video.officialRevisionId,
     }));
     return { items, totalItems: all.length };
   }
@@ -44,25 +45,17 @@ export class InMemoryVideoRepository implements VideoRepository {
   async getVideo(videoId: string): Promise<VideoRecord | null> {
     const video = this.videos.get(videoId);
     if (!video) return null;
-    const { runsWithReport: _runs, ...record } = video;
+    const { revisionIds: _ids, ...record } = video;
     return record;
   }
 
-  async selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection> {
-    if (!selectedBy.trim()) throw new StoreRejection('invalid', 'A reviewer name is required');
+  async setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange> {
     const video = this.videos.get(videoId);
-    if (!video) throw new StoreRejection('not-found', 'Video not found');
-    if (!video.runsWithReport.includes(modelRunId)) throw new StoreRejection('invalid', ONLY_REPORTED_RUNS);
-    video.officialRunId = modelRunId;
-    return { videoId, officialRunId: modelRunId, selectedBy: selectedBy.trim(), selectedAt: new Date().toISOString().replace('Z', '') };
-  }
-
-  async clearOfficialRun(videoId: string, clearedBy: string): Promise<OfficialClearance> {
-    if (!clearedBy.trim()) throw new StoreRejection('invalid', 'A reviewer name is required');
-    const video = this.videos.get(videoId);
-    if (!video) throw new StoreRejection('not-found', 'Video not found');
-    video.officialRunId = null;
-    return { videoId, officialRunId: null, clearedBy: clearedBy.trim() };
+    if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
+    if (revisionId !== null && !video.revisionIds.includes(revisionId)) throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
+    this.officialCalls.push({ videoId, revisionId, crops });
+    video.officialRevisionId = revisionId;
+    return { videoId, officialRevisionId: revisionId, crops: revisionId === null ? 0 : crops.length };
   }
 
   async deleteVideo(videoId: string): Promise<void> {

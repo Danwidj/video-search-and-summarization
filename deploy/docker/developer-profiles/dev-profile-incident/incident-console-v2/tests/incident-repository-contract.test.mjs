@@ -3,10 +3,10 @@
 // One IncidentRepository contract, run against the in-memory fake and the
 // Supabase adapter (over a fake PostgREST), so use-case tests that rely on the
 // fake are testing behaviour the real adapter has. The fake PostgREST's
-// list_incident_report_summaries applies paging, scope, status and
+// list_incident_report_summaries applies paging, scope, kind and
 // newest/oldest order to SQL-shaped summaries; the other filters run in SQL
-// and are pinned by the reports route tests. Its reviewer-version views and
-// RPCs come from tests/support/finals-database.mjs.
+// and are pinned by the reports route tests. Its save_human_revision RPC comes
+// from tests/support/revisions-database.mjs.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,286 +15,198 @@ import { join } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
 
 import { fakePostgrest } from './support/fake-postgrest.mjs';
-import { effectiveViews, reviewerRpcs } from './support/finals-database.mjs';
+import { revisionRpcs } from './support/revisions-database.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { StoreRejection } = await import('../lib/ports/index.ts');
 const { SupabaseIncidentAdapter } = await import('../lib/adapters/supabase/incidents.ts');
-const { reviewTransitionFromRpc, structuredEditResultFromRpc } = await import('../lib/adapters/supabase/mappers/report.ts');
+const { savedRevisionFromRpc } = await import('../lib/adapters/supabase/mappers/report.ts');
 const { reportListFromRpc, reportListRpcArgs } = await import('../lib/adapters/supabase/mappers/report-library.ts');
 const { PostgrestClient } = await import('../lib/postgrest/client.ts');
-const { aiRunReport } = await import('./support/report-view.mjs');
+const { humanRevisionContent } = await import('../lib/reports/revision.ts');
+const { aiRevisionRow, aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
-const [ASSAULT, LEGACY, REPAIRED] = summaries.reports;
+const [HUMAN, LEGACY, REPAIRED] = summaries.reports;
 const LIBRARY = {
-  page: 1, pageSize: 6, search: null, type: null, severity: null, status: null, generatedAfter: null, generatedBefore: null,
+  page: 1, pageSize: 6, search: null, type: null, severity: null, kind: null, generatedAfter: null, generatedBefore: null,
   timeFrom: null, timeTo: null, entities: null, instruments: null, assets: null, dayOfWeek: null,
   sort: 'newest', scope: 'all', entityTypes: null, evidenceMatch: 'contains', timezone: 'UTC',
 };
-const KEY = { videoId: smoke.videoId, modelRunId: smoke.modelRunId };
-const OTHER_RUN = { videoId: smoke.videoId, modelRunId: 'm-other' };
+const VIDEO_ID = smoke.videoId;
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
 function listSummaries(args) {
   const direction = args.p_sort === 'oldest' ? 1 : -1;
   const matching = summaries.reports
-    .filter((report) => (args.p_scope !== 'official' || report.isOfficial) && (args.p_status === null || report.status === args.p_status))
-    .sort((a, b) => direction * a.generatedAt.localeCompare(b.generatedAt) || a.reportId.localeCompare(b.reportId));
+    .filter((report) => (args.p_scope !== 'official' || report.isOfficial) && (args.p_kind === null || report.kind === args.p_kind))
+    .sort((a, b) => direction * a.generatedAt.localeCompare(b.generatedAt) || a.revisionId - b.revisionId);
   const size = Math.min(Math.max(args.p_page_size, 1), 1000);
   const start = (Math.max(args.p_page, 1) - 1) * size;
   return { reports: matching.slice(start, start + size), totalItems: matching.length, incidentTypes: summaries.incidentTypes };
 }
 
-/** An edit of the smoke run: a new description and severity, entity E2 dropped, asset A1 renamed; every item names its AI item. */
+/** An edit of the smoke run: a new description and severity, entity E2 dropped, asset A1 renamed; every item names its source item. */
 function smokeEdit() {
+  const details = (sourceId) => ({ source_id: sourceId, timestamp_seconds: 1, label: '', image: null });
   return {
     incident: { type: 'assault', start_timestamp: 1, end_timestamp: 9, description: 'Reviewer: one person pushes the other over.', severity_level: 3 },
-    entities: [{ entity_id: 'E1', source_id: 'E1', type: 'human', description: smoke.entities[0].description }],
+    entities: [{ entity_id: 'E1', type: 'human', description: smoke.entities[0].description, ...details('E1') }],
     instruments: [],
     assets: smoke.assets.map((asset, index) => ({
-      asset_id: asset.asset_id, source_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description,
+      asset_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description, ...details(asset.asset_id),
     })),
   };
 }
 
-/** The smoke run as a legacy analysis stored it: lowercase zero-padded IDs, 'person', a held instrument. */
-const legacySmoke = (threatLevel) => ({
-  ...smoke,
-  entities: smoke.entities.map((entity, index) => ({ ...entity, entity_id: `e0${index + 1}`, type: 'person' })),
-  instruments: [{ incident_id: smoke.videoId, model_run_id: smoke.modelRunId, instrument_id: 'i01', entity_id: 'e02', name: 'bag', description: 'Swung', threat_level: threatLevel, image: null }],
-  assets: smoke.assets.map((asset, index) => ({ ...asset, asset_id: `a0${index + 1}` })),
+const humanInput = (record, overrides = {}) => ({
+  videoId: VIDEO_ID, parentId: record.revision.revisionId, createdBy: ' Editor ', note: ' Corrected the severity ',
+  ...humanRevisionContent(record, smokeEdit()), ...overrides,
 });
 
-// Each implementation also exposes the stored AI report, which no edit or verification may change.
+// Each implementation seeds the smoke run's one AI revision (id 1); officialRevisionId marks one official.
 const implementations = {
-  memory: (rows = smoke) => {
-    const repo = new InMemoryIncidentRepository([aiRunReport(rows)], summaries.reports);
-    const ai = () => {
-      const { incident, entities, instruments, assets } = repo.runs.get(`${KEY.videoId}\u0000${KEY.modelRunId}`);
-      return { incident, entities, instruments, assets };
-    };
-    return { repo, ai };
+  memory: (officialRevisionId = null) => {
+    const record = aiRunReport(smoke);
+    record.video.officialRevisionId = officialRevisionId;
+    const repo = new InMemoryIncidentRepository([record], summaries.reports);
+    return { repo, ai: () => structuredClone(repo.revisions[0]) };
   },
-  supabase: (rows = smoke, rpc = {}) => {
+  supabase: (officialRevisionId = null, rpc = {}) => {
     const db = fakePostgrest({
-      videos: [rows.video], model_runs: [rows.modelRun], incidents: [rows.incident], review_status: [rows.review],
-      entities: rows.entities, instruments: rows.instruments, assets: rows.assets, reports: [rows.reportRow],
-    }, { rpc: { list_incident_report_summaries: listSummaries, ...reviewerRpcs, ...rpc }, views: effectiveViews });
+      videos: [{ ...smoke.video, official_revision_id: officialRevisionId }], model_runs: [smoke.modelRun], report_revisions: [aiRevisionRow(smoke)],
+    }, { rpc: { list_incident_report_summaries: listSummaries, ...revisionRpcs, ...rpc }, identity: { report_revisions: 'id' } });
     globalThis.fetch = db.fetch;
-    const ai = () => ({ incident: db.store.incidents, entities: db.store.entities, instruments: db.store.instruments, assets: db.store.assets });
-    return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), ai, db };
+    return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), ai: () => structuredClone(db.store.report_revisions[0]), db };
   },
 };
 
 for (const [name, make] of Object.entries(implementations)) {
   describe(`IncidentRepository contract: ${name}`, () => {
-    test('a run is found by its full key only', async () => {
+    test('a revision is found by video and id; its AI run notes come with it', async () => {
       const { repo } = make();
-      assert.equal(await repo.runExists(KEY), true);
-      assert.equal(await repo.runExists(OTHER_RUN), false);
-      assert.equal(await repo.getRunReport(OTHER_RUN), null);
-      const record = await repo.getRunReport(KEY);
-      assert.deepEqual(record.key, KEY);
+      assert.equal(await repo.getRevision('v-none', null), null);
+      assert.equal(await repo.getRevision(VIDEO_ID, 99), null);
+      const record = await repo.getRevision(VIDEO_ID, 1);
+      assert.deepEqual([record.revision.revisionId, record.revision.revisionNo, record.revision.kind, record.revision.modelRunId], [1, 1, 'ai', smoke.modelRunId]);
       assert.equal(record.modelRun.notes.kind, 'contract');
       assert.deepEqual(record.entities.map((entity) => entity.entityId), ['E1', 'E2']);
+      assert.equal(record.video.officialRevisionId, null);
     });
 
-    test('verifying stamps the verifier, keeps the edit stamps and is a no-op when repeated', async () => {
-      const { repo } = make();
-      const edited = await repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor');
-      const verified = await repo.setReviewStatus(KEY, 'verified', ' Lead ');
-      assert.deepEqual({ ...verified, verifiedAt: typeof verified.verifiedAt }, {
-        changed: true, status: 'verified', verifiedBy: 'Lead', verifiedAt: 'string', humanVersionCreated: false,
-      });
-      const review = { status: 'verified', verifiedBy: 'Lead', verifiedAt: verified.verifiedAt, editedBy: 'Editor', editedAt: edited.editedAt };
-      assert.deepEqual(await repo.getReview(KEY), review);
-      assert.deepEqual((await repo.getRunReport(KEY)).review, review);
-      assert.deepEqual(await repo.setReviewStatus(KEY, 'verified', 'Someone else'), {
-        changed: false, status: 'verified', verifiedBy: null, verifiedAt: null, humanVersionCreated: false,
-      });
-      assert.deepEqual(await repo.getReview(KEY), review);
-      assert.equal(await repo.getReview(OTHER_RUN), null);
+    test('with no revision asked for, the newest is read when none is official, else the official one', async () => {
+      const unmarked = make();
+      await unmarked.repo.saveHumanRevision(humanInput(await unmarked.repo.getRevision(VIDEO_ID, 1)));
+      assert.equal((await unmarked.repo.getRevision(VIDEO_ID, null)).revision.revisionNo, 2, 'newest, never inferred as official');
+      assert.equal((await unmarked.repo.getRevision(VIDEO_ID, null)).revision.isOfficial, false);
+      const marked = make(1);
+      await marked.repo.saveHumanRevision(humanInput(await marked.repo.getRevision(VIDEO_ID, 1)));
+      const shown = await marked.repo.getRevision(VIDEO_ID, null);
+      assert.deepEqual([shown.revision.revisionId, shown.revision.isOfficial], [1, true]);
+      assert.equal((await marked.repo.getRevision(VIDEO_ID, 2)).revision.isOfficial, false);
     });
 
-    test('a status other than verified clears the verifier and never stamps an edit', async () => {
-      const { repo } = make();
-      await repo.setReviewStatus(KEY, 'verified', 'Lead');
-      const reset = await repo.setReviewStatus(KEY, 'unreviewed', 'Lead');
-      assert.deepEqual(reset, { changed: true, status: 'unreviewed', verifiedBy: null, verifiedAt: null, humanVersionCreated: false });
-      assert.deepEqual(await repo.getReview(KEY), { status: 'unreviewed', verifiedBy: null, verifiedAt: null, editedBy: null, editedAt: null });
-    });
-
-    test('verifying without an edit copies the AI report into the reviewer version; the report reads the same', async () => {
+    test('a save appends a human revision with the next number and the opened revision as parent; the AI revision is unchanged', async () => {
       const { repo, ai } = make();
-      const before = await repo.getRunReport(KEY);
-      const aiBefore = structuredClone(ai());
-      assert.equal((await repo.setReviewStatus(KEY, 'verified', 'Lead')).humanVersionCreated, true);
-      const after = await repo.getRunReport(KEY);
-      assert.deepEqual({ ...after, review: null }, { ...before, review: null });
-      assert.deepEqual(ai(), aiBefore);
-      await repo.setReviewStatus(KEY, 'under review', 'Lead');
-      assert.equal((await repo.setReviewStatus(KEY, 'verified', 'Lead')).humanVersionCreated, false);
-    });
-
-    test('verifying a legacy AI report renumbers its items, each naming the AI item it came from', async () => {
-      const { repo, ai } = make(legacySmoke(3));
-      const aiBefore = structuredClone(ai());
-      await repo.setReviewStatus(KEY, 'verified', 'Lead');
-      const record = await repo.getRunReport(KEY);
-      assert.deepEqual(record.entities.map((entity) => [entity.entityId, entity.sourceId, entity.type]), [['E1', 'e01', 'human'], ['E2', 'e02', 'human']]);
-      assert.deepEqual(record.instruments.map((instrument) => [instrument.instrumentId, instrument.sourceId, instrument.entityId]), [['I1', 'i01', 'E2']], 'the bag stays with e02, now E2');
-      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', 'a01'], ['A2', 'a02']]);
-      assert.deepEqual(ai(), aiBefore);
-    });
-
-    test('verifying an AI report that must be edited first is refused and changes nothing', async () => {
-      const { repo, ai } = make(legacySmoke(null));
-      const before = await repo.getRunReport(KEY);
-      const aiBefore = structuredClone(ai());
-      await assert.rejects(repo.setReviewStatus(KEY, 'verified', 'Lead'), (error) => {
-        assert.ok(error instanceof StoreRejection, `${error}`);
-        assert.equal(error.reason, 'invalid');
-        assert.match(error.message, /cannot be verified as it stands; edit it first/);
-        return true;
+      const aiBefore = ai();
+      const saved = await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1)));
+      assert.deepEqual({ ...saved, createdAt: typeof saved.createdAt, model: undefined }, {
+        revisionId: 2, videoId: VIDEO_ID, revisionNo: 2, kind: 'human', createdBy: 'Editor', createdAt: 'string', note: 'Corrected the severity',
+        parentId: 1, modelRunId: smoke.modelRunId, model: undefined, isOfficial: false,
       });
-      assert.deepEqual(await repo.getRunReport(KEY), before);
-      assert.deepEqual(ai(), aiBefore);
-    });
-
-    test('an edit saves the reviewer version, which the report then reads; the AI report is unchanged', async () => {
-      const { repo, ai } = make();
-      const aiBefore = structuredClone(ai());
-      const first = await repo.applyStructuredEdit(KEY, smokeEdit(), ' Editor ');
-      assert.deepEqual({ ...first, editedAt: typeof first.editedAt }, {
-        incidentId: KEY.videoId, modelRunId: KEY.modelRunId, editedBy: 'Editor', editedAt: 'string', duration: 8, revision: 1, status: 'unreviewed',
-      });
-      const record = await repo.getRunReport(KEY);
+      const record = await repo.getRevision(VIDEO_ID, 2);
       assert.deepEqual(record.incident, {
         type: 'assault', startSeconds: 1, endSeconds: 9, duration: 8, description: 'Reviewer: one person pushes the other over.', severityLevel: 3,
         confidenceScore: null,
       });
       assert.deepEqual(record.entities.map((entity) => entity.entityId), ['E1']);
       assert.deepEqual(record.assets.map((asset) => asset.name), ['white delivery van', 'blue car']);
-      assert.deepEqual(record.review, { status: 'unreviewed', verifiedBy: null, verifiedAt: null, editedBy: 'Editor', editedAt: first.editedAt });
       assert.deepEqual(ai(), aiBefore);
-      assert.equal((await repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor')).revision, 2);
+      const second = await repo.saveHumanRevision(humanInput(record, { note: null }));
+      assert.deepEqual([second.revisionNo, second.parentId, second.note], [3, 2, null]);
     });
 
-    test('each reviewer item keeps its AI origin through a delete, an added item and the next edit', async () => {
-      const { repo } = make();
-      assert.deepEqual((await repo.getRunReport(KEY)).entities.map((entity) => entity.sourceId), ['E1', 'E2'], 'an AI item is its own source');
-      const edit = smokeEdit();
-      edit.entities = [{ entity_id: 'E1', source_id: 'E2', type: 'human', description: smoke.entities[1].description }];
-      edit.assets = [{ asset_id: 'A1', source_id: null, name: 'bench', description: 'Added by the reviewer' }, ...edit.assets.slice(1).map((asset) => ({ ...asset, asset_id: 'A2' }))];
-      await repo.applyStructuredEdit(KEY, edit, 'Editor');
-      const record = await repo.getRunReport(KEY);
-      assert.deepEqual(record.entities.map((entity) => [entity.entityId, entity.sourceId]), [['E1', 'E2']], 'AI E1 was deleted; the reviewer E1 is AI E2');
-      assert.deepEqual(record.assets.map((asset) => [asset.assetId, asset.sourceId]), [['A1', null], ['A2', 'A2']]);
-      // The next edit starts from the reviewer version and keeps the origins.
-      const next = smokeEdit();
-      next.entities = record.entities.map((entity) => ({ entity_id: entity.entityId, source_id: entity.sourceId, type: entity.type, description: entity.description }));
-      next.assets = record.assets.map((asset) => ({ asset_id: asset.assetId, source_id: asset.sourceId, name: asset.name, description: asset.description }));
-      await repo.applyStructuredEdit(KEY, next, 'Editor');
-      assert.deepEqual((await repo.getRunReport(KEY)).entities.map((entity) => entity.sourceId), ['E2']);
+    test('the History lists every revision newest first, marking the official one', async () => {
+      const { repo } = make(1);
+      assert.deepEqual(await repo.listRevisions('v-none'), []);
+      await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1)));
+      const history = await repo.listRevisions(VIDEO_ID);
+      assert.deepEqual(history.map((row) => [row.revisionId, row.kind, row.createdBy, row.isOfficial, row.parentId]), [
+        [2, 'human', 'Editor', false, 1], [1, 'ai', null, true, null],
+      ]);
+      assert.equal(history[1].model, 'nvidia/cosmos-3-nano-reasoner');
     });
 
-    test('editing a verified report sends it back to under review and clears the verifier', async () => {
+    test('a save for a missing video or parent, or without a reviewer name, is refused and writes nothing', async () => {
       const { repo } = make();
-      await repo.setReviewStatus(KEY, 'verified', 'Lead');
-      const result = await repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor');
-      assert.equal(result.status, 'under review');
-      assert.equal(result.revision, 2, 'verifying created revision 1');
-      assert.deepEqual(await repo.getReview(KEY), { status: 'under review', verifiedBy: null, verifiedAt: null, editedBy: 'Editor', editedAt: result.editedAt });
-    });
-
-    test('a review change or an edit of a missing run is refused', async () => {
-      const { repo } = make();
-      const notFound = (error) => error instanceof StoreRejection && error.reason === 'not-found' && /Report not found/.test(error.message);
-      await assert.rejects(repo.setReviewStatus(OTHER_RUN, 'verified', 'Lead'), notFound);
-      await assert.rejects(repo.applyStructuredEdit(OTHER_RUN, smokeEdit(), 'Editor'), notFound);
-      assert.equal(await repo.getReview(OTHER_RUN), null);
-    });
-
-    test('deleting a run removes its report and review', async () => {
-      const { repo } = make();
-      await repo.deleteRun(KEY);
-      assert.equal(await repo.runExists(KEY), false);
-      assert.equal(await repo.getRunReport(KEY), null);
+      const record = await repo.getRevision(VIDEO_ID, 1);
+      const refusal = (reason, message) => (error) => error instanceof StoreRejection && error.reason === reason && message.test(error.message);
+      await assert.rejects(repo.saveHumanRevision(humanInput(record, { videoId: 'v-none' })), refusal('not-found', /Video not found/));
+      await assert.rejects(repo.saveHumanRevision(humanInput(record, { parentId: 99 })), refusal('not-found', /Revision not found/));
+      await assert.rejects(repo.saveHumanRevision(humanInput(record, { createdBy: '  ' })), refusal('invalid', /reviewer name/));
+      assert.equal((await repo.listRevisions(VIDEO_ID)).length, 1);
     });
 
     test('the library comes in pages with the exact total, newest first, field for field', async () => {
       const { repo } = make();
-      assert.deepEqual(await repo.listReports({ ...LIBRARY, pageSize: 2 }), { items: [ASSAULT, REPAIRED], totalItems: 3, incidentTypes: ['assault', 'road accident'] });
+      assert.deepEqual(await repo.listReports({ ...LIBRARY, pageSize: 2 }), { items: [HUMAN, REPAIRED], totalItems: 3, incidentTypes: ['assault', 'road accident'] });
       assert.deepEqual((await repo.listReports({ ...LIBRARY, page: 2, pageSize: 2 })).items, [LEGACY]);
-      assert.deepEqual((await repo.listReports({ ...LIBRARY, sort: 'oldest' })).items, [LEGACY, REPAIRED, ASSAULT]);
+      assert.deepEqual((await repo.listReports({ ...LIBRARY, sort: 'oldest' })).items, [LEGACY, REPAIRED, HUMAN]);
     });
 
-    test('official scope and a review status narrow the library', async () => {
+    test('official scope and a revision kind narrow the library', async () => {
       const { repo } = make();
       const official = await repo.listReports({ ...LIBRARY, scope: 'official' });
-      assert.deepEqual([official.items, official.totalItems], [[ASSAULT], 1]);
-      assert.deepEqual((await repo.listReports({ ...LIBRARY, status: 'under review' })).items, [REPAIRED]);
-      assert.equal((await repo.listReports({ ...LIBRARY, status: 'rejected' })).totalItems, 0);
+      assert.deepEqual([official.items, official.totalItems], [[HUMAN], 1]);
+      assert.deepEqual((await repo.listReports({ ...LIBRARY, kind: 'human' })).items, [HUMAN]);
+      assert.deepEqual((await repo.listReports({ ...LIBRARY, kind: 'ai' })).items, [REPAIRED, LEGACY]);
     });
   });
 }
 
-describe('Supabase adapter: reviewer version', () => {
-  test('a run report is read from the effective views, never the AI tables', async () => {
+describe('Supabase adapter: revisions', () => {
+  test('a revision is read from report_revisions and its run; nothing else is touched', async () => {
     const { repo, db } = implementations.supabase();
-    // A reviewer version stored without the console, as the midterm-to-finals copy writes it.
-    db.store.human_reports = [{ incident_id: KEY.videoId, model_run_id: KEY.modelRunId, type: 'assault', start_seconds: 2, end_seconds: 6, description: 'Copied reviewer text', severity_level: 4, revision: 1 }];
-    db.store.human_report_entities = [{ incident_id: KEY.videoId, model_run_id: KEY.modelRunId, entity_id: 'E1', source_entity_id: 'E2', type: 'human', description: 'Copied entity' }];
-    const record = await repo.getRunReport(KEY);
-    assert.deepEqual([record.incident.description, record.incident.startSeconds, record.incident.duration, record.incident.severityLevel], ['Copied reviewer text', 2, 4, 4]);
-    assert.deepEqual(record.entities, [{ entityId: 'E1', sourceId: 'E2', type: 'human', description: 'Copied entity' }]);
-    assert.deepEqual(record.assets, []);
-    const read = db.requests.map((request) => request.path);
-    assert.deepEqual(read.filter((path) => path.startsWith('effective_')).sort(), ['effective_assets', 'effective_entities', 'effective_incidents', 'effective_instruments']);
-    for (const table of ['incidents', 'entities', 'instruments', 'assets']) assert.ok(!read.includes(table), `getRunReport reads ${table}`);
+    await repo.getRevision(VIDEO_ID, 1);
+    assert.deepEqual(db.requests.map((request) => `${request.method} ${request.path}`), ['GET videos', 'GET report_revisions', 'GET model_runs']);
   });
 
-  test('a review change is one set_review_status call and nothing else is written', async () => {
+  test('a save is one save_human_revision call and nothing else is written', async () => {
     const { repo, db } = implementations.supabase();
-    await repo.setReviewStatus(KEY, 'under review', 'Lead');
+    const input = humanInput(await repo.getRevision(VIDEO_ID, 1));
+    db.requests.length = 0;
+    await repo.saveHumanRevision(input);
     assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/set_review_status',
-      body: { p_incident_id: KEY.videoId, p_model_run_id: KEY.modelRunId, p_status: 'under review', p_reviewer: 'Lead' },
-    }]);
-  });
-
-  test('an edit is one save_human_report_edit call, not the apply_structured_report_edit shim', async () => {
-    const { repo, db } = implementations.supabase();
-    const edit = smokeEdit();
-    await repo.applyStructuredEdit(KEY, edit, 'Editor');
-    assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/save_human_report_edit',
-      body: { p_incident_id: KEY.videoId, p_model_run_id: KEY.modelRunId, p_edit: edit, p_edited_by: 'Editor' },
+      method: 'POST', path: 'rpc/save_human_revision',
+      body: {
+        p_video_id: VIDEO_ID, p_parent_id: 1, p_created_by: ' Editor ', p_note: ' Corrected the severity ',
+        p_payload: input.payload, p_evidence: input.evidence,
+        p_incident_type: 'assault', p_severity_level: 3, p_start_seconds: 1, p_end_seconds: 9,
+      },
     }]);
   });
 
   test("an RPC's RAISE is a StoreRejection with its message; any other failure is rethrown", async () => {
-    const refusing = implementations.supabase(smoke, {
-      save_human_report_edit: () => { throw new Error('E1 names source_id "E9", which is not an AI entity of this run'); },
+    const refusing = implementations.supabase(null, {
+      save_human_revision: () => { throw new Error('The report payload must be an object with an incident'); },
     });
-    await assert.rejects(refusing.repo.applyStructuredEdit(KEY, smokeEdit(), 'Editor'), (error) => {
+    await assert.rejects(refusing.repo.saveHumanRevision(humanInput(await refusing.repo.getRevision(VIDEO_ID, 1))), (error) => {
       assert.ok(error instanceof StoreRejection, `${error}`);
-      assert.deepEqual([error.reason, error.message], ['invalid', 'E1 names source_id "E9", which is not an AI entity of this run']);
+      assert.deepEqual([error.reason, error.message], ['invalid', 'The report payload must be an object with an incident']);
       return true;
     });
-    globalThis.fetch = async () => new Response(JSON.stringify({ code: '42501', message: 'permission denied for function set_review_status' }), { status: 401 });
-    await assert.rejects(refusing.repo.setReviewStatus(KEY, 'verified', 'Lead'), (error) => !(error instanceof StoreRejection) && /HTTP 401.*permission denied/.test(error.message));
+    const record = await refusing.repo.getRevision(VIDEO_ID, 1);
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: '42501', message: 'permission denied for function save_human_revision' }), { status: 401 });
+    await assert.rejects(refusing.repo.saveHumanRevision(humanInput(record)), (error) => !(error instanceof StoreRejection) && /HTTP 401.*permission denied/.test(error.message));
   });
 
-  test('malformed RPC results map to safe values', () => {
-    assert.deepEqual(reviewTransitionFromRpc(null, 'verified'), { changed: false, status: 'verified', verifiedBy: null, verifiedAt: null, humanVersionCreated: false });
-    assert.deepEqual(structuredEditResultFromRpc({ status: 'rejected' }, KEY, smokeEdit(), ' Editor '), {
-      incidentId: KEY.videoId, modelRunId: KEY.modelRunId, editedBy: 'Editor', editedAt: '', duration: 8, revision: 1, status: 'unreviewed',
+  test('a malformed RPC result maps to safe values', () => {
+    assert.deepEqual(savedRevisionFromRpc(null), {
+      revisionId: NaN, videoId: 'undefined', revisionNo: NaN, kind: 'ai', createdBy: null, createdAt: null, note: null, parentId: null, modelRunId: null, model: null, isOfficial: false,
     });
   });
 });
@@ -302,11 +214,11 @@ describe('Supabase adapter: reviewer version', () => {
 describe('list_incident_report_summaries mapping', () => {
   test('the query becomes the nineteen RPC arguments', () => {
     assert.deepEqual(reportListRpcArgs({
-      ...LIBRARY, page: 2, search: 'blade', type: 'assault', severity: '4', status: 'verified', generatedAfter: '2026-09-01T00:00:00',
+      ...LIBRARY, page: 2, search: 'blade', type: 'assault', severity: '4', kind: 'human', generatedAfter: '2026-09-01T00:00:00',
       generatedBefore: '2026-09-28T00:00:00', timeFrom: '08:00', timeTo: '17:30', entities: ['person'], instruments: ['knife'], assets: ['door'],
       dayOfWeek: 1, sort: 'severity-high', scope: 'official', entityTypes: ['human'], evidenceMatch: 'exact', timezone: 'Asia/Singapore',
     }), {
-      p_page: 2, p_page_size: 6, p_search: 'blade', p_type: 'assault', p_severity: '4', p_status: 'verified',
+      p_page: 2, p_page_size: 6, p_search: 'blade', p_type: 'assault', p_severity: '4', p_kind: 'human',
       p_generated_after: '2026-09-01T00:00:00', p_generated_before: '2026-09-28T00:00:00', p_time_from: '08:00', p_time_to: '17:30',
       p_entities: ['person'], p_instruments: ['knife'], p_assets: ['door'], p_day_of_week: 1, p_sort: 'severity-high', p_scope: 'official',
       p_entity_types: ['human'], p_evidence_match: 'exact', p_timezone: 'Asia/Singapore',
@@ -315,11 +227,10 @@ describe('list_incident_report_summaries mapping', () => {
 
   test('a malformed result lists what it can with every field the library reads', () => {
     assert.deepEqual(reportListFromRpc(null), { items: [], totalItems: 0, incidentTypes: [] });
-    const { items } = reportListFromRpc({ reports: [{ reportId: 'r1', isOfficial: 'yes' }], incidentTypes: ['assault', 7] });
+    const { items } = reportListFromRpc({ reports: [{ revisionId: 7, isOfficial: 'yes' }], incidentTypes: ['assault', 7] });
     assert.deepEqual(items[0], {
-      reportId: 'r1', videoId: '', modelRunId: '', title: '', filename: '', incident_type: '', description: '', severity: 1, confidence: null,
-      generatedAt: null, uploadedAt: null, model: '', status: 'unreviewed', outcome: 'legacy', isOfficial: false,
-      verifiedBy: null, verifiedAt: null, editedBy: null, editedAt: null, r2Key: null, sensorId: null,
+      revisionId: 7, revisionNo: 0, videoId: '', modelRunId: null, kind: 'ai', createdBy: null, note: null, title: '', filename: '', incident_type: '',
+      description: '', severity: 1, confidence: null, generatedAt: null, uploadedAt: null, model: '', outcome: null, isOfficial: false, r2Key: null, sensorId: null,
     });
     assert.deepEqual(reportListFromRpc({ incidentTypes: ['assault', 7] }).incidentTypes, ['assault']);
   });

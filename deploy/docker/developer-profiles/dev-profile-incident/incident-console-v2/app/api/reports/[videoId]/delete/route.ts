@@ -3,25 +3,24 @@
 import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
-import { deleteReport } from '@/lib/application/reports';
+import { deleteVideoAndReports } from '@/lib/application/reports';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { deleteR2Video } from '@/lib/r2/config';
 import { thumbnailKeyForVideo } from '@/lib/r2/key';
 
-export async function DELETE(request: Request, context: { params: Promise<{ videoId: string }> }) {
+// Revisions are append-only, so the only delete is the whole video and every
+// revision of it. Evidence images under evidence/<videoId>/ stay in R2.
+export async function DELETE(_request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
     const { videoId } = await context.params;
-    const params = new URL(request.url).searchParams;
-    const modelRunId = params.get('run');
-    if (!modelRunId) return NextResponse.json({ error: 'A model run ID is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    await deleteReport(getDbAdapters(config), { videoId, modelRunId }, params.get('deleteVideo') === 'true', (storageKey) => Promise.all([
+    await deleteVideoAndReports(getDbAdapters(config).videos, videoId, (storageKey: string) => Promise.all([
       deleteR2Video(config, storageKey),
       deleteR2Video(config, thumbnailKeyForVideo(storageKey)),
     ]));
     return NextResponse.json({ deleted: true });
   } catch (error) {
-    return errorResponse(error, 'Could not delete report');
+    return errorResponse(error, 'Could not delete the video');
   }
 }

@@ -26,13 +26,28 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /StructuredEditor/);
   assert.match(report, /Model classified this as/);
   assert.match(report, /model window/);
-  assert.match(report, /last edited by/);
+  assert.match(report, /Human, \$\{revision\.createdBy/, 'the version label names the human author');
   assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
   assert.match(report, /outside incident window/);
   assert.match(report, /outside the video/);
   assert.match(report, /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/, 'seeking is blocked only for a time outside the video');
   assert.match(report, /Validation policy/);
   assert.match(report, /Full contract validity \(first response\)/);
+});
+
+test('the report page has a History of versions, a reviewer prompt and explicit official controls, and no verification flow', async () => {
+  const report = await readFile(new URL('incident-report.tsx', components), 'utf8');
+  assert.match(report, /RevisionHistory/);
+  assert.match(report, /OfficialControls/);
+  const history = await readFile(new URL('revision-history.tsx', components), 'utf8');
+  assert.match(history, /api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/restore/);
+  const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
+  assert.match(reanalysis, /Reviewer prompt \(optional\)/);
+  assert.match(reanalysis, /additionalInstruction/);
+  for (const name of ['incident-report.tsx', 'report-screen.tsx', 'reports-library.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'revision-history.tsx', 'official-controls.tsx']) {
+    const source = await readFile(new URL(name, components), 'utf8');
+    assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
+  }
 });
 
 test('library cards omit the confidence percentage when the model returned none', async () => {

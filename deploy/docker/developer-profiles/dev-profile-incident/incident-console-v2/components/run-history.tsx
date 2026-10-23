@@ -44,7 +44,7 @@ export function OutcomeBadge({ outcome, inferred = false }: { outcome: RunOutcom
 }
 
 /** A video's analysis history. Failed attempts are listed with their reason and never as reports. */
-export function RunHistoryList({ history, currentRunId, compact = false, onChanged }: { history: VideoRunHistory; currentRunId?: string; compact?: boolean; onChanged?: () => void }) {
+export function RunHistoryList({ history, currentRunId, compact = false, onChanged }: { history: VideoRunHistory; currentRunId?: string | null; compact?: boolean; onChanged?: () => void }) {
   const runs = compact ? history.runs.slice(0, 6) : history.runs;
   const { counts } = history;
   return (
@@ -57,7 +57,7 @@ export function RunHistoryList({ history, currentRunId, compact = false, onChang
         {counts.legacy ? ` · ${counts.legacy} earlier` : ''}
       </p>
       <ol className="mt-3 space-y-2">
-        {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} hasOfficial={Boolean(history.officialRunId)} key={run.modelRunId} onChanged={onChanged} run={run} videoId={history.video.videoId} />)}
+        {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} hasOfficial={history.officialRevisionId !== null} key={run.modelRunId} onChanged={onChanged} run={run} videoId={history.video.videoId} />)}
       </ol>
       {compact && history.runs.length > runs.length && <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>}
     </div>
@@ -77,8 +77,7 @@ function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHis
       </div>
       <p className="mt-1 text-ink/50">
         {formatTimestamp(run.attemptedAt)}
-        {run.report ? ` · ${run.report.type ?? 'unclassified'} · severity ${run.report.severityLevel ?? '—'}/5` : ''}
-        {run.reportRemoved ? ' · report deleted' : ''}
+        {run.revision ? ` · ${run.revision.type ?? 'unclassified'} · severity ${run.revision.severityLevel ?? '—'}/5` : ''}
         {failed ? ' · no report' : ''}
       </p>
       {run.additionalInstruction && <p className="mt-1 text-ink/55">Additional instruction: “{run.additionalInstruction}”</p>}
@@ -98,10 +97,10 @@ function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHis
         <p className="mt-2 text-[#765300]">Contract repair applied (IDs only) · {run.repair.ruleSet}: {run.repair.operations.map((operation) => String(operation.op)).join(', ')}</p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        {run.report && !current && (
-          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?run=${encodeURIComponent(run.modelRunId)}`}>Open report →</Link>
+        {run.revision && !current && (
+          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?revision=${run.revision.revisionId}`}>Open report →</Link>
         )}
-        {run.report && onChanged && <OfficialControls hasOfficial={hasOfficial} isOfficial={Boolean(run.isOfficial)} modelRunId={run.modelRunId} onChanged={onChanged} videoId={videoId} />}
+        {run.revision && onChanged && <OfficialControls hasOfficial={hasOfficial} isOfficial={Boolean(run.isOfficial)} onChanged={onChanged} revisionId={run.revision.revisionId} videoId={videoId} />}
       </div>
     </li>
   );

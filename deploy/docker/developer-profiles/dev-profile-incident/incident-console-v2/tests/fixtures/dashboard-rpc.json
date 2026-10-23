@@ -1,11 +1,11 @@
 {
   "total": 3,
   "videos": { "uploaded": 5, "withOfficial": 3, "awaitingSelection": 1, "withoutReport": 1 },
-  "previous": { "total": 2, "verified": 1, "unreviewed": 1, "high": 0 },
+  "previous": { "total": 2, "human": 1, "ai": 1, "high": 0 },
   "averageConfidence": 0.8166666666666667,
   "confidenceNotProvided": 0,
   "severity": { "low": 1, "medium": 0, "high": 2 },
-  "reviews": { "unreviewed": 1, "under_review": 1, "verified": 1 },
+  "revisions": { "ai": 2, "human": 1 },
   "types": [
     {
       "type": "assault",

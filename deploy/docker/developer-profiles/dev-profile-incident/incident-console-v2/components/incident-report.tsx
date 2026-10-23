@@ -5,9 +5,9 @@
 import { useRef, useState, type ReactNode } from 'react';
 
 import { OfficialControls } from '@/components/official-controls';
+import { RevisionHistory } from '@/components/revision-history';
 import { StructuredEditor } from '@/components/structured-editor';
 import { timestampWithinVideo } from '@/lib/contract/video-bounds';
-import type { ReviewStatus } from '@/lib/reports/storage';
 import { formatClock } from '@/lib/reports/normalize';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
 import { formatTimestamp } from '@/lib/time';
@@ -22,18 +22,26 @@ function capitalize(value: string | null): string {
   return value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified';
 }
 
-function statusLabel(status: ReviewStatus): string {
-  return status === 'under review' ? 'Under review' : status[0].toUpperCase() + status.slice(1);
+interface IncidentReportProps {
+  report: ReportView;
+  /** The edit form is controlled by the parent so it stays open while the reviewer opens another version. */
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  onNewAnalysis: () => void;
+  /** The official mark changed. */
+  onChanged: () => void;
+  /** A save or restore created this human version. */
+  onSaved: (revisionId: number) => void;
+  /** History: show this version and start the edit form from it. */
+  onOpenRevision: (revisionId: number) => void;
+  historyKey: number;
 }
 
-export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: ReportView; onNewAnalysis: () => void; onEdited?: () => void }) {
-  const { structured, modelOutput, run, differences } = report;
+export function IncidentReport({ report, editing, onEditingChange, onNewAnalysis, onChanged, onSaved, onOpenRevision, historyKey }: IncidentReportProps) {
+  const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [copied, setCopied] = useState(false);
-  const [reviewStatus, setReviewStatus] = useState<ReviewStatus>(report.review.status);
-  const [reviewBusy, setReviewBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
   // The player's own length, a second guard (besides the recorded length) before jumping to a timeline time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const windowEdited = differences.fields.includes('incident window');
@@ -52,31 +60,10 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  async function changeReviewStatus(status: ReviewStatus) {
-    const reviewer = window.prompt(`Your name is required to mark this report ${status}.`);
-    if (!reviewer?.trim()) return;
-    if (status === 'verified' && !window.confirm('Verify this report as reviewed and accurate?')) return;
-    setReviewBusy(true);
-    try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(report.videoId)}/review`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelRunId: report.modelRunId, status, reviewedBy: reviewer }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Review update failed');
-      setReviewStatus(status);
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Review update failed');
-    } finally {
-      setReviewBusy(false);
-    }
-  }
-
   return (
     <article className="report-sheet overflow-hidden rounded-[2rem] border border-ink/10 bg-white shadow-panel">
       <div className="print-hidden flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 bg-white px-6 py-3 text-xs">
-        <span className="text-ink/45">Report {run.reportId}</span>
+        <span className="text-ink/45" data-testid="revision-label">Version {revision.revisionNo} · {revision.kind === 'human' ? `Human, ${revision.createdBy ?? 'unknown reviewer'}` : `AI, ${run.model}`} · {formatTimestamp(revision.createdAt, 'time unknown')}</span>
         <div className="flex gap-4">
           <button className="font-semibold text-moss" onClick={copyLink} type="button">{copied ? 'Link copied' : 'Copy link'}</button>
           <button className="font-semibold text-moss" onClick={() => window.print()} type="button">Print report</button>
@@ -88,7 +75,7 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-moss">
-              Incident report{run.notesKind === 'legacy' ? ' · earlier prompt version' : ''}{report.official.isOfficial ? ' · official' : ''}
+              Incident report{run.notesKind === 'legacy' ? ' · earlier prompt version' : ''}{report.official.isOfficial ? ' · official' : ''}{revision.kind === 'human' ? ' · human version' : ''}
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">{reportHeading(report)}</h2>
             {modelOutput?.title && <p className="mt-1 text-xs text-ink/40">Title generated by the model{differences.fields.length ? ' (before reviewer edits)' : ''}</p>}
@@ -122,28 +109,22 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
 
       <section className="print-hidden flex flex-col gap-3 border-b border-ink/10 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/40">Human review</p>
-          <p className="mt-1 text-sm text-ink/60">Current status: <strong className="text-ink">{statusLabel(reviewStatus)}</strong></p>
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink/40">Reviewer</p>
           <p className="mt-1 text-xs text-ink/55" data-testid="official-status">
             {report.official.isOfficial
-              ? `Official report for this video · selected by ${report.official.selectedBy ?? 'a reviewer'} on ${formatTimestamp(report.official.selectedAt)}`
-              : report.official.officialRunId ? 'Another analysis is the official report for this video.' : 'No official report has been selected for this video.'}
+              ? 'This version is the official report for this video.'
+              : report.official.officialRevisionId !== null ? 'Another version is the official report for this video.' : 'No official report has been selected for this video.'}
           </p>
-          {report.review.editedBy && report.review.editedAt && (
-            <p className="mt-1 text-xs text-ink/45" data-testid="last-edited">Structured fields last edited by {report.review.editedBy} on {formatTimestamp(report.review.editedAt)}</p>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <OfficialControls hasOfficial={Boolean(report.official.officialRunId)} isOfficial={report.official.isOfficial} modelRunId={report.modelRunId} onChanged={() => onEdited?.()} videoId={report.videoId} />
-          <button className="action" disabled={editing} onClick={() => setEditing(true)} type="button">{editing ? 'Editing report' : 'Edit report'}</button>
-          {reviewStatus !== 'verified' && <button className="rounded-full bg-moss px-4 py-2 text-xs font-semibold text-white disabled:opacity-50" disabled={reviewBusy} onClick={() => void changeReviewStatus('verified')} type="button">Verify report</button>}
-          {reviewStatus !== 'unreviewed' && <button className="action" disabled={reviewBusy} onClick={() => void changeReviewStatus('unreviewed')} type="button">Reset review</button>}
+          <OfficialControls hasOfficial={report.official.officialRevisionId !== null} isOfficial={report.official.isOfficial} onChanged={onChanged} revisionId={report.revisionId} videoId={report.videoId} />
+          <button className="action" disabled={editing} onClick={() => onEditingChange(true)} type="button">{editing ? 'Editing report' : 'Edit report'}</button>
         </div>
       </section>
 
       {editing && (
         <section className="print-hidden border-b border-ink/10 px-6 py-5 sm:px-8">
-          <StructuredEditor onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onEdited?.(); }} report={report} reviewStatus={reviewStatus} />
+          <StructuredEditor onCancel={() => onEditingChange(false)} onSaved={(revisionId) => { onEditingChange(false); onSaved(revisionId); }} report={report} />
         </section>
       )}
 
@@ -257,6 +238,8 @@ export function IncidentReport({ report, onNewAnalysis, onEdited }: { report: Re
         </div>
       </div>
 
+      <RevisionHistory currentRevisionId={report.revisionId} onOpen={onOpenRevision} onRestored={onSaved} refreshKey={historyKey} videoId={report.videoId} />
+
       <RunDetailsPanel report={report} />
 
       <footer className="flex flex-col gap-3 border-t border-ink/10 bg-canvas/70 px-6 py-4 text-xs text-ink/45 sm:flex-row sm:items-center sm:justify-between">
@@ -310,7 +293,7 @@ function RunDetailsPanel({ report }: { report: ReportView }) {
           <dl className="grid gap-x-6 gap-y-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
             <Provenance label="Model" value={run.model} />
             <Provenance label="Contract / prompt version" value={run.promptVersion || 'Legacy prompt'} />
-            <Provenance label="Model run" value={run.modelRunId} />
+            <Provenance label="Model run" value={run.modelRunId ?? 'Not recorded'} />
             <Provenance label="Generated" value={formatTimestamp(run.generatedAt)} />
             {run.status && <Provenance label="Analysis outcome" value={`${OUTCOME_LABELS[run.status]}${run.statusInferred ? ' (recorded before outcomes were stored)' : ''}`} />}
             {request && <Provenance label="Additional instruction" value={request.additionalInstruction || 'None'} />}

@@ -29,33 +29,30 @@ export async function GET(_request: Request, context: { params: Promise<{ videoI
     const { config, db } = database();
     const video = await db.selectOne('videos', { id: videoId });
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    const [runRows, effectiveRows, attemptCandidates] = await Promise.all([
-      db.selectMany('incidents', {
-        filters: { incident_id: videoId },
-        select: 'model_run_id,model_runs(id,model_name,prompt_version,run_datetime,notes),reports(id,generated_datetime)',
+    const [revisionRows, attemptCandidates] = await Promise.all([
+      db.selectMany('report_revisions', {
+        filters: { video_id: videoId, kind: 'ai' },
+        select: 'id,model_run_id,incident_type,severity_level,created_at,model_runs(id,model_name,prompt_version,run_datetime,notes)',
       }),
-      // Type and severity as the report shows them: the reviewer's version when the run has one.
-      db.selectMany('effective_incidents', { filters: { incident_id: videoId }, select: 'model_run_id,type,severity_level' }),
       db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,model_name,prompt_version,run_datetime,notes'),
     ]);
-    const effective = new Map(effectiveRows.map((row) => [String(row.model_run_id), row]));
-    const incidentRows = runRows.map((row): Record<string, unknown> => {
-      const shown = effective.get(String(row.model_run_id));
-      return { ...row, type: shown?.type ?? null, severity_level: shown?.severity_level ?? null };
-    });
-    const runIds = incidentRows.map((row) => String(row.model_run_id));
-    const usage = runIds.length ? await db.selectIn('incidents', 'model_run_id', runIds, 'model_run_id') : [];
-    const perRun = new Map<string, number>();
-    for (const row of usage) perRun.set(String(row.model_run_id), (perRun.get(String(row.model_run_id)) ?? 0) + 1);
-    const sharedRunIds = new Set([...perRun].filter(([, count]) => count > 1).map(([id]) => id));
+    const runIds = revisionRows.map((row) => String(row.model_run_id));
+    const usage = runIds.length ? await db.selectIn('report_revisions', 'model_run_id', runIds, 'model_run_id,video_id') : [];
+    const videosPerRun = new Map<string, Set<string>>();
+    for (const row of usage) {
+      const set = videosPerRun.get(String(row.model_run_id)) ?? new Set<string>();
+      set.add(String(row.video_id));
+      videosPerRun.set(String(row.model_run_id), set);
+    }
+    const sharedRunIds = new Set([...videosPerRun].filter(([, set]) => set.size > 1).map(([id]) => id));
 
-    const { runs, counts } = buildRunHistory({ videoId, incidentRows, attemptCandidates, sharedRunIds });
+    const { runs, counts } = buildRunHistory({ videoId, revisionRows, attemptCandidates, sharedRunIds });
     const filepath = typeof video.filepath === 'string' ? video.filepath : '';
     let playbackUrl: string | null = null;
     if (isValidR2Key(filepath)) {
       try { playbackUrl = await createR2PlaybackUrl(config, filepath); } catch { playbackUrl = null; }
     }
-    const officialRunId = typeof video.selected_model_run_id === 'string' ? video.selected_model_run_id : null;
+    const officialRevisionId = typeof video.official_revision_id === 'number' ? video.official_revision_id : null;
     const history: VideoRunHistory = {
       video: {
         videoId,
@@ -64,9 +61,9 @@ export async function GET(_request: Request, context: { params: Promise<{ videoI
         source: typeof video.source === 'string' ? video.source : null,
         playbackUrl,
       },
-      runs: runs.map((run) => ({ ...run, isOfficial: run.modelRunId === officialRunId })),
+      runs: runs.map((run) => ({ ...run, isOfficial: run.revision !== null && run.revision.revisionId === officialRevisionId })),
       counts,
-      officialRunId,
+      officialRevisionId,
     };
     return NextResponse.json(history);
   } catch (error) {
@@ -77,8 +74,9 @@ export async function GET(_request: Request, context: { params: Promise<{ videoI
 /**
  * Re-analyse the stored video with an allowlisted model: the same canonical
  * request, strict validation and ID-only recovery as a new upload, always a
- * new run, never touching the video row (so its upload time is kept) or any
- * earlier run or report.
+ * new run and a new AI revision, never touching the video row (so its upload
+ * time is kept) or any earlier run or revision. additionalInstruction is the
+ * reviewer prompt typed in the console.
  */
 export async function POST(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -86,17 +84,22 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     const body = (await request.json().catch(() => null)) as { model?: unknown; additionalInstruction?: unknown } | null;
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'A JSON body with model is required' }, { status: 400 });
     const { config, db } = database();
-    if (config.analysisMode !== 'gateway') {
-      return NextResponse.json({ error: 'Re-analysis with a selected model is only available in gateway analysis mode' }, { status: 409 });
+    // Agent mode runs the agent's configured model; choosing another model is gateway-only.
+    if (config.analysisMode === 'agent') {
+      if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+      if (body.model && body.model !== config.vlmModel) {
+        return NextResponse.json({ error: 'Model selection is only available in gateway analysis mode' }, { status: 409 });
+      }
+    } else if (!config.gatewayUrl) {
+      throw new Error('VLM_GATEWAY_URL is not configured');
     }
-    if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
     const video = await db.selectOne('videos', { id: videoId }, 'id,filepath');
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     if (!isValidR2Key(video.filepath)) return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
 
-    const { run } = await runContractAnalysis({ videoId, r2Key: String(video.filepath), model: body.model, additionalInstruction: body.additionalInstruction }, config);
+    const { run, revisionId } = await runContractAnalysis({ videoId, r2Key: String(video.filepath), model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction }, config);
     return NextResponse.json({
-      run: { videoId: run.videoId, modelRunId: run.modelRunId, reportId: run.reportId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status },
+      run: { videoId: run.videoId, modelRunId: run.modelRunId, revisionId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status },
     });
   } catch (error) {
     return analysisErrorResponse(error, 'Re-analysis failed');

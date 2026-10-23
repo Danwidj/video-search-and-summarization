@@ -2,7 +2,7 @@
 
 // Characterisation test for GET /api/reports' response, written against the
 // pre-refactor route: list_incident_report_summaries' result, in the shape its
-// SQL builds (supabase/migrations/20261020000000_finals_baseline.sql), reaches
+// SQL builds (supabase/functions-final.sql), reaches
 // the browser unchanged apart from the signed thumbnail of an R2 video.
 
 import assert from 'node:assert/strict';
@@ -66,7 +66,7 @@ const DEFAULT_ARGS = {
   p_search: null,
   p_type: null,
   p_severity: null,
-  p_status: null,
+  p_kind: null,
   p_generated_after: null,
   p_generated_before: null,
   p_time_from: null,
@@ -100,14 +100,14 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
 
 test('the full export (all=true) asks for up to 1000 reports and signs no thumbnails', async () => {
   const bodies = serve(summaries);
-  const response = await GET(new Request('http://localhost/api/reports?all=true&page=0&search=%20blade%20&status=verified&type=all&severity=all&sort=oldest'));
+  const response = await GET(new Request('http://localhost/api/reports?all=true&page=0&search=%20blade%20&kind=human&type=all&severity=all&sort=oldest'));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     reports: summaries.reports,
     incidentTypes: summaries.incidentTypes,
     pagination: { page: 1, pageSize: 1000, totalItems: 13, totalPages: 1 },
   });
-  assert.deepEqual(bodies, [{ ...DEFAULT_ARGS, p_page_size: 1000, p_search: 'blade', p_status: 'verified', p_sort: 'oldest' }]);
+  assert.deepEqual(bodies, [{ ...DEFAULT_ARGS, p_page_size: 1000, p_search: 'blade', p_kind: 'human', p_sort: 'oldest' }]);
 });
 
 test('a thumbnail that cannot be signed is left out and its report is still listed', async () => {
@@ -116,6 +116,14 @@ test('a thumbnail that cannot be signed is left out and its report is still list
   const response = await GET(new Request('http://localhost/api/reports'));
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).reports, summaries.reports);
+});
+
+test('an unknown revision kind is a 400 and nothing is asked of the database', async () => {
+  const bodies = serve(summaries);
+  const response = await GET(new Request('http://localhost/api/reports?kind=verified'));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Invalid revision kind' });
+  assert.deepEqual(bodies, []);
 });
 
 test('an empty RPC result lists nothing', async () => {

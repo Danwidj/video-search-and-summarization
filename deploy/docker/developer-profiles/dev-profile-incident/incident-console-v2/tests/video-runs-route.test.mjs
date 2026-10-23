@@ -20,17 +20,13 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/stored.mp4' } });
 
 const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
-const { PATCH: editReport } = await import('../app/api/reports/[videoId]/edit/route.ts');
-const { draftFromView, editFromDraft } = await import('../lib/reports/edit-draft.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
-const { effectiveViews, reviewerRpcs } = await import('./support/finals-database.mjs');
-const { buildReportView } = await import('./support/report-view.mjs');
+const { aiRevisionRow } = await import('./support/report-view.mjs');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
 const coreFailure = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'invalid', 'cross-end-before-start.json'), 'utf8');
 const V = repaired.videoId;
-const R2_KEY = repaired.video.filepath;
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
@@ -42,146 +38,100 @@ beforeEach(() => {
 });
 afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
 
-function db(calls, completionContent) {
-  return async (url, init = {}) => {
-    const parsed = new URL(String(url));
-    const path = parsed.pathname.replace('/rest/v1/', '');
-    calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(String(init.body)) : undefined, params: parsed.searchParams });
+/** The repaired video with its AI revision (and optionally the failed attempt), plus a gateway that answers with `completionContent`. */
+function services(completionContent, { extraRuns = [], official = null } = {}) {
+  const gatewayCalls = [];
+  const db = fakePostgrest(
+    { videos: [{ ...repaired.video, official_revision_id: official }], model_runs: [repaired.modelRun, ...extraRuns], report_revisions: [aiRevisionRow(repaired)] },
+    { identity: { report_revisions: 'id' } },
+  );
+  globalThis.fetch = async (url, init = {}) => {
     if (String(url).includes('/v1/chat/completions')) {
+      gatewayCalls.push(JSON.parse(String(init.body)));
       return new Response(JSON.stringify({ choices: [{ message: { content: completionContent }, finish_reason: 'stop' }], usage: {} }));
     }
-    if (path === 'videos') return new Response(JSON.stringify([{ ...repaired.video }]));
-    if (path === 'model_runs' && (init.method || 'GET') === 'GET') return new Response(JSON.stringify([{ id: parsed.searchParams.get('id')?.replace('eq.', '') }]));
-    if (path === 'incidents') return new Response(JSON.stringify([{ incident_id: V, model_run_id: parsed.searchParams.get('model_run_id')?.replace('eq.', '') }]));
-    if (path === 'reports') return new Response(JSON.stringify([{ id: 'r', incident_id: V, model_run_id: 'x' }]));
-    return new Response(JSON.stringify([{ ok: true }]));
+    return db.fetch(url, init);
   };
+  return { db, gatewayCalls };
 }
 const post = (body) => POST(new Request(`http://localhost/api/videos/${V}/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ videoId: V }) });
+const history = () => GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
+const writes = (db) => db.requests.filter((r) => r.method !== 'GET');
 
-test('re-analysis uses the stored video object, creates a new run and never writes the videos row', async () => {
-  const calls = [];
-  globalThis.fetch = db(calls, validReport);
+test('re-analysis uses the stored video object, creates a new run and a new AI revision, and never writes the videos row', async () => {
+  const { db, gatewayCalls } = services(validReport);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner', additionalInstruction: 'Pay particular attention to the person entering from the left side of the frame.' });
   assert.equal(response.status, 200);
   const { run } = await response.json();
   assert.equal(run.videoId, V);
   assert.notEqual(run.modelRunId, repaired.modelRunId);
   assert.equal(run.outcome, 'valid_first_pass');
-  const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions'));
-  assert.ok(!writes.some((c) => c.path === 'videos'), 'the video row (and its upload time) is never written by a re-run');
-  const gateway = calls.find((c) => c.path.endsWith('chat/completions'));
-  assert.equal(gateway.body.model, 'nvidia/cosmos-3-super-reasoner');
-  assert.equal(gateway.body.messages[0].content.length, 3, 'canonical video + prompt parts, plus the fenced instruction');
-  assert.match(gateway.body.messages[0].content[2].text, /<<<\nPay particular attention/);
-  const modelRun = writes.find((c) => c.path === 'model_runs');
-  const notes = JSON.parse(modelRun.body.notes).incidentConsoleV2;
+  assert.equal(run.revisionId, 2);
+  assert.ok(!writes(db).some((r) => r.path === 'videos'), 'the video row (and its upload time) is never written by a re-run');
+  assert.equal(gatewayCalls[0].model, 'nvidia/cosmos-3-super-reasoner');
+  assert.equal(gatewayCalls[0].messages[0].content.length, 3, 'canonical video + prompt parts, plus the fenced instruction');
+  assert.match(gatewayCalls[0].messages[0].content[2].text, /<<<\nPay particular attention/);
+  const modelRun = db.store.model_runs.find((row) => row.id === run.modelRunId);
+  const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
   assert.equal(notes.request.additionalInstruction, 'Pay particular attention to the person entering from the left side of the frame.');
   assert.equal(notes.videoId, V);
-  assert.ok(writes.some((c) => c.path === 'rpc/insert_incident'), 'a successful re-run gets its own report rows');
+  const revision = db.store.report_revisions.find((row) => row.id === 2);
+  assert.deepEqual([revision.video_id, revision.revision_no, revision.kind, revision.model_run_id, revision.parent_id], [V, 2, 'ai', run.modelRunId, null]);
+  assert.deepEqual(db.store.report_revisions[0], aiRevisionRow(repaired), 'the earlier revision is untouched; edits are not carried across');
+  assert.equal(db.store.videos[0].official_revision_id, null, 'the new version is not made official');
 });
 
 test('a failed re-run is recorded in history only and returns its reason', async () => {
-  const calls = [];
-  globalThis.fetch = db(calls, coreFailure);
+  const { db } = services(coreFailure);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
   assert.equal(response.status, 422);
   const payload = await response.json();
   assert.equal(payload.outcome, 'contract_failed');
   assert.deepEqual(payload.codes, ['WINDOW_END_BEFORE_START'], 'the failure names the core violation only');
-  const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions')).map((c) => c.path);
-  assert.deepEqual(writes, ['model_runs'], 'only the attempt record; no report, incident, evidence, review or video rows');
+  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs'], 'only the attempt record; no revision, evidence or video rows');
+  assert.equal(db.store.report_revisions.length, 1);
 });
 
-test('a re-run whose only problem is its timeline gets its own report rows (core-scored-v1)', async () => {
-  const calls = [];
-  globalThis.fetch = db(calls, timelineFailure);
+test('a re-run whose only problem is its timeline gets its own revision (core-scored-v1)', async () => {
+  const { db } = services(timelineFailure);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
   assert.equal(response.status, 200);
-  const writes = calls.filter((c) => c.method !== 'GET' && !c.path.endsWith('chat/completions'));
-  assert.ok(writes.some((c) => c.path === 'rpc/insert_incident'));
-  const notes = JSON.parse(writes.find((c) => c.path === 'model_runs').body.notes).incidentConsoleV2;
+  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs', 'report_revisions']);
+  const notes = JSON.parse(db.store.model_runs.at(-1).notes).incidentConsoleV2;
   assert.equal(notes.status, 'valid_first_pass');
   assert.equal(notes.validation.fullContractValid, false);
   assert.equal(notes.response.content, timelineFailure);
 });
 
-test('re-analysis refuses unknown models, missing videos and agent mode', async () => {
-  const calls = [];
-  globalThis.fetch = db(calls, validReport);
+test('re-analysis refuses unknown models, other models in agent mode and a missing video', async () => {
+  const { gatewayCalls, db } = services(validReport);
   assert.equal((await post({ model: 'some/other-model' })).status, 400);
   process.env.ANALYSIS_MODE = 'agent';
-  assert.equal((await post({ model: 'nvidia/cosmos-3-nano-reasoner' })).status, 409);
-  assert.ok(!calls.some((c) => c.path.endsWith('chat/completions')));
+  process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test:8000';
+  assert.equal((await post({ model: 'nvidia/cosmos-3-super-reasoner' })).status, 409, 'the agent runs its configured model (nano by default)');
+  assert.equal(gatewayCalls.length, 0);
+  process.env.ANALYSIS_MODE = 'gateway';
+  db.store.videos.length = 0;
+  assert.equal((await post({ model: 'nvidia/cosmos-3-super-reasoner' })).status, 404);
+  assert.deepEqual(writes(db), []);
 });
 
-test('history GET combines incident-backed runs with explicitly associated attempts', async () => {
+test('history GET combines revision-backed runs with explicitly associated attempts', async () => {
   const failed = { id: 'm-cf', model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-09-27T12:00:00', notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status: 'contract_failed', contractVersion: 'incident-contract-v2', videoId: V, attemptedAt: '2026-09-27T12:00:00Z', stage: 'contract_validation', failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' }, request: { model: 'nvidia/cosmos-3-super-reasoner' }, validation: { firstPass: [] }, repair: null } }) };
-  globalThis.fetch = async (url) => {
-    const parsed = new URL(String(url));
-    const path = parsed.pathname.replace('/rest/v1/', '');
-    if (path === 'videos') return new Response(JSON.stringify([{ ...repaired.video }]));
-    if (path === 'incidents' && parsed.searchParams.get('incident_id')) {
-      assert.match(parsed.searchParams.get('select'), /model_runs\(/);
-      return new Response(JSON.stringify([{ model_run_id: repaired.modelRunId, type: 'assault', severity_level: 3, model_runs: repaired.modelRun, reports: [repaired.reportRow] }]));
-    }
-    if (path === 'incidents') return new Response(JSON.stringify([{ model_run_id: repaired.modelRunId }]));
-    if (path === 'model_runs') {
-      assert.equal(parsed.searchParams.get('notes'), `like.*"videoId":"${V}"*`);
-      return new Response(JSON.stringify([failed]));
-    }
-    return new Response('[]');
-  };
-  const response = await GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
+  // The fake PostgREST does not embed, so the run's model_runs row sits on its revision row.
+  const { db } = services(validReport, { extraRuns: [failed], official: 1 });
+  db.store.report_revisions[0].model_runs = repaired.modelRun;
+  const response = await history();
   assert.equal(response.status, 200);
-  const history = await response.json();
-  assert.equal(history.video.uploadedAt, repaired.video.uploaded_datetime);
-  assert.deepEqual(history.runs.map((run) => [run.modelRunId, run.outcome, Boolean(run.report)]), [['m-cf', 'contract_failed', false], [repaired.modelRunId, 'valid_after_structural_repair', true]]);
-  assert.equal(history.counts.withReport, 1);
-  assert.equal(history.officialRunId, null);
+  const body = await response.json();
+  assert.equal(body.video.uploadedAt, repaired.video.uploaded_datetime);
+  assert.deepEqual(body.runs.map((run) => [run.modelRunId, run.outcome, run.revision?.revisionId ?? null, run.isOfficial]), [['m-cf', 'contract_failed', null, false], [repaired.modelRunId, 'valid_after_structural_repair', 1, true]]);
+  assert.equal(body.counts.withReport, 1);
+  assert.equal(body.officialRevisionId, 1);
 });
 
-test("history shows a run's type and severity as the report does: the reviewer's edit, not the AI's", async () => {
-  const run = { ...repaired, incident: { ...repaired.incident, type: 'assault', severity_level: 4 } };
-  // The fake PostgREST does not embed, so the run's model_runs and reports rows sit on its incident row.
-  const db = fakePostgrest({
-    videos: [repaired.video], model_runs: [repaired.modelRun], reports: [repaired.reportRow], review_status: [],
-    incidents: [{ ...run.incident, model_runs: repaired.modelRun, reports: [repaired.reportRow] }],
-    entities: repaired.entities, instruments: repaired.instruments, assets: repaired.assets,
-  }, { rpc: reviewerRpcs, views: effectiveViews });
-  globalThis.fetch = db.fetch;
-  const history = async () => {
-    const response = await GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
-    assert.equal(response.status, 200);
-    return (await response.json()).runs.find((entry) => entry.modelRunId === repaired.modelRunId).report;
-  };
-  assert.deepEqual([(await history()).type, (await history()).severityLevel], ['assault', 4]);
-
-  const edit = editFromDraft(draftFromView(buildReportView({ ...run, playbackUrl: 'x' })));
-  edit.incident.type = 'burglary';
-  edit.incident.severity_level = 2;
-  const saved = await editReport(new Request(`http://localhost/api/reports/${V}/edit`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modelRunId: repaired.modelRunId, editedBy: 'Rev', edit }),
-  }), { params: Promise.resolve({ videoId: V }) });
-  assert.equal(saved.status, 200);
-
-  assert.deepEqual([(await history()).type, (await history()).severityLevel], ['burglary', 2]);
-  assert.deepEqual([db.store.incidents[0].type, db.store.incidents[0].severity_level], ['assault', 4], 'the AI report is unchanged');
-});
-
-test('the videos list names the incident -> video relationship (videos also reference their official incident)', async () => {
-  const { GET: listVideos } = await import('../app/api/videos/route.ts');
-  const selects = [];
-  globalThis.fetch = async (url) => {
-    const params = new URL(String(url)).searchParams;
-    selects.push([params.get('select'), params.get('incidents'), params.get('selected_model_run_id')]);
-    return new Response('[]', { headers: { 'content-range': '*/0' } });
-  };
-  for (const filter of ['all', 'without-report', 'awaiting-selection']) {
-    assert.equal((await listVideos(new Request(`http://localhost/api/videos?filter=${filter}`))).status, 200);
-  }
-  for (const [select] of selects) assert.match(select, /incidents!incidents_incident_id_fkey/);
-  assert.equal(selects[1][1], 'is.null', 'without-report is an anti-join');
-  assert.equal(selects[2][2], 'is.null', 'awaiting-selection = has a report but no official one');
-  assert.match(selects[2][0], /!inner\(model_run_id,reports!inner/);
+test('history of an unknown video is 404', async () => {
+  const { db } = services(validReport);
+  db.store.videos.length = 0;
+  assert.equal((await history()).status, 404);
 });

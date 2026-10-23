@@ -81,7 +81,7 @@ describe('get_incident_dashboard mapping', () => {
     assert.equal(mapped.total, 4);
     assert.deepEqual(mapped.videos, { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 });
     assert.equal(mapped.previous, null);
-    assert.deepEqual(mapped.reviews, { unreviewed: 0, under_review: 0, verified: 0 });
+    assert.deepEqual(mapped.revisions, { ai: 0, human: 0 });
     assert.deepEqual(mapped.types, [{ type: 'assault', count: 0, severity: { low: 0, medium: 0, high: 0 }, entities: [], instruments: [], assets: [] }]);
     assert.deepEqual(mapped.heatmap, [{ day: null, hour: null, count: 2 }]);
     assert.deepEqual(mapped.modelCoverage, []);

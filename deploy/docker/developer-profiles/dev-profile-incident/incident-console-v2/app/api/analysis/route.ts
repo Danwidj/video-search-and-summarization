@@ -32,7 +32,8 @@ function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceC
 interface AnalysisRunSummary {
   videoId: string;
   modelRunId: string;
-  reportId: string;
+  /** The new AI revision. */
+  revisionId: number;
   model: string;
   promptVersion: string;
   /** valid_first_pass or valid_after_structural_repair; failures are returned as errors. */
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Model selection is only available in gateway analysis mode' }, { status: 409 });
     }
 
-    const { run } = await runContractAnalysis(
+    const { run, revisionId } = await runContractAnalysis(
       {
         videoId: compactId('v', input.sensorId),
         r2Key: input.filepath,
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     const report: AnalysisRunSummary = {
       videoId: run.videoId,
       modelRunId: run.modelRunId,
-      reportId: run.reportId,
+      revisionId,
       model: run.request.model,
       promptVersion: run.contractVersion,
       outcome: run.status,

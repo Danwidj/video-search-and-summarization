@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Characterisation test for GET /api/reports/[videoId]?run=..., written against
-// the pre-refactor route so the hexagonal migration can prove no behaviour change.
+// GET /api/reports/[videoId]?revision=...: the view of one revision with a signed playback URL.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -23,8 +22,8 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/video.mp4' } });
 
 const { GET } = await import('../app/api/reports/[videoId]/route.ts');
-const { buildReportView } = await import('./support/report-view.mjs');
-const { effectiveRowsOfAiRun } = await import('./support/finals-database.mjs');
+const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
+const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -38,54 +37,60 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 
 const call = (query) => GET(new Request(`http://localhost/api/reports/${smoke.videoId}${query}`), { params: Promise.resolve({ videoId: smoke.videoId }) });
 
-function database(overrides = {}) {
-  const rows = { ...effectiveRowsOfAiRun(smoke), video: { ...smoke.video, selected_model_run_id: smoke.modelRunId, selected_by: 'Lead', selected_at: '2026-10-01T00:00:00' }, ...overrides };
-  const requests = [];
-  globalThis.fetch = async (url) => {
-    const parsed = new URL(String(url));
-    const table = parsed.pathname.replace('/rest/v1/', '');
-    requests.push(`${table}?${parsed.searchParams}`);
-    const one = (row) => new Response(JSON.stringify(row ? [row] : []));
-    if (table === 'model_runs') return one(rows.modelRun);
-    if (table === 'videos') return one(rows.video);
-    if (table === 'review_status') return one(rows.review);
-    if (table === 'effective_incidents') return one(rows.incident);
-    if (table === 'reports') return one(rows.reportRow);
-    const items = { effective_entities: 'entities', effective_instruments: 'instruments', effective_assets: 'assets' }[table];
-    if (items) return new Response(JSON.stringify(rows[items]));
-    return new Response('[]');
-  };
-  return { rows, requests };
+/** The smoke video with an AI revision (1) and a later human one (2); revision `official` is marked official. */
+function database({ official = null, video = smoke.video, modelRuns = [smoke.modelRun] } = {}) {
+  const human = { ...aiRevisionRow(smoke, { id: 2, revision_no: 2, kind: 'human', parent_id: 1, created_by: 'Lead', note: 'Checked' }) };
+  human.payload = { ...human.payload, incident: { ...human.payload.incident, severity_level: 4 } };
+  const db = fakePostgrest({
+    videos: [{ ...video, official_revision_id: official }], model_runs: modelRuns, report_revisions: [aiRevisionRow(smoke), human],
+  });
+  globalThis.fetch = db.fetch;
+  return db;
 }
 
-test('a run ID is required', async () => {
-  assert.equal((await call('')).status, 400);
+test('a revision ID that is not a positive whole number is 400', async () => {
+  database();
+  for (const bad of ['0', '-1', '1.5', 'abc']) assert.equal((await call(`?revision=${bad}`)).status, 400, bad);
 });
 
-test('the report is the view built from the run rows with a signed playback URL', async () => {
-  const { rows, requests } = database();
-  const response = await call(`?run=${smoke.modelRunId}`);
+test('the report is the view of the asked-for revision with a signed playback URL', async () => {
+  database({ official: 1 });
+  const response = await call('?revision=2');
   assert.equal(response.status, 200);
-  const expected = JSON.parse(JSON.stringify(buildReportView({ ...rows, playbackUrl: 'https://signed.r2.test/video.mp4' })));
-  assert.deepEqual((await response.json()).report, expected);
-  assert.equal(expected.official.isOfficial, true);
-  assert.equal(requests.length, 8);
-  // The report is the effective one (the reviewer's version when there is one), never the AI tables.
-  assert.deepEqual(requests.map((request) => request.split('?')[0]).sort(), [
-    'effective_assets', 'effective_entities', 'effective_incidents', 'effective_instruments', 'model_runs', 'reports', 'review_status', 'videos',
-  ]);
+  const { report } = await response.json();
+  assert.deepEqual([report.revisionId, report.revision.kind, report.revision.createdBy, report.structured.incident.severityLevel], [2, 'human', 'Lead', 4]);
+  assert.equal(report.official.isOfficial, false);
+  assert.equal(report.official.officialRevisionId, 1);
+  assert.equal(report.run.playbackUrl, 'https://signed.r2.test/video.mp4');
+  const expected = JSON.parse(JSON.stringify(buildReportView({ ...smoke, playbackUrl: 'https://signed.r2.test/video.mp4' }, { id: 1 })));
+  assert.deepEqual((await (await call('?revision=1')).json()).report, { ...expected, official: { officialRevisionId: 1, isOfficial: true }, revision: { ...expected.revision, isOfficial: true } });
 });
 
-test('a missing incident, run or video is 404', async () => {
-  for (const missing of ['incident', 'modelRun', 'video']) {
-    database({ [missing]: null });
-    assert.equal((await call(`?run=${smoke.modelRunId}`)).status, 404, missing);
-  }
+test('with no revision asked for, the official revision is shown, else the newest', async () => {
+  database({ official: 1 });
+  assert.equal((await (await call('')).json()).report.revisionId, 1);
+  database();
+  assert.equal((await (await call('')).json()).report.revisionId, 2);
+});
+
+test('a missing video or revision is 404', async () => {
+  database();
+  assert.equal((await call('?revision=9')).status, 404);
+  database({ video: { ...smoke.video, id: 'someone-else' } });
+  assert.equal((await call('')).status, 404);
 });
 
 test('a video without an R2 key is a 500 with the original message', async () => {
   database({ video: { ...smoke.video, filepath: null } });
-  const response = await call(`?run=${smoke.modelRunId}`);
+  const response = await call('?revision=1');
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: 'The report has no linked R2 video' });
+});
+
+test('a revision whose run is not recorded still renders from its payload', async () => {
+  database({ modelRuns: [] });
+  const { report } = await (await call('?revision=1')).json();
+  assert.equal(report.modelOutput, null);
+  assert.equal(report.run.model, 'Unknown model');
+  assert.equal(report.structured.incident.type, 'assault');
 });
