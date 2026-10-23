@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getDbHealth } from '@/lib/container';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
-import { GatewayClient } from '@/lib/gateway/client';
+import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
 
 export const dynamic = 'force-dynamic';
 

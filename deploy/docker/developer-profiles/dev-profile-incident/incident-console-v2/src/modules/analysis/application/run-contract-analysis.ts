@@ -5,7 +5,7 @@
 // request identical to eval's -> validation under policy core-scored-v1 ->
 // optional id-normalization-v1 repair (re-validated) -> a new, unique model run.
 //
-// core-scored-v1 (lib/contract/validate.ts validateCore, same as eval): the
+// core-scored-v1 (modules/contract/domain/validate.ts validateCore, same as eval): the
 // database-backed fields decide the outcome. A cross-field failure confined to
 // the unscored enrichment fields (e.g. a timeline outside the incident window)
 // is recorded, not fatal, and never repaired; the incident window must also lie
@@ -15,18 +15,23 @@
 //   valid_first_pass | valid_after_structural_repair  -> AI report revision + notes
 //   contract_failed  | request_failed                 -> model_runs notes only
 // The original model response is stored unaltered in every case.
+//
+// The model, agent, video store and persistence are ports; the composition root
+// (lib/container.ts) chooses the adapters.
 
 import { randomUUID } from 'node:crypto';
 
-import { buildP1Request, normalizeAdditionalInstruction, p1InferenceConfig } from '@/lib/analysis/build-request';
+import { buildP1Request, normalizeAdditionalInstruction, p1InferenceConfig } from '@/modules/analysis/application/build-request';
 import {
-  persistContractRun,
-  persistFailedAttempt,
-  recordUploadedVideo,
+  type AgentStoredRevision,
   type AnalysisAttemptRecord,
+  type AnalysisRunRepository,
   type AttemptRepair,
   type ContractRunRecord,
-} from '@/lib/analysis/persistence';
+} from '@/modules/analysis/domain/AnalysisRunRepository';
+import { AgentRequestError, type AgentHttpResponse, type IncidentAgent } from '@/modules/analysis/domain/IncidentAgent';
+import { GatewayError, type GatewayCompletionResponse, type ModelGateway } from '@/modules/analysis/domain/ModelGateway';
+import type { VideoObjectStore } from '@/modules/analysis/domain/VideoObjectStore';
 import { contractVersion, findAllowedModel, promptSha256, schemaSha256 } from '@/modules/contract/infrastructure/loader';
 import { attemptIdNormalization, REPAIR_RULE_SET } from '@/modules/contract/domain/repair';
 import type { IncidentContractReport } from '@/modules/contract/domain/types';
@@ -41,12 +46,8 @@ import {
   type ValidationContext,
   type ViolationScope,
 } from '@/modules/contract/domain/validate';
-import type { ServiceConfiguration } from '@/lib/env';
-import { GatewayClient, GatewayError, type GatewayCompletionResponse } from '@/lib/gateway/client';
 import { compactId } from '@/lib/ids';
-import { evidenceEntries, type EvidenceEntry } from '@/modules/reports/domain/revision';
-import { PostgrestClient } from '@/lib/postgrest/client';
-import { createR2PlaybackUrl, readR2VideoDurationSeconds, verifyR2Video } from '@/lib/r2/config';
+import { evidenceEntries } from '@/modules/reports/domain/revision';
 
 /** A request the caller must fix, or an attempt whose outcome is a recorded failure. */
 export class AnalysisRequestError extends Error {
@@ -60,6 +61,18 @@ export class AnalysisRequestError extends Error {
     this.details = details;
   }
 }
+
+/** The outbound ports one analysis uses. A null model port means its URL is not configured. */
+export interface AnalysisPorts {
+  runs: AnalysisRunRepository;
+  videos: VideoObjectStore;
+  /** Gateway mode's model call. */
+  gateway: ModelGateway | null;
+  /** Agent mode's model call. */
+  agent: IncidentAgent | null;
+}
+
+export type AnalysisMode = 'gateway' | 'agent';
 
 export interface ContractAnalysisInput {
   videoId: string;
@@ -172,16 +185,25 @@ function completionResponse(completion: GatewayCompletionResponse): NonNullable<
   return response;
 }
 
-async function recordFailure(db: PostgrestClient, attempt: AnalysisAttemptRecord): Promise<boolean> {
+/** The FastAPI error detail of an agent error body; undefined when the body is not JSON. */
+function agentErrorDetail(text: string): unknown {
   try {
-    await persistFailedAttempt(db, attempt);
+    return (JSON.parse(text) as { detail?: unknown }).detail;
+  } catch {
+    return undefined;
+  }
+}
+
+async function recordFailure(runs: AnalysisRunRepository, attempt: AnalysisAttemptRecord): Promise<boolean> {
+  try {
+    await runs.saveFailedAttempt(attempt);
     return true;
   } catch {
     return false;
   }
 }
 
-export async function runContractAnalysis(input: ContractAnalysisInput, config: ServiceConfiguration): Promise<ContractAnalysisResult> {
+export async function runContractAnalysis(input: ContractAnalysisInput, ports: AnalysisPorts, mode: AnalysisMode): Promise<ContractAnalysisResult> {
   let model = resolveAllowedModel(input.model);
   let additionalInstruction: string | null;
   try {
@@ -190,19 +212,18 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
     throw new AnalysisRequestError(400, error instanceof Error ? error.message : String(error));
   }
 
-  const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
   let operation = 'verifying the R2 video object';
   try {
-    const { contentLength } = await verifyR2Video(config, input.r2Key);
+    const { contentLength } = await ports.videos.verify(input.r2Key);
     if (input.newVideo) {
       operation = 'recording the uploaded video';
-      await recordUploadedVideo(db, input.videoId, { r2Key: input.r2Key, sensorId: input.newVideo.sensorId, uploadedAt: input.newVideo.uploadedAt });
+      await ports.runs.recordUploadedVideo({ videoId: input.videoId, r2Key: input.r2Key, sensorId: input.newVideo.sensorId, uploadedAt: input.newVideo.uploadedAt });
     }
     operation = 'creating the signed R2 video URL';
-    const playbackUrl = await createR2PlaybackUrl(config, input.r2Key);
+    const playbackUrl = await ports.videos.playbackUrl(input.r2Key);
 
     operation = 'reading the video length';
-    const videoDurationSeconds = await readR2VideoDurationSeconds(config, input.r2Key, contentLength);
+    const videoDurationSeconds = await ports.videos.durationSeconds(input.r2Key, contentLength);
 
     const attemptedAt = new Date().toISOString();
     const modelRunId = compactId('m', `${input.videoId}:${attemptedAt}:${randomUUID()}`);
@@ -224,30 +245,23 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
 
     let response: NonNullable<AnalysisAttemptRecord['response']>;
     // What the agent stored or cropped itself (agent mode); the console stores the revision when it did not.
-    const fromAgent: { revisionId: number | null; evidence: EvidenceEntry[] | null } = { revisionId: null, evidence: null };
+    const fromAgent: AgentStoredRevision = { revisionId: null, evidence: null };
 
-    if (config.analysisMode === 'agent') {
+    if (mode === 'agent') {
       operation = 'calling the incident agent';
-      if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
-      const endpoint = `${config.agentUrl.replace(/\/$/, '')}/api/v1/incidents/${input.videoId}/analyze`;
-      let agentResponse: Response;
+      if (!ports.agent) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+      let agentResponse: AgentHttpResponse;
       try {
-        agentResponse = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_url: playbackUrl, model_run_id: modelRunId, model: model.id, skip_rp1: true,
-            ...(additionalInstruction ? { reviewer_prompt: additionalInstruction } : {}),
-          }),
-          signal: AbortSignal.timeout(model.timeout_seconds * 1000),
-        });
+        agentResponse = await ports.agent.analyze(
+          { videoId: input.videoId, videoUrl: playbackUrl, modelRunId, model: model.id, additionalInstruction },
+          AbortSignal.timeout(model.timeout_seconds * 1000),
+        );
       } catch (error) {
-        const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
-        const code = isTimeout ? 'AGENT_TIMEOUT' : 'AGENT_FETCH_FAILED';
-        const message = error instanceof Error ? error.message : String(error);
+        if (!(error instanceof AgentRequestError)) throw error;
+        const { code, message } = error;
         const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code, message }, response: null, validation: { firstPass: [] }, repair: null };
-        const recorded = await recordFailure(db, attempt);
-        throw new AnalysisRequestError(isTimeout ? 504 : 502, `The agent request failed (${code}): ${message}`, {
+        const recorded = await recordFailure(ports.runs, attempt);
+        throw new AnalysisRequestError(code === 'AGENT_TIMEOUT' ? 504 : 502, `The agent request failed (${code}): ${message}`, {
           outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
         });
       }
@@ -257,19 +271,19 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown; revision_id?: unknown; evidence?: unknown };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
-        agentP1 = (await agentResponse.json()) as AgentP1;
+        agentP1 = JSON.parse(agentResponse.text) as AgentP1;
       } else if (agentResponse.status === 422) {
-        const detail = ((await agentResponse.clone().json().catch(() => ({}))) as { detail?: unknown }).detail;
+        const detail = agentErrorDetail(agentResponse.text);
         if (detail && typeof detail === 'object' && typeof (detail as AgentP1).raw_output === 'string') agentP1 = detail as AgentP1;
       }
       if (!agentP1) {
-        const errorText = await agentResponse.text().catch(() => '');
+        const errorText = agentResponse.text;
         const code = agentResponse.status === 504 ? 'AGENT_TIMEOUT' : `AGENT_HTTP_${agentResponse.status}`;
         const attempt: AnalysisAttemptRecord = {
           ...base, status: 'request_failed', stage: 'gateway', failure: { code, message: errorText || agentResponse.statusText },
           response: { httpStatus: agentResponse.status, errorBody: errorText }, validation: { firstPass: [] }, repair: null,
         };
-        const recorded = await recordFailure(db, attempt);
+        const recorded = await recordFailure(ports.runs, attempt);
         throw new AnalysisRequestError(agentResponse.status === 504 ? 504 : 502, `The agent returned HTTP ${agentResponse.status}: ${errorText}`, {
           outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
         });
@@ -297,7 +311,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
           validation: { firstPass: [] },
           repair: null,
         };
-        const recorded = await recordFailure(db, attempt);
+        const recorded = await recordFailure(ports.runs, attempt);
         throw new AnalysisRequestError(502, message, {
           outcome: 'request_failed',
           code: 'CONTRACT_VERSION_MISMATCH',
@@ -308,10 +322,10 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       }
     } else {
       operation = `calling the VLM gateway (${model.id})`;
-      if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
+      if (!ports.gateway) throw new Error('VLM_GATEWAY_URL is not configured');
       let completion: GatewayCompletionResponse;
       try {
-        completion = await new GatewayClient(config.gatewayUrl).complete(
+        completion = await ports.gateway.complete(
           buildP1Request(model.id, playbackUrl, additionalInstruction),
           AbortSignal.timeout(model.timeout_seconds * 1000),
         );
@@ -321,7 +335,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
           ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
           : null;
         const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response: resp, validation: { firstPass: [] }, repair: null };
-        const recorded = await recordFailure(db, attempt);
+        const recorded = await recordFailure(ports.runs, attempt);
         throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
           outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
         });
@@ -337,7 +351,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         ? `The model stopped with finish_reason "${finishReason}" before a usable response`
         : 'The model returned no response content';
       const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code, message }, response, validation: { firstPass: [] }, repair: null };
-      const recorded = await recordFailure(db, attempt);
+      const recorded = await recordFailure(ports.runs, attempt);
       throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: base.request.model, finishReason, attemptId: modelRunId, attemptRecorded: recorded });
     }
 
@@ -352,7 +366,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         ...base, status: 'contract_failed', stage: outcome.stage, failure: { code: codes.join(','), message: outcome.message },
         response, validation: validationRecord(outcome), repair: outcome.repair,
       };
-      const recorded = await recordFailure(db, attempt);
+      const recorded = await recordFailure(ports.runs, attempt);
       throw new AnalysisRequestError(422, `The model's response did not satisfy the incident contract: ${outcome.message}`, {
         outcome: 'contract_failed', codes, model: base.request.model, finishReason, rawContent: content.slice(0, 20000), attemptId: modelRunId, attemptRecorded: recorded,
       });
@@ -369,7 +383,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       generatedAt: attemptedAt,
       report: withDerivedFields(outcome.report),
     };
-    const { revisionId } = await persistContractRun(db, run, input.r2Key, (nextOperation) => { operation = nextOperation; }, fromAgent);
+    const revisionId = await ports.runs.saveRun(run, fromAgent, (nextOperation) => { operation = nextOperation; });
     return { run, playbackUrl, revisionId };
   } catch (error) {
     if (error instanceof AnalysisRequestError) throw error;

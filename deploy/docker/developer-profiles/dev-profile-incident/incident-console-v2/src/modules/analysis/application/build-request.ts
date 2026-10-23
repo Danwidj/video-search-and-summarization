@@ -9,7 +9,7 @@
 // Without an instruction the request body equals eval's P1 body key for key.
 
 import { extractionPrompt, inferenceSettings, responseFormat } from '@/modules/contract/infrastructure/loader';
-import type { GatewayCompletionRequest } from '@/lib/gateway/client';
+import type { GatewayCompletionRequest } from '@/modules/analysis/domain/ModelGateway';
 
 export const MAX_ADDITIONAL_INSTRUCTION_LENGTH = 1000;
 

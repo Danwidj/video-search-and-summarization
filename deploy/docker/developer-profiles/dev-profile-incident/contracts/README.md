@@ -2,7 +2,7 @@
 
 This directory is the single source of truth for incident extraction: one prompt and one output schema, shared by `eval/`, `incident-console-v2/` and `vss-agent`. This directory is the only place to edit shared contract files; run `python sync.py` (or `python sync.py --check`) to regenerate the agent's vendored copy in `services/agent/src/vss_agents/incident_contract/`. Decisions: [`../.docs/decisions.md`](../.docs/decisions.md).
 
-**Status:** all consumers are on the contract. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` (gateway and agent mode) uses it too (`lib/contract/`, `lib/analysis/build-request.ts`, `lib/analysis/run-contract-analysis.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). `vss-agent` vendors the contract under `services/agent/src/vss_agents/incident_contract/` and executes P1/RP1 directly.
+**Status:** all consumers are on the contract. `eval/` runs P1 and RP1 on the contract (`eval/contract.py`, `eval/scripts/eval_run.py`). `incident-console-v2/` (gateway and agent mode) uses it too (`modules/contract/`, `modules/analysis/application/build-request.ts`, `modules/analysis/application/run-contract-analysis.ts`), with the ID-only `id-normalization-v1` recovery on top of strict validation (application only; eval scores first responses). `vss-agent` vendors the contract under `services/agent/src/vss_agents/incident_contract/` and executes P1/RP1 directly.
 
 | File | Purpose |
 |---|---|

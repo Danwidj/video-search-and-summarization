@@ -17,12 +17,12 @@ const repaired = fixture('contract-v2-repaired-run.json');
 const smoke = fixture('contract-v2-smoke-run.json');
 const V = repaired.videoId;
 
-const revisionRow = (rows, id) => ({
-  id, model_run_id: rows.modelRunId, incident_type: rows.incident.type, severity_level: rows.incident.severity_level,
-  created_at: rows.reportRow.generated_datetime, model_runs: rows.modelRun,
+const revisionRow = (rows, revisionId) => ({
+  revisionId, modelRunId: rows.modelRunId, incidentType: rows.incident.type, severityLevel: rows.incident.severity_level,
+  createdAt: rows.reportRow.generated_datetime, modelName: rows.modelRun.model_name, runDatetime: rows.modelRun.run_datetime, notes: rows.modelRun.notes,
 });
-const attempt = (id, videoId, status, extra = {}) => ({
-  id, model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-09-27T12:00:00',
+const attempt = (modelRunId, videoId, status, extra = {}) => ({
+  modelRunId, modelName: 'nvidia/cosmos-3-super-reasoner', runDatetime: '2026-09-27T12:00:00',
   notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, contractVersion: 'incident-contract-v2', videoId, attemptedAt: '2026-09-27T12:00:00.000Z', request: { model: 'nvidia/cosmos-3-super-reasoner', additionalInstruction: null }, response: null, validation: { firstPass: [] }, repair: null, ...extra } }),
 });
 
@@ -35,9 +35,9 @@ test('a video history lists successful runs, repaired runs and failed attempts, 
   const otherVideo = attempt('m-other', 'v-some-other-video', 'contract_failed');
   const { runs, counts } = buildRunHistory({
     videoId: V,
-    revisionRows: [revisionRow(repaired, 7), revisionRow(smoke, 8)],
+    revisions: [revisionRow(repaired, 7), revisionRow(smoke, 8)],
     // The repaired run is also found by the notes pre-filter; it must appear once.
-    attemptCandidates: [contractFailed, requestFailed, otherVideo, { id: repaired.modelRunId, notes: repaired.modelRun.notes }],
+    attempts: [contractFailed, requestFailed, otherVideo, { modelRunId: repaired.modelRunId, modelName: null, runDatetime: null, notes: repaired.modelRun.notes }],
     sharedRunIds: new Set(),
   });
 
@@ -56,12 +56,10 @@ test('a video history lists successful runs, repaired runs and failed attempts, 
 });
 
 test('pre-outcome and batch runs are shown as earlier analyses, never as failures', () => {
-  const evalRun = { id: 'P1-cosmos3nano', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-27T01:00:00', notes: null };
-  const evalRow = { id: 3, model_run_id: 'P1-cosmos3nano', incident_type: 'assault', severity_level: 3, created_at: '2026-09-27T01:00:00', model_runs: evalRun };
-  const legacyRun = { id: 'm-legacy', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-20T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'fighting' } } }) };
-  const legacyRow = { id: 4, model_run_id: 'm-legacy', incident_type: 'fighting', severity_level: 2, created_at: '2026-09-20T01:00:00', model_runs: legacyRun };
-  const unrevised = { id: 'm-removed', model_name: 'm', run_datetime: '2026-09-19T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'burglary' } } }) };
-  const { runs, counts } = buildRunHistory({ videoId: V, revisionRows: [evalRow, legacyRow], attemptCandidates: [unrevised], sharedRunIds: new Set(['P1-cosmos3nano']) });
+  const evalRow = { revisionId: 3, modelRunId: 'P1-cosmos3nano', incidentType: 'assault', severityLevel: 3, createdAt: '2026-09-27T01:00:00', modelName: 'nvidia/cosmos-3-nano-reasoner', runDatetime: '2026-09-27T01:00:00', notes: null };
+  const legacyRow = { revisionId: 4, modelRunId: 'm-legacy', incidentType: 'fighting', severityLevel: 2, createdAt: '2026-09-20T01:00:00', modelName: 'nvidia/cosmos-3-nano-reasoner', runDatetime: '2026-09-20T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'fighting' } } }) };
+  const unrevised = { modelRunId: 'm-removed', modelName: 'm', runDatetime: '2026-09-19T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'burglary' } } }) };
+  const { runs, counts } = buildRunHistory({ videoId: V, revisions: [evalRow, legacyRow], attempts: [unrevised], sharedRunIds: new Set(['P1-cosmos3nano']) });
   const byId = Object.fromEntries(runs.map((run) => [run.modelRunId, run]));
   assert.equal(byId['P1-cosmos3nano'].outcome, 'legacy');
   assert.equal(byId['P1-cosmos3nano'].source, 'shared');

@@ -100,7 +100,9 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
       const results = [];
       for (const row of incoming) {
         const index = keys.length ? rows.findIndex((existing) => keys.every((key) => existing[key] === row[key])) : -1;
-        if (index >= 0) { rows[index] = { ...rows[index], ...row }; results.push(rows[index]); }
+        // resolution=ignore-duplicates keeps the existing row (insertIfAbsent); otherwise the conflict merges.
+        if (index >= 0 && String(init.headers?.Prefer ?? '').includes('ignore-duplicates')) results.push(rows[index]);
+        else if (index >= 0) { rows[index] = { ...rows[index], ...row }; results.push(rows[index]); }
         else {
           const column = identity[path];
           const stored = column && row[column] === undefined ? { ...row, [column]: Math.max(0, ...rows.map((existing) => existing[column])) + 1 } : { ...row };

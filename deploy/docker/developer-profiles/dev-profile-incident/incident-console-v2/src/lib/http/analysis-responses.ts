@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Edge-only: maps analysis outcomes to HTTP responses for the analysis routes.
+// The analysis module returns and throws plain values; NextResponse lives here.
+
 import { NextResponse } from 'next/server';
 
-import { AnalysisRequestError } from '@/lib/analysis/run-contract-analysis';
 import { errorResponse } from '@/lib/http';
+import { AnalysisRequestError } from '@/modules/analysis/application/run-contract-analysis';
 
 /** HTTP response for an analysis failure: recorded attempt outcomes keep their status and details. */
 export function analysisErrorResponse(error: unknown, fallback: string): NextResponse {

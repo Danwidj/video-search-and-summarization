@@ -2,11 +2,11 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/container';
+import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
 import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { storeSearchableCrops, type SearchableCropsResult } from '@/modules/reports/application/reports';
-import { analysisErrorResponse } from '@/lib/analysis/responses';
-import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
+import { analysisErrorResponse } from '@/lib/http/analysis-responses';
+import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
 import { compactId } from '@/lib/ids';
 
@@ -75,7 +75,8 @@ export async function POST(request: Request) {
         additionalInstruction: input.additionalInstruction,
         newVideo: { sensorId: input.sensorId, uploadedAt: new Date().toISOString() },
       },
-      config,
+      getAnalysisPorts(config),
+      config.analysisMode,
     );
 
     const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));

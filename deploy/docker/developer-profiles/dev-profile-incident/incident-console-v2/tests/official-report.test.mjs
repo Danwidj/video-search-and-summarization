@@ -112,7 +112,7 @@ test('the report view marks the official revision explicitly and never infers it
 });
 
 test('analysis code never writes the official pointer or rebuilds crops', async () => {
-  for (const file of ['src/lib/analysis/persistence.ts', 'src/lib/analysis/run-contract-analysis.ts', 'src/app/api/analysis/route.ts', 'src/app/api/videos/[videoId]/runs/route.ts']) {
+  for (const file of ['src/modules/analysis/infrastructure/supabase/analysis-runs.ts', 'src/modules/analysis/application/run-contract-analysis.ts', 'src/app/api/analysis/route.ts', 'src/app/api/videos/[videoId]/runs/route.ts']) {
     const source = await readFile(join(process.cwd(), file), 'utf8');
     // Reads of videos.official_revision_id are fine; no object key assigning it, no RPC, no crops.
     assert.doesNotMatch(source, /[{,]\s*official_revision_id:|set_official_revision|evidence_crops/, file);
