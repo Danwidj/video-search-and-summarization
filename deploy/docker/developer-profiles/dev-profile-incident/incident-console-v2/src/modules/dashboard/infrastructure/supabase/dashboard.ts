@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { dashboardFromRpc, dashboardRpcArgs } from '@/lib/adapters/supabase/mappers/dashboard';
-import type { DashboardAnalytics } from '@/lib/dashboard/types';
-import type { DashboardQuery, DashboardRepository } from '@/lib/ports/dashboard';
+import { dashboardFromRpc, dashboardRpcArgs } from '@/modules/dashboard/infrastructure/supabase/mappers/dashboard';
+import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
+import type { DashboardQuery, DashboardRepository } from '@/modules/dashboard/domain/DashboardRepository';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 
 export class SupabaseDashboardAdapter implements DashboardRepository {

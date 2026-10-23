@@ -4,8 +4,8 @@
 // given and records each query. Like get_incident_dashboard, it has no
 // previous-period comparison unless both period bounds are set.
 
-import type { DashboardAnalytics } from '@/lib/dashboard/types';
-import type { DashboardQuery, DashboardRepository } from '@/lib/ports/dashboard';
+import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
+import type { DashboardQuery, DashboardRepository } from '@/modules/dashboard/domain/DashboardRepository';
 
 const NO_INCIDENTS: DashboardAnalytics = {
   total: 0,
