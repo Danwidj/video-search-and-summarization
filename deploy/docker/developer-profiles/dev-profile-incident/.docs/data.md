@@ -12,6 +12,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 
 - `20261023000000_report_revisions_schema.sql` — drops the relational report tables and retires `videos.selected_*`; creates `report_revisions`, the revision-keyed `evidence_crops` and `query_results`, and `videos.official_revision_id`.
 - `20261023000100_report_revisions_functions.sql` — `save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`.
+- `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
 
 Schema authority is the migrations, not the archived Streamlit v1 console's `archived/incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
@@ -33,7 +34,8 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
   edits.
 - **One revision per video is official.** `videos.official_revision_id` (composite FK to
   `report_revisions(video_id, id)`) names it; NULL means none. Selection never rewrites a revision.
-  `evidence_crops` rows exist only for the official revision.
+  `evidence_crops` rows belong to the video's **searchable revision**: the official revision when
+  there is one, otherwise the newest (`searchable_revision_id(video_id)`). See `evidence_crops`.
 - **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE` (the one exception is the
   `ON DELETE CASCADE` of the video, see below).
 
@@ -53,6 +55,7 @@ Primary registry of ingested video assets.
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
 | `official_revision_id` | `BIGINT` | NULLABLE; composite FK `(id, official_revision_id)` → `report_revisions(video_id, id)` | The video's official report revision. NULL = awaiting selection. Set/cleared only by `set_official_revision`. The old `selected_model_run_id`, `selected_by` and `selected_at` columns are gone. |
+| `official_since` | `TIMESTAMP` | NULLABLE | Naive UTC time the current official revision was marked; NULL when there is none. Set when the pointer moves to a different revision, kept when the same one is marked again, cleared with the pointer. Rows marked before the column existed were backfilled with the official revision's `created_at` (the real time was never recorded). |
 
 #### `queries`
 
@@ -109,12 +112,25 @@ Constraints and indexes:
 
 #### `evidence_crops`
 
-Searchable evidence of **official revisions only**. The primary key and FK are revision-scoped; there
-is no `incident_id`/`model_run_id` here — both come through `report_revisions`.
+Searchable evidence of each video's **searchable revision**: its official revision, or, while the
+video has none, its newest revision. A video has rows for at most that one revision. The primary
+key and FK are revision-scoped; there is no `incident_id`/`model_run_id` here — both come through
+`report_revisions`.
+
+What moves the rows (the database cannot embed, so a writer always supplies them):
+
+| Event | Searchable revision | Rows |
+|---|---|---|
+| `set_revision_crops(video, newest, crops)` on a video with no official revision | newest | stored for the newest revision, every other row of the video deleted |
+| A newer revision is saved (`save_human_revision` or the agent's insert) and the video has **no** official revision | the new revision | the old rows stay but are never returned by search; the video is not searchable until the writer calls `set_revision_crops` for the new revision, which deletes the old rows |
+| A newer revision is saved and the video **has** an official revision | unchanged | unchanged |
+| `set_official_revision(video, rev, crops)` with a crop list | `rev` | replaced with `crops` |
+| `set_official_revision(video, rev)` with no crop list | `rev` | `rev` keeps the rows it has; the video's other rows are deleted |
+| `set_official_revision(video, NULL, ...)` (clear) | the newest revision | the newest revision keeps its rows (or takes the crop list); other rows deleted |
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `revision_id` | `BIGINT` | PRIMARY KEY (part); FK → `report_revisions.id` ON DELETE CASCADE | The official revision these crops belong to |
+| `revision_id` | `BIGINT` | PRIMARY KEY (part); FK → `report_revisions.id` ON DELETE CASCADE | The searchable revision (official, else newest) these crops belong to |
 | `item_type` | `VARCHAR(16)` | PRIMARY KEY (part); CHECK `IN ('entity','instrument','asset')` | Evidence category |
 | `item_id` | `VARCHAR(20)` | PRIMARY KEY (part) | Item identifier in the revision (`E1..`, `I1..`, `A1..`) |
 | `item_name` | `VARCHAR(256)` | NOT NULL | Item name or detector label |
@@ -201,9 +217,12 @@ must be an array; `p_created_by` must be 1-256 characters after trimming. Return
 set_official_revision(p_video_id VARCHAR, p_revision_id BIGINT, p_crops JSONB DEFAULT '[]') RETURNS JSONB
 ```
 
-In one transaction: sets `videos.official_revision_id` and deletes that video's `evidence_crops`
-rows, then inserts `p_crops` for the new official revision. `p_revision_id` NULL clears both the
-pointer and the crops. There is no audit trail of previous selections.
+In one transaction: sets `videos.official_revision_id` and `official_since`, then makes the new
+official revision (or, for NULL, the video's newest revision) the searchable one. A non-empty
+`p_crops` replaces all the video's `evidence_crops` rows with rows for that revision. An empty
+`p_crops` keeps the rows the revision already has and deletes the video's other rows, so marking
+the newest revision official needs no new embeddings. There is no audit trail of previous
+selections.
 
 `p_crops` is the exact row list to store, one object per crop:
 
@@ -215,10 +234,26 @@ pointer and the crops. There is no audit trail of previous selections.
 Entries without an `item_type` of `entity`/`instrument`/`asset`, without an `item_id` or without an
 `image` are skipped. A missing/`null` `bounding_box` becomes `[0,0,1000,1000]`; a missing
 `timestamp_seconds` becomes 0; `embedding` is a 1024-number array or null. Returns
-`{videoId, officialRevisionId, crops}` where `crops` is the number of rows inserted.
+`{videoId, officialRevisionId, crops}` where `crops` is the number of rows now stored.
 
 The console obtains the embeddings (the agent's `POST /api/v1/incidents/evidence-embeddings`) and
 passes them in `p_crops`; it writes no table directly.
+
+#### `set_revision_crops`
+
+```
+set_revision_crops(p_video_id VARCHAR, p_revision_id BIGINT, p_crops JSONB DEFAULT '[]') RETURNS JSONB
+```
+
+Stores `p_crops` (same format as `set_official_revision`) for the video's searchable revision
+without touching the official pointer: how a video with no official revision gets searchable
+evidence, and how a writer refreshes the rows after a newer revision is saved. `p_revision_id`
+must equal `searchable_revision_id(p_video_id)`, otherwise the call is refused, so a writer
+holding a stale revision id cannot overwrite the rows of a newer one. The video's other rows are
+deleted; an empty list clears them. Returns `{videoId, revisionId, crops}`.
+
+`searchable_revision_id(video_id)`, `evidence_image(item)` and `replace_video_crops(...)` are
+helpers the RPCs use; the console and agent have no reason to call them.
 
 #### `search_evidence_items`
 
@@ -232,8 +267,8 @@ search_evidence_items(
 )
 ```
 
-pgvector HNSW cosine search over `evidence_crops.embedding`, scoped to official revisions
-(`videos.official_revision_id = evidence_crops.revision_id`). Returns the incident (video) id, the
+pgvector HNSW cosine search over `evidence_crops.embedding`, scoped to each video's searchable
+revision (`searchable_revision_id(video_id) = evidence_crops.revision_id`: official, else newest). Returns the incident (video) id, the
 revision id, the revision's model run and facets, the crop, and `similarity_score`
 (`1.0 - distance`). `incident_start_timestamp`/`incident_end_timestamp` are the revision's seconds
 as text. Rows whose embedding is NULL are skipped.
@@ -248,7 +283,11 @@ weekday (`p_timezone`, default UTC), entity/instrument/asset text or exact-name 
 `p_entity_types`, `p_sort`, and `p_scope` (`all` or `official`). Returns
 `{reports: [...], totalItems, incidentTypes}`. Each card carries `revisionId`, `revisionNo`,
 `videoId`, `modelRunId`, `kind`, `createdBy`, `note`, `isOfficial`, `outcome`, and the display
-fields. It never returns `payload`, notes, signed URLs or video content.
+fields, plus `officialSince` (when the official revision was marked; null if none), `versionCount`
+(revisions of the video), `evidenceCount` (items of the card revision's `evidence` list that have an
+image) and `thumbnail` (the R2 key of the first such item, or null). The evidence figures come from
+the revision's `evidence` list, not `evidence_crops`, so they do not depend on embeddings being
+stored. It never returns `payload`, notes, signed URLs or video content.
 
 #### `get_incident_dashboard`
 

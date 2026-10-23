@@ -121,7 +121,7 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
 
 ## `POST /api/v1/incidents/evidence-embeddings`
 
-Called by the console when a revision is made official. It reads that revision's `evidence` from `report_revisions` and embeds each item with the model search uses (`nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions, `passage` input of `"{item_name}: {description}"`). The agent writes nothing; the console writes the `evidence_crops` rows.
+Called by the console when a revision becomes a video's searchable revision (made official, or the newest revision of a video with no official one). It reads that revision's `evidence` from `report_revisions` and embeds each item with the model search uses (`nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions, `passage` input of `"{item_name}: {description}"`). The agent writes nothing; the console writes the `evidence_crops` rows.
 
 Request: `{"revision_id": <int >= 1>}`. Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when the revision has no items). Errors: `404` unknown revision, `502` embedding service failed, `503` database or embedding key not configured.
 

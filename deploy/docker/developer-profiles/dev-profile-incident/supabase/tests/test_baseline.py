@@ -126,12 +126,14 @@ with tempfile.TemporaryDirectory() as tmp:
                      "select_official_report", "set_review_status", "effective_incidents"):
             assert gone not in names, gone
         for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
-                        "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only"):
+                        "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
+                        "set_revision_crops", "searchable_revision_id"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
         columns = [r[0] for r in conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'videos'").fetchall()]
         assert "official_revision_id" in columns and "selected_model_run_id" not in columns, columns
+        assert "official_since" in columns, columns
 
     @test("migrations: the revision migrations can be applied again over the live shape")
     def _():
@@ -269,7 +271,7 @@ with tempfile.TemporaryDirectory() as tmp:
                             (vector_literal(0),)).fetchall()
         assert rows == [("v1", ai1, "m1", "E1", "assault", "2"), ("v1", ai1, "m1", "I1", "assault", "2")], rows
 
-    @test("marking another revision official replaces the crops; NULL clears both")
+    @test("marking another revision official replaces the crops; NULL leaves the newest revision searchable")
     def _():
         one_crop = [crop("entity", "E1", "evidence/v1/u3/E1.jpg", vector(0), item_name="animal",
                          description="Edited", timestamp_seconds=1)]
@@ -279,8 +281,10 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (ai1,))[0] == 0
         assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v1'")[0] == human["revisionId"]
         cleared = one(conn, "SELECT public.set_official_revision('v1', NULL)")[0]
-        assert cleared == {"videoId": "v1", "officialRevisionId": None, "crops": 0}, cleared
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops")[0] == 0
+        # the edited revision is also v1's newest, so it stays searchable and keeps its row
+        assert cleared == {"videoId": "v1", "officialRevisionId": None, "crops": 1}, cleared
+        assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (human["revisionId"],))[0] == 1
+        assert one(conn, "SELECT count(*) FROM public.evidence_crops")[0] == 1
         assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v1'")[0] is None
         refused(conn, "SELECT public.set_official_revision('v1', %s)", (ai2,), contains="Revision not found for this video")
         refused(conn, "SELECT public.set_official_revision('nope', NULL)", None, contains="Video not found")
@@ -327,6 +331,93 @@ with tempfile.TemporaryDirectory() as tmp:
         assert dashboard["threatLevels"] == [{"level": 3, "count": 1}] and dashboard["averageConfidence"] == 0.8, dashboard
         coverage = {row["model"]: row for row in dashboard["modelCoverage"]}
         assert coverage["model-a"]["withReport"] == 2 and coverage["model-b"]["legacy"] == 1, coverage
+
+    def cards():
+        return {item["videoId"]: item for item in summaries()["reports"]}
+
+    @test("library cards carry officialSince, versionCount, evidenceCount and thumbnail")
+    def _():
+        found = cards()
+        assert found["v1"]["isOfficial"] and found["v1"]["officialSince"] is not None, found["v1"]
+        assert found["v1"]["versionCount"] == 2 and found["v1"]["evidenceCount"] == 2, found["v1"]
+        assert found["v1"]["thumbnail"] == "evidence/v1/u1/E1.jpg", found["v1"]
+        assert found["v2"]["officialSince"] is None and found["v2"]["versionCount"] == 1, found["v2"]
+        assert found["v2"]["evidenceCount"] == 0 and found["v2"]["thumbnail"] is None, found["v2"]
+        assert found["v3"]["versionCount"] == 3 and found["v3"]["officialSince"] is None, found["v3"]
+
+    @test("official_since is set when the pointer moves, kept on a repeat mark and cleared with it")
+    def _():
+        since = lambda: one(conn, "SELECT official_since FROM public.videos WHERE id = 'v1'")[0]
+        first = since()
+        conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
+        assert since() == first, (since(), first)
+        conn.execute("SELECT public.set_official_revision('v1', NULL)")
+        assert since() is None
+        conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
+        assert since() is not None and since() >= first
+
+    searchable = lambda video: one(conn, "SELECT public.searchable_revision_id(%s)", (video,))[0]
+    searched = lambda index: conn.execute(
+        "SELECT incident_id, revision_id, item_id FROM public.search_evidence_items(%s::extensions.vector, 5, 0.5)",
+        (vector_literal(index),)).fetchall()
+    crop_count = lambda video: one(
+        conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id IN (SELECT id FROM public.report_revisions WHERE video_id = %s)",
+        (video,))[0]
+    set_crops = lambda video, revision, rows: one(conn, "SELECT public.set_revision_crops(%s, %s, %s)", (video, revision, json.dumps(rows)))[0]
+
+    @test("the searchable revision is the official one, else the newest, else none")
+    def _():
+        assert searchable("v1") == ai1 and searchable("v2") == ai2 and searchable("v4") is None
+        assert searchable("v3") == one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v3'")[0]
+
+    @test("a video with no official revision becomes searchable through its newest revision")
+    def _():
+        assert searched(5) == []
+        result = set_crops("v2", ai2, [crop("entity", "E1", "evidence/v2/u1/E1.jpg", vector(5), item_name="human", description="Burglar")])
+        assert result == {"videoId": "v2", "revisionId": ai2, "crops": 1}, result
+        assert searched(5) == [("v2", ai2, "E1")], searched(5)
+        assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v2'")[0] is None
+
+    @test("set_revision_crops refuses a revision that is not the searchable one, and bad input")
+    def _():
+        first_v3 = one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'v3'")[0]
+        refused(conn, "SELECT public.set_revision_crops('v3', %s, '[]')", (first_v3,), contains="not the searchable revision")
+        refused(conn, "SELECT public.set_revision_crops('v1', %s, '[]')", (human["revisionId"],), contains="not the searchable revision")
+        refused(conn, "SELECT public.set_revision_crops('v4', NULL, '[]')", contains="not the searchable revision")
+        refused(conn, "SELECT public.set_revision_crops('nope', 1, '[]')", contains="Video not found")
+        refused(conn, "SELECT public.set_revision_crops('v2', %s, '{}')", (ai2,), contains="crops must be a list")
+
+    @test("saving a newer revision with no official one hides the old rows until the new ones are stored")
+    def _():
+        newer = save("v2", ai2, report(kind="burglary", severity=3, title="Shop break-in, edited"), [])
+        assert searchable("v2") == newer["revisionId"]
+        assert searched(5) == [] and crop_count("v2") == 1  # old row stays but is never returned
+        refused(conn, "SELECT public.set_revision_crops('v2', %s, '[]')", (ai2,), contains="not the searchable revision")
+        set_crops("v2", newer["revisionId"], [crop("entity", "E1", "evidence/v2/u2/E1.jpg", vector(5), item_name="human", description="Burglar")])
+        assert searched(5) == [("v2", newer["revisionId"], "E1")] and crop_count("v2") == 1
+        assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (ai2,))[0] == 0
+
+    @test("marking the newest revision official keeps its rows; clearing it falls back to the newest")
+    def _():
+        newest = searchable("v2")
+        result = one(conn, "SELECT public.set_official_revision('v2', %s)", (newest,))[0]
+        assert result["crops"] == 1 and searched(5) == [("v2", newest, "E1")], result
+        assert one(conn, "SELECT official_since FROM public.videos WHERE id = 'v2'")[0] is not None
+        later = save("v2", newest, report(kind="burglary", severity=3), [])  # official stays; nothing moves
+        assert searchable("v2") == newest and searched(5) == [("v2", newest, "E1")]
+        refused(conn, "SELECT public.set_revision_crops('v2', %s, '[]')", (later["revisionId"],), contains="not the searchable revision")
+        cleared = one(conn, "SELECT public.set_official_revision('v2', NULL)")[0]
+        assert cleared == {"videoId": "v2", "officialRevisionId": None, "crops": 0}, cleared  # newest has no rows yet
+        assert searchable("v2") == later["revisionId"] and crop_count("v2") == 0 and searched(5) == []
+        assert one(conn, "SELECT official_since FROM public.videos WHERE id = 'v2'")[0] is None
+        set_crops("v2", later["revisionId"], [crop("asset", "A1", "evidence/v2/u3/A1.jpg", vector(5), item_name="bench", description="Bench")])
+        kept = one(conn, "SELECT public.set_official_revision('v2', NULL)")[0]
+        assert kept["crops"] == 1 and searched(5) == [("v2", later["revisionId"], "A1")], kept
+        assert set_crops("v2", later["revisionId"], [])["crops"] == 0 and crop_count("v2") == 0
+
+    @test("the revisions of other videos are never touched by a crop write")
+    def _():
+        assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
 
     @test("deleting a video removes its revisions, crops and query results")
     def _():

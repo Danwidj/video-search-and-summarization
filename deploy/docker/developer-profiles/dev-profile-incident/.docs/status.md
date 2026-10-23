@@ -34,6 +34,8 @@ The finals baseline incorporates all prior migration effects:
 
 The console in this branch requires the versioned-report schema and its functions; the migrations that create them are delivered by the schema task, not by this change. Do not point the console at a database without them.
 
+`supabase/migrations/20261023000200_searchable_latest_revision.sql` is written and tested on the hermetic harness but **not yet applied** to the live database (the captain applies it). Until then a video with no official revision has no searchable evidence, and library cards lack `officialSince`, `versionCount`, `evidenceCount` and `thumbnail`. Nothing writes the newest revision's crops yet: the console and agent still need to call `set_revision_crops`.
+
 ## 4. Known issues
 
 1. **The AI revision has two writers.** In agent mode the agent inserts it and returns `revision_id`; in gateway mode the console inserts it. Both are append-only and the console verifies the agent's row, but there is no single writer.

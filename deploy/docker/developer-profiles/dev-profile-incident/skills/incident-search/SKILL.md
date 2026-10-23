@@ -76,14 +76,14 @@ Use `context.scope: "incident"` with `incident_id` for one incident, or include 
 
 ## How evidence crops reach search
 
-There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds official revisions only: when a revision is made official the console calls `POST /api/v1/incidents/evidence-embeddings` with `{"revision_id": <id>}`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself.
+There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): when a revision is made official, or a video with no official revision gets a newer revision, the console calls `POST /api/v1/incidents/evidence-embeddings` with `{"revision_id": <id>}`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself (`set_official_revision`, or `set_revision_crops` when there is no official revision).
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \
   -H 'Content-Type: application/json' -d '{"revision_id": 1}' | jq 'length, .[0] | del(.embedding)'
 ```
 
-`404` means the revision does not exist; `503` means the database or embedding key is not configured. An empty `evidence_crops` table means no revision has been made official yet, not a broken search. Changing the embedding model means re-embedding every official revision.
+`404` means the revision does not exist; `503` means the database or embedding key is not configured. An empty `evidence_crops` table means no crops have been stored yet, not a broken search; a video whose newest revision has no rows is not searchable until its rows are written. Changing the embedding model means re-embedding every searchable revision.
 
 ## Verify
 
