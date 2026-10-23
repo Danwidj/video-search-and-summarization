@@ -67,7 +67,7 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 ## Revision lifecycle
 
 <<<<<<< HEAD
-There is no verify step and no review status. A report is its list of revisions; the report page's **History** (`GET /api/reports/<videoId>/revisions`) lists them newest first.
+There is no verify step and no review status. A report is its list of revisions; the report page's versions graph (`GET /api/reports/<videoId>/revisions`) lists them newest first.
 =======
 `PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`, one `revision-based review transition` call each; a status change never changes "last edited by". Verifying copies the report into its reviewer version if it has none; a legacy AI report that is not valid as it stands (no contract type, an unrated instrument) is refused with 422 and must be edited first. Editing a report (`PATCH /api/reports/<videoId>/edit`) saves the reviewer version, never the AI rows, and sends a verified report back to `under review`; every edited item must carry `source_id`, the AI item it came from (null for one the reviewer added), or the edit is refused with 422. The report page shows the reviewer version when there is one. Re-analysing resets `review_status` to `unreviewed` for that run (via the `` RPC).
 >>>>>>> origin/main

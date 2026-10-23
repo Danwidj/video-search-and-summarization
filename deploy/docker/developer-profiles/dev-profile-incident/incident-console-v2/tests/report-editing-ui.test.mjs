@@ -7,9 +7,9 @@ import test from 'node:test';
 const components = new URL('../components/', import.meta.url);
 
 test('report page separates structured fields, read-only model output and run details', async () => {
-  const report = await readFile(new URL('incident-report.tsx', components), 'utf8');
+  const report = (await Promise.all(['report-pane.tsx', 'report-run-details.tsx', 'report-page.tsx'].map((name) => readFile(new URL(name, components), 'utf8')))).join('\n');
 
-  assert.match(report, /Model severity rationale/);
+  assert.match(report, /Severity rationale/);
   assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
   assert.match(report, /Model event timeline/);
   assert.match(report, /Model-reported uncertainties/);
@@ -23,10 +23,10 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /Valid after structural repair/);
   assert.match(report, /confidenceScore !== null/, 'no confidence percentage when the model returned none');
   assert.doesNotMatch(report, /<input|<textarea/, 'the report view itself has no inputs; editing happens in the structured editor');
+  assert.doesNotMatch(report, /createdBy/, 'human versions show no author name');
   assert.match(report, /StructuredEditor/);
   assert.match(report, /Model classified this as/);
   assert.match(report, /model window/);
-  assert.match(report, /Human, \$\{revision\.createdBy/, 'the version label names the human author');
   assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
   assert.match(report, /outside incident window/);
   assert.match(report, /outside the video/);
@@ -36,15 +36,16 @@ test('report page separates structured fields, read-only model output and run de
 });
 
 test('the report page has a History of versions, a reviewer prompt and explicit official controls, and no verification flow', async () => {
-  const report = await readFile(new URL('incident-report.tsx', components), 'utf8');
-  assert.match(report, /RevisionHistory/);
-  assert.match(report, /OfficialControls/);
-  const history = await readFile(new URL('revision-history.tsx', components), 'utf8');
+  const report = await readFile(new URL('report-page.tsx', components), 'utf8');
+  assert.match(report, /ReportVersions/);
+  const history = await readFile(new URL('report-versions.tsx', components), 'utf8');
+  assert.match(history, /markOfficial/);
+  assert.match(history, /role="alert"/, 'the agent-unreachable message is shown inline');
   assert.doesNotMatch(history, /restore/i);
   const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
-  for (const name of ['incident-report.tsx', 'report-screen.tsx', 'reports-library.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'revision-history.tsx', 'official-controls.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'reports-library.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'report-versions.tsx', 'official-controls.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
   }
@@ -58,7 +59,7 @@ test('library cards omit the confidence percentage when the model returned none'
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
   const clientOnly = await readFile(new URL('../lib/reports/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['incident-report.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'report-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -90,7 +91,7 @@ test('the report page offers re-analysis and history', async () => {
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
-  for (const name of ['incident-report.tsx', 'run-comparison.tsx', 'reports-library.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx']) {
+  for (const name of ['report-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'reports-library.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
