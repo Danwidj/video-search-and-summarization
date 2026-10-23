@@ -4,7 +4,7 @@
     "name": "incident_report",
     "schema": {
       "title": "incident_report",
-      "description": "incident-contract-v3: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
+      "description": "incident-contract-v4: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -112,6 +112,16 @@
                 "minimum": 0,
                 "description": "Seconds from video start where the entity is most clearly visible."
               },
+              "first_seen_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Seconds from video start at which the entity first appears in the incident."
+              },
+              "last_seen_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Seconds from video start at which the entity was last seen in the incident. Not before first_seen_seconds; timestamp_seconds lies within the span."
+              },
               "label": {
                 "type": "string",
                 "description": "Short label for detector search (e.g. 'person in dark hoodie', 'dog')."
@@ -122,6 +132,8 @@
               "type",
               "description",
               "timestamp_seconds",
+              "first_seen_seconds",
+              "last_seen_seconds",
               "label"
             ]
           }

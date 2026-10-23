@@ -22,6 +22,8 @@
       "type": "human",
       "description": "Person at the counter being struck.",
       "timestamp_seconds": 4,
+      "first_seen_seconds": 4,
+      "last_seen_seconds": 4,
       "label": "person at counter"
     }
   ],

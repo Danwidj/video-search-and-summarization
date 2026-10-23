@@ -24,8 +24,13 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
+<<<<<<< HEAD
 | `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes `videos`, `model_runs` and the AI revision (gateway analysis does not crop, so its evidence entries have no image) |
 | `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only); the console's reviewer-prompt field is sent as `reviewer_prompt`, while model choice stays gateway-only. |
+=======
+| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v4` | Console writes `videos`, `model_runs` and the report rows (`` RPC); no `report_revisions` row or evidence crops are written in this mode |
+| `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only). The console's own additional-instructions field is still gateway-only (400 in agent mode); the agent's `reviewer_prompt` is the same idea for direct calls. |
+>>>>>>> origin/main
 
 ## Instructions
 
@@ -61,7 +66,11 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 
 ## Revision lifecycle
 
+<<<<<<< HEAD
 There is no verify step and no review status. A report is its list of revisions; the report page's **History** (`GET /api/reports/<videoId>/revisions`) lists them newest first.
+=======
+`PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`, one `revision-based review transition` call each; a status change never changes "last edited by". Verifying copies the report into its reviewer version if it has none; a legacy AI report that is not valid as it stands (no contract type, an unrated instrument) is refused with 422 and must be edited first. Editing a report (`PATCH /api/reports/<videoId>/edit`) saves the reviewer version, never the AI rows, and sends a verified report back to `under review`; every edited item must carry `source_id`, the AI item it came from (null for one the reviewer added), or the edit is refused with 422. The report page shows the reviewer version when there is one. Re-analysing resets `review_status` to `unreviewed` for that run (via the `` RPC).
+>>>>>>> origin/main
 
 - **Save** (`PATCH /api/reports/<videoId>/edit` with `{"parentId", "editedBy", "edit", "note"?}`) validates the structured edit, then appends a `human` revision whose parent is the revision that was opened. Every edited item keeps the id of the item it came from, so its evidence and image follow it; the AI revision and `model_runs.notes` are never changed.
 - **Restore** (`POST /api/reports/<videoId>/restore` with `{"revisionId", "restoredBy"}`) appends a `human` revision with the content of an earlier one; it does not delete anything.
@@ -80,5 +89,5 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 ## Known quirks
 
-- Both gateway and agent modes use `incident-contract-v3` (with required `timestamp_seconds` and `label` grounding, the same request as eval) and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- Both gateway and agent modes use `incident-contract-v4` (with required `timestamp_seconds` and `label` grounding, plus `first_seen_seconds` and `last_seen_seconds` per entity, the same request as eval) and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.

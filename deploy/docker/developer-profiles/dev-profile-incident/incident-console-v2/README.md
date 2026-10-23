@@ -56,7 +56,7 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Analysis contract
 
-Both gateway and agent modes analyse with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
+Both gateway and agent modes analyse with the shared **`incident-contract-v4`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
 - strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
 - ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);
@@ -88,7 +88,7 @@ reachability booleans; it never returns URLs or credentials.
 Selecting a video immediately starts the three-step nvstreamer upload. If that upload has no durable R2 key (the
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
-for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to the selected VLM through the gateway, strictly validates the structured result against `incident-contract-v3` under `core-scored-v1` (applying ID-only recovery `id-normalization-v1` if needed), persists it through `persistContractRun`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
+for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to the selected VLM through the gateway, strictly validates the structured result against `incident-contract-v4` under `core-scored-v1` (applying ID-only recovery `id-normalization-v1` if needed), persists it through `persistContractRun`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
 instead of the gateway and the console still validates and persists the run; see the variable list above). Start with short clips while inference remains
 synchronous.
 
@@ -121,11 +121,20 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
 signed R2 screenshots when available and otherwise use a static skeleton; they never request video. The full report
 and its video are fetched only after opening a report.
 The library supports full-text evidence search; incident type,
+<<<<<<< HEAD
 severity, and official filters; generated-date presets and custom date/time ranges; and severity, confidence, or
 date sorting. Every save or restore appends a `human` revision; the AI revision is never changed, and each video has at
 most one official revision. Re-generation creates a new model run and a new AI revision and preserves prior results.
 Deleting only a report keeps its R2 video; deleting the video is a separate, explicit confirmation and removes all
 revisions for that video through the database cascade.
+=======
+severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
+date sorting. Review transitions are persisted through revision writes, and edits save a reviewer version that
+the report then shows; the AI report is never changed. Re-analysis creates a new model run and preserves
+prior results. Deleting only a report keeps its R2
+video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
+database cascade.
+>>>>>>> origin/main
 
 ## Phase 5 review and operations workspace
 

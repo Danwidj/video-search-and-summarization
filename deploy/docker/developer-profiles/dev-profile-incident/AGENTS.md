@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v3`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`), midterm-to-finals copy (`copy/`) | Active. `supabase/midterm/` is the frozen midterm record: never push |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `archived/incident-console/` | Streamlit | v1 console | **Archived.** Read-only history; never launched, set up, tested or changed. `incident-console-v2/` is the only console. |
@@ -49,8 +49,13 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Architecture rules
 
 - **Reports are versioned snapshots:** each analysis writes an append-only `report_revisions` row (`kind='ai'`, JSONB `payload` and `evidence`, new `model_run_id`); a human edit is a later `kind='human'` revision. Re-generation is a new AI branch (`parent_id` NULL) and copies no earlier edits. `evidence_crops` and `query_results` key on `revision_id`.
+<<<<<<< HEAD
 - **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In agent mode the agent inserts the AI revision (and uploads its evidence crops to R2) and returns `revision_id`; in gateway mode the console inserts the revision with image-less evidence entries. Neither writes `videos`; the console owns the `model_runs` row. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
 - **Both modes use `incident-contract-v3`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
+=======
+- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In agent mode the agent writes the AI revision and its evidence crops in R2; gateway mode calls the `vlm-gateway` instead, so no revision or crops are written there. The agent never writes `videos`; in agent mode the console owns the `model_runs` row, so the agent only inserts a placeholder if it is absent. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
+- **Both modes use `incident-contract-v4`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
+>>>>>>> origin/main
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).

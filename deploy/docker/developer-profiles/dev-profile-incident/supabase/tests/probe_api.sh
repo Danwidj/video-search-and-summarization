@@ -24,14 +24,14 @@ probe() { # label key method path [body]
   printf '%-14s %-6s %-62s %s\n' "$label" "$method" "$path" "$code"
 }
 
-for table in videos model_runs incidents entities review_status evidence_crops query_results human_reports effective_incidents; do
+for table in videos queries model_runs report_revisions evidence_crops query_results; do
   probe "public key" "$FINALS_PUBLIC_KEY" GET "/rest/v1/$table?select=*&limit=1"
 done
 probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/videos" '{"id":"probe-anon"}'
-probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/rpc/insert_incident" \
-  '{"p_incident_id":"x","p_model_run_id":"x","p_type":"assault","p_start_timestamp":"0","p_end_timestamp":"1","p_duration":1,"p_description":"x","p_severity_level":1,"p_confidence_score":0.5}'
+probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/rpc/save_human_revision" \
+  '{"p_video_id":"x","p_parent_id":null,"p_created_by":"probe","p_note":null,"p_payload":{"incident":{"type":"assault"}},"p_evidence":[],"p_incident_type":"assault","p_severity_level":1,"p_start_seconds":0,"p_end_seconds":1}'
 probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/rpc/list_incident_report_summaries" '{}'
 probe "public key" "$FINALS_PUBLIC_KEY" POST "/rest/v1/rpc/get_incident_dashboard" '{}'
 probe "service key" "$FINALS_SERVICE_KEY" GET "/rest/v1/videos?select=id&limit=1"
-probe "service key" "$FINALS_SERVICE_KEY" GET "/rest/v1/effective_incidents?select=incident_id&limit=1"
+probe "service key" "$FINALS_SERVICE_KEY" GET "/rest/v1/report_revisions?select=id&limit=1"
 probe "service key" "$FINALS_SERVICE_KEY" POST "/rest/v1/rpc/get_incident_dashboard" '{}'

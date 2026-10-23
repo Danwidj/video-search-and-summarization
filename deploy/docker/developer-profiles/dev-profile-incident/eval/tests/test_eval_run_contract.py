@@ -87,8 +87,8 @@ def test_valid_report_is_persisted_with_derived_duration_and_rp1_runs():
     assert result["prediction"]["incident"]["duration"] == 8
     assert db.incidents[0]["duration"] == 8 and db.incidents[0]["type"] == "assault"
     assert rp1.call_count == 1 and result["rp1_report"]["ok"] is True
-    assert result["prompt_version"] == "incident-contract-v3"
-    assert "incident-contract-v3" in result["inference_config"]["response_format"]
+    assert result["prompt_version"] == "incident-contract-v4"
+    assert "incident-contract-v4" in result["inference_config"]["response_format"]
 
 
 def test_contract_violation_is_a_miss_and_rp1_is_skipped():
@@ -172,7 +172,7 @@ def test_timeline_only_failure_is_scored_not_emptied():
     assert db.incidents[0]["type"] == report["incident"]["type"]  # persisted and scored
     validation = result["validation"]
     assert validation["validation_policy"] == "core-scored-v1"
-    assert validation["contract_version"] == "incident-contract-v3"
+    assert validation["contract_version"] == "incident-contract-v4"
     assert [v["code"] for v in validation["enrichment_violations"]] == ["TIMELINE_START_OUTSIDE_WINDOW"]
     assert validation["core_violations"] == [] and validation["video_bounds_checked"] is True
     assert rp1.call_count == 1 and result["rp1_report"]["ok"] is True  # RP1 runs when core_ok

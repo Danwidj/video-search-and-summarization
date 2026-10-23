@@ -47,7 +47,7 @@ committed `.env` placeholder - if they're missing from `.env.local`, add them be
 
 ## What P1 sends (incident contract)
 
-P1 follows the shared [incident contract](../contracts/README.md) (`incident-contract-v3`), which is the same prompt, schema and request shape the console and agent use ([`../.docs/analysis-schema.md`](../.docs/analysis-schema.md)):
+P1 follows the shared [incident contract](../contracts/README.md) (`incident-contract-v4`), which is the same prompt, schema and request shape the console and agent use ([`../.docs/analysis-schema.md`](../.docs/analysis-schema.md)):
 
 - one video as a **signed R2 URL** (never downloaded or base64-inlined), placed before the contract's extraction prompt;
 - the schema enforced with `response_format: json_schema` (strict);

@@ -2,6 +2,7 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+<<<<<<< HEAD
 ### 2026-10-23: Versioned report revisions as JSONB snapshots
 - **Decision:**
   - A report is a list of immutable **revisions** per incident (video), `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, and facet columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`) written by the caller. `kind='ai'` revisions are made by an analysis; `kind='human'` ones by Save or Restore, with `parent_id` the revision that was opened. A trigger rejects any UPDATE or DELETE (a video's cascade may remove them).
@@ -12,6 +13,19 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** The team wants each upload to give an AI report with evidence, a human to edit it and keep every version, re-generation with a different model, and exactly one official version. Snapshots keep each version whole and make restore a copy, where the previous design (relational AI rows plus one reviewer copy per run) could keep only one reviewer version and needed `effective_*` views, `source_*_id` links and a review status machine.
 - **Rejected:** a draft status (unsaved edits live in the form only; a refresh reloads the database version); a migration script in this change (the schema task owns the schema); deleting individual revisions or R2 images (an old revision may reference them); inferring the official report as "latest" (one explicit mark per incident); incident-level vector search (search stays on item crops of the official revision).
 - **Links:** [`data.md`](data.md); [`architecture.md`](architecture.md#report-versions-editing-history-and-restore); [`analysis-schema.md`](analysis-schema.md#report-revisions-ai-and-human); [`../supabase/README.md`](../supabase/README.md).
+=======
+### 2026-10-23: Hand-applied report schema is recorded as finals migrations
+- **Decision:** Add `20261023000000_report_revisions_schema.sql` and `20261023000100_report_revisions_functions.sql` to reproduce the revision schema the captain applied out of band, and make them safe to apply to the live database that already has it (`IF NOT EXISTS`, `CREATE OR REPLACE`, guarded `DO` blocks, conditional drops). The schema migration also drops the retired relational report tables, functions and `videos.selected_*` columns, and the test harness reapplies both files over the built schema to prove idempotence.
+- **Why:** The live database was changed by hand, so a fresh database could not be built and the repo no longer matched production. Migrations keep one rebuildable source of truth and let later changes reach the live project through the normal `db push` path.
+- **Rejected:** a data migration for the old relational rows (the captain wants none and the tables are already gone); recording the change only with `migration repair` (the repo still would not build).
+- **Links:** [`../supabase/migrations/20261023000000_report_revisions_schema.sql`](../supabase/migrations/20261023000000_report_revisions_schema.sql); [`../supabase/migrations/20261023000100_report_revisions_functions.sql`](../supabase/migrations/20261023000100_report_revisions_functions.sql); [`../supabase/README.md`](../supabase/README.md); [`data.md`](data.md).
+
+### 2026-10-23: Contract v4 adds an entity seen span
+- **Decision:** `incident-contract-v4` adds required integer `first_seen_seconds` and `last_seen_seconds` to every entity in `incident_report.schema.json` (vendored to the agent). The prompt asks for `first <= timestamp_seconds <= last`; no cross-field rule enforces it. `evidence_items` adds both to entity entries, falling back to `timestamp_seconds` for reports stored without them. Console validation is version-aware, so v2 and v3 reports still validate against their own schema.
+- **Why:** The report page timeline draws a bar per entity from first to last seen and Edit mode changes the two times; one `timestamp_seconds` gave the bar no data. Required, not optional, because strict `response_format` needs every property in `required`; stored reports are never re-validated against the new schema, so requiring them is safe.
+- **Rejected:** optional fields (strict mode forbids them); a cross-field rule for the span (a model slip would fail an otherwise good core under `core-scored-v1`; revisit if the eval shows violations); columns on `evidence_crops` or the search RPCs (needs a new migration, which the revisions work owns; `evidence_crops` and `search_evidence_items` still expose only `timestamp_seconds`).
+- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../contracts/README.md`](../contracts/README.md).
+>>>>>>> origin/main
 
 ### 2026-10-23: Console chat route calls POST /api/v1/incidents/chat
 - **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`lib/chat/agent-chat.ts`, types in `lib/ports/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.

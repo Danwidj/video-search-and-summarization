@@ -64,7 +64,11 @@ flowchart TB
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
     UI -->|REST report_revisions insert| Supabase
+<<<<<<< HEAD
     UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
+=======
+    UI -->|/rpc/save_human_revision, set_official_revision| Supabase
+>>>>>>> origin/main
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -219,7 +223,11 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
+<<<<<<< HEAD
 - Report detail, History, Save, Restore, official marking and delete go through `lib/application/reports.ts` (`getReport`, `listRevisions`, `saveHumanEdit`, `restoreRevision`, `setOfficialRevision`, `deleteVideoAndReports`); R2 signing and deletion, and the agent's embedding call, are passed in as functions. A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by `save_human_revision` or `set_official_revision` becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list and the History list call a port directly; the report library route signs thumbnails itself.
+=======
+- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the revision model (the reviewer version when the run has one, else the AI's latest `report_revisions` row), and a review change invokes the revision write functions. See `.docs/data.md` for the current schema. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+>>>>>>> origin/main
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
 - Analysis saving (`lib/analysis/persistence.ts`) writes `model_runs` and the AI revision through the same `PostgrestClient`; see §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round) for what is still outside the ports.
 
@@ -269,9 +277,15 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - **Provenance:** never editable.
 - **Unsaved edits** exist only in the form. A refresh reloads the stored revision. There is no draft.
 
+<<<<<<< HEAD
 `PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision`, which appends a `human` revision whose parent is the revision that was opened. `POST /api/reports/[videoId]/restore {revisionId, restoredBy}` does the same with the content of an earlier revision. `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` uploads a replacement image to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg` (never overwriting or deleting) and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
 
 The report shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
+=======
+`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `save_human_revision`. In one transaction that function saves the run's reviewer version (`report_revisions` human revision, revision No. max + 1, inheriting the parent's `model_run_id`) and stamps `review_status.edited_by/edited_at`; an edit of a verified report sends it back to `under review` and clears the verifier. It never touches the AI rows or `model_runs.notes`. The console calls it directly, not the `apply_structured_report_edit` shim the finals database keeps for older consoles.
+
+`PATCH /api/reports/[videoId]/review` calls `the revision-based review transition`, one transaction that never writes `edited_by/edited_at` (they mean the last content edit). Verifying a report with no reviewer version first copies the AI report into one, so every verified report has a reviewer version.
+>>>>>>> origin/main
 
 ### Run history, re-generation and the official version
 
@@ -284,13 +298,19 @@ The report shows "Reviewer-edited after generation", "Model assessed N/5; review
   - the same canonical request, strict validation and ID-only recovery as an upload;
   - always a new run and a new AI revision, which starts from the model's output (earlier edits are not carried across);
   - it never writes the `videos` row (the upload time is kept);
+<<<<<<< HEAD
   - it never changes the official version.
 - **Official version.** `PUT /api/videos/[videoId]/official {revisionId}` and `DELETE` call `setOfficialRevision`: for a mark, the console asks the agent for the revision's evidence embeddings (`POST /api/v1/incidents/evidence-embeddings`) and passes them to `set_official_revision`, which sets `videos.official_revision_id` and rebuilds the incident's `evidence_crops`; for a clear it passes none and the rows go. If the agent is unreachable the mark fails and nothing changes. Used from the report page and the video history.
 - **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-generation with a compact history.
+=======
+  - it never selects the official report.
+- **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `set_official_revision`, used from the report page and the video history.
+- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-analysis with a compact history.
+>>>>>>> origin/main
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
-*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v3`.*
+*Zero-GPU local development flow using `vlm-gateway` and Cloudflare R2, on `incident-contract-v4`.*
 
 ```mermaid
 sequenceDiagram
@@ -322,7 +342,11 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules; id-normalization-v1 only if every violation is ID-only, then re-validate
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
+<<<<<<< HEAD
         UI->>DB: report_revisions (kind ai: payload, evidence, facets)
+=======
+        UI->>DB: /rpc/report_revisions_insert, entities (E#), instruments (I#, holder), assets (A#), reports
+>>>>>>> origin/main
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
     else contract_failed / request_failed
@@ -389,7 +413,11 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
+<<<<<<< HEAD
         UI->>DB: report_revisions (kind ai: payload, evidence, facets)
+=======
+        UI->>DB: /rpc/report_revisions_insert, entities (E#), instruments (I#, holder), assets (A#), reports
+>>>>>>> origin/main
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
     else contract_failed / request_failed
@@ -405,4 +433,4 @@ sequenceDiagram
 *Authoritative specification, sequence, and data flow: [`mvp2/README.md`](mvp2/README.md) and [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).*
 
 > [!NOTE]
-> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v3`), object cropping through a detector port (today the remote VLM; local open-vocabulary detectors are evaluated in [`mvp2/eval.md`](mvp2/eval.md)), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
+> MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v4`), object cropping through a detector port (today the remote VLM; local open-vocabulary detectors are evaluated in [`mvp2/eval.md`](mvp2/eval.md)), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and an always-on VLM critic (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
