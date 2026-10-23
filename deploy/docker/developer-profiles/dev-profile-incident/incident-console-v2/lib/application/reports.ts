@@ -9,6 +9,7 @@ import type { DbAdapters, IncidentRepository, OfficialChange, RevisionRecord, Vi
 import { StoreRejection } from '@/lib/ports';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { ReportView } from '@/lib/reports/report-view';
+import { missingItemFields } from '@/lib/contract/validate';
 import { humanRevisionContent, isEvidenceKeyOfVideo, officialCrops, type EvidenceEmbedding, type RevisionSummary } from '@/lib/reports/revision';
 import { toReportView } from '@/lib/reports/view';
 
@@ -71,6 +72,8 @@ export async function saveHumanEdit(
   if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
   checkImages(parent, input.edit);
   const { payload, evidence } = humanRevisionContent(parent, input.edit);
+  const missing = missingItemFields(payload);
+  if (missing.length) throw new StoreRejection('invalid', `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`);
   return incidents.saveHumanRevision({ videoId: input.videoId, parentId: input.parentId, payload, evidence, createdBy: input.createdBy, note: input.note?.trim() || null });
 }
 

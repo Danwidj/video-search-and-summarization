@@ -208,6 +208,21 @@ export function crossFieldViolations(report: IncidentContractReport): ContractVi
   return violations;
 }
 
+/**
+ * Contract v4 required fields the payload's entities, instruments and assets lack. Narrower than
+ * validateReport on purpose: the rest of a human revision's payload is inherited from its parent,
+ * which may predate v4.
+ */
+export function missingItemFields(payload: Record<string, unknown>): ContractViolation[] {
+  const contract = schema() as { properties: Record<string, { items: { required: string[] } }> };
+  return ['entities', 'instruments', 'assets'].flatMap((collection) => {
+    const items = Array.isArray(payload[collection]) ? (payload[collection] as Array<Record<string, unknown>>) : [];
+    return items.flatMap((item, index) => contract.properties[collection].items.required
+      .filter((field) => item?.[field] === undefined)
+      .map((field): ContractViolation => ({ code: 'SCHEMA_VIOLATION', path: `${collection}/${index}/${field}`, message: `${collection}/${index}: must have required property '${field}'` })));
+  });
+}
+
 /** Message-only view of crossFieldViolations (the eval cross_field_errors shape). */
 export function crossFieldErrors(report: IncidentContractReport): string[] {
   return crossFieldViolations(report).map((violation) => violation.message);

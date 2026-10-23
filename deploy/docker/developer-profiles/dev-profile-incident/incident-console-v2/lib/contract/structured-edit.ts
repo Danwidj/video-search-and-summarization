@@ -18,7 +18,7 @@ import { crossFieldViolations, type ContractViolation } from '@/lib/contract/val
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
-export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description', 'timestamp_seconds', 'label'] as const;
+export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description', 'timestamp_seconds', 'first_seen_seconds', 'last_seen_seconds', 'label'] as const;
 export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level', 'timestamp_seconds', 'label'] as const;
 export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description', 'timestamp_seconds', 'label'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
@@ -26,6 +26,9 @@ const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as co
 // and the item's evidence image key (up to the column's 1024 characters).
 const SOURCE_ID_SCHEMA = { type: ['string', 'null'], minLength: 1, maxLength: 20 };
 const IMAGE_SCHEMA = { type: ['string', 'null'], minLength: 1, maxLength: 1024 };
+// Optional: where a reviewer-drawn image was cut from (the video second and the [ymin, xmin, ymax, xmax] box, 0-1000).
+const IMAGE_TIMESTAMP_SCHEMA = { type: ['integer', 'null'], minimum: 0 };
+const IMAGE_BOX_SCHEMA = { type: ['array', 'null'], items: { type: 'number', minimum: 0, maximum: 1000 }, minItems: 4, maxItems: 4 };
 
 export class StructuredEditError extends Error {
   status: 400 | 422;
@@ -60,7 +63,7 @@ function editValidator(): ValidateFunction {
       type: 'object',
       additionalProperties: false,
       required: [...fields, 'source_id', 'image'],
-      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA, image: IMAGE_SCHEMA },
+      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA, image: IMAGE_SCHEMA, image_timestamp_seconds: IMAGE_TIMESTAMP_SCHEMA, image_box: IMAGE_BOX_SCHEMA },
     },
   });
   const editSchema = {
@@ -94,6 +97,15 @@ export function notEditableKeys(edit: unknown): string[] {
   return blocked;
 }
 
+/** The contract's span rule (schema description, not expressible in JSON Schema): first <= last, and the most-visible second lies within. */
+function entitySpanViolations(edit: StructuredEdit): ContractViolation[] {
+  return edit.entities.flatMap((entity, index): ContractViolation[] => {
+    const { first_seen_seconds: first, last_seen_seconds: last, timestamp_seconds: seen } = entity;
+    const bad = last < first ? 'last_seen_seconds is before first_seen_seconds' : seen < first || seen > last ? 'timestamp_seconds lies outside first_seen_seconds to last_seen_seconds' : null;
+    return bad ? [{ code: 'SCHEMA_VIOLATION', path: `entities/${index}`, message: `entities[${index}]: ${bad}` }] : [];
+  });
+}
+
 export function validateStructuredEdit(edit: unknown): StructuredEdit {
   const blocked = notEditableKeys(edit);
   if (blocked.length) {
@@ -110,7 +122,7 @@ export function validateStructuredEdit(edit: unknown): StructuredEdit {
   const typed = edit as StructuredEdit;
   // The contract's own cross-field rules; the timeline is model output and not part of an edit.
   const pseudoReport = { ...typed, incident: { ...typed.incident }, timeline: [], uncertainties: [] } as unknown as IncidentContractReport;
-  const violations = crossFieldViolations(pseudoReport);
+  const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed)];
   if (violations.length) {
     throw new StructuredEditError(422, `The edit does not satisfy the incident contract: ${violations.map((v) => v.message).join('; ')}`, violations);
   }

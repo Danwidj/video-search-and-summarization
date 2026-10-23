@@ -100,7 +100,8 @@ export function isEvidenceKeyOfVideo(key: string, videoId: string): boolean {
  * The human revision saved from an edit of `parent`: the parent's payload
  * with the reviewer's incident fields and items, and evidence that follows
  * each item from the parent item it came from (source_id). An item whose
- * image the reviewer replaced gets an upload entry instead; an item without
+ * image the reviewer replaced gets an upload entry instead, carrying the
+ * second and box the reviewer drew it from when the edit has them; an item without
  * an image gets none. Model-only fields (title, severity rationale,
  * confidence, location, timeline, uncertainties) are kept from the parent.
  */
@@ -113,21 +114,21 @@ export function humanRevisionContent(parent: { payload: ReportPayload; evidence:
       ...edit.incident,
       duration: edit.incident.end_timestamp - edit.incident.start_timestamp,
     },
-    entities: edit.entities.map(({ source_id: _source, image: _image, ...item }) => item),
-    instruments: edit.instruments.map(({ source_id: _source, image: _image, ...item }) => item),
-    assets: edit.assets.map(({ source_id: _source, image: _image, ...item }) => item),
+    entities: edit.entities.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
+    instruments: edit.instruments.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
+    assets: edit.assets.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
   };
   const evidence: EvidenceEntry[] = [];
-  const follow = (type: EvidenceItemType, itemId: string, sourceId: string | null, image: string | null) => {
+  const follow = (type: EvidenceItemType, itemId: string, sourceId: string | null, image: string | null, crop: { box?: number[] | null; seconds?: number | null }) => {
     if (!image) return;
     const base = sourceId ? parent.evidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
     evidence.push(base && base.image === image
       ? { ...base, item_id: itemId }
-      : { item_type: type, item_id: itemId, image, bounding_box: null, timestamp_seconds: null, source: 'upload' });
+      : { item_type: type, item_id: itemId, image, bounding_box: crop.box ?? null, timestamp_seconds: crop.seconds ?? null, source: 'upload' });
   };
-  edit.entities.forEach((item) => follow('entity', item.entity_id, item.source_id, item.image));
-  edit.instruments.forEach((item) => follow('instrument', item.instrument_id, item.source_id, item.image));
-  edit.assets.forEach((item) => follow('asset', item.asset_id, item.source_id, item.image));
+  edit.entities.forEach((item) => follow('entity', item.entity_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
+  edit.instruments.forEach((item) => follow('instrument', item.instrument_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
+  edit.assets.forEach((item) => follow('asset', item.asset_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
   return { payload, evidence };
 }
 

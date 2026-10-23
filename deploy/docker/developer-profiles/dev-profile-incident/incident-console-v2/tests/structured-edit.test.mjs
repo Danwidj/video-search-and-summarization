@@ -145,3 +145,31 @@ test('a legacy run is normalised for the edit: contract type, seconds, E#/I# IDs
   const unknownType = buildReportView({ ...JSON.parse(JSON.stringify({ videoId: 'v', modelRunId: 'm', playbackUrl: 'x', video: {}, modelRun: {}, incident: { type: 'other', start_timestamp: 'soon', end_timestamp: null, description: 'd', severity_level: 2 }, entities: [], instruments: [], assets: [], review: null, reportRow: null })) });
   assert.deepEqual(draftProblems(draftFromView(unknownType)), ['Choose an incident type.', 'Enter the incident start and end in seconds.']);
 });
+
+test('an entity span must be ordered and contain the most-visible second; a draft of a v2 run starts from that second', () => {
+  const base = editFromDraft(draftFromView(view(repaired)));
+  assert.ok(base.entities.every((e) => e.first_seen_seconds === e.timestamp_seconds && e.last_seen_seconds === e.timestamp_seconds));
+  for (const mutate of [(e) => { e.entities[0].first_seen_seconds = e.entities[0].timestamp_seconds + 2; e.entities[0].last_seen_seconds = e.entities[0].timestamp_seconds + 1; },
+    (e) => { e.entities[0].last_seen_seconds = e.entities[0].timestamp_seconds - 1; e.entities[0].first_seen_seconds = 0; }]) {
+    const edit = clone(base);
+    mutate(edit);
+    expectError(edit, 422, /first_seen_seconds/);
+  }
+  const missing = clone(base);
+  delete missing.entities[0].first_seen_seconds;
+  expectError(missing, 422, /first_seen_seconds/);
+  const draft = draftFromView(view(repaired));
+  draft.entities[0].lastSeenSeconds = draft.entities[0].timestampSeconds - 1;
+  draft.entities[0].firstSeenSeconds = draft.entities[0].timestampSeconds + 1;
+  assert.match(draftProblems(draft).join(' '), /last seen must not be before/);
+});
+
+test('a drawn image\'s second and box are validated when present', () => {
+  const base = editFromDraft(draftFromView(view(repaired)));
+  const ok = clone(base);
+  Object.assign(ok.assets[0] ?? ok.entities[0], { image_timestamp_seconds: 2, image_box: [0, 0, 500, 500] });
+  assert.doesNotThrow(() => validateStructuredEdit(ok));
+  const bad = clone(base);
+  Object.assign(bad.entities[0], { image_box: [0, 0, 5000, 500] });
+  expectError(bad, 422, /image_box/);
+});
