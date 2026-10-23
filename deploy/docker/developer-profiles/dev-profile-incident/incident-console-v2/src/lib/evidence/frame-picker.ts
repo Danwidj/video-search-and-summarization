@@ -42,8 +42,18 @@ export function regionBox(region: FrameRegion): number[] {
   return [grid(region.y), grid(region.x), grid(region.y + region.h), grid(region.x + region.w)];
 }
 
-/** A picked second: never negative, and never past the end of the video when its length is known. */
-export function pickSeconds(seconds: number, durationSeconds: number | null): number {
-  const floor = Math.max(0, seconds);
-  return durationSeconds === null ? floor : Math.min(floor, durationSeconds);
+/** The seconds an entity is on screen, so a picked frame keeps its most-visible second inside them. */
+export interface SecondsRange {
+  first: number;
+  last: number;
+}
+
+/**
+ * A picked second: never negative, never past the end of the video when its length is known,
+ * and inside the given range when there is one.
+ */
+export function pickSeconds(seconds: number, durationSeconds: number | null, range: SecondsRange | null = null): number {
+  const floor = Math.max(range?.first ?? 0, seconds);
+  const ceiling = range === null ? durationSeconds : Math.min(range.last, durationSeconds ?? range.last);
+  return ceiling === null ? floor : Math.min(floor, ceiling);
 }

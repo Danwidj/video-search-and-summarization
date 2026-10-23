@@ -241,9 +241,11 @@ export function ReportEditPane({
       {picking && (
         <EvidenceFramePicker
           itemId={picking.key}
+          initialSeconds={picking.timestampSeconds ?? 0}
           label={draftItemName(picking) || 'evidence'}
           onClose={() => setPicking(null)}
           onPick={(pick) => applyPick(picking, pick)}
+          range={isDraftEntity(picking) && picking.firstSeenSeconds !== null ? { first: picking.firstSeenSeconds, last: picking.lastSeenSeconds ?? picking.firstSeenSeconds } : null}
           videoId={videoId}
           videoSrc={videoSrc}
         />
