@@ -74,11 +74,31 @@ export function groupByIncident(hits: EvidenceSearchHit[]): IncidentGroup[] {
   return [...groups.values()].sort((a, b) => b.best - a.best);
 }
 
+/** Hits with the critic's rejected verdict left out, unless the switch shows them. */
+export function withoutRejected(hits: EvidenceSearchHit[], showRejected: boolean): EvidenceSearchHit[] {
+  return showRejected ? hits : hits.filter((hit) => hit.critic.verdict !== 'rejected');
+}
+
 export const matchPercent = (hit: EvidenceSearchHit): number => Math.round(hit.similarityScore * 100);
 
 /** Hits of the same incident taken at the same video second: the boxes the frame viewer draws together. */
 export function hitsInFrame(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): EvidenceSearchHit[] {
   return hits.filter((other) => other.incident.videoId === hit.incident.videoId && other.item.timestampSeconds === hit.item.timestampSeconds);
+}
+
+/** The report page for a hit: its version, and the second the hit was taken at (?t=). */
+export function reportHref(hit: EvidenceSearchHit, version?: SearchedVersion): string {
+  const query = new URLSearchParams();
+  if (version) query.set('revision', String(version.revisionId));
+  query.set('t', String(Math.floor(hit.item.timestampSeconds)));
+  return `/reports/${encodeURIComponent(hit.incident.videoId)}?${query}`;
+}
+
+/** The ?t= second a report page opens at; null when absent or not a non-negative number. */
+export function parseStartSeconds(value: string | null | undefined): number | null {
+  if (value == null || value.trim() === '') return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
 export const hitKey = (hit: EvidenceSearchHit): string => hit.resultId || `${hit.incident.videoId}:${hit.item.itemType}:${hit.item.itemId}`;

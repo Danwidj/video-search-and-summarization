@@ -5,14 +5,17 @@ import Link from 'next/link';
 
 import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/components/evidence-frame';
 import { IncidentThumbnail, SeverityChip } from '@/components/library/shared';
-import { type HitRelationship, type SearchedVersion, matchPercent } from '@/lib/library/search';
-import type { EvidenceSearchHit } from '@/lib/ports/search';
+import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
+import type { CriticVerdict, EvidenceSearchHit } from '@/lib/ports/search';
 import { formatClock } from '@/lib/reports/normalize';
 
-export function reportHref(hit: EvidenceSearchHit, version?: SearchedVersion): string {
-  const query = new URLSearchParams();
-  if (version) query.set('revision', String(version.revisionId));
-  return `/reports/${encodeURIComponent(hit.incident.videoId)}${query.size ? `?${query}` : ''}`;
+const VERDICT_LABEL: Record<CriticVerdict, string> = { confirmed: 'Confirmed', rejected: 'Rejected', unverified: 'Unverified' };
+const VERDICT_STYLE: Record<CriticVerdict, string> = { confirmed: 'bg-moss/10 text-moss', rejected: 'bg-clay/10 text-clay', unverified: 'bg-ink/5 text-ink/60' };
+
+/** The critic's verdict on the hit; its rationale is the tooltip. */
+export function CriticBadge({ critic }: { critic: EvidenceSearchHit['critic'] }) {
+  const confidence = critic.confidence == null ? '' : ` ${Math.round(critic.confidence * 100)}%`;
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${VERDICT_STYLE[critic.verdict]}`} data-testid="hit-verdict" title={critic.rationale}>{VERDICT_LABEL[critic.verdict]}{confidence}</span>;
 }
 
 export function RelationshipLine({ relationship }: { relationship: HitRelationship }) {
@@ -33,6 +36,7 @@ export function HitCard({ hit, version, relationship, onView }: { hit: EvidenceS
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="flex items-center gap-1 font-semibold"><i className={`inline-block h-2 w-2 rounded-full ${KIND_COLOUR[item.itemType]}`} />{KIND_LABEL[item.itemType]}</span>
+          <CriticBadge critic={hit.critic} />
           <span className="font-mono text-ink/50">{item.itemId}</span>
           {item.threatLevel != null && <span className="text-ink/50">Threat {item.threatLevel}</span>}
           <span className="ml-auto font-mono text-ink/50">{formatClock(item.timestampSeconds)}</span>
