@@ -103,7 +103,7 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
       "item_type": "instrument", "item_id": "I1", "name": "machete", "label": "machete",
       "description": "Long curved blade held by assailant during storefront altercation.",
       "threat_level": 4, "holder_entity_id": "E1",
-      "crop_image_url": "https://<r2-host>/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+      "crop_image_url": "https://<r2-host>/evidence/Assault007_x264/1f9c2a7b4e6d8035a1c2e4f6b8d0a2c4/I1.jpg",
       "timestamp_seconds": 14, "bounding_box": [320, 450, 510, 600]
     },
     "incident": {
@@ -139,7 +139,7 @@ Request:
 | `reviewer_prompt` | string | none | max 1000 chars (`422` above). Added to the report prompt for this run only, framed as `ADDITIONAL REVIEWER CONTEXT FOR THIS VIDEO`; copies nothing from earlier revisions |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
 
-Response `200`: the validated contract report (`core-scored-v1`), as a JSON object. When the database is configured it also carries `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image). Takes tens of seconds to minutes (VLM calls); use a long timeout.
+Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image). Takes tens of seconds to minutes (VLM calls); use a long timeout.
 
 Errors:
 
