@@ -12,13 +12,13 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 
 /**
  * A dialog where the reviewer scrubs the video to a frame and drags a rectangle
- * on it. Save crops that rectangle from that frame on the server and hands the
- * new image back to the caller; nothing is written until the draft is saved.
+ * on it. Use this crop cuts the rectangle from that frame on the server and
+ * hands the JPEG back to the caller. It is held in the browser: nothing is
+ * written to R2 until the draft is saved.
  */
-export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, initialSeconds, range, onPick, onClose }: {
+export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, range, onPick, onClose }: {
   videoId: string;
   videoSrc: string;
-  itemId: string;
   label: string;
   initialSeconds: number;
   range: SecondsRange | null;
@@ -67,11 +67,14 @@ export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, initialS
       const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/evidence-crop`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ itemId, timestampSeconds: seconds, region }),
+        body: JSON.stringify({ timestampSeconds: seconds, region }),
       });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error ?? `The crop failed (${response.status})`);
-      onPick({ image: body.image, imageUrl: body.imageUrl, timestampSeconds: seconds, box: regionBox(region) });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? `The crop failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      onPick({ blob, previewUrl: URL.createObjectURL(blob), timestampSeconds: seconds, box: regionBox(region) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The crop failed');
       setBusy(false);

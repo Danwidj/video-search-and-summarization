@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The versioned report database over the fake PostgREST store: the
-// save_human_revision, set_official_revision and set_revision_crops RPCs of the sibling's supabase/functions-final.sql.
+// save_human_revision, save_human_revision_with_crops, set_official_revision and set_revision_crops RPCs of supabase/migrations.
 // Only the behaviour the console relies on is modelled: numbering and parentage
 // of a human revision, its refusals, the official pointer and the crops it
 // rebuilds. Payload validation and facet derivation are not; the SQL test
@@ -42,6 +42,18 @@ export const revisionRpcs = {
       revisionId: row.id, revisionNo: row.revision_no, videoId: row.video_id, kind: row.kind, parentId: row.parent_id,
       modelRunId: row.model_run_id, createdBy: row.created_by, createdAt: row.created_at, note: row.note,
     };
+  },
+
+  // As the SQL function: the crops are checked before anything is written, and on a video with no official
+  // revision they replace the video's rows for the new revision in the same call.
+  save_human_revision_with_crops: (args, store) => {
+    const video = store.videos.find((row) => row.id === args.p_video_id);
+    if (!video) throw new Error(`Video not found: ${args.p_video_id}`);
+    if (!Array.isArray(args.p_crops ?? [])) throw new Error('The crops must be a list');
+    const searchable = video.official_revision_id === null || video.official_revision_id === undefined;
+    const saved = revisionRpcs.save_human_revision(args, store);
+    if (searchable) store.evidence_crops = (args.p_crops ?? []).map((crop) => ({ revision_id: saved.revisionId, ...crop }));
+    return { ...saved, crops: searchable ? store.evidence_crops.length : 0 };
   },
 
   set_official_revision: (args, store) => {

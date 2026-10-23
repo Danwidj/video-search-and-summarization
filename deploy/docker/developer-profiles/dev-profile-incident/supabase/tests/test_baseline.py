@@ -24,7 +24,7 @@ from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
 MIGRATIONS = sorted((HERE.parent / "migrations").glob("*.sql"))
-REVISION_MIGRATIONS = [path for path in MIGRATIONS if path.name.startswith("20261023")]
+REVISION_MIGRATIONS = [path for path in MIGRATIONS if path.name >= "20261023"]
 PASSED: list[str] = []
 
 
@@ -396,6 +396,41 @@ with tempfile.TemporaryDirectory() as tmp:
         set_crops("v2", newer["revisionId"], [crop("entity", "E1", "evidence/v2/u2/E1.jpg", vector(5), item_name="human", description="Burglar")])
         assert searched(5) == [("v2", newer["revisionId"], "E1")] and crop_count("v2") == 1
         assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (ai2,))[0] == 0
+
+    save_with_crops = lambda video, parent, rows: one(conn, """
+        SELECT public.save_human_revision_with_crops(%s, %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, %s)""",
+        (video, parent, json.dumps(report()), json.dumps(rows)))[0]
+
+    @test("save_human_revision_with_crops stores the revision and its crops together when the video has no official revision")
+    def _():
+        parent = ai_revision("v4", 1, "m1", report(), [])
+        rows = [crop("entity", "E1", "evidence/v4/u1/E1.jpg", vector(3), item_name="human", description="Man in a red jacket"),
+                crop("asset", "A1", None, vector(4), item_name="bench", description="Bus stop bench")]
+        stored = save_with_crops("v4", parent, rows)
+        assert stored["revisionNo"] == 2 and stored["parentId"] == parent and stored["crops"] == 1, stored
+        assert searchable("v4") == stored["revisionId"] and searched(3) == [("v4", stored["revisionId"], "E1")], searched(3)
+        refused(conn, "SELECT public.save_human_revision_with_crops('v4', %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, '{}')",
+                (parent, json.dumps(report())), contains="crops must be a list")
+
+    @test("save_human_revision_with_crops writes no revision when one of its crops cannot be stored")
+    def _():
+        parent = one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v4'")[0]
+        before = one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v4'")[0]
+        searchable_before = searchable("v4")
+        bad = [{"item_type": "entity", "item_id": "E9", "image": "evidence/v4/u9/E9.jpg", "embedding": [1.0, 2.0]}]
+        refused(conn, """SELECT public.save_human_revision_with_crops('v4', %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, %s)""",
+                (parent, json.dumps(report()), json.dumps(bad)), contains="dimensions")
+        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v4'")[0] == before
+        assert searchable("v4") == searchable_before, "the searchable revision is unchanged"
+
+    @test("save_human_revision_with_crops leaves an official revision's rows alone")
+    def _():
+        parent = one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v4'")[0]
+        assert one(conn, "SELECT public.set_official_revision('v4', %s)", (parent,))[0]["crops"] == 1
+        before = crop_count("v4")
+        saved = save_with_crops("v4", parent, [crop("entity", "E2", "evidence/v4/u2/E2.jpg", vector(5), item_name="other", description="Ignored")])
+        assert saved["crops"] == 0 and crop_count("v4") == before and searchable("v4") == parent, saved
+        assert one(conn, "SELECT public.set_official_revision('v4', NULL)")[0]["officialRevisionId"] is None
 
     @test("marking the newest revision official keeps its rows; clearing it falls back to the newest")
     def _():

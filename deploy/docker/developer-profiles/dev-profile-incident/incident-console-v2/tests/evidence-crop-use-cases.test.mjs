@@ -8,7 +8,7 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { createEvidenceCrop, getVideoFrame } = await import('../src/lib/application/evidence-frames.ts');
+const { cropEvidenceFrame, getVideoFrame } = await import('../src/lib/application/evidence-frames.ts');
 const { FrameRequestError, parseRegion, parseSeconds } = await import('../src/lib/evidence/frame-request.ts');
 const { ffmpegFrameArguments } = await import('../src/lib/video/ffmpeg-frame.ts');
 const { InMemoryVideoRepository } = await import('../src/modules/videos/infrastructure/memory/videos.ts');
@@ -18,18 +18,14 @@ const video = (storageKey) => ({ videoId: V, storageKey, uploadedAt: null, sourc
 
 function deps({ storageKey = 'videos/a.mp4', duration = 30 } = {}) {
   const frames = [];
-  const stored = [];
-  let n = 0;
   return {
-    frames, stored,
+    frames,
     deps: {
       videos: new InMemoryVideoRepository([video(storageKey)]),
       source: {
         durationSeconds: async () => duration,
         frame: async (key, seconds, region) => { frames.push({ key, seconds, region }); return Buffer.from('jpeg'); },
       },
-      store: async (key, jpeg) => { stored.push({ key, jpeg }); },
-      newUuid: () => `uuid-${++n}`,
     },
   };
 }
@@ -60,28 +56,23 @@ test('an unreadable video length leaves the bound to the decoder', async () => {
   await getVideoFrame(d, V, 9999);
 });
 
-test('a crop is stored under a fresh evidence key each time and returned', async () => {
-  const { deps: d, stored, frames } = deps();
-  const a = await createEvidenceCrop(d, V, { itemId: 'ent_1', timestampSeconds: 4, region });
-  const b = await createEvidenceCrop(d, V, { itemId: 'ent_1', timestampSeconds: 4, region });
-  assert.equal(a.image, 'evidence/vid-1/uuid-1/ent_1.jpg');
-  assert.equal(b.image, 'evidence/vid-1/uuid-2/ent_1.jpg');
-  assert.deepEqual(stored.map((s) => s.key), [a.image, b.image]);
-  assert.deepEqual(frames[0].region, region);
-  assert.equal(a.jpeg.toString(), 'jpeg');
+test('a crop is cut from the frame at its second and returned as JPEG, with nothing stored', async () => {
+  const { deps: d, frames } = deps();
+  const jpeg = await cropEvidenceFrame(d, V, { timestampSeconds: 4, region });
+  assert.equal(jpeg.toString(), 'jpeg');
+  assert.deepEqual(frames, [{ key: 'videos/a.mp4', seconds: 4, region }]);
 });
 
-test('a bad rectangle or item id stores nothing', async () => {
-  const { deps: d, stored } = deps();
-  const crop = (over) => createEvidenceCrop(d, V, { itemId: 'e1', timestampSeconds: 1, region, ...over });
+test('a bad rectangle or timestamp is refused before any frame is cut', async () => {
+  const { deps: d, frames } = deps();
+  const crop = (over) => cropEvidenceFrame(d, V, { timestampSeconds: 1, region, ...over });
   await rejects(crop({ region: { x: 0.8, y: 0, w: 0.3, h: 0.5 } }), 422, /inside the frame/);
   await rejects(crop({ region: { x: -0.1, y: 0, w: 0.3, h: 0.5 } }), 422, /inside the frame/);
   await rejects(crop({ region: { x: 0, y: 0, w: 0, h: 0.5 } }), 422, /at least/);
   await rejects(crop({ region: { x: 0, y: 0, w: 0.5 } }), 400, /four numbers/);
   await rejects(crop({ region: null }), 400, /four numbers/);
-  await rejects(crop({ itemId: '../x' }), 400, /itemId/);
   await rejects(crop({ timestampSeconds: 31 }), 422, /outside the video/);
-  assert.deepEqual(stored, []);
+  assert.deepEqual(frames, []);
 });
 
 test('a rectangle touching the frame edge is accepted, float noise is clamped', () => {
