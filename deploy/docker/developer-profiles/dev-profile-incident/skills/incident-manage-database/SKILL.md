@@ -14,7 +14,7 @@ There is **one Supabase project per phase**:
 - **Finals** is the live team database. There is no staging copy, so treat every write as production.
 - **Midterm** (`rfevukimyftzbxlehwel`) is a frozen, read-only record. **Never write to it, push to it or apply anything to it**, apart from `supabase/midterm/freeze_midterm.sql` (once, at the cutover) or `unfreeze_midterm.sql` (rollback only).
 
-Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, reviewer version and effective views, RPCs, cascades, security, R2 layout). Schema files and harness: [`supabase/README.md`](../../supabase/README.md). Which component points at which project: [`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase).
+Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, report revisions, RPCs, cascades, security, R2 layout). Schema files and harness: [`supabase/README.md`](../../supabase/README.md). Which component points at which project: [`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase).
 
 ## Access routing
 
@@ -26,13 +26,13 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, reviewer v
 
 Only `service_role` and `postgres` reach anything: the public (`anon`) key is refused everywhere on finals, and on midterm after the freeze.
 
-Report writers append to `report_revisions` (append-only; never update or delete a revision). The agent computes `revision_no` as `max + 1` and retries on a unique violation (SQLSTATE 23505), because PostgREST has no client-held transactions.
-The AI report rows (`incidents`, `entities`, `instruments`, `assets`) are never edited. Reviewer edits use `/rpc/save_human_report_edit` (or its `/rpc/apply_structured_report_edit` shim), which writes the run's reviewer version (`human_reports` and its items) and `review_status.edited_by/edited_at`, and sends a verified report back to `under review`. Every edited item must carry `source_id` (the AI item it came from, `null` for an added item); an edit without it is refused, never guessed. Status changes use `/rpc/set_review_status`; verifying without edits copies the AI report into the reviewer version. Neither touches `model_runs.notes` (the immutable analysis record). Readers that mean "the current report" use the `effective_*` views. Official reports are set only through `/rpc/select_official_report` / `/rpc/clear_official_report`.
-The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; its `p_entities`, `p_instruments`, and `p_assets` arrays filter the effective evidence by `(incident_id, model_run_id)`. It also takes `p_scope` (`all`/`official`), `p_entity_types`, `p_evidence_match` (`contains`/`exact`), and `p_timezone` (default `'UTC'`) for localised weekday and time-of-day filtering, and returns each report's analysis `outcome` and `isOfficial`. The library path does not read or sign video.
-The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`, counting official incidents only and accepting `p_timezone` (default `'UTC'`) for local-time heatmap bucketing; it never downloads full report notes or evidence rows.
-Natural-language search queries evidence items through the service-role-only `/rpc/search_evidence_items`, which performs a pgvector cosine distance search over `evidence_crops.embedding` strictly scoped to official reports (`videos.selected_model_run_id = ec.model_run_id`) and shows the reviewer's text; search hits and critic verification verdicts are logged into `query_results`.
-`evidence_crops` holds official revisions only and is written by the console from `POST /api/v1/incidents/evidence-embeddings` (the agent returns the embeddings, it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
-`model_runs` rows without an incident are normal: failed analysis attempts (`contract_failed` / `request_failed`) and runs whose report was deleted. Never count `model_runs` rows as analyses without filtering by `run_outcome(notes)`. PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey` (two relationships).
+The report model is versioned and append-only. Every AI analysis appends one `report_revisions` row (`kind='ai'`, `model_run_id`, `parent_id` NULL, full contract report in `payload`, crops in `evidence`, facets from the payload). A reviewer edit calls `/rpc/save_human_revision` (`kind='human'`, `parent_id` the revision opened, inherits the run), which locks the video row and assigns `revision_no = max + 1`. A re-generation is a new AI branch (new run, `parent_id` NULL); no revision is ever edited or deleted, and the table's trigger enforces that. The agent writes AI revisions directly and computes `revision_no` as `max + 1`, retrying on a unique violation (SQLSTATE 23505), because PostgREST has no client-held transactions.
+`videos.official_revision_id` names the one official revision per video (composite FK to that video's revision). Select it only through `/rpc/set_official_revision(video_id, revision_id, crops)`, which in one transaction sets the pointer and replaces the video's `evidence_crops`; pass a NULL revision to clear both. Never write `report_revisions`, `videos.official_revision_id` or `evidence_crops` by hand.
+The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; its `p_entities`, `p_instruments`, and `p_assets` arrays filter the shown revision's evidence by `(video_id, revision_id)`. It also takes `p_kind` (`ai`/`human`), `p_scope` (`all`/`official`), `p_entity_types`, `p_evidence_match` (`contains`/`exact`), and `p_timezone` (default `'UTC'`) for localised weekday and time-of-day filtering, and returns each card's `revisionId`, `revisionNo`, `kind`, analysis `outcome` and `isOfficial`. The library path does not read or sign video.
+The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`, counting official revisions only and accepting `p_timezone` (default `'UTC'`) for local-time heatmap bucketing; it never downloads full report notes or evidence rows.
+Natural-language search queries evidence items through the service-role-only `/rpc/search_evidence_items`, which performs a pgvector cosine distance search over `evidence_crops.embedding` strictly scoped to official revisions (`videos.official_revision_id = evidence_crops.revision_id`) and shows the revision's text; hits return `video_id`/`incident_id` and `revision_id`, and critic verdicts are logged into `query_results` against that revision.
+`evidence_crops` holds official revisions only and is written by `set_official_revision` from the crop list the console sends (the agent returns the embeddings via `POST /api/v1/incidents/evidence-embeddings`; it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
+`model_runs` rows without a revision are normal: failed analysis attempts (`contract_failed` / `request_failed`) and runs whose revision was removed by a video delete. Never count `model_runs` rows as analyses without filtering by `run_outcome(notes)`.
 
 ## Rules
 
@@ -41,7 +41,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
-- **Cascades are real.** Deleting a `videos` row cascades through its revisions and `query_results`; `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first.
+- **Cascades are real.** Deleting a `videos` row cascades through its revisions, their `evidence_crops` and the `query_results` that name those revisions. `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first. The append-only trigger permits only the video cascade, so delete a video rather than a revision.
 - **Changing a function signature:** drop the old signature in the same migration. PostgREST rejects ambiguous overloads that share parameter names.
 - **Never** print or commit the service-role key, public key or DSN. Backend code uses the service role server-side only.
 
@@ -78,7 +78,7 @@ supabase migration repair --workdir $W --db-url "$FINALS_DSN" --status applied <
 ### Read via PostgREST (works from anywhere with HTTPS)
 
 ```bash
-curl -s "$INCIDENT_SUPABASE_URL/rest/v1/incidents?incident_id=eq.<id>&select=*" \
+curl -s "$INCIDENT_SUPABASE_URL/rest/v1/report_revisions?video_id=eq.<id>&select=*&order=revision_no.desc" \
   -H "apikey: $INCIDENT_SUPABASE_SERVICE_ROLE_KEY" \
   -H "Authorization: Bearer $INCIDENT_SUPABASE_SERVICE_ROLE_KEY"
 ```
