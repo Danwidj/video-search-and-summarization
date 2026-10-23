@@ -3,9 +3,9 @@
 // IncidentChat (MVP2): multi-turn Q&A with cited evidence. These types are the
 // vss-agent's POST /api/v1/incidents/chat contract (chat-contract-v1,
 // services/agent/src/vss_agents/api/incident_chat.py ChatRequest / ChatResponse)
-// in camelCase; lib/chat/agent-chat.ts maps the snake_case.
+// in camelCase; modules/chat/infrastructure/agent/agent-chat.ts maps the snake_case.
 
-import type { EvidenceItemType } from '@/lib/ports/search';
+import type { EvidenceItemType } from '@/modules/search/domain/search';
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 

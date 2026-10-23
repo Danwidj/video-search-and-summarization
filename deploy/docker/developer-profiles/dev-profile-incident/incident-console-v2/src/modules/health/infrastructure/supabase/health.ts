@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
-import type { DatabaseHealth, HealthRepository } from '@/lib/ports/health';
+import type { DatabaseHealth, HealthRepository } from '@/modules/health/domain/HealthRepository';
 import { PostgrestClient } from '@/lib/postgrest/client';
 
 /** Never throws: an unconfigured database is a health result, not an error. */

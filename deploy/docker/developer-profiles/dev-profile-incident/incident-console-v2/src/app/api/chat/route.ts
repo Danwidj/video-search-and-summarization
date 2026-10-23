@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { NextResponse } from 'next/server';
-import { sendAgentChat } from '@/lib/chat/agent-chat';
+import { sendAgentChat } from '@/modules/chat/infrastructure/agent/agent-chat';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import type { ChatMessage } from '@/lib/ports/chat';
+import type { ChatMessage } from '@/modules/chat/domain/chat';
 
 export const maxDuration = 120;
 export async function POST(request: Request) {

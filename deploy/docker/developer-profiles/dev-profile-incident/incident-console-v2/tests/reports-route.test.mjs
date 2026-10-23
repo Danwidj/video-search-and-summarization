@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { afterEach, beforeEach, mock, test } from 'node:test';
-import { href } from '../src/lib/dashboard/links.ts';
+import { href } from '../src/modules/dashboard/domain/links.ts';
 import { reportThumbnailView, thumbnailCaptureTime } from '../src/lib/ui/thumbnail.ts';
 
 register('./support/alias-loader.mjs', import.meta.url);

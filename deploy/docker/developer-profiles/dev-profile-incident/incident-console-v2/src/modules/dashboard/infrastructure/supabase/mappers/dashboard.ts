@@ -5,8 +5,8 @@
 // (supabase/functions-final.sql) the output equals
 // the input; the defaults only apply to a malformed result.
 
-import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';
-import type { DashboardQuery } from '@/lib/ports/dashboard';
+import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/modules/dashboard/domain/types';
+import type { DashboardQuery } from '@/modules/dashboard/domain/DashboardRepository';
 
 type Row = Record<string, unknown>;
 

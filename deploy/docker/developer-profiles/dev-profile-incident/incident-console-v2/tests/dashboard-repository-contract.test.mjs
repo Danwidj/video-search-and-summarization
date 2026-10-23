@@ -15,9 +15,9 @@ import { fakePostgrest } from './support/fake-postgrest.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryDashboardRepository } = await import('../src/lib/adapters/memory/dashboard.ts');
-const { SupabaseDashboardAdapter } = await import('../src/lib/adapters/supabase/dashboard.ts');
-const { dashboardFromRpc, dashboardRpcArgs } = await import('../src/lib/adapters/supabase/mappers/dashboard.ts');
+const { InMemoryDashboardRepository } = await import('../src/modules/dashboard/infrastructure/memory/dashboard.ts');
+const { SupabaseDashboardAdapter } = await import('../src/modules/dashboard/infrastructure/supabase/dashboard.ts');
+const { dashboardFromRpc, dashboardRpcArgs } = await import('../src/modules/dashboard/infrastructure/supabase/mappers/dashboard.ts');
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
 import { errorResponse } from '@/lib/http';
-import type { DashboardSeverity } from '@/lib/ports/dashboard';
+import type { DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
 import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';

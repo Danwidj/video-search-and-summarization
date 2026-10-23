@@ -7,7 +7,7 @@ import { HitCard } from '@/components/library/hit-card';
 import { HitViewer } from '@/components/library/hit-viewer';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/components/library/shared';
 import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf, withoutRejected } from '@/lib/library/search';
-import type { EvidenceItemType, EvidenceSearchHit } from '@/lib/ports/search';
+import type { EvidenceItemType, EvidenceSearchHit } from '@/modules/search/domain/search';
 
 export interface EvidenceScope { videoId: string; title: string }
 

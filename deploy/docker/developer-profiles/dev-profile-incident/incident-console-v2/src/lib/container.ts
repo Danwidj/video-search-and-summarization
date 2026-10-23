@@ -4,11 +4,11 @@
 // adapter backs each port. Built per call (a client is two strings), so the
 // configuration is read at request time and never cached at module load.
 
-import { SupabaseDashboardAdapter } from '@/lib/adapters/supabase/dashboard';
-import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
+import { SupabaseDashboardAdapter } from '@/modules/dashboard/infrastructure/supabase/dashboard';
+import { SupabaseHealthAdapter } from '@/modules/health/infrastructure/supabase/health';
 import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
 import type { ServiceConfiguration } from '@/lib/env';
-import type { HealthRepository } from '@/lib/ports/health';
+import type { HealthRepository } from '@/modules/health/domain/HealthRepository';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';

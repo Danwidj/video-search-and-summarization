@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/components/evidence-frame';
 import { IncidentThumbnail, SeverityChip } from '@/components/library/shared';
 import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
-import type { CriticVerdict, EvidenceSearchHit } from '@/lib/ports/search';
+import type { CriticVerdict, EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
 const VERDICT_LABEL: Record<CriticVerdict, string> = { confirmed: 'Confirmed', rejected: 'Rejected', unverified: 'Unverified' };

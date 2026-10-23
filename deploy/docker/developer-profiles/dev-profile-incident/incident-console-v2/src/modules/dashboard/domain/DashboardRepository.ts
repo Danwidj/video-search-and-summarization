@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { DashboardAnalytics } from '@/lib/dashboard/types';
+import type { DashboardAnalytics } from '@/modules/dashboard/domain/types';
 
 export type DashboardSeverity = 'low' | 'medium' | 'high';
 
