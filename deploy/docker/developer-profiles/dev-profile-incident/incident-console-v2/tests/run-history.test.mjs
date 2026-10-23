@@ -8,8 +8,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { buildRunHistory } = await import('../src/lib/runs/history.ts');
-const { describeCode } = await import('../src/lib/runs/labels.ts');
+const { buildRunHistory } = await import('../src/modules/videos/application/run-history.ts');
+const { describeCode } = await import('../src/modules/videos/domain/run-labels.ts');
 const { formatTimestamp, parseStoredTimestamp, getViewerTimeZone, isValidTimeZone } = await import('../src/lib/time.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));

@@ -101,7 +101,7 @@ checks the chunk-upload response for a valid key and, when missing (the real-VST
 through a new server-side-only route, `src/app/api/uploads/r2/route.ts` (R2 `PutObject` via `src/lib/r2/config.ts`'s
 `putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key
 going forward. This is v2-only and does not touch `vss-agent` or `mock-backend`; the existing VST chunked-upload
-flow for obtaining `sensorId` (`src/lib/upload/chunked-upload.ts`) is unchanged.
+flow for obtaining `sensorId` (`src/modules/videos/infrastructure/vst/chunked-upload.ts`) is unchanged.
 
 For each new upload, the browser also attempts to capture the frame 25% into the already-local file, scale it to at most
 640×360, and upload it through `/api/uploads/thumbnail` to `thumbnails/<video-key>.webp`. Thumbnail failure never blocks

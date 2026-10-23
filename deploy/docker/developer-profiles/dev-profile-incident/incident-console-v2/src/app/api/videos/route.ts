@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
 import { errorResponse } from '@/lib/http';
-import type { VideoListFilter } from '@/lib/ports/videos';
+import type { VideoListFilter } from '@/modules/videos/domain/VideoRepository';
 
 export const dynamic = 'force-dynamic';
 

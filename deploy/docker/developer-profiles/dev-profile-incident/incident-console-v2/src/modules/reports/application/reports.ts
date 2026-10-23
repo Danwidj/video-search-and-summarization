@@ -7,7 +7,7 @@
 
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import type { IncidentRepository, RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
-import type { OfficialChange, VideoRepository } from '@/lib/ports/videos';
+import type { OfficialChange, VideoRepository } from '@/modules/videos/domain/VideoRepository';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 import type { ReportView } from '@/modules/reports/domain/report-view';

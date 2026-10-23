@@ -10,7 +10,7 @@
 // successful analysis by default.
 
 import { explicitVideoId, parseRunNotes } from '@/modules/reports/domain/run-notes';
-import type { OutcomeCounts, RunHistoryEntry } from '@/lib/runs/types';
+import type { OutcomeCounts, RunHistoryEntry } from '@/modules/videos/domain/run-types';
 import { canonicalIncidentType } from '@/modules/reports/domain/normalize';
 
 type Row = Record<string, unknown>;
