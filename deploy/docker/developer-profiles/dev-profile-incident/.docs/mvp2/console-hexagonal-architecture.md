@@ -419,7 +419,6 @@ Next.js App Router pages can load their data on the server instead of mounting a
 | `/reports` (library) | client fetch of `GET /api/reports` | planned; needs the viewer's time zone on the server |
 | `/videos`, `/videos/[videoId]` | client fetch of `GET /api/videos`, `GET /api/videos/[videoId]/runs` | planned; run history waits for its port (§7) |
 | `/dashboard` | client fetch of `GET /api/dashboard` | planned; needs the viewer's time zone on the server |
-| `/videos/[videoId]/ground-truth` | client fetch of `/api/reports/[videoId]` and its ground-truth route | planned; ground truth waits for its port (§7) |
 
 Conventions for a converted page (the report page is the reference, `app/reports/[videoId]/(report)/`):
 - `export const dynamic = 'force-dynamic'`: review state changes between visits, so the page is never served from a cache.
