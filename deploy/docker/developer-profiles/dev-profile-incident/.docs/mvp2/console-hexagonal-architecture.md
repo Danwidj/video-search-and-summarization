@@ -384,7 +384,7 @@ export interface HealthRepository {
   - [x] Create `lib/adapters/supabase/index.ts` providing `getDbAdapters()` and `getDbHealth()`.
 - [ ] **Search adapter:** implement `EvidenceSearchRepository` over the vss-agent's search route (`lib/adapters/agent/`), with the console search route (§7).
 - [x] **Add thin use cases (`lib/application/`)** for report detail, review status change and delete.
-- [ ] **Refactor API Routes (`app/api/*`):**
+- [x] **Refactor API Routes (`app/api/*`):**
   - [x] Refactor `app/api/health/route.ts`.
   - [x] Refactor `app/api/dashboard/route.ts`.
   - [x] Refactor `app/api/videos/route.ts` and `app/api/videos/[videoId]/official/route.ts`.
