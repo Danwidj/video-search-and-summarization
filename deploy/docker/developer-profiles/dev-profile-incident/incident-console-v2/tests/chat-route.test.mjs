@@ -88,3 +88,29 @@ test('a malformed agent response is a 500', async () => {
   assert.equal(response.status, 500);
   assert.match((await response.json()).error, /invalid chat response/);
 });
+
+test('a version and an unsaved draft are forwarded as version_id and draft_report', async () => {
+  const draftReport = { entities: [{ entity_id: 'E1', type: 'human', description: 'Guard' }] };
+  const response = await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: 'Assault007', versionId: 7, draftReport });
+  assert.equal(response.status, 200);
+  assert.deepEqual(upstream.calls[0].body, {
+    messages: [{ role: 'user', content: 'Who?' }],
+    context: { scope: 'incident', incident_id: 'Assault007' },
+    version_id: 7,
+    draft_report: draftReport,
+  });
+  assert.equal(validateRequest(upstream.calls[0].body), true, JSON.stringify(validateRequest.errors));
+});
+
+test('a version alone sends no draft_report', async () => {
+  await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: 'Assault007', versionId: 3 });
+  assert.equal(upstream.calls[0].body.version_id, 3);
+  assert.equal('draft_report' in upstream.calls[0].body, false);
+});
+
+test('a draft without its version, or a bad version, is a 400 and never reaches the agent', async () => {
+  assert.equal((await post({ messages: [{ role: 'user', content: 'Hi' }], draftReport: {} })).status, 400);
+  assert.equal((await post({ messages: [{ role: 'user', content: 'Hi' }], versionId: 0 })).status, 400);
+  assert.equal((await post({ messages: [{ role: 'user', content: 'Hi' }], versionId: 'x' })).status, 400);
+  assert.equal(upstream.calls.length, 0);
+});

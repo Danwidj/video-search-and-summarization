@@ -148,9 +148,13 @@ application. The report library remembers filters, scroll position, and its orig
 official revision only.
 
 Each report provides human-attributed structured corrections as new revisions, a versions graph with Save,
-non-streaming follow-up chat through the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the
-report's video and showing cited evidence, and model-run history and side-by-side comparison. Retained raw VLM output
+an "Ask about this incident" chat panel (non-streaming, through the agent `POST /api/v1/incidents/chat`,
+`chat-contract-v1`) scoped to the report's video, and model-run history and side-by-side comparison. Retained raw VLM output
 in `model_runs.notes` remains unchanged as provenance.
+
+The chat panel follows the selected version. In View it sends the `version_id` of the version on screen, official or
+not; while editing it also sends the unsaved draft as `draft_report`, so answers and citations come from the draft.
+Each answer says which version it came from, and its citations show the crop and jump the video to that moment.
 
 ## Evidence frames and crops
 
