@@ -67,6 +67,10 @@ def test_analyze_inserts_mock_ai_revision(monkeypatch):
     revision = fake.calls[2]
     assert revision[1] == ("video-1",)
     assert "MOCK" in revision[2]["payload"]["incident"]["description"]
+    # incident-contract-v3 types the window as integer seconds, which the facet columns are read from.
+    incident = revision[2]["payload"]["incident"]
+    assert (incident["start_timestamp"], incident["end_timestamp"]) == (0, 10)
+    assert all(type(incident[k]) is int for k in ("start_timestamp", "end_timestamp"))
     assert revision[2]["evidence"][0]["image"] is None and revision[2]["evidence"][0]["image_gap"]
     assert revision[2]["note"] is None
 

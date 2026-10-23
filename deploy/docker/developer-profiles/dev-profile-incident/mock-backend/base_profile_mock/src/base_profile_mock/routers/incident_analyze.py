@@ -101,8 +101,8 @@ def _mock_report(category: dict[str, object]) -> dict[str, object]:
         "incident": {
             "type": category["type"],
             "title": f"MOCK {category['type']}",
-            "start_timestamp": "00:00:00",
-            "end_timestamp": "00:00:10",
+            "start_timestamp": 0,
+            "end_timestamp": 10,
             "description": category["description"],
             "severity_level": category["severity"],
             "severity_reason": "MOCK severity; no VSS inference was run.",
