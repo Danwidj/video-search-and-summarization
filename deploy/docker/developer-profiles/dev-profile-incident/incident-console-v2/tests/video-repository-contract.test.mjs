@@ -73,6 +73,21 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal((await repo.getVideo('v1')).officialRevisionId, null);
     });
 
+    test('the searchable revision takes crops without changing the official pointer', async () => {
+      const { repo } = make();
+      // No official revision: the newest revision of v1 (id 1) is the searchable one.
+      assert.deepEqual(await repo.setRevisionCrops('v1', 1, CROPS), { videoId: 'v1', revisionId: 1, crops: 1 });
+      assert.equal((await repo.getVideo('v1')).officialRevisionId, null);
+      assert.deepEqual(await repo.setRevisionCrops('v1', 1, []), { videoId: 'v1', revisionId: 1, crops: 0 });
+    });
+
+    test('crops are refused for an unknown video or a revision that is not the searchable one', async () => {
+      const { repo } = make();
+      await assert.rejects(repo.setRevisionCrops('v-none', 1, []), rejection('not-found', /Video not found/));
+      await assert.rejects(repo.setRevisionCrops('v1', 2, []), rejection('invalid', /not the searchable revision/), "another video's revision");
+      await assert.rejects(repo.setRevisionCrops('v1', 99, []), rejection('invalid', /not the searchable revision/));
+    });
+
     test('a deleted video is gone', async () => {
       const { repo } = make();
       await repo.deleteVideo('v1');
@@ -92,6 +107,16 @@ describe('SupabaseVideoAdapter', () => {
     assert.deepEqual(store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]), [[1, 'E1', [0.1, 0.2]]]);
     await repo.setOfficialRevision('v1', null, []);
     assert.deepEqual(store.evidence_crops, []);
+  });
+
+  test('storing crops is one set_revision_crops call with the crops in the RPC shape', async () => {
+    const { repo, db, store } = implementations.supabase();
+    await repo.setRevisionCrops('v1', 1, CROPS);
+    assert.deepEqual(db.requests, [{
+      method: 'POST', path: 'rpc/set_revision_crops',
+      body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
+    }]);
+    assert.deepEqual(store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]), [[1, 'E1', [0.1, 0.2]]]);
   });
 
   test('deleting a video removes only the run records that name it and that no revision uses', async () => {

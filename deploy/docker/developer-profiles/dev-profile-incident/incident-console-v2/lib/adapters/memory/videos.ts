@@ -2,11 +2,13 @@
 
 // In-memory VideoRepository for use-case tests. It mirrors the rules the
 // database enforces through set_official_revision (only a revision of the
-// video can be official; null clears it) and the list filters.
+// video can be official; null clears it), set_revision_crops (only the
+// searchable revision, the official one else the newest, takes crops) and the
+// list filters.
 
 import {
   StoreRejection,
-  type OfficialChange, type Page, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type OfficialChange, type Page, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
 } from '@/lib/ports';
 import type { OfficialCrop } from '@/lib/reports/revision';
 
@@ -19,6 +21,9 @@ export class InMemoryVideoRepository implements VideoRepository {
   readonly videos = new Map<string, InMemoryVideo>();
   /** Each setOfficialRevision call, for tests to assert on the crops passed. */
   readonly officialCalls: Array<{ videoId: string; revisionId: number | null; crops: OfficialCrop[] }> = [];
+
+  /** Each setRevisionCrops call, for tests to assert on the crops passed. */
+  readonly cropCalls: Array<{ videoId: string; revisionId: number; crops: OfficialCrop[] }> = [];
 
   constructor(videos: InMemoryVideo[] = []) {
     for (const video of videos) this.videos.set(video.videoId, { ...video, revisionIds: [...video.revisionIds] });
@@ -56,6 +61,15 @@ export class InMemoryVideoRepository implements VideoRepository {
     this.officialCalls.push({ videoId, revisionId, crops });
     video.officialRevisionId = revisionId;
     return { videoId, officialRevisionId: revisionId, crops: revisionId === null ? 0 : crops.length };
+  }
+
+  async setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange> {
+    const video = this.videos.get(videoId);
+    if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
+    const searchable = video.officialRevisionId ?? video.revisionIds.at(-1) ?? null;
+    if (revisionId !== searchable) throw new StoreRejection('invalid', `Revision ${revisionId} is not the searchable revision of video ${videoId}`);
+    this.cropCalls.push({ videoId, revisionId, crops });
+    return { videoId, revisionId, crops: crops.length };
   }
 
   async deleteVideo(videoId: string): Promise<void> {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The versioned report database over the fake PostgREST store: the
-// save_human_revision and set_official_revision RPCs of the sibling's supabase/functions-final.sql.
+// save_human_revision, set_official_revision and set_revision_crops RPCs of the sibling's supabase/functions-final.sql.
 // Only the behaviour the console relies on is modelled: numbering and parentage
 // of a human revision, its refusals, the official pointer and the crops it
 // rebuilds. Payload validation and facet derivation are not; the SQL test
@@ -56,5 +56,16 @@ export const revisionRpcs = {
       store.evidence_crops = (args.p_crops ?? []).map((crop) => ({ revision_id: args.p_revision_id, ...crop }));
     }
     return { videoId: args.p_video_id, officialRevisionId: args.p_revision_id, crops: store.evidence_crops.length };
+  },
+
+  set_revision_crops: (args, store) => {
+    const video = store.videos.find((row) => row.id === args.p_video_id);
+    if (!video) throw new Error(`Video not found: ${args.p_video_id}`);
+    const searchable = video.official_revision_id ?? Math.max(0, ...revisionsOf(store, args.p_video_id).map((row) => row.id));
+    if (args.p_revision_id !== searchable) {
+      throw new Error(`Revision ${args.p_revision_id} is not the searchable revision of video ${args.p_video_id} (the official revision, else the newest)`);
+    }
+    store.evidence_crops = (args.p_crops ?? []).map((crop) => ({ revision_id: args.p_revision_id, ...crop }));
+    return { videoId: args.p_video_id, revisionId: args.p_revision_id, crops: store.evidence_crops.length };
   },
 };

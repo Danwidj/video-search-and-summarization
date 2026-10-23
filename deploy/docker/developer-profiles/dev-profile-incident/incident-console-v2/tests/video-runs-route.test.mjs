@@ -22,6 +22,7 @@ mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: asy
 const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
+const { revisionRpcs } = await import('./support/revisions-database.mjs');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
@@ -43,7 +44,7 @@ function services(completionContent, { extraRuns = [], official = null } = {}) {
   const gatewayCalls = [];
   const db = fakePostgrest(
     { videos: [{ ...repaired.video, official_revision_id: official }], model_runs: [repaired.modelRun, ...extraRuns], report_revisions: [aiRevisionRow(repaired)] },
-    { identity: { report_revisions: 'id' } },
+    { identity: { report_revisions: 'id' }, rpc: revisionRpcs },
   );
   globalThis.fetch = async (url, init = {}) => {
     if (String(url).includes('/v1/chat/completions')) {
@@ -79,6 +80,17 @@ test('re-analysis uses the stored video object, creates a new run and a new AI r
   assert.deepEqual([revision.video_id, revision.revision_no, revision.kind, revision.model_run_id, revision.parent_id], [V, 2, 'ai', run.modelRunId, null]);
   assert.deepEqual(db.store.report_revisions[0], aiRevisionRow(repaired), 'the earlier revision is untouched; edits are not carried across');
   assert.equal(db.store.videos[0].official_revision_id, null, 'the new version is not made official');
+  assert.deepEqual(run.searchable, { crops: 0 }, 'with no official revision the new revision becomes the searched one');
+  const cropCall = db.requests.find((r) => r.path === 'rpc/set_revision_crops');
+  assert.deepEqual([cropCall.body.p_video_id, cropCall.body.p_revision_id, cropCall.body.p_crops], [V, 2, []]);
+});
+
+test('a re-run on a video with an official revision does not touch the evidence crops', async () => {
+  const { db } = services(validReport, { official: 1 });
+  const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).run.searchable, { crops: null });
+  assert.ok(!db.requests.some((r) => r.path === 'rpc/set_revision_crops'));
 });
 
 test('a failed re-run is recorded in history only and returns its reason', async () => {
@@ -96,7 +108,7 @@ test('a re-run whose only problem is its timeline gets its own revision (core-sc
   const { db } = services(timelineFailure);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
   assert.equal(response.status, 200);
-  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs', 'report_revisions']);
+  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs', 'report_revisions', 'rpc/set_revision_crops']);
   const notes = JSON.parse(db.store.model_runs.at(-1).notes).incidentConsoleV2;
   assert.equal(notes.status, 'valid_first_pass');
   assert.equal(notes.validation.fullContractValid, false);

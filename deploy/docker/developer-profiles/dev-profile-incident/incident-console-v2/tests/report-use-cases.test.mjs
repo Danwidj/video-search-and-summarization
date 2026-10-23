@@ -6,14 +6,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryIncidentRepository } = await import('../lib/adapters/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
 const { StoreRejection } = await import('../lib/ports/index.ts');
-const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision } = await import('../lib/application/reports.ts');
+const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision, storeSearchableCrops } = await import('../lib/application/reports.ts');
 const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
@@ -120,6 +120,43 @@ test('an agent failure leaves the previous official revision in place', async ()
   assert.equal((await ports.videos.getVideo(V)).officialRevisionId, null);
   assert.deepEqual(ports.videos.officialCalls, []);
   await assert.rejects(setOfficialRevision(ports, V, 9, async () => []), (error) => error instanceof StoreRejection && error.reason === 'not-found');
+});
+
+test('a new revision of a video with no official revision gets its crops from the agent embeddings', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  const asked = [];
+  const embedding = { itemType: 'entity', itemId: 'E1', embedding: [0.5] };
+  assert.deepEqual(await storeSearchableCrops(ports, V, 1, async (id) => { asked.push(id); return [embedding]; }), { crops: 1 });
+  assert.deepEqual(asked, [1]);
+  assert.deepEqual(ports.videos.cropCalls.map((call) => [call.videoId, call.revisionId, call.crops.map((crop) => [crop.item_id, crop.image, crop.embedding])]), [[V, 1, [['E1', 'evidence/v/u/E1.jpg', [0.5]]]]]);
+  assert.equal((await ports.videos.getVideo(V)).officialRevisionId, null, 'the official pointer is not changed');
+  assert.deepEqual(ports.videos.officialCalls, []);
+});
+
+test('a new revision with no images clears the crops without calling the agent', async () => {
+  const ports = official([aiRunReport(smoke)]);
+  assert.deepEqual(await storeSearchableCrops(ports, V, 1, async () => assert.fail('nothing to embed')), { crops: 0 });
+  assert.deepEqual(ports.videos.cropCalls.map((call) => call.crops), [[]]);
+});
+
+test('an official revision stays the searched one, so a new revision stores no crops', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  await ports.videos.setOfficialRevision(V, 1, []);
+  assert.deepEqual(await storeSearchableCrops(ports, V, 1, async () => assert.fail('official crops are untouched')), { crops: null });
+  assert.deepEqual(ports.videos.cropCalls, []);
+});
+
+test('a crops failure is returned, not thrown, because the revision is already saved', async () => {
+  const ports = official([withImage('evidence/v/u/E1.jpg')]);
+  const log = mock.method(console, 'error', () => {});
+  try {
+    assert.deepEqual(await storeSearchableCrops(ports, V, 1, async () => { throw new Error('agent down'); }), { crops: null, error: 'agent down' });
+    assert.match(log.mock.calls[0].arguments[0], /agent down/);
+  } finally {
+    log.mock.restore();
+  }
+  assert.deepEqual(ports.videos.cropCalls, []);
+  assert.deepEqual(await storeSearchableCrops(ports, 'v-none', 1, async () => []), { crops: null }, 'an unknown video is skipped');
 });
 
 test('deleting a video removes its stored objects before the video row', async () => {
