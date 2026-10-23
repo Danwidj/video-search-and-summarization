@@ -33,10 +33,12 @@ logger = logging.getLogger(__name__)
 EMBEDDING_DIMENSIONS = 1024
 DEFAULT_EMBEDDING_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_EMBEDDING_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2"
-DEFAULT_EMBEDDING_TIMEOUT_SECONDS = 30.0
+DEFAULT_EMBEDDING_TIMEOUT_SECONDS = 15.0
 EMBEDDING_BATCH_SIZE = 32
 EMBEDDING_MAX_ATTEMPTS = 3
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+# The hosted endpoint answers HTTP 400 with this message when a batch (possibly other callers' inputs) is too long.
+_TOKEN_LIMIT_ERROR = "exceeds maximum allowed token size"
 
 InputType = Literal["query", "passage"]
 
@@ -47,6 +49,12 @@ def _api_key_from_env() -> str:
         if value:
             return value
     return ""
+
+
+def _is_retryable(resp: httpx.Response) -> bool:
+    if resp.status_code in _RETRYABLE_STATUS_CODES:
+        return True
+    return resp.status_code == 400 and _TOKEN_LIMIT_ERROR in resp.text
 
 
 class RemoteTextEmbedder:
@@ -110,16 +118,24 @@ class RemoteTextEmbedder:
         url = f"{self.base_url}/embeddings"
 
         for attempt in range(1, EMBEDDING_MAX_ATTEMPTS + 1):
-            if self._http_client is not None:
-                resp = await self._http_client.post(url, json=body, headers=headers, timeout=self.timeout_seconds)
-            else:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                    resp = await client.post(url, json=body, headers=headers)
-            if resp.status_code in _RETRYABLE_STATUS_CODES and attempt < EMBEDDING_MAX_ATTEMPTS:
+            try:
+                resp = await self._post(url, body, headers)
+            except httpx.ReadTimeout:
+                if attempt == EMBEDDING_MAX_ATTEMPTS:
+                    raise
+                logger.warning("Embedding endpoint timed out; retrying (%d)", attempt)
+                await asyncio.sleep(2.0 * attempt)
+                continue
+            if _is_retryable(resp) and attempt < EMBEDDING_MAX_ATTEMPTS:
                 logger.warning("Embedding endpoint returned HTTP %d; retrying (%d)", resp.status_code, attempt)
                 await asyncio.sleep(2.0 * attempt)
                 continue
-            resp.raise_for_status()
+            if not resp.is_success:
+                raise httpx.HTTPStatusError(
+                    f"Embedding endpoint returned HTTP {resp.status_code}: {resp.text[:300]}",
+                    request=resp.request,
+                    response=resp,
+                )
             break
 
         rows = sorted(resp.json()["data"], key=lambda row: row.get("index", 0))
@@ -130,3 +146,9 @@ class RemoteTextEmbedder:
                 f"{sorted({len(v) for v in vectors})}; expected {len(texts)} x {self.dimensions}"
             )
         return vectors
+
+    async def _post(self, url: str, body: dict[str, object], headers: dict[str, str]) -> httpx.Response:
+        if self._http_client is not None:
+            return await self._http_client.post(url, json=body, headers=headers, timeout=self.timeout_seconds)
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            return await client.post(url, json=body, headers=headers)

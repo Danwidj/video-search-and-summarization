@@ -5,7 +5,8 @@ import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
 import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
-import { saveHumanEdit, storeSearchableCrops } from '@/modules/reports/application/reports';
+import { saveHumanEdit } from '@/modules/reports/application/save-human-edit';
+import { storeSearchableCrops } from '@/modules/reports/application/store-searchable-crops';
 import { StructuredEditError, validateStructuredEdit } from '@/modules/contract/domain/structured-edit';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';

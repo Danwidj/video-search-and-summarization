@@ -43,6 +43,14 @@ test('a picked second is never negative and never past the end of the video', ()
   assert.equal(pickSeconds(12.5, null), 12.5, 'an unknown length leaves only the lower bound');
 });
 
+test('a picked second stays inside the seconds an entity is on screen', () => {
+  const seen = { first: 5, last: 10 };
+  assert.equal(pickSeconds(0, 60, seen), 5, 'a frame before the entity appears moves to its first second');
+  assert.equal(pickSeconds(7, 60, seen), 7);
+  assert.equal(pickSeconds(12, 60, seen), 10, 'a frame after the entity leaves moves to its last second');
+  assert.equal(pickSeconds(12, null, seen), 10, 'the range still applies when the length is unknown');
+});
+
 test('the picker is a dialog that crops through the evidence-crop route and hands back the frame second and box', async () => {
   const picker = await readFile(new URL('evidence/components/EvidenceFramePicker/EvidenceFramePicker.tsx', components), 'utf8');
   assert.match(picker, /role="dialog"/);

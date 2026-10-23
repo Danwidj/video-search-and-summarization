@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
-import { listRevisions } from '@/modules/reports/application/reports';
+import { listRevisions } from '@/modules/reports/application/list-revisions';
 import { errorResponse } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';

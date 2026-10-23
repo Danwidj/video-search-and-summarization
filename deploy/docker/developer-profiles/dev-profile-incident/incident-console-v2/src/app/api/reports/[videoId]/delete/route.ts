@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
-import { deleteVideoAndReports } from '@/modules/reports/application/reports';
+import { deleteVideoAndReports } from '@/modules/reports/application/delete-video-and-reports';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { deleteR2Video } from '@/lib/r2/config';

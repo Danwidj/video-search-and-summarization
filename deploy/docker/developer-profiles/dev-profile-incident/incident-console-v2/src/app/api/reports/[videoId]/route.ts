@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
-import { getReport } from '@/modules/reports/application/reports';
+import { getReport } from '@/modules/reports/application/get-report';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl } from '@/lib/r2/config';

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
 import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
-import { storeSearchableCrops } from '@/modules/reports/application/reports';
+import { storeSearchableCrops } from '@/modules/reports/application/store-searchable-crops';
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
 import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';

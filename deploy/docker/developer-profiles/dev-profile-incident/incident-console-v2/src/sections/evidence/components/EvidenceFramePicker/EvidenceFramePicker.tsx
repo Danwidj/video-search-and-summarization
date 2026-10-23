@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { dragRegion, pickSeconds, regionBox, type FramePick, type FramePoint } from '@/lib/evidence/frame-picker';
+import { dragRegion, pickSeconds, regionBox, type FramePick, type FramePoint, type SecondsRange } from '@/lib/evidence/frame-picker';
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
@@ -15,16 +15,18 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
  * on it. Save crops that rectangle from that frame on the server and hands the
  * new image back to the caller; nothing is written until the draft is saved.
  */
-export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, onPick, onClose }: {
+export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, initialSeconds, range, onPick, onClose }: {
   videoId: string;
   videoSrc: string;
   itemId: string;
   label: string;
+  initialSeconds: number;
+  range: SecondsRange | null;
   onPick: (pick: FramePick) => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState(() => pickSeconds(initialSeconds, null, range));
   const [duration, setDuration] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ from: FramePoint; to: FramePoint } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, onPick, 
   }, [busy, onClose]);
 
   const seek = (value: number) => {
-    const next = pickSeconds(value, duration);
+    const next = pickSeconds(value, duration, range);
     setSeconds(next);
     if (videoRef.current) videoRef.current.currentTime = next;
   };
@@ -113,8 +115,8 @@ export function EvidenceFramePicker({ videoId, videoSrc, itemId, label, onPick, 
           aria-label="Frame second"
           className="mt-3 w-full"
           disabled={duration === null || busy}
-          max={duration ?? 0}
-          min={0}
+          max={range === null ? duration ?? 0 : Math.min(range.last, duration ?? range.last)}
+          min={range?.first ?? 0}
           onChange={(event) => seek(Number(event.target.value))}
           step={0.1}
           type="range"

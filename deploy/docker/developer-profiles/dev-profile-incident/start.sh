@@ -507,7 +507,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
   export ANALYSIS_MODE="agent"
-elif [ "$VSS_START_MODE" = "local" ]; then
+elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
   # ../.env.local (README.md §1, kept in place by .githooks/setup-worktree.sh).
   for env_link in mock-backend/.env.local vlm-gateway/.env.local; do

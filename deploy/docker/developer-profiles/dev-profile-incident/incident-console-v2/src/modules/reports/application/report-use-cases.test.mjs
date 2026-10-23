@@ -8,13 +8,18 @@ import { register } from 'node:module';
 import { join } from 'node:path';
 import { mock, test } from 'node:test';
 
-register('./support/alias-loader.mjs', import.meta.url);
+register('../../../../tests/support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryIncidentRepository } = await import('../src/modules/reports/infrastructure/memory/incidents.ts');
-const { InMemoryVideoRepository } = await import('../src/modules/videos/infrastructure/memory/videos.ts');
-const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
-const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision, storeSearchableCrops } = await import('../src/modules/reports/application/reports.ts');
-const { aiRunReport } = await import('./support/report-view.mjs');
+const { InMemoryIncidentRepository } = await import('../../../../src/modules/reports/infrastructure/memory/incidents.ts');
+const { InMemoryVideoRepository } = await import('../../../../src/modules/videos/infrastructure/memory/videos.ts');
+const { StoreRejection } = await import('../../../../src/modules/shared/domain/common.ts');
+const { getReport } = await import('@/modules/reports/application/get-report');
+const { listRevisions } = await import('@/modules/reports/application/list-revisions');
+const { saveHumanEdit } = await import('@/modules/reports/application/save-human-edit');
+const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
+const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
+const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
+const { aiRunReport } = await import('../../../../tests/support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
 const V = smoke.videoId;
