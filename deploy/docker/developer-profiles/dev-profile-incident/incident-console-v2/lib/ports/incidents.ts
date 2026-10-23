@@ -2,7 +2,7 @@
 
 // IncidentRepository: the report library, and one incident's report
 // revisions (report_revisions). A video is one incident; each analysis adds an
-// AI revision and each reviewer save or restore adds a human revision. Revisions
+// AI revision and each reviewer save adds a human revision. Revisions
 // are append-only: nothing here updates or deletes one.
 
 import type { Page } from '@/lib/ports/common';
@@ -79,7 +79,7 @@ export interface RevisionRecord {
 /** A human revision to append. */
 export interface HumanRevisionInput {
   videoId: string;
-  /** The revision the reviewer opened (Save) or restored (Restore). */
+  /** The revision the reviewer opened (Save). */
   parentId: number;
   payload: ReportPayload;
   evidence: EvidenceEntry[];

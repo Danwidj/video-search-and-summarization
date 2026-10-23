@@ -9,13 +9,11 @@ import { formatTimestamp } from '@/lib/time';
 
 /**
  * The incident's History: every version, newest first. Open shows a version
- * (and starts the edit form from it); Restore saves a new human version with
- * that version's content. Nothing here changes or deletes an old version.
+ * (and starts the edit form from it). Nothing here changes or deletes an old version.
  */
-export function RevisionHistory({ videoId, currentRevisionId, refreshKey, onOpen, onRestored }: { videoId: string; currentRevisionId: number; refreshKey: number; onOpen: (revisionId: number) => void; onRestored: (revisionId: number) => void }) {
+export function RevisionHistory({ videoId, currentRevisionId, refreshKey, onOpen }: { videoId: string; currentRevisionId: number; refreshKey: number; onOpen: (revisionId: number) => void }) {
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<number | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -32,26 +30,6 @@ export function RevisionHistory({ videoId, currentRevisionId, refreshKey, onOpen
       });
     return () => controller.abort();
   }, [videoId, refreshKey]);
-
-  async function restore(revision: RevisionSummary) {
-    const restoredBy = window.prompt('Your name is required to restore a version.');
-    if (!restoredBy?.trim()) return;
-    setBusy(revision.revisionId);
-    try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revisionId: revision.revisionId, restoredBy: restoredBy.trim() }),
-      });
-      const payload = (await response.json()) as { revision?: { revisionId: number }; error?: string };
-      if (!response.ok || !payload.revision) throw new Error(payload.error || 'Restore failed');
-      onRestored(payload.revision.revisionId);
-    } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : 'Restore failed');
-    } finally {
-      setBusy(null);
-    }
-  }
 
   return (
     <section className="print-hidden border-t border-ink/10 px-6 py-6 sm:px-8" data-testid="revision-history">
@@ -72,7 +50,6 @@ export function RevisionHistory({ videoId, currentRevisionId, refreshKey, onOpen
                 {revision.revisionId === currentRevisionId
                   ? <span className="text-xs font-semibold text-ink/45">Open now</span>
                   : <button className="text-xs font-semibold text-moss" onClick={() => onOpen(revision.revisionId)} type="button">Open</button>}
-                <button className="text-xs font-semibold text-moss disabled:opacity-50" disabled={busy !== null} onClick={() => void restore(revision)} type="button">{busy === revision.revisionId ? 'Restoring…' : 'Restore'}</button>
               </span>
             </li>
           ))}

@@ -74,20 +74,6 @@ export async function saveHumanEdit(
   return incidents.saveHumanRevision({ videoId: input.videoId, parentId: input.parentId, payload, evidence, createdBy: input.createdBy, note: input.note?.trim() || null });
 }
 
-/** Restore: a new human revision with the content of an earlier one, which is its parent. */
-export async function restoreRevision(incidents: IncidentRepository, input: { videoId: string; revisionId: number; createdBy: string }): Promise<RevisionSummary> {
-  const source = await incidents.getRevision(input.videoId, input.revisionId);
-  if (!source) throw new StoreRejection('not-found', `Revision not found for this video: ${input.revisionId}`);
-  return incidents.saveHumanRevision({
-    videoId: input.videoId,
-    parentId: input.revisionId,
-    payload: source.payload,
-    evidence: source.evidence,
-    createdBy: input.createdBy,
-    note: `Restored revision ${source.revision.revisionNo}`,
-  });
-}
-
 /**
  * Marks a revision official (revisionId null clears it). Marking asks the
  * agent to embed the revision's evidence images and hands the vectors to the

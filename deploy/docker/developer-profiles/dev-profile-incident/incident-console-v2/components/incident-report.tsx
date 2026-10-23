@@ -30,7 +30,7 @@ interface IncidentReportProps {
   onNewAnalysis: () => void;
   /** The official mark changed. */
   onChanged: () => void;
-  /** A save or restore created this human version. */
+  /** A save created this human version. */
   onSaved: (revisionId: number) => void;
   /** History: show this version and start the edit form from it. */
   onOpenRevision: (revisionId: number) => void;
@@ -238,7 +238,7 @@ export function IncidentReport({ report, editing, onEditingChange, onNewAnalysis
         </div>
       </div>
 
-      <RevisionHistory currentRevisionId={report.revisionId} onOpen={onOpenRevision} onRestored={onSaved} refreshKey={historyKey} videoId={report.videoId} />
+      <RevisionHistory currentRevisionId={report.revisionId} onOpen={onOpenRevision} refreshKey={historyKey} videoId={report.videoId} />
 
       <RunDetailsPanel report={report} />
 
