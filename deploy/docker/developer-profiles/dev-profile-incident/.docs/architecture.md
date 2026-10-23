@@ -230,6 +230,7 @@ sequenceDiagram
     actor User as Reviewer
     participant UI as /reports
     participant API as Next.js /api/reports
+    participant Page as /reports/[videoId] (Server Component)
     participant DB as Supabase RPC
     participant R2 as Cloudflare R2
 
@@ -240,11 +241,10 @@ sequenceDiagram
     API->>R2: Sign up to 6 derived thumbnail keys
     API-->>UI: Metadata + small thumbnail URLs (no video URL)
     UI-->>User: Lazy screenshot images or skeleton fallback
-    User->>UI: Open one report
-    UI->>API: GET /api/reports/videoId?run=modelRunId
-    API->>DB: Read selected report graph (IncidentRepository.getRunReport)
-    API->>R2: Create selected object's signed URL
-    API-->>UI: Full report + playback URL
+    User->>Page: Open one report (/reports/videoId?run=modelRunId)
+    Page->>DB: Read selected report graph (getReport → IncidentRepository.getRunReport)
+    Page->>R2: Create selected object's signed URL
+    Page-->>User: Rendered report + playback URL
 ```
 
 Date inputs are directly editable: entering either boundary activates the custom range automatically. Preset
