@@ -11,20 +11,17 @@
 
 import { explicitVideoId, parseRunNotes } from '@/modules/reports/domain/run-notes';
 import type { OutcomeCounts, RunHistoryEntry } from '@/modules/videos/domain/run-types';
+import type { AttemptRunRecord, RevisionRunRecord } from '@/modules/videos/domain/VideoRepository';
 import { canonicalIncidentType } from '@/modules/reports/domain/normalize';
 
-type Row = Record<string, unknown>;
-
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
-const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-const first = (value: unknown): Row | null => (Array.isArray(value) ? ((value[0] as Row) ?? null) : value && typeof value === 'object' ? (value as Row) : null);
 
 export interface HistoryInputs {
   videoId: string;
-  /** The video's AI report_revisions rows (id, model_run_id, incident_type, severity_level, created_at) with the embedded model_runs row. */
-  revisionRows: Row[];
-  /** model_runs rows whose notes mention the videoId (pre-filter). */
-  attemptCandidates: Row[];
+  /** The video's AI report revisions, each with the model run that produced it. */
+  revisions: RevisionRunRecord[];
+  /** Model runs whose notes mention the videoId (pre-filter). */
+  attempts: AttemptRunRecord[];
   /** Model runs shared by more than one video (batch eval/seed runs). */
   sharedRunIds: Set<string>;
 }
@@ -73,38 +70,35 @@ export function buildRunHistory(inputs: HistoryInputs): { runs: RunHistoryEntry[
   const runs: RunHistoryEntry[] = [];
   const seen = new Set<string>();
 
-  for (const row of inputs.revisionRows) {
-    const runId = text(row.model_run_id);
+  for (const row of inputs.revisions) {
+    const runId = text(row.modelRunId);
     if (!runId || seen.has(runId)) continue;
     seen.add(runId);
-    const modelRun = first(row.model_runs) ?? {};
     const base: RunHistoryEntry = {
       modelRunId: runId,
-      model: text(modelRun.model_name) ?? 'Unknown model',
-      attemptedAt: text(row.created_at) ?? text(modelRun.run_datetime),
+      model: text(row.modelName) ?? 'Unknown model',
+      attemptedAt: text(row.createdAt) ?? text(row.runDatetime),
       outcome: 'legacy',
       outcomeInferred: true,
       source: inputs.sharedRunIds.has(runId) ? 'shared' : 'other',
-      revision: typeof row.id === 'number'
-        ? { revisionId: row.id, type: canonicalIncidentType(row.incident_type), severityLevel: num(row.severity_level) }
-        : null,
+      revision: { revisionId: row.revisionId, type: canonicalIncidentType(row.incidentType), severityLevel: row.severityLevel },
       additionalInstruction: null,
       failure: null,
       repair: null,
     };
-    const entry = fromNotes(base, modelRun.notes);
+    const entry = fromNotes(base, row.notes);
     // A successful analysis keeps its outcome; a report only exists when a revision does.
     runs.push(entry.outcome === 'contract_failed' || entry.outcome === 'request_failed' ? { ...entry, revision: null } : entry);
   }
 
-  for (const candidate of inputs.attemptCandidates) {
-    const runId = text(candidate.id);
+  for (const candidate of inputs.attempts) {
+    const runId = text(candidate.modelRunId);
     if (!runId || seen.has(runId) || explicitVideoId(candidate.notes) !== inputs.videoId) continue;
     seen.add(runId);
     const base: RunHistoryEntry = {
       modelRunId: runId,
-      model: text(candidate.model_name) ?? 'Unknown model',
-      attemptedAt: text(candidate.run_datetime),
+      model: text(candidate.modelName) ?? 'Unknown model',
+      attemptedAt: text(candidate.runDatetime),
       outcome: 'legacy',
       outcomeInferred: true,
       source: 'other',

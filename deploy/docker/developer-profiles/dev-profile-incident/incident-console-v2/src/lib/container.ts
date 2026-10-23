@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The composition root for database access: the only place that chooses which
-// adapter backs each port. Built per call (a client is two strings), so the
-// configuration is read at request time and never cached at module load.
+// The composition root: the only place that chooses which adapter backs each
+// port. Built per call (a client is two strings), so the configuration is read
+// at request time and never cached at module load.
 
 import { SupabaseDashboardAdapter } from '@/modules/dashboard/infrastructure/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/modules/health/infrastructure/supabase/health';
 import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
-import type { ServiceConfiguration } from '@/lib/env';
+import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import type { HealthRepository } from '@/modules/health/domain/HealthRepository';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';
+import type { AnalysisPorts } from '@/modules/analysis/application/run-contract-analysis';
+import { SupabaseAnalysisRunAdapter } from '@/modules/analysis/infrastructure/supabase/analysis-runs';
+import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
+import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
+import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 
 /** Throws 'Supabase PostgREST is not configured' when the service-role settings are missing. */
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
@@ -26,4 +31,19 @@ export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
 /** Never throws: /api/health must answer when the database is not configured. */
 export function getDbHealth(config?: ServiceConfiguration): HealthRepository {
   return new SupabaseHealthAdapter(config);
+}
+
+/**
+ * The analysis ports. The model port is built only when its URL is configured;
+ * the analysis refuses the mode whose port is null. Throws like getDbAdapters
+ * when the database is not configured.
+ */
+export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfiguration()): AnalysisPorts {
+  const db = createPostgrestClient(config);
+  return {
+    runs: new SupabaseAnalysisRunAdapter(db),
+    videos: new R2VideoObjectStore(config),
+    gateway: config.gatewayUrl ? new GatewayClient(config.gatewayUrl) : null,
+    agent: config.agentUrl ? new HttpIncidentAgent(config.agentUrl) : null,
+  };
 }

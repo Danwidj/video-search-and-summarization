@@ -2,14 +2,13 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/container';
+import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
 import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { storeSearchableCrops } from '@/modules/reports/application/reports';
-import { analysisErrorResponse } from '@/lib/analysis/responses';
-import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
-import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
+import { analysisErrorResponse } from '@/lib/http/analysis-responses';
+import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
+import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key } from '@/lib/r2/key';
 import { buildRunHistory } from '@/modules/videos/application/run-history';
@@ -19,49 +18,33 @@ export const dynamic = 'force-dynamic';
 // The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
 export const maxDuration = 360;
 
-function database() {
+function database(): ServiceConfiguration {
   const config = getServiceConfiguration();
   if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
-  return { config, db: new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!) };
+  return config;
 }
 
 /** The video's analysis history: every attempt, successful or failed, newest first. */
 export async function GET(_request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
     const { videoId } = await context.params;
-    const { config, db } = database();
-    const video = await db.selectOne('videos', { id: videoId });
-    if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    const [revisionRows, attemptCandidates] = await Promise.all([
-      db.selectMany('report_revisions', {
-        filters: { video_id: videoId, kind: 'ai' },
-        select: 'id,model_run_id,incident_type,severity_level,created_at,model_runs(id,model_name,prompt_version,run_datetime,notes)',
-      }),
-      db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,model_name,prompt_version,run_datetime,notes'),
-    ]);
-    const runIds = revisionRows.map((row) => String(row.model_run_id));
-    const usage = runIds.length ? await db.selectIn('report_revisions', 'model_run_id', runIds, 'model_run_id,video_id') : [];
-    const videosPerRun = new Map<string, Set<string>>();
-    for (const row of usage) {
-      const set = videosPerRun.get(String(row.model_run_id)) ?? new Set<string>();
-      set.add(String(row.video_id));
-      videosPerRun.set(String(row.model_run_id), set);
-    }
-    const sharedRunIds = new Set([...videosPerRun].filter(([, set]) => set.size > 1).map(([id]) => id));
-
-    const { runs, counts } = buildRunHistory({ videoId, revisionRows, attemptCandidates, sharedRunIds });
-    const filepath = typeof video.filepath === 'string' ? video.filepath : '';
+    const config = database();
+    const records = await getDbAdapters(config).videos.listRunHistory(videoId);
+    if (!records) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
+    const { video } = records;
+    const { runs, counts } = buildRunHistory({ videoId, revisions: records.revisions, attempts: records.attempts, sharedRunIds: records.sharedRunIds });
+    const filepath = video.storageKey ?? '';
     let playbackUrl: string | null = null;
     if (isValidR2Key(filepath)) {
       try { playbackUrl = await createR2PlaybackUrl(config, filepath); } catch { playbackUrl = null; }
     }
-    const officialRevisionId = typeof video.official_revision_id === 'number' ? video.official_revision_id : null;
+    const officialRevisionId = video.officialRevisionId;
     const history: VideoRunHistory = {
       video: {
         videoId,
         filename: filepath.split('/').pop() || videoId,
-        uploadedAt: typeof video.uploaded_datetime === 'string' ? video.uploaded_datetime : null,
-        source: typeof video.source === 'string' ? video.source : null,
+        uploadedAt: video.uploadedAt,
+        source: video.source,
         playbackUrl,
       },
       runs: runs.map((run) => ({ ...run, isOfficial: run.revision !== null && run.revision.revisionId === officialRevisionId })),
@@ -86,17 +69,21 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     const { videoId } = await context.params;
     const body = (await request.json().catch(() => null)) as { model?: unknown; additionalInstruction?: unknown } | null;
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'A JSON body with model is required' }, { status: 400 });
-    const { config, db } = database();
+    const config = database();
     if (config.analysisMode === 'agent') {
       if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
     } else if (!config.gatewayUrl) {
       throw new Error('VLM_GATEWAY_URL is not configured');
     }
-    const video = await db.selectOne('videos', { id: videoId }, 'id,filepath');
+    const video = await getDbAdapters(config).videos.getVideo(videoId);
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    if (!isValidR2Key(video.filepath)) return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
+    if (!isValidR2Key(video.storageKey)) return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
 
-    const { run, revisionId } = await runContractAnalysis({ videoId, r2Key: String(video.filepath), model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction }, config);
+    const { run, revisionId } = await runContractAnalysis(
+      { videoId, r2Key: video.storageKey, model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction },
+      getAnalysisPorts(config),
+      config.analysisMode,
+    );
     const searchable = await storeSearchableCrops(getDbAdapters(config), videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
     return NextResponse.json({
       run: { videoId: run.videoId, modelRunId: run.modelRunId, revisionId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status, searchable },

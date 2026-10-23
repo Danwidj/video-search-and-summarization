@@ -42,9 +42,41 @@ export interface RevisionCropsChange {
   crops: number;
 }
 
+/** One AI report revision of a video with the model run that produced it. */
+export interface RevisionRunRecord {
+  revisionId: number;
+  modelRunId: string;
+  incidentType: string | null;
+  severityLevel: number | null;
+  createdAt: string | null;
+  modelName: string | null;
+  runDatetime: string | null;
+  /** The model run's notes record as stored (JSON text). */
+  notes: string | null;
+}
+
+/** A model run whose notes name a video: a candidate for a failed attempt in its history. */
+export interface AttemptRunRecord {
+  modelRunId: string;
+  modelName: string | null;
+  runDatetime: string | null;
+  notes: string | null;
+}
+
+/** The stored records behind a video's analysis history, read before the history is built. */
+export interface RunHistoryRecords {
+  video: VideoRecord;
+  revisions: RevisionRunRecord[];
+  attempts: AttemptRunRecord[];
+  /** Model runs that more than one video uses (batch eval/seed runs). */
+  sharedRunIds: Set<string>;
+}
+
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
+  /** The records a video's analysis history is built from; null for an unknown video. */
+  listRunHistory(videoId: string): Promise<RunHistoryRecords | null>;
   /**
    * Makes revisionId the video's one official revision (null clears it) and,
    * in the same transaction, replaces the video's evidence_crops with the
