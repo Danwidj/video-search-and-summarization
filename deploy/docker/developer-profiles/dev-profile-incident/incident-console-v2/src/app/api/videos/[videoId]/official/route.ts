@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { setOfficialRevision } from '@/modules/reports/application/reports';
+import { setOfficialRevision } from '@/modules/reports/application/set-official-revision';
 import { AgentUnreachableError, fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
