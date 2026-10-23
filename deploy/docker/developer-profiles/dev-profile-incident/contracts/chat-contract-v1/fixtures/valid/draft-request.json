@@ -1,0 +1,23 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Who is wearing a hood?"
+    }
+  ],
+  "version_id": 42,
+  "draft_report": {
+    "entities": [
+      {
+        "entity_id": "E1",
+        "type": "person",
+        "description": "Person in a hood",
+        "timestamp_seconds": 12,
+        "first_seen_seconds": 10,
+        "last_seen_seconds": 20
+      }
+    ],
+    "instruments": [],
+    "assets": []
+  }
+}

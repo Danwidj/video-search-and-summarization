@@ -56,7 +56,19 @@
         }
       },
       "description": "Optional conversational context specifying scope, target incident, or evidence crops."
+    },
+    "version_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional report revision (report_revisions.id) the question is about. Citations come from that revision: the search index for the official one, the revision's own saved evidence for any other."
+    },
+    "draft_report": {
+      "type": "object",
+      "description": "Optional unsaved incident report edited from version_id. Requires version_id. Citations are grounded in its entities, instruments and assets, with crops taken from the same item in version_id."
     }
+  },
+  "dependentRequired": {
+    "draft_report": ["version_id"]
   },
   "required": ["messages"]
 }

@@ -17,6 +17,7 @@ import pytest
 from vss_agents.api.incident_chat import AssistantMessage
 from vss_agents.api.incident_chat import ChatRequest
 from vss_agents.api.incident_chat import ChatResponse
+from vss_agents.api.incident_chat import RevisionStoreUnavailableError
 from vss_agents.api.incident_chat import register_incident_chat_routes
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[5] / "deploy/docker/developer-profiles/dev-profile-incident/contracts"
@@ -53,10 +54,66 @@ class FakeSearchClient:
         return self.hits[:top_k]
 
 
-def _make_client(search_client=None) -> TestClient:
+class FakeRevisionStore:
+    """Revisions keyed by id; ``official`` maps video_id to its official revision id."""
+
+    def __init__(
+        self,
+        revisions: dict[int, dict[str, Any]] | None = None,
+        official: dict[str, int] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.revisions = revisions or {}
+        self.official = official or {}
+        self.error = error
+
+    async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
+        if self.error:
+            raise self.error
+        return self.revisions.get(revision_id)
+
+    async def get_official_revision_id(self, video_id: str) -> int | None:
+        return self.official.get(video_id)
+
+
+def _make_client(search_client=None, revision_store=None) -> TestClient:
     app = FastAPI()
-    register_incident_chat_routes(app, search_client=search_client)
+    register_incident_chat_routes(app, search_client=search_client, revision_store=revision_store)
     return TestClient(app)
+
+
+def _revision(revision_id: int, video_id: str = "V1") -> dict[str, Any]:
+    return {
+        "id": revision_id,
+        "video_id": video_id,
+        "evidence": [
+            {
+                "item_type": "instrument",
+                "item_id": "I1",
+                "item_name": "crowbar",
+                "label": "crowbar",
+                "description": "Pry bar on the door",
+                "timestamp_seconds": 8,
+                "image": f"evidence/{video_id}/batch{revision_id}/I1.jpg",
+            },
+            {
+                "item_type": "entity",
+                "item_id": "E1",
+                "item_name": "person",
+                "label": "person",
+                "description": "Person in a dark hood",
+                "timestamp_seconds": 12,
+                "image": f"evidence/{video_id}/batch{revision_id}/E1.jpg",
+            },
+        ],
+    }
+
+
+def _ask(client: TestClient, **extra: Any):
+    return client.post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "Is there a crowbar?"}], **extra},
+    )
 
 
 def test_chat_minimal_request_returns_grounded_answer():
@@ -257,3 +314,83 @@ def test_models_reject_invalid_response_fixtures(path: Path):
 def test_assistant_message_requires_citations():
     with pytest.raises(ValidationError):
         AssistantMessage.model_validate({"role": "assistant", "content": "hi"})
+
+
+def test_chat_non_official_version_cites_its_own_saved_crops():
+    search = FakeSearchClient(hits=[])
+    store = FakeRevisionStore(revisions={2: _revision(2), 3: _revision(3)}, official={"V1": 3})
+    resp = _ask(_make_client(search, store), version_id=2)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert search.last_query is None  # evidence_crops is never searched for a non-official revision
+    first = data["message"]["citations"][0]
+    assert (first["incident_id"], first["item_id"], first["item_type"]) == ("V1", "I1", "instrument")
+    assert first["timestamp_seconds"] == 8
+    assert first["crop_image_url"].endswith("evidence/V1/batch2/I1.jpg")
+    assert not list(response_validator.iter_errors(data))
+
+
+def test_chat_official_version_uses_search_index():
+    search = FakeSearchClient(hits=[])
+    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    resp = _ask(_make_client(search, store), version_id=3)
+    assert resp.status_code == 200
+    assert search.last_filters == {"incident_id": "V1"}
+
+
+def test_chat_draft_uses_draft_items_with_crops_from_base_version():
+    search = FakeSearchClient(hits=[])
+    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    draft = {
+        "instruments": [
+            {"instrument_id": "I1", "name": "lockpick", "description": "Thin tool", "timestamp_seconds": 9},
+            {"instrument_id": "I2", "name": "torch", "description": "Handheld torch", "timestamp_seconds": 11},
+        ]
+    }
+    resp = _ask(_make_client(search, store), version_id=3, draft_report=draft)
+    assert resp.status_code == 200
+    assert search.last_query is None
+    cits = {c["item_id"]: c for c in resp.json()["message"]["citations"]}
+    assert set(cits) == {"I1", "I2"}
+    assert cits["I1"]["timestamp_seconds"] == 9
+    assert cits["I1"]["crop_image_url"].endswith("evidence/V1/batch3/I1.jpg")
+    assert cits["I2"]["crop_image_url"] == ""
+
+
+def test_chat_version_ranks_keyword_matches_first():
+    store = FakeRevisionStore(revisions={2: _revision(2)})
+    resp = _make_client(FakeSearchClient(), store).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "who wears a hood?"}], "version_id": 2},
+    )
+    assert resp.json()["message"]["citations"][0]["item_id"] == "E1"
+
+
+def test_chat_unknown_version_returns_404():
+    resp = _ask(_make_client(FakeSearchClient(), FakeRevisionStore()), version_id=99)
+    assert resp.status_code == 404
+
+
+def test_chat_version_from_other_incident_returns_400():
+    store = FakeRevisionStore(revisions={2: _revision(2, "V1")})
+    resp = _ask(
+        _make_client(FakeSearchClient(), store),
+        version_id=2,
+        context={"scope": "incident", "incident_id": "V2"},
+    )
+    assert resp.status_code == 400
+
+
+def test_chat_version_store_unavailable_returns_503():
+    store = FakeRevisionStore(error=RevisionStoreUnavailableError("not configured"))
+    assert _ask(_make_client(FakeSearchClient(), store), version_id=2).status_code == 503
+
+
+def test_chat_version_store_error_returns_502():
+    store = FakeRevisionStore(error=RuntimeError("boom"))
+    assert _ask(_make_client(FakeSearchClient(), store), version_id=2).status_code == 502
+
+
+def test_chat_draft_without_version_returns_422():
+    resp = _ask(_make_client(FakeSearchClient(), FakeRevisionStore()), draft_report={"entities": []})
+    assert resp.status_code == 422
