@@ -170,5 +170,9 @@ A reviewer replacing or adding evidence picks a frame and draws a rectangle on i
 - **Report page (View mode):**
   - a fixed top band: the video, a vertical timeline with one lane per entity (first to last seen span, held instruments on the lane, then "Holder unknown" and Assets lanes; click a lane to seek) and the versions graph (each AI run is its own branch, human versions sit on their parent's; the star marks a version official, with no Restore);
   - a scrolling pane: version, report fields, evidence cards grouped by holder, read-only model output (title, severity rationale, timeline, uncertainties) and a "Run & model output details" panel;
-  - a bottom bar with "Edit from vN", which opens the structured editor.
+  - a bottom bar with "Edit from vN", which switches to Edit mode.
+- **Report page (Edit mode):** the same frame as View, only the inside changes.
+  - The scrolling pane shows the version being compared (A, read-only, left) beside the editable draft (B, right), field by field and one evidence row per entity, with the instruments it holds as sub-rows.
+  - Delete removes a draft item (deleting an entity also deletes the instruments it holds); Revert puts an edited or deleted item back exactly as A has it (an instrument whose holder is deleted stays blocked until the holder is reverted).
+  - The bottom bar's "Save as new version" always appends a new human revision and requires a note (`PATCH /api/reports/<videoId>/edit`). There is no Restore. Replacing or adding evidence images comes with the frame picker and is not in this pane yet.
 - **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.
