@@ -4,8 +4,8 @@
 import { useState } from 'react';
 import { KIND_COLOUR } from '@/components/evidence-frame';
 import { boxStyle } from '@/lib/evidence/frame-geometry';
-import { formatClock } from '@/lib/reports/normalize';
-import type { EvidenceItemType } from '@/lib/reports/revision';
+import { formatClock } from '@/modules/reports/domain/normalize';
+import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
 export interface FrameBox {
   id: string;

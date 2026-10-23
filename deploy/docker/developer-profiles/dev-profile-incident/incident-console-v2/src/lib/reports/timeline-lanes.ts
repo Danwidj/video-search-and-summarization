@@ -5,8 +5,8 @@
 // on the same lane), a "Holder unknown" lane for instruments nobody visibly
 // holds, and one lane for the assets.
 
-import type { ReportView } from '@/lib/reports/report-view';
-import type { EvidenceItemType } from '@/lib/reports/revision';
+import type { ReportView } from '@/modules/reports/domain/report-view';
+import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
 export interface LaneMarker {
   id: string;

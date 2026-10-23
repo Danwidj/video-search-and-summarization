@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { putR2Video, verifyR2Video } from '@/lib/r2/config';
-import { uploadedEvidenceKey } from '@/lib/reports/revision';
+import { uploadedEvidenceKey } from '@/modules/reports/domain/revision';
 
 export const maxDuration = 30;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

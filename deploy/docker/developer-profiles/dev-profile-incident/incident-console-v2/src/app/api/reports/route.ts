@@ -6,7 +6,7 @@ import { AgentRevisionSearchRepository } from '@/lib/adapters/agent/revision-sea
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/lib/ports/incidents';
+import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/modules/reports/domain/IncidentRepository';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import { isValidTimeZone } from '@/lib/time';

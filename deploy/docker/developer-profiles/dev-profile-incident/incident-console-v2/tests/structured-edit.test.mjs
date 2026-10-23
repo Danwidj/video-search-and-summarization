@@ -9,7 +9,7 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { StructuredEditError, validateStructuredEdit } = await import('../src/modules/contract/domain/structured-edit.ts');
-const { draftFromView, draftProblems, editFromDraft } = await import('../src/lib/reports/edit-draft.ts');
+const { draftFromView, draftProblems, editFromDraft } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', name), 'utf8'));

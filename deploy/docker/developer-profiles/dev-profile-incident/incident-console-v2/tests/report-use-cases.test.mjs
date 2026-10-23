@@ -10,10 +10,10 @@ import { mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryIncidentRepository } = await import('../src/lib/adapters/memory/incidents.ts');
+const { InMemoryIncidentRepository } = await import('../src/modules/reports/infrastructure/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../src/lib/adapters/memory/videos.ts');
 const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
-const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision, storeSearchableCrops } = await import('../src/lib/application/reports.ts');
+const { deleteVideoAndReports, getReport, listRevisions, saveHumanEdit, setOfficialRevision, storeSearchableCrops } = await import('../src/modules/reports/application/reports.ts');
 const { aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));

@@ -5,8 +5,8 @@
 // RevisionRecord or ReportView in one step: the Supabase report mapper, then
 // the view builder. Import after registering ./alias-loader.mjs.
 
-import { revisionRecordFromRows } from '../../src/lib/adapters/supabase/mappers/report.ts';
-import { toReportView } from '../../src/lib/reports/view.ts';
+import { revisionRecordFromRows } from '../../src/modules/reports/infrastructure/supabase/mappers/report.ts';
+import { toReportView } from '../../src/modules/reports/application/report-view.ts';
 
 const withoutKeys = (row, ...keys) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
 const dropIdentity = (row) => withoutKeys(row, 'incident_id', 'model_run_id', 'image');

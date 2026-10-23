@@ -14,8 +14,8 @@
 //   be shown against them.
 // - Class C (run, revision): run, revision and provenance metadata.
 
-import type { RevisionSummary } from '@/lib/reports/revision';
-import type { ContractRunRequest, ContractRunResponse } from '@/lib/reports/run-notes';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import type { ContractRunRequest, ContractRunResponse } from '@/modules/reports/domain/run-notes';
 
 export interface StructuredIncident {
   type: string | null;

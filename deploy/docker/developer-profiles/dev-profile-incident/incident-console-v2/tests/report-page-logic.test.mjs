@@ -10,7 +10,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { buildTimelineLanes, timelineDuration, axisPercent, axisTicks } = await import('../src/lib/reports/timeline-lanes.ts');
 const { layoutVersions } = await import('../src/lib/reports/version-graph.ts');
 const { markOfficial, clearOfficial } = await import('../src/lib/reports/official-client.ts');
-const { structuredFromPayload } = await import('../src/lib/reports/payload-view.ts');
+const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
 
 const entity = (id, first, last, extra = {}) => ({ entityId: id, type: 'person', label: 'Guard', description: '', timestampSeconds: 5, firstSeenSeconds: first, lastSeenSeconds: last, evidence: null, ...extra });
 const instrument = (id, entityId) => ({ instrumentId: id, entityId, name: id, description: '', threatLevel: 2, timestampSeconds: 7, evidence: null });

@@ -13,8 +13,8 @@ import {
   EDITABLE_INCIDENT_TYPES,
   newKey,
   type EditDraft,
-} from '@/lib/reports/edit-draft';
-import type { ReportView, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
+} from '@/modules/reports/domain/edit-draft';
+import type { ReportView, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
 
 export type PairKind = 'entity' | 'instrument' | 'asset';
 export type Structured = ReportView['structured'];

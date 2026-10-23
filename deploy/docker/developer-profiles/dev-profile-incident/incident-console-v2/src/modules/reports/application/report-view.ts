@@ -5,12 +5,12 @@
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/modules/contract/domain/validate';
-import type { RevisionRecord } from '@/lib/ports/incidents';
-import { canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
-import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/lib/reports/report-view';
+import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
+import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
+import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/modules/reports/domain/report-view';
 
-export { reportHeading } from '@/lib/reports/report-view';
-export type { ReportView } from '@/lib/reports/report-view';
+export { reportHeading } from '@/modules/reports/domain/report-view';
+export type { ReportView } from '@/modules/reports/domain/report-view';
 
 type RawEvent = { startSeconds: number; endSeconds: number | null; description: string };
 

@@ -3,8 +3,8 @@
 
 import { useState } from 'react';
 import { cropImageStyle, cropRegion, evidenceFrameState } from '@/lib/evidence/frame-geometry';
-import { formatClock } from '@/lib/reports/normalize';
-import type { EvidenceItemType } from '@/lib/reports/revision';
+import { formatClock } from '@/modules/reports/domain/normalize';
+import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
 export const KIND_COLOUR: Record<EvidenceItemType, string> = { entity: 'bg-moss', instrument: 'bg-clay', asset: 'bg-[#5f7896]' };
 export const KIND_LABEL: Record<EvidenceItemType, string> = { entity: 'Entity', instrument: 'Instrument', asset: 'Asset' };

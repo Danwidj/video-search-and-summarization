@@ -15,7 +15,7 @@ import type { ValidateFunction } from 'ajv';
 import { schema } from '@/modules/contract/infrastructure/loader';
 import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import { crossFieldViolations, type ContractViolation } from '@/modules/contract/domain/validate';
-import type { StructuredEdit } from '@/lib/reports/edit-draft';
+import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
 export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description', 'timestamp_seconds', 'first_seen_seconds', 'last_seen_seconds', 'label'] as const;

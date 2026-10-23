@@ -9,7 +9,7 @@ import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import type { SearchedVersion } from '@/lib/library/search';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';

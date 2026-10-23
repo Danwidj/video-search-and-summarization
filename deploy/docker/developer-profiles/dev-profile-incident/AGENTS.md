@@ -54,7 +54,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-- **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `src/lib/adapters/supabase/` builds PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
+- **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `src/lib/adapters/supabase/` and `src/modules/*/infrastructure/supabase/` build PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
 - **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).

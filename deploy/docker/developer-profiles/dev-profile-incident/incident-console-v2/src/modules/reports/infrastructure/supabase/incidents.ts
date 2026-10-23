@@ -2,14 +2,14 @@
 
 import {
   REVISION_SUMMARY_COLUMNS, revisionRecordFromRows, revisionSummaryFromRow, savedRevisionFromRpc,
-} from '@/lib/adapters/supabase/mappers/report';
-import { reportListFromRpc, reportListRpcArgs } from '@/lib/adapters/supabase/mappers/report-library';
+} from '@/modules/reports/infrastructure/supabase/mappers/report';
+import { reportListFromRpc, reportListRpcArgs } from '@/modules/reports/infrastructure/supabase/mappers/report-library';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import {
   type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
-} from '@/lib/ports/incidents';
+} from '@/modules/reports/domain/IncidentRepository';
 import type { PostgrestClient } from '@/lib/postgrest/client';
-import { revisionFacets, type RevisionSummary } from '@/lib/reports/revision';
+import { revisionFacets, type RevisionSummary } from '@/modules/reports/domain/revision';
 
 type Row = Record<string, unknown>;
 

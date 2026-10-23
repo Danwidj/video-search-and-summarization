@@ -44,7 +44,7 @@ import {
 import type { ServiceConfiguration } from '@/lib/env';
 import { GatewayClient, GatewayError, type GatewayCompletionResponse } from '@/lib/gateway/client';
 import { compactId } from '@/lib/ids';
-import { evidenceEntries, type EvidenceEntry } from '@/lib/reports/revision';
+import { evidenceEntries, type EvidenceEntry } from '@/modules/reports/domain/revision';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl, readR2VideoDurationSeconds, verifyR2Video } from '@/lib/r2/config';
 

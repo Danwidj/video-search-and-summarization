@@ -9,7 +9,7 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { deleteDraftItem, draftChangeCount, draftToStructured, pairReport, revertBlocked, revertDraftItem, rowDiffers } = await import('../src/lib/reports/compare.ts');
-const { draftFromView } = await import('../src/lib/reports/edit-draft.ts');
+const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
 
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
