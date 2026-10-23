@@ -5,8 +5,8 @@
 //
 // A revision is a full snapshot: payload is the whole incident-contract-v3
 // report and evidence lists the R2 image keys and crop details its items use.
-// Revisions are append-only. Save and Restore both write a new human revision
-// whose parent is the revision the reviewer opened; nothing is ever updated.
+// Revisions are append-only. Save writes a new human revision whose parent is
+// the revision the reviewer opened; nothing is ever updated.
 
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The revision History, Restore and evidence-image upload routes. A restore
-// appends a human revision; an upload gets a new unique R2 key and nothing is
-// ever overwritten or deleted.
+// The revision History and evidence-image upload routes. An upload gets a new
+// unique R2 key and nothing is ever overwritten or deleted.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -30,7 +29,6 @@ mock.module('@aws-sdk/client-s3', {
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/x' } });
 
 const { GET: history } = await import('../app/api/reports/[videoId]/revisions/route.ts');
-const { POST: restore } = await import('../app/api/reports/[videoId]/restore/route.ts');
 const { POST: uploadImage } = await import('../app/api/reports/[videoId]/evidence-image/route.ts');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
@@ -59,7 +57,6 @@ function database() {
   globalThis.fetch = db.fetch;
   return db;
 }
-const restoreRequest = (body) => restore(new Request(`http://localhost/api/reports/${V}/restore`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), params);
 const upload = (fields) => {
   const form = new FormData();
   for (const [name, value] of Object.entries(fields)) form.set(name, value);
@@ -69,39 +66,15 @@ const image = (type = 'image/png', size = 4) => new Blob([new Uint8Array(size)],
 
 test('History lists every revision newest first with kind, author, time, note and the official flag', async () => {
   const db = database();
-  assert.equal((await restoreRequest({ revisionId: 1, restoredBy: 'Lead' })).status, 200);
+  db.store.report_revisions.push({ ...aiRevisionRow(repaired), id: 2, revision_no: 2, kind: 'human', parent_id: 1, created_by: 'Lead', note: 'Edited by hand' });
   const response = await history(new Request(`http://localhost/api/reports/${V}/revisions`), params);
   assert.equal(response.status, 200);
   const { revisions } = await response.json();
   assert.deepEqual(revisions.map((r) => [r.revisionNo, r.kind, r.createdBy, r.isOfficial]), [[2, 'human', 'Lead', false], [1, 'ai', null, true]]);
-  assert.equal(revisions[0].note, 'Restored revision 1');
+  assert.equal(revisions[0].note, 'Edited by hand');
   assert.equal(revisions[1].model, repaired.modelRun.model_name);
   assert.ok(revisions.every((r) => r.createdAt), 'each revision carries its time');
   assert.equal(db.store.report_revisions.length, 2);
-});
-
-test('Restore appends a human revision copying the chosen one; the original and the official mark are untouched', async () => {
-  const db = database();
-  const before = JSON.stringify(db.store.report_revisions[0]);
-  const response = await restoreRequest({ revisionId: 1, restoredBy: 'Lead' });
-  assert.equal(response.status, 200);
-  const { restored, revision } = await response.json();
-  assert.equal(restored, true);
-  assert.deepEqual([revision.revisionNo, revision.kind, revision.parentId, revision.createdBy], [2, 'human', 1, 'Lead']);
-  const [original, copy] = db.store.report_revisions;
-  assert.equal(JSON.stringify(original), before);
-  assert.deepEqual([copy.payload, copy.evidence], [original.payload, original.evidence]);
-  assert.equal(db.store.videos[0].official_revision_id, 1);
-  assert.deepEqual(db.requests.filter((r) => r.method !== 'GET').map((r) => r.path), ['rpc/save_human_revision']);
-});
-
-test('Restore refuses a malformed body (400) and an unknown revision (404) without writing', async () => {
-  const db = database();
-  for (const bad of [{}, { revisionId: 1 }, { revisionId: '1', restoredBy: 'x' }, { revisionId: 1, restoredBy: 'x', extra: true }]) {
-    assert.equal((await restoreRequest(bad)).status, 400);
-  }
-  assert.equal((await restoreRequest({ revisionId: 99, restoredBy: 'Lead' })).status, 404);
-  assert.deepEqual(db.requests.filter((r) => r.method !== 'GET'), []);
 });
 
 test('an uploaded evidence image gets a new unique key under evidence/<videoId>/<uuid>/<itemId>.jpg and is never overwritten', async () => {

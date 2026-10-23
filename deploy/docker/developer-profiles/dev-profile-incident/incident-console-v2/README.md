@@ -143,7 +143,7 @@ application. The report library remembers filters, scroll position, and its orig
 `/dashboard` summarizes report volume, confidence, severity, and incident types with drill-down links, counting the
 official revision only.
 
-Each report provides human-attributed structured corrections as new revisions, a History panel with Save and Restore,
+Each report provides human-attributed structured corrections as new revisions, a History panel with Save,
 non-streaming follow-up chat through the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the
 report's video and showing cited evidence, and model-run history and side-by-side comparison. Retained raw VLM output
 in `model_runs.notes` remains unchanged as provenance.
