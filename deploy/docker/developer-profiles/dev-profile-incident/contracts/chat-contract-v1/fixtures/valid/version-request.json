@@ -1,0 +1,14 @@
+{
+  "session_id": "session_xyz123",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the second entity holding?"
+    }
+  ],
+  "context": {
+    "scope": "incident",
+    "incident_id": "Assault007"
+  },
+  "version_id": 42
+}
