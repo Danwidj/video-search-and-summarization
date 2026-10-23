@@ -86,7 +86,7 @@ flowchart TB
 
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
-| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, report versions (edit, History, restore, official), report display |
+| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, report versions (View and Edit modes, History, official), `/library` search, report chat, report display |
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for mock mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, base profile responses, search, and chat |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
@@ -219,8 +219,8 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, History, Save, Restore, official marking and delete go through `lib/application/reports.ts` (`getReport`, `listRevisions`, `saveHumanEdit`, `restoreRevision`, `setOfficialRevision`, `deleteVideoAndReports`); R2 signing and deletion, and the agent's embedding call, are passed in as functions. A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by `save_human_revision` or `set_official_revision` becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list and the History list call a port directly; the report library route signs thumbnails itself.
-- `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
+- Report detail, History, Save as new version, official marking and delete go through `lib/application/reports.ts` (`getReport`, `listRevisions`, `saveHumanEdit`, `setOfficialRevision`, `deleteVideoAndReports`); R2 signing and deletion, and the agent's embedding call, are passed in as functions. After an analysis, a re-run or a save, `storeSearchableCrops` writes the crops of a revision that becomes searchable (no official revision yet). A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by `save_human_revision` or `set_official_revision` becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list and the History list call a port directly; the report library route signs thumbnails itself.
+- `EvidenceSearchRepository` has its agent adapter (`lib/adapters/agent/search.ts`), which calls the vss-agent's `POST /api/v1/incidents/search`. The console exposes it as `POST /api/search` for `/library`. The Find incidents text search calls the agent's `POST /api/v1/incidents/revisions/search` through `RevisionSearchRepository` (`AgentRevisionSearchRepository`), then filters the result in the console. A hit's report link carries `?t=` and the report page seeks to that second.
 - Analysis saving (`lib/analysis/persistence.ts`) writes `model_runs` and the AI revision through the same `PostgrestClient`; see §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round) for what is still outside the ports.
 
 ### Report library pagination and deferred report loading
@@ -228,7 +228,7 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```mermaid
 sequenceDiagram
     actor User as Reviewer
-    participant UI as /reports
+    participant UI as /library
     participant API as Next.js /api/reports
     participant DB as Supabase RPC
     participant R2 as Cloudflare R2
@@ -257,21 +257,26 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - Videos with revisions but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
 - Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
 - Model coverage counts every analysis attempt in the period by outcome.
-- Every other number links to `/reports?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
+- Every other number links to `/library?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
-- The heatmap and weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/reports` detects the same zone itself, so drill-down links carry no timezone and the totals still match.
+- The heatmap and weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/library` detects the same zone itself, so drill-down links carry no timezone and the totals still match. The old `/reports` URL redirects to `/library` with its query string.
 
-### Report versions: editing, History and restore
+### Report versions: View, Edit and History
 
-`Edit report` opens a side-by-side editor: the original model output read-only on the left, and the structured fields on the right. The page's **History** lists every revision of the incident (kind, author, time, note), newest first; opening one loads it into the editor.
-- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets, including each item's description and detail and its image. IDs are renumbered by position; each item sends the item it came from as `source_id` (null for an added item) so its evidence follows it through a delete or reorder.
+The report page has two modes. **View** shows the version on screen (its timeline lanes, versions graph, official star, evidence cards and run details); **Edit from vN** opens **Edit** mode, where the version being edited is the read-only A side and the unsaved draft is the editable B side, with one evidence row per entity and its held instruments as sub-rows. Deleting an entity deletes the instruments it holds; Revert restores an item as in A. The page's **History** lists every revision of the incident (kind, author, time, note), newest first.
+- **Save as new version** always appends a `human` revision and needs a note. There is no Restore: copying an older version back is an Edit from that version.
+- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets, including each item's description, detail and image, and each entity's first and last seen seconds. IDs are renumbered by position; each item sends the item it came from as `source_id` (null for an added item) so its evidence follows it through a delete or reorder. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry.
 - **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties (copied unchanged into the new revision).
 - **Provenance:** never editable.
 - **Unsaved edits** exist only in the form. A refresh reloads the stored revision. There is no draft.
 
-`PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision`, which appends a `human` revision whose parent is the revision that was opened. `POST /api/reports/[videoId]/restore {revisionId, restoredBy}` does the same with the content of an earlier revision. `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` uploads a replacement image to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg` (never overwriting or deleting) and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
+`PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision`, which appends a `human` revision whose parent is the revision that was opened. `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` uploads a replacement image to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg` (never overwriting or deleting) and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
 
 The report shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
+
+- **Frames and crops (API):** `GET /api/reports/[videoId]/frame?t=` returns one frame as a JPEG, and `POST /api/reports/[videoId]/evidence-crop {itemId, timestampSeconds, region}` cuts a rectangle (fractions 0-1) from that frame and stores it under a new key. Both use `ffmpeg` on the console host's PATH (a host prerequisite, see [`incident-profile-operations.md`](incident-profile-operations.md)). In Edit mode, **Replace image** on a draft card opens the frame picker: scrub to a second, drag a rectangle, **Use this crop**. Nothing is uploaded until the draft is saved; the picked second and box are saved on the evidence entry.
+- **Report chat:** `POST /api/chat` sends `version_id` (the version on screen in View, or the version an Edit draft came from) and, in Edit, `draft_report`; the agent answers from that version's evidence (see [`vm-api-contracts.md`](vm-api-contracts.md)). Each answer is tagged with the version it came from.
+- **Searchable crops:** a save, re-run or analysis of a video with no official revision also writes that revision's crops through `set_revision_crops`, so `/library` can find the video (see [`data.md`](data.md)).
 
 ### Run history, re-generation and the official version
 
@@ -286,7 +291,8 @@ The report shows "Reviewer-edited after generation", "Model assessed N/5; review
   - it never writes the `videos` row (the upload time is kept);
   - it never changes the official version.
 - **Official version.** `PUT /api/videos/[videoId]/official {revisionId}` and `DELETE` call `setOfficialRevision`: for a mark, the console asks the agent for the revision's evidence embeddings (`POST /api/v1/incidents/evidence-embeddings`) and passes them to `set_official_revision`, which sets `videos.official_revision_id` and rebuilds the incident's `evidence_crops`; for a clear it passes none and the rows go. If the agent is unreachable the mark fails and nothing changes. Used from the report page and the video history.
-- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-generation with a compact history.
+- **Model choice:** both modes send the chosen allowlisted model (gateway to `vlm-gateway`, agent as `model` on `/analyze`). The run records the model the agent reports, so in agent mode the recorded model is the agent's.
+- **Where it appears:** the re-run card (`ReanalysisCard`) is on `/videos/[id]` and in the report page's View mode (advanced tools).
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 

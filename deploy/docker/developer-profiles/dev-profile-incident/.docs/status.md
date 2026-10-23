@@ -6,7 +6,7 @@
 
 | Area | State | Where |
 |---|---|---|
-| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v4` with a three-model picker, versioned reports (History, Save, Restore, evidence-image replacement), explicit official revision, official-revision dashboard, run history and re-generation with a reviewer prompt. API routes reach Supabase through the middle layer (ports and adapters), except analysis saving. Requires the versioned-report schema (`report_revisions`, `evidence_crops`, `query_results`, `videos.official_revision_id`, `save_human_revision`, `set_official_revision`) delivered by the schema task | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
+| Console (`incident-console-v2`) | Upload, analysis on `incident-contract-v4` with a three-model picker, versioned reports (View and Edit modes, History, Save as new version with a note, evidence-image replacement, a chat that follows the selected version), the `/library` page for incident and evidence search, explicit official revision, official-revision dashboard, and run history with re-generation (model and reviewer prompt) on the video page. API routes reach Supabase through the middle layer (ports and adapters), except analysis saving. Requires the versioned-report schema (`report_revisions`, `evidence_crops`, `query_results`, `videos.official_revision_id`, `save_human_revision`, `set_official_revision`) delivered by the schema task | [`analysis-schema.md`](analysis-schema.md), [`architecture.md`](architecture.md), [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Versioned `report_revisions` rows plus Cloudflare R2 videos and evidence images; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
@@ -18,9 +18,10 @@
 Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; the analyze route writes `report_revisions` with evidence crops; `POST /api/v1/incidents/evidence-embeddings` serves the embeddings; and marking a revision official rebuilds that incident's `evidence_crops` from it.
-- **Revision vector search (written, not applied):** migration `20261023120000` adds `report_revisions.embedding`, its HNSW index and `search_report_revisions`; the agent embeds each AI revision's summary on insert and serves `POST /api/v1/incidents/revisions/search`. The captain applies the migration; until then the column does not exist on finals.
+- **Revision vector search (written, not applied):** migration `20261023120000` adds `report_revisions.embedding`, its HNSW index and `search_report_revisions`; the agent embeds each AI revision's `incident.title` and `incident.description` on insert and serves `POST /api/v1/incidents/revisions/search`. The captain applies the migration; until then the column does not exist on finals.
 - **Live on `kwanz-ws`:** not re-verified since the move to `report_revisions`. The 2026-10-18 check of the retired backfill loader (64 of 69 items loaded) no longer applies; re-run the search checks in [`vm-api-contracts.md`](vm-api-contracts.md) after marking a console revision official.
-- **In progress:** frontend search UI (the console's report page chat already calls `POST /api/v1/incidents/chat`; the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer work.
+- **Console search and chat (delivered):** `/library` Find incidents and Find evidence (`POST /api/search` to the agent's search route); the report page chat calls `POST /api/chat` and follows the selected version (`version_id`, `draft_report`).
+- **In progress:** retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer work.
 - **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
 
 ## 3. Database status
@@ -35,7 +36,7 @@ The finals baseline incorporates all prior migration effects:
 
 The console in this branch requires the versioned-report schema and its functions; the migrations that create them are delivered by the schema task, not by this change. Do not point the console at a database without them.
 
-`supabase/migrations/20261023000200_searchable_latest_revision.sql` is written and tested on the hermetic harness but **not yet applied** to the live database (the captain applies it). Until then a video with no official revision has no searchable evidence, and library cards lack `officialSince`, `versionCount`, `evidenceCount` and `thumbnail`. Nothing writes the newest revision's crops yet: the console and agent still need to call `set_revision_crops`.
+`supabase/migrations/20261023000200_searchable_latest_revision.sql` is written and tested on the hermetic harness but **not yet applied** to the live database (the captain applies it). Until then the console's `set_revision_crops` call for a video with no official revision fails (logged, returned as `searchable.error`, the save still succeeds), and library cards lack `officialSince`, `versionCount`, `evidenceCount` and `thumbnail`.
 
 ## 4. Known issues
 
@@ -45,7 +46,8 @@ The console in this branch requires the versioned-report schema and its function
 4. **One run has no recorded outcome.** `m86a5c319e26659804b0` predates recorded outcomes and shows as `valid_first_pass` (inferred).
 5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no revision) stays, because attempt notes are immutable.
 6. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
-7. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports contextual `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` rules when given `video_duration_seconds`. At runtime, `vss-agent` has no R2 credentials to perform byte-range reads on MP4 headers; in agent mode, the console performs the header read and enforces the video-bounds rule upon receiving agent output.
+7. **Two re-run models are unconfirmed on the Brev endpoint.** `nvidia/cosmos-3-nano-reasoner` and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` are in the allowlist, but the VM check could not list the served models (401 without a LiteLLM key). If the agent rejects one, that run is recorded as `request_failed`.
+8. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports contextual `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` rules when given `video_duration_seconds`. At runtime, `vss-agent` has no R2 credentials to perform byte-range reads on MP4 headers; in agent mode, the console performs the header read and enforces the video-bounds rule upon receiving agent output.
 
 ## 5. Follow-ups
 
