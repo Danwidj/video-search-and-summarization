@@ -46,7 +46,7 @@ export function unchangedEdit(rows) {
   const details = (sourceId) => ({ source_id: sourceId, timestamp_seconds: incident.startSeconds, label: '', image: null });
   return {
     incident: { type: incident.type, start_timestamp: incident.startSeconds, end_timestamp: incident.endSeconds, description: incident.description, severity_level: incident.severityLevel },
-    entities: structured.entities.map((e) => ({ entity_id: e.entityId, type: e.type, description: e.description, ...details(e.entityId) })),
+    entities: structured.entities.map((e) => ({ entity_id: e.entityId, type: e.type, description: e.description, first_seen_seconds: incident.startSeconds, last_seen_seconds: incident.startSeconds, ...details(e.entityId) })),
     instruments: structured.instruments.map((i) => ({ instrument_id: i.instrumentId, entity_id: i.entityId, name: i.name, description: i.description, threat_level: i.threatLevel, ...details(i.instrumentId) })),
     assets: structured.assets.map((a) => ({ asset_id: a.assetId, name: a.name, description: a.description, ...details(a.assetId) })),
   };
