@@ -228,7 +228,7 @@ Run through these checks before any live demo or presentation:
 - [ ] **Health Endpoint Check:** Call `GET /api/health` on `incident-console-v2` (`curl -s http://localhost:3200/api/health`). All core services (`database`, `storage`, `inference`, `agent`) should report `true`. If any status reports `degraded`, treat it as an active warning and investigate before presenting.
 - [ ] **Search Configuration & UX:** Keep search `top_k` set to 5–10 (each candidate hit adds ~1 s of critic launch delay spacing, so high `top_k` values scale latency linearly). Ensure the frontend displays a loading state during query evaluation.
 - [ ] **Recorded Fallback Asset:** Keep a pre-recorded demo video or offline screencast ready in case remote inference or network connectivity degrades during the demo.
-- [ ] **Evidence Rows:** Search needs `evidence_crops` rows, which the console rebuilds when a revision is made official (it calls the agent's `evidence-embeddings` endpoint). Mark the demo incidents official before the demo, then confirm a search returns them.
+- [ ] **Evidence Rows:** Search needs `evidence_crops` rows. Each video's rows belong to its official revision, or to its newest revision when it has no official one. The console rebuilds them when a revision is made official (it calls the agent's `evidence-embeddings` endpoint); nothing writes them yet for a newest revision with no official one. Mark the demo incidents official before the demo, then confirm a search returns them. `scripts/backfill_official_timestamps.py` is retired.
 
 ---
 

@@ -24,6 +24,7 @@ supabase/
                 20261022123252_drop_unused_tables.sql — removes tables no live code uses
                 20261023000000_report_revisions_schema.sql — versioned JSONB reports
                 20261023000100_report_revisions_functions.sql — revision RPCs
+                20261023000200_searchable_latest_revision.sql — crops for the newest revision, official_since, card fields
   tests/        SQL harness (test_baseline.py, test_freeze.py), security_check.sql, supabase_stub.sql,
                 parity_check.py, rehearse.py, probe_api.sh
   copy/         copy_midterm_to_finals.py + transform.sql: the one-way midterm -> finals copy (historical)
@@ -36,15 +37,15 @@ The migrations build the original midterm-shaped model, drop the tables no live 
 replace the relational report model with versioned snapshots. The **current** schema has six tables:
 
 - `videos` — upload registry, now with `official_revision_id` (composite FK to one of its own
-  revisions); the old `selected_model_run_id`/`selected_by`/`selected_at` columns are gone.
+  revisions) and `official_since` (when it was marked); the old `selected_model_run_id`/`selected_by`/`selected_at` columns are gone.
 - `queries`, `model_runs` — unchanged search audit and run registry. Model runs keep the immutable
   analysis-attempt record in `notes`.
 - `report_revisions` — append-only `ai`/`human` snapshots: full contract report in `payload`,
   evidence list in `evidence`, plain facets (`incident_type`, `severity_level`, timestamps), and
   links to the video (`revision_no` per video), run (`model_run_id`) and parent revision
   (`parent_id`).
-- `evidence_crops` — searchable crops keyed by `revision_id` with the pgvector embedding; rows exist
-  only for the **official** revision.
+- `evidence_crops` — searchable crops keyed by `revision_id` with the pgvector embedding; rows belong
+  to the video's **searchable revision**: the official one, else the newest.
 - `query_results` — search audit keyed by `query_id` and `revision_id`.
 
 `incidents`, `reports`, `entities`, `instruments`, `assets`, `human_reports*`, `review_status`,
@@ -56,12 +57,17 @@ constraints: [`../.docs/data.md`](../.docs/data.md).
 
 - `save_human_revision` — atomically appends a human revision (`max(revision_no)+1`, inherits the
   parent's run) and returns its JSON descriptor.
-- `set_official_revision` — in one transaction sets `videos.official_revision_id` and replaces that
-  video's `evidence_crops` with the caller's crop list (NULL clears both).
-- `search_evidence_items` — HNSW cosine search over official revisions, returning the incident,
-  revision, run, facets and similarity.
+- `set_official_revision` — in one transaction sets `videos.official_revision_id` and
+  `official_since` and moves the video's `evidence_crops` to the new official revision (the caller's
+  crop list, or the rows it already has); NULL clears the pointer and leaves the newest revision
+  searchable.
+- `set_revision_crops` — stores the crops of the video's searchable revision (official, else newest)
+  without changing the pointer; refused for any other revision.
+- `search_evidence_items` — HNSW cosine search over each video's searchable revision, returning the
+  incident, revision, run, facets and similarity.
 - `list_incident_report_summaries` — one card per video (official, else newest), filtered by
-  `p_kind` (`ai`/`human`), type, severity, evidence and text.
+  `p_kind` (`ai`/`human`), type, severity, evidence and text; cards carry `officialSince`,
+  `versionCount`, `evidenceCount` and `thumbnail`.
 - `get_incident_dashboard` — aggregates official revisions only.
 
 Every function is `SECURITY INVOKER`, pins `SET search_path = ''`, and is executable by
