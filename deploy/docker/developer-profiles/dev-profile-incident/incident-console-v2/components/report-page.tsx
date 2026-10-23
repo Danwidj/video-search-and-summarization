@@ -7,9 +7,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { AdvancedReportTools } from '@/components/advanced-report-tools';
 import { ReportEditPane } from '@/components/report-edit-pane';
+import { ReportChat } from '@/components/report-chat';
 import { ReportPane } from '@/components/report-pane';
 import { ReportTimeline } from '@/components/report-timeline';
 import { ReportVersions } from '@/components/report-versions';
+import { chatTarget } from '@/lib/chat/report-chat';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
 import { draftFromView, draftProblems, editFromDraft, type EditDraft } from '@/lib/reports/edit-draft';
 import { reportHeading, type ReportView } from '@/lib/reports/report-view';
@@ -39,6 +41,7 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [editBase, setEditBase] = useState<EditBase | null>(null);
   const [compareRevisionId, setCompareRevisionId] = useState<number | null>(null);
@@ -227,6 +230,7 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-ink/10 px-5 py-3 text-sm">
           <Link className="font-semibold text-moss" href="/reports" id="back-to-reports">← Reports</Link>
           <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>{heading}<span className="ml-2 font-normal text-ink/45">{filename}</span></h1>
+          <button aria-expanded={chatOpen} className="rounded-full border border-ink/15 px-3 py-1 text-xs font-semibold text-moss" data-testid="chat-toggle" onClick={() => setChatOpen((open) => !open)} type="button">Ask about this incident</button>
           <div aria-label="Report mode" className="flex shrink-0 rounded-full border border-ink/15 p-0.5 text-xs font-semibold" role="tablist">
             <button aria-selected={mode === 'view'} className={`rounded-full px-3 py-1 ${mode === 'view' ? 'bg-ink text-white' : 'text-ink/60'}`} onClick={() => switchMode('view')} role="tab" type="button">View</button>
             <button aria-selected={mode === 'edit'} className={`rounded-full px-3 py-1 ${mode === 'edit' ? 'bg-ink text-white' : 'text-ink/60'}`} onClick={() => switchMode('edit')} role="tab" type="button">Edit</button>
@@ -315,6 +319,7 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
         </div>
       </article>
       {mode === 'view' && <AdvancedReportTools report={report} />}
+      {chatOpen && <ReportChat onClose={() => setChatOpen(false)} onSeek={seek} target={chatTarget(mode === 'edit' && draft && editBase ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft } : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null })} videoId={videoId} />}
     </div>
   );
 }

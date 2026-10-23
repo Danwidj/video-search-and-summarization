@@ -29,6 +29,10 @@ export interface ChatRequest {
   /** At least one; the last user message is the query. */
   messages: ChatMessage[];
   context?: ChatContext;
+  /** The saved report version (report_revisions.id) the question is about; citations come from it. */
+  versionId?: number;
+  /** An unsaved incident report edited from versionId; answers are grounded in it. Requires versionId. */
+  draftReport?: Record<string, unknown>;
 }
 
 export interface ChatCitation {
