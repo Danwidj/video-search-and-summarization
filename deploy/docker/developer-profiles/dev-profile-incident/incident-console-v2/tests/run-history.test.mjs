@@ -17,9 +17,9 @@ const repaired = fixture('contract-v2-repaired-run.json');
 const smoke = fixture('contract-v2-smoke-run.json');
 const V = repaired.videoId;
 
-const incidentRow = (rows) => ({
-  model_run_id: rows.modelRunId, type: rows.incident.type, severity_level: rows.incident.severity_level,
-  model_runs: rows.modelRun, reports: [rows.reportRow],
+const revisionRow = (rows, id) => ({
+  id, model_run_id: rows.modelRunId, incident_type: rows.incident.type, severity_level: rows.incident.severity_level,
+  created_at: rows.reportRow.generated_datetime, model_runs: rows.modelRun,
 });
 const attempt = (id, videoId, status, extra = {}) => ({
   id, model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-09-27T12:00:00',
@@ -35,7 +35,7 @@ test('a video history lists successful runs, repaired runs and failed attempts, 
   const otherVideo = attempt('m-other', 'v-some-other-video', 'contract_failed');
   const { runs, counts } = buildRunHistory({
     videoId: V,
-    incidentRows: [incidentRow(repaired), incidentRow(smoke)],
+    revisionRows: [revisionRow(repaired, 7), revisionRow(smoke, 8)],
     // The repaired run is also found by the notes pre-filter; it must appear once.
     attemptCandidates: [contractFailed, requestFailed, otherVideo, { id: repaired.modelRunId, notes: repaired.modelRun.notes }],
     sharedRunIds: new Set(),
@@ -45,10 +45,10 @@ test('a video history lists successful runs, repaired runs and failed attempts, 
   const byId = Object.fromEntries(runs.map((run) => [run.modelRunId, run]));
   assert.equal(byId.m811cf2b237f50ff9812.outcome, 'valid_after_structural_repair');
   assert.deepEqual(byId.m811cf2b237f50ff9812.repair.operations.map((op) => op.op), ['reorder', 'rename-id']);
-  assert.equal(byId.m811cf2b237f50ff9812.report.reportId, 'r4a0af1f2a8a1bab313f');
+  assert.equal(byId.m811cf2b237f50ff9812.revision.revisionId, 7);
   assert.equal(byId.m86a5c319e26659804b0.outcome, 'valid_first_pass');
   assert.equal(byId.m86a5c319e26659804b0.outcomeInferred, true, 'recorded before outcomes existed');
-  assert.equal(byId['m-cf'].report, null, 'failed attempts never have a report');
+  assert.equal(byId['m-cf'].revision, null, 'failed attempts never have a report version');
   assert.equal(byId['m-cf'].failure.violations[0].code, 'TIMELINE_START_OUTSIDE_WINDOW');
   assert.equal(byId['m-rf'].failure.code, 'GATEWAY_TIMEOUT');
   assert.equal(describeCode(byId['m-rf'].failure.code), 'The model did not answer within its time limit');
@@ -56,18 +56,21 @@ test('a video history lists successful runs, repaired runs and failed attempts, 
 });
 
 test('pre-outcome and batch runs are shown as earlier analyses, never as failures', () => {
-  const evalRow = { model_run_id: 'P1-cosmos3nano', type: 'Assault', severity_level: 3, model_runs: { id: 'P1-cosmos3nano', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-27T01:00:00', notes: null }, reports: [] };
-  const legacyRow = { model_run_id: 'm-legacy', type: 'fighting', severity_level: 2, model_runs: { id: 'm-legacy', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-20T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'fighting' } } }) }, reports: [{ id: 'r-legacy', generated_datetime: '2026-09-20T01:00:00' }] };
-  const removedLegacy = { id: 'm-removed', model_name: 'm', run_datetime: '2026-09-19T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'burglary' } } }) };
-  const { runs, counts } = buildRunHistory({ videoId: V, incidentRows: [evalRow, legacyRow], attemptCandidates: [removedLegacy], sharedRunIds: new Set(['P1-cosmos3nano']) });
+  const evalRun = { id: 'P1-cosmos3nano', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-27T01:00:00', notes: null };
+  const evalRow = { id: 3, model_run_id: 'P1-cosmos3nano', incident_type: 'assault', severity_level: 3, created_at: '2026-09-27T01:00:00', model_runs: evalRun };
+  const legacyRun = { id: 'm-legacy', model_name: 'nvidia/cosmos-3-nano-reasoner', run_datetime: '2026-09-20T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'fighting' } } }) };
+  const legacyRow = { id: 4, model_run_id: 'm-legacy', incident_type: 'fighting', severity_level: 2, created_at: '2026-09-20T01:00:00', model_runs: legacyRun };
+  const unrevised = { id: 'm-removed', model_name: 'm', run_datetime: '2026-09-19T01:00:00', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: V, incident_type: 'burglary' } } }) };
+  const { runs, counts } = buildRunHistory({ videoId: V, revisionRows: [evalRow, legacyRow], attemptCandidates: [unrevised], sharedRunIds: new Set(['P1-cosmos3nano']) });
   const byId = Object.fromEntries(runs.map((run) => [run.modelRunId, run]));
   assert.equal(byId['P1-cosmos3nano'].outcome, 'legacy');
   assert.equal(byId['P1-cosmos3nano'].source, 'shared');
-  assert.equal(byId['P1-cosmos3nano'].report, null, 'an eval run without a reports row has no report');
+  assert.deepEqual(byId['P1-cosmos3nano'].revision, { revisionId: 3, type: 'assault', severityLevel: 3 });
   assert.equal(byId['m-legacy'].outcome, 'legacy');
-  assert.equal(byId['m-legacy'].report.type, 'assault', 'legacy types are shown in contract form');
-  assert.equal(byId['m-removed'].reportRemoved, true);
-  assert.deepEqual(counts, { attempts: 3, withReport: 1, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 0, request_failed: 0, legacy: 3 });
+  assert.equal(byId['m-legacy'].revision.type, 'assault', 'legacy types are shown in contract form');
+  assert.equal(byId['m-removed'].outcome, 'legacy');
+  assert.equal(byId['m-removed'].revision, null, 'a run with no stored version has no report');
+  assert.deepEqual(counts, { attempts: 3, withReport: 2, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 0, request_failed: 0, legacy: 3 });
 });
 
 test('stored UTC timestamps without a zone are rendered as UTC, not local time', () => {

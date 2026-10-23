@@ -1,6 +1,6 @@
 ---
 name: incident-search
-description: Use to search incident evidence, ask grounded follow-up questions, inspect critic verdicts, or populate and verify evidence crops through the incident profile's local mock or VM agent. Not for generating a report (use incident-analyze-video), batch evaluation (use incident-run-eval), or database migrations (use incident-manage-database).
+description: Use to search incident evidence, ask grounded follow-up questions, inspect critic verdicts, or populate and check evidence crops through the incident profile's local mock or VM agent. Not for generating a report (use incident-analyze-video), batch evaluation (use incident-run-eval), or database migrations (use incident-manage-database).
 license: Apache-2.0
 metadata:
   version: "0.1.0"
@@ -37,7 +37,7 @@ curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"weapon used during a burglary","top_k":5}' | jq .
 
-# Local mode (the mock uses the same route shape)
+# Mock mode (the mock uses the same route shape)
 curl -sS -X POST http://localhost:7777/api/v1/incidents/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"crowbar used in burglary","top_k":3}' | jq .
@@ -93,7 +93,7 @@ curl -sS http://localhost:8000/health | jq .
 curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
   -H 'Content-Type: application/json' -d '{"query":"weapon","top_k":5}' | jq '{total_hits, hits: [.hits[] | {rank, timestamp: .item.timestamp_seconds, verdict: .critic.verdict}]}'
 
-# Local mock smoke test instead: replace :8000 with :7777.
+# Mock-mode smoke test instead: replace :8000 with :7777.
 ```
 
 For a live run, confirm that crop URLs return an image response, the timestamp seeks into the parent playback window, and `queries`/`query_results` grow in finals. If the route returns hits but query persistence warns, stop and hand off to [`incident-operate-vm`](../incident-operate-vm/SKILL.md); do not silently treat the search as fully verified.

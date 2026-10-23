@@ -87,5 +87,5 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |
 | Port 3200, 7777, 8000 or 8600 already in use | A previous run is still alive. Stop it, or find it with `lsof -i :<port>`. |
 | Console health shows Supabase or R2 not configured | A missing variable or broken symlink. Re-run the prerequisite checks. |
-| Saving, editing or verifying fails with "permission denied" while reads work | `.env.local` still points at the frozen midterm project. Set the 3 finals values (and refresh other worktrees' copies). |
+| Saving a revision or marking one official fails with "permission denied" while reads work | `.env.local` still points at the frozen midterm project. Set the 3 finals values (and refresh other worktrees' copies). |
 | VM services missing after self-heal | Hand off to [`incident-operate-vm`](../incident-operate-vm/SKILL.md). |

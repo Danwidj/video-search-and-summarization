@@ -28,7 +28,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Mode | Backend | Analysis path (`ANALYSIS_MODE`) | Needs |
 |---|---|---|---|
 | `--mode mock` | `mock-backend` + `vlm-gateway` on the laptop | `gateway`: console calls the gateway, the console writes Supabase | `.env.local`, no GPU, no SSH |
-| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`) and writes Supabase; agent persists nothing when `model_run_id` is supplied | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
+| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`); the agent inserts the AI revision and returns `revision_id`, the console writes `model_runs` | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
 
 ---
 
@@ -38,7 +38,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 |---|---|
 | Set up secrets and launch the console, locally or against the VM | [`incident-start`](incident-start/SKILL.md) |
 | Deploy, restart, inspect or fix services on `kwanz-ws` | [`incident-operate-vm`](incident-operate-vm/SKILL.md) |
-| Upload a clip and generate, re-run, review or check an incident report | [`incident-analyze-video`](incident-analyze-video/SKILL.md) |
+| Upload a clip and generate, re-run, version or mark official an incident report | [`incident-analyze-video`](incident-analyze-video/SKILL.md) |
 | Search incident evidence, ask grounded follow-up questions, or refresh evidence crops | [`incident-search`](incident-search/SKILL.md) |
 | Change or inspect the Supabase schema, test or apply a migration, query incident data, or find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
 | Ingest ground truth, run the P1/RP1 VLM benchmark, aggregate results | [`incident-run-eval`](incident-run-eval/SKILL.md) |
@@ -59,7 +59,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 |---|---|
 | [incident-start](incident-start/SKILL.md) | Prepare `.env.local` and symlinks, then launch via `start.sh --mode mock\|vm`. Covers mode choice, SSH preflight, and health checks. |
 | [incident-operate-vm](incident-operate-vm/SKILL.md) | Operate `kwanz-ws`: the native-vs-Docker split, `native-services.sh`, Compose appliances, `generated.env.remote` rules, the agent editable reinstall, and the troubleshooting order. Includes the never-run list. |
-| [incident-analyze-video](incident-analyze-video/SKILL.md) | Upload → analyse → persist → review flow in both modes. Covers agent and console API contracts, error codes, where each row comes from, and verification. |
+| [incident-analyze-video](incident-analyze-video/SKILL.md) | Upload → analyse → persist → version flow in both modes. Covers agent and console API contracts, error codes, where each row comes from, and verification. |
 | [incident-search](incident-search/SKILL.md) | Search and chat requests, critic verdicts, evidence crops, and the local/VM verification path. |
 | [incident-manage-database](incident-manage-database/SKILL.md) | Finals schema (baseline, reviewer version, RPCs), the SQL harness and security check, `supabase db push` with dry-run first, PostgREST vs direct-Postgres access, and the R2 key layout. Never writes to the frozen midterm project. |
 | [incident-run-eval](incident-run-eval/SKILL.md) | Standalone `eval/` pipeline: embedding server, GT ingest, seeded split, batch run, aggregation, and hermetic tests. |

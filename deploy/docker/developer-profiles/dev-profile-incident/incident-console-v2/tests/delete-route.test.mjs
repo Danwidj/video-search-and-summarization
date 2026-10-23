@@ -33,10 +33,12 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 
 const attempt = (id, videoId, status) => ({
   id,
-  notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, contractVersion: 'incident-contract-v2', videoId, request: {}, response: null, validation: { firstPass: [] }, repair: null } }),
+  notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, contractVersion: 'incident-contract-v3', videoId, request: {}, response: null, validation: { firstPass: [] }, repair: null } }),
 });
 
-test('deleting a video removes the run records that explicitly name that video and no longer have an incident', async () => {
+const call = () => DELETE(new Request('http://localhost/api/reports/v-target/delete', { method: 'DELETE' }), { params: Promise.resolve({ videoId: 'v-target' }) });
+
+test('deleting a video removes its objects, the video row, and the run records that name only it and no revision uses', async () => {
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
@@ -52,32 +54,30 @@ test('deleting a video removes the run records that explicitly name that video a
         attempt('m-valid', 'v-target', 'valid_first_pass'),
         { id: 'm-legacy', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v-target', incident_type: 'burglary' } } }) },
         { id: 'm-legacy-other', notes: JSON.stringify({ incidentConsoleV2: { report: { videoId: 'v-target-2' } } }) },
-        { id: 'm-mentions', notes: JSON.stringify({ incidentConsoleV2: { contractVersion: 'incident-contract-v2', note: '"videoId":"v-target"' } }) },
-        attempt('m-has-incident', 'v-target', 'contract_failed'),
+        { id: 'm-mentions', notes: JSON.stringify({ incidentConsoleV2: { contractVersion: 'incident-contract-v3', note: '"videoId":"v-target"' } }) },
+        attempt('m-used', 'v-target', 'valid_first_pass'),
       ]));
     }
-    if (table === 'incidents') {
-      const run = parsed.searchParams.get('model_run_id');
-      return new Response(JSON.stringify(run === 'eq.m-has-incident' ? [{ incident_id: 'v-target' }] : []));
+    if (table === 'report_revisions') {
+      return new Response(JSON.stringify(parsed.searchParams.get('model_run_id') === 'eq.m-used' ? [{ id: 9 }] : []));
     }
     return new Response('[]');
   };
 
-  const response = await DELETE(new Request('http://localhost/api/reports/v-target/delete?run=m-valid&deleteVideo=true', { method: 'DELETE' }), { params: Promise.resolve({ videoId: 'v-target' }) });
+  const response = await call();
 
   assert.equal(response.status, 200);
   assert.deepEqual(deletes.filter((d) => d.startsWith('model_runs')).sort(), ['model_runs?id=eq.m-failed', 'model_runs?id=eq.m-legacy', 'model_runs?id=eq.m-request', 'model_runs?id=eq.m-valid']);
-  assert.ok(deletes.indexOf('videos?id=eq.v-target') < deletes.indexOf('model_runs?id=eq.m-failed'), 'the video (and its cascaded report rows) goes first');
+  assert.ok(deletes.indexOf('videos?id=eq.v-target') < deletes.indexOf('model_runs?id=eq.m-failed'), 'the video (and its cascaded revisions) goes first');
+  assert.deepEqual(deletedObjects.sort(), ['thumbnails/uploads/s/v.mp4.webp', 'uploads/s/v.mp4'], 'only the video object and its thumbnail; evidence images stay');
 });
 
-test('deleting a single report does not touch attempt records', async () => {
+test('a video without a stored object is refused and nothing is deleted', async () => {
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
-    const parsed = new URL(String(url));
-    if (init.method === 'DELETE') deletes.push(parsed.pathname.replace('/rest/v1/', ''));
-    return new Response('[]');
+    if (init.method === 'DELETE') deletes.push(String(url));
+    return new Response(JSON.stringify([{ id: 'v-target', filepath: null }]));
   };
-  const response = await DELETE(new Request('http://localhost/api/reports/v-target/delete?run=m-valid', { method: 'DELETE' }), { params: Promise.resolve({ videoId: 'v-target' }) });
-  assert.equal(response.status, 200);
-  assert.deepEqual(deletes, ['incidents']);
+  assert.notEqual((await call()).status, 200);
+  assert.deepEqual(deletes, []);
 });

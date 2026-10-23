@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored in Supabase (rows) and Cloudflare R2 (video). Reviewers then verify it, and it is scored against ground truth. MVP2 adds natural-language search ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)).
+Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVAITC). A reviewer uploads a clip, a VLM extracts a structured incident report, and the report is stored as an append-only Supabase revision (JSONB) with the video in Cloudflare R2. Reviewers edit it into new human revisions, one revision per incident is marked official, and eval scores model output separately. MVP2 adds natural-language search ([`.docs/mvp2/README.md`](.docs/mvp2/README.md)).
 
 - **Operate the profile** (launch, VM ops, analyse, migrate, evaluate): use the skills in [`skills/README.md`](skills/README.md).
 - **Understand it:** [`.docs/`](#docs-map). Start with [`.docs/status.md`](.docs/status.md) for what is true today.
@@ -12,7 +12,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 
 | Path | Stack | Role | Status |
 |---|---|---|---|
-| `incident-console-v2/` | Next.js 15, TypeScript, Zod | Primary UI :3200: upload, analysis orchestration, review, eval form | Active |
+| `incident-console-v2/` | Next.js 15, TypeScript, Zod | Primary UI :3200: upload, analysis orchestration, report versions (History, Save, Restore, official) | Active |
 | `vlm-gateway/` | FastAPI, `uv` | Holds the Brev key server-side; `/v1/chat/completions` :8600 | Active |
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
@@ -49,13 +49,13 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Architecture rules
 
 - **Reports are versioned snapshots:** each analysis writes an append-only `report_revisions` row (`kind='ai'`, JSONB `payload` and `evidence`, new `model_run_id`); a human edit is a later `kind='human'` revision. Re-generation is a new AI branch (`parent_id` NULL) and copies no earlier edits. `evidence_crops` and `query_results` key on `revision_id`.
-- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In agent mode the agent writes the AI revision and its evidence crops in R2; gateway mode calls the `vlm-gateway` instead, so no revision or crops are written there. The agent never writes `videos`; in agent mode the console owns the `model_runs` row, so the agent only inserts a placeholder if it is absent. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
+- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In agent mode the agent inserts the AI revision (and uploads its evidence crops to R2) and returns `revision_id`; in gateway mode the console inserts the revision with image-less evidence entries. Neither writes `videos`; the console owns the `model_runs` row. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
 - **Both modes use `incident-contract-v3`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
 - **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `lib/adapters/supabase/` builds PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
-- **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official report is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
+- **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.

@@ -4,16 +4,17 @@
 // lib/reports/view.ts (which reads notes and validates the contract); this
 // module must not import server-only code.
 //
-// The report view: three sources, never merged into one another.
-// - Class A (structured): the relational projection (incidents, entities,
-//   instruments, assets). This is the current, reviewer-editable state.
+// The report view of one revision: three sources, never merged into one another.
+// - Class A (structured): the revision's payload (incident, entities,
+//   instruments, assets) with each item's evidence. A human revision holds the
+//   reviewer's values; an AI revision the model's.
 // - Class B (modelOutput): read-only fields from the immutable original model
 //   report in model_runs.notes (title, severity rationale, location, timeline,
 //   uncertainties), plus the model's original structured values so edits can
 //   be shown against them.
-// - Class C (run): run and provenance metadata.
+// - Class C (run, revision): run, revision and provenance metadata.
 
-import type { ReviewStatus } from '@/lib/reports/storage';
+import type { RevisionSummary } from '@/lib/reports/revision';
 import type { ContractRunRequest, ContractRunResponse } from '@/lib/reports/run-notes';
 
 export interface StructuredIncident {
@@ -26,11 +27,21 @@ export interface StructuredIncident {
   confidenceScore: number | null;
 }
 
-// sourceId: the ID of the AI item this item came from (its own ID in the AI report), or null for
-// an item the reviewer added. Reviewer IDs are renumbered by position, so they cannot carry it.
-export interface StructuredEntity { entityId: string; sourceId: string | null; type: string; description: string }
-export interface StructuredInstrument { instrumentId: string; sourceId: string | null; entityId: string | null; name: string; description: string; threatLevel: number | null }
-export interface StructuredAsset { assetId: string; sourceId: string | null; name: string; description: string }
+/** An item's evidence in this revision: the image key, its signed URL (null when none or unsigned) and crop details. */
+export interface ItemEvidence {
+  image: string | null;
+  imageUrl: string | null;
+  boundingBox: number[] | null;
+  timestampSeconds: number | null;
+  /** True for an image a reviewer uploaded (no bounding box in the video frame). */
+  uploaded: boolean;
+}
+
+// timestampSeconds: when the item is most clearly visible; label: its short detector label.
+interface ItemDetails { timestampSeconds: number | null; label: string; evidence: ItemEvidence | null }
+export interface StructuredEntity extends ItemDetails { entityId: string; type: string; description: string }
+export interface StructuredInstrument extends ItemDetails { instrumentId: string; entityId: string | null; name: string; description: string; threatLevel: number | null }
+export interface StructuredAsset extends ItemDetails { assetId: string; name: string; description: string }
 
 export interface TimelineEvent {
   startSeconds: number;
@@ -68,8 +79,8 @@ export interface ModelOutput {
 
 export interface RunDetails {
   videoId: string;
-  modelRunId: string;
-  reportId: string;
+  /** Null only for a revision whose run is not recorded. */
+  modelRunId: string | null;
   filename: string;
   playbackUrl: string;
   model: string;
@@ -93,13 +104,14 @@ export interface RunDetails {
 
 export interface ReportView {
   videoId: string;
-  modelRunId: string;
+  revisionId: number;
+  modelRunId: string | null;
   structured: { incident: StructuredIncident; entities: StructuredEntity[]; instruments: StructuredInstrument[]; assets: StructuredAsset[] };
   modelOutput: ModelOutput | null;
   run: RunDetails;
-  /** Explicit official-report selection for the video (D6); never inferred from recency. */
-  official: { officialRunId: string | null; selectedBy: string | null; selectedAt: string | null; isOfficial: boolean };
-  review: { status: ReviewStatus; verifiedBy?: string; verifiedAt?: string; editedBy?: string; editedAt?: string };
+  revision: RevisionSummary;
+  /** The incident's one official revision (D6); never inferred from recency. */
+  official: { officialRevisionId: number | null; isOfficial: boolean };
   /** Where the current structured values differ from the model's original ones. */
   differences: { type?: { model: string; current: string }; severity?: { model: number; current: number }; fields: string[] };
 }

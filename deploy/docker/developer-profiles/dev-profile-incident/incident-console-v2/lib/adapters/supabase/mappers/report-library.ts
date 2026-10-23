@@ -2,13 +2,14 @@
 
 // list_incident_report_summaries: ReportListQuery -> RPC arguments, and its
 // JSON -> ReportList field by field. Its SQL
-// (supabase/migrations/20261020000000_finals_baseline.sql) builds every summary
+// (supabase/functions-final.sql) builds every summary
 // with exactly these keys and null for an empty column, so for every result it
 // can build the output equals the input; the defaults only apply to a
 // malformed result.
 
 import type { ReportList, ReportListQuery } from '@/lib/ports';
-import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
+import type { RevisionKind } from '@/lib/reports/revision';
+import type { ReportLibraryItem } from '@/lib/reports/storage';
 
 type Row = Record<string, unknown>;
 type Outcome = NonNullable<ReportLibraryItem['outcome']>;
@@ -18,7 +19,7 @@ const text = (value: unknown): string => (typeof value === 'string' ? value : ''
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
-/** A label the SQL derives from stored text (status, run outcome); kept as given, since no CHECK constrains it. */
+/** A label the SQL derives from stored text (run outcome); kept as given, since no CHECK constrains it. */
 const label = <T extends string>(value: unknown, fallback: T): T => (typeof value === 'string' ? (value as T) : fallback);
 
 export function reportListRpcArgs(query: ReportListQuery): Row {
@@ -28,7 +29,7 @@ export function reportListRpcArgs(query: ReportListQuery): Row {
     p_search: query.search,
     p_type: query.type,
     p_severity: query.severity,
-    p_status: query.status,
+    p_kind: query.kind,
     p_generated_after: query.generatedAfter,
     p_generated_before: query.generatedBefore,
     p_time_from: query.timeFrom,
@@ -48,9 +49,13 @@ export function reportListRpcArgs(query: ReportListQuery): Row {
 /** One summary, in the order the SQL builds it. */
 function reportSummary(item: Row): ReportLibraryItem {
   return {
-    reportId: text(item.reportId),
+    revisionId: numberOrNull(item.revisionId) ?? 0,
+    revisionNo: numberOrNull(item.revisionNo) ?? 0,
     videoId: text(item.videoId),
-    modelRunId: text(item.modelRunId),
+    modelRunId: textOrNull(item.modelRunId),
+    kind: label<RevisionKind>(item.kind, 'ai'),
+    createdBy: textOrNull(item.createdBy),
+    note: textOrNull(item.note),
     title: text(item.title),
     filename: text(item.filename),
     incident_type: text(item.incident_type),
@@ -61,15 +66,10 @@ function reportSummary(item: Row): ReportLibraryItem {
     generatedAt: textOrNull(item.generatedAt),
     uploadedAt: textOrNull(item.uploadedAt),
     model: text(item.model),
-    status: label<ReviewStatus>(item.status, 'unreviewed'),
-    // From the run's immutable notes: how the analysis ended.
-    outcome: label<Outcome>(item.outcome, 'legacy'),
-    // Whether this run is the video's selected official report.
+    // From the run's immutable notes: how the analysis ended; null when the revision has no recorded run.
+    outcome: typeof item.outcome === 'string' ? (item.outcome as Outcome) : null,
+    // Whether this revision is the video's official one.
     isOfficial: item.isOfficial === true,
-    verifiedBy: textOrNull(item.verifiedBy),
-    verifiedAt: textOrNull(item.verifiedAt),
-    editedBy: textOrNull(item.editedBy),
-    editedAt: textOrNull(item.editedAt),
     r2Key: textOrNull(item.r2Key),
     sensorId: textOrNull(item.sensorId),
   };

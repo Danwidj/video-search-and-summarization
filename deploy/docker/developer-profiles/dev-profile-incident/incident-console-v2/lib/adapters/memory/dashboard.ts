@@ -10,11 +10,11 @@ import type { DashboardQuery, DashboardRepository } from '@/lib/ports';
 const NO_INCIDENTS: DashboardAnalytics = {
   total: 0,
   videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
-  previous: { total: 0, verified: 0, unreviewed: 0, high: 0 },
+  previous: { total: 0, human: 0, ai: 0, high: 0 },
   averageConfidence: null,
   confidenceNotProvided: 0,
   severity: { low: 0, medium: 0, high: 0 },
-  reviews: { unreviewed: 0, under_review: 0, verified: 0 },
+  revisions: { ai: 0, human: 0 },
   types: [],
   trend: [],
   heatmap: [],

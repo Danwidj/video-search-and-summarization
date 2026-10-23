@@ -10,15 +10,19 @@ import { createR2PlaybackUrl } from '@/lib/r2/config';
 
 export const dynamic = 'force-dynamic';
 
+/** One revision of the incident's report: ?revision=<id>, else the official revision, else the newest. */
 export async function GET(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
     const { videoId } = await context.params;
-    const modelRunId = new URL(request.url).searchParams.get('run');
-    if (!modelRunId) return NextResponse.json({ error: 'A model run ID is required' }, { status: 400 });
+    const raw = new URL(request.url).searchParams.get('revision');
+    const revisionId = raw === null ? null : Number(raw);
+    if (revisionId !== null && (!Number.isSafeInteger(revisionId) || revisionId < 1)) {
+      return NextResponse.json({ error: 'The revision must be a positive whole number' }, { status: 400 });
+    }
 
     const config = getServiceConfiguration();
     const { incidents } = getDbAdapters(config);
-    const report = await getReport(incidents, { videoId, modelRunId }, (storageKey) => createR2PlaybackUrl(config, storageKey));
+    const report = await getReport(incidents, videoId, revisionId, (storageKey) => createR2PlaybackUrl(config, storageKey));
     if (!report) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
     return NextResponse.json({ report });
   } catch (error) {

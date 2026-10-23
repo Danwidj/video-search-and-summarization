@@ -116,8 +116,10 @@ export class PostgrestClient {
     return this.request(`/${table}?${query}`, { method: 'PATCH', body: JSON.stringify(values) });
   }
 
-  async insertIncident(parameters: Record<string, unknown>): Promise<void> {
-    await this.request('/rpc/insert_incident', { method: 'POST', body: JSON.stringify(parameters) });
+  /** Insert one row and return it; a duplicate key is an error (HTTP 409, SQLSTATE 23505). */
+  async insertRow(table: string, row: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const result = await this.request(`/${table}`, { method: 'POST', body: JSON.stringify(row) });
+    return (Array.isArray(result) ? result[0] : result) as Record<string, unknown>;
   }
 
   async rpc(functionName: string, parameters: Record<string, unknown>): Promise<unknown> {

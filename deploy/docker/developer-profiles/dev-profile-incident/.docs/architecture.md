@@ -63,8 +63,8 @@ flowchart TB
     UI -->|VM Mode HTTP /analyze| FwdAgent
     UI -->|VM Mode Video Upload| FwdHAProxy
     UI -->|Direct Upload Fallback & Presigned URLs| R2
-    UI -->|REST /rpc/insert_incident| Supabase
-    UI -->|/rpc/save_human_report_edit, /rpc/set_review_status| Supabase
+    UI -->|REST report_revisions insert| Supabase
+    UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
 
     %% Gateway Upstream
     Gateway -->|Bearer Token Auth| Brev
@@ -86,7 +86,7 @@ flowchart TB
 
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
-| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, review workflow, eval form, report display |
+| `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, report versions (edit, History, restore, official), report display |
 | `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for mock mode |
 | `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, base profile responses, search, and chat |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
@@ -104,7 +104,7 @@ flowchart TB
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
 | `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
-| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals); `supabase/midterm/` (frozen record) | Relational store for reports, incidents, evidence, and reviews. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
+| `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals, including the versioned-report schema and functions); `supabase/midterm/` (frozen record) | Store for videos, runs, versioned report revisions, evidence crops and search history. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
 | `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
 
@@ -167,10 +167,10 @@ ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4
 
 | Project | Role | Schema | Access |
 |---|---|---|---|
-| **Finals** (new project, same organisation and region as midterm) | The live database every service uses | [`supabase/migrations/`](../supabase/README.md): the finals baseline, then later finals migrations | `service_role` (PostgREST) and `postgres` (direct DSN) only; RLS on everything; the public key reaches nothing |
+| **Finals** (new project, same organisation and region as midterm) | The live database every service uses | [`supabase/migrations/`](../supabase/README.md): the finals baseline, then the versioned-report schema and its functions, then later finals migrations | `service_role` (PostgREST) and `postgres` (direct DSN) only; RLS on everything; the public key reaches nothing |
 | **Midterm** (`rfevukimyftzbxlehwel`) | Frozen record of the midterm phase | [`supabase/midterm/`](../supabase/midterm/README.md) (archive; never pushed) | Read-only after the freeze: `service_role` reads and runs the read RPCs, every write fails, direct-DSN sessions are read-only, `anon` is locked out |
 
-Finals is built from the baseline and filled once from midterm by `supabase/copy/copy_midterm_to_finals.py` (one-way; [`../supabase/README.md`](../supabase/README.md)). **R2 is shared:** both projects name the same bucket and keys, so no object is copied and no R2 setting changes. A delete in finals removes R2 objects that the midterm record still names; that is accepted for a record.
+Finals is built from the baseline and filled once from midterm by `supabase/copy/copy_midterm_to_finals.py` (one-way; [`../supabase/README.md`](../supabase/README.md)). The versioned-report schema and its functions (`save_human_revision`, `set_official_revision`, the rewritten search/library/dashboard functions) are applied on top through `supabase/migrations/`. **R2 is shared:** both projects name the same bucket and keys, so no object is copied and no R2 setting changes. A delete in finals removes R2 objects that the midterm record still names; that is accepted for a record.
 
 What points at the database, and how it switches at the cutover:
 
@@ -178,9 +178,9 @@ What points at the database, and how it switches at the cutover:
 |---|---|---|---|
 | `dev-profile-incident/.env.local` on each laptop (symlinked into `incident-console-v2/`, `vlm-gateway/`, `mock-backend/`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | Console, eval, mock backend in local mode, the copy and parity scripts | Each teammate sets the 3 finals values |
 | `.env.local` copies in other worktrees | same | Console or eval started from those worktrees | `.githooks/setup-worktree.sh` never overwrites an existing copy, so old worktrees keep midterm values: refresh or delete them. The freeze makes a stale one fail loudly |
-| `generated.env.remote` on `kwanz-ws` | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Native `vss-agent` (search, chat, standalone persistence); `.scripts/native-services.sh` | Back up, set the two finals values, restart `vss-agent` ("ask first"; [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
+| `generated.env.remote` on `kwanz-ws` | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Native `vss-agent` (search, chat, AI revision insert, evidence embeddings); `.scripts/native-services.sh` | Back up, set the two finals values, restart `vss-agent` ("ask first"; [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
 | `deploy/docker/services/agent/compose.yml` | `INCIDENT_SUPABASE_*` passthrough | The Docker `vss-agent` (not used; the native one owns :8000) | Nothing |
-| `eval/` | `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_*` from the same `.env.local` | P1/RP1 batch, ground-truth ingest | Same `.env.local`; `init_schema()` is a no-op on finals (every table exists) |
+| `eval/` | `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_*` from the same `.env.local` | P1/RP1 batch (outside this change) | Same `.env.local`; eval's storage is outside this change |
 
 The agent only **warns** when it cannot record a search query, so an agent still pointed at midterm keeps answering searches and silently loses the query logs: check that `queries` grows on finals after the switch. The cutover steps, checklist and rollback are in the [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill.
 
@@ -219,9 +219,9 @@ components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (mult
 ```
 
 - Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, review status changes and delete go through `lib/application/reports.ts` (`getReport`, `changeReviewStatus`, `deleteReport`); R2 signing and deletion are passed in as functions. A run's report is read from the `effective_incidents/entities/instruments/assets` views (the reviewer version when the run has one, else the AI's), and a review change is one `set_review_status` call. A refusal by `set_review_status` or `save_human_report_edit` (for example verifying a legacy AI report that must be edited first) becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list, official selection and edit call a port directly; the report library route signs thumbnails itself.
+- Report detail, History, Save, Restore, official marking and delete go through `lib/application/reports.ts` (`getReport`, `listRevisions`, `saveHumanEdit`, `restoreRevision`, `setOfficialRevision`, `deleteVideoAndReports`); R2 signing and deletion, and the agent's embedding call, are passed in as functions. A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by `save_human_revision` or `set_official_revision` becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list and the History list call a port directly; the report library route signs thumbnails itself.
 - `EvidenceSearchRepository` is defined for MVP2 search; its planned adapter calls the vss-agent's `POST /api/v1/incidents/search`.
-- Not yet behind the ports (listed in §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round)): analysis saving and run history (`/api/analysis`, `/api/videos/[videoId]/runs`, `lib/analysis/*`).
+- Analysis saving (`lib/analysis/persistence.ts`) writes `model_runs` and the AI revision through the same `PostgrestClient`; see §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round) for what is still outside the ports.
 
 ### Report library pagination and deferred report loading
 
@@ -241,8 +241,8 @@ sequenceDiagram
     API-->>UI: Metadata + small thumbnail URLs (no video URL)
     UI-->>User: Lazy screenshot images or skeleton fallback
     User->>UI: Open one report
-    UI->>API: GET /api/reports/videoId?run=modelRunId
-    API->>DB: Read selected report graph (IncidentRepository.getRunReport)
+    UI->>API: GET /api/reports/videoId?revision=revisionId
+    API->>DB: Read one report_revisions row (IncidentRepository.getReport)
     API->>R2: Create selected object's signed URL
     API-->>UI: Full report + playback URL
 ```
@@ -253,41 +253,40 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 ### Dashboard analytics and cross-filtering
 
-`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **official incidents only**: one per video, through the video's explicitly selected official report (D6).
-- Videos with reports but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
+`GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **official versions only**: one per video, through `videos.official_revision_id`.
+- Videos with revisions but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
 - Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
 - Model coverage counts every analysis attempt in the period by outcome.
 - Every other number links to `/reports?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
 - The heatmap and weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/reports` detects the same zone itself, so drill-down links carry no timezone and the totals still match.
 
-### Structured (Class A) report editing
+### Report versions: editing, History and restore
 
-`Edit report` opens a side-by-side editor: the original model output read-only on the left, and the structured fields on the right.
-- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets. IDs are renumbered by position; each item sends the AI item it came from as `source_id` (null for an item the reviewer added), so a delete or reorder never relinks it to the AI item that now has its number.
-- **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties.
+`Edit report` opens a side-by-side editor: the original model output read-only on the left, and the structured fields on the right. The page's **History** lists every revision of the incident (kind, author, time, note), newest first; opening one loads it into the editor.
+- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets, including each item's description and detail and its image. IDs are renumbered by position; each item sends the item it came from as `source_id` (null for an added item) so its evidence follows it through a delete or reorder.
+- **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties (copied unchanged into the new revision).
 - **Provenance:** never editable.
+- **Unsaved edits** exist only in the form. A refresh reloads the stored revision. There is no draft.
 
-`PATCH /api/reports/[videoId]/edit` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), then calls `save_human_report_edit`. In one transaction that function saves the run's reviewer version (`human_reports` and its items; created on the first edit, `revision` +1 per save) and stamps `review_status.edited_by/edited_at`; an edit of a verified report sends it back to `under review` and clears the verifier. It never touches the AI rows or `model_runs.notes`. The console calls it directly, not the `apply_structured_report_edit` shim the finals database keeps for older consoles.
+`PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision`, which appends a `human` revision whose parent is the revision that was opened. `POST /api/reports/[videoId]/restore {revisionId, restoredBy}` does the same with the content of an earlier revision. `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` uploads a replacement image to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg` (never overwriting or deleting) and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
 
-`PATCH /api/reports/[videoId]/review` calls `set_review_status`, one transaction that never writes `edited_by/edited_at` (they mean the last content edit). Verifying a report with no reviewer version first copies the AI report into one, so every verified report has a reviewer version.
+The report shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
 
-The report then shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
-
-### Run history, re-analysis and official report
+### Run history, re-generation and the official version
 
 - **Video history.** A video is the parent of its analyses. `GET /api/videos/[videoId]/runs` builds the history from two sources:
-  - runs with an incident for the video;
-  - incident-less attempt records whose notes explicitly name the video: failed attempts, and runs whose report was deleted.
+  - runs with an AI revision for the video;
+  - revision-less attempt records whose notes explicitly name the video: failed attempts.
 
-  Each entry shows model, time, outcome, failure reasons or repair operations, and any additional instruction. Its type and severity come from `effective_incidents`, so a reviewer's edit shows there as on the report page. Failed attempts are never reports.
-- **Re-analysis.** `POST /api/videos/[videoId]/runs {model, additionalInstruction?}` re-analyses the stored R2 object:
+  Each entry shows model, time, outcome, failure reasons or repair operations, the reviewer prompt, and whether its revision is the official one. Failed attempts are never reports.
+- **Re-generation.** `POST /api/videos/[videoId]/runs {model, additionalInstruction?}` re-analyses the stored R2 object (the console's "reviewer prompt" box is `additionalInstruction`):
   - the same canonical request, strict validation and ID-only recovery as an upload;
-  - always a new run;
+  - always a new run and a new AI revision, which starts from the model's output (earlier edits are not carried across);
   - it never writes the `videos` row (the upload time is kept);
-  - it never selects the official report.
-- **Official report.** `PUT/DELETE /api/videos/[videoId]/official` calls `select_official_report` / `clear_official_report`, used from the report page and the video history.
-- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-analysis with a compact history.
+  - it never changes the official version.
+- **Official version.** `PUT /api/videos/[videoId]/official {revisionId}` and `DELETE` call `setOfficialRevision`: for a mark, the console asks the agent for the revision's evidence embeddings (`POST /api/v1/incidents/evidence-embeddings`) and passes them to `set_official_revision`, which sets `videos.official_revision_id` and rebuilds the incident's `evidence_crops`; for a clear it passes none and the rows go. If the agent is unreachable the mark fails and nothing changes. Used from the report page and the video history.
+- **Where it appears:** pages `/videos` and `/videos/[id]`. The report page's analysis card combines re-generation with a compact history.
 
 ### Sequence A: Upload, Analysis & Reporting in Gateway Mode (`ANALYSIS_MODE=gateway`)
 
@@ -323,11 +322,11 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules; id-normalization-v1 only if every violation is ID-only, then re-validate
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
-        UI->>DB: /rpc/insert_incident, entities (E#), instruments (I#, holder), assets (A#), reports
+        UI->>DB: report_revisions (kind ai: payload, evidence, facets)
         UI->>DB: Read back and verify
-        UI-->>User: Redirect to /reports/[videoId]?run=[modelRunId]
+        UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
     else contract_failed / request_failed
-        UI->>DB: model_runs attempt record only (no incident/report/review/evidence rows)
+        UI->>DB: model_runs attempt record only (no revision)
         UI-->>User: 422 / 502 / 504 with the reason; the attempt appears in the video's history
     end
 ```
@@ -382,19 +381,19 @@ sequenceDiagram
     Brev-->>Agent: Schema-constrained JSON
     Agent->>Agent: Strict parse under core-scored-v1 (+ id-normalization-v1), derive duration; core violation -> 422 with raw_output
     Note over Agent,Brev: skip_rp1 - no RP1 call, like gateway mode (standalone calls run RP1)
-    Note over Agent,DB: With model_run_id the agent writes nothing - the console records the run
+    Note over Agent,DB: The agent inserts the AI revision and returns revision_id; the console records the run
 
-    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason}
+    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason, revision_id}
     Tunnel-->>UI: Forward agent response
 
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
-        UI->>DB: /rpc/insert_incident, entities (E#), instruments (I#, holder), assets (A#), reports
+        UI->>DB: report_revisions (kind ai: payload, evidence, facets)
         UI->>DB: Read back and verify
-        UI-->>User: Redirect to /reports/[videoId]?run=[modelRunId]
+        UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
     else contract_failed / request_failed
-        UI->>DB: model_runs attempt record only (no incident/report/review/evidence rows)
+        UI->>DB: model_runs attempt record only (no revision)
         UI-->>User: 422 / 502 / 504 with the reason; the attempt appears in the video's history
     end
 ```

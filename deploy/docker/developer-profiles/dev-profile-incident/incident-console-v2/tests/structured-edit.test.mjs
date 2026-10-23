@@ -90,8 +90,8 @@ test('each item keeps the AI item it came from through a delete, a reorder and a
   const draft = draftFromView(view(repaired));
   draft.entities.shift();
   draft.instruments.reverse();
-  draft.instruments.push({ key: 'instrument-new', sourceId: null, holderKey: null, name: 'phone', description: 'Dropped', threat_level: 1 });
-  draft.assets.push({ key: 'asset-new', sourceId: null, name: 'bench', description: 'Nearby' });
+  draft.instruments.push({ key: 'instrument-new', sourceId: null, timestampSeconds: 4, label: '', image: null, imageUrl: null, holderKey: null, name: 'phone', description: 'Dropped', threat_level: 1 });
+  draft.assets.push({ key: 'asset-new', sourceId: null, timestampSeconds: 4, label: '', image: null, imageUrl: null, name: 'bench', description: 'Nearby' });
   const edit = editFromDraft(draft);
   assert.deepEqual(edit.entities.map((e) => [e.entity_id, e.source_id]), [['E1', 'E2']], 'the walker, AI E2, is now E1 and still names E2');
   assert.deepEqual(edit.instruments.map((i) => [i.instrument_id, i.source_id, i.name]), [['I1', 'I2', 'white van'], ['I2', 'I1', 'bag'], ['I3', null, 'phone']]);
