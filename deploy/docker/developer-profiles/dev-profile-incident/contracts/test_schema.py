@@ -32,7 +32,7 @@ def _validate(schema: dict, instance: dict, label: str) -> None:
 def test_search_request_schema_valid_fixtures():
     """Valid request fixtures pass search_request.schema.json."""
     schema = _load("search-contract-v1/search_request.schema.json")
-    for name in ["minimal-request.json", "full-request.json"]:
+    for name in ["minimal-request.json", "full-request.json", "version-request.json", "draft-request.json"]:
         fixture = _load(f"search-contract-v1/fixtures/valid/{name}")
         _validate(schema, fixture, f"request/{name}")
 
@@ -112,7 +112,7 @@ def test_search_response_pilot_constraints():
 def test_chat_request_schema_valid_fixtures():
     """Valid request fixtures pass chat_request.schema.json."""
     schema = _load("chat-contract-v1/chat_request.schema.json")
-    for name in ["minimal-request.json", "full-request.json"]:
+    for name in ["minimal-request.json", "full-request.json", "version-request.json", "draft-request.json"]:
         fixture = _load(f"chat-contract-v1/fixtures/valid/{name}")
         _validate(schema, fixture, f"chat-request/{name}")
 
@@ -124,6 +124,8 @@ def test_chat_request_schema_invalid_fixtures():
         "request-missing-messages.json",
         "request-empty-messages.json",
         "request-invalid-scope.json",
+        "request-draft-without-version.json",
+        "request-invalid-version-id.json",
     ]:
         fixture = _load(f"chat-contract-v1/fixtures/invalid/{name}")
         try:

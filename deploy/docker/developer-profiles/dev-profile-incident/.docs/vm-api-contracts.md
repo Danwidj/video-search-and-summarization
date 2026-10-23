@@ -172,12 +172,16 @@ Request:
 | `context.scope` | `"global"\|"incident"` | default `global` |
 | `context.incident_id` | string | filters to one incident when scope is `incident` |
 | `context.evidence_crop_ids` | string[] | accepted, unused |
+| `version_id` | integer >= 1 | optional; the `report_revisions.id` the question is about |
+| `draft_report` | object | optional unsaved report edited from `version_id`; requires `version_id` (otherwise `422`) |
 
 Response `200`: `{"session_id", "message": {"role": "assistant", "content", "citations": [{"incident_id","item_id","item_type","timestamp_seconds","crop_image_url"}]}}`. No match gives a "No matching incidents..." message with empty `citations`.
 
+With `version_id` the answer is read from the database, not the canned data: the official revision (`videos.official_revision_id`) goes through search (`evidence_crops`), any other revision uses its own saved `report_revisions.evidence` (crop keys resolved to URLs), and a `draft_report` uses the draft's items with each crop taken from the same item in `version_id`'s evidence. Items match the query by keyword; with no keyword match the revision's items are returned in order. `context.incident_id`, if given, must be the revision's video.
+
 Models are strict (`extra="forbid"`): unknown fields, an invalid `role` or `scope` and an empty `session_id` are `422`. Response citations require `item_type` of `entity`, `instrument` or `asset`, non-empty ids and `timestamp_seconds` >= 0, and `citations` is always present.
 
-Errors: `422` validation (including invalid scope), `400` no `user` message, `502` search client failure. Synchronous and fast (no model call).
+Errors: `422` validation (including invalid scope), `400` no `user` message or `context.incident_id` that is not the revision's video, `404` unknown `version_id`, `502` search client or revision read failure, `503` incident database not configured (only with `version_id`). Synchronous and fast (no model call).
 
 Example: `{"messages":[{"role":"user","content":"edged weapon"}]}` returns `200` with 2 citations from the canned `Assault007` data.
 

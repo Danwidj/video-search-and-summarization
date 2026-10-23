@@ -23,6 +23,11 @@ Follows a hexagonal architecture: calls evidence search capabilities through the
 :class:`SearchClient` port. An in-memory adapter is provided for testing and offline
 operation.
 
+A request may name a report revision (``version_id``) and carry an inline ``draft_report``. The
+official revision is answered from the search index (``evidence_crops``); any other revision, and
+any draft, is answered from that revision's own saved ``evidence``, because ``evidence_crops`` only
+holds official revisions. Revisions are read through the :class:`RevisionStore` port.
+
 TODO(MVP2 Phase 4 / search route owner): Wire SearchClient to live search endpoint /
 pgvector RPC once merged.
 """
@@ -42,6 +47,11 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
+
+from vss_agents.utils import incident_db
+from vss_agents.utils.crop_evidence import evidence_items
+from vss_agents.utils.r2 import resolve_r2_url
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +278,97 @@ class InMemorySearchClient:
 
 
 # ---------------------------------------------------------------------------
+# RevisionStore Port & incident_db Adapter
+# ---------------------------------------------------------------------------
+
+
+class RevisionStoreUnavailableError(RuntimeError):
+    """The revision store cannot be reached or is not configured."""
+
+
+@runtime_checkable
+class RevisionStore(Protocol):
+    """Port for reading saved report revisions."""
+
+    async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
+        """The ``report_revisions`` row, or ``None`` when it does not exist."""
+        ...
+
+    async def get_official_revision_id(self, video_id: str) -> int | None:
+        """The video's ``official_revision_id``, or ``None`` when it has none."""
+        ...
+
+
+class IncidentDBRevisionStore:
+    """RevisionStore adapter over the incident Supabase database (``utils/incident_db``)."""
+
+    async def _db(self) -> incident_db.IncidentDB:
+        db = await incident_db.get_db()
+        if db is None:
+            raise RevisionStoreUnavailableError("incident database is not configured or unreachable")
+        return db
+
+    async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
+        return await (await self._db()).get_revision(revision_id)
+
+    async def get_official_revision_id(self, video_id: str) -> int | None:
+        video = await (await self._db()).get_video(video_id)
+        official = video.get("official_revision_id") if video else None
+        return int(official) if official is not None else None
+
+
+def _query_tokens(query: str) -> list[str]:
+    return [tok for tok in query.lower().strip().replace("?", " ").replace(",", " ").split() if len(tok) > 2]
+
+
+def _revision_hits(
+    query: str,
+    video_id: str,
+    evidence: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """Rank a revision's own evidence entries for ``query`` and shape them like search hits.
+
+    Crops come from each entry's ``image`` key in this revision's saved evidence (never from
+    ``evidence_crops``). Matching is the same keyword match as the in-memory search client; when
+    nothing matches, the revision's items are returned in order, as for an incident-scoped search.
+    """
+    tokens = _query_tokens(query)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for entry in evidence:
+        if entry.get("item_type") not in ("entity", "instrument", "asset") or not entry.get("item_id"):
+            continue
+        text = " ".join(str(entry.get(k) or "") for k in ("item_type", "item_name", "label", "description")).lower()
+        score = sum(1 for tok in tokens if tok in text or (len(tok) > 3 and tok.rstrip("s") in text))
+        scored.append((score if score > 0 else 0.1, entry))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [
+        {
+            "item": {
+                "item_type": entry["item_type"],
+                "item_id": entry["item_id"],
+                "name": entry.get("item_name"),
+                "label": entry.get("label"),
+                "timestamp_seconds": entry.get("timestamp_seconds") or 0,
+                "crop_image_url": resolve_r2_url(str(entry.get("image") or "")),
+            },
+            "incident": {"incident_id": video_id},
+        }
+        for _, entry in scored[:top_k]
+    ]
+
+
+def _draft_evidence(draft_report: dict[str, Any], saved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The draft's items, each with the saved crop of the same item in the base revision (if any)."""
+    crops = {(e.get("item_type"), e.get("item_id")): e for e in saved}
+    merged = []
+    for item in evidence_items(draft_report):
+        base = crops.get((item["item_type"], item["item_id"]))
+        merged.append({**item, "image": base.get("image") if base else None})
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # Request & Response Data Models (chat-contract-v1)
 # ---------------------------------------------------------------------------
 
@@ -297,6 +398,19 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=128, description="Optional session ID")
     messages: list[ChatMessage] = Field(..., min_length=1, description="Message history")
     context: ChatContext | None = Field(default=None, description="Optional context")
+    version_id: int | None = Field(
+        default=None, ge=1, description="Optional report revision (report_revisions.id) the question is about"
+    )
+    draft_report: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional unsaved incident report edited from version_id; answers are grounded in it",
+    )
+
+    @model_validator(mode="after")
+    def _draft_needs_version(self) -> ChatRequest:
+        if self.draft_report is not None and self.version_id is None:
+            raise ValueError("draft_report requires version_id")
+        return self
 
 
 class EvidenceCitation(BaseModel):
@@ -329,10 +443,55 @@ class ChatResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def create_incident_chat_router(search_client: SearchClient | None = None) -> APIRouter:
+def create_incident_chat_router(
+    search_client: SearchClient | None = None,
+    revision_store: RevisionStore | None = None,
+) -> APIRouter:
     """Build the ``POST /api/v1/incidents/chat`` router with an injected or default SearchClient."""
     router = APIRouter()
     client: SearchClient = search_client if search_client is not None else InMemorySearchClient()
+    revisions: RevisionStore = revision_store if revision_store is not None else IncidentDBRevisionStore()
+
+    async def _version_hits(
+        body: ChatRequest,
+        query_text: str,
+        filters: dict[str, Any],
+        search: SearchClient,
+        store: RevisionStore,
+    ) -> list[dict[str, Any]]:
+        """Hits for a question about one revision (``body.version_id``), optionally with a draft."""
+        assert body.version_id is not None
+        try:
+            revision = await store.get_revision(body.version_id)
+            if revision is None:
+                raise HTTPException(status_code=404, detail=f"Report version {body.version_id} not found")
+            video_id = str(revision["video_id"])
+            if filters.get("incident_id", video_id) != video_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Report version {body.version_id} belongs to incident {video_id}, "
+                    f"not {filters['incident_id']}",
+                )
+            official = await store.get_official_revision_id(video_id) == body.version_id
+        except RevisionStoreUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("RevisionStore failed during incident chat: %s", exc, exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Report revision error: {exc}") from exc
+
+        if official and body.draft_report is None:
+            # evidence_crops holds the official revision only, and it is what search indexes.
+            try:
+                return await search.search(query=query_text, top_k=5, filters={"incident_id": video_id})
+            except Exception as exc:
+                logger.error("SearchClient failed during incident chat: %s", exc, exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Evidence search error: {exc}") from exc
+
+        saved = revision.get("evidence") or []
+        evidence = _draft_evidence(body.draft_report, saved) if body.draft_report is not None else saved
+        return _revision_hits(query_text, video_id, evidence, top_k=5)
 
     @router.post(
         "/api/v1/incidents/chat",
@@ -362,16 +521,20 @@ def create_incident_chat_router(search_client: SearchClient | None = None) -> AP
         if body.context and body.context.scope == "incident" and body.context.incident_id:
             filters["incident_id"] = body.context.incident_id
 
-        # Query evidence search through the SearchClient port
-        try:
-            hits = await client.search(
-                query=query_text,
-                top_k=5,
-                filters=filters,
-            )
-        except Exception as exc:
-            logger.error("SearchClient failed during incident chat: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Evidence search error: {exc}") from exc
+        hits: list[dict[str, Any]]
+        if body.version_id is None:
+            # Query evidence search through the SearchClient port
+            try:
+                hits = await client.search(
+                    query=query_text,
+                    top_k=5,
+                    filters=filters,
+                )
+            except Exception as exc:
+                logger.error("SearchClient failed during incident chat: %s", exc, exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Evidence search error: {exc}") from exc
+        else:
+            hits = await _version_hits(body, query_text, filters, client, revisions)
 
         # Handle empty results cleanly
         if not hits:
@@ -436,10 +599,14 @@ def create_incident_chat_router(search_client: SearchClient | None = None) -> AP
     return router
 
 
-def register_incident_chat_routes(app: FastAPI, search_client: SearchClient | None = None) -> None:
+def register_incident_chat_routes(
+    app: FastAPI,
+    search_client: SearchClient | None = None,
+    revision_store: RevisionStore | None = None,
+) -> None:
     """Register ``POST /api/v1/incidents/chat`` onto the FastAPI app."""
     try:
-        app.include_router(create_incident_chat_router(search_client))
+        app.include_router(create_incident_chat_router(search_client, revision_store))
         logger.info("Registered POST /api/v1/incidents/chat")
     except Exception as exc:
         logger.error("Failed to register incident chat routes: %s", exc, exc_info=True)

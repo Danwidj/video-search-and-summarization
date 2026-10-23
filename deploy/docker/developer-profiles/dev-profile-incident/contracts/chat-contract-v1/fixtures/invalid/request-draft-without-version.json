@@ -1,0 +1,11 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Who is wearing a hood?"
+    }
+  ],
+  "draft_report": {
+    "entities": []
+  }
+}
