@@ -9,7 +9,7 @@ import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { assertWithinVideo, FrameRequestError, parseItemId, parseRegion, parseSeconds } from '@/lib/evidence/frame-request';
 import type { VideoRepository } from '@/lib/ports/videos';
 import { isValidR2Key } from '@/lib/r2/key';
-import { uploadedEvidenceKey } from '@/lib/reports/revision';
+import { uploadedEvidenceKey } from '@/modules/reports/domain/revision';
 
 /** Reads a video's length in seconds (null when it cannot be read) and one JPEG frame, optionally cropped. */
 export interface FrameSource {

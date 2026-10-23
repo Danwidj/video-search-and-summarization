@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ReportView } from '@/lib/reports/report-view';
+import type { ReportView } from '@/modules/reports/domain/report-view';
 import { formatTimestamp } from '@/lib/time';
 
 export function RunDetailsPanel({ report }: { report: ReportView }) {

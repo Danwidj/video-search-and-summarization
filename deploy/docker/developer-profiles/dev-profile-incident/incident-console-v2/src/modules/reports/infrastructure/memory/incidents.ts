@@ -12,10 +12,10 @@
 import { StoreRejection } from '@/modules/shared/domain/common';
 import {
   type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
-} from '@/lib/ports/incidents';
-import { structuredFromPayload } from '@/lib/reports/payload-view';
-import type { RevisionSummary } from '@/lib/reports/revision';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+} from '@/modules/reports/domain/IncidentRepository';
+import { structuredFromPayload } from '@/modules/reports/domain/payload-view';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
 /** Stored timestamps are naive UTC, as Postgres returns them. */
 const storedNow = () => new Date().toISOString().replace('Z', '');

@@ -19,13 +19,13 @@ import { revisionRpcs } from './support/revisions-database.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryIncidentRepository } = await import('../src/lib/adapters/memory/incidents.ts');
+const { InMemoryIncidentRepository } = await import('../src/modules/reports/infrastructure/memory/incidents.ts');
 const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
-const { SupabaseIncidentAdapter } = await import('../src/lib/adapters/supabase/incidents.ts');
-const { savedRevisionFromRpc } = await import('../src/lib/adapters/supabase/mappers/report.ts');
-const { reportListFromRpc, reportListRpcArgs } = await import('../src/lib/adapters/supabase/mappers/report-library.ts');
+const { SupabaseIncidentAdapter } = await import('../src/modules/reports/infrastructure/supabase/incidents.ts');
+const { savedRevisionFromRpc } = await import('../src/modules/reports/infrastructure/supabase/mappers/report.ts');
+const { reportListFromRpc, reportListRpcArgs } = await import('../src/modules/reports/infrastructure/supabase/mappers/report-library.ts');
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
-const { humanRevisionContent } = await import('../src/lib/reports/revision.ts');
+const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
 const { aiRevisionRow, aiRunReport } = await import('./support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));

@@ -7,9 +7,9 @@
 // can build the output equals the input; the defaults only apply to a
 // malformed result.
 
-import type { ReportList, ReportListQuery } from '@/lib/ports/incidents';
-import type { RevisionKind } from '@/lib/reports/revision';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { ReportList, ReportListQuery } from '@/modules/reports/domain/IncidentRepository';
+import type { RevisionKind } from '@/modules/reports/domain/revision';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
 type Row = Record<string, unknown>;
 type Outcome = NonNullable<ReportLibraryItem['outcome']>;

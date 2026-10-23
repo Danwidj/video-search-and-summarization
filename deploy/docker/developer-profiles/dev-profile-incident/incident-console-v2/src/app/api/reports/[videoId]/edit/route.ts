@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
-import { saveHumanEdit, storeSearchableCrops } from '@/lib/application/reports';
+import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { saveHumanEdit, storeSearchableCrops } from '@/modules/reports/application/reports';
 import { StructuredEditError, validateStructuredEdit } from '@/modules/contract/domain/structured-edit';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';

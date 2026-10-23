@@ -4,9 +4,9 @@ import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
   type OfficialChange, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
 } from '@/lib/ports/videos';
-import type { OfficialCrop } from '@/lib/reports/revision';
+import type { OfficialCrop } from '@/modules/reports/domain/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
-import { explicitVideoId } from '@/lib/reports/run-notes';
+import { explicitVideoId } from '@/modules/reports/domain/run-notes';
 
 type Row = Record<string, unknown>;
 

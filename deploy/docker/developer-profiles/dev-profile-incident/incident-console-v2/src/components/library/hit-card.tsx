@@ -7,7 +7,7 @@ import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/components/evidence-fr
 import { IncidentThumbnail, SeverityChip } from '@/components/library/shared';
 import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
 import type { CriticVerdict, EvidenceSearchHit } from '@/lib/ports/search';
-import { formatClock } from '@/lib/reports/normalize';
+import { formatClock } from '@/modules/reports/domain/normalize';
 
 const VERDICT_LABEL: Record<CriticVerdict, string> = { confirmed: 'Confirmed', rejected: 'Rejected', unverified: 'Unverified' };
 const VERDICT_STYLE: Record<CriticVerdict, string> = { confirmed: 'bg-moss/10 text-moss', rejected: 'bg-clay/10 text-clay', unverified: 'bg-ink/5 text-ink/60' };

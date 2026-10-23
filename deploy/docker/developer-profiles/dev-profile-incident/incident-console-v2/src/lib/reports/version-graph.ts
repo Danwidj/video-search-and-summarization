@@ -4,7 +4,7 @@
 // starts its own lane and a human version sits on the lane of the version it
 // was edited from. Rows stay newest first, as the revisions route returns them.
 
-import type { RevisionSummary } from '@/lib/reports/revision';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 export interface GraphSegment {
   lane: number;

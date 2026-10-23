@@ -8,7 +8,7 @@
 // Revisions are append-only. Save writes a new human revision whose parent is
 // the revision the reviewer opened; nothing is ever updated.
 
-import type { StructuredEdit } from '@/lib/reports/edit-draft';
+import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 
 export type RevisionKind = 'ai' | 'human';
 export type EvidenceItemType = 'entity' | 'instrument' | 'asset';

@@ -6,14 +6,14 @@
 // are tested with in-memory fakes.
 
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
-import type { IncidentRepository, RevisionRecord } from '@/lib/ports/incidents';
+import type { IncidentRepository, RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import type { OfficialChange, VideoRepository } from '@/lib/ports/videos';
 import { StoreRejection } from '@/modules/shared/domain/common';
-import type { StructuredEdit } from '@/lib/reports/edit-draft';
-import type { ReportView } from '@/lib/reports/report-view';
+import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
+import type { ReportView } from '@/modules/reports/domain/report-view';
 import { missingItemFields } from '@/modules/contract/domain/validate';
-import { humanRevisionContent, isEvidenceKeyOfVideo, officialCrops, type EvidenceEmbedding, type RevisionSummary } from '@/lib/reports/revision';
-import { toReportView } from '@/lib/reports/view';
+import { humanRevisionContent, isEvidenceKeyOfVideo, officialCrops, type EvidenceEmbedding, type RevisionSummary } from '@/modules/reports/domain/revision';
+import { toReportView } from '@/modules/reports/application/report-view';
 
 /** Turns a stored object key into a short-lived URL the browser can play or show. */
 export type SignStorageKey = (storageKey: string) => Promise<string>;

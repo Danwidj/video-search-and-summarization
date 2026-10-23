@@ -3,8 +3,8 @@
 import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
-import { storeSearchableCrops, type SearchableCropsResult } from '@/lib/application/reports';
+import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { storeSearchableCrops, type SearchableCropsResult } from '@/modules/reports/application/reports';
 import { analysisErrorResponse } from '@/lib/analysis/responses';
 import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';

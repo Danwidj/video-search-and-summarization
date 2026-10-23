@@ -4,7 +4,7 @@
 // revision, and whole-video deletion. R2 objects are never touched here.
 
 import type { Page } from '@/modules/shared/domain/common';
-import type { OfficialCrop } from '@/lib/reports/revision';
+import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
 export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection';
 

@@ -5,8 +5,8 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { formatClock } from '@/lib/reports/normalize';
-import { reportHeading, type ReportView } from '@/lib/reports/report-view';
+import { formatClock } from '@/modules/reports/domain/normalize';
+import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import { formatTimestamp } from '@/lib/time';
 
 export function RunComparison({ videoId, left, right }: { videoId: string; left: string; right: string }) {

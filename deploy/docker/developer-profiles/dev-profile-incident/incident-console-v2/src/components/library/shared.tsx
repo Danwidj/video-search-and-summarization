@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 
-import { reportThumbnailView } from '@/lib/reports/thumbnail';
+import { reportThumbnailView } from '@/lib/ui/thumbnail';
 
 export function severityClass(level: number) {
   if (level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';

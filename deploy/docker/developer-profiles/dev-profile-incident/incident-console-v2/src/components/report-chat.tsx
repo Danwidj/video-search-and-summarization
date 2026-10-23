@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 
 import { chatRequestBody, type ChatTarget } from '@/lib/chat/report-chat';
 import type { ChatCitation, ChatResponse } from '@/lib/ports/chat';
-import { formatClock } from '@/lib/reports/normalize';
+import { formatClock } from '@/modules/reports/domain/normalize';
 
 const SUGGESTIONS = ['What happened, in order?', 'Who is involved?', 'What was taken, or what could cause harm?'];
 

@@ -4,8 +4,8 @@
 // In View the chat asks about the version on screen (official or not); in Edit
 // it asks about the unsaved draft, edited from that version.
 
-import type { EditDraft } from '@/lib/reports/edit-draft';
-import type { RevisionSummary } from '@/lib/reports/revision';
+import type { EditDraft } from '@/modules/reports/domain/edit-draft';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 export interface ChatTarget {
   /** The saved version the question is about (the draft's base when there is a draft). */

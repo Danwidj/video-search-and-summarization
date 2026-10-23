@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { isValidR2Key } from '@/lib/r2/key';
-import { thumbnailCaptureTime } from '@/lib/reports/thumbnail';
+import { thumbnailCaptureTime } from '@/lib/ui/thumbnail';
 import { chunkedUpload } from '@/lib/upload/chunked-upload';
 
 type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';

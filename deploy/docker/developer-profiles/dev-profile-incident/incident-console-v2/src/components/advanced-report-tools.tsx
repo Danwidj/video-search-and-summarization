@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
 
 import { ReanalysisCard } from '@/components/reanalysis-card';
 import { RunHistoryList, useRunHistory } from '@/components/run-history';
-import type { ReportView } from '@/lib/reports/report-view';
-import type { RevisionSummary } from '@/lib/reports/revision';
+import type { ReportView } from '@/modules/reports/domain/report-view';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 export function AdvancedReportTools({ report }: { report: ReportView }) {
   return (

@@ -6,7 +6,7 @@
 
 import type { DerivedContractReport } from '@/modules/contract/domain/types';
 import { validateCore, type ContractViolation } from '@/modules/contract/domain/validate';
-import { reportFromNotes, type LegacyAnalysisReport } from '@/lib/reports/storage';
+import { reportFromNotes, type LegacyAnalysisReport } from '@/modules/reports/domain/storage';
 
 export interface ContractRunRequest {
   model?: string;

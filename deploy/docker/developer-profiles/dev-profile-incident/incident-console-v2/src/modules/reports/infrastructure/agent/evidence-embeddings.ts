@@ -6,7 +6,7 @@
 // rows; the console never embeds anything itself.
 
 import type { ServiceConfiguration } from '@/lib/env';
-import type { EvidenceEmbedding } from '@/lib/reports/revision';
+import type { EvidenceEmbedding } from '@/modules/reports/domain/revision';
 
 export const EMBEDDING_DIMENSIONS = 1024;
 

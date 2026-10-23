@@ -6,10 +6,10 @@
 // are append-only: nothing here updates or deletes one.
 
 import type { Page } from '@/modules/shared/domain/common';
-import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
-import type { EvidenceEntry, ReportPayload, RevisionKind, RevisionSummary } from '@/lib/reports/revision';
-import type { RunNotes } from '@/lib/reports/run-notes';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type { EvidenceEntry, ReportPayload, RevisionKind, RevisionSummary } from '@/modules/reports/domain/revision';
+import type { RunNotes } from '@/modules/reports/domain/run-notes';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
 export type ReportSort = 'newest' | 'oldest' | 'severity-high' | 'severity-low' | 'confidence-high' | 'confidence-low';
 

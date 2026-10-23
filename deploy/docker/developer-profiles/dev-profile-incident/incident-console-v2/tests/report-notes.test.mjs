@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { reportFromNotes } = await import('../src/lib/reports/storage.ts');
+const { reportFromNotes } = await import('../src/modules/reports/domain/storage.ts');
 
 test('reportFromNotes normalizes legacy camelCase notes to snake_case', () => {
   const notes = JSON.stringify({
