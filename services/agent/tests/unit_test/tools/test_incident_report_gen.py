@@ -37,6 +37,7 @@ from vss_agents.tools.incident_report_gen import incident_report_gen
 from vss_agents.tools.incident_report_gen import normalize_reviewer_prompt
 from vss_agents.tools.incident_report_gen import p1_request_body
 from vss_agents.tools.incident_report_gen import persist_revision
+from vss_agents.tools.incident_report_gen import revision_embedding
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
@@ -255,6 +256,11 @@ class TestPersistRevision:
         with (
             patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=True),
             patch("vss_agents.tools.incident_report_gen.incident_db.get_db", new_callable=AsyncMock, return_value=db),
+            patch(
+                "vss_agents.tools.incident_report_gen.revision_embedding",
+                new_callable=AsyncMock,
+                return_value=[0.5] * 3,
+            ),
         ):
             return await persist_revision(**{**kwargs, **overrides})
 
@@ -268,7 +274,12 @@ class TestPersistRevision:
         )
         db.insert_model_run_if_absent.assert_not_called()
         db.insert_ai_revision.assert_awaited_once_with(
-            "v1", model_run_id="run1", payload=self.REPORT, evidence=self.EVIDENCE, note="Reviewer prompt: x"
+            "v1",
+            model_run_id="run1",
+            payload=self.REPORT,
+            evidence=self.EVIDENCE,
+            note="Reviewer prompt: x",
+            embedding=[0.5] * 3,
         )
         db.upsert_video.assert_not_called()  # the console owns videos.filepath (the R2 key)
 
@@ -300,6 +311,45 @@ class TestPersistRevision:
                 caller_owns_run=False,
             )
         assert result is None
+
+
+class TestRevisionEmbedding:
+    """The summary vector saved with an AI revision; a failure leaves the row with NULL."""
+
+    REPORT: ClassVar[dict] = {"incident": {"title": "Fight", "description": "Two people fight."}}
+
+    @pytest.mark.asyncio
+    async def test_embeds_the_title_and_description_as_a_passage(self):
+        embedder = MagicMock()
+        embedder.is_configured.return_value = True
+        embedder.embed_passage = AsyncMock(return_value=[0.1] * 1024)
+        with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
+            assert await revision_embedding(self.REPORT) == [0.1] * 1024
+        embedder.embed_passage.assert_awaited_once_with("Fight\nTwo people fight.")
+
+    @pytest.mark.asyncio
+    async def test_none_when_no_embedding_key_is_configured(self):
+        embedder = MagicMock()
+        embedder.is_configured.return_value = False
+        with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
+            assert await revision_embedding(self.REPORT) is None
+        embedder.embed_passage.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_none_when_the_endpoint_fails(self):
+        embedder = MagicMock()
+        embedder.is_configured.return_value = True
+        embedder.embed_passage = AsyncMock(side_effect=httpx.ConnectError("down"))
+        with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
+            assert await revision_embedding(self.REPORT) is None
+
+    @pytest.mark.asyncio
+    async def test_none_for_a_report_without_text(self):
+        embedder = MagicMock()
+        embedder.is_configured.return_value = True
+        with patch("vss_agents.tools.incident_report_gen.RemoteTextEmbedder", return_value=embedder):
+            assert await revision_embedding({"incident": {}}) is None
+        embedder.embed_passage.assert_not_called()
 
 
 class TestEndToEnd:

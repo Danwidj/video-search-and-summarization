@@ -27,6 +27,16 @@ Canonical facts:
 2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
 3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
 
+## Search saved report revisions
+
+Finds whole incident reports by meaning, using one summary embedding per saved revision (the title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the local mock does not serve it.
+
+```bash
+curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"fight at a bus stop","top_k":5}' | jq .
+```
+
 ## Search evidence
 
 Send a natural-language query to the backend. The route embeds the query with the same 1024-dimensional text embedding model used for crop metadata, queries `search_evidence_items`, and runs the VLM critic for every returned candidate.

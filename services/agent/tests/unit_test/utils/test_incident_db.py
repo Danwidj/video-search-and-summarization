@@ -31,6 +31,7 @@ import pytest_asyncio
 
 from vss_agents.utils import incident_db
 from vss_agents.utils.incident_db import IncidentDB
+from vss_agents.utils.incident_db import revision_summary_text
 
 
 def _make_mock_client() -> MagicMock:
@@ -330,6 +331,45 @@ REPORT_PAYLOAD = {
     },
     "entities": [],
 }
+
+
+@pytest.mark.asyncio
+async def test_insert_ai_revision_stores_the_summary_embedding_in_the_same_insert():
+    client, table = _revision_client(last_revision_nos=[0])
+    await IncidentDB(client).insert_ai_revision(
+        "v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[], embedding=[0.25]
+    )
+    assert table.insert.call_args.args[0]["embedding"] == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_insert_ai_revision_defaults_the_embedding_to_null():
+    client, table = _revision_client(last_revision_nos=[0])
+    await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
+    assert table.insert.call_args.args[0]["embedding"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_revisions_calls_the_rpc_and_returns_rows():
+    client = MagicMock()
+    rpc_chain = MagicMock()
+    rpc_chain.execute = AsyncMock(return_value=MagicMock(data=[{"revision_id": 4, "similarity_score": 0.9}]))
+    client.rpc.return_value = rpc_chain
+    rows = await IncidentDB(client).search_revisions([0.1, 0.2], top_k=3, min_similarity=0.5)
+    client.rpc.assert_called_once_with(
+        "search_report_revisions",
+        {"p_query_embedding": [0.1, 0.2], "p_top_k": 3, "p_min_similarity": 0.5},
+    )
+    assert rows == [{"revision_id": 4, "similarity_score": 0.9}]
+
+
+def test_revision_summary_text_joins_title_and_description_and_tolerates_gaps():
+    assert (
+        revision_summary_text({"incident": {"title": " Fight ", "description": "Two people."}}) == "Fight\nTwo people."
+    )
+    assert revision_summary_text({"incident": {"title": None, "description": "Only this."}}) == "Only this."
+    assert revision_summary_text({"incident": {}}) == ""
+    assert revision_summary_text({"entities": []}) == ""
 
 
 @pytest.mark.asyncio
