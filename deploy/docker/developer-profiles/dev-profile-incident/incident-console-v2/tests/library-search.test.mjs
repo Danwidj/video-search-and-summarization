@@ -113,3 +113,10 @@ test('the viewer cuts its frame through the report frame route and falls back to
   assert.match(viewer, /<FrameViewer/);
   assert.match(viewer, /<EvidenceFrame/);
 });
+
+test('rejected hits are hidden unless the switch shows them', async () => {
+  const { withoutRejected } = await import('../lib/library/search.ts');
+  const hits = [{ critic: { verdict: 'confirmed' } }, { critic: { verdict: 'rejected' } }, { critic: { verdict: 'unverified' } }];
+  assert.deepEqual(withoutRejected(hits, false).map((hit) => hit.critic.verdict), ['confirmed', 'unverified']);
+  assert.equal(withoutRejected(hits, true).length, 3);
+});

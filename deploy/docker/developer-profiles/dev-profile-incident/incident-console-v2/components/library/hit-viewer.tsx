@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
 
 import { EvidenceFrame, KIND_LABEL } from '@/components/evidence-frame';
 import { FrameViewer } from '@/components/frame-viewer';
-import { RelationshipLine, reportHref } from '@/components/library/hit-card';
-import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf } from '@/lib/library/search';
+import { RelationshipLine } from '@/components/library/hit-card';
+import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/lib/ports/search';
 import { formatClock } from '@/lib/reports/normalize';
 
