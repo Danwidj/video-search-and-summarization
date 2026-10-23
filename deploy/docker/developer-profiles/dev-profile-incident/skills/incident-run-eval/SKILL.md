@@ -24,7 +24,7 @@ Canonical facts:
 
 ## What a run sends
 
-P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v3`):
+P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v4`):
 - a signed R2 URL, then the contract prompt, with the schema enforced via `response_format`;
 - no few-shot examples;
 - a fixed `max_tokens 16384` and `num_frames 64`.

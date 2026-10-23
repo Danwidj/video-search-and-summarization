@@ -56,7 +56,7 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 ## Analysis contract
 
-Both gateway and agent modes analyse with the shared **`incident-contract-v3`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
+Both gateway and agent modes analyse with the shared **`incident-contract-v4`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
 - strict validation (`lib/contract/validate.ts`, Ajv on the schema file);
 - ID-only recovery (`lib/contract/repair.ts`, `id-normalization-v1`);
@@ -88,7 +88,7 @@ reachability booleans; it never returns URLs or credentials.
 Selecting a video immediately starts the three-step nvstreamer upload. If that upload has no durable R2 key (the
 real VST/NvStreamer case, as opposed to the mock backend), the console uploads the file to R2 itself before
 continuing — see [Real-VST R2 upload fallback](#real-vst-r2-upload-fallback) below. It then signs the resulting R2 object
-for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to the selected VLM through the gateway, strictly validates the structured result against `incident-contract-v3` under `core-scored-v1` (applying ID-only recovery `id-normalization-v1` if needed), persists it through `persistContractRun`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
+for temporary model access only after `HeadObject` confirms the object exists and is nonempty, submits it to the selected VLM through the gateway, strictly validates the structured result against `incident-contract-v4` under `core-scored-v1` (applying ID-only recovery `id-normalization-v1` if needed), persists it through `persistContractRun`, reads the required row graph back through PostgREST, and renders a timestamp-linked incident report (with `ANALYSIS_MODE=agent`, vss-agent runs P1
 instead of the gateway and the console still validates and persists the run; see the variable list above). Start with short clips while inference remains
 synchronous.
 

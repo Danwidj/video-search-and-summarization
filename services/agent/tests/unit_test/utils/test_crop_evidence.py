@@ -332,6 +332,8 @@ REPORT = {
             "type": "human",
             "description": "Suspect in hoodie",
             "timestamp_seconds": 0,
+            "first_seen_seconds": 0,
+            "last_seen_seconds": 2,
             "label": "person",
         }
     ],
@@ -369,6 +371,12 @@ class TestEvidenceItems:
         instrument = items[1]
         assert instrument["threat_level"] == 3 and instrument["holder_entity_id"] == "E1"
         assert instrument["timestamp_seconds"] == 1 and instrument["label"] == "crowbar"
+        assert (items[0]["first_seen_seconds"], items[0]["last_seen_seconds"]) == (0, 2)
+        assert "first_seen_seconds" not in instrument and "last_seen_seconds" not in items[2]
+
+    def test_entities_stored_before_the_seen_span_fall_back_to_their_timestamp(self) -> None:
+        (item,) = evidence_items({"entities": [{"entity_id": "E1", "timestamp_seconds": 5}]})
+        assert (item["first_seen_seconds"], item["last_seen_seconds"]) == (5, 5)
 
     def test_items_without_an_id_are_dropped_and_timestamps_are_whole_seconds(self) -> None:
         items = evidence_items(

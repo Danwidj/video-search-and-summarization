@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TypeScript view of contracts/incident_report.schema.json (incident-contract-v3).
+// TypeScript view of contracts/incident_report.schema.json (incident-contract-v4).
 // The JSON Schema file is the source of truth; tests/contract-validate.test.mjs
 // checks that these keys match it.
 
@@ -27,6 +27,8 @@ export interface ContractEntity {
   type: EntityType;
   description: string;
   timestamp_seconds: number;
+  first_seen_seconds: number;
+  last_seen_seconds: number;
   label: string;
 }
 
