@@ -8,8 +8,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { ContractError, parseReport, validateReport, withDerivedFields } = await import('../src/lib/contract/validate.ts');
-const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256 } = await import('../src/lib/contract/load.ts');
+const { ContractError, parseReport, validateReport, withDerivedFields } = await import('../src/modules/contract/domain/validate.ts');
+const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256 } = await import('../src/modules/contract/infrastructure/loader.ts');
 
 const fixturesDir = join(process.cwd(), '..', 'contracts', 'fixtures');
 const fixtures = (kind) => readdirSync(join(fixturesDir, kind)).filter((name) => name.endsWith('.json')).sort();
@@ -70,8 +70,8 @@ test('contract version, hashes and inference settings load from contracts/', () 
   assert.deepEqual(inferenceSettings().p1, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
 });
 
-test('src/lib/contract/types.ts keys match the schema file', () => {
-  const source = readFileSync(join(process.cwd(), 'src', 'lib', 'contract', 'types.ts'), 'utf8');
+test('src/modules/contract/domain/types.ts keys match the schema file', () => {
+  const source = readFileSync(join(process.cwd(), 'src', 'modules', 'contract', 'domain', 'types.ts'), 'utf8');
   const interfaceKeys = (name) => {
     const body = source.match(new RegExp(`interface ${name} \\{([^}]*)\\}`))[1];
     return [...body.matchAll(/^\s+(\w+)\??:/gm)].map((match) => match[1]).sort();
@@ -86,7 +86,7 @@ test('src/lib/contract/types.ts keys match the schema file', () => {
 });
 
 test('INCIDENT_TYPES and ENTITY_TYPES match the schema enums', async () => {
-  const { INCIDENT_TYPES, ENTITY_TYPES } = await import('../src/lib/contract/types.ts');
+  const { INCIDENT_TYPES, ENTITY_TYPES } = await import('../src/modules/contract/domain/types.ts');
   const properties = schema().properties;
   assert.deepEqual([...INCIDENT_TYPES], properties.incident.properties.type.enum);
   assert.deepEqual([...ENTITY_TYPES], properties.entities.items.properties.type.enum);

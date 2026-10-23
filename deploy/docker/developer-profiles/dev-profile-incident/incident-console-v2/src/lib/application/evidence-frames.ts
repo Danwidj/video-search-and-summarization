@@ -7,7 +7,7 @@
 
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { assertWithinVideo, FrameRequestError, parseItemId, parseRegion, parseSeconds } from '@/lib/evidence/frame-request';
-import type { VideoRepository } from '@/lib/ports';
+import type { VideoRepository } from '@/lib/ports/videos';
 import { isValidR2Key } from '@/lib/r2/key';
 import { uploadedEvidenceKey } from '@/lib/reports/revision';
 

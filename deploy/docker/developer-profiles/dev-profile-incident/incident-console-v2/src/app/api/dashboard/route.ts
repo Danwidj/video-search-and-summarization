@@ -2,9 +2,9 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { errorResponse } from '@/lib/http';
-import type { DashboardSeverity } from '@/lib/ports';
+import type { DashboardSeverity } from '@/lib/ports/dashboard';
 import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';

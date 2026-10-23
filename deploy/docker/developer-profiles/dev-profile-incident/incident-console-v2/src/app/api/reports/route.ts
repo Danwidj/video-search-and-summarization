@@ -3,10 +3,10 @@
 import { NextResponse } from 'next/server';
 
 import { AgentRevisionSearchRepository } from '@/lib/adapters/agent/revision-search';
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/lib/ports';
+import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/lib/ports/incidents';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import { isValidTimeZone } from '@/lib/time';

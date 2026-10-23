@@ -11,9 +11,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv';
 
-import { schema } from '@/lib/contract/load';
-import type { DerivedContractReport, IncidentContractReport } from '@/lib/contract/types';
-import { timestampWithinVideo } from '@/lib/contract/video-bounds';
+import { schema } from '@/modules/contract/infrastructure/loader';
+import type { DerivedContractReport, IncidentContractReport } from '@/modules/contract/domain/types';
+import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 
 /**
  * Machine-readable violation codes. The messages match eval/contract.py's text;
@@ -55,7 +55,7 @@ export interface ContractViolation {
 export const VALIDATION_POLICY = 'core-scored-v1';
 
 // The whole-second tolerance lives in the browser-safe lib/contract/video-bounds.ts.
-export { timestampWithinVideo, WHOLE_SECOND_RESOLUTION } from '@/lib/contract/video-bounds';
+export { timestampWithinVideo, WHOLE_SECOND_RESOLUTION } from '@/modules/contract/domain/video-bounds';
 
 export type ViolationScope = 'core' | 'enrichment';
 

@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbHealth } from '@/lib/adapters/supabase';
+import { getDbHealth } from '@/lib/container';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { GatewayClient } from '@/lib/gateway/client';
 

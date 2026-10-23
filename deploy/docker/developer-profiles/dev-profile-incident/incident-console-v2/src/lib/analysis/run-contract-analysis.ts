@@ -27,9 +27,9 @@ import {
   type AttemptRepair,
   type ContractRunRecord,
 } from '@/lib/analysis/persistence';
-import { contractVersion, findAllowedModel, promptSha256, schemaSha256 } from '@/lib/contract/load';
-import { attemptIdNormalization, REPAIR_RULE_SET } from '@/lib/contract/repair';
-import type { IncidentContractReport } from '@/lib/contract/types';
+import { contractVersion, findAllowedModel, promptSha256, schemaSha256 } from '@/modules/contract/infrastructure/loader';
+import { attemptIdNormalization, REPAIR_RULE_SET } from '@/modules/contract/domain/repair';
+import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import {
   ContractError,
   decodeContent,
@@ -40,7 +40,7 @@ import {
   type ContractViolation,
   type ValidationContext,
   type ViolationScope,
-} from '@/lib/contract/validate';
+} from '@/modules/contract/domain/validate';
 import type { ServiceConfiguration } from '@/lib/env';
 import { GatewayClient, GatewayError, type GatewayCompletionResponse } from '@/lib/gateway/client';
 import { compactId } from '@/lib/ids';

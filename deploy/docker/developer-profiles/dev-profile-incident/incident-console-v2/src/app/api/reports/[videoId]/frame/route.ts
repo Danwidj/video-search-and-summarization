@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { getVideoFrame } from '@/lib/application/evidence-frames';
 import { FrameRequestError } from '@/lib/evidence/frame-request';
 import { errorResponse } from '@/lib/http';

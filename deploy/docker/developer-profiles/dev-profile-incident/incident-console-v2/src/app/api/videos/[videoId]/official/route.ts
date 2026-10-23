@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { setOfficialRevision } from '@/lib/application/reports';
 import { AgentUnreachableError, fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';

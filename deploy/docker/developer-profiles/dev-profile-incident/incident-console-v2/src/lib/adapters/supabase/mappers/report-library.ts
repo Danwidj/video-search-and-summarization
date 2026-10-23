@@ -7,7 +7,7 @@
 // can build the output equals the input; the defaults only apply to a
 // malformed result.
 
-import type { ReportList, ReportListQuery } from '@/lib/ports';
+import type { ReportList, ReportListQuery } from '@/lib/ports/incidents';
 import type { RevisionKind } from '@/lib/reports/revision';
 import type { ReportLibraryItem } from '@/lib/reports/storage';
 

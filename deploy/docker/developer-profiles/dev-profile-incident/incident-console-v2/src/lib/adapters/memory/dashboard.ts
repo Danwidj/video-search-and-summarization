@@ -5,7 +5,7 @@
 // previous-period comparison unless both period bounds are set.
 
 import type { DashboardAnalytics } from '@/lib/dashboard/types';
-import type { DashboardQuery, DashboardRepository } from '@/lib/ports';
+import type { DashboardQuery, DashboardRepository } from '@/lib/ports/dashboard';
 
 const NO_INCIDENTS: DashboardAnalytics = {
   total: 0,

@@ -12,9 +12,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
 
-import { schema } from '@/lib/contract/load';
-import type { IncidentContractReport } from '@/lib/contract/types';
-import { crossFieldViolations, type ContractViolation } from '@/lib/contract/validate';
+import { schema } from '@/modules/contract/infrastructure/loader';
+import type { IncidentContractReport } from '@/modules/contract/domain/types';
+import { crossFieldViolations, type ContractViolation } from '@/modules/contract/domain/validate';
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;

@@ -16,7 +16,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { InMemoryVideoRepository } = await import('../src/lib/adapters/memory/videos.ts');
 const { SupabaseVideoAdapter } = await import('../src/lib/adapters/supabase/videos.ts');
-const { StoreRejection } = await import('../src/lib/ports/common.ts');
+const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const originalFetch = globalThis.fetch;

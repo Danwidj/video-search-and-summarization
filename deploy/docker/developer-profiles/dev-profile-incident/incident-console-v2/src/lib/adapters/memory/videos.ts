@@ -6,10 +6,10 @@
 // searchable revision, the official one else the newest, takes crops) and the
 // list filters.
 
+import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
-  StoreRejection,
-  type OfficialChange, type Page, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
-} from '@/lib/ports';
+  type OfficialChange, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+} from '@/lib/ports/videos';
 import type { OfficialCrop } from '@/lib/reports/revision';
 
 export interface InMemoryVideo extends VideoRecord {

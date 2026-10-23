@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { getReport } from '@/lib/application/reports';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';

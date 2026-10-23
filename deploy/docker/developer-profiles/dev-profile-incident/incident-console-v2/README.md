@@ -58,8 +58,8 @@ Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `te
 
 Both gateway and agent modes analyse with the shared **`incident-contract-v4`** from [`../contracts/`](../contracts/README.md), read at runtime (`CONTRACTS_DIR`, default `../contracts`):
 - the same prompt, schema, P1 settings and model allowlist (`contracts/inference.json`) as `eval/`;
-- strict validation (`src/lib/contract/validate.ts`, Ajv on the schema file);
-- ID-only recovery (`src/lib/contract/repair.ts`, `id-normalization-v1`);
+- strict validation (`src/modules/contract/domain/validate.ts`, Ajv on the schema file);
+- ID-only recovery (`src/modules/contract/domain/repair.ts`, `id-normalization-v1`);
 - every attempt recorded immutably in `model_runs.notes` with outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`.
 
 See [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md).

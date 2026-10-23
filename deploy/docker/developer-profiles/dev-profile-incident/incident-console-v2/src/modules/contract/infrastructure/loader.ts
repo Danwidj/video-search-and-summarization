@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { InferenceModel, InferenceSettings } from '@/lib/contract/types';
+import type { InferenceModel, InferenceSettings } from '@/modules/contract/domain/types';
 
 // Keys describing the schema document itself; stripped from what is sent to the
 // model because some OpenAI-compatible servers reject them inside response_format

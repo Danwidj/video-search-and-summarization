@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Domain vocabulary shared by the console's driven ports (lib/ports/*). Port
+// Domain vocabulary shared by the console's driven ports (src/lib/ports/*). Port
 // modules import types only, never server code, so they stay browser-safe and
 // a component may import a domain type from here.
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { RepairOperation, RepairIneligibility } from '@/lib/contract/repair';
-import type { DerivedContractReport } from '@/lib/contract/types';
-import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/lib/contract/validate';
+import type { RepairOperation, RepairIneligibility } from '@/modules/contract/domain/repair';
+import type { DerivedContractReport } from '@/modules/contract/domain/types';
+import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/modules/contract/domain/validate';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { placeholderEvidence, revisionFacets, type EvidenceEntry } from '@/lib/reports/revision';
 

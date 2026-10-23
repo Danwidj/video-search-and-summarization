@@ -4,10 +4,10 @@ import {
   REVISION_SUMMARY_COLUMNS, revisionRecordFromRows, revisionSummaryFromRow, savedRevisionFromRpc,
 } from '@/lib/adapters/supabase/mappers/report';
 import { reportListFromRpc, reportListRpcArgs } from '@/lib/adapters/supabase/mappers/report-library';
+import { StoreRejection } from '@/modules/shared/domain/common';
 import {
-  StoreRejection,
   type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
-} from '@/lib/ports';
+} from '@/lib/ports/incidents';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import { revisionFacets, type RevisionSummary } from '@/lib/reports/revision';
 

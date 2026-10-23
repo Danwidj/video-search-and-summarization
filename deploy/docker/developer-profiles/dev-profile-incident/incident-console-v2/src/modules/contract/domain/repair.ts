@@ -8,8 +8,8 @@
 // the full strict validator on its output. eval/ never uses it: eval scores
 // the original first response only.
 
-import type { IncidentContractReport } from '@/lib/contract/types';
-import type { ContractViolation, ContractViolationCode } from '@/lib/contract/validate';
+import type { IncidentContractReport } from '@/modules/contract/domain/types';
+import type { ContractViolation, ContractViolationCode } from '@/modules/contract/domain/validate';
 
 export const REPAIR_RULE_SET = 'id-normalization-v1';
 
