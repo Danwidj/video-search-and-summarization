@@ -11,6 +11,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv';
 
+// Documented boundary exception: this domain module reads the JSON Schema through the
+// infrastructure loader (node:fs). Injecting the schema as a port is the stricter option
+// and is not taken yet, so the loader stays a direct import here.
 import { schema } from '@/modules/contract/infrastructure/loader';
 import type { DerivedContractReport, IncidentContractReport } from '@/modules/contract/domain/types';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
