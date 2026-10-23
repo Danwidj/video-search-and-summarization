@@ -2,8 +2,8 @@
 
 import { Suspense } from 'react';
 
-import { AppHeader } from '@/components/app-header';
-import { VideosScreen } from '@/components/videos-screen';
+import { AppHeader } from '@/sections/shell/components/AppHeader';
+import { VideosScreen } from '@/sections/videos/components/VideosScreen';
 
 export default function VideosPage() {
   return (

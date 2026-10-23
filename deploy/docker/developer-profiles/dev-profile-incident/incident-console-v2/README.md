@@ -96,7 +96,7 @@ synchronous.
 
 Real VST/NvStreamer's chunk-upload response never includes a durable R2 object key (`filePath`) — only
 `mock-backend`'s own reimplementation (`../mock-backend/base_profile_mock/src/base_profile_mock/routers/vst_storage.py`) fakes that field by doing its own R2 upload. Since
-`incident-console-v2`'s analysis flow (`src/app/api/analysis/route.ts`) hard-requires that key, `src/components/analysis-workspace.tsx`
+`incident-console-v2`'s analysis flow (`src/app/api/analysis/route.ts`) hard-requires that key, `src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx`
 checks the chunk-upload response for a valid key and, when missing (the real-VST case), uploads the file itself
 through a new server-side-only route, `src/app/api/uploads/r2/route.ts` (R2 `PutObject` via `src/lib/r2/config.ts`'s
 `putR2Video`, reusing the same client pattern as `createR2PlaybackUrl`/`deleteR2Video`), and uses its returned key

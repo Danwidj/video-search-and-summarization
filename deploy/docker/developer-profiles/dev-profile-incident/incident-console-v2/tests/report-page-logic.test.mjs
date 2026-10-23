@@ -71,9 +71,9 @@ test('the entity seen span is mapped into the report view', () => {
 });
 
 test('the report page has a mark-official star, no Restore, and keeps the layout while loading', async () => {
-  const components = new URL('../src/components/', import.meta.url);
-  const versions = await readFile(new URL('report-versions.tsx', components), 'utf8');
-  const page = await readFile(new URL('report-page.tsx', components), 'utf8');
+  const components = new URL('../src/sections/', import.meta.url);
+  const versions = await readFile(new URL('reports/components/ReportVersions/ReportVersions.tsx', components), 'utf8');
+  const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(versions, /Mark v\$\{revision\.revisionNo\} official/);
   assert.doesNotMatch(versions + page, /restore/i);
   assert.match(page, /Try again/);
@@ -92,7 +92,7 @@ test('a search hit links to its report at the hit second, and the page reads tha
 });
 
 test('the report page seeks to ?t once, when the player has loaded its metadata', async () => {
-  const page = await readFile(new URL('../src/components/report-page.tsx', import.meta.url), 'utf8');
+  const page = await readFile(new URL('../src/sections/reports/components/ReportPage/ReportPage.tsx', import.meta.url), 'utf8');
   assert.match(page, /startSeconds = null/);
   assert.match(page, /if \(startSeconds !== null && !startedAt\.current\) \{ startedAt\.current = true; event\.currentTarget\.currentTime = startSeconds; \}/);
   assert.match(page, /id="back-to-library"[^>]*>← Library</);

@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const components = new URL('../src/components/', import.meta.url);
+const components = new URL('../src/sections/', import.meta.url);
 
 test('report page separates structured fields, read-only model output and run details', async () => {
-  const report = (await Promise.all(['report-pane.tsx', 'report-run-details.tsx', 'report-page.tsx'].map((name) => readFile(new URL(name, components), 'utf8')))).join('\n');
+  const report = (await Promise.all(['reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportRunDetails/ReportRunDetails.tsx', 'reports/components/ReportPage/ReportPage.tsx'].map((name) => readFile(new URL(name, components), 'utf8')))).join('\n');
 
   assert.match(report, /Severity rationale/);
   assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
@@ -36,30 +36,30 @@ test('report page separates structured fields, read-only model output and run de
 });
 
 test('the report page has a History of versions, a reviewer prompt and explicit official controls, and no verification flow', async () => {
-  const report = await readFile(new URL('report-page.tsx', components), 'utf8');
+  const report = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(report, /ReportVersions/);
-  const history = await readFile(new URL('report-versions.tsx', components), 'utf8');
+  const history = await readFile(new URL('reports/components/ReportVersions/ReportVersions.tsx', components), 'utf8');
   assert.match(history, /markOfficial/);
   assert.match(history, /role="alert"/, 'the agent-unreachable message is shown inline');
   assert.doesNotMatch(history, /restore/i);
-  const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
+  const reanalysis = await readFile(new URL('analysis/components/ReanalysisCard/ReanalysisCard.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'advanced-report-tools.tsx', 'report-edit-pane.tsx', 'report-versions.tsx', 'official-controls.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
+  for (const name of ['reports/components/ReportPage/ReportPage.tsx', 'reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportTimeline/ReportTimeline.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/OfficialControls/OfficialControls.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
   }
 });
 
 test('library incident cards show no confidence percentage', async () => {
-  const card = await readFile(new URL('library/incident-card.tsx', components), 'utf8');
+  const card = await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8');
   assert.doesNotMatch(card, /confidence/);
 });
 
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
   const clientOnly = await readFile(new URL('../src/modules/reports/domain/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'report-edit-pane.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'analysis-workspace.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
+  for (const name of ['reports/components/ReportPage/ReportPage.tsx', 'reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportTimeline/ReportTimeline.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/ReportRunDetails/ReportRunDetails.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'analysis/components/RunHistory/RunHistory.tsx', 'analysis/components/ReanalysisCard/ReanalysisCard.tsx', 'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx', 'videos/components/VideosScreen/VideosScreen.tsx', 'reports/components/RunComparison/RunComparison.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -69,7 +69,7 @@ test('browser components import only browser-safe report modules', async () => {
 });
 
 test('edit mode pairs every evidence row with A and saves the whole draft as a new version', async () => {
-  const editor = await readFile(new URL('report-edit-pane.tsx', components), 'utf8');
+  const editor = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
   assert.match(editor, /pairReport/);
   assert.match(editor, /ReadCard/);
   assert.match(editor, /EditCard/);
@@ -79,7 +79,7 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(editor, /Delete/);
   assert.doesNotMatch(editor, /createdBy/, 'the pane never shows author names');
 
-  const page = await readFile(new URL('report-page.tsx', components), 'utf8');
+  const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(page, /draftFromView/);
   assert.match(page, /editFromDraft/);
   assert.match(page, /draftProblems/);
@@ -92,26 +92,26 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
 });
 
 test('the report page offers re-analysis and history', async () => {
-  const tools = await readFile(new URL('advanced-report-tools.tsx', components), 'utf8');
+  const tools = await readFile(new URL('reports/components/AdvancedReportTools/AdvancedReportTools.tsx', components), 'utf8');
   assert.match(tools, /ReanalysisCard/);
   assert.match(tools, /RunHistoryList/);
-  const library = await readFile(new URL('library/library-screen.tsx', components), 'utf8');
+  const library = await readFile(new URL('library/components/LibraryScreen/LibraryScreen.tsx', components), 'utf8');
   assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
-  assert.match(await readFile(new URL('library/incident-card.tsx', components), 'utf8'), /library-repair-marker/);
-  const history = await readFile(new URL('run-history.tsx', components), 'utf8');
+  assert.match(await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8'), /library-repair-marker/);
+  const history = await readFile(new URL('analysis/components/RunHistory/RunHistory.tsx', components), 'utf8');
   assert.match(history, /no report/);
   assert.match(history, /Contract violations/);
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
-  for (const name of ['report-pane.tsx', 'report-edit-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx', 'library/hit-card.tsx']) {
+  for (const name of ['reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/RunComparison/RunComparison.tsx', 'analysis/components/RunHistory/RunHistory.tsx', 'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx', 'videos/components/VideosScreen/VideosScreen.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx', 'library/components/HitCard/HitCard.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
 });
 
 test('the new-analysis model selector shows full model names and never clips them', async () => {
-  const workspace = await readFile(new URL('analysis-workspace.tsx', components), 'utf8');
+  const workspace = await readFile(new URL('analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', components), 'utf8');
   const select = /<select className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
   assert.ok(select, 'the model selector exists');
   const classes = select[1].split(/\s+/);

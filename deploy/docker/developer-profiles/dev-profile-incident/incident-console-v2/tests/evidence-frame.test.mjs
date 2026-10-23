@@ -8,7 +8,7 @@ import test from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { boxRegion, boxStyle, cropImageStyle, cropRegion, evidenceFrameState } = await import('../src/lib/evidence/frame-geometry.ts');
-const components = new URL('../src/components/', import.meta.url);
+const components = new URL('../src/sections/', import.meta.url);
 
 test('a [ymin, xmin, ymax, xmax] box on the 0-1000 grid becomes frame fractions and CSS percentages', () => {
   assert.deepEqual(boxRegion([100, 200, 300, 600]), { x: 0.2, y: 0.1, w: 0.4, h: 0.2 });
@@ -57,14 +57,14 @@ test('an evidence tile prefers the stored image, then a frame crop, then a place
 });
 
 test('EvidenceFrame and FrameViewer render the states and boxes the report page needs', async () => {
-  const frame = await readFile(new URL('evidence-frame.tsx', components), 'utf8');
+  const frame = await readFile(new URL('evidence/components/EvidenceFrame/EvidenceFrame.tsx', components), 'utf8');
   assert.match(frame, /export function EvidenceFrame/);
   assert.match(frame, /export \{ EvidenceFrame as CropImage \}/);
   assert.match(frame, /Cropping frame/);
   assert.match(frame, /Image unavailable/);
   assert.match(frame, /onError/, 'a broken image falls back to the placeholder');
 
-  const viewer = await readFile(new URL('frame-viewer.tsx', components), 'utf8');
+  const viewer = await readFile(new URL('evidence/components/FrameViewer/FrameViewer.tsx', components), 'utf8');
   assert.match(viewer, /export function FrameViewer/);
   assert.match(viewer, /boxStyle\(item\.box\)/);
   assert.match(viewer, /Frame unavailable/);

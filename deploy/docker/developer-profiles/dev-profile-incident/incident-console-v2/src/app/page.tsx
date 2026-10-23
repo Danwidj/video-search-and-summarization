@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { AnalysisWorkspace } from '@/components/analysis-workspace';
-import { AppHeader } from '@/components/app-header';
+import { AnalysisWorkspace } from '@/sections/analysis/components/AnalysisWorkspace';
+import { AppHeader } from '@/sections/shell/components/AppHeader';
 
 const stages = ['Upload secured', 'Video understood', 'Evidence structured', 'Report ready'];
 

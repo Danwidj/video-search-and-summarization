@@ -10,7 +10,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
 const { dragRegion, pickSeconds, regionBox } = await import('../src/lib/evidence/frame-picker.ts');
 const { parseRegion, parseItemId, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
-const components = new URL('../src/components/', import.meta.url);
+const components = new URL('../src/sections/', import.meta.url);
 
 test('a drag in either direction becomes one rectangle clipped to the frame', () => {
   assert.deepEqual(dragRegion({ x: 0.25, y: 0.125 }, { x: 0.75, y: 0.375 }), { x: 0.25, y: 0.125, w: 0.5, h: 0.25 });
@@ -44,7 +44,7 @@ test('a picked second is never negative and never past the end of the video', ()
 });
 
 test('the picker is a dialog that crops through the evidence-crop route and hands back the frame second and box', async () => {
-  const picker = await readFile(new URL('evidence-frame-picker.tsx', components), 'utf8');
+  const picker = await readFile(new URL('evidence/components/EvidenceFramePicker/EvidenceFramePicker.tsx', components), 'utf8');
   assert.match(picker, /role="dialog"/);
   assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-crop/);
   assert.match(picker, /body: JSON\.stringify\(\{ itemId, timestampSeconds: seconds, region \}\)/);
@@ -53,11 +53,11 @@ test('the picker is a dialog that crops through the evidence-crop route and hand
 });
 
 test('Edit mode offers Replace image on each draft card and applies the pick to the draft item', async () => {
-  const pane = await readFile(new URL('report-edit-pane.tsx', components), 'utf8');
+  const pane = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
   assert.match(pane, />Replace image</);
   assert.match(pane, /<EvidenceFramePicker/);
   assert.match(pane, /imageTimestampSeconds: pick\.timestampSeconds, imageBox: pick\.box/, 'the frame second and box are stored for the save path');
   assert.match(pane, /timestampSeconds: pick\.timestampSeconds/, 'the picked frame becomes the item\'s most visible second');
-  const page = await readFile(new URL('report-page.tsx', components), 'utf8');
+  const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(page, /videoSrc=\{report\.run\.playbackUrl\}/);
 });

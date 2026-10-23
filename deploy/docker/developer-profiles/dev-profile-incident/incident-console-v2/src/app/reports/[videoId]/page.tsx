@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { AppHeader } from '@/components/app-header';
-import { ReportPage as ReportView } from '@/components/report-page';
+import { AppHeader } from '@/sections/shell/components/AppHeader';
+import { ReportPage as ReportView } from '@/sections/reports/components/ReportPage';
 import { parseStartSeconds } from '@/lib/library/search';
 
 export default async function ReportPage({
