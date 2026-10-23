@@ -129,8 +129,8 @@ The AI report is immutable twice over: in `model_runs.notes` and in its relation
 
 - **One reviewer version per run**, keyed `(incident_id, model_run_id)` like `review_status` and the official selection. The official report's content is that run's effective version.
 - **The effective report** is the reviewer version if there is one, otherwise the AI version (`effective_*` views). The library, dashboard and search read it; eval and the crop loader read the AI rows, so a reviewer edit never leaks into a benchmark.
-- **Edits** (`save_human_report_edit`, or its `apply_structured_report_edit` shim) are validated against the contract's own sub-schemas and the ID/holder/window rules and applied in one transaction. They set `review_status.edited_by/edited_at`, which now means "last content edit" only: status changes never write it.
-- **Verification** (`set_review_status`) is one atomic transition. Verifying without edits copies the AI report, so every verified report has a reviewer version.
+- **Edits** (`save_human_revision`, or its `apply_structured_report_edit` shim) are validated against the contract's own sub-schemas and the ID/holder/window rules and applied in one transaction. They set `review_status.edited_by/edited_at`, which now means "last content edit" only: status changes never write it.
+- **Verification** (revision-based review transition) is one atomic transition. Verifying without edits copies the AI report, so every verified report has a reviewer version.
 - **Evidence crops belong to AI items**, whose IDs never change; a reviewer item shows the crop of its `source_*_id`, and a reviewer-added item has none. Because the editor renumbers items by position, every edited item must carry `source_id` (`null` for an added item): the console reads it from the `effective_*` views, sends it back and refuses an edit without it (422), and the database refuses an edit with a keyless item instead of guessing (the midterm console sends none, so the console change must be deployed before the switch to finals).
 - Neither path touches notes.
 

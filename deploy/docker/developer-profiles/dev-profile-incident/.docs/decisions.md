@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-23: Hand-applied report schema is recorded as finals migrations
+- **Decision:** Add `20261023000000_report_revisions_schema.sql` and `20261023000100_report_revisions_functions.sql` to reproduce the revision schema the captain applied out of band, and make them safe to apply to the live database that already has it (`IF NOT EXISTS`, `CREATE OR REPLACE`, guarded `DO` blocks, conditional drops). The schema migration also drops the retired relational report tables, functions and `videos.selected_*` columns, and the test harness reapplies both files over the built schema to prove idempotence.
+- **Why:** The live database was changed by hand, so a fresh database could not be built and the repo no longer matched production. Migrations keep one rebuildable source of truth and let later changes reach the live project through the normal `db push` path.
+- **Rejected:** a data migration for the old relational rows (the captain wants none and the tables are already gone); recording the change only with `migration repair` (the repo still would not build).
+- **Links:** [`../supabase/migrations/20261023000000_report_revisions_schema.sql`](../supabase/migrations/20261023000000_report_revisions_schema.sql); [`../supabase/migrations/20261023000100_report_revisions_functions.sql`](../supabase/migrations/20261023000100_report_revisions_functions.sql); [`../supabase/README.md`](../supabase/README.md); [`data.md`](data.md).
+
 ### 2026-10-23: Console chat route calls POST /api/v1/incidents/chat
 - **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`lib/chat/agent-chat.ts`, types in `lib/ports/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.
 - **Why:** The route called the generic NAT `/chat`, so the cited-evidence chat was unreachable from the UI (chat model audit, finding 5). The agent answers from stored evidence, which is still canned seed data (see [`vm-api-contracts.md`](vm-api-contracts.md)).
