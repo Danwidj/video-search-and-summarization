@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from postgrest import APIError
 import pytest
 import pytest_asyncio
 
@@ -291,304 +292,168 @@ async def test_get_model_run_returns_none_when_missing():
 
 
 @pytest.mark.asyncio
-async def test_insert_incident_calls_rpc():
+async def test_insert_model_run_if_absent_never_overwrites_an_existing_row():
     mock_client = _make_mock_client()
     db = IncidentDB(mock_client)
-    await db.insert_incident(
-        "vid-1",
-        "run-1",
-        fields={"type": "burglary", "severity_level": 3, "confidence_score": 0.8},
+    assert await db.insert_model_run_if_absent("run-1", model_name="m", prompt_version="v3") == "run-1"
+    mock_client.table.assert_called_with("model_runs")
+    args, kwargs = mock_client.table().upsert.call_args
+    assert args[0]["id"] == "run-1" and args[0]["notes"] is None and args[0]["prompt_version"] == "v3"
+    assert kwargs == {"on_conflict": "id", "ignore_duplicates": True}
+
+
+def _revision_client(*, last_revision_nos, insert_results=None):
+    """Client whose ``report_revisions`` select returns one max ``revision_no`` per call, then insert results."""
+    client = MagicMock()
+    table = MagicMock()
+    select_chain = MagicMock()
+    select_chain.eq.return_value = select_chain
+    select_chain.order.return_value = select_chain
+    select_chain.limit.return_value = select_chain
+    select_chain.execute = AsyncMock(
+        side_effect=[MagicMock(data=[{"revision_no": n}] if n else []) for n in last_revision_nos]
     )
-    mock_client.rpc.assert_called_once()
-    args, _kwargs = mock_client.rpc.call_args
-    assert args[0] == "insert_incident"
-    assert args[1]["p_incident_id"] == "vid-1"
-    assert args[1]["p_model_run_id"] == "run-1"
-    assert args[1]["p_type"] == "burglary"
-    assert args[1]["p_severity_level"] == 3
-    assert args[1]["p_confidence_score"] == 0.8
-    mock_client.rpc.return_value.execute.assert_awaited_once()
+    table.select.return_value = select_chain
+    insert_chain = MagicMock()
+    insert_chain.execute = AsyncMock(side_effect=insert_results or [MagicMock(data=[{"id": 11}])])
+    table.insert.return_value = insert_chain
+    client.table.return_value = table
+    return client, table
+
+
+REPORT_PAYLOAD = {
+    "incident": {
+        "type": "burglary",
+        "severity_level": 2,
+        "start_timestamp": 1.4,
+        "end_timestamp": 6,
+    },
+    "entities": [],
+}
 
 
 @pytest.mark.asyncio
-async def test_get_incident_returns_none_when_missing():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
-    db = IncidentDB(mock_client)
-    assert await db.get_incident("vid-1", "run-1") is None
-
-
-@pytest.mark.asyncio
-async def test_list_incidents_without_filter():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"incident_id": "vid-1"}]))
-    db = IncidentDB(mock_client)
-    result = await db.list_incidents()
-    assert result == [{"incident_id": "vid-1"}]
-
-
-@pytest.mark.asyncio
-async def test_list_incidents_with_model_run_filter():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"incident_id": "vid-1"}]))
-    db = IncidentDB(mock_client)
-    await db.list_incidents(model_run_id="run-1")
-    # Verify the eq filter was applied
-    select_mock = mock_client.table().select()
-    select_mock.eq.assert_called_with("model_run_id", "run-1")
-
-
-@pytest.mark.asyncio
-async def test_update_incident_with_no_allowed_fields_skips():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.update_incident("vid-1", "run-1", fields={"not_a_column": "x"})
-    # update should not be called
-    mock_client.table.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_update_incident_builds_update():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.update_incident("vid-1", "run-1", fields={"severity_level": 5, "bogus": "x"})
-    mock_client.table.assert_called_with("incidents")
-    update_call = mock_client.table().update({"severity_level": 5})
-    update_call.eq.assert_any_call("incident_id", "vid-1")
-    update_call.eq.assert_any_call("model_run_id", "run-1")
-    update_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_delete_incident_calls_delete():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.delete_incident("vid-1", "run-1")
-    mock_client.table.assert_called_with("incidents")
-    delete_call = mock_client.table().delete()
-    delete_call.eq.assert_any_call("incident_id", "vid-1")
-    delete_call.eq.assert_any_call("model_run_id", "run-1")
-    delete_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_add_incident_entity_inserts():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.add_incident_entity("vid-1", "run-1", entity_id="e1", type="human", description="a person")
-    mock_client.table.assert_called_with("entities")
-    insert_call = mock_client.table().insert
-    insert_call.assert_called_once()
-    args, _ = insert_call.call_args
-    assert args[0]["incident_id"] == "vid-1"
-    assert args[0]["entity_id"] == "e1"
-    assert args[0]["model_run_id"] == "run-1"
-    assert args[0]["type"] == "human"
-    assert args[0]["description"] == "a person"
-
-
-@pytest.mark.asyncio
-async def test_add_incident_instrument_inserts():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.add_incident_instrument("vid-1", "run-1", instrument_id="i1", entity_id="e1", name="knife", threat_level=4)
-    mock_client.table.assert_called_with("instruments")
-    insert_call = mock_client.table().insert
-    insert_call.assert_called_once()
-    args, _ = insert_call.call_args
-    assert args[0]["incident_id"] == "vid-1"
-    assert args[0]["instrument_id"] == "i1"
-    assert args[0]["model_run_id"] == "run-1"
-    assert args[0]["entity_id"] == "e1"
-    assert args[0]["name"] == "knife"
-    assert args[0]["threat_level"] == 4
-
-
-@pytest.mark.asyncio
-async def test_add_incident_asset_inserts():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.add_incident_asset("vid-1", "run-1", asset_id="a1", name="car", description="a parked car")
-    mock_client.table.assert_called_with("assets")
-    insert_call = mock_client.table().insert
-    insert_call.assert_called_once()
-    args, _ = insert_call.call_args
-    assert args[0]["incident_id"] == "vid-1"
-    assert args[0]["asset_id"] == "a1"
-    assert args[0]["model_run_id"] == "run-1"
-    assert args[0]["name"] == "car"
-    assert args[0]["description"] == "a parked car"
-
-
-@pytest.mark.asyncio
-async def test_delete_incident_entities_calls_delete():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.delete_incident_entities("vid-1", "run-1")
-    mock_client.table.assert_called_with("entities")
-    delete_call = mock_client.table().delete()
-    delete_call.eq.assert_any_call("incident_id", "vid-1")
-    delete_call.eq.assert_any_call("model_run_id", "run-1")
-    delete_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_delete_incident_instruments_calls_delete():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.delete_incident_instruments("vid-1", "run-1")
-    mock_client.table.assert_called_with("instruments")
-    delete_call = mock_client.table().delete()
-    delete_call.eq.assert_any_call("incident_id", "vid-1")
-    delete_call.eq.assert_any_call("model_run_id", "run-1")
-    delete_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_delete_incident_assets_calls_delete():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.delete_incident_assets("vid-1", "run-1")
-    mock_client.table.assert_called_with("assets")
-    delete_call = mock_client.table().delete()
-    delete_call.eq.assert_any_call("incident_id", "vid-1")
-    delete_call.eq.assert_any_call("model_run_id", "run-1")
-    delete_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_list_incident_entities_scopes_by_incident_and_run():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"entity_id": "e1"}]))
-    db = IncidentDB(mock_client)
-    result = await db.list_incident_entities("vid-1", "run-1")
-    assert result == [{"entity_id": "e1"}]
-    select_mock = mock_client.table().select()
-    select_mock.eq.assert_any_call("incident_id", "vid-1")
-    select_mock.eq.assert_any_call("model_run_id", "run-1")
-
-
-@pytest.mark.asyncio
-async def test_list_incident_instruments_without_model_run_filter():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"instrument_id": "i1"}]))
-    db = IncidentDB(mock_client)
-    result = await db.list_incident_instruments("vid-1")
-    assert result == [{"instrument_id": "i1"}]
-
-
-@pytest.mark.asyncio
-async def test_list_incident_assets_without_model_run_filter():
-    mock_client = _make_mock_client()
-    mock_client.table().select().order().execute = AsyncMock(return_value=MagicMock(data=[{"asset_id": "a1"}]))
-    db = IncidentDB(mock_client)
-    result = await db.list_incident_assets("vid-1")
-    assert result == [{"asset_id": "a1"}]
-
-
-@pytest.mark.asyncio
-async def test_get_review_status_returns_none_when_missing():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
-    db = IncidentDB(mock_client)
-    assert await db.get_review_status("vid-1", "run-1") is None
-
-
-@pytest.mark.asyncio
-async def test_set_review_status_rejects_invalid_status():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    with pytest.raises(ValueError, match="Invalid review status"):
-        await db.set_review_status("vid-1", "run-1", status="bogus", reviewed_by="alice", notify_threshold=4)
-
-
-@pytest.mark.asyncio
-async def test_set_review_status_requires_reviewer_name():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    with pytest.raises(ValueError, match="Reviewer name is required"):
-        await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="   ", notify_threshold=4)
-
-
-@pytest.mark.asyncio
-async def test_set_review_status_raises_when_incident_missing():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
-    db = IncidentDB(mock_client)
-    with pytest.raises(ValueError, match="Incident not found"):
-        await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
-
-
-@pytest.mark.asyncio
-async def test_set_review_status_no_change_returns_early():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(
-        side_effect=[
-            MagicMock(data={"severity_level": 5}),
-            MagicMock(data={"status": "verified"}),
-        ]
+async def test_insert_ai_revision_appends_the_next_revision_no_with_facets():
+    client, table = _revision_client(last_revision_nos=[2])
+    row = await IncidentDB(client).insert_ai_revision(
+        "v1", model_run_id="run-1", payload=REPORT_PAYLOAD, evidence=[{"item_id": "E1"}], note="n"
     )
-    db = IncidentDB(mock_client)
-    result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
-    assert result == {"notified": False, "severity": 5}
-    mock_client.table().update.assert_not_called()
+    assert row == {"id": 11}
+    inserted = table.insert.call_args.args[0]
+    assert inserted["video_id"] == "v1" and inserted["revision_no"] == 3
+    assert inserted["kind"] == "ai" and inserted["model_run_id"] == "run-1"
+    assert inserted["parent_id"] is None and inserted["created_by"] is None and inserted["note"] == "n"
+    assert inserted["payload"] is REPORT_PAYLOAD and inserted["evidence"] == [{"item_id": "E1"}]
+    assert (inserted["incident_type"], inserted["severity_level"]) == ("burglary", 2)
+    assert (inserted["start_seconds"], inserted["end_seconds"]) == (1, 6)
+    assert "+" not in inserted["created_at"]  # naive UTC
 
 
 @pytest.mark.asyncio
-async def test_set_review_status_notifies_above_threshold():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(
-        side_effect=[
-            MagicMock(data={"severity_level": 5}),
-            MagicMock(data=None),
-        ]
+async def test_first_revision_of_a_video_is_number_one():
+    client, table = _revision_client(last_revision_nos=[0])
+    await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
+    assert table.insert.call_args.args[0]["revision_no"] == 1
+
+
+@pytest.mark.asyncio
+async def test_insert_ai_revision_retries_a_revision_no_taken_by_a_concurrent_writer():
+    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
+    client, table = _revision_client(
+        last_revision_nos=[2, 3], insert_results=[clash, MagicMock(data=[{"id": 12, "revision_no": 4}])]
     )
-    db = IncidentDB(mock_client)
-    result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
-    assert result == {"notified": True, "severity": 5}
-    mock_client.table().insert.assert_not_called()
+    row = await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
+    assert row["id"] == 12
+    assert [call.args[0]["revision_no"] for call in table.insert.call_args_list] == [3, 4]
 
 
 @pytest.mark.asyncio
-async def test_set_review_status_below_threshold_does_not_notify():
-    mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(
-        side_effect=[
-            MagicMock(data={"severity_level": 2}),
-            MagicMock(data=None),
-        ]
+async def test_insert_ai_revision_three_concurrent_inserts_succeed_with_distinct_revision_nos():
+    """3+ concurrent inserts against unique (video_id, revision_no) all succeed with distinct numbers.
+
+    With 5 attempts and jittered backoff, concurrent writers retry on SQLSTATE 23505 and eventually
+    each gets a distinct revision_no instead of all aborting after 3 attempts.
+    """
+    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
+    client, _table = _revision_client(
+        last_revision_nos=[2, 3, 4, 5, 6, 7],
+        insert_results=[
+            clash,
+            MagicMock(data=[{"id": 1, "revision_no": 3}]),
+            clash,
+            MagicMock(data=[{"id": 2, "revision_no": 5}]),
+            clash,
+            MagicMock(data=[{"id": 3, "revision_no": 7}]),
+        ],
     )
-    db = IncidentDB(mock_client)
-    result = await db.set_review_status("vid-1", "run-1", status="verified", reviewed_by="alice", notify_threshold=4)
-    assert result == {"notified": False, "severity": 2}
-    mock_client.table().insert.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_insert_generated_report_upserts():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    result = await db.insert_generated_report(
-        "report-1", incident_id="vid-1", model_run_id="run-1", filepath="reports/vid-1.md"
+    rows = await asyncio.gather(
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r1", payload=REPORT_PAYLOAD, evidence=[]),
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r2", payload=REPORT_PAYLOAD, evidence=[]),
+        IncidentDB(client).insert_ai_revision("v1", model_run_id="r3", payload=REPORT_PAYLOAD, evidence=[]),
     )
-    assert result == "report-1"
-    mock_client.table.assert_called_with("reports")
-    upsert_call = mock_client.table().upsert
-    upsert_call.assert_called_once()
-    args, kwargs = upsert_call.call_args
-    assert args[0]["id"] == "report-1"
-    assert args[0]["incident_id"] == "vid-1"
-    assert args[0]["model_run_id"] == "run-1"
-    assert args[0]["filepath"] == "reports/vid-1.md"
-    assert kwargs["on_conflict"] == "id"
+    assert len(rows) == 3
+    revision_nos = [row["revision_no"] for row in rows]
+    assert len(set(revision_nos)) == 3
+    assert set(revision_nos) == {3, 5, 7}
 
 
 @pytest.mark.asyncio
-async def test_get_generated_report_returns_none_when_missing():
+async def test_insert_ai_revision_gives_up_after_repeated_clashes():
+    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
+    client, _ = _revision_client(last_revision_nos=[1, 2, 3, 4, 5], insert_results=[clash] * 5)
+    with pytest.raises(RuntimeError, match="revision_no"):
+        await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
+
+
+@pytest.mark.asyncio
+async def test_insert_ai_revision_does_not_retry_other_errors():
+    boom = APIError({"message": "violates foreign key", "code": "23503", "details": "", "hint": ""})
+    client, table = _revision_client(last_revision_nos=[1], insert_results=[boom])
+    with pytest.raises(APIError):
+        await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
+    assert table.insert.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_revision_returns_none_when_missing():
     mock_client = _make_mock_client()
-    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data=None))
     db = IncidentDB(mock_client)
-    assert await db.get_generated_report("missing") is None
+    assert await db.get_revision(99) is None
+    mock_client.table.assert_called_with("report_revisions")
+
+
+@pytest.mark.asyncio
+async def test_get_revision_returns_the_row():
+    mock_client = _make_mock_client()
+    mock_client.table().select().maybe_single().execute = AsyncMock(return_value=MagicMock(data={"id": 5}))
+    assert await IncidentDB(mock_client).get_revision(5) == {"id": 5}
+
+
+@pytest.mark.asyncio
+async def test_list_revisions_orders_by_revision_no():
+    mock_client = _make_mock_client()
+    mock_client.table().select().execute = AsyncMock(return_value=MagicMock(data=[{"id": 1}, {"id": 2}]))
+    assert await IncidentDB(mock_client).list_revisions("v1") == [{"id": 1}, {"id": 2}]
+    mock_client.table().select().order.assert_called_with("revision_no")
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (REPORT_PAYLOAD, {"incident_type": "burglary", "severity_level": 2, "start_seconds": 1, "end_seconds": 6}),
+        ({}, {"incident_type": None, "severity_level": None, "start_seconds": None, "end_seconds": None}),
+        (
+            {"incident": {"type": "", "severity_level": True, "start_timestamp": "00:00:01", "end_timestamp": None}},
+            {"incident_type": None, "severity_level": None, "start_seconds": None, "end_seconds": None},
+        ),
+        (
+            {"incident": {"start_timestamp": float("nan"), "end_timestamp": 7.6}},
+            {"incident_type": None, "severity_level": None, "start_seconds": None, "end_seconds": 8},
+        ),
+    ],
+)
+def test_revision_facets_read_the_payload_and_tolerate_malformed_values(payload, expected):
+    assert incident_db.revision_facets(payload) == expected
 
 
 @pytest.mark.asyncio

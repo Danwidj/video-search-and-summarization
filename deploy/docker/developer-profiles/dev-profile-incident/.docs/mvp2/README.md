@@ -107,8 +107,8 @@ Search & Retrieval
 | Contract / Schema | Description | Consumed By |
 |---|---|---|
 | **incident-contract-v3** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
-| **evidence_crops** (new Supabase table) | Unified table: `(incident_id, model_run_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route, chat endpoint, evidence loader (migration delivered in PR 134) |
-| **query_results** (new Supabase table) | Records: `id, query_id, incident_id, model_run_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
+| **evidence_crops** (new Supabase table) | Unified table: `(revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route, chat endpoint; rows written by the console from `POST /api/v1/incidents/evidence-embeddings` for official revisions |
+| **query_results** (new Supabase table) | Records: `id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
 | **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true), `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
 | **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
 | **chat-contract-v1** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `session_id` (optional), `messages[]` (`{role: "user" | "assistant" | "system", content}`), `context` (`{scope: "global" | "incident", incident_id, evidence_crop_ids}`). Returns assistant response with grounded evidence citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`). | PR 118 (frontend chat) |
@@ -314,7 +314,7 @@ The following specifications are planned, not final, pending completion of the o
 > - **Stand-in Placeholder:** Enum values `'entity'`, `'instrument'`, `'asset'`.
 
 > [!NOTE]
-> **COMPLETED [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass & Production Evidence Loader**
+> **RETIRED [fm/vss-mvp2-backfill-timestamps]: Targeted Timestamp Backfill Pass & Production Evidence Loader (script removed; the analyze route now writes crops and the console writes `evidence_crops`)**
 > - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
 > - **Production Adapters:** `LiveCropClient` (remote VLM detector + R2 upload), `RemoteTextEmbedderAdapter` (NVIDIA-hosted `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions), and `LiveEvidenceStore` (`SupabaseEvidenceStore` upserting into `evidence_crops`). In-memory fakes retained for unit tests and `--dry-run`.
 
@@ -336,11 +336,11 @@ The following specifications are planned, not final, pending completion of the o
 | 10 | Live DB RLS Lockdown Verification | PR 126 | Superseded: finals is locked down by its baseline (tested by `supabase/tests/`; `security_check.sql` and `probe_api.sh` at the cutover) and midterm is frozen |
 | 11 | `evidence_crops` & `query_results` Migration | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
 | 12 | `search_evidence_items` Database RPC | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
-| 13 | Crop Embedding Generator & Ingestion | Backfill | Delivered via `scripts/backfill_official_timestamps.py` |
+| 13 | Crop Embedding Generator & Ingestion | Backfill | Replaced: the analyze route crops and uploads, `POST /api/v1/incidents/evidence-embeddings` embeds, the console stores |
 | 14 | Console Middle Layer (ports and adapters) | PR 120 | `incident-console-v2/lib/ports/`, `lib/adapters/supabase/` |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
 | 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |
-| 17 | Targeted Timestamp Backfill Script | `fm/vss-mvp2-backfill-timestamps` | `scripts/backfill_official_timestamps.py` script & test suite |
+| 17 | Targeted Timestamp Backfill Script | `fm/vss-mvp2-backfill-timestamps` | Retired (script and tests removed) |
 
 ---
 

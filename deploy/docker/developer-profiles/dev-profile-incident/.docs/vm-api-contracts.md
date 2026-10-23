@@ -119,6 +119,12 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
 }
 ```
 
+## `POST /api/v1/incidents/evidence-embeddings`
+
+Called by the console when a revision is made official. It reads that revision's `evidence` from `report_revisions` and embeds each item with the model search uses (`nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions, `passage` input of `"{item_name}: {description}"`). The agent writes nothing; the console writes the `evidence_crops` rows.
+
+Request: `{"revision_id": <int >= 1>}`. Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when the revision has no items). Errors: `404` unknown revision, `502` embedding service failed, `503` database or embedding key not configured.
+
 ## `POST /api/v1/incidents/{incident_id}/analyze`
 
 Runs the `incident_report_gen` tool (P1 extraction, then RP1 prose report) on an uploaded video. Called by `incident-console-v2` in agent mode; `incident_id` is the console's `videos.id`. Field-level report schema: [analysis-schema.md](analysis-schema.md).
@@ -128,16 +134,18 @@ Request:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `video_url` | string | required | signed R2 URL, min 1 char |
-| `model_run_id` | string | none | 1-20 chars; when given the caller records the run and the agent persists nothing |
+| `model_run_id` | string | none | 1-20 chars; when given the caller owns the `model_runs` row (the agent inserts only a placeholder if it is absent) |
+| `model` | string | agent `VLM_NAME` | a model id from the `contracts/inference.json` allowlist; anything else is `400` |
+| `reviewer_prompt` | string | none | max 1000 chars (`422` above). Added to the report prompt for this run only, framed as `ADDITIONAL REVIEWER CONTEXT FOR THIS VIDEO`; copies nothing from earlier revisions |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
 
-Response `200`: the validated contract report (`core-scored-v1`), as a JSON object. Takes tens of seconds to minutes (VLM calls); use a long timeout.
+Response `200`: the validated contract report (`core-scored-v1`), as a JSON object. When the database is configured it also carries `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image). Takes tens of seconds to minutes (VLM calls); use a long timeout.
 
 Errors:
 
 | Status | `detail` |
 |---|---|
-| 422 | validation, or contract violation: object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted; record the attempt) |
+| 422 | validation, or contract violation: object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted by the agent; the caller records the attempt) |
 | 501 | string: `incident_report_gen tool is not configured on this profile` |
 | 504 | string: `Incident analysis timed out: ...` (P1 timeout) |
 | 500 | string: `Analysis failed: ...` |
@@ -189,4 +197,4 @@ Registered by the same worker; documented upstream. Video: `POST /api/v1/videos`
 | `POST chat` | `200`, canned `Assault007` citations |
 | listening ports | `8000`, `7777` yes; `30081`, `30082` no (dropped from tunnel) |
 
-Differences from main: the VM checkout was at `f7847e1d2` (PR 134), before the evidence loader and embedding changes of PR 138, and its search returned no hits. Hit contents above are therefore documented from main's models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).
+Differences from main: the VM checkout was at `f7847e1d2` (PR 134), before the evidence changes of PR 138, and its search returned no hits. Hit contents above are therefore documented from main's models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).

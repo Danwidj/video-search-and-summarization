@@ -26,12 +26,12 @@ Canonical facts: [`.docs/data.md`](../../.docs/data.md) (table specs, reviewer v
 
 Only `service_role` and `postgres` reach anything: the public (`anon`) key is refused everywhere on finals, and on midterm after the freeze.
 
-All PostgREST writers must use `/rpc/insert_incident` for the `incidents` + `review_status` pair. PostgREST has no client-held transactions.
+Report writers append to `report_revisions` (append-only; never update or delete a revision). The agent computes `revision_no` as `max + 1` and retries on a unique violation (SQLSTATE 23505), because PostgREST has no client-held transactions.
 The AI report rows (`incidents`, `entities`, `instruments`, `assets`) are never edited. Reviewer edits use `/rpc/save_human_report_edit` (or its `/rpc/apply_structured_report_edit` shim), which writes the run's reviewer version (`human_reports` and its items) and `review_status.edited_by/edited_at`, and sends a verified report back to `under review`. Every edited item must carry `source_id` (the AI item it came from, `null` for an added item); an edit without it is refused, never guessed. Status changes use `/rpc/set_review_status`; verifying without edits copies the AI report into the reviewer version. Neither touches `model_runs.notes` (the immutable analysis record). Readers that mean "the current report" use the `effective_*` views. Official reports are set only through `/rpc/select_official_report` / `/rpc/clear_official_report`.
 The report library reads filtered, paginated metadata through the service-role-only `/rpc/list_incident_report_summaries`; its `p_entities`, `p_instruments`, and `p_assets` arrays filter the effective evidence by `(incident_id, model_run_id)`. It also takes `p_scope` (`all`/`official`), `p_entity_types`, `p_evidence_match` (`contains`/`exact`), and `p_timezone` (default `'UTC'`) for localised weekday and time-of-day filtering, and returns each report's analysis `outcome` and `isOfficial`. The library path does not read or sign video.
 The operations dashboard reads bounded aggregates through the service-role-only `/rpc/get_incident_dashboard`, counting official incidents only and accepting `p_timezone` (default `'UTC'`) for local-time heatmap bucketing; it never downloads full report notes or evidence rows.
 Natural-language search queries evidence items through the service-role-only `/rpc/search_evidence_items`, which performs a pgvector cosine distance search over `evidence_crops.embedding` strictly scoped to official reports (`videos.selected_model_run_id = ec.model_run_id`) and shows the reviewer's text; search hits and critic verification verdicts are logged into `query_results`.
-`evidence_crops` is loaded by `scripts/backfill_official_timestamps.py` (remote VLM grounding and boxes, R2 upload, remote embeddings); rows are upserted, so rerunning is safe. Crops are keyed to AI items. The search route embeds queries with the same model, so a model change means re-embedding every row.
+`evidence_crops` holds official revisions only and is written by the console from `POST /api/v1/incidents/evidence-embeddings` (the agent returns the embeddings, it does not write the rows). The search route embeds queries with the same model, so a model change means re-embedding every row.
 `model_runs` rows without an incident are normal: failed analysis attempts (`contract_failed` / `request_failed`) and runs whose report was deleted. Never count `model_runs` rows as analyses without filtering by `run_outcome(notes)`. PostgREST embeds between `videos` and `incidents` must name `incidents_incident_id_fkey` (two relationships).
 
 ## Rules
@@ -41,7 +41,7 @@ Natural-language search queries evidence items through the service-role-only `/r
 - **Dry-run first, then ask** before applying for real. Applying is live and shared.
 - **After applying, run `supabase/tests/security_check.sql`** against finals: 0 rows expected.
 - **Security on every new object:** RLS on every new table; `SET search_path = ''` and no `SECURITY DEFINER` on every function; nothing for `PUBLIC`/`anon`/`authenticated`. The harness and the security check fail otherwise. Default privileges only cover objects created by `postgres`.
-- **Cascades are real.** Deleting a `videos` or `model_runs` row, or re-running `insert_incident` under the same `model_run_id`, cascades through the evidence, review, reviewer-version, and severity-eval tables. `insert_incident` refuses a run that has a reviewer version. Callers must re-insert evidence after the RPC.
+- **Cascades are real.** Deleting a `videos` row cascades through its revisions and `query_results`; `model_runs` and `report_revisions` are linked by a required foreign key, so a revision needs its run row first.
 - **Changing a function signature:** drop the old signature in the same migration. PostgREST rejects ambiguous overloads that share parameter names.
 - **Never** print or commit the service-role key, public key or DSN. Backend code uses the service role server-side only.
 
@@ -91,8 +91,7 @@ Finals has no legacy JWT keys: the server key is `sb_secret_...` and the public 
 
 | Sender | How | Handles `sb_secret_`? |
 |---|---|---|
-| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore` and `SupabaseEvidenceStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0` and `uv.lock` does not pin it. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
-| Evidence loader `scripts/backfill_official_timestamps.py` | Same `incident_db.get_db()` in the same `services/agent/.venv` | Same as the agent; the VM key check covers it. Its own `Authorization: Bearer` header goes to the VLM gateway, not Supabase |
+| `vss-agent` (`utils/incident_db.py`, and through it `SupabaseSearchStore`) | `supabase-py` `acreate_client` | Depends on the installed `supabase` version: `pyproject.toml` only requires `supabase~=2.0` and `uv.lock` does not pin it. Older 2.x releases validate the key as a JWT and raise `Invalid API key` (2.15.x still does; 2.18.0 and later do not). Prove it with the VM key check (step 4) |
 | `mock-backend/base_profile_mock` (mock mode) | Same `incident_db`, its own venv | Yes: its `uv.lock` pins `supabase` 2.31.0 |
 | `incident-console-v2` `lib/postgrest/client.ts` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
 | `eval/db_postgrest.py` | `apikey`; Bearer only for JWT-style (`eyJ...`) keys | Yes |
