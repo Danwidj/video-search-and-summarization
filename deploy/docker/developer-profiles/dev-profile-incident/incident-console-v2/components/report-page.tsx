@@ -283,6 +283,8 @@ export function ReportPage({ videoId, revisionId }: { videoId: string; revisionI
             onChange={setDraft}
             onSeek={seek}
             title={reportHeading(editBase.report)}
+            videoId={videoId}
+            videoSrc={report.run.playbackUrl}
           />
         ) : null}
 

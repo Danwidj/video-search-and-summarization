@@ -2,7 +2,11 @@
 
 'use client';
 
+import { useState } from 'react';
+
 import { EvidenceFrame } from '@/components/evidence-frame';
+import { EvidenceFramePicker } from '@/components/evidence-frame-picker';
+import type { FramePick } from '@/lib/evidence/frame-picker';
 import {
   deleteDraftItem,
   draftItemName,
@@ -41,7 +45,9 @@ const rowKey = (row: PairRow) => `${row.kind}-${row.b?.key ?? (row.a ? savedItem
  * editable draft (B) on the right, field by field and evidence row by row. A
  * is never editable. Delete removes a draft item (and the instruments an entity
  * holds); Revert puts an edited or deleted item back exactly as A has it.
- * Replace/add evidence is not part of this pane yet.
+ * Replace image picks a frame from the video and a rectangle on it; the crop
+ * and its frame second go into the draft item. Add evidence is not part of
+ * this pane yet.
  */
 export function ReportEditPane({
   a,
@@ -49,6 +55,8 @@ export function ReportEditPane({
   baseRevisionNo,
   draft,
   title,
+  videoId,
+  videoSrc,
   onChange,
   onSeek,
 }: {
@@ -57,9 +65,12 @@ export function ReportEditPane({
   baseRevisionNo: number;
   draft: EditDraft;
   title: string;
+  videoId: string;
+  videoSrc: string;
   onChange: (draft: EditDraft) => void;
   onSeek: (seconds: number) => void;
 }) {
+  const [picking, setPicking] = useState<PairRow['b'] | null>(null);
   const pairing = pairReport(a, draft);
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) => onChange({ ...draft, entities: draft.entities.map((entity) => (entity.key === key ? { ...entity, ...patch } : entity)) });
@@ -70,6 +81,16 @@ export function ReportEditPane({
   };
   const revert = (row: PairRow) => {
     if (a) onChange(revertDraftItem(draft, a, row));
+  };
+  const replace = (row: PairRow) => {
+    if (row.b) setPicking(row.b);
+  };
+  const applyPick = (item: NonNullable<PairRow['b']>, pick: FramePick) => {
+    const frame = { timestampSeconds: pick.timestampSeconds, image: pick.image, imageUrl: pick.imageUrl, imageTimestampSeconds: pick.timestampSeconds, imageBox: pick.box };
+    if (isDraftEntity(item)) patchEntity(item.key, frame);
+    else if (isDraftInstrument(item)) patchInstrument(item.key, frame);
+    else patchAsset(item.key, frame);
+    setPicking(null);
   };
   const holderOptions = draft.entities.map((entity, index) => ({ key: entity.key, label: `${index + 1}. ${entity.label || entity.type}` }));
   const draftHolder = (instrument: EditDraft['instruments'][number]) => {
@@ -179,6 +200,7 @@ export function ReportEditPane({
                     holderOptions={holderOptions}
                     inherited={inherited(unit.entity)}
                     onRemove={remove}
+                    onReplace={replace}
                     onRevert={revert}
                     onSeek={onSeek}
                     patchAsset={patchAsset}
@@ -199,6 +221,7 @@ export function ReportEditPane({
                       holderOptions={holderOptions}
                       inherited=""
                       onRemove={remove}
+                      onReplace={replace}
                       onRevert={revert}
                       onSeek={onSeek}
                       patchAsset={patchAsset}
@@ -214,6 +237,17 @@ export function ReportEditPane({
           </div>
         )}
       </section>
+
+      {picking && (
+        <EvidenceFramePicker
+          itemId={picking.key}
+          label={draftItemName(picking) || 'evidence'}
+          onClose={() => setPicking(null)}
+          onPick={(pick) => applyPick(picking, pick)}
+          videoId={videoId}
+          videoSrc={videoSrc}
+        />
+      )}
     </div>
   );
 }
@@ -242,6 +276,7 @@ function PairRowView({
   draftHolder,
   holderOptions,
   onRemove,
+  onReplace,
   onRevert,
   onSeek,
   patchEntity,
@@ -257,6 +292,7 @@ function PairRowView({
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   holderOptions: Array<{ key: string; label: string }>;
   onRemove: (row: PairRow) => void;
+  onReplace: (row: PairRow) => void;
   onRevert: (row: PairRow) => void;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -278,6 +314,7 @@ function PairRowView({
             holderOptions={holderOptions}
             item={row.b}
             onRemove={() => onRemove(row)}
+            onReplace={() => onReplace(row)}
             onRevert={changed ? () => onRevert(row) : null}
             onSeek={onSeek}
             patchAsset={patchAsset}
@@ -317,6 +354,7 @@ function EditCard({
   holderOptions,
   draftHolder,
   onRemove,
+  onReplace,
   onRevert,
   onSeek,
   patchEntity,
@@ -327,6 +365,7 @@ function EditCard({
   holderOptions: Array<{ key: string; label: string }>;
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   onRemove: () => void;
+  onReplace: () => void;
   onRevert: (() => void) | null;
   onSeek: (seconds: number) => void;
   patchEntity: PatchEntity;
@@ -368,6 +407,7 @@ function EditCard({
       {isDraftInstrument(item) && <p className="text-ink/50">Held by <b>{draftHolder(item)}</b></p>}
       <p className="text-ink/50">Most visible at <b className="font-mono">{clock(item.timestampSeconds)}</b></p>
       <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-semibold">
+        <button className="rounded-full px-2 py-0.5 text-ink hover:bg-ink/5" onClick={onReplace} type="button">Replace image</button>
         <button className="rounded-full px-2 py-0.5 text-clay hover:bg-clay/10" onClick={onRemove} type="button">Delete</button>
         {onRevert && <button className="rounded-full px-2 py-0.5 text-moss hover:bg-moss/10" onClick={onRevert} type="button">Revert to A</button>}
       </div>
