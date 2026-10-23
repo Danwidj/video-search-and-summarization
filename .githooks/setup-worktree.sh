@@ -12,11 +12,11 @@
 # Part 0 (dev-profile-incident root .env.local): a new worktree must get the
 # main worktree's real deploy/docker/developer-profiles/dev-profile-incident/.env.local
 # (the developer's secrets). Outside the main worktree, when the main worktree
-# has that file, copy it here if the target is missing or is still a byte-exact
-# copy of the placeholder .env template (what an older version of this hook
-# seeded); never overwrite any other existing .env.local. Only when there is no
-# real file to copy (fresh clone, or the main worktree itself) seed a missing
-# .env.local from the tracked .env template instead.
+# has that file, copy it here if the target is missing, or refresh it when the
+# target is a regular file that differs from the main copy (so stale secrets
+# from an older project do not persist). A symlink target is left alone. Only
+# when there is no real file to copy (fresh clone, or the main worktree itself)
+# seed a missing .env.local from the tracked .env template instead.
 #
 # Part A propagates real (non-generated) .env files and symlinks from the MAIN
 # worktree into this worktree, copy-if-missing only, never overwriting. Covers the
@@ -60,10 +60,9 @@ if [ -d "$incident_root_dir" ]; then
         if [ ! -e "$target_env_local" ] && [ ! -L "$target_env_local" ]; then
             cp "$main_env_local" "$target_env_local"
             echo "setup-worktree: copied $INCIDENT_ROOT/.env.local from the main worktree"
-        elif [ -f "$target_env_local" ] && [ ! -L "$target_env_local" ] && [ -f "$template_env" ] &&
-            cmp -s "$target_env_local" "$template_env" && ! cmp -s "$target_env_local" "$main_env_local"; then
+        elif [ -f "$target_env_local" ] && [ ! -L "$target_env_local" ] && ! cmp -s "$target_env_local" "$main_env_local"; then
             cp "$main_env_local" "$target_env_local"
-            echo "setup-worktree: replaced placeholder $INCIDENT_ROOT/.env.local with the main worktree's copy"
+            echo "setup-worktree: refreshed $INCIDENT_ROOT/.env.local from the main worktree"
         fi
     elif [ -f "$template_env" ] && [ ! -e "$target_env_local" ] && [ ! -L "$target_env_local" ]; then
         cp "$template_env" "$target_env_local"

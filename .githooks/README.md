@@ -26,12 +26,14 @@ the env is current.
 1. **dev-profile-incident root `.env.local` (real secrets).** Outside the
    main worktree, when the main worktree has
    `deploy/docker/developer-profiles/dev-profile-incident/.env.local`, copy it
-   here if this worktree has none, or if this worktree's file is still a
-   byte-exact copy of the placeholder `.env` template (what an older version of
-   this hook seeded). Any other existing `.env.local` is never overwritten.
-   Only when there is no real file to copy (a fresh clone, or the main worktree
-   itself) is a missing `.env.local` seeded from the tracked `.env` template
-   (blank/placeholder values, ready for the developer to fill in).
+   here if this worktree has none. If this worktree's file is a regular file
+   that differs from the main worktree's copy, it is refreshed from the main
+   copy, so a stale copy from an older project does not persist. A symlink is
+   never replaced. The main worktree's file is never written, and nothing is
+   copied when the main file is absent. Only when there is no real file to copy
+   (a fresh clone, or the main worktree itself) is a missing `.env.local` seeded
+   from the tracked `.env` template (blank/placeholder values, ready for the
+   developer to fill in).
 2. **`.env` propagation.** Copies `.env` / `.env.*` / `*.env_file` files
    found in the main worktree (pruning `node_modules`, `.venv`, `.git` and
    `dev-profile-incident/archived/`, whose retired code is never set up)
