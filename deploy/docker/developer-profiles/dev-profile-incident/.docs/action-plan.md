@@ -41,6 +41,6 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md). A hybrid pip
 3. **Storage:** R2 is the permanent store for videos and evidence images; Supabase Postgres holds reports, review and evaluations; the VIOS disk is only a working cache.
 4. **1 video = 1 incident:** `incidents.incident_id` equals `videos.id`; there is no `video_id` column.
 5. **Multi-run support:** `incidents`, `entities`, `instruments` and `assets` are keyed by `model_run_id` as well, so several runs over one video do not collide.
-6. **Isolated review state:** `review_status` is keyed by `(incident_id, model_run_id)`, leaving `incidents` an immutable record of model output.
+6. **Isolated review state:** a reviewer's edit is a `kind='human'` row in `report_revisions`, so the AI revision and `model_runs` stay an immutable record of model output (this replaced `review_status`, 2026-10-23).
 7. **VM network constraint:** `kwanz-ws` blocks port 5432, so agent-side persistence uses HTTPS PostgREST (`supabase-py`); laptop tools may use `INCIDENT_DB_DSN`.
 8. **Stateless users:** `edited_by`, `verified_by` and `rater` are plain-text names; there is no account table.
