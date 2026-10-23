@@ -1,6 +1,6 @@
 ---
 name: incident-manage-database
-description: Use to inspect or change the incident Supabase Postgres schema, write, test and apply a migration under supabase/migrations/, run the SQL harness or security check, query incident/review/ground-truth tables, or locate and validate video objects in Cloudflare R2. Not for running an analysis (use incident-analyze-video), searching evidence (use incident-search), or scoring ground truth (use incident-run-eval).
+description: Use to inspect or change the incident Supabase Postgres schema, write, test and apply a migration under supabase/migrations/, run the SQL harness or security check, query incident/review tables, or locate and validate video objects in Cloudflare R2. Not for running an analysis (use incident-analyze-video) or searching evidence (use incident-search).
 license: Apache-2.0
 metadata:
   version: "0.2.1"

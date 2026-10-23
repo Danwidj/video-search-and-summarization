@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-22: Remove ground-truth features from incident-console-v2 and mark GT tables removed
+- **Decision:** Remove all ground-truth features from `incident-console-v2` (the `/videos/[videoId]/ground-truth` page, `GroundTruthScreen` component, `/api/reports/[videoId]/ground-truth` route, links from video history and report tools, and corresponding tests). The ground-truth tables (`gt_incidents`, `gt_entities`, `gt_instruments`, `gt_assets`) and `severity_eval_log` have been deleted from Supabase and are marked removed across documentation.
+- **Why:** The ground-truth evaluation screen and tables are no longer used by the incident console; evaluation is handled independently and the tables have been dropped from the live Supabase database.
+- **Rejected:** Retaining dead UI links or mock routes in the console.
+- **Links:** [`data.md`](data.md); [`status.md`](status.md); [`architecture.md`](architecture.md).
+
 ### 2026-10-22: Concurrency-safe native service startup across shared VM users
 - **Decision:**
   - Serialise native service check-then-start via `flock` on `.run/native-services.lock` (group-writable); close descriptor 200 before daemonising background processes so `flock` is released when the launcher exits.

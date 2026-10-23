@@ -136,8 +136,7 @@ application. The report library remembers filters, scroll position, and its orig
 links.
 
 Each report provides human-attributed structured corrections, non-streaming report-grounded follow-up chat through
-the agent `/chat` contract, model-run history and side-by-side comparison, and a ground-truth/severity evaluation
-form. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
+the agent `/chat` contract, and model-run history and side-by-side comparison. Human corrections update structured incident fields while retained raw VLM output remains unchanged as
 provenance.
 
 ## Videos, run history and official reports (2026-09-27)
@@ -145,7 +144,6 @@ provenance.
 - **Pages:**
   - `/videos` lists uploaded videos, with "Awaiting official report" and "Without a report" views.
   - `/videos/<id>` shows the video, a re-analysis card (any allowlisted model, optional additional instruction) and the full analysis history: every attempt with its model, time, outcome, failure reasons or repair operations. Failed attempts never appear as reports.
-  - `/videos/<id>/ground-truth` holds human ground truth: never pre-filled from model output, with a read-only comparison. Scoring stays in `eval/`.
 - **Re-analysis** always creates a new run, never changes the video's upload time, and never makes the new report official.
 - **Official report:** a reviewer explicitly chooses it on the report page or in the history.
 - **Dashboard:** it counts official incidents only, and every number links to `/reports?scope=official&...`. The reports page treats the URL as its filter state.

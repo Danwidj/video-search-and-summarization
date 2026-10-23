@@ -367,7 +367,7 @@ export interface HealthRepository {
   - [x] Refactor `app/api/videos/route.ts` and `app/api/videos/[videoId]/official/route.ts`.
   - [x] Refactor `app/api/reports/route.ts`.
   - [x] Refactor `app/api/reports/[videoId]/route.ts`, `review`, `edit` and `delete`.
-  - [ ] `app/api/reports/[videoId]/ground-truth`, `app/api/videos/[videoId]/runs`, `app/api/analysis` and `lib/analysis/*` (deferred, §7).
+  - [ ] `app/api/videos/[videoId]/runs`, `app/api/analysis` and `lib/analysis/*` (deferred, §7; ground truth removed).
 - [x] **Testing & Quality Assurance:**
   - [x] Characterisation tests for responses no test pinned (report detail, review, the videos list, the full dashboard and report-library responses), written against the unrefactored routes.
   - [x] Contract suites that run the same cases against the in-memory fake and the Supabase adapter (over `tests/support/fake-postgrest.mjs`).
@@ -392,7 +392,7 @@ This round meets these for every route not listed in §7; the callers in §7 sta
 ## 7. Deferred in this round
 
 Decided 2026-10-17; updated 2026-10-19, when the dashboard and the report library moved onto the ports:
-- **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): untouched; no ground-truth port. Its GET still returns raw rows.
+- **Ground truth** (`app/api/reports/[videoId]/ground-truth`, its page and the `gt_*` tables): removed from console and database.
 - **Analysis saving and run history** (`app/api/analysis`, `lib/analysis/*`, `app/api/videos/[videoId]/runs`): not on the ports yet; they move into the middle layer later, together with the rest of the separation of human-verified and AI-generated reports. Run history already reads each run's type and severity from `effective_incidents`.
 - **Search adapter and route**: the port is defined to match the agent's search contract (§3.1); the agent-backed adapter and a console search route come in a later PR. No console-side embedding.
 - **Keys built in SQL**: the report library and dashboard responses keep the snake_case keys their RPCs build (`incident_type`, `reviews.under_review`), because the components read them; renaming them means changing the mapper and the components together.
@@ -401,7 +401,6 @@ Files outside `lib/adapters/supabase/**` that still import `lib/postgrest/client
 
 | File | Waits for |
 |---|---|
-| `app/api/reports/[videoId]/ground-truth/route.ts` | nothing planned: ground truth stays untouched |
 | `app/api/videos/[videoId]/runs/route.ts` | the verified/AI report split |
 | `lib/analysis/run-contract-analysis.ts` | the verified/AI report split |
 | `lib/analysis/persistence.ts` | the verified/AI report split |
