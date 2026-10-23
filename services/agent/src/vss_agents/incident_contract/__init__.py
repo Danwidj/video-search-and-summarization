@@ -178,6 +178,11 @@ def p1_request() -> dict[str, Any]:
     return p1
 
 
+def allowed_models() -> list[str]:
+    """Ids of the VLMs P1 may run on: the ``models`` allowlist in ``inference.json``, shared with the console."""
+    return [str(model["id"]) for model in _read_json("inference.json")["models"]]
+
+
 def rp1_request() -> dict[str, Any]:
     """Fixed RP1 request: ``model`` plus its inference settings, shared with eval."""
     rp1: dict[str, Any] = _read_json("inference.json")["rp1"]

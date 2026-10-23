@@ -88,8 +88,11 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
   `DELETE /api/v1/videos/{id}` - video upload/delete, mirroring
   `services/agent/src/vss_agents/api/video_ingest.py` / `video_delete.py`.
 - `POST /api/v1/incidents/{id}/analyze` - deterministic mock incident report
-  generation, persisted through the shared incident DB writer; invoked
-  automatically by the console's upload flow.
+  generation, persisted as an AI `report_revisions` row through the shared
+  incident DB writer (response carries `revision_id`); invoked automatically by
+  the console's upload flow.
+- `POST /api/v1/incidents/evidence-embeddings` - deterministic 1024-dimension
+  embeddings for a revision's evidence items (`{"revision_id"}`), mirroring the agent.
 - `POST /api/v1/incidents/search` - natural-language evidence search conforming to
   `search-contract-v1` with canned hits, crop URLs, and critic verdicts.
 - `POST /api/v1/incidents/chat` - conversational evidence Q&A conforming to

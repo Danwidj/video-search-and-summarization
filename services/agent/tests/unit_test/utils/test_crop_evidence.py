@@ -20,7 +20,6 @@ import io
 from pathlib import Path
 import tempfile
 from typing import ClassVar
-from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -34,15 +33,15 @@ from vss_agents.utils.crop_evidence import DefaultDetector
 from vss_agents.utils.crop_evidence import Detection
 from vss_agents.utils.crop_evidence import FakeDetector
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
-from vss_agents.utils.crop_evidence import LiveEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
-from vss_agents.utils.crop_evidence import SupabaseEvidenceStore
 from vss_agents.utils.crop_evidence import apply_box_padding
 from vss_agents.utils.crop_evidence import crop_evidence_item
 from vss_agents.utils.crop_evidence import encode_jpeg
+from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
+from vss_agents.utils.crop_evidence import new_evidence_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
@@ -82,22 +81,19 @@ def tiny_video_path() -> Generator[Path]:
 
 
 class TestEvidenceKey:
-    """Test canonical evidence key layout generation."""
+    """Test the never-overwritten evidence key layout."""
 
     def test_canonical_key_format(self) -> None:
-        key = evidence_key("Explosion001", "MR001", "entities", "E1")
-        assert key == "evidence/Explosion001/MR001/entities/E1.jpg"
+        assert evidence_key("Explosion001", "b1", "E1") == "evidence/Explosion001/b1/E1.jpg"
 
-    def test_singular_collection_normalization(self) -> None:
-        assert evidence_key("Burglary004", "run1", "entity", "E2") == "evidence/Burglary004/run1/entities/E2.jpg"
-        assert evidence_key("Burglary004", "run1", "instrument", "I1") == "evidence/Burglary004/run1/instruments/I1.jpg"
-        assert evidence_key("Burglary004", "run1", "asset", "A3") == "evidence/Burglary004/run1/assets/A3.jpg"
+    def test_item_ids_are_unique_across_types_so_no_collection_folder(self) -> None:
+        keys = {evidence_key("v", "b", item_id) for item_id in ("E1", "I1", "A1")}
+        assert len(keys) == 3
 
-    def test_plural_collections(self) -> None:
-        assert (
-            evidence_key("Assault007", "MR002", "instruments", "I2") == "evidence/Assault007/MR002/instruments/I2.jpg"
-        )
-        assert evidence_key("Assault007", "MR002", "assets", "A1") == "evidence/Assault007/MR002/assets/A1.jpg"
+    def test_each_batch_id_is_new(self) -> None:
+        first, second = new_evidence_batch_id(), new_evidence_batch_id()
+        assert first != second and len(first) == 32
+        assert evidence_key("v", first, "E1") != evidence_key("v", second, "E1")
 
 
 class TestBoxPaddingAndNormalization:
@@ -257,7 +253,7 @@ class TestEvidenceStoreAdapters:
     @pytest.mark.asyncio
     async def test_in_memory_store_put_and_get(self) -> None:
         store = InMemoryEvidenceStore()
-        key = "evidence/Video1/Run1/entities/E1.jpg"
+        key = "evidence/Video1/batch/E1.jpg"
         data = b"\xff\xd8\xff\xe0test_image"
 
         stored_key = await store.put_image(key, data)
@@ -270,40 +266,14 @@ class TestEvidenceStoreAdapters:
         assert non_existent is None
 
     @pytest.mark.asyncio
-    async def test_in_memory_store_crop_metadata(self) -> None:
-        store = InMemoryEvidenceStore()
-        record = await store.record_crop(
-            incident_id="Vid001",
-            model_run_id="Run001",
-            item_type="instrument",
-            item_id="I1",
-            item_name="crowbar",
-            description="Used to pry open lockbox",
-            timestamp_seconds=12,
-            bounding_box=[100, 200, 300, 400],
-            image_key="evidence/Vid001/Run001/instruments/I1.jpg",
-            threat_level=4,
-            holder_entity_id="E1",
-        )
-        assert record["item_name"] == "crowbar"
-        assert record["threat_level"] == 4
-
-        fetched = await store.get_crop("Vid001", "Run001", "instrument", "I1")
-        assert fetched == record
-
-        all_crops = await store.list_crops_for_incident("Vid001", "Run001")
-        assert len(all_crops) == 1
-        assert all_crops[0]["item_id"] == "I1"
-
-    @pytest.mark.asyncio
     async def test_r2_store_puts_and_gets_image(self) -> None:
         client = MagicMock()
         client.get_object.return_value = {"Body": io.BytesIO(b"jpeg-bytes")}
         store = R2EvidenceStore(bucket="bucket", client=client)
 
-        key = await store.put_image("evidence/V1/M1/entities/E1.jpg", b"jpeg-bytes")
+        key = await store.put_image("evidence/V1/batch/E1.jpg", b"jpeg-bytes")
 
-        assert key == "evidence/V1/M1/entities/E1.jpg"
+        assert key == "evidence/V1/batch/E1.jpg"
         client.put_object.assert_called_once_with(
             Bucket="bucket", Key=key, Body=b"jpeg-bytes", ContentType="image/jpeg"
         )
@@ -319,52 +289,6 @@ class TestEvidenceStoreAdapters:
         store = R2EvidenceStore(bucket="bucket", client=client)
 
         assert await store.get_image("evidence/missing.jpg") is None
-
-    @pytest.mark.asyncio
-    async def test_supabase_store_upserts_and_reads_crop_rows(self) -> None:
-        table = MagicMock()
-        table.upsert.return_value.execute = AsyncMock()
-        table.select.return_value.eq.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute = AsyncMock(
-            return_value=MagicMock(data=[{"item_id": "I1"}])
-        )
-        client = MagicMock()
-        client.table.return_value = table
-        store = SupabaseEvidenceStore(client=client)
-
-        row = await store.record_crop(
-            incident_id="v1",
-            model_run_id="m1",
-            item_type="instrument",
-            item_id="I1",
-            item_name="knife",
-            description="a kitchen knife",
-            timestamp_seconds=5,
-            bounding_box=[1, 2, 3, 4],
-            image_key="evidence/v1/m1/instruments/I1.jpg",
-            threat_level=4,
-            embedding=[0.5] * 3,
-        )
-
-        client.table.assert_called_with("evidence_crops")
-        table.upsert.assert_called_once_with(row, on_conflict="incident_id,model_run_id,item_type,item_id")
-        assert row["image"] == "evidence/v1/m1/instruments/I1.jpg"
-        assert row["embedding"] == [0.5] * 3
-        assert await store.get_crop("v1", "m1", "instrument", "I1") == {"item_id": "I1"}
-
-    @pytest.mark.asyncio
-    async def test_live_store_delegates_images_to_r2_and_rows_to_supabase(self) -> None:
-        images = MagicMock()
-        images.put_image = AsyncMock(return_value="k")
-        crops = MagicMock()
-        crops.record_crop = AsyncMock(return_value={"ok": True})
-        crops.get_crop = AsyncMock(return_value=None)
-        store = LiveEvidenceStore(images=images, crops=crops)
-
-        assert await store.put_image("k", b"x") == "k"
-        assert await store.record_crop(item_id="E1") == {"ok": True}
-        assert await store.get_crop("v1", "m1", "entity", "E1") is None
-        images.put_image.assert_awaited_once_with("k", b"x", "image/jpeg")
-        crops.record_crop.assert_awaited_once_with(item_id="E1")
 
 
 class TestDefaultDetector:
@@ -400,95 +324,121 @@ class TestDefaultDetector:
         post.assert_not_called()
 
 
+REPORT = {
+    "incident": {"title": "Burglary", "type": "burglary"},
+    "entities": [
+        {
+            "entity_id": "E1",
+            "type": "human",
+            "description": "Suspect in hoodie",
+            "timestamp_seconds": 0,
+            "label": "person",
+        }
+    ],
+    "instruments": [
+        {
+            "instrument_id": "I1",
+            "entity_id": "E1",
+            "name": "crowbar",
+            "description": "Heavy metal tool",
+            "threat_level": 3,
+            "timestamp_seconds": 1,
+            "label": "crowbar",
+        }
+    ],
+    "assets": [
+        {
+            "asset_id": "A1",
+            "name": "cash register",
+            "description": "Store register",
+            "timestamp_seconds": 1,
+            "label": "cash register",
+        }
+    ],
+}
+
+
+class TestEvidenceItems:
+    def test_lists_entities_instruments_and_assets_with_the_evidence_columns(self) -> None:
+        items = evidence_items(REPORT)
+        assert [(i["item_type"], i["item_id"], i["item_name"]) for i in items] == [
+            ("entity", "E1", "human"),
+            ("instrument", "I1", "crowbar"),
+            ("asset", "A1", "cash register"),
+        ]
+        instrument = items[1]
+        assert instrument["threat_level"] == 3 and instrument["holder_entity_id"] == "E1"
+        assert instrument["timestamp_seconds"] == 1 and instrument["label"] == "crowbar"
+
+    def test_items_without_an_id_are_dropped_and_timestamps_are_whole_seconds(self) -> None:
+        items = evidence_items(
+            {"entities": [{"type": "human"}, {"entity_id": "E2", "timestamp_seconds": 2.6}], "assets": None}
+        )
+        assert [i["item_id"] for i in items] == ["E2"]
+        assert items[0]["timestamp_seconds"] == 3
+
+
 class TestCropEvidenceService:
     """Test CropEvidenceService report processing."""
 
     @pytest.mark.asyncio
-    async def test_process_incident_report_crops_all_items(self, tiny_video_path: Path) -> None:
-        detector = FakeDetector(
-            detections=[
-                Detection(box=[200, 200, 600, 600], score=0.95, label="person"),
-            ]
-        )
+    async def test_process_incident_report_uploads_a_unique_crop_per_item(self, tiny_video_path: Path) -> None:
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
         store = InMemoryEvidenceStore()
         service = CropEvidenceService(detector=detector, store=store)
 
-        report = {
-            "incident": {"title": "Burglary", "type": "burglary"},
-            "entities": [
-                {
-                    "entity_id": "E1",
-                    "type": "human",
-                    "description": "Suspect in hoodie",
-                    "timestamp_seconds": 0,
-                    "label": "person",
-                }
-            ],
-            "instruments": [
-                {
-                    "instrument_id": "I1",
-                    "entity_id": "E1",
-                    "name": "crowbar",
-                    "description": "Heavy metal tool",
-                    "threat_level": 3,
-                    "timestamp_seconds": 1,
-                    "label": "crowbar",
-                }
-            ],
-            "assets": [
-                {
-                    "asset_id": "A1",
-                    "name": "cash register",
-                    "description": "Store register",
-                    "timestamp_seconds": 1,
-                    "label": "cash register",
-                }
-            ],
-        }
-
         results = await service.process_incident_report(
-            video_ref=tiny_video_path,
-            incident_id="Burglary001",
-            model_run_id="MR001",
-            report=report,
+            video_ref=tiny_video_path, video_id="Burglary001", report=REPORT, batch_id="batch1"
         )
 
-        assert len(results) == 3
-        # Verify images stored in InMemoryEvidenceStore
-        e1_key = evidence_key("Burglary001", "MR001", "entities", "E1")
-        i1_key = evidence_key("Burglary001", "MR001", "instruments", "I1")
-        a1_key = evidence_key("Burglary001", "MR001", "assets", "A1")
-
-        assert (await store.get_image(e1_key)) is not None
-        assert (await store.get_image(i1_key)) is not None
-        assert (await store.get_image(a1_key)) is not None
-
-        # Verify crop records
-        crop_records = await store.list_crops_for_incident("Burglary001", "MR001")
-        assert len(crop_records) == 3
-        types = {c["item_type"] for c in crop_records}
-        assert types == {"entity", "instrument", "asset"}
+        assert [r["item_id"] for r in results] == ["E1", "I1", "A1"]
+        for entry in results:
+            assert entry["image"] == f"evidence/Burglary001/batch1/{entry['item_id']}.jpg"
+            assert entry["image_gap"] is None
+            assert len(entry["bounding_box"]) == 4
+            assert await store.get_image(entry["image"]) is not None
 
     @pytest.mark.asyncio
-    async def test_process_incident_report_gracefully_degrades_when_detector_unavailable(
-        self, tiny_video_path: Path
-    ) -> None:
-        service = CropEvidenceService(detector=DefaultDetector(api_key=""))
+    async def test_each_run_gets_a_new_batch_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
+        service = CropEvidenceService(detector=FakeDetector(), store=InMemoryEvidenceStore())
+        first = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
+        second = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
+        assert {e["image"] for e in first}.isdisjoint({e["image"] for e in second})
+
+    @pytest.mark.asyncio
+    async def test_no_store_records_the_gap_for_every_item(self, tiny_video_path: Path) -> None:
+        service = CropEvidenceService(detector=FakeDetector(), store=None)
+        results = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
+        assert len(results) == 3
+        assert all(r["image"] is None and r["bounding_box"] is None for r in results)
+        assert all("store" in r["image_gap"] for r in results)
+
+    @pytest.mark.asyncio
+    async def test_unavailable_detector_records_the_gap_instead_of_dropping_items(self, tiny_video_path: Path) -> None:
+        service = CropEvidenceService(detector=DefaultDetector(api_key=""), store=InMemoryEvidenceStore())
         assert not service.is_detector_available()
+        results = await service.process_incident_report(video_ref=tiny_video_path, video_id="Vid1", report=REPORT)
+        assert len(results) == 3
+        assert all(r["image"] is None and "detector" in r["image_gap"] for r in results)
 
-        report = {
-            "entities": [{"entity_id": "E1", "type": "human", "timestamp_seconds": 0, "label": "person"}],
-            "instruments": [],
-            "assets": [],
-        }
+    @pytest.mark.asyncio
+    async def test_upload_failure_is_recorded_per_item(self, tiny_video_path: Path) -> None:
+        store = MagicMock()
 
+        async def put_image(key: str, data: bytes, content_type: str = "image/jpeg") -> str:
+            if key.endswith("I1.jpg"):
+                raise RuntimeError("r2 down")
+            return key
+
+        store.put_image = put_image
+        service = CropEvidenceService(detector=FakeDetector(), store=store)
         results = await service.process_incident_report(
-            video_ref=tiny_video_path,
-            incident_id="Vid1",
-            model_run_id="Run1",
-            report=report,
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b"
         )
-        assert results == []
+        by_id = {r["item_id"]: r for r in results}
+        assert by_id["E1"]["image"] == "evidence/v/b/E1.jpg"
+        assert by_id["I1"]["image"] is None and "r2 down" in by_id["I1"]["image_gap"]
+        assert by_id["A1"]["image"] == "evidence/v/b/A1.jpg"
 
     def test_global_service_get_and_set(self) -> None:
         orig = get_crop_evidence_service()

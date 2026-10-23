@@ -14,7 +14,8 @@
 # limitations under the License.
 """Common pytest fixtures for unit tests."""
 
-from datetime import UTC
+from datetime import timezone
+UTC = timezone.utc
 from datetime import datetime
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock

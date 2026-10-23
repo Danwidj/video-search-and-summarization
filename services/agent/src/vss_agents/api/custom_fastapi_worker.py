@@ -27,6 +27,7 @@ from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontE
 
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
+from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
 from vss_agents.api.incident_search import register_incident_search_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
 from vss_agents.api.rtsp_ingest import register_rtsp_ingest_routes
@@ -98,6 +99,9 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
           search with always-on VLM critic (MVP2).
         - ``POST /api/v1/incidents/chat`` — conversational evidence Q&A
           with grounded citations (MVP2).
+        - ``POST /api/v1/incidents/evidence-embeddings`` — passage embeddings
+          for a report revision's evidence, called by the console when a
+          revision is made official.
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -133,3 +137,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_analyze_routes(app, self.config, builder)
         register_incident_search_routes(app, self.config)
         register_incident_chat_routes(app)
+        register_incident_evidence_embeddings_routes(app)

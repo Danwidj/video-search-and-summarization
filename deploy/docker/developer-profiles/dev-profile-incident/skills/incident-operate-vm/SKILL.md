@@ -94,7 +94,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
   services/agent/.venv/bin/python -c "import os, importlib.metadata as m, supabase; c = supabase.create_client(os.environ['FINALS_URL'], os.environ['FINALS_KEY']); print('supabase', m.version('supabase'), 'ok, rows', len(c.table('videos').select('id').limit(1).execute().data))"
   unset FINALS_KEY
   ```
-  If it fails with `Invalid API key` or a JWT error, run `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (ask first: shared VM) and retest. The evidence loader (`scripts/backfill_official_timestamps.py`) uses the same venv and `incident_db.get_db()`, so the same test covers it. Pinning a minimum `supabase` version in `services/agent` is a follow-up.
+  If it fails with `Invalid API key` or a JWT error, run `uv pip install --python services/agent/.venv/bin/python -U 'supabase>=2,<3'` (ask first: shared VM) and retest. Pinning a minimum `supabase` version in `services/agent` is a follow-up.
 - GPU allocation: all Docker appliances and native services pinned strictly to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `FIXED_SHARED_DEVICE_IDS=0`) to protect GPU 1 for co-tenants.
 
 ## Troubleshooting order

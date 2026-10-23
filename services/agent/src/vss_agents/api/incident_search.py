@@ -27,7 +27,6 @@ import os
 import time
 from typing import Any
 from typing import Literal
-from typing import cast
 import uuid
 
 from fastapi import APIRouter
@@ -183,12 +182,17 @@ class SearchResponse(BaseModel):
 
 
 class EvidenceCandidate(BaseModel):
-    """Evidence candidate row returned from search_evidence_items RPC or candidate store."""
+    """Evidence candidate row returned from search_evidence_items RPC or candidate store.
+
+    ``incident_id`` is the video id; ``revision_id`` is the official ``report_revisions`` row the
+    ``evidence_crops`` item belongs to, and is what ``query_results`` stores.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     incident_id: str
-    model_run_id: str
+    revision_id: int
+    model_run_id: str = ""
     playback_url: str
     incident_type: str
     severity_level: int
@@ -213,6 +217,7 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
         "incident_id": "Assault007_x264",
         "model_run_id": "m86a5c319e26659804b0",
+        "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
         "incident_type": "assault",
         "severity_level": 4,
@@ -238,6 +243,7 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
         "incident_id": "Assault007_x264",
         "model_run_id": "m86a5c319e26659804b0",
+        "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
         "incident_type": "assault",
         "severity_level": 4,
@@ -261,6 +267,7 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
         "incident_id": "Burglary004_x264",
         "model_run_id": "m71b9c240a15549703f1",
+        "revision_id": 2,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/burglary/Burglary004_x264.mp4",
         "incident_type": "burglary",
         "severity_level": 3,
@@ -284,6 +291,7 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
         "incident_id": "RoadAccidents010_x264",
         "model_run_id": "m42c8d119e34418602a8",
+        "revision_id": 3,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/road_accidents/RoadAccidents010_x264.mp4",
         "incident_type": "road accident",
         "severity_level": 2,
@@ -305,6 +313,7 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
         "incident_id": "Assault007_x264",
         "model_run_id": "m86a5c319e26659804b0",
+        "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
         "incident_type": "assault",
         "severity_level": 4,
@@ -510,8 +519,9 @@ class SupabaseSearchStore(SearchStore):
                 item_type = "entity"
 
             cand = EvidenceCandidate(
-                incident_id=str(row.get("incident_id", "")),
-                model_run_id=str(row.get("model_run_id", "")),
+                incident_id=str(row.get("video_id") or row.get("incident_id") or ""),
+                revision_id=int(row["revision_id"]),
+                model_run_id=str(row.get("model_run_id") or ""),
                 playback_url=playback_url,
                 incident_type=str(row.get("incident_type", "unknown")),
                 severity_level=int(row.get("severity_level", 1)),
@@ -555,8 +565,7 @@ class SupabaseSearchStore(SearchStore):
                 {
                     "id": r["id"],
                     "query_id": query_id,
-                    "incident_id": r["incident_id"],
-                    "model_run_id": r["model_run_id"],
+                    "revision_id": r["revision_id"],
                     "item_type": r["item_type"],
                     "item_id": r["item_id"],
                     "rank": r["rank"],
@@ -618,7 +627,7 @@ class EmbeddingUnavailableError(RuntimeError):
 class DefaultQueryEmbedder(QueryEmbedder):
     """Default query text embedder adapter.
 
-    Uses the remote embedding endpoint (the same model the evidence loader embeds descriptions with)
+    Uses the remote embedding endpoint (the same model the evidence-embeddings route embeds evidence with)
     when an embedding API key is configured. Otherwise, only when ``allow_placeholder`` is set, falls
     back to a deterministic placeholder vector so zero-VM mock runs and unit tests need no
     credentials. A placeholder is meaningless against real pgvector data, so without it a missing key
@@ -861,6 +870,8 @@ def create_incident_search_router(
         # 3. Always-on critic evaluation per candidate hit with configurable delay spacing
         delay = _get_critic_delay_seconds(critic_delay_seconds)
 
+        revision_by_result: dict[str, int] = {}
+
         async def _evaluate_hit(rank: int, cand: EvidenceCandidate) -> SearchHit:
             item = ItemHit(
                 item_type=cand.item_type,
@@ -897,8 +908,10 @@ def create_incident_search_router(
                     confidence=None,
                     rationale=f"Critic verification failed: {exc}",
                 )
+            result_id = f"res-{uuid.uuid4().hex}"
+            revision_by_result[result_id] = cand.revision_id
             return SearchHit(
-                result_id=f"res-{uuid.uuid4().hex}",
+                result_id=result_id,
                 rank=rank,
                 similarity_score=cand.similarity_score,
                 item=item,
@@ -922,8 +935,7 @@ def create_incident_search_router(
                 results_to_persist = [
                     {
                         "id": hit.result_id,
-                        "incident_id": hit.incident.incident_id,
-                        "model_run_id": hit.incident.model_run_id,
+                        "revision_id": revision_by_result[hit.result_id],
                         "item_type": hit.item.item_type,
                         "item_id": hit.item.item_id,
                         "rank": hit.rank,
@@ -949,7 +961,7 @@ def create_incident_search_router(
             execution_time_ms=elapsed_ms,
             hits=hits,
         )
-        return cast("dict[str, Any]", response.model_dump())
+        return response.model_dump()
 
     return router
 

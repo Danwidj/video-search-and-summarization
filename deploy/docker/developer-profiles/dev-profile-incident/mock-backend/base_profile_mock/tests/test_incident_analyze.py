@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -19,27 +18,27 @@ class FakeWriter:
     async def get_video(self, video_id):
         return {"id": video_id, "source": "sensor-1"}
 
-    @asynccontextmanager
-    async def transaction(self):
-        yield self
-
     async def update_video(self, *args, **kwargs):
         self.calls.append(("video", args, kwargs))
 
     async def insert_model_run(self, *args, **kwargs):
         self.calls.append(("run", args, kwargs))
 
-    async def insert_incident(self, *args, **kwargs):
-        self.calls.append(("incident", args, kwargs))
+    async def insert_model_run_if_absent(self, *args, **kwargs):
+        self.calls.append(("run_if_absent", args, kwargs))
 
-    async def add_incident_entity(self, *args, **kwargs):
-        self.calls.append(("entity", args, kwargs))
+    async def insert_ai_revision(self, *args, **kwargs):
+        self.calls.append(("revision", args, kwargs))
+        return {"id": 42}
 
-    async def insert_generated_report(self, *args, **kwargs):
-        self.calls.append(("report", args, kwargs))
+    async def get_revision(self, revision_id):
+        return {
+            "id": revision_id,
+            "evidence": [{"item_type": "entity", "item_id": "E1", "item_name": "human", "description": "a person"}],
+        }
 
 
-def test_analyze_persists_mock_report_and_evidence(monkeypatch):
+def test_analyze_inserts_mock_ai_revision(monkeypatch):
     fake = FakeWriter()
 
     # get_db is async in production; make the fake match it.
@@ -60,11 +59,53 @@ def test_analyze_persists_mock_report_and_evidence(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed" and body["mock"] is True
+    assert body["revision_id"] == 42
     assert body["video_filepath"] == "anomaly/fighting/clip.mp4"
     assert body["incident_type"] in {"road accident", "assault", "animal attack", "burglary", "explosion"}
-    assert [call[0] for call in fake.calls] == ["video", "run", "incident", "entity", "report"]
+    assert [call[0] for call in fake.calls] == ["video", "run", "revision"]
     assert fake.calls[0][2] == {"filepath": "anomaly/fighting/clip.mp4"}
-    assert "MOCK" in fake.calls[2][2]["fields"]["description"]
+    revision = fake.calls[2]
+    assert revision[1] == ("video-1",)
+    assert "MOCK" in revision[2]["payload"]["incident"]["description"]
+    # incident-contract-v3 types the window as integer seconds, which the facet columns are read from.
+    incident = revision[2]["payload"]["incident"]
+    assert (incident["start_timestamp"], incident["end_timestamp"]) == (0, 10)
+    assert all(type(incident[k]) is int for k in ("start_timestamp", "end_timestamp"))
+    assert revision[2]["evidence"][0]["image"] is None and revision[2]["evidence"][0]["image_gap"]
+    assert revision[2]["note"] is None
+
+
+def test_analyze_with_caller_run_and_reviewer_prompt(monkeypatch):
+    fake = FakeWriter()
+
+    async def get_db():
+        return fake
+
+    async def get_video(_video_id):
+        return {"id": "video-1", "filepath": "anomaly/burglary/clip.mp4", "source": None}
+
+    fake.get_video = get_video
+    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    response = TestClient(create_app()).post(
+        "/api/v1/incidents/video-1/analyze", json={"model_run_id": "mrun1", "reviewer_prompt": "look at the door"}
+    )
+    assert response.status_code == 200
+    assert response.json()["model_run_id"] == "mrun1"
+    assert [call[0] for call in fake.calls] == ["video", "run_if_absent", "revision"]
+    assert fake.calls[2][2]["model_run_id"] == "mrun1"
+    assert fake.calls[2][2]["note"] == "Reviewer prompt: look at the door"
+
+
+def test_evidence_embeddings_returns_one_vector_per_item(monkeypatch):
+    async def get_db():
+        return FakeWriter()
+
+    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    response = TestClient(create_app()).post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 7})
+    assert response.status_code == 200
+    rows = response.json()
+    assert [(row["item_type"], row["item_id"]) for row in rows] == [("entity", "E1")]
+    assert len(rows[0]["embedding"]) == 1024
 
 
 def test_analyze_rejects_missing_video(monkeypatch):
@@ -112,6 +153,7 @@ def test_analyze_reuses_existing_r2_object_key(monkeypatch):
     assert response.status_code == 200
     assert response.json()["video_filepath"] == "anomaly/burglary/clip.mp4"
     assert fake.calls[0] == ("video", ("video-1",), {"filepath": "anomaly/burglary/clip.mp4"})
+    assert fake.calls[-1][0] == "revision"
 
 
 def test_uploaded_bytes_are_playable_from_vst_url(monkeypatch):
