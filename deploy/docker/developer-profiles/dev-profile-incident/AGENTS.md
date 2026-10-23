@@ -12,7 +12,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 
 | Path | Stack | Role | Status |
 |---|---|---|---|
-| `incident-console-v2/` | Next.js 15, TypeScript, Zod | Primary UI :3200: upload, analysis orchestration, report versions (History, Save, official) | Active |
+| `incident-console-v2/` | Next.js 15, TypeScript, Zod | Primary UI :3200: upload, analysis orchestration, report page (video, timeline, versions graph, official star) | Active |
 | `vlm-gateway/` | FastAPI, `uv` | Holds the Brev key server-side; `/v1/chat/completions` :8600 | Active |
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |

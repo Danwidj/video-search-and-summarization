@@ -4,6 +4,8 @@
 
 import { useState } from 'react';
 
+import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
+
 /**
  * Explicit official-revision selection for a video. Nothing becomes official
  * by itself; a reviewer marks one revision, which also embeds its evidence for
@@ -16,13 +18,7 @@ export function OfficialControls({ videoId, revisionId, isOfficial, hasOfficial,
     if (action === 'select' && hasOfficial && !window.confirm('Another version is currently the official report for this video. Replace it with this one?')) return;
     setBusy(true);
     try {
-      const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/official`, {
-        method: action === 'select' ? 'PUT' : 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: action === 'select' ? JSON.stringify({ revisionId }) : undefined,
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'Update failed');
+      await (action === 'select' ? markOfficial(videoId, revisionId) : clearOfficial(videoId));
       onChanged();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Update failed');
