@@ -10,7 +10,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { attemptIdNormalization, REPAIR_RULE_SET } = await import('../src/modules/contract/domain/repair.ts');
 const { ContractError, validateReport } = await import('../src/modules/contract/domain/validate.ts');
-const { evaluateContent } = await import('../src/lib/analysis/run-contract-analysis.ts');
+const { evaluateContent } = await import('../src/modules/analysis/application/run-contract-analysis.ts');
 
 const fixture = (name) => JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', name), 'utf8'));
 const validReport = () => JSON.parse(readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8'));
