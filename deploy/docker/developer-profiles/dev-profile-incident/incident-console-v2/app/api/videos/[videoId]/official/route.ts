@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/adapters/supabase';
 import { setOfficialRevision } from '@/lib/application/reports';
-import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
+import { AgentUnreachableError, fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 
@@ -25,6 +25,9 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
     const result = await setOfficialRevision(getDbAdapters(config), videoId, parsed.data.revisionId, (revisionId) => fetchEvidenceEmbeddings(config, revisionId));
     return NextResponse.json({ official: result });
   } catch (error) {
+    if (error instanceof AgentUnreachableError) {
+      return NextResponse.json({ error: 'The agent service is not reachable, so this report could not be made official. Start the agent service and try again.' }, { status: 503 });
+    }
     return rejectionResponse(error) ?? errorResponse(error, 'Could not mark the revision official');
   }
 }
