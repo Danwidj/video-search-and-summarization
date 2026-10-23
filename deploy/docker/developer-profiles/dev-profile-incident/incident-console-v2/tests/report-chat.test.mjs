@@ -10,7 +10,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { chatTarget, draftReport, chatRequestBody } = await import('../src/lib/chat/report-chat.ts');
-const { toAgentChatBody } = await import('../src/lib/chat/agent-chat.ts');
+const { toAgentChatBody } = await import('../src/modules/chat/infrastructure/agent/agent-chat.ts');
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 const validateRequest = ajv.compile(JSON.parse(readFileSync(join(process.cwd(), '..', 'contracts', 'chat-contract-v1', 'chat_request.schema.json'), 'utf8')));

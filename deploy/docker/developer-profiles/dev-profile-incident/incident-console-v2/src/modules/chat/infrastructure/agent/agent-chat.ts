@@ -4,7 +4,7 @@
 // camelCase ChatRequest in, camelCase ChatResponse out.
 
 import { readUpstream } from '@/lib/http';
-import type { ChatCitation, ChatRequest, ChatResponse } from '@/lib/ports/chat';
+import type { ChatCitation, ChatRequest, ChatResponse } from '@/modules/chat/domain/chat';
 
 export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   const { sessionId, messages, context, versionId, draftReport } = request;

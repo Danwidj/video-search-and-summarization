@@ -4,7 +4,7 @@
 // (search-contract-v1): camelCase request in, camelCase result out.
 
 import { readUpstream } from '@/lib/http';
-import type { EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult } from '@/lib/ports/search';
+import type { EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult } from '@/modules/search/domain/search';
 
 export function toAgentSearchBody(request: EvidenceSearchRequest): Record<string, unknown> {
   const { query, topK, minSimilarity, hideRejected, filters } = request;

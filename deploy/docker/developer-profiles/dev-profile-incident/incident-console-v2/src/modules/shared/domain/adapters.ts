@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { DashboardRepository } from '@/lib/ports/dashboard';
+import type { DashboardRepository } from '@/modules/dashboard/domain/DashboardRepository';
 import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
 import type { VideoRepository } from '@/modules/videos/domain/VideoRepository';
 
