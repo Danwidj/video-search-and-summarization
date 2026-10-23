@@ -60,6 +60,8 @@ MODEL_OUTPUT = {
             "type": "human",
             "description": "Person in a hood.",
             "timestamp_seconds": 2,
+            "first_seen_seconds": 1,
+            "last_seen_seconds": 4,
             "label": "person",
         }
     ],

@@ -121,7 +121,7 @@ is no `incident_id`/`model_run_id` here — both come through `report_revisions`
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
-| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start |
+| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<videoId>/<uuid>/<itemId>.jpg`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
@@ -266,7 +266,7 @@ AI revisions).
 
 PostgREST has no client-held transactions, so the agent's report write is one `INSERT` into
 `report_revisions` (`IncidentDB.insert_ai_revision`): `kind='ai'`, `model_run_id` (a required
-foreign key), `parent_id` NULL, the full contract report as `payload`, the crop list as `evidence`,
+foreign key), `parent_id` NULL, the full contract report as `payload`, the crop list as `evidence` (entity entries carry `first_seen_seconds` and `last_seen_seconds` from `incident-contract-v4`; `evidence_crops` has no columns for them, so they live only in the revision),
 and the facet columns copied from the payload. `revision_no` is `max + 1` for the video; if a
 concurrent writer takes the number first, the unique `(video_id, revision_no)` key rejects the
 insert (SQLSTATE 23505) and the agent retries with the next number, five attempts at most with

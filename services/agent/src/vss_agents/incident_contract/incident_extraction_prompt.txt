@@ -1,4 +1,4 @@
-UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v3)
+UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v4)
 
 You are analysing a surveillance video for structured incident extraction.
 
@@ -216,6 +216,18 @@ TIMESTAMP_SECONDS
   the entity is most clearly and prominently visible.
 - Ground the entity temporally at the moment of peak visibility or active
   involvement.
+
+FIRST_SEEN_SECONDS
+- Integer number of seconds from the beginning of the video at which
+  the entity first appears in the incident.
+
+LAST_SEEN_SECONDS
+- Integer number of seconds from the beginning of the video at which
+  the entity is last seen in the incident.
+- Must not be earlier than FIRST_SEEN_SECONDS.
+- TIMESTAMP_SECONDS must fall within FIRST_SEEN_SECONDS and
+  LAST_SEEN_SECONDS (inclusive).
+- An entity seen at a single moment uses the same value for both.
 
 LABEL
 - Short concise visual label (1–5 words) that an open-vocabulary object
@@ -518,6 +530,8 @@ For example:
 - an Instrument.Entity_ID must correspond to an Entity_ID returned in
   the Entities array;
 - End_Timestamp must not be earlier than Start_Timestamp;
+- an entity's Last_Seen_Seconds must not be earlier than its
+  First_Seen_Seconds, and its Timestamp_Seconds must lie within them;
 - every timeline event must lie within Start_Timestamp and
   End_Timestamp;
 - descriptions must not contradict the structured fields;

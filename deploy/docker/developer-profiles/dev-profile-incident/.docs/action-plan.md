@@ -19,7 +19,7 @@ An intelligent, video-driven incident search and reporting system for physical s
 ### Incident reporting (delivered)
 
 - **Ingestion:** VST/NvStreamer chunked upload with a direct-to-R2 fallback; durable playback links generated on demand.
-- **Analysis:** either the credential-holding `vlm-gateway` or the native `vss-agent` (`POST /api/v1/incidents/{incident_id}/analyze`), on `incident-contract-v3`, with any of three allowlisted VLMs, strict validation and ID-only recovery. Every attempt is recorded; failures stay in a per-video history.
+- **Analysis:** either the credential-holding `vlm-gateway` or the native `vss-agent` (`POST /api/v1/incidents/{incident_id}/analyze`), on `incident-contract-v4`, with any of three allowlisted VLMs, strict validation and ID-only recovery. Every attempt is recorded; failures stay in a per-video history.
 - **Review UI (`incident-console-v2`):** upload workspace, report view with timestamp seeking and evidence cards, review lifecycle `unreviewed` / `under review` / `verified`, structured reviewer editing that leaves model output immutable, run history and re-analysis, explicit official report per video, and a dashboard that counts official incidents only.
 - **Tier 1 ground-truth evaluation (removed):** Formerly `gt_*` tables from human annotations; exact match for type and severity, LLM-judge scoring for the description, temporal tolerance for start/end/duration, and precision / recall / F1 for entities, instruments and assets via embedding similarity and Hungarian matching. The ground-truth evaluation screen and tables have been removed.
 
@@ -27,7 +27,7 @@ An intelligent, video-driven incident search and reporting system for physical s
 
 Specification and architecture: [`mvp2/README.md`](mvp2/README.md). A hybrid pipeline, because VLM bounding boxes scored 0% well-framed while timestamps were over 95% accurate:
 
-- **VLM extraction:** reports with item timestamps (`incident-contract-v3`).
+- **VLM extraction:** reports with item timestamps (`incident-contract-v4`).
 - **Crop pipeline:** keyframes at item timestamps, a detector port for boxes (today the remote VLM; local open-vocabulary detectors are evaluated offline in [`mvp2/eval.md`](mvp2/eval.md)), crops uploaded to R2.
 - **Search layer:** metadata and 1024-d text embeddings in `evidence_crops` (HNSW index), queried through the `search_evidence_items` RPC (`service_role` only).
 - **Always-on VLM critic:** checks each candidate hit against the query and records verdicts in `query_results`.

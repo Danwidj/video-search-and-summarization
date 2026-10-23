@@ -97,6 +97,8 @@ class ContractEntity(BaseModel):
     type: EntityType
     description: str
     timestamp_seconds: int = Field(ge=0)
+    first_seen_seconds: int = Field(ge=0)
+    last_seen_seconds: int = Field(ge=0)
     label: str
 
 

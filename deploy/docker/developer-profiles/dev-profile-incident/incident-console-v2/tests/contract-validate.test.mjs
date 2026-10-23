@@ -91,3 +91,13 @@ test('INCIDENT_TYPES and ENTITY_TYPES match the schema enums', async () => {
   assert.deepEqual([...INCIDENT_TYPES], properties.incident.properties.type.enum);
   assert.deepEqual([...ENTITY_TYPES], properties.entities.items.properties.type.enum);
 });
+
+test('a report stored under incident-contract-v3 (no first/last seen) validates against its own version only', () => {
+  const stored = readFixture('valid', 'full-report.json');
+  for (const entity of stored.entities) {
+    delete entity.first_seen_seconds;
+    delete entity.last_seen_seconds;
+  }
+  assert.throws(() => validateReport(stored), ContractError);
+  assert.doesNotThrow(() => validateReport(stored, 'incident-contract-v3'));
+});

@@ -46,6 +46,8 @@ def _valid_report() -> dict:
                 "type": "human",
                 "description": "Person in a dark jacket attacking.",
                 "timestamp_seconds": 4,
+                "first_seen_seconds": 3,
+                "last_seen_seconds": 9,
                 "label": "person in dark jacket",
             },
             {
@@ -53,6 +55,8 @@ def _valid_report() -> dict:
                 "type": "human",
                 "description": "Person at the counter being struck.",
                 "timestamp_seconds": 4,
+                "first_seen_seconds": 3,
+                "last_seen_seconds": 11,
                 "label": "person at counter",
             },
         ],
@@ -121,7 +125,7 @@ def test_response_format_strips_document_keys():
 
 
 def test_version_file():
-    assert contract.contract_version() == "incident-contract-v3"
+    assert contract.contract_version() == "incident-contract-v4"
 
 
 def test_extraction_prompt_has_no_output_template_or_few_shot():
@@ -179,6 +183,9 @@ def test_non_json_content_is_rejected_without_extraction(content):
         lambda r: r["incident"].update(confidence_score=0.9 * 2),
         lambda r: r["entities"][0].update(type="person"),
         lambda r: r["entities"][0].pop("timestamp_seconds"),
+        lambda r: r["entities"][0].pop("first_seen_seconds"),
+        lambda r: r["entities"][0].pop("last_seen_seconds"),
+        lambda r: r["entities"][0].update(first_seen_seconds=-1),
         lambda r: r["entities"][0].pop("label"),
         lambda r: r.update(persons=[]),
     ],

@@ -16,6 +16,8 @@
       "type": "human",
       "description": "Person in a dark jacket attacking.",
       "timestamp_seconds": -1,
+      "first_seen_seconds": -1,
+      "last_seen_seconds": -1,
       "label": "person in dark jacket"
     },
     {
@@ -23,6 +25,8 @@
       "type": "human",
       "description": "Person at the counter being struck.",
       "timestamp_seconds": 4,
+      "first_seen_seconds": 4,
+      "last_seen_seconds": 4,
       "label": "person at counter"
     }
   ],

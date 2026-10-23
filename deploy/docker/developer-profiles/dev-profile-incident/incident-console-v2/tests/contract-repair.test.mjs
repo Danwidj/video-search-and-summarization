@@ -185,7 +185,7 @@ test('a lowercase malformed ID that free text mentions is not renamed (free text
 test('duplicate IDs and unresolvable holders are ineligible', () => {
   const duplicate = validReport();
   duplicate.entities[1].entity_id = 'E1';
-  duplicate.entities.push({ entity_id: 'E3', type: 'unknown', description: 'Third.', timestamp_seconds: 3, label: 'person' });
+  duplicate.entities.push({ entity_id: 'E3', type: 'unknown', description: 'Third.', timestamp_seconds: 3, first_seen_seconds: 3, last_seen_seconds: 3, label: 'person' });
   assert.equal(attemptIdNormalization(duplicate, violationsOf(duplicate)).reason, 'DUPLICATE_ID');
 
   const holder = validReport();

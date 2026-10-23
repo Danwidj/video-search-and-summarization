@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The single incident-contract-v3 analysis path, shared by the upload flow and
+// The single incident-contract-v4 analysis path, shared by the upload flow and
 // re-runs of an existing video: allowlisted model -> signed R2 URL -> P1
 // request identical to eval's -> validation under policy core-scored-v1 ->
 // optional id-normalization-v1 repair (re-validated) -> a new, unique model run.

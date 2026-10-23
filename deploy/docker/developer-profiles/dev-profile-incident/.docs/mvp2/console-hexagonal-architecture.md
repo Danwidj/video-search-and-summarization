@@ -56,7 +56,7 @@ The search adapter calls the vss-agent rather than Supabase, so it will sit besi
 2. `lib/ports/**` holds type-only imports (apart from the `StoreRejection` class in `common.ts`), so ports stay browser-safe.
 3. `lib/application/**` never imports `lib/adapters`, `lib/postgrest`, `lib/r2` or `lib/gateway`; R2 work is passed in as functions.
 4. Only `lib/adapters/supabase/**` imports `lib/postgrest/client` as a value. The callers not yet migrated are listed in §7; remove an entry when its caller moves.
-5. incident-contract-v3 shapes (`lib/contract/types.ts`, `StructuredEdit`) keep their snake_case keys: they mirror the JSON Schema shared with eval and the agent. Translation applies to database shapes, not to that contract.
+5. incident-contract-v4 shapes (`lib/contract/types.ts`, `StructuredEdit`) keep their snake_case keys: they mirror the JSON Schema shared with eval and the agent. Translation applies to database shapes, not to that contract.
 
 ---
 

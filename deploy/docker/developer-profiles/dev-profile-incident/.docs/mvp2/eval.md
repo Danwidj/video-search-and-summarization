@@ -17,7 +17,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Splits:**
   - 55 held-out videos, seed 42.
   - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate.
-- **Runner:** `eval/scripts/eval_run.py` sends the contract P1 request (`incident-contract-v3`) straight to the upstream model with a signed R2 URL.
+- **Runner:** `eval/scripts/eval_run.py` sends the contract P1 request (`incident-contract-v4`) straight to the upstream model with a signed R2 URL.
   - It does not go through the `vlm-gateway` service, which is a pure proxy for the same request.
 - **Validation:** `core-scored-v1` (`eval/contract.py`) separates full contract validity (`contract_ok`) from core validity (`core_ok`).
   - Timeline-only defects are scored.
@@ -123,7 +123,7 @@ flowchart LR
 ### 3.3 Leakage and labelling (P-2)
 
 - **Authoring protocol.** One protocol applies to every class:
-  1. **Brief.** A short scenario brief lists the query classes, the five incident categories and the entity types from `incident-contract-v3`, a generic surveillance object vocabulary and generic confusion pairs (e.g. firearm vs phone, crowbar vs walking stick). Its author must not draw on `gt_*` text, `evidence_crops` descriptions, report text or the corpus crops. The brief is committed with the query set.
+  1. **Brief.** A short scenario brief lists the query classes, the five incident categories and the entity types from `incident-contract-v4`, a generic surveillance object vocabulary and generic confusion pairs (e.g. firearm vs phone, crowbar vs walking stick). Its author must not draw on `gt_*` text, `evidence_crops` descriptions, report text or the corpus crops. The brief is committed with the query set.
   2. **Authors write blind.** Query authors see only the brief: no ground-truth text, no evidence or report text, no crops and no videos from the corpus. This keeps queries from being tailored to what is retrievable. The critic also reads the evidence descriptions, which is a further reason they stay hidden.
   3. **LLM assistance** (if chosen under open question 1) gets the same brief and nothing else; a person verifies each proposed query before it enters the set.
   4. **Labellers judge, they do not author.** Labelling (below) is done from crops and video, ideally by people who did not write the queries. Labelling decides positive vs negative; queries are not edited after labelling, only added.
@@ -211,7 +211,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
 - **Metadata in every result file:**
   - agent git SHA
-  - `search-contract-v1` and `incident-contract-v3` versions
+  - `search-contract-v1` and `incident-contract-v4` versions
   - request parameters
   - `EVIDENCE_EMBEDDING_MODEL`
   - critic model
@@ -276,7 +276,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 ## 5. Track F: full-system extraction (deferred)
 
 - The original question stands: does a compound VSS pipeline (perception, tool calling, subagents) beat one-shot P1 on the same videos and ground truth?
-- **Entry criteria:** such a pipeline exists and emits `incident-contract-v3`. It then joins Track X as a third arm with the same scorer.
+- **Entry criteria:** such a pipeline exists and emits `incident-contract-v4`. It then joins Track X as a third arm with the same scorer.
 - **Status:** multi-subagent routing and RT-CV / RT-Embed indexing are not started ([status](../status.md)).
 - **Still open:** how to normalise token budgets and timeouts between a single call and a multi-call pipeline (Q2 in §9).
 

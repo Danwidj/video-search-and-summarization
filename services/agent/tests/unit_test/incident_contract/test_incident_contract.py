@@ -54,8 +54,24 @@ VALID = {
         "location": "shop interior",
     },
     "entities": [
-        {"entity_id": "E1", "type": "human", "description": "Attacker.", "timestamp_seconds": 3, "label": "attacker"},
-        {"entity_id": "E2", "type": "human", "description": "Victim.", "timestamp_seconds": 3, "label": "victim"},
+        {
+            "entity_id": "E1",
+            "type": "human",
+            "description": "Attacker.",
+            "timestamp_seconds": 3,
+            "first_seen_seconds": 2,
+            "last_seen_seconds": 8,
+            "label": "attacker",
+        },
+        {
+            "entity_id": "E2",
+            "type": "human",
+            "description": "Victim.",
+            "timestamp_seconds": 3,
+            "first_seen_seconds": 2,
+            "last_seen_seconds": 9,
+            "label": "victim",
+        },
     ],
     "instruments": [
         {

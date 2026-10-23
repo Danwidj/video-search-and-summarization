@@ -96,7 +96,7 @@ def _mock_category(incident_id: str) -> dict[str, object]:
 
 
 def _mock_report(category: dict[str, object]) -> dict[str, object]:
-    """A small incident-contract-v3 report: one incident and one human entity."""
+    """A small incident-contract-v4 report: one incident and one human entity."""
     return {
         "incident": {
             "type": category["type"],
@@ -115,6 +115,8 @@ def _mock_report(category: dict[str, object]) -> dict[str, object]:
                 "type": "human",
                 "description": "MOCK detected person involved in the incident.",
                 "timestamp_seconds": 2,
+                "first_seen_seconds": 1,
+                "last_seen_seconds": 6,
                 "label": "person",
             }
         ],
@@ -138,6 +140,8 @@ def _mock_evidence(report: dict[str, object]) -> list[dict[str, object]]:
             "threat_level": None,
             "holder_entity_id": None,
             "timestamp_seconds": entity["timestamp_seconds"],
+            "first_seen_seconds": entity["first_seen_seconds"],
+            "last_seen_seconds": entity["last_seen_seconds"],
             "label": entity["label"],
             "bounding_box": None,
             "image": None,
