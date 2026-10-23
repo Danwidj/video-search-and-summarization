@@ -230,7 +230,7 @@ describe('list_incident_report_summaries mapping', () => {
     const { items } = reportListFromRpc({ reports: [{ revisionId: 7, isOfficial: 'yes' }], incidentTypes: ['assault', 7] });
     assert.deepEqual(items[0], {
       revisionId: 7, revisionNo: 0, videoId: '', modelRunId: null, kind: 'ai', createdBy: null, note: null, title: '', filename: '', incident_type: '',
-      description: '', severity: 1, confidence: null, generatedAt: null, uploadedAt: null, model: '', outcome: null, isOfficial: false, r2Key: null, sensorId: null,
+      description: '', severity: 1, confidence: null, generatedAt: null, uploadedAt: null, model: '', outcome: null, isOfficial: false, officialSince: null, versionCount: 0, evidenceCount: 0, thumbnail: null, r2Key: null, sensorId: null,
     });
     assert.deepEqual(reportListFromRpc({ incidentTypes: ['assault', 7] }).incidentTypes, ['assault']);
   });

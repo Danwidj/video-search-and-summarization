@@ -115,30 +115,34 @@ and its model run from PostgREST and creates a fresh one-hour R2 playback URL; i
 reports retain raw and normalized model output for diagnostics alongside model, prompt, run, and generation metadata.
 The report provides timestamp seeking, explicit empty states, a copy-link action, and print-specific presentation.
 
-## Phase 4 report library
+## Phase 4 incident library
 
-`/reports` lists persisted v2 reports as server-paginated pages of six lightweight summaries. Cards lazy-load small,
-signed R2 screenshots when available and otherwise use a static skeleton; they never request video. The full report
-and its video are fetched only after opening a report.
-The library supports full-text evidence search; incident type,
-<<<<<<< HEAD
-severity, and official filters; generated-date presets and custom date/time ranges; and severity, confidence, or
-date sorting. Every save or restore appends a `human` revision; the AI revision is never changed, and each video has at
-most one official revision. Re-generation creates a new model run and a new AI revision and preserves prior results.
-Deleting only a report keeps its R2 video; deleting the video is a separate, explicit confirmation and removes all
-revisions for that video through the database cascade.
-=======
-severity, and review-state filters; generated-date presets and custom date/time ranges; and severity, confidence, or
-date sorting. Review transitions are persisted through revision writes, and edits save a reviewer version that
-the report then shows; the AI report is never changed. Re-analysis creates a new model run and preserves
-prior results. Deleting only a report keeps its R2
-video; deleting the video is a separate, explicit confirmation and removes all reports for that video through the
-database cascade.
->>>>>>> origin/main
+`/library` (the old `/reports` listing redirects there, keeping its query string) has two tabs.
+
+- **Find incidents** lists one card per video as server-paginated pages of six lightweight summaries
+  (`list_incident_report_summaries`): the official revision, else the newest. Cards show the severity, the
+  "Official vN" marker with when it was made official or "No official version", the summary, and the evidence and
+  version counts. Thumbnails are small signed R2 screenshots (falling back to the first evidence image, then a
+  skeleton); the library never requests video. Filters: text, incident type, official-only status, severity band, added
+  date and sort. Active filters show as removable chips, and the URL is the filter state (dashboard links, shared
+  links and refresh all land on the same list). "Search evidence" on a card scopes the other tab to that incident
+  for the visit only.
+- **Find evidence** posts the text to `POST /api/search`, which asks the agent (`POST /api/v1/incidents/search`,
+  `search-contract-v1`, `lib/adapters/agent/search.ts`) for the top 20 ranked hits with no similarity cutoff and the
+  critic's rejections kept, then adds each video's searched version from the same summaries. Hits show the crop,
+  match percentage, video time, kind, threat and relationship (held by / holds); kind, threat and incident-type
+  filters and "Group by incident" work on the returned hits without a new search. Clicking a crop opens the viewer
+  with the item's details and a link to its report. The viewer shows the full frame (`FrameViewer`, cut by `GET /api/reports/<id>/frame`) with every box found
+  at that second, or the enlarged crop when the frame cannot be cut.
+
+Every save appends a `human` revision; the AI revision is never changed, and each video has at most one official
+revision. Re-generation creates a new model run and a new AI revision and preserves prior results. Deleting only a
+report keeps its R2 video; deleting the video is a separate, explicit confirmation and removes all revisions for that
+video through the database cascade.
 
 ## Phase 5 review and operations workspace
 
-The global header keeps Analyze, Reports, Dashboard, and service health consistent throughout the
+The global header keeps Analyze, Library, Videos, Dashboard, and service health consistent throughout the
 application. The report library remembers filters, scroll position, and its originating card when a report is opened.
 `/dashboard` summarizes report volume, confidence, severity, and incident types with drill-down links, counting the
 official revision only.
@@ -162,7 +166,7 @@ A reviewer replacing or adding evidence picks a frame and draws a rectangle on i
   - `/videos/<id>` shows the video, a re-generation card (any allowlisted model, optional reviewer prompt) and the full analysis history: every attempt with its model, time, outcome, failure reasons or repair operations. Failed attempts never appear as reports.
 - **Re-generation** always creates a new run and a new AI revision, never changes the video's upload time, and never changes the official revision.
 - **Official revision:** a reviewer explicitly chooses it with the star on the report page's versions graph (a filled star clears it) or in the history; marking it rebuilds the incident's `evidence_crops`.
-- **Dashboard:** it counts official revisions only, and every number links to `/reports?scope=official&...`. The reports page treats the URL as its filter state.
+- **Dashboard:** it counts official revisions only, and every number links to `/library?scope=official&...`. The library treats the URL as its filter state.
 - **Report page (View mode):**
   - a fixed top band: the video, a vertical timeline with one lane per entity (first to last seen span, held instruments on the lane, then "Holder unknown" and Assets lanes; click a lane to seek) and the versions graph (each AI run is its own branch, human versions sit on their parent's; the star marks a version official, with no Restore);
   - a scrolling pane: version, report fields, evidence cards grouped by holder, read-only model output (title, severity rationale, timeline, uncertainties) and a "Run & model output details" panel;
