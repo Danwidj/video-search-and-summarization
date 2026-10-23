@@ -5,7 +5,7 @@
 // AI revision and each reviewer save adds a human revision. Revisions
 // are append-only: nothing here updates or deletes one.
 
-import type { Page } from '@/lib/ports/common';
+import type { Page } from '@/modules/shared/domain/common';
 import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
 import type { EvidenceEntry, ReportPayload, RevisionKind, RevisionSummary } from '@/lib/reports/revision';
 import type { RunNotes } from '@/lib/reports/run-notes';

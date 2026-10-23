@@ -4,8 +4,8 @@
 // attempt record (lib/analysis/persistence.ts attemptNotes) or a legacy console
 // report. Nothing here writes notes.
 
-import type { DerivedContractReport } from '@/lib/contract/types';
-import { validateCore, type ContractViolation } from '@/lib/contract/validate';
+import type { DerivedContractReport } from '@/modules/contract/domain/types';
+import { validateCore, type ContractViolation } from '@/modules/contract/domain/validate';
 import { reportFromNotes, type LegacyAnalysisReport } from '@/lib/reports/storage';
 
 export interface ContractRunRequest {

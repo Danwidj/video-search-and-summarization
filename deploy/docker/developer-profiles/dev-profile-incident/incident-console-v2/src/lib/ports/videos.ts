@@ -3,7 +3,7 @@
 // VideoRepository: the video registry (1 video = 1 incident), its one official
 // revision, and whole-video deletion. R2 objects are never touched here.
 
-import type { Page } from '@/lib/ports/common';
+import type { Page } from '@/modules/shared/domain/common';
 import type { OfficialCrop } from '@/lib/reports/revision';
 
 export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection';

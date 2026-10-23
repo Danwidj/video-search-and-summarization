@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 
 import { AgentSearchRepository } from '@/lib/adapters/agent/search';
-import { getDbAdapters } from '@/lib/adapters/supabase';
+import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl } from '@/lib/r2/config';

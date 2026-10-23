@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 
-import { StoreRejection } from '@/lib/ports';
+import { StoreRejection } from '@/modules/shared/domain/common';
 
 export function errorResponse(error: unknown, fallback: string): NextResponse {
   const message = error instanceof Error ? error.message : fallback;

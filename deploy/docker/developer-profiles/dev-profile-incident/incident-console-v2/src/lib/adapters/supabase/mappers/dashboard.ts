@@ -6,7 +6,7 @@
 // the input; the defaults only apply to a malformed result.
 
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';
-import type { DashboardQuery } from '@/lib/ports';
+import type { DashboardQuery } from '@/lib/ports/dashboard';
 
 type Row = Record<string, unknown>;
 

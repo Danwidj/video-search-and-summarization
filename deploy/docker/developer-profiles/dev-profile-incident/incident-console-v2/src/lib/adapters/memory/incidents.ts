@@ -9,10 +9,10 @@
 // returns them; paging, scope, kind and newest/oldest order are modelled, and
 // any other filter is refused rather than ignored.
 
+import { StoreRejection } from '@/modules/shared/domain/common';
 import {
-  StoreRejection,
   type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
-} from '@/lib/ports';
+} from '@/lib/ports/incidents';
 import { structuredFromPayload } from '@/lib/reports/payload-view';
 import type { RevisionSummary } from '@/lib/reports/revision';
 import type { ReportLibraryItem } from '@/lib/reports/storage';
