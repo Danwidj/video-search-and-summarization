@@ -12,7 +12,7 @@
 // within the video when its length can be read from the MP4 header.
 //
 // Every attempt that reaches the model is recorded with one of four outcomes:
-//   valid_first_pass | valid_after_structural_repair  -> report rows + notes
+//   valid_first_pass | valid_after_structural_repair  -> AI report revision + notes
 //   contract_failed  | request_failed                 -> model_runs notes only
 // The original model response is stored unaltered in every case.
 
@@ -44,6 +44,7 @@ import {
 import type { ServiceConfiguration } from '@/lib/env';
 import { GatewayClient, GatewayError, type GatewayCompletionResponse } from '@/lib/gateway/client';
 import { compactId } from '@/lib/ids';
+import { evidenceEntries, type EvidenceEntry } from '@/lib/reports/revision';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl, readR2VideoDurationSeconds, verifyR2Video } from '@/lib/r2/config';
 
@@ -64,6 +65,7 @@ export interface ContractAnalysisInput {
   videoId: string;
   r2Key: string;
   model: unknown;
+  /** The reviewer prompt typed on re-generation: appended to the gateway request, or sent to the agent as reviewer_prompt. */
   additionalInstruction?: unknown;
   /** Present only for a newly uploaded video; its row is created once and never reset. */
   newVideo?: { sensorId: string; uploadedAt: string };
@@ -72,6 +74,8 @@ export interface ContractAnalysisInput {
 export interface ContractAnalysisResult {
   run: ContractRunRecord;
   playbackUrl: string;
+  /** The new AI revision (report_revisions.id). */
+  revisionId: number;
 }
 
 export function resolveAllowedModel(model: unknown) {
@@ -185,9 +189,6 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
   } catch (error) {
     throw new AnalysisRequestError(400, error instanceof Error ? error.message : String(error));
   }
-  if (config.analysisMode === 'agent' && additionalInstruction) {
-    throw new AnalysisRequestError(400, 'An additional instruction is only available in gateway analysis mode');
-  }
 
   const db = new PostgrestClient(config.supabaseUrl!, config.supabaseServiceRoleKey!);
   let operation = 'verifying the R2 video object';
@@ -222,6 +223,8 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
     };
 
     let response: NonNullable<AnalysisAttemptRecord['response']>;
+    // What the agent stored or cropped itself (agent mode); the console stores the revision when it did not.
+    const fromAgent: { revisionId: number | null; evidence: EvidenceEntry[] | null } = { revisionId: null, evidence: null };
 
     if (config.analysisMode === 'agent') {
       operation = 'calling the incident agent';
@@ -232,7 +235,10 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
         agentResponse = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video_url: playbackUrl, model_run_id: modelRunId, skip_rp1: true }),
+          body: JSON.stringify({
+            video_url: playbackUrl, model_run_id: modelRunId, skip_rp1: true,
+            ...(additionalInstruction ? { reviewer_prompt: additionalInstruction } : {}),
+          }),
           signal: AbortSignal.timeout(model.timeout_seconds * 1000),
         });
       } catch (error) {
@@ -248,7 +254,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
 
       // A 422 is the agent rejecting the model output under core-scored-v1; its detail
       // carries the raw output, which is validated and recorded here like a success.
-      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown };
+      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown; revision_id?: unknown; evidence?: unknown };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
         agentP1 = (await agentResponse.json()) as AgentP1;
@@ -276,6 +282,8 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       }
 
       response = { content: typeof agentP1.raw_output === 'string' ? agentP1.raw_output : null };
+      if (typeof agentP1.revision_id === 'number' && Number.isInteger(agentP1.revision_id)) fromAgent.revisionId = agentP1.revision_id;
+      if (Array.isArray(agentP1.evidence)) fromAgent.evidence = evidenceEntries(agentP1.evidence);
       if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
 
       if (agentP1.contract_version !== contractVersion()) {
@@ -358,12 +366,11 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
       response,
       validation: validationRecord(outcome),
       repair: outcome.repair,
-      reportId: compactId('r', `${input.videoId}:${modelRunId}`),
       generatedAt: attemptedAt,
       report: withDerivedFields(outcome.report),
     };
-    await persistContractRun(db, run, input.r2Key, (nextOperation) => { operation = nextOperation; });
-    return { run, playbackUrl };
+    const { revisionId } = await persistContractRun(db, run, input.r2Key, (nextOperation) => { operation = nextOperation; }, fromAgent);
+    return { run, playbackUrl, revisionId };
   } catch (error) {
     if (error instanceof AnalysisRequestError) throw error;
     const detail = error instanceof Error ? error.message : String(error);

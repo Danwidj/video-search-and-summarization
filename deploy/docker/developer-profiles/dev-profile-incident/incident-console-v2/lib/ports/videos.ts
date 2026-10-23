@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// VideoRepository: the video registry, its official-report selection, and
-// whole-video deletion. R2 objects are never touched here.
+// VideoRepository: the video registry (1 video = 1 incident), its one official
+// revision, and whole-video deletion. R2 objects are never touched here.
 
 import type { Page } from '@/lib/ports/common';
+import type { OfficialCrop } from '@/lib/reports/revision';
 
 export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection';
 
@@ -13,9 +14,9 @@ export interface VideoListItem {
   filename: string;
   uploadedAt: string | null;
   source: string | null;
-  /** Analyses with an incident and a report; failed attempts are counted in the video's history. */
-  analysesWithReport: number;
-  officialRunId: string | null;
+  /** Report revisions of the incident, AI and human; failed attempts are counted in the video's history. */
+  revisions: number;
+  officialRevisionId: number | null;
 }
 
 export interface VideoRecord {
@@ -24,28 +25,26 @@ export interface VideoRecord {
   storageKey: string | null;
   uploadedAt: string | null;
   source: string | null;
-  officialRunId: string | null;
+  officialRevisionId: number | null;
 }
 
-export interface OfficialSelection {
+export interface OfficialChange {
   videoId: string;
-  officialRunId: string;
-  selectedBy: string;
-  selectedAt: string;
-}
-
-export interface OfficialClearance {
-  videoId: string;
-  officialRunId: null;
-  clearedBy: string;
+  officialRevisionId: number | null;
+  /** evidence_crops rows written for the new official revision (0 when cleared). */
+  crops: number;
 }
 
 export interface VideoRepository {
   listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>>;
   getVideo(videoId: string): Promise<VideoRecord | null>;
-  /** Throws StoreRejection: 'not-found' for an unknown video, 'invalid' for a run that cannot be official. */
-  selectOfficialRun(videoId: string, modelRunId: string, selectedBy: string): Promise<OfficialSelection>;
-  clearOfficialRun(videoId: string, clearedBy: string): Promise<OfficialClearance>;
-  /** Deletes the video row (incidents, evidence, reviews and reports cascade), then the run records that name only this video. */
+  /**
+   * Makes revisionId the video's one official revision (null clears it) and,
+   * in the same transaction, replaces the video's evidence_crops with the
+   * given crops (they carry the agent's vectors). Throws StoreRejection: 'not-found' for an unknown
+   * video or a revision that is not one of its own.
+   */
+  setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange>;
+  /** Deletes the video row (its revisions, evidence crops and query results cascade), then the run records that name only this video. */
   deleteVideo(videoId: string): Promise<void>;
 }

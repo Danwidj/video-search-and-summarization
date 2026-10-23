@@ -1,77 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // In-memory IncidentRepository for use-case tests. It implements the semantics
-// the Supabase adapter owns: run scoping, null on a missing run, the reviewer
-// version (an edit or a verification never changes the AI report; the report
-// read is the reviewer's version when there is one; each reviewer item keeps
-// the AI item it came from), atomic review transitions (verifying copies the
-// AI report into a renumbered reviewer version, or refuses one that must be
-// edited first), and the run delete cascading to the review, the reviewer
-// version and the run's library summary.
+// the Supabase adapter owns: revisions are append-only and numbered per video;
+// getRevision with no id reads the official revision, else the newest; a human
+// revision takes its parent's run and refuses an unknown video or parent or an
+// empty reviewer name.
 // The library is seeded with summaries as list_incident_report_summaries
-// returns them; paging, scope, status and newest/oldest order are modelled,
-// and any other filter is refused rather than ignored.
+// returns them; paging, scope, kind and newest/oldest order are modelled, and
+// any other filter is refused rather than ignored.
 
 import {
   StoreRejection,
-  type IncidentRepository, type ReportList, type ReportListQuery, type ReviewState, type ReviewTransition, type RunKey, type RunReportRecord,
-  type StructuredEditResult,
+  type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
 } from '@/lib/ports';
-import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type StructuredEdit } from '@/lib/reports/edit-draft';
-import type { ReportLibraryItem, ReviewStatus } from '@/lib/reports/storage';
-
-const id = (key: RunKey) => `${key.videoId}\u0000${key.modelRunId}`;
-
-/** The reviewer's version of one run: the report fields of a RunReportRecord, plus its save count. */
-type HumanVersion = Pick<RunReportRecord, 'incident' | 'entities' | 'instruments' | 'assets'> & { revision: number };
+import { structuredFromPayload } from '@/lib/reports/payload-view';
+import type { RevisionSummary } from '@/lib/reports/revision';
+import type { ReportLibraryItem } from '@/lib/reports/storage';
 
 /** Stored timestamps are naive UTC, as Postgres returns them. */
 const storedNow = () => new Date().toISOString().replace('Z', '');
-
-const rated = (level: number | null) => level !== null && level >= 1 && level <= 5;
-
-/**
- * set_review_status's transition rule: null when the status is unchanged, a
- * run without a review counting as 'unreviewed'; otherwise the reviewer
- * becomes the verifier only when verifying. The edit stamps are kept: they
- * mean "last content edit", and a status change is not one.
- */
-function nextReviewState(current: ReviewState | null, status: ReviewStatus, reviewer: string, now: string): ReviewState | null {
-  if ((current?.status ?? 'unreviewed') === status) return null;
-  const verified = status === 'verified';
-  return {
-    status,
-    editedBy: current?.editedBy ?? null,
-    editedAt: current?.editedAt ?? null,
-    verifiedBy: verified ? reviewer : null,
-    verifiedAt: verified ? now : null,
-  };
-}
-
-/**
- * The reviewer version verifying copies from the AI report (create_human_report_from_ai):
- * items keep their order, are renumbered E#/I#/A# and name the AI item they came from.
- * Refused when the AI report is not a valid reviewer version as it stands.
- */
-function humanVersionFromAi(run: RunReportRecord): HumanVersion {
-  const { incident, entities, instruments, assets } = run;
-  const entityIds = new Map(entities.map((entity, index) => [entity.entityId, `E${index + 1}`]));
-  const valid = (EDITABLE_INCIDENT_TYPES as readonly (string | null)[]).includes(incident.type)
-    && incident.startSeconds !== null && incident.endSeconds !== null && incident.endSeconds >= incident.startSeconds
-    && rated(incident.severityLevel) && incident.description !== null
-    && entities.every((entity) => (EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type))
-    && instruments.every((instrument) => rated(instrument.threatLevel) && (instrument.entityId === null || entityIds.has(instrument.entityId)));
-  if (!valid) throw new StoreRejection('invalid', `The AI report of run ${run.key.modelRunId} cannot be verified as it stands; edit it first`);
-  return {
-    incident,
-    entities: entities.map((entity, index) => ({ ...entity, entityId: `E${index + 1}`, sourceId: entity.entityId })),
-    instruments: instruments.map((instrument, index) => ({
-      ...instrument, instrumentId: `I${index + 1}`, sourceId: instrument.instrumentId, entityId: instrument.entityId === null ? null : entityIds.get(instrument.entityId)!,
-    })),
-    assets: assets.map((asset, index) => ({ ...asset, assetId: `A${index + 1}`, sourceId: asset.assetId })),
-    revision: 1,
-  };
-}
 
 const UNMODELLED_FILTERS = [
   'search', 'type', 'severity', 'generatedAfter', 'generatedBefore', 'timeFrom', 'timeTo',
@@ -79,19 +26,16 @@ const UNMODELLED_FILTERS = [
 ] as const;
 
 export class InMemoryIncidentRepository implements IncidentRepository {
-  /** The AI reports, as analysis stored them; edits and verifications never change them. */
-  readonly runs = new Map<string, RunReportRecord>();
-  readonly humanVersions = new Map<string, HumanVersion>();
-  readonly reviews = new Map<string, ReviewState>();
-  readonly edits: Array<{ key: RunKey; edit: StructuredEdit; editedBy: string }> = [];
+  /** Every revision of every video, oldest first. */
+  readonly revisions: RevisionRecord[] = [];
+  readonly saved: HumanRevisionInput[] = [];
   summaries: ReportLibraryItem[];
   now = storedNow;
+  private nextId: number;
 
-  constructor(runs: RunReportRecord[] = [], summaries: ReportLibraryItem[] = []) {
-    for (const run of runs) {
-      this.runs.set(id(run.key), run);
-      if (run.review) this.reviews.set(id(run.key), run.review);
-    }
+  constructor(revisions: RevisionRecord[] = [], summaries: ReportLibraryItem[] = []) {
+    this.revisions.push(...revisions);
+    this.nextId = Math.max(0, ...revisions.map((record) => record.revision.revisionId)) + 1;
     this.summaries = summaries.map((summary) => ({ ...summary }));
   }
 
@@ -101,8 +45,8 @@ export class InMemoryIncidentRepository implements IncidentRepository {
     if (unmodelled.length) throw new Error(`InMemoryIncidentRepository does not model: ${unmodelled.join(', ')}`);
     const direction = query.sort === 'oldest' ? 1 : -1;
     const matching = this.summaries
-      .filter((summary) => (query.scope !== 'official' || summary.isOfficial) && (query.status === null || summary.status === query.status))
-      .sort((a, b) => direction * (a.generatedAt ?? '').localeCompare(b.generatedAt ?? '') || a.reportId.localeCompare(b.reportId));
+      .filter((summary) => (query.scope !== 'official' || summary.isOfficial) && (query.kind === null || summary.kind === query.kind))
+      .sort((a, b) => direction * (a.generatedAt ?? '').localeCompare(b.generatedAt ?? '') || a.revisionId - b.revisionId);
     // The RPC clamps the page size to 1-1000 and the page to at least 1.
     const size = Math.min(Math.max(query.pageSize, 1), 1000);
     const start = (Math.max(query.page, 1) - 1) * size;
@@ -113,74 +57,50 @@ export class InMemoryIncidentRepository implements IncidentRepository {
     };
   }
 
-  async getRunReport(key: RunKey): Promise<RunReportRecord | null> {
-    const run = this.runs.get(id(key));
-    if (!run) return null;
-    const human = this.humanVersions.get(id(key));
-    const report = human ? { incident: human.incident, entities: human.entities, instruments: human.instruments, assets: human.assets } : {};
-    return { ...run, ...report, review: this.reviews.get(id(key)) ?? null };
+  private ofVideo(videoId: string): RevisionRecord[] {
+    return this.revisions.filter((record) => record.revision.videoId === videoId);
   }
 
-  async runExists(key: RunKey): Promise<boolean> {
-    return this.runs.has(id(key));
+  async getRevision(videoId: string, revisionId: number | null): Promise<RevisionRecord | null> {
+    const all = this.ofVideo(videoId);
+    if (!all.length) return null;
+    const official = all[0].video.officialRevisionId;
+    const wanted = revisionId ?? official;
+    const found = wanted === null
+      ? all.reduce((newest, record) => (record.revision.revisionNo > newest.revision.revisionNo ? record : newest))
+      : all.find((record) => record.revision.revisionId === wanted);
+    if (!found) return null;
+    return { ...found, revision: { ...found.revision, isOfficial: official === found.revision.revisionId } };
   }
 
-  async getReview(key: RunKey): Promise<ReviewState | null> {
-    return this.reviews.get(id(key)) ?? null;
+  async listRevisions(videoId: string): Promise<RevisionSummary[]> {
+    const all = this.ofVideo(videoId);
+    const official = all[0]?.video.officialRevisionId ?? null;
+    return [...all].reverse().map((record) => ({ ...record.revision, isOfficial: official === record.revision.revisionId }));
   }
 
-  async setReviewStatus(key: RunKey, status: ReviewStatus, reviewer: string): Promise<ReviewTransition> {
-    const run = this.runs.get(id(key));
-    if (!run) throw new StoreRejection('not-found', 'Report not found for this video and model run');
-    const next = nextReviewState(this.reviews.get(id(key)) ?? null, status, reviewer.trim(), this.now());
-    if (!next) return { changed: false, status, verifiedBy: null, verifiedAt: null, humanVersionCreated: false };
-    const humanVersionCreated = status === 'verified' && !this.humanVersions.has(id(key));
-    if (humanVersionCreated) this.humanVersions.set(id(key), humanVersionFromAi(run));
-    this.reviews.set(id(key), next);
-    return { changed: true, status, verifiedBy: next.verifiedBy, verifiedAt: next.verifiedAt, humanVersionCreated };
-  }
-
-  async applyStructuredEdit(key: RunKey, edit: StructuredEdit, editedBy: string): Promise<StructuredEditResult> {
-    const run = this.runs.get(id(key));
-    if (!run) throw new StoreRejection('not-found', 'Report not found for this video and model run');
-    this.edits.push({ key, edit, editedBy });
-    const editor = editedBy.trim();
-    const editedAt = this.now();
-    const { incident } = edit;
-    const duration = incident.end_timestamp - incident.start_timestamp;
-    const revision = (this.humanVersions.get(id(key))?.revision ?? 0) + 1;
-    this.humanVersions.set(id(key), {
-      incident: {
-        type: incident.type, startSeconds: incident.start_timestamp, endSeconds: incident.end_timestamp, duration,
-        description: incident.description, severityLevel: incident.severity_level, confidenceScore: run.incident.confidenceScore,
-      },
-      entities: edit.entities.map((entity) => ({
-        entityId: entity.entity_id, sourceId: entity.source_id,
-        type: entity.type, description: entity.description,
-      })),
-      instruments: edit.instruments.map((instrument) => ({
-        instrumentId: instrument.instrument_id, sourceId: instrument.source_id,
-        entityId: instrument.entity_id, name: instrument.name, description: instrument.description, threatLevel: instrument.threat_level,
-      })),
-      assets: edit.assets.map((asset) => ({
-        assetId: asset.asset_id, sourceId: asset.source_id,
-        name: asset.name, description: asset.description,
-      })),
-      revision,
-    });
-    // An edit sends a verified report back to 'under review' and clears the verifier.
-    const current = this.reviews.get(id(key)) ?? { status: 'unreviewed', verifiedBy: null, verifiedAt: null, editedBy: null, editedAt: null };
-    const review: ReviewState = current.status === 'verified'
-      ? { status: 'under review', verifiedBy: null, verifiedAt: null, editedBy: editor, editedAt }
-      : { ...current, editedBy: editor, editedAt };
-    this.reviews.set(id(key), review);
-    return { incidentId: key.videoId, modelRunId: key.modelRunId, editedBy: editor, editedAt, duration, revision, status: review.status };
-  }
-
-  async deleteRun(key: RunKey): Promise<void> {
-    this.runs.delete(id(key));
-    this.humanVersions.delete(id(key));
-    this.reviews.delete(id(key));
-    this.summaries = this.summaries.filter((summary) => summary.videoId !== key.videoId || summary.modelRunId !== key.modelRunId);
+  async saveHumanRevision(input: HumanRevisionInput): Promise<RevisionSummary> {
+    const all = this.ofVideo(input.videoId);
+    if (!all.length) throw new StoreRejection('not-found', `Video not found: ${input.videoId}`);
+    const parent = all.find((record) => record.revision.revisionId === input.parentId);
+    if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
+    const createdBy = input.createdBy.trim();
+    if (!createdBy || createdBy.length > 256) throw new StoreRejection('invalid', 'A reviewer name of 1 to 256 characters is required');
+    this.saved.push(input);
+    const revision: RevisionSummary = {
+      revisionId: this.nextId++,
+      videoId: input.videoId,
+      revisionNo: Math.max(...all.map((record) => record.revision.revisionNo)) + 1,
+      kind: 'human',
+      createdBy,
+      createdAt: this.now(),
+      note: input.note?.trim() || null,
+      parentId: input.parentId,
+      modelRunId: parent.revision.modelRunId,
+      model: parent.revision.model,
+      isOfficial: false,
+    };
+    this.revisions.push({ ...parent, revision, payload: input.payload, evidence: input.evidence, ...structuredFromPayload(input.payload, input.evidence) });
+    return revision;
   }
 }

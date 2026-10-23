@@ -2,7 +2,7 @@
 
 // get_incident_dashboard: DashboardQuery -> RPC arguments, and its JSON ->
 // DashboardAnalytics field by field. For every result its SQL can build
-// (supabase/migrations/20261020000000_finals_baseline.sql) the output equals
+// (supabase/functions-final.sql) the output equals
 // the input; the defaults only apply to a malformed result.
 
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';
@@ -40,7 +40,7 @@ export function dashboardRpcArgs(query: DashboardQuery): Row {
 export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   const result = asRow(value);
   const videos = asRow(result.videos);
-  const reviews = asRow(result.reviews);
+  const revisions = asRow(result.revisions);
   // NULL for an all-time period, else one row of counts.
   const previous = result.previous && typeof result.previous === 'object' ? asRow(result.previous) : null;
   return {
@@ -51,11 +51,11 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
       awaitingSelection: count(videos.awaitingSelection),
       withoutReport: count(videos.withoutReport),
     },
-    previous: previous ? { total: count(previous.total), verified: count(previous.verified), unreviewed: count(previous.unreviewed), high: count(previous.high) } : null,
+    previous: previous ? { total: count(previous.total), human: count(previous.human), ai: count(previous.ai), high: count(previous.high) } : null,
     averageConfidence: numberOrNull(result.averageConfidence),
     confidenceNotProvided: count(result.confidenceNotProvided),
     severity: severityCounts(result.severity),
-    reviews: { unreviewed: count(reviews.unreviewed), under_review: count(reviews.under_review), verified: count(reviews.verified) },
+    revisions: { ai: count(revisions.ai), human: count(revisions.human) },
     types: asRows(result.types).map((item): TypeDetail => ({
       type: text(item.type),
       count: count(item.count),

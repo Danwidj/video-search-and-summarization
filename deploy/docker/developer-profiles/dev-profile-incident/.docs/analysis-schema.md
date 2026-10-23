@@ -11,8 +11,8 @@ This document describes how incident analysis output is defined, validated, stor
 
 1. **`contracts/` defines the complete model output.** `incident_report.schema.json` (JSON Schema draft 2020-12), `incident_extraction_prompt.txt` and `VERSION` are the source of truth for what the VLM must return and what counts as a valid response. In `incident-contract-v3`, entities, instruments, and assets require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localization. `incident-contract-v4` also requires `first_seen_seconds` and `last_seen_seconds` (integers >= 0) on every entity: the span in which it is seen, with `timestamp_seconds` (its clearest moment) inside it. The schema cannot express `first <= last` or the containment of `timestamp_seconds`, so the prompt asks for them and no cross-field rule enforces them; consumers treat the span as advisory. Reports stored under v2 or v3 lack the span: readers fall back to `timestamp_seconds` for both ends, and the console validates such a report against its own version (`lib/contract/validate.ts`). Spatial bounding boxes are detector-produced and optional in search hits, not VLM outputs.
 2. **`model_runs.notes` stores the complete validated report and its provenance, immutably.** Nothing ever edits it.
-3. **Relational tables are a query-optimised projection** (`incidents`, `entities`, `instruments`, `assets`). A field gets a column when it must be queried, filtered, aggregated, joined, edited, matched or charted.
-4. **What the report page shows follows reviewer usefulness**, drawing from both the projection and the notes. The console translates the rows of one run (projection, review state, official selection, decoded notes) into a `RunReportRecord` in `incident-console-v2/lib/adapters/supabase/mappers/report.ts`; `toReportView` in `lib/reports/view.ts` builds the report view from that record without reading any column.
+3. **A report is a JSONB snapshot with queryable facets.** `report_revisions.payload` holds the whole contract report and `report_revisions.evidence` the evidence list; only the fields statistics filter on are copied into columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`, `revision_no`). `evidence_crops` is the search projection, rebuilt from the official revision.
+4. **What the report page shows follows reviewer usefulness**, drawing from one revision and its run. The console maps one `report_revisions` row and its `model_runs` row into a `ReportView` (`lib/adapters/supabase/mappers/report.ts`, `lib/reports/view.ts`); nothing is reassembled from several tables.
 
 ## 2. The analysis request (identical to eval P1)
 
@@ -65,12 +65,12 @@ Every attempt that reaches the model has one outcome:
 
 | Outcome | Meaning | Rows written |
 |---|---|---|
-| `valid_first_pass` | the first response's database-backed fields were valid (enrichment issues, if any, are recorded) | report rows + notes |
-| `valid_after_structural_repair` | valid after `id-normalization-v1`; UI badge "Contract repair applied (IDs only)" | report rows + notes |
+| `valid_first_pass` | the first response's database-backed fields were valid (enrichment issues, if any, are recorded) | AI revision + notes |
+| `valid_after_structural_repair` | valid after `id-normalization-v1`; UI badge "Contract repair applied (IDs only)" | AI revision + notes |
 | `contract_failed` | invalid; repair ineligible or re-validation failed | `model_runs` notes only |
 | `request_failed` | no usable answer: gateway error or timeout, non-JSON or missing completion, empty content, or `finish_reason` other than `stop` (e.g. `FINISH_LENGTH`) | `model_runs` notes only |
 
-Failed attempts never create incident, report, review or evidence rows, and never appear as reports.
+Failed attempts never create a revision or evidence rows, and never appear as reports.
 
 **Timeline presentation:** when the model's timeline is inconsistent with its own incident window, the report page says so ("Model-generated timeline, not consistent with the detected incident window"). Events outside the window are tagged as model context and stay seekable. Seeking is blocked only for a time outside the video, judged by the recorded length and by the player's own length. The run history notes the issue, and the run-details panel lists enrichment issues, the policy and full-contract validity.
 
@@ -109,35 +109,33 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 | Class | Fields | Source | Editable |
 |---|---|---|---|
-| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`) | AI version: `incidents`, `entities`, `instruments`, `assets`. Reviewer version: `human_reports` and its items. Readers: `effective_*` views | Yes, into the reviewer version only, except duration (recomputed) and confidence |
+| **A: structured** | type, start/end (integer seconds as text), duration (derived), description, severity level, confidence (model-sourced), entities (`E#`, human/animal/unknown), instruments (`I#`, holder, threat 1-5), assets (`A#`), and each item's description, detail and image | `report_revisions.payload` and `.evidence` | Yes, into a new `human` revision only, except duration (recomputed) and confidence |
 | **B: model output** | title, severity rationale, location, timeline, uncertainties | the report in notes | No (read-only) |
 | **C: provenance** | model, contract version, run id, instruction, settings, fingerprints, raw response, reasoning, finish reason, usage, repair record | notes + `model_runs` | No |
 
-### AI version and reviewer version
+### Report revisions (AI and human)
 
-The AI report is immutable twice over: in `model_runs.notes` and in its relational rows (`incidents`, `entities`, `instruments`, `assets`), which analysis writes once and nothing edits afterwards. A reviewer's changes go to a separate **reviewer version** of the run (`human_reports` and its items; schema in [`data.md`](data.md#reviewer-version-and-effective-views)):
+A report is a list of immutable revisions in `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, the facet columns, `kind` (`ai` or `human`) and `parent_id` (the revision that was opened). The AI report is written once by analysis; a reviewer's Save or Restore appends a `human` revision and never touches the AI one. The schema and the append-only trigger are in [`data.md`](data.md#agent-report-writes-report_revisions); the console's writer is `save_human_revision`.
 
-| Event | AI rows | Reviewer version | `review_status` |
-|---|---|---|---|
-| Successful analysis | written once | – | `unreviewed` |
-| First edit | untouched | created from the edit (a complete report), each item with its `source_*_id` | `edited_by/at` |
-| Later edit | untouched | replaced, `revision + 1` | `edited_by/at`; a `verified` report goes back to `under review` and the verifier is cleared |
-| Verify, no edits | untouched | created as a copy of the AI report | `verified`, `verified_by/at` |
-| Verify after edits | untouched | unchanged | `verified`, `verified_by/at` |
-| Back to unreviewed / under review | untouched | kept (status is not content) | status only |
-| Delete run or video | cascade | cascade | cascade |
+| Event | Revision written |
+|---|---|
+| Successful analysis | `kind='ai'`, `parent_id` NULL, `model_run_id` set |
+| First Save or Restore | `kind='human'`, `parent_id` = the revision opened, complete payload and evidence, `created_by` |
+| Later Save or Restore | another `human` revision on the current one |
+| Re-generation | a new `ai` revision with `parent_id` NULL; it copies no earlier edits |
+| Mark official | none; `videos.official_revision_id` changes and `evidence_crops` is rebuilt |
+| Delete video | cascade removes every revision |
 
-- **One reviewer version per run**, keyed `(incident_id, model_run_id)` like `review_status` and the official selection. The official report's content is that run's effective version.
-- **The effective report** is the reviewer version if there is one, otherwise the AI version (`effective_*` views). The library, dashboard and search read it; eval and the crop loader read the AI rows, so a reviewer edit never leaks into a benchmark.
-- **Edits** (`save_human_revision`, or its `apply_structured_report_edit` shim) are validated against the contract's own sub-schemas and the ID/holder/window rules and applied in one transaction. They set `review_status.edited_by/edited_at`, which now means "last content edit" only: status changes never write it.
-- **Verification** (revision-based review transition) is one atomic transition. Verifying without edits copies the AI report, so every verified report has a reviewer version.
-- **Evidence crops belong to AI items**, whose IDs never change; a reviewer item shows the crop of its `source_*_id`, and a reviewer-added item has none. Because the editor renumbers items by position, every edited item must carry `source_id` (`null` for an added item): the console reads it from the `effective_*` views, sends it back and refuses an edit without it (422), and the database refuses an edit with a keyless item instead of guessing (the midterm console sends none, so the console change must be deployed before the switch to finals).
-- Neither path touches notes.
+- **One official revision per video** (`videos.official_revision_id`, NULL = none), chosen explicitly. It is the version statistics count and the only version search reads (`evidence_crops` are rebuilt from it).
+- **The report page** opens `?revision=<id>`, else the official revision, else the newest one. History lists every revision newest first; opening one loads it into the editor.
+- **Edits** (`save_human_revision`) are validated against the contract's own sub-schemas and the ID/holder/window rules before the call. Each item keeps the id of the item it came from through the editor's renumbering, so its evidence and image follow it.
+- **Evidence images** are never overwritten or deleted. An edit or a replacement uploads to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg`; an item without an image records an `image_gap` reason.
+- **There is no verification status and no draft.** `kind='human'` with `created_by` and `created_at` says a person saved it; unsaved edits live only in the form.
 
 The report page:
 - shows "Model severity rationale";
-- when a reviewer changed the severity, adds "Model assessed N/5; reviewer set M/5";
-- marks every other reviewer-changed structured field ("Reviewer-edited after generation").
+- when a human revision changed the severity, adds "Model assessed N/5; reviewer set M/5";
+- marks every other changed structured field ("Reviewer-edited after generation").
 
 ## 5. Legacy data
 
@@ -146,15 +144,15 @@ Older rows are shown in contract form for display and querying. The midterm-to-f
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
 
-Their notes are parsed best-effort for the read-only Class B fields. Saving an edit or verifying a legacy run writes a contract-form reviewer version (`e01` → `E1` with `source_entity_id = 'e01'`, `"0:18"` → 18); its AI rows and historical notes are untouched.
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit or restoring a legacy run writes a contract-form `human` revision (`e01` → `E1`, `"0:18"` → 18); its `model_runs.notes` are untouched.
 
 ## 6. Agent mode
 
 `ANALYSIS_MODE=agent` posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze` with `{ video_url, model_run_id?, model?, reviewer_prompt?, skip_rp1? }`.
 - `vss-agent` uses its vendored `incident-contract-v4` (`vss_agents/incident_contract/`) to run P1 (direct VLM call with JSON Schema response format) and RP1 (prose report generation). P1 and RP1 request settings come from the shared `contracts/inference.json` `p1` and `rp1` blocks (the agent reads its vendored copy; eval asserts its constants match). The request's `skip_rp1` flag runs P1 only; the console always sets it, because gateway mode runs P1 only too.
 - The agent validates P1 with strict Pydantic models under the same `core-scored-v1` policy and `id-normalization-v1` repair as the console (timeline-only violations are not fatal), derives `incident.duration` and, unless `skip_rp1`, runs RP1 on the result. Only a schema or unrepairable core violation is a 422, whose `detail` carries `raw_output`, `finish_reason`, `model` and `contract_version`. `vss_agents.incident_contract` supports contextual video bounds rules (`WINDOW_BEYOND_VIDEO`, `TIMELINE_BEYOND_VIDEO`) when `video_duration_seconds` is known; at runtime in agent mode, the agent receives only signed playback URLs without R2 credentials to perform byte-range reads on MP4 headers, so the video-length rule is left to the calling console, which reads the video length from R2 and re-evaluates the policy.
-- After a valid report the agent appends a `report_revisions` row (`kind='ai'`, `payload` = the report, `evidence`, facet columns, `parent_id` NULL) best-effort. This is agent mode only: gateway mode calls the `vlm-gateway` instead, and nothing writes a revision or crops there. It crops each evidence item, uploads it to R2 under `evidence/<videoId>/<uuid>/<itemId>.jpg` (a new `<uuid>` per run, so keys are never overwritten) and records a plain `image_gap` reason in the evidence JSONB when it cannot (no detector, no R2 store, no box, upload failed). With a caller `model_run_id` it only inserts a placeholder `model_runs` row if absent (the console writes its `notes` record afterwards). Without one it creates its own run. A `reviewer_prompt` reaches the model run only; re-generation copies no earlier edits. It never writes `videos`.
-- In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason in `model_runs.notes`, and writes every row itself through `persistContractRun`. Its timeout is the model's, as in gateway mode, since only P1 runs. A non-empty `additionalInstruction` is a 400 in agent mode: the console does not send a `reviewer_prompt` there, although the agent accepts one. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
+- After a valid report the agent appends a `report_revisions` row (`kind='ai'`, `payload` = the report, `evidence`, facet columns, `parent_id` NULL) best-effort, for both agent variants (P1 only and P1+RP1). It crops each evidence item, uploads it to R2 under `evidence/<videoId>/<uuid>/<itemId>.jpg` (a new `<uuid>` per run, so keys are never overwritten) and records a plain `image_gap` reason in the evidence JSONB when it cannot (no detector, no R2 store, no box, upload failed). With a caller `model_run_id` it only inserts a placeholder `model_runs` row if absent (the console writes its `notes` record afterwards). Without one it creates its own run. A `reviewer_prompt` reaches the model run only; re-generation copies no earlier edits. It never writes `videos`.
+- In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason, and writes the `model_runs` notes itself; it inserts the AI revision too unless the agent's response carries `revision_id`, in which case it only verifies it (`persistContractRun`). Its timeout is the model's, as in gateway mode, since only P1 runs. A non-empty `additionalInstruction` is sent to the agent as `reviewer_prompt` (the agent's own field for a direct caller), so the reviewer prompt works in both modes; only the model choice stays gateway-only. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
 - Legacy agent-mode contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`) have been retired.
 
 ## 7. Model inference findings

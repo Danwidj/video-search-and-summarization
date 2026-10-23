@@ -3,6 +3,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { IncidentReport } from '@/components/incident-report';
@@ -14,14 +15,18 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; report: ReportView };
 
-export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRunId: string }) {
+/** revisionId null opens the incident's official version, else its newest. */
+export function ReportScreen({ videoId, revisionId }: { videoId: string; revisionId: number | null }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setState({ status: 'loading' });
-    fetch(`/api/reports/${encodeURIComponent(videoId)}?run=${encodeURIComponent(modelRunId)}`, {
+    fetch(`/api/reports/${encodeURIComponent(videoId)}${revisionId === null ? '' : `?revision=${revisionId}`}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -35,7 +40,7 @@ export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRu
         setState({ status: 'error', message: error instanceof Error ? error.message : 'Could not load the report' });
       });
     return () => controller.abort();
-  }, [attempt, modelRunId, videoId]);
+  }, [attempt, revisionId, videoId]);
 
   if (state.status === 'loading') {
     return (
@@ -71,7 +76,17 @@ export function ReportScreen({ videoId, modelRunId }: { videoId: string; modelRu
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12">
-      <IncidentReport key={`${state.report.modelRunId}-${state.report.review.editedAt ?? ''}`} onEdited={() => setAttempt((value) => value + 1)} onNewAnalysis={() => { window.location.href = '/'; }} report={state.report} />
+      <IncidentReport
+        editing={editing}
+        historyKey={historyKey}
+        key={state.report.revisionId}
+        onChanged={() => { setHistoryKey((value) => value + 1); setAttempt((value) => value + 1); }}
+        onEditingChange={setEditing}
+        onNewAnalysis={() => { window.location.href = '/'; }}
+        onOpenRevision={(id) => { setEditing(true); router.push(`/reports/${encodeURIComponent(videoId)}?revision=${id}`); }}
+        onSaved={(id) => { setEditing(false); setHistoryKey((value) => value + 1); router.push(`/reports/${encodeURIComponent(videoId)}?revision=${id}`); }}
+        report={state.report}
+      />
       <AdvancedReportTools report={state.report} />
     </div>
   );

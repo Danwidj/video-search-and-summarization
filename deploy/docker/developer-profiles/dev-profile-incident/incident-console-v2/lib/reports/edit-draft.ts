@@ -3,40 +3,56 @@
 // Browser-safe shape of a structured (Class A) reviewer edit and the helpers
 // the editor uses. Identifiers are managed here, never typed by the reviewer:
 // every change renumbers E#/I#/A# by position and carries instrument holders
-// with their entity. Each item keeps the ID of the AI item it came from
-// (source_id; null for an item the reviewer added), so a delete or reorder
-// does not relink it to whichever AI item has its new number. Validation happens server-side
-// (lib/contract/structured-edit.ts) and again in the database function.
+// with their entity. Each item keeps the ID it had in the revision the
+// reviewer opened (source_id; null for an item the reviewer added), so its
+// evidence follows it through a delete or reorder. The edit is the reviewer's
+// whole report: saving it appends a new human revision (lib/reports/revision.ts).
+// Validation happens server-side (lib/contract/structured-edit.ts) and the
+// database function checks the rest.
 
 import type { ReportView } from '@/lib/reports/report-view';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
 export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
 
+/** Fields every item carries: when it is most clearly visible, its detector label and its evidence image (an R2 key). */
+interface EditItemDetails { source_id: string | null; timestamp_seconds: number; label: string; image: string | null }
+
 export interface StructuredEdit {
   incident: { type: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
-  entities: Array<{ entity_id: string; source_id: string | null; type: string; description: string }>;
-  instruments: Array<{ instrument_id: string; source_id: string | null; entity_id: string | null; name: string; description: string; threat_level: number }>;
-  assets: Array<{ asset_id: string; source_id: string | null; name: string; description: string }>;
+  entities: Array<{ entity_id: string; type: string; description: string } & EditItemDetails>;
+  instruments: Array<{ instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails>;
+  assets: Array<{ asset_id: string; name: string; description: string } & EditItemDetails>;
 }
 
-/** An in-progress edit: values a legacy run may lack (type, times, threat level) start empty and must be chosen. */
+/** Draft item details: imageUrl is a signed URL for showing the image, never sent. */
+interface DraftItemDetails { key: string; sourceId: string | null; timestampSeconds: number | null; label: string; image: string | null; imageUrl: string | null }
+
+/** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
 export interface EditDraft {
   incident: { type: string | null; start_timestamp: number | null; end_timestamp: number | null; description: string; severity_level: number | null };
-  entities: Array<{ key: string; sourceId: string | null; type: string; description: string }>;
-  instruments: Array<{ key: string; sourceId: string | null; holderKey: string | null; name: string; description: string; threat_level: number | null }>;
-  assets: Array<{ key: string; sourceId: string | null; name: string; description: string }>;
+  entities: Array<{ type: string; description: string } & DraftItemDetails>;
+  instruments: Array<{ holderKey: string | null; name: string; description: string; threat_level: number | null } & DraftItemDetails>;
+  assets: Array<{ name: string; description: string } & DraftItemDetails>;
 }
 
 let keySequence = 0;
 export const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(keySequence += 1)}`;
 
+/** A new item's details: visible from the incident start, no label or image yet. */
+export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetails {
+  return { key: newKey(prefix), sourceId: null, timestampSeconds: draft.incident.start_timestamp, label: '', image: null, imageUrl: null };
+}
+
 /**
- * Start an edit from the current structured values. Legacy values are
- * normalised for this edit only: contract types, integer seconds, E#/I#/A#
- * IDs by position, legacy 'person' -> 'human'. Values that cannot be mapped
- * (e.g. a legacy type outside the contract, an unrated threat) start empty.
+ * Start an edit from the opened revision's structured values. Values outside
+ * the contract (e.g. an unknown type, an unrated threat) start empty and must
+ * be chosen before saving.
  */
+function details(key: string, sourceId: string, item: { timestampSeconds: number | null; label: string; evidence: { image: string | null; imageUrl: string | null } | null }): DraftItemDetails {
+  return { key, sourceId, timestampSeconds: item.timestampSeconds, label: item.label, image: item.evidence?.image ?? null, imageUrl: item.evidence?.imageUrl ?? null };
+}
+
 export function draftFromView(view: ReportView): EditDraft {
   const { incident, entities, instruments, assets } = view.structured;
   const allowedType = (EDITABLE_INCIDENT_TYPES as readonly string[]).includes(incident.type ?? '') ? incident.type : null;
@@ -50,20 +66,18 @@ export function draftFromView(view: ReportView): EditDraft {
       severity_level: incident.severityLevel !== null && incident.severityLevel >= 1 && incident.severityLevel <= 5 ? incident.severityLevel : null,
     },
     entities: entities.map((entity, index) => ({
-      key: `entity-${index}`,
-      sourceId: entity.sourceId,
+      ...details(`entity-${index}`, entity.entityId, entity),
       type: (EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type) ? entity.type : 'unknown',
       description: entity.description,
     })),
     instruments: instruments.map((instrument, index) => ({
-      key: `instrument-${index}`,
-      sourceId: instrument.sourceId,
+      ...details(`instrument-${index}`, instrument.instrumentId, instrument),
       holderKey: instrument.entityId ? entityKeys.get(instrument.entityId) ?? null : null,
       name: instrument.name,
       description: instrument.description,
       threat_level: instrument.threatLevel !== null && instrument.threatLevel >= 1 && instrument.threatLevel <= 5 ? instrument.threatLevel : null,
     })),
-    assets: assets.map((asset, index) => ({ key: `asset-${index}`, sourceId: asset.sourceId, name: asset.name, description: asset.description })),
+    assets: assets.map((asset, index) => ({ ...details(`asset-${index}`, asset.assetId, asset), name: asset.name, description: asset.description })),
   };
 }
 
@@ -76,8 +90,11 @@ export function draftProblems(draft: EditDraft): string[] {
   else if (incident.end_timestamp < incident.start_timestamp) problems.push('The incident end must not be before its start.');
   if (incident.severity_level === null) problems.push('Choose a severity level.');
   if (draft.instruments.some((instrument) => instrument.threat_level === null)) problems.push('Rate the threat level of every instrument (1-5).');
+  if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.timestampSeconds === null)) problems.push('Enter the second each entity, instrument and asset is most clearly visible.');
   return problems;
 }
+
+const sent = (item: DraftItemDetails): EditItemDetails => ({ source_id: item.sourceId, timestamp_seconds: item.timestampSeconds!, label: item.label, image: item.image });
 
 /** The edit sent to the server: sequential IDs by position, holders resolved to the renumbered entity IDs, each item's source_id kept. */
 export function editFromDraft(draft: EditDraft): StructuredEdit {
@@ -92,15 +109,15 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       description: draft.incident.description,
       severity_level: draft.incident.severity_level!,
     },
-    entities: draft.entities.map((entity, index) => ({ entity_id: `E${index + 1}`, source_id: entity.sourceId, type: entity.type, description: entity.description })),
+    entities: draft.entities.map((entity, index) => ({ entity_id: `E${index + 1}`, type: entity.type, description: entity.description, ...sent(entity) })),
     instruments: draft.instruments.map((instrument, index) => ({
       instrument_id: `I${index + 1}`,
-      source_id: instrument.sourceId,
       entity_id: instrument.holderKey ? entityIdByKey.get(instrument.holderKey) ?? null : null,
       name: instrument.name,
       description: instrument.description,
       threat_level: instrument.threat_level!,
+      ...sent(instrument),
     })),
-    assets: draft.assets.map((asset, index) => ({ asset_id: `A${index + 1}`, source_id: asset.sourceId, name: asset.name, description: asset.description })),
+    assets: draft.assets.map((asset, index) => ({ asset_id: `A${index + 1}`, name: asset.name, description: asset.description, ...sent(asset) })),
   };
 }

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Server-side validation of a structured (Class A) reviewer edit, built from
-// the incident-contract-v2 schema itself (no second schema): the editable
+// the incident-contract-v3 schema itself (no second schema): the editable
 // incident properties plus the contract's own entities / instruments / assets
 // item schemas, then the contract's ID and holder rules and the window order.
 // Class B (model-generated) and Class C (provenance) fields are rejected.
-// Each item also names the AI item it came from (source_id, required; null for
-// an item the reviewer added); the database checks it names an AI item of the
-// run, once.
+// Each item also names the item it came from in the revision the reviewer
+// opened (source_id, required; null for an item the reviewer added) and its
+// evidence image (image: an R2 key or null), which the save checks.
 
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
@@ -18,12 +18,14 @@ import { crossFieldViolations, type ContractViolation } from '@/lib/contract/val
 import type { StructuredEdit } from '@/lib/reports/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
-export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description'] as const;
-export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level'] as const;
-export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description'] as const;
+export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description', 'timestamp_seconds', 'label'] as const;
+export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level', 'timestamp_seconds', 'label'] as const;
+export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description', 'timestamp_seconds', 'label'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
-// Not a contract field: AI IDs are kept as stored (legacy runs use e.g. 'e01'), up to the column's 20 characters.
+// Not contract fields: the opened revision's item ID as stored (up to evidence_crops' 20 characters),
+// and the item's evidence image key (up to the column's 1024 characters).
 const SOURCE_ID_SCHEMA = { type: ['string', 'null'], minLength: 1, maxLength: 20 };
+const IMAGE_SCHEMA = { type: ['string', 'null'], minLength: 1, maxLength: 1024 };
 
 export class StructuredEditError extends Error {
   status: 400 | 422;
@@ -57,8 +59,8 @@ function editValidator(): ValidateFunction {
     items: {
       type: 'object',
       additionalProperties: false,
-      required: [...fields, 'source_id'],
-      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA },
+      required: [...fields, 'source_id', 'image'],
+      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA, image: IMAGE_SCHEMA },
     },
   });
   const editSchema = {

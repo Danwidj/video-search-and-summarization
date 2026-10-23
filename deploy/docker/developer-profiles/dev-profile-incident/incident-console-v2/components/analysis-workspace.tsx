@@ -239,7 +239,7 @@ export function AnalysisWorkspace() {
       await apiJson('/api/uploads/complete', { sensorId: uploaded.sensorId, filename });
 
       setStage('analyzing');
-      const result = await apiJson<{ report: { videoId: string; modelRunId: string } }>('/api/analysis', {
+      const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
         sensorId: uploaded.sensorId,
         filepath: filePath,
         filename,
@@ -247,7 +247,7 @@ export function AnalysisWorkspace() {
       });
       setStage('saving');
       setStage('complete');
-      router.push(`/reports/${encodeURIComponent(result.report.videoId)}?run=${encodeURIComponent(result.report.modelRunId)}`);
+      router.push(`/reports/${encodeURIComponent(result.report.videoId)}?revision=${result.report.revisionId}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Analysis failed';
       setError(message === 'Upload was cancelled' ? 'Analysis cancelled.' : message);

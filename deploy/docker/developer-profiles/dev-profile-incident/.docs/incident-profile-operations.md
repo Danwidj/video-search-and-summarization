@@ -228,7 +228,7 @@ Run through these checks before any live demo or presentation:
 - [ ] **Health Endpoint Check:** Call `GET /api/health` on `incident-console-v2` (`curl -s http://localhost:3200/api/health`). All core services (`database`, `storage`, `inference`, `agent`) should report `true`. If any status reports `degraded`, treat it as an active warning and investigate before presenting.
 - [ ] **Search Configuration & UX:** Keep search `top_k` set to 5–10 (each candidate hit adds ~1 s of critic launch delay spacing, so high `top_k` values scale latency linearly). Ensure the frontend displays a loading state during query evaluation.
 - [ ] **Recorded Fallback Asset:** Keep a pre-recorded demo video or offline screencast ready in case remote inference or network connectivity degrades during the demo.
-- [ ] **Evidence Status:** Search needs `evidence_crops` rows, which the console writes when a revision is made official. Check that the demo videos have an official revision before the demo; `scripts/backfill_official_timestamps.py` is retired.
+- [ ] **Evidence Rows:** Search needs `evidence_crops` rows, which the console rebuilds when a revision is made official (it calls the agent's `evidence-embeddings` endpoint). Mark the demo incidents official before the demo, then confirm a search returns them.
 
 ---
 
@@ -242,16 +242,15 @@ Verify deployment health against this checklist before declaring a build ready:
       (type, severity, confidence, summary, timeline, entities, instruments, assets). Confirm ambiguous footage
       gracefully degrades (e.g. empty persons array, unconfirmed start time).
 - [ ] **Persistence Read-Back:** Confirm `POST /api/analysis` returns 200 only after `videos`, `model_runs`,
-      `incidents`, and `reports` can be read back and `videos.filepath` exactly matches the submitted R2 key.
-- [ ] **Metadata Editing & Re-Analysis:** Modify input metadata, re-run analysis, and confirm that a new model run ID
-      is generated and prior runs remain accessible in the run picker.
+      `report_revisions` (the AI revision) can be read back and `videos.filepath` exactly matches the submitted R2 key.
+- [ ] **Re-Generation:** Re-generate with a different model and a reviewer prompt, and confirm a new AI revision appears in
+      History while earlier revisions remain openable.
 - [ ] **Pipeline Error Handling:** Induce an invalid video or disconnect the tunnel; verify that the frontend surfaces
       descriptive error messaging without crashing.
-- [ ] **Human Review & Verification:** Transition report review status (`unreviewed` -> `under review` -> `verified`).
-      Verify that reviewer attribution and timestamps persist.
+- [ ] **Human Revisions:** Edit a report and Save, open an older revision in History and Restore it, then make one revision
+      official. Verify each creates a new revision with the reviewer's name and time, and that only one is official.
 - [ ] **Filtering & Dashboard:** Filter report library by incident type, severity, and date range. Confirm that
       counts match database records and clearing filters restores the full catalog.
-- [ ] **Ground-Truth Evaluation (removed):** Formerly opened the evaluation interface for an incident with ground truth (`gt_incidents`). Ground-truth UI and tables have been removed.
 
 ---
 

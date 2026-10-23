@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Builds a video's analysis history (server-side) from two sources:
-// - runs with an incident for this video (incidents.incident_id = videoId),
-//   which is how successful console, agent, eval and seed runs link to videos;
-// - attempt records with no incident whose model_runs.notes explicitly name
-//   this videoId (failed attempts, and successful runs whose report was later
-//   deleted). The notes text search is only a pre-filter; every candidate is
-//   confirmed from its parsed notes.
+// - runs with an AI report revision for this video (report_revisions rows of
+//   kind 'ai'), which is how successful console and agent runs link to videos;
+// - attempt records with no revision whose model_runs.notes explicitly name
+//   this videoId (failed attempts). The notes text search is only a
+//   pre-filter; every candidate is confirmed from its parsed notes.
 // Run counts are always per outcome; nothing treats a model_runs row as a
 // successful analysis by default.
 
@@ -22,8 +21,8 @@ const first = (value: unknown): Row | null => (Array.isArray(value) ? ((value[0]
 
 export interface HistoryInputs {
   videoId: string;
-  /** incidents rows for the video with embedded model_runs and reports, and the effective (reviewer's, else AI's) type and severity_level. */
-  incidentRows: Row[];
+  /** The video's AI report_revisions rows (id, model_run_id, incident_type, severity_level, created_at) with the embedded model_runs row. */
+  revisionRows: Row[];
   /** model_runs rows whose notes mention the videoId (pre-filter). */
   attemptCandidates: Row[];
   /** Model runs shared by more than one video (batch eval/seed runs). */
@@ -74,30 +73,28 @@ export function buildRunHistory(inputs: HistoryInputs): { runs: RunHistoryEntry[
   const runs: RunHistoryEntry[] = [];
   const seen = new Set<string>();
 
-  for (const row of inputs.incidentRows) {
+  for (const row of inputs.revisionRows) {
     const runId = text(row.model_run_id);
     if (!runId || seen.has(runId)) continue;
     seen.add(runId);
     const modelRun = first(row.model_runs) ?? {};
-    const reportRow = first(row.reports);
     const base: RunHistoryEntry = {
       modelRunId: runId,
       model: text(modelRun.model_name) ?? 'Unknown model',
-      attemptedAt: text(reportRow?.generated_datetime) ?? text(modelRun.run_datetime),
+      attemptedAt: text(row.created_at) ?? text(modelRun.run_datetime),
       outcome: 'legacy',
       outcomeInferred: true,
       source: inputs.sharedRunIds.has(runId) ? 'shared' : 'other',
-      report: reportRow && text(reportRow.id)
-        ? { reportId: text(reportRow.id)!, type: canonicalIncidentType(row.type), severityLevel: num(row.severity_level) }
+      revision: typeof row.id === 'number'
+        ? { revisionId: row.id, type: canonicalIncidentType(row.incident_type), severityLevel: num(row.severity_level) }
         : null,
-      reportRemoved: false,
       additionalInstruction: null,
       failure: null,
       repair: null,
     };
     const entry = fromNotes(base, modelRun.notes);
-    // A successful analysis keeps its outcome; a report only exists when a reports row does.
-    runs.push(entry.outcome === 'contract_failed' || entry.outcome === 'request_failed' ? { ...entry, report: null } : entry);
+    // A successful analysis keeps its outcome; a report only exists when a revision does.
+    runs.push(entry.outcome === 'contract_failed' || entry.outcome === 'request_failed' ? { ...entry, revision: null } : entry);
   }
 
   for (const candidate of inputs.attemptCandidates) {
@@ -111,22 +108,20 @@ export function buildRunHistory(inputs: HistoryInputs): { runs: RunHistoryEntry[
       outcome: 'legacy',
       outcomeInferred: true,
       source: 'other',
-      report: null,
-      reportRemoved: false,
+      revision: null,
       additionalInstruction: null,
       failure: null,
       repair: null,
     };
     const entry = fromNotes(base, candidate.notes);
-    const failed = entry.outcome === 'contract_failed' || entry.outcome === 'request_failed';
-    runs.push({ ...entry, report: null, reportRemoved: !failed });
+    runs.push({ ...entry, revision: null });
   }
 
   runs.sort((a, b) => (b.attemptedAt ?? '').localeCompare(a.attemptedAt ?? '') || a.modelRunId.localeCompare(b.modelRunId));
   const counts: OutcomeCounts = { attempts: runs.length, withReport: 0, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 0, request_failed: 0, legacy: 0 };
   for (const run of runs) {
     counts[run.outcome] += 1;
-    if (run.report) counts.withReport += 1;
+    if (run.revision) counts.withReport += 1;
   }
   return { runs, counts };
 }

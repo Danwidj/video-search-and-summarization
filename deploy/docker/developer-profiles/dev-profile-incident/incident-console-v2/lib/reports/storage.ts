@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { RevisionKind } from '@/lib/reports/revision';
+
 export interface LegacyTimelineItem {
   start_seconds: number;
   end_seconds: number | null;
@@ -169,33 +171,33 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
   }
 }
 
-export type ReviewStatus = 'unreviewed' | 'under review' | 'verified';
-
-/** One report-library card (list_incident_report_summaries); null where the stored column is empty. */
+/** One report-library card (list_incident_report_summaries): an incident's official revision, else its newest; null where the stored value is empty. */
 export interface ReportLibraryItem {
-  reportId: string;
+  revisionId: number;
+  revisionNo: number;
   videoId: string;
-  modelRunId: string;
+  /** The run the revision derives from (a human revision inherits its parent's). */
+  modelRunId: string | null;
+  kind: RevisionKind;
+  /** The reviewer of a human revision. */
+  createdBy: string | null;
+  note: string | null;
   title: string;
   filename: string;
   incident_type: string;
   description: string;
   severity: number;
-  /** null when the model reported no confidence (incident-contract-v2 allows null). */
+  /** null when the model reported no confidence (the contract allows null). */
   confidence: number | null;
+  /** When the shown revision was created. */
   generatedAt: string | null;
   uploadedAt?: string | null;
   model: string;
-  status: ReviewStatus;
-  verifiedBy?: string | null;
-  verifiedAt?: string | null;
-  editedBy?: string | null;
-  editedAt?: string | null;
   thumbnailUrl?: string;
   r2Key?: string | null;
   sensorId?: string | null;
-  /** How the report's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */
-  outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy';
-  /** The video's explicitly selected official report (D6). */
+  /** How the revision's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */
+  outcome?: 'valid_first_pass' | 'valid_after_structural_repair' | 'legacy' | null;
+  /** The shown revision is the incident's official one (D6). */
   isOfficial?: boolean;
 }

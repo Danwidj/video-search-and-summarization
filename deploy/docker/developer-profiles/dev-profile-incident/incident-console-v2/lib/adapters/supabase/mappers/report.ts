@@ -1,111 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Row -> domain translation for one run's report rows (videos, model_runs,
-// the effective_* views, review_status, reports) and the results of the
-// reviewer RPCs. The only place that knows those column and result names;
-// the row mapping is lifted unchanged from lib/reports/view.ts.
+// Row -> domain translation for one report revision (report_revisions, with
+// its video and model_runs rows) and the save_human_revision result. The only
+// place that knows those column and result names. The payload is the stored
+// incident-contract-v3 report, read leniently: a human revision may hold what
+// a reviewer typed.
 
-import type { ReviewState, ReviewTransition, RunKey, RunReportRecord, StructuredEditResult } from '@/lib/ports';
-import type { StructuredEdit } from '@/lib/reports/edit-draft';
-import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
+import type { RevisionRecord } from '@/lib/ports';
+import { structuredFromPayload } from '@/lib/reports/payload-view';
+import { evidenceEntries, type RevisionKind, type RevisionSummary } from '@/lib/reports/revision';
 import { parseRunNotes } from '@/lib/reports/run-notes';
-import type { ReviewStatus } from '@/lib/reports/storage';
 
 type Row = Record<string, unknown>;
 
-export interface ReportRows {
-  videoId: string;
-  modelRunId: string;
+export interface RevisionRows {
   video: Row;
-  modelRun: Row;
-  incident: Row;
-  entities: Row[];
-  instruments: Row[];
-  assets: Row[];
-  review: Row | null;
-  reportRow: Row | null;
+  revision: Row;
+  /** model_runs row of revision.model_run_id; null when it names none or is not recorded. */
+  modelRun: Row | null;
 }
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value : null);
 const num = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-const byId = (key: string) => (a: Row, b: Row) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), undefined, { numeric: true });
 const asRow = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
-const REVIEW_STATUSES = new Set(['unreviewed', 'under review', 'verified']);
-const reviewStatus = (value: unknown, fallback: ReviewStatus): ReviewStatus =>
-  (typeof value === 'string' && REVIEW_STATUSES.has(value) ? value : fallback) as ReviewStatus;
 
-/** review_status row -> ReviewState; an unknown stored status reads as 'unreviewed', as the report view always showed it. */
-export function reviewFromRow(row: Row | null): ReviewState | null {
-  if (!row) return null;
+/** The columns a History row needs: everything but the payload and evidence. */
+export const REVISION_SUMMARY_COLUMNS = 'id,video_id,revision_no,kind,model_run_id,parent_id,created_by,created_at,note';
+
+export function revisionSummaryFromRow(row: Row, officialRevisionId: number | null, model: string | null): RevisionSummary {
+  const id = Number(row.id);
   return {
-    status: reviewStatus(row.status, 'unreviewed'),
-    verifiedBy: text(row.verified_by),
-    verifiedAt: text(row.verified_at),
-    editedBy: text(row.edited_by),
-    editedAt: text(row.edited_at),
+    revisionId: id,
+    videoId: String(row.video_id),
+    revisionNo: Number(row.revision_no),
+    kind: (row.kind === 'human' ? 'human' : 'ai') as RevisionKind,
+    createdBy: text(row.created_by),
+    createdAt: text(row.created_at),
+    note: text(row.note),
+    parentId: num(row.parent_id),
+    modelRunId: text(row.model_run_id),
+    model,
+    isOfficial: officialRevisionId !== null && officialRevisionId === id,
   };
 }
 
-/** set_review_status's result -> ReviewTransition. */
-export function reviewTransitionFromRpc(result: unknown, status: ReviewStatus): ReviewTransition {
+/** save_human_revision's result -> RevisionSummary (the model is not part of it, so it is unknown here). */
+export function savedRevisionFromRpc(result: unknown, officialRevisionId: number | null = null): RevisionSummary {
   const row = asRow(result);
-  return {
-    changed: row.changed === true,
-    status: reviewStatus(row.status, status),
-    verifiedBy: text(row.verifiedBy),
-    verifiedAt: text(row.verifiedAt),
-    humanVersionCreated: row.humanVersionCreated === true,
-  };
+  return revisionSummaryFromRow({
+    id: row.revisionId,
+    video_id: row.videoId,
+    revision_no: row.revisionNo,
+    kind: row.kind,
+    created_by: row.createdBy,
+    created_at: row.createdAt,
+    note: row.note,
+    parent_id: row.parentId,
+    model_run_id: row.modelRunId,
+  }, officialRevisionId, null);
 }
 
-/** save_human_report_edit's result (duration = end - start) -> StructuredEditResult. */
-export function structuredEditResultFromRpc(result: unknown, key: RunKey, edit: StructuredEdit, editedBy: string): StructuredEditResult {
-  const row = asRow(result);
+export function revisionRecordFromRows(input: RevisionRows): RevisionRecord {
+  const { video, revision, modelRun } = input;
+  const payload = asRow(revision.payload);
+  const evidence = evidenceEntries(revision.evidence);
+  const officialRevisionId = num(video.official_revision_id);
+  const videoId = String(video.id);
+  const modelName = modelRun ? text(modelRun.model_name) : null;
   return {
-    incidentId: text(row.incidentId) ?? key.videoId,
-    modelRunId: text(row.modelRunId) ?? key.modelRunId,
-    editedBy: text(row.editedBy) ?? editedBy.trim(),
-    editedAt: text(row.editedAt) ?? '',
-    duration: num(row.duration) ?? edit.incident.end_timestamp - edit.incident.start_timestamp,
-    revision: num(row.revision) ?? 1,
-    status: reviewStatus(row.status, 'unreviewed'),
-  };
-}
-
-export function runReportFromRows(rows: ReportRows): RunReportRecord {
-  const { incident, video } = rows;
-  const officialRunId = text(video.selected_model_run_id);
-  return {
-    key: { videoId: rows.videoId, modelRunId: rows.modelRunId },
+    revision: revisionSummaryFromRow(revision, officialRevisionId, modelName),
+    payload,
+    evidence,
     video: {
       storageKey: typeof video.filepath === 'string' && video.filepath ? video.filepath : null,
-      filename: (text(video.filepath) ?? '').split('/').pop() || rows.videoId,
-      official: {
-        officialRunId,
-        selectedBy: officialRunId ? text(video.selected_by) : null,
-        selectedAt: officialRunId ? text(video.selected_at) : null,
-      },
+      filename: (text(video.filepath) ?? '').split('/').pop() || videoId,
+      officialRevisionId,
     },
-    modelRun: {
-      modelName: text(rows.modelRun.model_name),
-      promptVersion: text(rows.modelRun.prompt_version),
-      runAt: text(rows.modelRun.run_datetime),
-      notes: parseRunNotes(rows.modelRun.notes),
-    },
-    incident: {
-      type: canonicalIncidentType(incident.type),
-      startSeconds: parseTimestamp(incident.start_timestamp),
-      endSeconds: parseTimestamp(incident.end_timestamp),
-      duration: num(incident.duration),
-      description: text(incident.description),
-      severityLevel: num(incident.severity_level),
-      confidenceScore: num(incident.confidence_score),
-    },
-    // source_*_id: an AI row's own ID, a reviewer row's AI origin (NULL when the reviewer added it).
-    entities: [...rows.entities].sort(byId('entity_id')).map((row) => ({ entityId: String(row.entity_id ?? ''), sourceId: text(row.source_entity_id), type: canonicalEntityType(row.type), description: String(row.description ?? '') })),
-    instruments: [...rows.instruments].sort(byId('instrument_id')).map((row) => ({ instrumentId: String(row.instrument_id ?? ''), sourceId: text(row.source_instrument_id), entityId: text(row.entity_id), name: String(row.name ?? ''), description: String(row.description ?? ''), threatLevel: num(row.threat_level) })),
-    assets: [...rows.assets].sort(byId('asset_id')).map((row) => ({ assetId: String(row.asset_id ?? ''), sourceId: text(row.source_asset_id), name: String(row.name ?? ''), description: String(row.description ?? '') })),
-    review: reviewFromRow(rows.review),
-    report: rows.reportRow ? { reportId: text(rows.reportRow.id), generatedAt: text(rows.reportRow.generated_datetime) } : null,
+    modelRun: modelRun
+      ? { modelName, promptVersion: text(modelRun.prompt_version), runAt: text(modelRun.run_datetime), notes: parseRunNotes(modelRun.notes) }
+      : null,
+    ...structuredFromPayload(payload, evidence),
   };
 }

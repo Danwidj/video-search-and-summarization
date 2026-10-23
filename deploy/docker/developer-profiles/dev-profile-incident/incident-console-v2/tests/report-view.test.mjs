@@ -41,7 +41,7 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   assert.equal(view.run.notesKind, 'contract');
   assert.equal(view.run.model, 'nvidia/cosmos-3-nano-reasoner');
   assert.equal(view.run.promptVersion, 'incident-contract-v2');
-  assert.equal(view.run.reportId, 'r03ba684293caa75f533');
+  assert.deepEqual([view.revisionId, view.revision.kind, view.revision.revisionNo, view.official], [1, 'ai', 1, { officialRevisionId: null, isOfficial: false }]);
   assert.equal(view.run.request.additionalInstruction, null);
   assert.deepEqual(view.run.request.inferenceConfig, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
   assert.equal(view.run.response.finishReason, 'stop');
@@ -49,7 +49,6 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   assert.deepEqual(view.run.originalReport, notes.report);
 
   assert.deepEqual(view.differences, { fields: [] }, 'unedited run: projection equals the original model output');
-  assert.equal(view.review.status, 'unreviewed');
 });
 
 test('an inconsistent timeline is shown as model context, never as incident timestamps, and never altered', () => {
@@ -149,7 +148,6 @@ test('legacy run: normalised Class A, best-effort Class B, earlier reviewer edit
   assert.equal(view.run.notesKind, 'legacy');
   assert.equal(view.run.rawModelOutput, '{"legacy":true}');
   assert.deepEqual(view.run.legacyReviewerEdits, { title: 'Street fight near bus stop' });
-  assert.equal(view.review.status, 'verified');
 });
 
 test('runs without readable notes still render their structured rows', () => {

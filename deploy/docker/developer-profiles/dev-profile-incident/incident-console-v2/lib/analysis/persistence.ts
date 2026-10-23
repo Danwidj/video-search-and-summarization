@@ -4,6 +4,7 @@ import type { RepairOperation, RepairIneligibility } from '@/lib/contract/repair
 import type { DerivedContractReport } from '@/lib/contract/types';
 import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/lib/contract/validate';
 import { PostgrestClient } from '@/lib/postgrest/client';
+import { placeholderEvidence, revisionFacets, type EvidenceEntry } from '@/lib/reports/revision';
 
 interface VideoReference {
   r2Key: string;
@@ -12,27 +13,28 @@ interface VideoReference {
   duration?: number | null;
 }
 
-export async function verifySavedReport(
+export async function verifySavedRevision(
   db: PostgrestClient,
-  report: { videoId: string; modelRunId: string; reportId: string },
+  saved: { videoId: string; modelRunId: string; revisionId: number },
   expectedR2Key: string,
 ): Promise<void> {
-  const [video, modelRun, incident, reportRow] = await Promise.all([
-    db.selectOne('videos', { id: report.videoId }, 'id,filepath'),
-    db.selectOne('model_runs', { id: report.modelRunId }, 'id'),
-    db.selectOne('incidents', { incident_id: report.videoId, model_run_id: report.modelRunId }, 'incident_id,model_run_id'),
-    db.selectOne('reports', { id: report.reportId }, 'id,incident_id,model_run_id'),
+  const [video, modelRun, revision] = await Promise.all([
+    db.selectOne('videos', { id: saved.videoId }, 'id,filepath'),
+    db.selectOne('model_runs', { id: saved.modelRunId }, 'id'),
+    db.selectOne('report_revisions', { video_id: saved.videoId, id: String(saved.revisionId) }, 'id,model_run_id'),
   ]);
 
   const missing = [
     !video && 'videos',
     !modelRun && 'model_runs',
-    !incident && 'incidents',
-    !reportRow && 'reports',
+    !revision && 'report_revisions',
   ].filter(Boolean);
   if (missing.length > 0) throw new Error(`persistence verification found missing rows: ${missing.join(', ')}`);
   if (video?.filepath !== expectedR2Key) {
     throw new Error('persistence verification found an unexpected videos.filepath value');
+  }
+  if (revision?.model_run_id !== saved.modelRunId) {
+    throw new Error('persistence verification found an AI revision for a different model run');
   }
 }
 
@@ -91,19 +93,18 @@ export interface AnalysisAttemptRecord {
   repair: AttemptRepair | null;
 }
 
-/** A valid attempt: it also carries the final validated report and its report row id. */
+/** A valid attempt: it also carries the final validated report. Its AI revision id is known only once the revision is stored. */
 export interface ContractRunRecord extends AnalysisAttemptRecord {
   status: 'valid_first_pass' | 'valid_after_structural_repair';
-  reportId: string;
   generatedAt: string;
   report: DerivedContractReport;
 }
 
 /**
  * The immutable model_runs.notes record. Written once and never modified;
- * reviewer edits change only the relational projection. The wrapper key
+ * reviewer edits are new human revisions. The wrapper key
  * stays incidentConsoleV2 (with the final report at incidentConsoleV2.report)
- * so the existing list/dashboard SQL title lookups keep working.
+ * so the existing SQL lookups keep working.
  */
 export function attemptNotes(attempt: AnalysisAttemptRecord | ContractRunRecord): string {
   return JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', ...attempt } });
@@ -122,7 +123,7 @@ export async function recordUploadedVideo(db: PostgrestClient, videoId: string, 
 
 /**
  * Record a contract_failed or request_failed attempt: a model_runs row only,
- * never incident, evidence, review_status or report rows, so it can never
+ * never a report revision, so it can never
  * appear as a report or in incident statistics.
  */
 export async function persistFailedAttempt(db: PostgrestClient, attempt: AnalysisAttemptRecord): Promise<void> {
@@ -143,19 +144,26 @@ export async function persistFailedAttempt(db: PostgrestClient, attempt: Analysi
   );
 }
 
+/** What was stored for a valid run. */
+export interface PersistedRevision {
+  revisionId: number;
+}
+
 /**
- * Persist one valid contract run as a new model run: model_runs (with the notes
- * record), incidents through the insert_incident RPC (which also creates the
- * review_status row), the E#/I#/A# evidence rows, and the reports row. The
- * videos row is recorded separately (recordUploadedVideo).
+ * Persist one valid contract run as a new model run (model_runs with the
+ * notes record) and its AI report revision: the full contract report as the
+ * payload, the evidence list (the agent's crops when it supplied them, else
+ * one image-less entry per item) and the facet columns. When the agent has
+ * already stored the revision (agentRevisionId) only its presence is checked.
+ * The videos row is recorded separately (recordUploadedVideo).
  */
 export async function persistContractRun(
   db: PostgrestClient,
   run: ContractRunRecord,
   expectedR2Key: string,
   setOperation: (operation: string) => void,
-): Promise<void> {
-  const { incident, entities, instruments, assets } = run.report;
+  agent: { revisionId?: number | null; evidence?: EvidenceEntry[] | null } = {},
+): Promise<PersistedRevision> {
   setOperation('saving the model run to PostgREST');
   await db.upsert(
     'model_runs',
@@ -169,69 +177,45 @@ export async function persistContractRun(
     },
     'id',
   );
-  setOperation('saving the incident through the PostgREST RPC');
-  await db.insertIncident({
-    p_incident_id: run.videoId,
-    p_model_run_id: run.modelRunId,
-    p_type: incident.type,
-    // incidents.start_timestamp/end_timestamp are VARCHAR; contract runs store
-    // integer seconds as text (as eval does), legacy runs hold "M:SS".
-    p_start_timestamp: String(incident.start_timestamp),
-    p_end_timestamp: String(incident.end_timestamp),
-    p_duration: incident.duration,
-    p_description: incident.description,
-    p_severity_level: incident.severity_level,
-    p_confidence_score: incident.confidence_score,
-  });
-  if (entities.length) {
-    setOperation('saving entities to PostgREST');
-    await db.upsert('entities', entities.map((entity) => ({
-      incident_id: run.videoId,
-      model_run_id: run.modelRunId,
-      entity_id: entity.entity_id,
-      type: entity.type,
-      description: entity.description,
-      image: null,
-    })));
+  let revisionId = agent.revisionId ?? null;
+  if (revisionId === null) {
+    setOperation('saving the AI report revision to PostgREST');
+    const payload = run.report as unknown as Record<string, unknown>;
+    const evidence = agent.evidence ?? placeholderEvidence(payload, 'not cropped (gateway analysis)');
+    revisionId = await insertAiRevision(db, { videoId: run.videoId, modelRunId: run.modelRunId, payload, evidence });
   }
-  if (instruments.length) {
-    setOperation('saving instruments to PostgREST');
-    await db.upsert('instruments', instruments.map((instrument) => ({
-      incident_id: run.videoId,
-      model_run_id: run.modelRunId,
-      instrument_id: instrument.instrument_id,
-      entity_id: instrument.entity_id,
-      name: instrument.name,
-      description: instrument.description,
-      threat_level: instrument.threat_level,
-      image: null,
-    })));
-  }
-  if (assets.length) {
-    setOperation('saving assets to PostgREST');
-    await db.upsert('assets', assets.map((asset) => ({
-      incident_id: run.videoId,
-      model_run_id: run.modelRunId,
-      asset_id: asset.asset_id,
-      name: asset.name,
-      description: asset.description,
-      image: null,
-    })));
-  }
-  setOperation('saving report metadata to PostgREST');
-  await db.upsert(
-    'reports',
-    {
-      id: run.reportId,
-      incident_id: run.videoId,
-      query_id: null,
-      model_run_id: run.modelRunId,
-      filepath: null,
-      generated_datetime: run.generatedAt,
-    },
-    'id',
-  );
   setOperation('verifying the persisted report in PostgREST');
-  await verifySavedReport(db, run, expectedR2Key);
+  await verifySavedRevision(db, { videoId: run.videoId, modelRunId: run.modelRunId, revisionId }, expectedR2Key);
+  return { revisionId };
 }
 
+/**
+ * Append an AI revision (kind 'ai', no parent) with the video's next revision
+ * number. revision_no is unique per video, so a concurrent insert that took
+ * the same number is retried with the next one.
+ */
+export async function insertAiRevision(
+  db: PostgrestClient,
+  input: { videoId: string; modelRunId: string; payload: Record<string, unknown>; evidence: EvidenceEntry[] },
+): Promise<number> {
+  for (let attempt = 0; ; attempt += 1) {
+    const [latest] = await db.selectMany('report_revisions', { filters: { video_id: input.videoId }, select: 'revision_no', order: 'revision_no.desc', limit: 1 });
+    const revisionNo = (typeof latest?.revision_no === 'number' ? latest.revision_no : 0) + 1;
+    try {
+      const row = await db.insertRow('report_revisions', {
+        video_id: input.videoId,
+        revision_no: revisionNo,
+        kind: 'ai',
+        model_run_id: input.modelRunId,
+        parent_id: null,
+        payload: input.payload,
+        evidence: input.evidence,
+        ...revisionFacets(input.payload),
+      });
+      return Number(row.id);
+    } catch (error) {
+      const duplicate = error instanceof Error && /23505|duplicate key/.test(error.message);
+      if (!duplicate || attempt >= 3) throw error;
+    }
+  }
+}

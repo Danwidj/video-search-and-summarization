@@ -1,61 +1,125 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Report use cases: what a route asks for, in domain terms. They depend on
-// ports only; R2 signing and deletion are passed in as functions, so they never
-// import an adapter, R2 or PostgREST and are tested with in-memory fakes.
+// ports only; R2 signing, R2 deletion and the agent's embedding call are
+// passed in as functions, so they never import an adapter, R2 or PostgREST and
+// are tested with in-memory fakes.
 
-import type { DbAdapters, IncidentRepository, RunKey } from '@/lib/ports';
+import type { DbAdapters, IncidentRepository, OfficialChange, RevisionRecord, VideoRepository } from '@/lib/ports';
+import { StoreRejection } from '@/lib/ports';
+import type { StructuredEdit } from '@/lib/reports/edit-draft';
 import type { ReportView } from '@/lib/reports/report-view';
-import type { ReviewStatus } from '@/lib/reports/storage';
+import { humanRevisionContent, isEvidenceKeyOfVideo, officialCrops, type EvidenceEmbedding, type RevisionSummary } from '@/lib/reports/revision';
 import { toReportView } from '@/lib/reports/view';
 
-/** Turns a stored object key into a short-lived URL the browser can play. */
+/** Turns a stored object key into a short-lived URL the browser can play or show. */
 export type SignStorageKey = (storageKey: string) => Promise<string>;
 
 /** Deletes a stored video object and everything derived from it (its thumbnail). */
 export type RemoveStoredVideo = (storageKey: string) => Promise<unknown>;
 
-/** One run's report view; null when the run, its video or its incident is missing. */
-export async function getReport(incidents: IncidentRepository, key: RunKey, sign: SignStorageKey): Promise<ReportView | null> {
-  const record = await incidents.getRunReport(key);
-  if (!record) return null;
-  if (!record.video.storageKey) throw new Error('The report has no linked R2 video');
-  return toReportView(record, await sign(record.video.storageKey));
+/** The agent's embeddings for the evidence of one stored revision. */
+export type EmbedRevisionEvidence = (revisionId: number) => Promise<EvidenceEmbedding[]>;
+
+/** Signs each item's image so the browser can show it; an image that cannot be signed is shown as missing. */
+async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<ReportView> {
+  const signed = new Map<string, string | null>();
+  const urlOf = async (image: string | null) => {
+    if (!image) return null;
+    if (!signed.has(image)) signed.set(image, await sign(image).catch(() => null));
+    return signed.get(image) ?? null;
+  };
+  const items = [...view.structured.entities, ...view.structured.instruments, ...view.structured.assets];
+  await Promise.all(items.map(async (item) => {
+    if (item.evidence) item.evidence = { ...item.evidence, imageUrl: await urlOf(item.evidence.image) };
+  }));
+  return view;
 }
 
-export type ReviewChange = { kind: 'not-found' } | { kind: 'unchanged' } | { kind: 'changed'; at: string };
+/** One revision's report view (revisionId null: the official revision, else the newest); null when the video or revision is missing. */
+export async function getReport(incidents: IncidentRepository, videoId: string, revisionId: number | null, sign: SignStorageKey): Promise<ReportView | null> {
+  const record = await incidents.getRevision(videoId, revisionId);
+  if (!record) return null;
+  if (!record.video.storageKey) throw new Error('The report has no linked R2 video');
+  return withImageUrls(toReportView(record, await sign(record.video.storageKey)), sign);
+}
 
-/** One atomic transition; `at` is the stored verification time when verifying, else the time of the request. */
-export async function changeReviewStatus(
-  incidents: IncidentRepository,
-  key: RunKey,
-  status: ReviewStatus,
-  reviewer: string,
-  clock: () => Date = () => new Date(),
-): Promise<ReviewChange> {
-  if (!(await incidents.runExists(key))) return { kind: 'not-found' };
-  const transition = await incidents.setReviewStatus(key, status, reviewer);
-  if (!transition.changed) return { kind: 'unchanged' };
-  return { kind: 'changed', at: transition.verifiedAt ?? clock().toISOString() };
+/** The incident's History: every revision, newest first. */
+export function listRevisions(incidents: IncidentRepository, videoId: string): Promise<RevisionSummary[]> {
+  return incidents.listRevisions(videoId);
+}
+
+/** An edit's item images must be ones the opened revision already used or new uploads for this video. */
+function checkImages(parent: RevisionRecord, edit: StructuredEdit) {
+  const known = new Set(parent.evidence.flatMap((entry) => (entry.image ? [entry.image] : [])));
+  for (const item of [...edit.entities, ...edit.instruments, ...edit.assets]) {
+    if (item.image && !known.has(item.image) && !isEvidenceKeyOfVideo(item.image, parent.revision.videoId)) {
+      throw new StoreRejection('invalid', `An evidence image is not one of this video's images: ${item.image}`);
+    }
+  }
 }
 
 /**
- * Deletes one run's report, or the whole video: its stored objects first, then
- * the video row (incidents, evidence, reviews and reports cascade) and the run
- * records that name only this video.
+ * Save: a new human revision from the form's edit, with the revision the
+ * reviewer opened as its parent. Earlier revisions are never changed.
  */
-export async function deleteReport(
-  { incidents, videos }: DbAdapters,
-  key: RunKey,
-  wholeVideo: boolean,
+export async function saveHumanEdit(
+  incidents: IncidentRepository,
+  input: { videoId: string; parentId: number; edit: StructuredEdit; createdBy: string; note?: string | null },
+): Promise<RevisionSummary> {
+  const parent = await incidents.getRevision(input.videoId, input.parentId);
+  if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
+  checkImages(parent, input.edit);
+  const { payload, evidence } = humanRevisionContent(parent, input.edit);
+  return incidents.saveHumanRevision({ videoId: input.videoId, parentId: input.parentId, payload, evidence, createdBy: input.createdBy, note: input.note?.trim() || null });
+}
+
+/** Restore: a new human revision with the content of an earlier one, which is its parent. */
+export async function restoreRevision(incidents: IncidentRepository, input: { videoId: string; revisionId: number; createdBy: string }): Promise<RevisionSummary> {
+  const source = await incidents.getRevision(input.videoId, input.revisionId);
+  if (!source) throw new StoreRejection('not-found', `Revision not found for this video: ${input.revisionId}`);
+  return incidents.saveHumanRevision({
+    videoId: input.videoId,
+    parentId: input.revisionId,
+    payload: source.payload,
+    evidence: source.evidence,
+    createdBy: input.createdBy,
+    note: `Restored revision ${source.revision.revisionNo}`,
+  });
+}
+
+/**
+ * Marks a revision official (revisionId null clears it). Marking asks the
+ * agent to embed the revision's evidence images and hands the vectors to the
+ * store, which rebuilds the incident's evidence_crops in one transaction; a
+ * failure leaves the previous official revision and crops untouched.
+ */
+export async function setOfficialRevision(
+  { incidents, videos }: Pick<DbAdapters, 'incidents' | 'videos'>,
+  videoId: string,
+  revisionId: number | null,
+  embed: EmbedRevisionEvidence,
+): Promise<OfficialChange> {
+  if (revisionId === null) return videos.setOfficialRevision(videoId, null, []);
+  const record = await incidents.getRevision(videoId, revisionId);
+  if (!record) throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
+  const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
+  return videos.setOfficialRevision(videoId, revisionId, officialCrops(record.payload, record.evidence, embeddings));
+}
+
+/**
+ * Deletes the whole video: its stored objects first, then the video row
+ * (revisions, evidence crops and query results cascade) and the run records
+ * that name only this video. Revisions are append-only, so there is no
+ * deleting a single one. Evidence images under evidence/<videoId>/ are left in R2.
+ */
+export async function deleteVideoAndReports(
+  videos: VideoRepository,
+  videoId: string,
   removeStoredVideo: RemoveStoredVideo,
 ): Promise<void> {
-  if (!wholeVideo) {
-    await incidents.deleteRun(key);
-    return;
-  }
-  const video = await videos.getVideo(key.videoId);
+  const video = await videos.getVideo(videoId);
   if (video?.storageKey == null) throw new Error('Video has no R2 object key');
   await removeStoredVideo(video.storageKey);
-  await videos.deleteVideo(key.videoId);
+  await videos.deleteVideo(videoId);
 }

@@ -1,6 +1,6 @@
 ---
 name: incident-analyze-video
-description: Use to upload a video clip and generate, re-run, inspect, review or verify a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (mock) or agent (vm) mode. Not for batch scoring against ground truth - use incident-run-eval.
+description: Use to upload a video clip and generate, re-run, edit, version or mark official a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (mock) or agent (vm) mode. Not for batch scoring against ground truth - use incident-run-eval.
 license: Apache-2.0
 metadata:
   version: "0.1.2"
@@ -24,21 +24,26 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 | `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
 |---|---|---|---|
+<<<<<<< HEAD
+| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v3` | Console writes `videos`, `model_runs` and the AI revision (gateway analysis does not crop, so its evidence entries have no image) |
+| `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only); the console's reviewer-prompt field is sent as `reviewer_prompt`, while model choice stays gateway-only. |
+=======
 | `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v4` | Console writes `videos`, `model_runs` and the report rows (`` RPC); no `report_revisions` row or evidence crops are written in this mode |
 | `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only). The console's own additional-instructions field is still gateway-only (400 in agent mode); the agent's `reviewer_prompt` is the same idea for direct calls. |
+>>>>>>> origin/main
 
 ## Instructions
 
 ### Preferred: through the UI
 
-Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?run=<model-run-id>`. To analyse an already-uploaded video again (any model, optional additional instruction), open `/videos/<video-id>` or the report page's analysis card. Every attempt is a new run, failed attempts appear in the history only, and choosing the official report is a separate explicit action.
+Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?revision=<revision-id>`. To analyse an already-uploaded video again (any model, optional reviewer prompt), open `/videos/<video-id>` or the report page's analysis card. Every attempt is a new run and a new AI revision, failed attempts appear in the history only, and choosing the official revision is a separate explicit action.
 
 ### Scripted: console API (same path the UI uses)
 
 1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
 2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
 3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
-4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "model"?}` (gateway; `reasoning`/`promptOverride` apply to agent mode only). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs`, `incidents`, and `reports` and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
+4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "model"?}` (gateway; `reasoning`/`promptOverride` apply to agent mode only). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs` and the AI `report_revisions` row and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
 
 Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video use `POST /api/videos/<video-id>/runs` with `{"model", "additionalInstruction"?}`: it never touches the video row. Responses: 200 `{run: {..., outcome}}` (`valid_first_pass` or `valid_after_structural_repair`), 422 `contract_failed` with `codes`, 502/504 `request_failed` with `code`; failures are recorded in `GET /api/videos/<video-id>/runs`.
 
@@ -50,7 +55,7 @@ curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>", "skip_rp1": false}'
 ```
 
-The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent persists the run itself (under its configured `model_run_id`); with one, it persists nothing and the caller records the run. `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair.
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent creates its own run; with one, the caller owns the `model_runs` row and the agent only inserts a placeholder if it is absent. In both cases, when the database is configured, the agent appends the AI revision and returns its `revision_id` (`null` if the best-effort write failed). `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason, revision_id, evidence}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair.
 
 | Status | Meaning |
 |---|---|
@@ -59,11 +64,19 @@ The `videos` row must already exist (`incidents` references it); the agent does 
 | 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
 | 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |
 
-## Review lifecycle
+## Revision lifecycle
 
+<<<<<<< HEAD
+There is no verify step and no review status. A report is its list of revisions; the report page's **History** (`GET /api/reports/<videoId>/revisions`) lists them newest first.
+=======
 `PATCH /api/reports/<videoId>/review` with `{"modelRunId", "status", "reviewedBy"}`. Status moves `unreviewed` → `under review` → `verified`, one `revision-based review transition` call each; a status change never changes "last edited by". Verifying copies the report into its reviewer version if it has none; a legacy AI report that is not valid as it stands (no contract type, an unrated instrument) is refused with 422 and must be edited first. Editing a report (`PATCH /api/reports/<videoId>/edit`) saves the reviewer version, never the AI rows, and sends a verified report back to `under review`; every edited item must carry `source_id`, the AI item it came from (null for one the reviewer added), or the edit is refused with 422. The report page shows the reviewer version when there is one. Re-analysing resets `review_status` to `unreviewed` for that run (via the `` RPC).
+>>>>>>> origin/main
 
-On the finals database the AI report rows are never changed: an edit (`PATCH /api/reports/<videoId>/edit`) writes the run's reviewer version and sends a verified report back to `under review`, and verifying a report with no edits copies the AI report into the reviewer version ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#ai-version-and-reviewer-version)). Re-analysis always makes a new run, so it never touches a reviewer version.
+- **Save** (`PATCH /api/reports/<videoId>/edit` with `{"parentId", "editedBy", "edit", "note"?}`) validates the structured edit, then appends a `human` revision whose parent is the revision that was opened. Every edited item keeps the id of the item it came from, so its evidence and image follow it; the AI revision and `model_runs.notes` are never changed.
+- **Restore** (`POST /api/reports/<videoId>/restore` with `{"revisionId", "restoredBy"}`) appends a `human` revision with the content of an earlier one; it does not delete anything.
+- **Evidence image** (`POST /api/reports/<videoId>/evidence-image`) uploads a replacement to a new R2 key and returns it for the edit; no existing object is overwritten or deleted.
+- **Official** (`PUT`/`DELETE /api/videos/<videoId>/official`) sets or clears `videos.official_revision_id`. Marking asks the agent for the revision's evidence embeddings and rebuilds `evidence_crops`; if the agent is unreachable the mark fails and nothing changes.
+- **Re-generation** always makes a new AI revision and copies no earlier edits ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#report-revisions-ai-and-human)).
 
 ## Verify
 
@@ -71,7 +84,7 @@ Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#6-end-
 
 - The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
 - `videos.filepath` is a classification-neutral **R2 key** (`uploads/<sensorId>/<uuid><ext>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (see [`.docs/decisions.md`](../../.docs/decisions.md) 2026-10-16).
-- There is a new `model_runs` row, and the previous runs still appear in the run picker.
+- There is a new `model_runs` row and a new AI revision in History, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
 
 ## Known quirks
