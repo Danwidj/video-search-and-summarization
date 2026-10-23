@@ -88,9 +88,9 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     reports: [
-      { ...summaries.reports[0], thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp' },
+      { ...summaries.reports[0], thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp', evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-assault-1/u1/I1.jpg' },
       summaries.reports[1],
-      summaries.reports[2],
+      { ...summaries.reports[2], evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-repaired-3/m/E1.jpg' },
     ],
     incidentTypes: summaries.incidentTypes,
     pagination: { page: 3, pageSize: 6, totalItems: 13, totalPages: 3 },

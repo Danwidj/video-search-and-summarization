@@ -88,13 +88,13 @@ export async function GET(request: Request) {
       evidenceMatch: match,
       timezone,
     });
+    const sign = async (key: string) => { try { return await createR2PlaybackUrl(config, key); } catch { return undefined; } };
     const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
-      if (!isValidR2Key(report.r2Key)) return report;
-      try {
-        return { ...report, thumbnailUrl: await createR2PlaybackUrl(config, thumbnailKeyForVideo(report.r2Key)) };
-      } catch {
-        return report;
-      }
+      const [thumbnailUrl, evidenceThumbnailUrl] = await Promise.all([
+        isValidR2Key(report.r2Key) ? sign(thumbnailKeyForVideo(report.r2Key)) : undefined,
+        report.thumbnail ? sign(report.thumbnail) : undefined,
+      ]);
+      return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(evidenceThumbnailUrl ? { evidenceThumbnailUrl } : {}) };
     }));
 
     return NextResponse.json({

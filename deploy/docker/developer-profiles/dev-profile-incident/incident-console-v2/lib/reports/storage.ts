@@ -194,6 +194,16 @@ export interface ReportLibraryItem {
   uploadedAt?: string | null;
   model: string;
   thumbnailUrl?: string;
+  /** Signed URL of the first evidence image, the card's fallback when the video has no screenshot. */
+  evidenceThumbnailUrl?: string;
+  /** R2 key of the shown revision's first evidence image; the route signs it into evidenceThumbnailUrl. */
+  thumbnail?: string | null;
+  /** When the official revision was marked official (stored, naive UTC); null with no official revision. */
+  officialSince?: string | null;
+  /** Revisions of the video, all kinds. */
+  versionCount?: number;
+  /** Items of the shown revision that carry an image. */
+  evidenceCount?: number;
   r2Key?: string | null;
   sensorId?: string | null;
   /** How the revision's analysis ended (from model_runs.notes); 'legacy' for runs recorded before outcomes existed. */

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // EvidenceSearchRepository (MVP2): natural-language search over evidence crops.
-// Planned adapter: the vss-agent's POST /api/v1/incidents/search
-// (search-contract-v1, .docs/vm-api-contracts.md). The agent embeds the query,
-// ranks the official revisions' evidence_crops with search_evidence_items, runs the always-on critic
-// and records the query and its hits itself. These types are that contract
-// (services/agent/src/vss_agents/api/incident_search.py SearchRequest /
-// SearchResponse) in camelCase; the adapter will map the snake_case. Nothing
-// implements or calls this port yet.
-
-import type { RevisionKey } from '@/lib/ports/common';
+// Adapter: lib/adapters/agent/search.ts, over the vss-agent's POST
+// /api/v1/incidents/search (search-contract-v1, .docs/vm-api-contracts.md). The
+// agent embeds the query, ranks each video's searchable revision's evidence_crops
+// (the official one, else the newest) with search_evidence_items, runs the
+// always-on critic and records the query and its hits itself. These types are that
+// contract (services/agent/src/vss_agents/api/incident_search.py SearchRequest /
+// SearchResponse) in camelCase.
 
 export type EvidenceItemType = 'entity' | 'instrument' | 'asset';
 export type CriticVerdict = 'confirmed' | 'rejected' | 'unverified';
@@ -58,9 +56,12 @@ export interface EvidenceSearchHit {
     /** [ymin, xmin, ymax, xmax] normalised to 0-1000, detector-produced; null when there is none. */
     boundingBox: [number, number, number, number] | null;
   };
-  /** The official revision the evidence comes from. */
+  /** The incident (video) the evidence comes from, as its searchable revision describes it. */
   incident: {
-    key: RevisionKey;
+    /** videos.id. */
+    videoId: string;
+    /** The run the searched revision derives from. */
+    modelRunId: string;
     incidentType: string;
     /** 1 to 5. */
     severityLevel: number;

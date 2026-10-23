@@ -59,6 +59,8 @@ Use chat for a follow-up question rather than treating a free-form answer as an 
 
 The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`.
 
+The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query"}`), which calls the agent with `top_k` 20, `min_similarity` 0 and `hide_rejected` false, then adds each video's searched version to the hits. Search takes about a second per hit (the critic), so the route allows up to 115 seconds.
+
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \
   -H 'Content-Type: application/json' \

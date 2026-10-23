@@ -70,6 +70,10 @@ function reportSummary(item: Row): ReportLibraryItem {
     outcome: typeof item.outcome === 'string' ? (item.outcome as Outcome) : null,
     // Whether this revision is the video's official one.
     isOfficial: item.isOfficial === true,
+    officialSince: textOrNull(item.officialSince),
+    versionCount: numberOrNull(item.versionCount) ?? 0,
+    evidenceCount: numberOrNull(item.evidenceCount) ?? 0,
+    thumbnail: textOrNull(item.thumbnail),
     r2Key: textOrNull(item.r2Key),
     sensorId: textOrNull(item.sensorId),
   };

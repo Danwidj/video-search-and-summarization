@@ -45,21 +45,21 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   const reanalysis = await readFile(new URL('reanalysis-card.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'reports-library.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'report-versions.tsx', 'official-controls.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'advanced-report-tools.tsx', 'structured-editor.tsx', 'report-versions.tsx', 'official-controls.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
   }
 });
 
-test('library cards omit the confidence percentage when the model returned none', async () => {
-  const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
-  assert.match(library, /item\.confidence !== null && <span/);
+test('library incident cards show no confidence percentage', async () => {
+  const card = await readFile(new URL('library/incident-card.tsx', components), 'utf8');
+  assert.doesNotMatch(card, /confidence/);
 });
 
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
   const clientOnly = await readFile(new URL('../lib/reports/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'reports-library.tsx', 'analysis-workspace.tsx']) {
+  for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'structured-editor.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'analysis-workspace.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -82,16 +82,16 @@ test('the report page offers re-analysis and history', async () => {
   const tools = await readFile(new URL('advanced-report-tools.tsx', components), 'utf8');
   assert.match(tools, /ReanalysisCard/);
   assert.match(tools, /RunHistoryList/);
-  const library = await readFile(new URL('reports-library.tsx', components), 'utf8');
+  const library = await readFile(new URL('library/library-screen.tsx', components), 'utf8');
   assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
-  assert.match(library, /library-repair-marker/);
+  assert.match(await readFile(new URL('library/incident-card.tsx', components), 'utf8'), /library-repair-marker/);
   const history = await readFile(new URL('run-history.tsx', components), 'utf8');
   assert.match(history, /no report/);
   assert.match(history, /Contract violations/);
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
-  for (const name of ['report-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'reports-library.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx']) {
+  for (const name of ['report-pane.tsx', 'report-versions.tsx', 'run-comparison.tsx', 'run-history.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'advanced-report-tools.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx', 'library/hit-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
