@@ -111,3 +111,23 @@ def test_mock_models_match_contract_fixtures():
     for path in sorted((FIXTURES_DIR / "invalid").glob("response-*.json")):
         with pytest.raises(ValidationError):
             ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+
+def test_mock_chat_accepts_version_id_and_draft_report():
+    client = TestClient(create_app())
+    body = {"messages": [{"role": "user", "content": "What weapon was used?"}], "version_id": 7}
+    resp = client.post("/api/v1/incidents/chat", json=body)
+    assert resp.status_code == 200
+    assert "report version 7" in resp.json()["message"]["content"]
+
+    resp = client.post("/api/v1/incidents/chat", json={**body, "draft_report": {"evidence": []}})
+    assert resp.status_code == 200
+    assert "unsaved draft of report version 7" in resp.json()["message"]["content"]
+
+
+def test_mock_chat_rejects_draft_report_without_version_id():
+    resp = TestClient(create_app()).post(
+        "/api/v1/incidents/chat",
+        json={"messages": [{"role": "user", "content": "weapons?"}], "draft_report": {}},
+    )
+    assert resp.status_code == 422

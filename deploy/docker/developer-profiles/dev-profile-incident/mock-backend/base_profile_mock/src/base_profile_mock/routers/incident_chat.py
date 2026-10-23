@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
 
 from base_profile_mock.routers.incident_search import _CANNED_HITS
 
@@ -47,6 +48,18 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=128, description="Optional session ID")
     messages: list[ChatMessage] = Field(..., min_length=1, description="Sequential message history")
     context: ChatContext | None = Field(default=None, description="Optional context")
+    version_id: int | None = Field(
+        default=None, ge=1, description="Optional report revision (report_revisions.id) the question is about"
+    )
+    draft_report: dict[str, Any] | None = Field(
+        default=None, description="Optional unsaved report edited from version_id"
+    )
+
+    @model_validator(mode="after")
+    def _draft_needs_version(self) -> ChatRequest:
+        if self.draft_report is not None and self.version_id is None:
+            raise ValueError("draft_report requires version_id")
+        return self
 
 
 class EvidenceCitation(BaseModel):
@@ -186,10 +199,12 @@ async def chat_incidents(req: ChatRequest) -> ChatResponse:
             item_summaries.append(f"{item_name} ({item_id}) in {inc_id} ({inc_type} at {int(ts)}s)")
 
     summary_text = "; ".join(item_summaries)
-    content = (
-        f"Across the recorded surveillance incidents, {len(citations)} relevant evidence item(s) were identified: "
-        f"{summary_text}."
-    )
+    if req.version_id is None:
+        scope_text = "Across the recorded surveillance incidents"
+    else:
+        basis = "the unsaved draft of " if req.draft_report is not None else ""
+        scope_text = f"In {basis}report version {req.version_id}"
+    content = f"{scope_text}, {len(citations)} relevant evidence item(s) were identified: {summary_text}."
 
     return ChatResponse(
         session_id=session_id,

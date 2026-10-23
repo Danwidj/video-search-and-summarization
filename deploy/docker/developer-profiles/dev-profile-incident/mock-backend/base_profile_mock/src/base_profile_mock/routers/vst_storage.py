@@ -29,6 +29,7 @@ from base_profile_mock.state import get_state
 
 router = APIRouter(prefix="/vst/api/v1")
 
+
 def _upload_key(stream: Stream, sensor_id: str) -> str:
     """Return a classification-neutral key for a user-uploaded video."""
     filename = PurePosixPath(stream.filename or "video.mp4").name
