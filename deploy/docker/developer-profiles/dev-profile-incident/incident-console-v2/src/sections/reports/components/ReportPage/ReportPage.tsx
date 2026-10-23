@@ -13,7 +13,8 @@ import { ReportTimeline } from '@/sections/reports/components/ReportTimeline';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 import { chatTarget } from '@/lib/chat/report-chat';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
-import { draftFromView, draftProblems, editFromDraft, type EditDraft } from '@/modules/reports/domain/edit-draft';
+import { draftFromView, draftProblems, editFromDraft, pendingImages, withUploadedImages, type EditDraft } from '@/modules/reports/domain/edit-draft';
+import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
@@ -198,10 +199,13 @@ export function ReportPage({ videoId, revisionId, startSeconds = null }: { video
     setSaving(true);
     setSaveProblems([]);
     try {
+      // Crops held in the browser reach R2 only now, before the revision that references them is written.
+      const keys = new Map<string, string>();
+      for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(videoId, itemId, blob));
       const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentId: editBase.revisionId, editedBy: SAVE_AUTHOR, note: trimmed, edit: editFromDraft(draft) }),
+        body: JSON.stringify({ parentId: editBase.revisionId, editedBy: SAVE_AUTHOR, note: trimmed, edit: editFromDraft(withUploadedImages(draft, keys)) }),
       });
       const payload = (await response.json()) as { error?: string; violations?: Array<{ message: string }>; revision?: { revisionId: number } };
       if (!response.ok || !payload.revision) {

@@ -15,7 +15,7 @@ const { InMemoryVideoRepository } = await import('../../../../src/modules/videos
 const { StoreRejection } = await import('../../../../src/modules/shared/domain/common.ts');
 const { getReport } = await import('@/modules/reports/application/get-report');
 const { listRevisions } = await import('@/modules/reports/application/list-revisions');
-const { saveHumanEdit } = await import('@/modules/reports/application/save-human-edit');
+const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/application/save-human-edit');
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { deleteVideoAndReports } = await import('@/modules/reports/application/delete-video-and-reports');
@@ -29,6 +29,10 @@ const withImage = (image) => {
   record.entities[0].evidence = { image, imageUrl: null, boundingBox: [1, 2, 3, 4], timestampSeconds: 2, uploaded: false };
   return record;
 };
+
+/** Embeds each evidence entry with a fixed vector, as the agent would. */
+const fakeEmbeddings = async (evidence) => evidence.map((entry) => ({ itemType: entry.item_type, itemId: entry.item_id, embedding: [0.5] }));
+const noEmbed = async () => assert.fail('nothing to embed');
 
 /** The edit a reviewer makes in the form: the revision's items kept, severity lowered, E1 keeping the record's image. */
 function editOf(record) {
@@ -63,8 +67,10 @@ test('an image that cannot be signed is shown as missing, not as an error', asyn
 
 test('saving an edit appends a human revision whose parent is the opened one; the History lists both', async () => {
   const record = withImage('evidence/v/u/E1.jpg');
-  const incidents = new InMemoryIncidentRepository([record]);
-  const saved = await saveHumanEdit(incidents, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor', note: ' tweaked ' });
+  const ports = official([record]);
+  const { incidents } = ports;
+  const saved = await saveHumanEdit(ports, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor', note: ' tweaked ' }, fakeEmbeddings);
+  assert.deepEqual(incidents.saved.at(-1).crops.map((crop) => crop.item_id), ['E1'], 'the crops are written with the revision');
   assert.deepEqual([saved.revisionNo, saved.kind, saved.parentId, saved.createdBy, saved.note], [2, 'human', 1, 'Editor', 'tweaked']);
   const stored = await incidents.getRevision(V, 2);
   assert.equal(stored.incident.severityLevel, 4);
@@ -75,22 +81,23 @@ test('saving an edit appends a human revision whose parent is the opened one; th
 
 test('a replaced image is a new upload entry; an image from another video is refused', async () => {
   const record = withImage('evidence/v/u/E1.jpg');
-  const incidents = new InMemoryIncidentRepository([record]);
+  const ports = official([record]);
+  const { incidents } = ports;
   const replaced = editOf(record);
   replaced.entities[0].image = `evidence/${V}/new-uuid/E1.jpg`;
-  await saveHumanEdit(incidents, { videoId: V, parentId: 1, edit: replaced, createdBy: 'Editor' });
+  await saveHumanEdit(ports, { videoId: V, parentId: 1, edit: replaced, createdBy: 'Editor' }, fakeEmbeddings);
   const [entry] = (await incidents.getRevision(V, 2)).evidence;
   assert.deepEqual([entry.image, entry.source, entry.bounding_box], [`evidence/${V}/new-uuid/E1.jpg`, 'upload', null]);
 
   const foreign = editOf(record);
   foreign.entities[0].image = 'evidence/other-video/u/E1.jpg';
-  await assert.rejects(saveHumanEdit(incidents, { videoId: V, parentId: 1, edit: foreign, createdBy: 'Editor' }), (error) => error instanceof StoreRejection && error.reason === 'invalid');
+  await assert.rejects(saveHumanEdit(ports, { videoId: V, parentId: 1, edit: foreign, createdBy: 'Editor' }, noEmbed), (error) => error instanceof StoreRejection && error.reason === 'invalid');
   assert.equal((await listRevisions(incidents, V)).length, 2);
 });
 
 test('saving against a missing revision is a not-found rejection', async () => {
-  const incidents = new InMemoryIncidentRepository([aiRunReport(smoke)]);
-  await assert.rejects(saveHumanEdit(incidents, { videoId: V, parentId: 7, edit: editOf(aiRunReport(smoke)), createdBy: 'Editor' }), (error) => error instanceof StoreRejection && error.reason === 'not-found');
+  const ports = official([aiRunReport(smoke)]);
+  await assert.rejects(saveHumanEdit(ports, { videoId: V, parentId: 7, edit: editOf(aiRunReport(smoke)), createdBy: 'Editor' }, noEmbed), (error) => error instanceof StoreRejection && error.reason === 'not-found');
 });
 
 function official(revisionRecords) {
@@ -183,10 +190,11 @@ test('a video without a stored object is refused and nothing is deleted', async 
 
 test('a saved human revision keeps each entity\'s first and last seen, and a drawn image keeps its second and box', async () => {
   const record = withImage('evidence/v/u/E1.jpg');
-  const incidents = new InMemoryIncidentRepository([record]);
+  const ports = official([record]);
+  const { incidents } = ports;
   const edit = editOf(record);
   Object.assign(edit.entities[0], { first_seen_seconds: 2, last_seen_seconds: 5, image: `evidence/${V}/new-uuid/E1.jpg`, image_timestamp_seconds: 3, image_box: [100, 200, 300, 400] });
-  await saveHumanEdit(incidents, { videoId: V, parentId: 1, edit, createdBy: 'Editor' });
+  await saveHumanEdit(ports, { videoId: V, parentId: 1, edit, createdBy: 'Editor' }, fakeEmbeddings);
   const stored = await incidents.getRevision(V, 2);
   assert.deepEqual(stored.payload.entities.map((e) => [e.first_seen_seconds, e.last_seen_seconds]), [[2, 5]]);
   assert.ok(!('image_box' in stored.payload.entities[0]) && !('image_timestamp_seconds' in stored.payload.entities[0]), 'the crop details live in evidence only');
@@ -195,9 +203,34 @@ test('a saved human revision keeps each entity\'s first and last seen, and a dra
 
 test('a saved item missing a contract v4 required field is rejected before anything is written', async () => {
   const record = withImage('evidence/v/u/E1.jpg');
-  const incidents = new InMemoryIncidentRepository([record]);
+  const ports = official([record]);
   const edit = editOf(record);
   delete edit.entities[0].last_seen_seconds;
-  await assert.rejects(saveHumanEdit(incidents, { videoId: V, parentId: 1, edit, createdBy: 'Editor' }), (error) => error instanceof StoreRejection && error.reason === 'invalid' && /last_seen_seconds/.test(error.message));
-  assert.equal((await listRevisions(incidents, V)).length, 1);
+  await assert.rejects(saveHumanEdit(ports, { videoId: V, parentId: 1, edit, createdBy: 'Editor' }, noEmbed), (error) => error instanceof StoreRejection && error.reason === 'invalid' && /last_seen_seconds/.test(error.message));
+  assert.equal((await listRevisions(ports.incidents, V)).length, 1);
+});
+
+test('an embedding failure stops the save: no revision is written and the reviewer is told why', async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  const ports = official([record]);
+  await assert.rejects(
+    saveHumanEdit(ports, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' }, async () => { throw new Error('agent down'); }),
+    (error) => error instanceof SearchableStepError && /agent down/.test(error.message) && /Try Save again/.test(error.message),
+  );
+  assert.deepEqual((await listRevisions(ports.incidents, V)).map((row) => row.revisionNo), [1], 'the revision was not written');
+  assert.deepEqual(ports.incidents.saved, []);
+});
+
+test('a video with an official revision saves without embedding and passes no crops', async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  const ports = official([record]);
+  await ports.videos.setOfficialRevision(V, 1, []);
+  await saveHumanEdit(ports, { videoId: V, parentId: 1, edit: editOf(record), createdBy: 'Editor' }, noEmbed);
+  assert.deepEqual(ports.incidents.saved.map((input) => input.crops), [[]]);
+});
+
+test('a revision with no images is saved without calling the agent, and clears the searchable crops', async () => {
+  const ports = official([aiRunReport(smoke)]);
+  await saveHumanEdit(ports, { videoId: V, parentId: 1, edit: editOf(aiRunReport(smoke)), createdBy: 'Editor' }, noEmbed);
+  assert.deepEqual(ports.incidents.saved.map((input) => input.crops), [[]]);
 });

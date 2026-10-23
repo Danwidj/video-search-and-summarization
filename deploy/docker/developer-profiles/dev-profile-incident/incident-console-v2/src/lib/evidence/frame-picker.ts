@@ -10,10 +10,10 @@ import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 
 export interface FramePoint { x: number; y: number }
 
-/** What the picker hands back once a crop exists: the frame second, the R2 key and its signed URL, and the box. */
+/** What the picker hands back once a crop exists: the cropped JPEG held in the browser, its object URL for the preview, the frame second and the box. */
 export interface FramePick {
-  image: string;
-  imageUrl: string;
+  blob: Blob;
+  previewUrl: string;
   timestampSeconds: number;
   box: number[];
 }
