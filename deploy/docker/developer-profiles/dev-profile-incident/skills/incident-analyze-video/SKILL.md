@@ -36,7 +36,7 @@ Open `http://localhost:3200`, choose the model, then select the clip. Upload, an
 ### Scripted: console API (same path the UI uses)
 
 1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
-2. Chunked upload to that URL. The browser does this in `lib/upload/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
+2. Chunked upload to that URL. The browser does this in `modules/videos/infrastructure/vst/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Direct upload success includes an R2 `HeadObject` check against the original byte length.
 3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
 4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "model"?}` (gateway; `reasoning`/`promptOverride` apply to agent mode only). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs` and the AI `report_revisions` row and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
 

@@ -12,8 +12,8 @@ import { errorResponse } from '@/lib/http';
 import { PostgrestClient } from '@/lib/postgrest/client';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key } from '@/lib/r2/key';
-import { buildRunHistory } from '@/lib/runs/history';
-import type { VideoRunHistory } from '@/lib/runs/types';
+import { buildRunHistory } from '@/modules/videos/application/run-history';
+import type { VideoRunHistory } from '@/modules/videos/domain/run-types';
 
 export const dynamic = 'force-dynamic';
 // The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.

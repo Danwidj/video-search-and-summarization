@@ -5,7 +5,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { describeCode } from '@/lib/runs/labels';
+import { describeCode } from '@/modules/videos/domain/run-labels';
 
 const MAX_PROMPT = 1000;
 

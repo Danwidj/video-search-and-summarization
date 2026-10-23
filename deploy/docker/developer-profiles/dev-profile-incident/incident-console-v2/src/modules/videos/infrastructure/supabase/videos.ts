@@ -3,7 +3,7 @@
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
   type OfficialChange, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
-} from '@/lib/ports/videos';
+} from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import { explicitVideoId } from '@/modules/reports/domain/run-notes';

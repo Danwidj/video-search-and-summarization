@@ -14,8 +14,8 @@ import { revisionRpcs } from './support/revisions-database.mjs';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { InMemoryVideoRepository } = await import('../src/lib/adapters/memory/videos.ts');
-const { SupabaseVideoAdapter } = await import('../src/lib/adapters/supabase/videos.ts');
+const { InMemoryVideoRepository } = await import('../src/modules/videos/infrastructure/memory/videos.ts');
+const { SupabaseVideoAdapter } = await import('../src/modules/videos/infrastructure/supabase/videos.ts');
 const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 

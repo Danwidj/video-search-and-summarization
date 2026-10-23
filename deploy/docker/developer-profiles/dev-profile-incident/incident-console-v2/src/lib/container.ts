@@ -6,7 +6,7 @@
 
 import { SupabaseDashboardAdapter } from '@/lib/adapters/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
-import { SupabaseVideoAdapter } from '@/lib/adapters/supabase/videos';
+import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
 import type { ServiceConfiguration } from '@/lib/env';
 import type { HealthRepository } from '@/lib/ports/health';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';

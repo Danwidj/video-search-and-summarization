@@ -4,7 +4,7 @@
 // each history entry is one analysis of that video (a video/model-run pair).
 // Successful analyses may have a report; failed attempts never do.
 
-import type { RunOutcome } from '@/lib/runs/labels';
+import type { RunOutcome } from '@/modules/videos/domain/run-labels';
 
 export interface RunHistoryEntry {
   modelRunId: string;
