@@ -26,6 +26,19 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** a separate `/search` page (the PR 118 plan); the mockup's "Find similar" and "Download crop", and the "No report yet" card, were left out for now.
 - **Links:** [pull/185](https://github.com/Danwidj/video-search-and-summarization/pull/185); [`mvp2/README.md`](mvp2/README.md).
 
+### 2026-10-23: Find incidents text search reads the agent's revision search and filters in the console
+- **Decision:** The Find incidents text search calls `POST /api/v1/incidents/revisions/search` through `RevisionSearchRepository`, keeps the incidents the agent matched that pass the other filters, and keeps the user's sort (not similarity order). Zero hits also fall back to the library's ILIKE search, because revisions without a stored vector are invisible to the agent. No similarity threshold is sent (the agent's default is 0).
+- **Why:** The library RPC has no text filter, and the agent already embeds each AI revision. A console-side filter keeps the library's other filters working on the same list.
+- **Rejected:** a new RPC with a text filter (a migration for one search); ordering by similarity (it would hide the sort the library already offers).
+- **Trade-off:** the console reads up to 1000 incidents and filters them, so a library over 1000 incidents drops matches. Revisit with a text filter in the RPC.
+- **Links:** [pull/196](https://github.com/Danwidj/video-search-and-summarization/pull/196); [`vm-api-contracts.md`](vm-api-contracts.md).
+
+### 2026-10-23: Model choice applies in agent mode, and the run records the agent's reported model
+- **Decision:** The re-run and upload model picker works in agent mode as well as gateway mode. The console sends the chosen allowlisted `model` to the agent's `/analyze`; the run records the model the agent reports.
+- **Why:** The agent accepts an allowlisted `model` since #188, so the gateway-only guard had no reason left. Recording the agent's model keeps `model_runs` true to the model that ran.
+- **Rejected:** keeping the 409 guard for agent mode (the console would offer a choice it then refused).
+- **Links:** [pull/194](https://github.com/Danwidj/video-search-and-summarization/pull/194); [`vm-api-contracts.md`](vm-api-contracts.md).
+
 ### 2026-10-23: The agent's field is reviewer_prompt, not additional_instruction
 - **Decision:** `/analyze` keeps `reviewer_prompt` (max 1000 characters). The console's request field `additionalInstruction` on `POST /api/videos/[videoId]/runs` is unchanged; it is passed to the agent as `reviewer_prompt`.
 - **Why:** The name already existed in the agent, the vendored docs and the console request. A second name would add a mapping for one value.

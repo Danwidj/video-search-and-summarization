@@ -46,7 +46,8 @@ The console in this branch requires the versioned-report schema and its function
 4. **One run has no recorded outcome.** `m86a5c319e26659804b0` predates recorded outcomes and shows as `valid_first_pass` (inferred).
 5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no revision) stays, because attempt notes are immutable.
 6. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `results/runs/`.
-7. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports contextual `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` rules when given `video_duration_seconds`. At runtime, `vss-agent` has no R2 credentials to perform byte-range reads on MP4 headers; in agent mode, the console performs the header read and enforces the video-bounds rule upon receiving agent output.
+7. **Two re-run models are unconfirmed on the Brev endpoint.** `nvidia/cosmos-3-nano-reasoner` and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` are in the allowlist, but the VM check could not list the served models (401 without a LiteLLM key). If the agent rejects one, that run is recorded as `request_failed`.
+8. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports contextual `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` rules when given `video_duration_seconds`. At runtime, `vss-agent` has no R2 credentials to perform byte-range reads on MP4 headers; in agent mode, the console performs the header read and enforces the video-bounds rule upon receiving agent output.
 
 ## 5. Follow-ups
 
