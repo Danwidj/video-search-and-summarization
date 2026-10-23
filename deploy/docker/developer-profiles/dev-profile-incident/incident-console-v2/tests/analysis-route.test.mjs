@@ -358,6 +358,18 @@ test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt an
   assert.ok(!('reviewer_prompt' in JSON.parse(again.find((c) => c.url.includes('/api/v1/incidents/')).options.body)));
 });
 
+test('agent mode: a chosen model is sent to the agent as model, not refused', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  videoBytes = mp4Bytes(30);
+  const recordedCalls = [];
+  globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-am/clip.mp4');
+
+  const response = await POST(jsonRequest({ sensorId: 's-am', filepath: 'uploads/s-am/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+  assert.equal(response.status, 200);
+  const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
+  assert.equal(JSON.parse(agentCall.options.body).model, 'nvidia/cosmos-3-super-reasoner');
+});
+
 test('agent mode: a revision the agent already stored is verified, not inserted twice', async () => {
   process.env.ANALYSIS_MODE = 'agent';
   videoBytes = mp4Bytes(30);
@@ -704,18 +716,6 @@ test('gateway mode: every analysis of the same video creates a new model run', a
     runIds.add((await response.json()).report.modelRunId);
   }
   assert.equal(runIds.size, 2);
-});
-
-test('agent mode: rejects a model other than the configured one (agent keeps its own contract)', async () => {
-  process.env.ANALYSIS_MODE = 'agent';
-  process.env.VLM_MODEL = 'nvidia/cosmos-3-nano-reasoner';
-  let called = false;
-  globalThis.fetch = async () => { called = true; return new Response('{}'); };
-
-  const response = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s-1/v.mp4', filename: 'v.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
-
-  assert.equal(response.status, 409);
-  assert.equal(called, false);
 });
 
 test('gateway mode: does not report success when persistence read-back is incomplete', async () => {

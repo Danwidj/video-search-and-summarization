@@ -87,12 +87,8 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     const body = (await request.json().catch(() => null)) as { model?: unknown; additionalInstruction?: unknown } | null;
     if (!body || typeof body !== 'object') return NextResponse.json({ error: 'A JSON body with model is required' }, { status: 400 });
     const { config, db } = database();
-    // Agent mode runs the agent's configured model; choosing another model is gateway-only.
     if (config.analysisMode === 'agent') {
       if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
-      if (body.model && body.model !== config.vlmModel) {
-        return NextResponse.json({ error: 'Model selection is only available in gateway analysis mode' }, { status: 409 });
-      }
     } else if (!config.gatewayUrl) {
       throw new Error('VLM_GATEWAY_URL is not configured');
     }

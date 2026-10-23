@@ -23,6 +23,7 @@ const { GET, POST } = await import('../app/api/videos/[videoId]/runs/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
+const { contractVersion } = await import('../lib/contract/load.ts');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
 const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
@@ -115,14 +116,31 @@ test('a re-run whose only problem is its timeline gets its own revision (core-sc
   assert.equal(notes.response.content, timelineFailure);
 });
 
-test('re-analysis refuses unknown models, other models in agent mode and a missing video', async () => {
-  const { gatewayCalls, db } = services(validReport);
-  assert.equal((await post({ model: 'some/other-model' })).status, 400);
+test('agent-mode re-analysis sends the chosen model and reviewer prompt to the agent and records the model the agent reports', async () => {
+  const { db, gatewayCalls } = services(validReport);
+  const gatewayFetch = globalThis.fetch;
+  const agentBodies = [];
   process.env.ANALYSIS_MODE = 'agent';
   process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test:8000';
-  assert.equal((await post({ model: 'nvidia/cosmos-3-super-reasoner' })).status, 409, 'the agent runs its configured model (nano by default)');
-  assert.equal(gatewayCalls.length, 0);
-  process.env.ANALYSIS_MODE = 'gateway';
+  globalThis.fetch = async (url, init = {}) => {
+    if (!String(url).includes('/api/v1/incidents/')) return gatewayFetch(url, init);
+    agentBodies.push(JSON.parse(String(init.body)));
+    // The mock agent answers with the model it ran, which here differs from the one requested.
+    return new Response(JSON.stringify({ model: 'nvidia/cosmos-3-super-reasoner', contract_version: contractVersion(), raw_output: validReport, finish_reason: 'stop' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const response = await post({ model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', additionalInstruction: 'Focus on the van.' });
+  assert.equal(response.status, 200);
+  assert.equal(agentBodies[0].model, 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning');
+  assert.equal(agentBodies[0].reviewer_prompt, 'Focus on the van.');
+  const { run } = await response.json();
+  assert.equal(run.model, 'nvidia/cosmos-3-super-reasoner', 'the model the agent reports is the one recorded');
+  assert.equal(db.store.model_runs.find((row) => row.id === run.modelRunId).model_name, 'nvidia/cosmos-3-super-reasoner');
+  assert.equal(gatewayCalls.length, 0, 'agent mode never calls the gateway');
+});
+
+test('re-analysis refuses unknown models and a missing video', async () => {
+  const { db } = services(validReport);
+  assert.equal((await post({ model: 'some/other-model' })).status, 400);
   db.store.videos.length = 0;
   assert.equal((await post({ model: 'nvidia/cosmos-3-super-reasoner' })).status, 404);
   assert.deepEqual(writes(db), []);
