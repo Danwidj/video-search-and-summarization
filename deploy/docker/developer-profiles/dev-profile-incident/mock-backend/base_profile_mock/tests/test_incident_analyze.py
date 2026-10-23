@@ -96,6 +96,50 @@ def test_analyze_with_caller_run_and_reviewer_prompt(monkeypatch):
     assert fake.calls[2][2]["note"] == "Reviewer prompt: look at the door"
 
 
+def _analyze(monkeypatch, body, fake=None):
+    fake = fake or FakeWriter()
+
+    async def get_db():
+        return fake
+
+    async def get_video(_video_id):
+        return {"id": "video-1", "filepath": "anomaly/burglary/clip.mp4", "source": None}
+
+    fake.get_video = get_video
+    monkeypatch.setattr(incident_analyze, "_writer_module", lambda: SimpleNamespace(get_db=get_db))
+    return fake, TestClient(create_app()).post("/api/v1/incidents/video-1/analyze", json=body)
+
+
+def test_analyze_accepts_allowlisted_model_and_reports_it(monkeypatch):
+    model = incident_analyze._allowed_models()[0]
+    fake, response = _analyze(monkeypatch, {"model_run_id": "mrun1", "model": model})
+    assert response.status_code == 200
+    assert response.json()["model"] == model
+    assert fake.calls[1][2]["model_name"] == model
+
+
+def test_analyze_rejects_model_outside_allowlist(monkeypatch):
+    fake, response = _analyze(monkeypatch, {"model": "not-a-model"})
+    assert response.status_code == 400
+    assert "not in the incident contract allowlist" in response.json()["detail"]
+    assert fake.calls == []
+
+
+def test_analyze_rejects_reviewer_prompt_over_1000_characters(monkeypatch):
+    fake, response = _analyze(monkeypatch, {"reviewer_prompt": "x" * 1001})
+    assert response.status_code == 422
+    assert fake.calls == []
+
+
+def test_analyze_omitted_model_and_prompt_keep_the_mock_defaults(monkeypatch):
+    fake, response = _analyze(monkeypatch, {"model_run_id": "mrun1"})
+    assert response.status_code == 200
+    assert response.json()["model"] == "base-profile-mock"
+    assert response.json()["reviewer_prompt"] is None
+    assert fake.calls[1][2]["model_name"] == "base-profile-mock"
+    assert fake.calls[2][2]["note"] is None
+
+
 def test_evidence_embeddings_returns_one_vector_per_item(monkeypatch):
     async def get_db():
         return FakeWriter()
