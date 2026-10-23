@@ -139,3 +139,17 @@ def test_other_failure_is_500():
 def test_missing_tool_is_501():
     client, _ = _client(tool_missing=True)
     assert client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).status_code == 501
+
+
+def test_omitted_model_and_reviewer_prompt_are_not_forwarded():
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
+    assert response.status_code == 200
+    tool.ainvoke.assert_awaited_once_with({"incident_id": "v1", "video_url": VIDEO_URL, "skip_rp1": False})
+
+
+def test_reported_model_is_the_model_the_tool_ran():
+    model = incident_contract.allowed_models()[-1]
+    client, _ = _client(result=OUTPUT.model_copy(update={"model": model}))
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model": model})
+    assert response.json()["model"] == model
