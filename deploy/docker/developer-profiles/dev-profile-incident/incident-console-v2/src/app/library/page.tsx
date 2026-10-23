@@ -2,8 +2,8 @@
 
 import { Suspense } from 'react';
 
-import { AppHeader } from '@/components/app-header';
-import { Library } from '@/components/library/library-screen';
+import { AppHeader } from '@/sections/shell/components/AppHeader';
+import { Library } from '@/sections/library/components/LibraryScreen';
 
 export default function LibraryPage() {
   return (
