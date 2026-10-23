@@ -12,7 +12,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { PUT, DELETE } = await import('../app/api/videos/[videoId]/official/route.ts');
+const { PUT, DELETE } = await import('../src/app/api/videos/[videoId]/official/route.ts');
 const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
@@ -112,7 +112,7 @@ test('the report view marks the official revision explicitly and never infers it
 });
 
 test('analysis code never writes the official pointer or rebuilds crops', async () => {
-  for (const file of ['lib/analysis/persistence.ts', 'lib/analysis/run-contract-analysis.ts', 'app/api/analysis/route.ts', 'app/api/videos/[videoId]/runs/route.ts']) {
+  for (const file of ['src/lib/analysis/persistence.ts', 'src/lib/analysis/run-contract-analysis.ts', 'src/app/api/analysis/route.ts', 'src/app/api/videos/[videoId]/runs/route.ts']) {
     const source = await readFile(join(process.cwd(), file), 'utf8');
     // Reads of videos.official_revision_id are fine; no object key assigning it, no RPC, no crops.
     assert.doesNotMatch(source, /[{,]\s*official_revision_id:|set_official_revision|evidence_crops/, file);

@@ -9,7 +9,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { POST } = await import('../app/api/chat/route.ts');
+const { POST } = await import('../src/app/api/chat/route.ts');
 
 const contractDir = join(process.cwd(), '..', 'contracts', 'chat-contract-v1');
 const read = (...parts) => JSON.parse(readFileSync(join(contractDir, ...parts), 'utf8'));

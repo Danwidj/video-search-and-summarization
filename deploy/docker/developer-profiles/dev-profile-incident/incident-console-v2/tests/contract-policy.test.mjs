@@ -13,8 +13,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { ContractError, decodeContent, validateCore, validateReport, violationScope, timestampWithinVideo, VALIDATION_POLICY } = await import('../lib/contract/validate.ts');
-const { mp4DurationSeconds } = await import('../lib/video/mp4-duration.ts');
+const { ContractError, decodeContent, validateCore, validateReport, violationScope, timestampWithinVideo, VALIDATION_POLICY } = await import('../src/lib/contract/validate.ts');
+const { mp4DurationSeconds } = await import('../src/lib/video/mp4-duration.ts');
 
 const policyDir = join(process.cwd(), '..', 'contracts', 'fixtures', 'policy');
 const cases = readdirSync(policyDir).filter((name) => name.endsWith('.json')).sort();

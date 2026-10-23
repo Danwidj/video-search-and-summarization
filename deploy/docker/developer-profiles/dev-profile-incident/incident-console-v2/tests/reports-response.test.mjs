@@ -27,7 +27,7 @@ mock.module('@aws-sdk/s3-request-presigner', {
   namedExports: { getSignedUrl: async (_client, command) => `https://signed.r2.test/${command.input.Key}` },
 });
 
-const { GET } = await import('../app/api/reports/route.ts');
+const { GET } = await import('../src/app/api/reports/route.ts');
 
 const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
 const originalEnv = { ...process.env };

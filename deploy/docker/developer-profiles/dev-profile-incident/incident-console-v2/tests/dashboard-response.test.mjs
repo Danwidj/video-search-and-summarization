@@ -13,7 +13,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { GET } = await import('../app/api/dashboard/route.ts');
+const { GET } = await import('../src/app/api/dashboard/route.ts');
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 const originalEnv = { ...process.env };

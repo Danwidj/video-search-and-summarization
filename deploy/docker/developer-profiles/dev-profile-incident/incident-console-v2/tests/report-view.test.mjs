@@ -9,9 +9,9 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { buildReportView } = await import('./support/report-view.mjs');
-const { reportHeading } = await import('../lib/reports/view.ts');
-const { parseRunNotes } = await import('../lib/reports/run-notes.ts');
-const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import('../lib/reports/normalize.ts');
+const { reportHeading } = await import('../src/lib/reports/view.ts');
+const { parseRunNotes } = await import('../src/lib/reports/run-notes.ts');
+const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import('../src/lib/reports/normalize.ts');
 
 // Real rows of the live smoke-test run (see the fixture's description).
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));

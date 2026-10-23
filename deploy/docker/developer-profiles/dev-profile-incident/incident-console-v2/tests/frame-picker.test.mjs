@@ -7,10 +7,10 @@ import test from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { boxRegion } = await import('../lib/evidence/frame-geometry.ts');
-const { dragRegion, pickSeconds, regionBox } = await import('../lib/evidence/frame-picker.ts');
-const { parseRegion, parseItemId, ITEM_ID } = await import('../lib/evidence/frame-request.ts');
-const components = new URL('../components/', import.meta.url);
+const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
+const { dragRegion, pickSeconds, regionBox } = await import('../src/lib/evidence/frame-picker.ts');
+const { parseRegion, parseItemId, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
+const components = new URL('../src/components/', import.meta.url);
 
 test('a drag in either direction becomes one rectangle clipped to the frame', () => {
   assert.deepEqual(dragRegion({ x: 0.25, y: 0.125 }, { x: 0.75, y: 0.375 }), { x: 0.25, y: 0.125, w: 0.5, h: 0.25 });
