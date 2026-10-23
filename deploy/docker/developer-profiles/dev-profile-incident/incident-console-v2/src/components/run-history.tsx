@@ -6,8 +6,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { OfficialControls } from '@/components/official-controls';
-import { describeCode, OUTCOME_DESCRIPTIONS, OUTCOME_LABELS, type RunOutcome } from '@/lib/runs/labels';
-import type { RunHistoryEntry, VideoRunHistory } from '@/lib/runs/types';
+import { describeCode, OUTCOME_DESCRIPTIONS, OUTCOME_LABELS, type RunOutcome } from '@/modules/videos/domain/run-labels';
+import type { RunHistoryEntry, VideoRunHistory } from '@/modules/videos/domain/run-types';
 import { formatTimestamp } from '@/lib/time';
 
 const OUTCOME_STYLES: Record<RunOutcome, string> = {
