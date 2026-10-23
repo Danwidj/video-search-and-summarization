@@ -9,7 +9,7 @@ export type { HumanRevisionInput, IncidentRepository, ReportList, ReportListQuer
 export type {
   CriticVerdict, EvidenceItemType, EvidenceSearchFilters, EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult,
 } from '@/lib/ports/search';
-export type { OfficialChange, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';
+export type { OfficialChange, RevisionCropsChange, VideoListFilter, VideoListItem, VideoRecord, VideoRepository } from '@/lib/ports/videos';
 export type { OfficialCrop } from '@/lib/reports/revision';
 
 import type { DashboardRepository } from '@/lib/ports/dashboard';

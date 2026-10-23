@@ -2,6 +2,9 @@
 
 import { NextResponse } from 'next/server';
 
+import { getDbAdapters } from '@/lib/adapters/supabase';
+import { fetchEvidenceEmbeddings } from '@/lib/agent/evidence-embeddings';
+import { storeSearchableCrops } from '@/lib/application/reports';
 import { analysisErrorResponse } from '@/lib/analysis/responses';
 import { runContractAnalysis } from '@/lib/analysis/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured } from '@/lib/env';
@@ -98,8 +101,9 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     if (!isValidR2Key(video.filepath)) return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
 
     const { run, revisionId } = await runContractAnalysis({ videoId, r2Key: String(video.filepath), model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction }, config);
+    const searchable = await storeSearchableCrops(getDbAdapters(config), videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
     return NextResponse.json({
-      run: { videoId: run.videoId, modelRunId: run.modelRunId, revisionId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status },
+      run: { videoId: run.videoId, modelRunId: run.modelRunId, revisionId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status, searchable },
     });
   } catch (error) {
     return analysisErrorResponse(error, 'Re-analysis failed');

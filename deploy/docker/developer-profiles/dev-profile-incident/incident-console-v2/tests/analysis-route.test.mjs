@@ -475,7 +475,7 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.ok(!('duration' in video), 'the incident duration is not the video duration');
 
   // The upload flow only needs the run's identity to open its report page.
-  assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'revisionId', 'videoId']);
+  assert.deepEqual(Object.keys(report).sort(), ['model', 'modelRunId', 'outcome', 'promptVersion', 'revisionId', 'searchable', 'videoId']);
   assert.equal(report.outcome, 'valid_first_pass');
   assert.equal(report.model, 'nvidia/cosmos-3-super-reasoner');
   assert.equal(report.promptVersion, 'incident-contract-v4');

@@ -49,10 +49,12 @@ test('a valid edit goes to save_human_revision only; model_runs (notes) is never
   const response = await patch(request(edit, { note: 'Lowered' }));
 
   assert.equal(response.status, 200);
-  const { saved, revision } = await response.json();
+  const { saved, revision, searchable } = await response.json();
   assert.equal(saved, true);
   assert.deepEqual([revision.revisionNo, revision.kind, revision.parentId, revision.createdBy, revision.note], [2, 'human', 1, 'Rev', 'Lowered']);
-  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision']);
+  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision', 'rpc/set_revision_crops']);
+  assert.deepEqual(writes(db)[1].body, { p_video_id: repaired.videoId, p_revision_id: revision.revisionId, p_crops: [] }, 'the new searchable revision has no images, so its crops are cleared');
+  assert.deepEqual(searchable, { crops: 0 });
   const [{ body }] = writes(db);
   assert.deepEqual([body.p_video_id, body.p_parent_id, body.p_created_by, body.p_note], [repaired.videoId, 1, 'Rev', 'Lowered']);
   assert.equal(body.p_payload.incident.severity_level, 2);
@@ -60,6 +62,27 @@ test('a valid edit goes to save_human_revision only; model_runs (notes) is never
   assert.ok(!writes(db).some((r) => r.path === 'model_runs'), 'the edit path never writes model_runs');
   assert.deepEqual(db.store.model_runs, [repaired.modelRun], 'the run notes are unchanged');
   assert.equal(db.store.report_revisions[0].payload.incident.severity_level, aiRevisionRow(repaired).payload.incident.severity_level, 'the AI revision is untouched');
+});
+
+test('with an official revision, Save does not touch the evidence crops', async () => {
+  const db = database();
+  db.store.videos[0].official_revision_id = 1;
+  const response = await patch(request(baseEdit()));
+  assert.equal(response.status, 200);
+  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision']);
+  assert.deepEqual((await response.json()).searchable, { crops: null });
+});
+
+test('a crops failure does not fail Save: the revision is kept and the error is reported', async () => {
+  const db = database();
+  globalThis.fetch = async (url, init) => (String(url).includes('rpc/set_revision_crops') ? new Response('{"message":"boom"}', { status: 500 }) : db.fetch(url, init));
+  const response = await patch(request(baseEdit()));
+  assert.equal(response.status, 200);
+  const { saved, searchable } = await response.json();
+  assert.equal(saved, true);
+  assert.equal(searchable.crops, null);
+  assert.match(searchable.error, /boom|500/);
+  assert.equal(db.store.report_revisions.length, 2);
 });
 
 test('Class B/C fields are rejected with 400 before any database call', async () => {
