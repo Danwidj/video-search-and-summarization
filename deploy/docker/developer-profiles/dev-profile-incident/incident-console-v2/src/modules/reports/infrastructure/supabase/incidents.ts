@@ -64,7 +64,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
 
   async saveHumanRevision(input: HumanRevisionInput): Promise<RevisionSummary> {
     const facets = revisionFacets(input.payload);
-    const result = await this.db.rpc('save_human_revision', {
+    const result = await this.db.rpc('save_human_revision_with_crops', {
       p_video_id: input.videoId,
       p_parent_id: input.parentId,
       p_created_by: input.createdBy,
@@ -75,6 +75,7 @@ export class SupabaseIncidentAdapter implements IncidentRepository {
       p_severity_level: facets.severity_level,
       p_start_seconds: facets.start_seconds,
       p_end_seconds: facets.end_seconds,
+      p_crops: input.crops,
     }).catch(reviewerRefusal);
     return savedRevisionFromRpc(result);
   }

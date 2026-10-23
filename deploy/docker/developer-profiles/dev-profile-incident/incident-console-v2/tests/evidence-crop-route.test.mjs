@@ -71,7 +71,7 @@ afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalE
 const params = (videoId) => ({ params: Promise.resolve({ videoId }) });
 const get = (query, videoId = 'v1') => GET(new Request(`http://localhost/api/reports/${videoId}/frame${query}`), params(videoId));
 const post = (body, videoId = 'v1') => POST(new Request('http://localhost/x', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }), params(videoId));
-const crop = { itemId: 'ent_1', timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
+const crop = { timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
 
 test('the frame route answers a JPEG decoded from the signed video URL', async () => {
   const response = await get('?t=0');
@@ -93,25 +93,21 @@ test('the frame route refuses a bad t, an unknown video and a missing ffmpeg', a
   assert.equal((await get('?t=0')).status, 422);
 });
 
-test('a crop is uploaded to a new evidence key and its key and signed URL returned', async () => {
-  const first = await (await post(crop)).json();
-  const second = await (await post(crop)).json();
-  assert.match(first.image, /^evidence\/v1\/[0-9a-f-]{36}\/ent_1\.jpg$/);
-  assert.notEqual(first.image, second.image);
-  assert.equal(first.imageUrl, `https://signed.r2.test/${first.image}`);
-  const puts = commands.filter((c) => c.constructor.name === 'PutObjectCommand');
-  assert.deepEqual(puts.map((p) => p.input.Key), [first.image, second.image]);
-  assert.equal(puts[0].input.ContentType, 'image/jpeg');
-  assert.equal(commands.some((c) => c.constructor.name === 'DeleteObjectCommand'), false);
+test('a crop is answered as JPEG bytes, and nothing is written to R2', async () => {
+  const response = await post(crop);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/jpeg');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(await response.text(), 'JPEGBYTES');
   assert.ok(spawned[0].args.some((a) => a.startsWith('crop=')));
+  assert.equal(commands.some((c) => c.constructor.name === 'PutObjectCommand'), false);
 });
 
 test('a bad crop request is refused before anything is uploaded', async () => {
   assert.equal((await post('not json')).status, 400);
-  assert.equal((await post({ ...crop, itemId: '../x' })).status, 400);
   const outside = await post({ ...crop, region: { x: 0.9, y: 0, w: 0.5, h: 0.5 } });
   assert.equal(outside.status, 422);
   assert.match((await outside.json()).error, /inside the frame/);
   assert.equal((await post(crop, 'nope')).status, 404);
-  assert.equal(commands.some((c) => c.constructor.name === 'PutObjectCommand'), false);
+  assert.equal(spawned.length, 0, 'no frame is cut for a refused request');
 });

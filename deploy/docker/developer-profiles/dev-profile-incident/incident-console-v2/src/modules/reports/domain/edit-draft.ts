@@ -28,11 +28,12 @@ export interface StructuredEdit {
 }
 
 /**
- * Draft item details: imageUrl is a signed URL for showing the image, never sent.
+ * Draft item details: imageUrl is a signed URL for showing the image, never sent, or the object URL of a pending crop.
+ * pendingImage is a reviewer-cropped JPEG held in the browser until Save uploads it; its key is then `image`.
  * imageTimestampSeconds and imageBox (the [ymin, xmin, ymax, xmax] box, 0-1000) describe a
  * reviewer-drawn image only; they stay null for an image the opened revision already had.
  */
-interface DraftItemDetails { key: string; sourceId: string | null; timestampSeconds: number | null; label: string; image: string | null; imageUrl: string | null; imageTimestampSeconds: number | null; imageBox: number[] | null }
+interface DraftItemDetails { key: string; sourceId: string | null; timestampSeconds: number | null; label: string; image: string | null; imageUrl: string | null; pendingImage: Blob | null; imageTimestampSeconds: number | null; imageBox: number[] | null }
 
 /** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
 export interface EditDraft {
@@ -47,7 +48,7 @@ export const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-
 
 /** A new item's details: visible from the incident start, no label or image yet. */
 export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetails {
-  return { key: newKey(prefix), sourceId: null, timestampSeconds: draft.incident.start_timestamp, label: '', image: null, imageUrl: null, imageTimestampSeconds: null, imageBox: null };
+  return { key: newKey(prefix), sourceId: null, timestampSeconds: draft.incident.start_timestamp, label: '', image: null, imageUrl: null, pendingImage: null, imageTimestampSeconds: null, imageBox: null };
 }
 
 /**
@@ -56,7 +57,7 @@ export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetai
  * be chosen before saving.
  */
 function details(key: string, sourceId: string, item: { timestampSeconds: number | null; label: string; evidence: { image: string | null; imageUrl: string | null } | null }): DraftItemDetails {
-  return { key, sourceId, timestampSeconds: item.timestampSeconds, label: item.label, image: item.evidence?.image ?? null, imageUrl: item.evidence?.imageUrl ?? null, imageTimestampSeconds: null, imageBox: null };
+  return { key, sourceId, timestampSeconds: item.timestampSeconds, label: item.label, image: item.evidence?.image ?? null, imageUrl: item.evidence?.imageUrl ?? null, pendingImage: null, imageTimestampSeconds: null, imageBox: null };
 }
 
 export function draftFromView(view: ReportView): EditDraft {
@@ -88,6 +89,20 @@ export function draftFromView(view: ReportView): EditDraft {
     })),
     assets: assets.map((asset, index) => ({ ...details(`asset-${index}`, asset.assetId, asset), name: asset.name, description: asset.description })),
   };
+}
+
+/** The crops in the draft that Save must upload first, by item key. */
+export function pendingImages(draft: EditDraft): Array<{ itemId: string; blob: Blob }> {
+  return [...draft.entities, ...draft.instruments, ...draft.assets].flatMap((item) => (item.pendingImage ? [{ itemId: item.key, blob: item.pendingImage }] : []));
+}
+
+/** The draft with each uploaded crop's R2 key in place of its pending JPEG: the edit Save sends. */
+export function withUploadedImages(draft: EditDraft, keys: ReadonlyMap<string, string>): EditDraft {
+  const place = <T extends DraftItemDetails>(item: T): T => {
+    const key = keys.get(item.key);
+    return key === undefined ? item : { ...item, image: key, pendingImage: null };
+  };
+  return { ...draft, entities: draft.entities.map(place), instruments: draft.instruments.map(place), assets: draft.assets.map(place) };
 }
 
 /** Problems that stop the draft from becoming a complete edit (shown before sending). */

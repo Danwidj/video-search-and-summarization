@@ -7,7 +7,7 @@
 
 import type { Page } from '@/modules/shared/domain/common';
 import type { StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
-import type { EvidenceEntry, ReportPayload, RevisionKind, RevisionSummary } from '@/modules/reports/domain/revision';
+import type { EvidenceEntry, OfficialCrop, ReportPayload, RevisionKind, RevisionSummary } from '@/modules/reports/domain/revision';
 import type { RunNotes } from '@/modules/reports/domain/run-notes';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
@@ -83,6 +83,11 @@ export interface HumanRevisionInput {
   parentId: number;
   payload: ReportPayload;
   evidence: EvidenceEntry[];
+  /**
+   * The searchable crops, stored in the same write as the revision when the video has no official
+   * revision (the new revision is then the searchable one). Empty when there is nothing to store.
+   */
+  crops: OfficialCrop[];
   createdBy: string;
   note: string | null;
 }

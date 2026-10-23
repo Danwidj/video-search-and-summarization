@@ -55,10 +55,3 @@ export function parseRegion(value: unknown): FrameRegion {
   }
   return { x, y, w: Math.min(w, 1 - x), h: Math.min(h, 1 - y) };
 }
-
-export function parseItemId(value: unknown): string {
-  if (typeof value !== 'string' || !ITEM_ID.test(value)) {
-    throw new FrameRequestError(400, 'itemId must be 1 to 64 letters, digits, dashes or underscores');
-  }
-  return value;
-}

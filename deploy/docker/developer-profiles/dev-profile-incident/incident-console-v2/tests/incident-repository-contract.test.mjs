@@ -64,7 +64,7 @@ function smokeEdit() {
 }
 
 const humanInput = (record, overrides = {}) => ({
-  videoId: VIDEO_ID, parentId: record.revision.revisionId, createdBy: ' Editor ', note: ' Corrected the severity ',
+  videoId: VIDEO_ID, parentId: record.revision.revisionId, createdBy: ' Editor ', note: ' Corrected the severity ', crops: [],
   ...humanRevisionContent(record, smokeEdit()), ...overrides,
 });
 
@@ -175,24 +175,24 @@ describe('Supabase adapter: revisions', () => {
     assert.deepEqual(db.requests.map((request) => `${request.method} ${request.path}`), ['GET videos', 'GET report_revisions', 'GET model_runs']);
   });
 
-  test('a save is one save_human_revision call and nothing else is written', async () => {
+  test('a save is one save_human_revision_with_crops call and nothing else is written', async () => {
     const { repo, db } = implementations.supabase();
     const input = humanInput(await repo.getRevision(VIDEO_ID, 1));
     db.requests.length = 0;
     await repo.saveHumanRevision(input);
     assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/save_human_revision',
+      method: 'POST', path: 'rpc/save_human_revision_with_crops',
       body: {
         p_video_id: VIDEO_ID, p_parent_id: 1, p_created_by: ' Editor ', p_note: ' Corrected the severity ',
         p_payload: input.payload, p_evidence: input.evidence,
-        p_incident_type: 'assault', p_severity_level: 3, p_start_seconds: 1, p_end_seconds: 9,
+        p_incident_type: 'assault', p_severity_level: 3, p_start_seconds: 1, p_end_seconds: 9, p_crops: [],
       },
     }]);
   });
 
   test("an RPC's RAISE is a StoreRejection with its message; any other failure is rethrown", async () => {
     const refusing = implementations.supabase(null, {
-      save_human_revision: () => { throw new Error('The report payload must be an object with an incident'); },
+      save_human_revision_with_crops: () => { throw new Error('The report payload must be an object with an incident'); },
     });
     await assert.rejects(refusing.repo.saveHumanRevision(humanInput(await refusing.repo.getRevision(VIDEO_ID, 1))), (error) => {
       assert.ok(error instanceof StoreRejection, `${error}`);

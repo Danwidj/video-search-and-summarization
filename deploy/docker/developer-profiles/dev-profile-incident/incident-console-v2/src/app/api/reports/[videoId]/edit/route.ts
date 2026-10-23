@@ -4,9 +4,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
-import { saveHumanEdit } from '@/modules/reports/application/save-human-edit';
-import { storeSearchableCrops } from '@/modules/reports/application/store-searchable-crops';
+import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { saveHumanEdit, SearchableStepError } from '@/modules/reports/application/save-human-edit';
 import { StructuredEditError, validateStructuredEdit } from '@/modules/contract/domain/structured-edit';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
@@ -41,12 +40,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     }
 
     const config = getServiceConfiguration();
-    const adapters = getDbAdapters(config);
-    const revision = await saveHumanEdit(adapters.incidents, { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note });
-    // With no official revision the new revision is the searched one: give it crops now.
-    const searchable = await storeSearchableCrops(adapters, videoId, revision.revisionId, (id) => fetchEvidenceEmbeddings(config, id));
-    return NextResponse.json({ saved: true, revision, searchable });
+    // With no official revision the new revision is the searched one: its crops are embedded and written with it.
+    const revision = await saveHumanEdit(
+      getDbAdapters(config),
+      { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
+      (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
+    );
+    return NextResponse.json({ saved: true, revision });
   } catch (error) {
+    if (error instanceof SearchableStepError) return NextResponse.json({ error: error.message }, { status: 502 });
     return rejectionResponse(error) ?? errorResponse(error, 'Could not save the edit');
   }
 }

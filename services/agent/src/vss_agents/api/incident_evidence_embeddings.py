@@ -16,14 +16,17 @@
 
 """``POST /api/v1/incidents/evidence-embeddings`` - embeddings for a report revision's evidence.
 
-``incident-console-v2`` calls this when a human makes a revision official. The route reads the
-revision's ``evidence`` JSONB from ``report_revisions`` and embeds each item's
-``"{item_name}: {description}"`` as a passage with the same embedding model search embeds queries
+``incident-console-v2`` calls this when a human makes a revision official, and before it saves a
+new revision that will be searchable. The body names either a stored revision (``revision_id``: the
+route reads its ``evidence`` JSONB from ``report_revisions``) or the evidence items themselves
+(``evidence``: nothing is read, so a revision can be embedded before it exists). Each item is embedded
+as ``"{item_name}: {description}"`` passage text with the same embedding model search embeds queries
 with (``RemoteTextEmbedder``, ``vector(1024)``). It returns the vectors only: the console writes
 the ``evidence_crops`` rows itself.
 
-Status codes: 404 for an unknown revision, 503 when the incident database or the embedding
-endpoint is not available, 502 when the embedding endpoint fails.
+Status codes: 404 for an unknown revision, 422 when the body names neither or both sources, 503 when
+the incident database or the embedding endpoint is not available, 502 when the embedding endpoint
+fails.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ from fastapi import HTTPException
 import httpx
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import model_validator
 
 from vss_agents.utils import incident_db
 from vss_agents.utils.embeddings import RemoteTextEmbedder
@@ -44,10 +48,29 @@ from vss_agents.utils.embeddings import RemoteTextEmbedder
 logger = logging.getLogger(__name__)
 
 
-class EvidenceEmbeddingsRequest(BaseModel):
-    """Body for ``POST /api/v1/incidents/evidence-embeddings``."""
+class EvidenceItemText(BaseModel):
+    """One evidence item to embed when the body carries the items instead of a stored revision."""
 
-    revision_id: int = Field(..., ge=1, description="report_revisions.id whose evidence is embedded.")
+    item_type: str
+    item_id: str
+    item_name: str | None = None
+    description: str | None = None
+
+
+class EvidenceEmbeddingsRequest(BaseModel):
+    """Body for ``POST /api/v1/incidents/evidence-embeddings``: exactly one of ``revision_id`` or ``evidence``."""
+
+    revision_id: int | None = Field(default=None, ge=1, description="report_revisions.id whose evidence is embedded.")
+    evidence: list[EvidenceItemText] | None = Field(
+        default=None,
+        description="Evidence items to embed without reading a stored revision, so a revision can be embedded before it is saved.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> EvidenceEmbeddingsRequest:
+        if (self.revision_id is None) == (self.evidence is None):
+            raise ValueError("send exactly one of revision_id or evidence")
+        return self
 
 
 class EvidenceEmbedding(BaseModel):
@@ -73,17 +96,18 @@ def create_incident_evidence_embeddings_router(embedder: RemoteTextEmbedder | No
         tags=["Incident Evidence"],
     )
     async def evidence_embeddings(body: EvidenceEmbeddingsRequest) -> list[EvidenceEmbedding]:
-        db = await incident_db.get_db()
-        if db is None:
-            raise HTTPException(status_code=503, detail="Incident database is not configured or unreachable")
-        revision = await db.get_revision(body.revision_id)
-        if revision is None:
-            raise HTTPException(status_code=404, detail=f"Revision {body.revision_id} not found")
-
+        if body.revision_id is None:
+            evidence: list[Any] = [entry.model_dump() for entry in body.evidence or []]
+        else:
+            db = await incident_db.get_db()
+            if db is None:
+                raise HTTPException(status_code=503, detail="Incident database is not configured or unreachable")
+            revision = await db.get_revision(body.revision_id)
+            if revision is None:
+                raise HTTPException(status_code=404, detail=f"Revision {body.revision_id} not found")
+            evidence = revision.get("evidence") or []
         items = [
-            entry
-            for entry in revision.get("evidence") or []
-            if isinstance(entry, dict) and entry.get("item_type") and entry.get("item_id")
+            entry for entry in evidence if isinstance(entry, dict) and entry.get("item_type") and entry.get("item_id")
         ]
         if not items:
             return []

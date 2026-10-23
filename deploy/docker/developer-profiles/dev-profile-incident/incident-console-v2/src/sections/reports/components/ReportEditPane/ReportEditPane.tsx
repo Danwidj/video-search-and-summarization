@@ -86,7 +86,8 @@ export function ReportEditPane({
     if (row.b) setPicking(row.b);
   };
   const applyPick = (item: NonNullable<PairRow['b']>, pick: FramePick) => {
-    const frame = { timestampSeconds: pick.timestampSeconds, image: pick.image, imageUrl: pick.imageUrl, imageTimestampSeconds: pick.timestampSeconds, imageBox: pick.box };
+    if (item.pendingImage && item.imageUrl) URL.revokeObjectURL(item.imageUrl);
+    const frame = { timestampSeconds: pick.timestampSeconds, image: null, imageUrl: pick.previewUrl, pendingImage: pick.blob, imageTimestampSeconds: pick.timestampSeconds, imageBox: pick.box };
     if (isDraftEntity(item)) patchEntity(item.key, frame);
     else if (isDraftInstrument(item)) patchInstrument(item.key, frame);
     else patchAsset(item.key, frame);
@@ -240,7 +241,6 @@ export function ReportEditPane({
 
       {picking && (
         <EvidenceFramePicker
-          itemId={picking.key}
           initialSeconds={picking.timestampSeconds ?? 0}
           label={draftItemName(picking) || 'evidence'}
           onClose={() => setPicking(null)}

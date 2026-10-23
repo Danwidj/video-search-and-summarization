@@ -9,7 +9,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
 const { dragRegion, pickSeconds, regionBox } = await import('../src/lib/evidence/frame-picker.ts');
-const { parseRegion, parseItemId, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
+const { parseRegion, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
 const components = new URL('../src/sections/', import.meta.url);
 
 test('a drag in either direction becomes one rectangle clipped to the frame', () => {
@@ -32,7 +32,7 @@ test('a region becomes the stored [ymin, xmin, ymax, xmax] box on the 0-1000 gri
 test('the drawn region passes the crop route rules, so the server accepts what the picker sends', () => {
   const region = dragRegion({ x: 0.75, y: 0.5 }, { x: 0.25, y: 0.125 });
   assert.deepEqual(parseRegion(region), region);
-  assert.equal(parseItemId('entity-m1abc-3'), 'entity-m1abc-3', 'draft keys are valid item IDs');
+  assert.ok(ITEM_ID.test('entity-m1abc-3'), 'draft keys are valid item IDs');
   assert.ok(ITEM_ID.test('instrument-m2-12'));
 });
 
@@ -55,8 +55,10 @@ test('the picker is a dialog that crops through the evidence-crop route and hand
   const picker = await readFile(new URL('evidence/components/EvidenceFramePicker/EvidenceFramePicker.tsx', components), 'utf8');
   assert.match(picker, /role="dialog"/);
   assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-crop/);
-  assert.match(picker, /body: JSON\.stringify\(\{ itemId, timestampSeconds: seconds, region \}\)/);
-  assert.match(picker, /onPick\(\{ image: body\.image, imageUrl: body\.imageUrl, timestampSeconds: seconds, box: regionBox\(region\) \}\)/);
+  assert.match(picker, /body: JSON\.stringify\(\{ timestampSeconds: seconds, region \}\)/);
+  assert.match(picker, /const blob = await response\.blob\(\);/, 'the crop is held as a blob in the browser');
+  assert.match(picker, /onPick\(\{ blob, previewUrl: URL\.createObjectURL\(blob\), timestampSeconds: seconds, box: regionBox\(region\) \}\)/);
+  assert.doesNotMatch(picker, /itemId/, 'the crop needs no item ID: Save uploads it under the item key');
   assert.match(picker, /Escape/, 'Escape closes the picker unless a crop is running');
 });
 
@@ -64,6 +66,7 @@ test('Edit mode offers Replace image on each draft card and applies the pick to 
   const pane = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
   assert.match(pane, />Replace image</);
   assert.match(pane, /<EvidenceFramePicker/);
+  assert.match(pane, /pendingImage: pick\.blob/, 'the crop waits in the draft item until Save uploads it');
   assert.match(pane, /imageTimestampSeconds: pick\.timestampSeconds, imageBox: pick\.box/, 'the frame second and box are stored for the save path');
   assert.match(pane, /timestampSeconds: pick\.timestampSeconds/, 'the picked frame becomes the item\'s most visible second');
   const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
