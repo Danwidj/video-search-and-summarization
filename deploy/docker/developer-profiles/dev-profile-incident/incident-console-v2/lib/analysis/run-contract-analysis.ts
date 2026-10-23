@@ -236,7 +236,7 @@ export async function runContractAnalysis(input: ContractAnalysisInput, config: 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            video_url: playbackUrl, model_run_id: modelRunId, skip_rp1: true,
+            video_url: playbackUrl, model_run_id: modelRunId, model: model.id, skip_rp1: true,
             ...(additionalInstruction ? { reviewer_prompt: additionalInstruction } : {}),
           }),
           signal: AbortSignal.timeout(model.timeout_seconds * 1000),
