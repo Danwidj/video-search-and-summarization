@@ -10,7 +10,7 @@
 // Validation happens server-side (lib/contract/structured-edit.ts) and the
 // database function checks the rest.
 
-import type { ReportView } from '@/lib/reports/report-view';
+import type { ReportView } from '@/modules/reports/domain/report-view';
 
 export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion', 'assault', 'animal attack'] as const;
 export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;

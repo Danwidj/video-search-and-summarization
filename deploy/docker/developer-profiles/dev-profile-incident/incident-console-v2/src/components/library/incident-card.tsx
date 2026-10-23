@@ -4,7 +4,7 @@
 import Link from 'next/link';
 
 import { IncidentThumbnail, SeverityChip } from '@/components/library/shared';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { formatTimestamp } from '@/lib/time';
 
 export function IncidentCard({ item, busy, onDelete, onOpen, onSearchEvidence }: {

@@ -9,9 +9,9 @@
 // Run counts are always per outcome; nothing treats a model_runs row as a
 // successful analysis by default.
 
-import { explicitVideoId, parseRunNotes } from '@/lib/reports/run-notes';
+import { explicitVideoId, parseRunNotes } from '@/modules/reports/domain/run-notes';
 import type { OutcomeCounts, RunHistoryEntry } from '@/lib/runs/types';
-import { canonicalIncidentType } from '@/lib/reports/normalize';
+import { canonicalIncidentType } from '@/modules/reports/domain/normalize';
 
 type Row = Record<string, unknown>;
 

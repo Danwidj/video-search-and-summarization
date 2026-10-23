@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { RevisionKind } from '@/lib/reports/revision';
+import type { RevisionKind } from '@/modules/reports/domain/revision';
 
 export interface LegacyTimelineItem {
   start_seconds: number;

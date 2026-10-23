@@ -27,8 +27,8 @@ import {
   EDITABLE_ENTITY_TYPES,
   EDITABLE_INCIDENT_TYPES,
   type EditDraft,
-} from '@/lib/reports/edit-draft';
-import { formatClock } from '@/lib/reports/normalize';
+} from '@/modules/reports/domain/edit-draft';
+import { formatClock } from '@/modules/reports/domain/normalize';
 
 function severityStyle(level: number | null): string {
   if (level !== null && level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';

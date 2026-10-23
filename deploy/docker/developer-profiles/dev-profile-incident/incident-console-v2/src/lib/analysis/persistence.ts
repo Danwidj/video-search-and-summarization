@@ -4,7 +4,7 @@ import type { RepairOperation, RepairIneligibility } from '@/modules/contract/do
 import type { DerivedContractReport } from '@/modules/contract/domain/types';
 import type { ContractViolation, ContractViolationCode, ViolationScope } from '@/modules/contract/domain/validate';
 import { PostgrestClient } from '@/lib/postgrest/client';
-import { placeholderEvidence, revisionFacets, type EvidenceEntry } from '@/lib/reports/revision';
+import { placeholderEvidence, revisionFacets, type EvidenceEntry } from '@/modules/reports/domain/revision';
 
 interface VideoReference {
   r2Key: string;

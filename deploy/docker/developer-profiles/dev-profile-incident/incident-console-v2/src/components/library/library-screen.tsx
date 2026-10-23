@@ -10,7 +10,7 @@ import { IncidentCard } from '@/components/library/incident-card';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/components/library/shared';
 import { type DatePreset, EMPTY_FILTERS, FILTER_KEYS, type IncidentFilters, activeFilters, filterParams, parseFilters, presetAfter } from '@/lib/library/filters';
 import type { LibrarySearchResponse } from '@/lib/library/search';
-import type { ReportLibraryItem } from '@/lib/reports/storage';
+import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { getViewerTimeZone } from '@/lib/time';
 
 type Tab = 'incidents' | 'evidence';

@@ -6,12 +6,12 @@
 
 import { SupabaseDashboardAdapter } from '@/lib/adapters/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/lib/adapters/supabase/health';
-import { SupabaseIncidentAdapter } from '@/lib/adapters/supabase/incidents';
 import { SupabaseVideoAdapter } from '@/lib/adapters/supabase/videos';
 import type { ServiceConfiguration } from '@/lib/env';
 import type { HealthRepository } from '@/lib/ports/health';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
+import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';
 
 /** Throws 'Supabase PostgREST is not configured' when the service-role settings are missing. */
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {

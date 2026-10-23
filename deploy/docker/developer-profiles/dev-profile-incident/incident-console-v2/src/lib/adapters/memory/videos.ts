@@ -10,7 +10,7 @@ import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
   type OfficialChange, type RevisionCropsChange, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
 } from '@/lib/ports/videos';
-import type { OfficialCrop } from '@/lib/reports/revision';
+import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
 export interface InMemoryVideo extends VideoRecord {
   /** Ids of this video's report revisions. */

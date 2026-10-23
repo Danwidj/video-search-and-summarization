@@ -5,9 +5,9 @@
 // report view shows, each item joined to its evidence entry. Shared by the
 // Supabase and in-memory adapters so both read a payload the same way.
 
-import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/lib/reports/normalize';
-import type { ItemEvidence, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/lib/reports/report-view';
-import type { EvidenceEntry, EvidenceItemType, ReportPayload } from '@/lib/reports/revision';
+import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
+import type { ItemEvidence, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type { EvidenceEntry, EvidenceItemType, ReportPayload } from '@/modules/reports/domain/revision';
 
 type Row = Record<string, unknown>;
 

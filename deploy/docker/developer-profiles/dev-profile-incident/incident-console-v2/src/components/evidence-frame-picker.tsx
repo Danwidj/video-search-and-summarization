@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { dragRegion, pickSeconds, regionBox, type FramePick, type FramePoint } from '@/lib/evidence/frame-picker';
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
-import { formatClock } from '@/lib/reports/normalize';
+import { formatClock } from '@/modules/reports/domain/normalize';
 
 const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 

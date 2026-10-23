@@ -58,13 +58,13 @@ test('library incident cards show no confidence percentage', async () => {
 
 test('browser components import only browser-safe report modules', async () => {
   const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
-  const clientOnly = await readFile(new URL('../src/lib/reports/report-view.ts', import.meta.url), 'utf8');
+  const clientOnly = await readFile(new URL('../src/modules/reports/domain/report-view.ts', import.meta.url), 'utf8');
   for (const name of ['report-page.tsx', 'report-pane.tsx', 'report-timeline.tsx', 'report-versions.tsx', 'report-run-details.tsx', 'report-edit-pane.tsx', 'run-history.tsx', 'reanalysis-card.tsx', 'video-history-screen.tsx', 'videos-screen.tsx', 'run-comparison.tsx', 'advanced-report-tools.tsx', 'analysis-workspace.tsx', 'library/library-screen.tsx', 'library/incident-card.tsx']) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
   for (const line of clientOnly.split('\n').filter((l) => l.startsWith('import '))) {
-    assert.match(line, /^import type /, `src/lib/reports/report-view.ts may only import types: ${line}`);
+    assert.match(line, /^import type /, `src/modules/reports/domain/report-view.ts may only import types: ${line}`);
   }
 });
 

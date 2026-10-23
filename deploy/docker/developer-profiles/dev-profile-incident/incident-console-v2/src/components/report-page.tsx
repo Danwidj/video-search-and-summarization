@@ -13,9 +13,9 @@ import { ReportTimeline } from '@/components/report-timeline';
 import { ReportVersions } from '@/components/report-versions';
 import { chatTarget } from '@/lib/chat/report-chat';
 import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
-import { draftFromView, draftProblems, editFromDraft, type EditDraft } from '@/lib/reports/edit-draft';
-import { reportHeading, type ReportView } from '@/lib/reports/report-view';
-import type { RevisionSummary } from '@/lib/reports/revision';
+import { draftFromView, draftProblems, editFromDraft, type EditDraft } from '@/modules/reports/domain/edit-draft';
+import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 type LoadState =
   | { status: 'loading' }

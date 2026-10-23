@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
-import type { RevisionSummary } from '@/lib/reports/revision';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { layoutVersions } from '@/lib/reports/version-graph';
 import { formatTimestamp } from '@/lib/time';
 

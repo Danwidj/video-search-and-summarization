@@ -3,8 +3,8 @@
 
 import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/components/evidence-frame';
 import { axisPercent, axisTicks, buildTimelineLanes, timelineDuration, type LaneMarker } from '@/lib/reports/timeline-lanes';
-import { formatClock } from '@/lib/reports/normalize';
-import type { ReportView } from '@/lib/reports/report-view';
+import { formatClock } from '@/modules/reports/domain/normalize';
+import type { ReportView } from '@/modules/reports/domain/report-view';
 
 const MARKER_SHAPE: Record<LaneMarker['kind'], string> = { entity: 'rounded-full', instrument: 'rotate-45', asset: '' };
 
