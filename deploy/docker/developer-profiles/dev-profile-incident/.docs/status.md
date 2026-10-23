@@ -10,7 +10,7 @@
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Supabase rows (finals project) plus Cloudflare R2 videos; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
 | Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract; Tier 1 ground-truth scoring | `eval/README.md` |
-| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy and an always-on search route. Launches `incident-console-v2`, the only console; the Streamlit v1 console is archived under `archived/incident-console/` and never started | [`incident-profile-operations.md`](incident-profile-operations.md) |
+| Launcher | `./start.sh --mode local\|vm` with SSH preflight, self-healing VM deploy, stop-on-last-exit coordination via VM flock, and an always-on search route. Launches `incident-console-v2`, the only console; the Streamlit v1 console is archived under `archived/incident-console/` and never started | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777) and `search_profile_mock` (:7778), including search and chat routes | `mock-backend/` |
 
 ## 2. MVP2: natural-language evidence search
@@ -19,7 +19,7 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; crop evidence service; `vss-agent` search route (`SupabaseSearchStore`, R2 presigned crop URLs, always-on critic with `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`); chat route; `evidence_crops` / `query_results` / `search_evidence_items` migration; the analyze route writes `report_revisions` with evidence crops, and `POST /api/v1/incidents/evidence-embeddings` serves the embeddings the console stores in `evidence_crops`.
 - **Live on `kwanz-ws`:** not re-verified since the move to `report_revisions`. The 2026-10-18 check of the retired backfill loader (64 of 69 items loaded) no longer applies; re-run the search checks in [`vm-api-contracts.md`](vm-api-contracts.md) once the console fills `evidence_crops` from official revisions.
-- **In progress:** frontend search UI and chat (the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer work.
+- **In progress:** frontend search UI (the console's report page chat already calls `POST /api/v1/incidents/chat`; the console's search port mirrors `search-contract-v1`; its agent adapter is not written yet); retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval); harness and query set not written; data layer work.
 - **Not started:** multi-subagent routing config; full RT-CV / RT-Embed indexing; retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
 
 ## 3. Database status
