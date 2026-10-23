@@ -143,7 +143,7 @@ application. The report library remembers filters, scroll position, and its orig
 `/dashboard` summarizes report volume, confidence, severity, and incident types with drill-down links, counting the
 official revision only.
 
-Each report provides human-attributed structured corrections as new revisions, a History panel with Save,
+Each report provides human-attributed structured corrections as new revisions, a versions graph with Save,
 non-streaming follow-up chat through the agent `POST /api/v1/incidents/chat` (`chat-contract-v1`), scoped to the
 report's video and showing cited evidence, and model-run history and side-by-side comparison. Retained raw VLM output
 in `model_runs.notes` remains unchanged as provenance.
@@ -161,10 +161,10 @@ A reviewer replacing or adding evidence picks a frame and draws a rectangle on i
   - `/videos` lists uploaded videos, with "Awaiting official report" and "Without a report" views.
   - `/videos/<id>` shows the video, a re-generation card (any allowlisted model, optional reviewer prompt) and the full analysis history: every attempt with its model, time, outcome, failure reasons or repair operations. Failed attempts never appear as reports.
 - **Re-generation** always creates a new run and a new AI revision, never changes the video's upload time, and never changes the official revision.
-- **Official revision:** a reviewer explicitly chooses it on the report page or in the history; marking it rebuilds the incident's `evidence_crops`.
+- **Official revision:** a reviewer explicitly chooses it with the star on the report page's versions graph (a filled star clears it) or in the history; marking it rebuilds the incident's `evidence_crops`.
 - **Dashboard:** it counts official revisions only, and every number links to `/reports?scope=official&...`. The reports page treats the URL as its filter state.
-- **Report page:**
-  - structured fields (editable through the structured editor);
-  - read-only model output (title, "Model severity rationale", timeline, uncertainties);
-  - a "Run & model output details" panel.
+- **Report page (View mode):**
+  - a fixed top band: the video, a vertical timeline with one lane per entity (first to last seen span, held instruments on the lane, then "Holder unknown" and Assets lanes; click a lane to seek) and the versions graph (each AI run is its own branch, human versions sit on their parent's; the star marks a version official, with no Restore);
+  - a scrolling pane: version, report fields, evidence cards grouped by holder, read-only model output (title, severity rationale, timeline, uncertainties) and a "Run & model output details" panel;
+  - a bottom bar with "Edit from vN", which opens the structured editor.
 - **Timestamps** from the database are UTC and are rendered in the viewer's time zone (`lib/time.ts`). The dashboard heatmap and report library time-of-day filters detect the client's timezone on mount (`getViewerTimeZone()`) and pass `timezone` to the API routes and database RPCs (`get_incident_dashboard`, `list_incident_report_summaries`), ensuring heatmap buckets, hour labels, and filter bounds match the user's local shift and time of day.

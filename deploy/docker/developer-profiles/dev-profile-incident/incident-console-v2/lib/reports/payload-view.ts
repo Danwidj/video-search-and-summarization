@@ -50,7 +50,7 @@ export function structuredFromPayload(payload: ReportPayload, evidence: Evidence
     },
     entities: rows(payload.entities).sort(byId('entity_id')).map((row) => {
       const entityId = String(row.entity_id ?? '');
-      return { entityId, type: canonicalEntityType(row.type), description: String(row.description ?? ''), timestampSeconds: num(row.timestamp_seconds), label: String(row.label ?? ''), evidence: evidenceOf(evidence, 'entity', entityId) };
+      return { entityId, type: canonicalEntityType(row.type), description: String(row.description ?? ''), timestampSeconds: num(row.timestamp_seconds), firstSeenSeconds: num(row.first_seen_seconds), lastSeenSeconds: num(row.last_seen_seconds), label: String(row.label ?? ''), evidence: evidenceOf(evidence, 'entity', entityId) };
     }),
     instruments: rows(payload.instruments).sort(byId('instrument_id')).map((row) => {
       const instrumentId = String(row.instrument_id ?? '');
