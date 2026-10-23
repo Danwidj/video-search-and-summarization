@@ -57,7 +57,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 
-The console runs in the foreground. Ctrl-C stops it, along with the backgrounded mock, gateway and tunnel.
+The console runs in the foreground. Ctrl-C stops it, along with the backgrounded mock, gateway and tunnel. In vm mode, exiting also stops the VM backend services (`vss-agent` and Docker containers in-place via `docker stop`, never removed) if this run was the last active session on `kwanz-ws`.
 
 Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). In vm mode `VSS_VM_IP` is detected from the VM over SSH when unset (fallback `10.131.1.5`); set it only to force an address.
 
@@ -81,6 +81,7 @@ Then run one upload to report with [`incident-analyze-video`](../incident-analyz
 | Symptom | Fix |
 |---|---|
 | `start.sh` aborts at the SSH preflight | Read the `Cause:` / `Fix:` lines it prints (Tailscale logged out or stopped, VM offline in the tailnet, DNS, SSH timeout or refused, login rejected, host key changed). Table: [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting). |
+| `start.sh` aborts with "could not register active run lock" | The backend may currently be stopping from another session's exit. Retry once the stop completes. |
 | `start.sh` stops with `[vm] ERROR` or "timed out" | The Docker step on the VM failed: exit 10 repo, 11 `generated.env.remote` missing, 12 docker unusable, 13 image pull (NGC login), 14/124 `compose up` failed or stuck (its output shows container states and Kafka logs). Tunables: `VSS_PULL_TIMEOUT`, `VSS_COMPOSE_UP_TIMEOUT`, `VSS_NATIVE_START_TIMEOUT`. |
 | Tunnel step fails | `start.sh` says whether a laptop port is taken, the SSH forward is blocked (or `VSS_AGENT_HOST` on the VM is bound to a LAN address instead of `127.0.0.1`), the VM address is wrong (set `VSS_VM_IP`), or the agent or proxy is down on the VM. |
 | Logged in as the wrong VM user | Set `User` under `Host kwanz-ws`, or `export VSS_SSH_USER=<name>`. |
