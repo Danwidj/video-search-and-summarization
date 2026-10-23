@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { href } from '../src/lib/dashboard/links.ts';
+import { href } from '../src/modules/dashboard/domain/links.ts';
 
 const components = new URL('../src/components/', import.meta.url);
 

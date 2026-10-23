@@ -8,7 +8,7 @@ import { EvidenceFrame, KIND_LABEL } from '@/components/evidence-frame';
 import { FrameViewer } from '@/components/frame-viewer';
 import { RelationshipLine } from '@/components/library/hit-card';
 import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf, reportHref } from '@/lib/library/search';
-import type { EvidenceSearchHit } from '@/lib/ports/search';
+import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
 /** The modal opened from any crop: the item's frame with every box found at that moment, its details and a way into the report at that time. */

@@ -4,7 +4,7 @@
 // returns, the client-side filters, the holder / holds relationship and the
 // grouping by incident. No React and no server code, so tests can import it.
 
-import type { EvidenceItemType, EvidenceSearchHit, EvidenceSearchResult } from '@/lib/ports/search';
+import type { EvidenceItemType, EvidenceSearchHit, EvidenceSearchResult } from '@/modules/search/domain/search';
 
 /** The version a hit came from: the video's official revision, else its newest (what search reads). */
 export interface SearchedVersion {

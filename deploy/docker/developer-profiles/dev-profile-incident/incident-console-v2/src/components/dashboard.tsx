@@ -2,8 +2,8 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/lib/dashboard/types';
-import { href, type Filters, type LinkFilters, type Range } from '@/lib/dashboard/links';
+import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/modules/dashboard/domain/types';
+import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import { getViewerTimeZone } from '@/lib/time';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
