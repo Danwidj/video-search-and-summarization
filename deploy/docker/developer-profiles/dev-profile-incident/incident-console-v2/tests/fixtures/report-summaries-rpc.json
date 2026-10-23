@@ -20,7 +20,11 @@
       "outcome": "valid_first_pass",
       "isOfficial": true,
       "r2Key": "uploads/sensor-1/assault-1.mp4",
-      "sensorId": "sensor-1"
+      "sensorId": "sensor-1",
+      "officialSince": "2026-09-30T01:00:00.5",
+      "versionCount": 2,
+      "evidenceCount": 5,
+      "thumbnail": "evidence/v-assault-1/u1/I1.jpg"
     },
     {
       "revisionId": 21,
@@ -42,7 +46,11 @@
       "outcome": "legacy",
       "isOfficial": false,
       "r2Key": "/home/vst/streamer_videos/legacy-2.mp4",
-      "sensorId": null
+      "sensorId": null,
+      "officialSince": null,
+      "versionCount": 1,
+      "evidenceCount": 0,
+      "thumbnail": null
     },
     {
       "revisionId": 31,
@@ -64,7 +72,11 @@
       "outcome": "valid_after_structural_repair",
       "isOfficial": false,
       "r2Key": null,
-      "sensorId": "sensor-3"
+      "sensorId": "sensor-3",
+      "officialSince": null,
+      "versionCount": 1,
+      "evidenceCount": 2,
+      "thumbnail": "evidence/v-repaired-3/m/E1.jpg"
     }
   ],
   "totalItems": 13,
