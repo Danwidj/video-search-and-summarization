@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Frame and crop use cases and request validation, with in-memory fakes.
+
+import assert from 'node:assert/strict';
+import { register } from 'node:module';
+import { test } from 'node:test';
+
+register('./support/alias-loader.mjs', import.meta.url);
+
+const { createEvidenceCrop, getVideoFrame } = await import('../lib/application/evidence-frames.ts');
+const { FrameRequestError, parseRegion, parseSeconds } = await import('../lib/evidence/frame-request.ts');
+const { ffmpegFrameArguments } = await import('../lib/video/ffmpeg-frame.ts');
+const { InMemoryVideoRepository } = await import('../lib/adapters/memory/videos.ts');
+
+const V = 'vid-1';
+const video = (storageKey) => ({ videoId: V, storageKey, uploadedAt: null, source: null, officialRevisionId: null, revisionIds: [] });
+
+function deps({ storageKey = 'videos/a.mp4', duration = 30 } = {}) {
+  const frames = [];
+  const stored = [];
+  let n = 0;
+  return {
+    frames, stored,
+    deps: {
+      videos: new InMemoryVideoRepository([video(storageKey)]),
+      source: {
+        durationSeconds: async () => duration,
+        frame: async (key, seconds, region) => { frames.push({ key, seconds, region }); return Buffer.from('jpeg'); },
+      },
+      store: async (key, jpeg) => { stored.push({ key, jpeg }); },
+      newUuid: () => `uuid-${++n}`,
+    },
+  };
+}
+
+const rejects = (promise, status, pattern) => assert.rejects(promise, (e) => e instanceof FrameRequestError && e.status === status && pattern.test(e.message));
+const region = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
+
+test('a frame is read at a timestamp inside the video', async () => {
+  const { deps: d, frames } = deps();
+  assert.equal((await getVideoFrame(d, V, '12.5')).toString(), 'jpeg');
+  assert.deepEqual(frames, [{ key: 'videos/a.mp4', seconds: 12.5, region: null }]);
+});
+
+test('a timestamp that is malformed, negative or past the end is refused', async () => {
+  const { deps: d } = deps({ duration: 30 });
+  for (const bad of [null, '', 'abc', '-1', 'Infinity']) await rejects(getVideoFrame(d, V, bad), 400, /timestamp/, bad);
+  await rejects(getVideoFrame(d, V, 30), 422, /outside the video/);
+  await rejects(getVideoFrame(d, V, 99), 422, /30 s long/);
+});
+
+test('an unknown video is 404 and one without an R2 object is 409', async () => {
+  await rejects(getVideoFrame(deps().deps, 'nope', 1), 404, /not found/);
+  await rejects(getVideoFrame(deps({ storageKey: '/vst/a.mp4' }).deps, V, 1), 409, /no stored R2 object/);
+});
+
+test('an unreadable video length leaves the bound to the decoder', async () => {
+  const { deps: d } = deps({ duration: null });
+  await getVideoFrame(d, V, 9999);
+});
+
+test('a crop is stored under a fresh evidence key each time and returned', async () => {
+  const { deps: d, stored, frames } = deps();
+  const a = await createEvidenceCrop(d, V, { itemId: 'ent_1', timestampSeconds: 4, region });
+  const b = await createEvidenceCrop(d, V, { itemId: 'ent_1', timestampSeconds: 4, region });
+  assert.equal(a.image, 'evidence/vid-1/uuid-1/ent_1.jpg');
+  assert.equal(b.image, 'evidence/vid-1/uuid-2/ent_1.jpg');
+  assert.deepEqual(stored.map((s) => s.key), [a.image, b.image]);
+  assert.deepEqual(frames[0].region, region);
+  assert.equal(a.jpeg.toString(), 'jpeg');
+});
+
+test('a bad rectangle or item id stores nothing', async () => {
+  const { deps: d, stored } = deps();
+  const crop = (over) => createEvidenceCrop(d, V, { itemId: 'e1', timestampSeconds: 1, region, ...over });
+  await rejects(crop({ region: { x: 0.8, y: 0, w: 0.3, h: 0.5 } }), 422, /inside the frame/);
+  await rejects(crop({ region: { x: -0.1, y: 0, w: 0.3, h: 0.5 } }), 422, /inside the frame/);
+  await rejects(crop({ region: { x: 0, y: 0, w: 0, h: 0.5 } }), 422, /at least/);
+  await rejects(crop({ region: { x: 0, y: 0, w: 0.5 } }), 400, /four numbers/);
+  await rejects(crop({ region: null }), 400, /four numbers/);
+  await rejects(crop({ itemId: '../x' }), 400, /itemId/);
+  await rejects(crop({ timestampSeconds: 31 }), 422, /outside the video/);
+  assert.deepEqual(stored, []);
+});
+
+test('a rectangle touching the frame edge is accepted, float noise is clamped', () => {
+  assert.deepEqual(parseRegion({ x: 0, y: 0, w: 1, h: 1 }), { x: 0, y: 0, w: 1, h: 1 });
+  assert.equal(parseRegion({ x: 0.7, y: 0, w: 0.3000001, h: 1 }).w, 1 - 0.7);
+  assert.equal(parseSeconds('0'), 0);
+});
+
+test('ffmpeg is told to seek, crop to fractions and write one JPEG to stdout', () => {
+  const args = ffmpegFrameArguments('https://r2.test/v.mp4', 12.5, region);
+  assert.deepEqual(args.slice(args.indexOf('-ss'), args.indexOf('-ss') + 4), ['-ss', '12.5', '-i', 'https://r2.test/v.mp4']);
+  assert.ok(args.includes('crop=w=trunc(iw*0.3):h=trunc(ih*0.4):x=trunc(iw*0.1):y=trunc(ih*0.2)'));
+  assert.equal(args.at(-1), 'pipe:1');
+  assert.ok(!ffmpegFrameArguments('u', 1, null).includes('-vf'));
+});

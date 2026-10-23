@@ -148,6 +148,13 @@ non-streaming follow-up chat through the agent `POST /api/v1/incidents/chat` (`c
 report's video and showing cited evidence, and model-run history and side-by-side comparison. Retained raw VLM output
 in `model_runs.notes` remains unchanged as provenance.
 
+## Evidence frames and crops
+
+A reviewer replacing or adding evidence picks a frame and draws a rectangle on it. Both routes decode with the `ffmpeg` on the console host's PATH (a missing binary answers 503), reading the signed R2 video by range request:
+
+- `GET /api/reports/<videoId>/frame?t=<seconds>` answers the frame as a JPEG. A malformed `t` is 400, a `t` at or past the video's length 422, an unknown video 404.
+- `POST /api/reports/<videoId>/evidence-crop` takes `{"itemId", "timestampSeconds", "region": {"x","y","w","h"}}`, the region as fractions (0-1) of the frame from the top-left. It stores the crop at a new `evidence/<videoId>/<uuid>/<itemId>.jpg` key and answers `{image, imageUrl, timestampSeconds, region}`; Save writes `image` into the next human revision. A region outside the frame or under 1% wide or high is 422. Nothing is overwritten or deleted.
+
 ## Videos, run history and the official revision
 
 - **Pages:**
