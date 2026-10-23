@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 
-import { AppHeader } from '@/components/app-header';
-import { VideoHistoryScreen } from '@/components/video-history-screen';
+import { AppHeader } from '@/sections/shell/components/AppHeader';
+import { VideoHistoryScreen } from '@/sections/videos/components/VideoHistoryScreen';
 
 export default async function VideoPage({ params }: { params: Promise<{ videoId: string }> }) {
   const { videoId } = await params;
