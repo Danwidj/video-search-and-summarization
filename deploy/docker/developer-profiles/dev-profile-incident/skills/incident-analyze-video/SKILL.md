@@ -74,6 +74,7 @@ There is no verify step and no review status. A report is its list of revisions;
 
 - **Save** (`PATCH /api/reports/<videoId>/edit` with `{"parentId", "editedBy", "edit", "note"?}`) validates the structured edit, then appends a `human` revision whose parent is the revision that was opened. Every edited item keeps the id of the item it came from, so its evidence and image follow it; the AI revision and `model_runs.notes` are never changed.
 - **Evidence image** (`POST /api/reports/<videoId>/evidence-image`) uploads a replacement to a new R2 key and returns it for the edit; no existing object is overwritten or deleted.
+- **Frame and crop** (`GET /api/reports/<videoId>/frame?t=<seconds>` returns a JPEG; `POST /api/reports/<videoId>/evidence-crop` with `{"itemId", "timestampSeconds", "region": {"x","y","w","h"}}`, fractions 0-1 of the frame, stores the crop at a new `evidence/<videoId>/<uuid>/<itemId>.jpg` key and returns `{image, imageUrl, timestampSeconds, region}`). A timestamp past the video's end or a rectangle outside the frame is 422; 503 means `ffmpeg` is missing on the console host.
 - **Official** (`PUT`/`DELETE /api/videos/<videoId>/official`) sets or clears `videos.official_revision_id`. Marking asks the agent for the revision's evidence embeddings and rebuilds `evidence_crops`; if the agent is unreachable the mark fails and nothing changes.
 - **Re-generation** always makes a new AI revision and copies no earlier edits ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#report-revisions-ai-and-human)).
 
