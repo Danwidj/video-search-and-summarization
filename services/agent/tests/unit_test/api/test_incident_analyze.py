@@ -36,6 +36,8 @@ OUTPUT = IncidentReportGenOutput(
     model="nvidia/cosmos-3-nano-reasoner",
     contract_version=incident_contract.contract_version(),
     raw_output="{}",
+    revision_id=5,
+    evidence=[{"item_id": "E1", "image": None, "image_gap": "no store"}],
 )
 
 
@@ -61,6 +63,40 @@ def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
         {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
     assert response.json() == OUTPUT.model_dump()
+
+
+def test_re_generation_passes_model_and_reviewer_prompt_to_the_tool():
+    model = incident_contract.allowed_models()[0]
+    client, tool = _client(result=OUTPUT)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze",
+        json={"video_url": VIDEO_URL, "model": model, "reviewer_prompt": "check the door"},
+    )
+    assert response.status_code == 200
+    assert response.json()["revision_id"] == 5
+    tool.ainvoke.assert_awaited_once_with(
+        {
+            "incident_id": "v1",
+            "video_url": VIDEO_URL,
+            "skip_rp1": False,
+            "model": model,
+            "reviewer_prompt": "check the door",
+        }
+    )
+
+
+def test_model_outside_the_allowlist_is_400_and_never_reaches_the_tool():
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model": "not-a-model"})
+    assert response.status_code == 400
+    tool.ainvoke.assert_not_called()
+
+
+def test_reviewer_prompt_over_the_limit_is_422():
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "reviewer_prompt": "x" * 1001})
+    assert response.status_code == 422
+    tool.ainvoke.assert_not_called()
 
 
 def test_video_url_is_required():

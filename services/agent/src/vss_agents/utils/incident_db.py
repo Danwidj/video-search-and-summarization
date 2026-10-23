@@ -13,22 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Async Supabase PostgREST helper for CRUD against the incident-console schema.
+"""Async Supabase PostgREST helper for the agent's reads and writes against the incident schema.
 
-The schema itself was originally owned by, and created by, the v1 console's
-``deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/db.py``
-(now archived; module docstring there is the authoritative table list - do not redesign the
-schema here, only mirror its tables/columns). That module also does the
-``CREATE TABLE IF NOT EXISTS`` bootstrap on startup; this helper assumes the
-schema already exists and only reads/writes rows.
+The finals schema is owned by ``deploy/docker/developer-profiles/dev-profile-incident/supabase/``
+(see ``.docs/data.md``); this helper assumes it exists and only reads/writes rows. The agent
+touches ``videos`` (read only in production; the console owns that row), ``model_runs`` and the
+append-only ``report_revisions`` snapshots. Search reads ``evidence_crops`` and writes ``queries``
+and ``query_results`` through its own store (``api/incident_search.py``), using this client.
 
-Covers the tables an agent-side caller plausibly writes while generating and
-persisting an incident report: ``videos``, ``model_runs``, ``incidents`` (plus
-per-incident ``entities``/``instruments``/``assets`` evidence), ``reports``,
-and ``review_status``. The human ground-truth (``gt_*``)
-tables are eval-workflow specific and are out of scope for this helper.
-Retired tables (``notifications``, ``entity_matches``, ``instrument_matches``,
-``asset_matches``) have been dropped.
+Every report is a ``report_revisions`` row: ``payload`` holds the full contract report,
+``evidence`` the evidence items and their R2 image keys, and the plain facet columns
+(``incident_type``, ``severity_level``, ``start_seconds``, ``end_seconds``) are filled by the writer
+from the payload. The table rejects UPDATE and DELETE, so this helper only ever inserts revisions.
+Human revisions, the official pointer (``videos.official_revision_id``) and the ``evidence_crops``
+rows belong to the console.
 
 Configuration is via two environment variables:
 - ``INCIDENT_SUPABASE_URL`` — e.g. ``https://<project_ref>.supabase.co``
@@ -40,21 +38,12 @@ When either is unset, :func:`is_configured` returns ``False`` and
 optional feature and degrade gracefully, matching the console's own
 "database not configured" stance. There is no fallback DSN.
 
-Note: ``INCIDENT_DB_DSN`` is intentionally NOT used here — the archived v1 console
-(``archived/incident-console/db.py``) used that for its direct-Postgres
-SQLAlchemy connection. The two config surfaces are independently maintained.
-
 This module uses ``supabase-py``'s async client (``acreate_client``) rather than
 ``asyncpg``. The PostgREST layer does not support client-held transactions or
 ``SELECT ... FOR UPDATE`` row locking; see ``.docs/data.md``'s "Client Access Models
-& PostgREST/Direct-Postgres Split" section for why. The one cross-table operation that needs atomicity
-(``insert_incident``) calls a Postgres RPC function via ``/rpc/insert_incident``.
-:meth:`IncidentDB.set_review_status` performs its read-then-write steps as
-separate sequential PostgREST calls rather than in one transaction, for the
-same reason - a concurrent writer racing the same (incident_id, model_run_id)
-could interleave, which the direct-Postgres/asyncpg version does not risk. No
-production caller does concurrent review-status writes for the same incident
-today, so this is an accepted PostgREST-layer limitation rather than a bug.
+& PostgREST/Direct-Postgres Split" section for why. :meth:`IncidentDB.insert_ai_revision`
+therefore reads ``max(revision_no)`` and inserts as two calls, and relies on the
+``(video_id, revision_no)`` unique key plus a retry when a concurrent writer takes the same number.
 """
 
 from __future__ import annotations
@@ -63,10 +52,12 @@ import asyncio
 from contextlib import asynccontextmanager
 import datetime as _dt
 import logging
+import math
 import os
 from typing import TYPE_CHECKING
 from typing import Any
 
+from postgrest import APIError
 from supabase import AsyncClient
 from supabase import acreate_client
 
@@ -77,6 +68,8 @@ logger = logging.getLogger(__name__)
 
 _SUPABASE_URL_ENV_VAR = "INCIDENT_SUPABASE_URL"
 _SUPABASE_KEY_ENV_VAR = "INCIDENT_SUPABASE_SERVICE_ROLE_KEY"
+_UNIQUE_VIOLATION = "23505"
+_REVISION_INSERT_ATTEMPTS = 3
 
 
 def _url_from_env() -> str:
@@ -116,9 +109,6 @@ class IncidentDB:
         version this does not roll back earlier calls if a later one in the
         block fails - it exists only so callers written against that sequential
         call-group shape (e.g. the mock backend's Analyze route) keep working.
-        The one operation that genuinely needs atomicity (:meth:`insert_incident`)
-        gets it from the ``insert_incident`` RPC function instead, not from this
-        context manager.
         """
         yield self
 
@@ -216,9 +206,8 @@ class IncidentDB:
     ) -> str:
         """Insert or update-in-place - never delete-then-insert.
 
-        Matches ``db.py``'s own ``insert_model_run`` note: ``incidents.model_run_id``
-        cascades on delete, so re-registering an existing run id must not delete
-        the incidents already recorded under it.
+        ``report_revisions.model_run_id`` references this row, so re-registering an
+        existing run id must update it rather than delete it.
         """
         data = {
             "id": model_run_id,
@@ -235,304 +224,123 @@ class IncidentDB:
         result = await self.client.table("model_runs").select("*").eq("id", model_run_id).maybe_single().execute()
         return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
 
-    # -- incidents (model output) ----------------------------------------#
-    _INCIDENT_FIELDS = (
-        "type",
-        "start_timestamp",
-        "end_timestamp",
-        "duration",
-        "description",
-        "severity_level",
-        "confidence_score",
-    )
-
-    async def insert_incident(
-        self, incident_id: str, model_run_id: str, *, fields: dict[str, Any] | None = None
-    ) -> tuple[str, str]:
-        """Insert-or-replace one model run's incident row for ``incident_id``.
-
-        Calls the Postgres RPC function ``insert_incident`` which performs the
-        delete-then-insert into ``incidents`` and resets ``review_status`` to
-        ``unreviewed`` atomically in a single server-side transaction.
-        """
-        payload = {k: (fields or {}).get(k) for k in self._INCIDENT_FIELDS}
-        await self.client.rpc(
-            "insert_incident",
-            {
-                "p_incident_id": incident_id,
-                "p_model_run_id": model_run_id,
-                "p_type": payload["type"],
-                "p_start_timestamp": payload["start_timestamp"],
-                "p_end_timestamp": payload["end_timestamp"],
-                "p_duration": payload["duration"],
-                "p_description": payload["description"],
-                "p_severity_level": payload["severity_level"],
-                "p_confidence_score": payload["confidence_score"],
-            },
-        ).execute()
-        return incident_id, model_run_id
-
-    async def get_incident(self, incident_id: str, model_run_id: str) -> dict[str, Any] | None:
-        result = await (
-            self.client.table("incidents")
-            .select("*")
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .maybe_single()
-            .execute()
-        )
-        return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
-
-    async def list_incidents(self, *, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        query = self.client.table("incidents").select("*").order("incident_id")
-        if model_run_id is not None:
-            query = query.eq("model_run_id", model_run_id)
-        result = await query.execute()
-        return result.data or []  # type: ignore[return-value]
-
-    async def update_incident(self, incident_id: str, model_run_id: str, *, fields: dict[str, Any]) -> None:
-        allowed = {k: v for k, v in fields.items() if k in self._INCIDENT_FIELDS}
-        if not allowed:
-            return
-        await (
-            self.client.table("incidents")
-            .update(allowed)
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-
-    async def delete_incident(self, incident_id: str, model_run_id: str) -> None:
-        await (
-            self.client.table("incidents")
-            .delete()
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-
-    # -- entities / instruments / assets (model output evidence) --------- #
-    async def add_incident_entity(
+    async def insert_model_run_if_absent(
         self,
-        incident_id: str,
         model_run_id: str,
         *,
-        entity_id: str,
-        type: str | None = None,
-        description: str | None = None,
-        image: str | None = None,
-    ) -> None:
-        data = {
-            "incident_id": incident_id,
-            "entity_id": entity_id,
-            "model_run_id": model_run_id,
-            "type": type,
-            "description": description,
-            "image": image,
-        }
-        await self.client.table("entities").insert(data).execute()
-
-    async def add_incident_instrument(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        *,
-        instrument_id: str,
-        entity_id: str | None = None,
-        name: str | None = None,
-        description: str | None = None,
-        threat_level: int | None = None,
-        image: str | None = None,
-    ) -> None:
-        data = {
-            "incident_id": incident_id,
-            "instrument_id": instrument_id,
-            "model_run_id": model_run_id,
-            "entity_id": entity_id,
-            "name": name,
-            "description": description,
-            "threat_level": threat_level,
-            "image": image,
-        }
-        await self.client.table("instruments").insert(data).execute()
-
-    async def add_incident_asset(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        *,
-        asset_id: str,
-        name: str | None = None,
-        description: str | None = None,
-        image: str | None = None,
-    ) -> None:
-        data = {
-            "incident_id": incident_id,
-            "asset_id": asset_id,
-            "model_run_id": model_run_id,
-            "name": name,
-            "description": description,
-            "image": image,
-        }
-        await self.client.table("assets").insert(data).execute()
-
-    async def delete_incident_entities(self, incident_id: str, model_run_id: str) -> None:
-        """Delete this incident+run's person entities so a re-analysis starts clean.
-
-        Mirrors :meth:`insert_incident`'s delete-then-insert semantics: entity
-        ids are deterministic per (incident, person index), so re-inserting
-        without deleting first would hit primary-key violations and keep stale
-        person rows (the insert loop swallows per-entity failures by design).
-        """
-        await (
-            self.client.table("entities")
-            .delete()
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-
-    async def delete_incident_instruments(self, incident_id: str, model_run_id: str) -> None:
-        """Delete this incident+run's instruments so a re-analysis starts clean."""
-        await (
-            self.client.table("instruments")
-            .delete()
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-
-    async def delete_incident_assets(self, incident_id: str, model_run_id: str) -> None:
-        """Delete this incident+run's assets so a re-analysis starts clean."""
-        await (
-            self.client.table("assets")
-            .delete()
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-
-    async def list_incident_entities(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        query = self.client.table("entities").select("*").eq("incident_id", incident_id).order("entity_id")
-        if model_run_id is not None:
-            query = query.eq("model_run_id", model_run_id)
-        result = await query.execute()
-        return result.data or []  # type: ignore[return-value]
-
-    async def list_incident_instruments(
-        self, incident_id: str, model_run_id: str | None = None
-    ) -> list[dict[str, Any]]:
-        query = self.client.table("instruments").select("*").eq("incident_id", incident_id).order("instrument_id")
-        if model_run_id is not None:
-            query = query.eq("model_run_id", model_run_id)
-        result = await query.execute()
-        return result.data or []  # type: ignore[return-value]
-
-    async def list_incident_assets(self, incident_id: str, model_run_id: str | None = None) -> list[dict[str, Any]]:
-        query = self.client.table("assets").select("*").eq("incident_id", incident_id).order("asset_id")
-        if model_run_id is not None:
-            query = query.eq("model_run_id", model_run_id)
-        result = await query.execute()
-        return result.data or []  # type: ignore[return-value]
-
-    # -- review_status ------------------------------------------------------#
-    async def get_review_status(self, incident_id: str, model_run_id: str) -> dict[str, Any] | None:
-        result = await (
-            self.client.table("review_status")
-            .select("*")
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .maybe_single()
-            .execute()
-        )
-        return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
-
-    async def set_review_status(
-        self, incident_id: str, model_run_id: str, *, status: str, reviewed_by: str, notify_threshold: int
-    ) -> dict[str, Any]:
-        """Persist a review-status transition; return whether notification threshold was met on verify.
-
-        Mirrors ``db.py``'s ``set_review_status`` semantics, but as sequential
-        PostgREST calls rather than one server-side transaction - see the
-        module docstring's note on this method's atomicity limitation.
-        """
-        if status not in {"unreviewed", "under review", "verified"}:
-            raise ValueError("Invalid review status")
-        if not reviewed_by.strip():
-            raise ValueError("Reviewer name is required")
-        incident_result = await (
-            self.client.table("incidents")
-            .select("severity_level")
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .maybe_single()
-            .execute()
-        )
-        incident_row = _row_to_dict(incident_result.data)  # type: ignore[arg-type, union-attr]
-        if incident_row is None:
-            raise ValueError("Incident not found")
-        severity = incident_row["severity_level"]
-        current_result = await (
-            self.client.table("review_status")
-            .select("status")
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .maybe_single()
-            .execute()
-        )
-        current = _row_to_dict(current_result.data)  # type: ignore[arg-type, union-attr]
-        if current is not None and current["status"] == status:
-            return {"notified": False, "severity": severity}
-        now = _utcnow()
-        cleaned_reviewer = reviewed_by.strip()
-        update_data: dict[str, Any] = {
-            "status": status,
-            "edited_by": cleaned_reviewer,
-            "edited_at": now.isoformat(),
-            "verified_by": cleaned_reviewer if status == "verified" else None,
-            "verified_at": now.isoformat() if status == "verified" else None,
-        }
-        await (
-            self.client.table("review_status")
-            .update(update_data)
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
-        )
-        notified = (
-            status == "verified"
-            and severity is not None
-            and isinstance(severity, (int, float))
-            and severity >= notify_threshold
-        )
-        return {"notified": notified, "severity": severity}
-
-    # -- generated report documents (reports table) ----------------------#
-    async def insert_generated_report(
-        self,
-        report_id: str,
-        *,
-        incident_id: str,
-        model_run_id: str,
-        query_id: str | None = None,
-        filepath: str | None = None,
-        generated_datetime: _dt.datetime | None = None,
+        model_name: str,
+        prompt_version: str | None = None,
+        run_datetime: _dt.datetime | None = None,
     ) -> str:
-        """Insert-or-replace the ``reports`` row for this id (the natural key)."""
-        data = {
-            "id": report_id,
-            "incident_id": incident_id,
-            "query_id": query_id,
-            "model_run_id": model_run_id,
-            "filepath": filepath,
-            "generated_datetime": (generated_datetime or _utcnow()).isoformat(),
-        }
-        await self.client.table("reports").upsert(data, on_conflict="id").execute()
-        return report_id
+        """Create the ``model_runs`` row only when no row has this id; an existing row is left untouched.
 
-    async def get_generated_report(self, report_id: str) -> dict[str, Any] | None:
-        result = await self.client.table("reports").select("*").eq("id", report_id).maybe_single().execute()
-        return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
+        ``report_revisions.model_run_id`` is a foreign key, so an AI revision needs its run row first.
+        In console agent mode the console writes the run's ``notes`` record after the agent returns;
+        this placeholder (``notes`` NULL) never overwrites a row the console already wrote.
+        """
+        data = {
+            "id": model_run_id,
+            "model_name": model_name,
+            "model_version": None,
+            "prompt_version": prompt_version,
+            "run_datetime": (run_datetime or _utcnow()).isoformat(),
+            "notes": None,
+        }
+        await self.client.table("model_runs").upsert(data, on_conflict="id", ignore_duplicates=True).execute()
+        return model_run_id
+
+    # -- report_revisions (append-only report snapshots) -----------------#
+    async def next_revision_no(self, video_id: str) -> int:
+        """``max(revision_no) + 1`` for this video (1 for its first revision)."""
+        result = await (
+            self.client.table("report_revisions")
+            .select("revision_no")
+            .eq("video_id", video_id)
+            .order("revision_no", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return int(rows[0]["revision_no"]) + 1 if rows else 1  # type: ignore[index, arg-type, call-overload]
+
+    async def insert_ai_revision(
+        self,
+        video_id: str,
+        *,
+        model_run_id: str,
+        payload: dict[str, Any],
+        evidence: list[dict[str, Any]],
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Append a new ``kind='ai'`` revision and return the inserted row (with its ``id``).
+
+        A re-generation is a new branch (``parent_id`` NULL) and copies nothing from earlier
+        revisions. The facet columns are filled from ``payload`` (:func:`revision_facets`).
+        ``revision_no`` is ``max + 1``; a concurrent writer taking the same number makes the
+        unique key reject the insert, which is retried with the next number.
+        """
+        last_exc: Exception | None = None
+        for _ in range(_REVISION_INSERT_ATTEMPTS):
+            row = {
+                "video_id": video_id,
+                "revision_no": await self.next_revision_no(video_id),
+                "kind": "ai",
+                "model_run_id": model_run_id,
+                "parent_id": None,
+                "payload": payload,
+                "evidence": evidence,
+                **revision_facets(payload),
+                "created_by": None,
+                "created_at": _utcnow().isoformat(),
+                "note": note,
+            }
+            try:
+                result = await self.client.table("report_revisions").insert(row).execute()
+            except APIError as exc:
+                if exc.code != _UNIQUE_VIOLATION:
+                    raise
+                last_exc = exc
+                continue
+            inserted = (result.data or [row])[0]
+            return dict(inserted)  # type: ignore[arg-type]
+        raise RuntimeError(f"could not allocate a revision_no for video {video_id}") from last_exc
+
+    async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
+        result = await self.client.table("report_revisions").select("*").eq("id", revision_id).maybe_single().execute()
+        return _row_to_dict(result.data if result is not None else None)  # type: ignore[arg-type]
+
+    async def list_revisions(self, video_id: str) -> list[dict[str, Any]]:
+        result = await (
+            self.client.table("report_revisions").select("*").eq("video_id", video_id).order("revision_no").execute()
+        )
+        return result.data or []  # type: ignore[return-value]
+
+
+def _whole_seconds(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    seconds: float = value
+    return round(seconds)
+
+
+def revision_facets(payload: dict[str, Any]) -> dict[str, Any]:
+    """The plain facet columns of a ``report_revisions`` row, read from its contract ``payload``.
+
+    ``incident_type`` and ``severity_level`` copy ``incident.type`` and ``incident.severity_level``;
+    ``start_seconds`` and ``end_seconds`` are ``incident.start_timestamp`` and ``end_timestamp``
+    rounded to whole seconds. A missing or malformed value leaves its column NULL.
+    """
+    incident = payload.get("incident") if isinstance(payload, dict) else None
+    if not isinstance(incident, dict):
+        incident = {}
+    incident_type = incident.get("type")
+    severity = incident.get("severity_level")
+    return {
+        "incident_type": incident_type if isinstance(incident_type, str) and incident_type else None,
+        "severity_level": severity if isinstance(severity, int) and not isinstance(severity, bool) else None,
+        "start_seconds": _whole_seconds(incident.get("start_timestamp")),
+        "end_seconds": _whole_seconds(incident.get("end_timestamp")),
+    }
 
 
 # --------------------------------------------------------------------------- #

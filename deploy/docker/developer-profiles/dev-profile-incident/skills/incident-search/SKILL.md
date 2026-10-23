@@ -9,7 +9,7 @@ metadata:
 ---
 # Incident Search
 
-Use this skill for MVP2 natural-language search across the incident archive, grounded chat about search results, and the evidence-crop loader. Search and chat are always-on in the profile; there is no `--search` startup flag.
+Use this skill for MVP2 natural-language search across the incident archive, grounded chat about search results, and checking how evidence crops reach search. Search and chat are always-on in the profile; there is no `--search` startup flag.
 
 Canonical facts:
 
@@ -24,7 +24,7 @@ Canonical facts:
 1. Start the profile with [`incident-start`](../incident-start/SKILL.md):
    - `./start.sh --mode local` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
    - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
-2. For live search or crop loading, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
+2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
 3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
 
 ## Search evidence
@@ -72,20 +72,16 @@ curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \
 
 Use `context.scope: "incident"` with `incident_id` for one incident, or include `evidence_crop_ids` to focus the answer. A successful response contains an assistant message and structured citations with `incident_id`, `item_id`, `item_type`, `timestamp_seconds`, and `crop_image_url`. When no evidence is relevant, the grounded response has `citations: []`; do not invent a citation. Invalid or empty messages are client errors (400/422).
 
-## Populate evidence crops
+## How evidence crops reach search
 
-The loader is idempotent and resumable: it reads official reports, asks the remote VLM for item timestamps and detector labels, extracts and uploads crops to R2, creates 1024-dimensional text embeddings, and upserts `evidence_crops`. It never rewrites reviewed report text.
-
-Run from the VM checkout after checking the finals environment and VM status:
+There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds official revisions only: when a revision is made official the console calls `POST /api/v1/incidents/evidence-embeddings` with `{"revision_id": <id>}`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself.
 
 ```bash
-cd /srv/rise-up/vss
-set -a; . deploy/docker/developer-profiles/dev-profile-incident/generated.env.remote; set +a
-services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --dry-run
-services/agent/.venv/bin/python scripts/backfill_official_timestamps.py --concurrency 2
+curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \
+  -H 'Content-Type: application/json' -d '{"revision_id": 1}' | jq 'length, .[0] | del(.embedding)'
 ```
 
-The dry run must pass before the write run. The Brev gateway is rate-limited; keep concurrency at 2 or lower unless the operations owner approves a change. A failed item is isolated and can be retried later. Do not run the loader during a demo, and do not rerun it solely to improve search scores while the remote gateway is unhealthy. Verify the live remaining-failure note in [`.docs/status.md`](../../.docs/status.md) first.
+`404` means the revision does not exist; `503` means the database or embedding key is not configured. An empty `evidence_crops` table means no revision has been made official yet, not a broken search. Changing the embedding model means re-embedding every official revision.
 
 ## Verify
 

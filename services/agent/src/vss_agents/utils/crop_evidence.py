@@ -17,7 +17,9 @@
 
 Produces tightly framed object crops from video frames at VLM timestamp_seconds
 using an open-vocabulary detector port, applying 5% margin padding clamped to the
-frame, and encoding JPEG quality 85 evidence images persisted via EvidenceStore.
+frame, and encoding JPEG quality 85 evidence images persisted via EvidenceStore (R2 in production).
+The crops become the evidence entries of the AI revision the analysis run writes; the console builds
+the searchable ``evidence_crops`` rows from a revision's evidence when it is made official.
 """
 
 from abc import ABC
@@ -37,6 +39,7 @@ import time
 from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
+import uuid
 
 try:
     import cv2
@@ -46,9 +49,9 @@ import httpx
 import numpy as np
 from PIL import Image
 
-from vss_agents.utils import incident_db
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.r2 import get_r2_client
+from vss_agents.utils.r2 import is_r2_configured
 
 logger = logging.getLogger(__name__)
 
@@ -72,22 +75,19 @@ class CropResult:
     frame_size: tuple[int, int]  # (width, height)
 
 
-def evidence_key(video_id: str, model_run_id: str, collection: str, item_id: str) -> str:
-    """Return the canonical R2 storage key for an evidence crop image.
+def evidence_key(video_id: str, batch_id: str, item_id: str) -> str:
+    """Return the R2 key for one evidence crop image: ``evidence/<videoId>/<batchId>/<itemId>.jpg``.
 
-    Canonical layout: evidence/<videoId>/<modelRunId>/<collection>/<id>.jpg
-    Collections are: entities, instruments, assets.
+    ``batch_id`` is a fresh UUID per analysis run (:func:`new_evidence_batch_id`), so a key is
+    never reused and an image a revision references is never overwritten. Item ids (``E1``,
+    ``I1``, ``A1``) are unique across the three collections, so no collection folder is needed.
     """
-    collection_mapping = {
-        "entity": "entities",
-        "entities": "entities",
-        "instrument": "instruments",
-        "instruments": "instruments",
-        "asset": "assets",
-        "assets": "assets",
-    }
-    col = collection_mapping.get(collection.lower(), collection)
-    return f"evidence/{video_id}/{model_run_id}/{col}/{item_id}.jpg"
+    return f"evidence/{video_id}/{batch_id}/{item_id}.jpg"
+
+
+def new_evidence_batch_id() -> str:
+    """A fresh batch id for :func:`evidence_key`."""
+    return uuid.uuid4().hex
 
 
 def apply_box_padding(
@@ -214,6 +214,8 @@ DEFAULT_GROUNDING_BASE_URL = "https://switchyard-13doh4lsz.brevlab.com"
 DEFAULT_GROUNDING_MODEL = "nvidia/cosmos-3-super-reasoner"
 GROUNDING_MAX_EDGE_PIXELS = 1280
 GROUNDING_MAX_ATTEMPTS = 4
+# Items of one report cropped at once; each crop is a blocking frame read plus a grounding call.
+EVIDENCE_CROP_CONCURRENCY = 4
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 _JSON_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$")
 
@@ -452,7 +454,7 @@ def crop_evidence_item(
 
 
 class EvidenceStore(ABC):
-    """Port for persisting evidence crop images and metadata."""
+    """Port for persisting evidence crop images."""
 
     @abstractmethod
     async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
@@ -464,53 +466,12 @@ class EvidenceStore(ABC):
         """Retrieve stored image bytes by key."""
         ...
 
-    @abstractmethod
-    async def record_crop(
-        self,
-        *,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-        item_name: str,
-        description: str,
-        timestamp_seconds: int,
-        bounding_box: list[int],
-        image_key: str,
-        threat_level: int | None = None,
-        holder_entity_id: str | None = None,
-        embedding: list[float] | None = None,
-    ) -> dict[str, Any]:
-        """Record crop metadata in the evidence catalog."""
-        ...
-
-    @abstractmethod
-    async def get_crop(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-    ) -> dict[str, Any] | None:
-        """Retrieve crop record by composite primary key."""
-        ...
-
-    @abstractmethod
-    async def list_crops_for_incident(
-        self,
-        incident_id: str,
-        model_run_id: str,
-    ) -> list[dict[str, Any]]:
-        """List all crops for an incident run."""
-        ...
-
 
 class InMemoryEvidenceStore(EvidenceStore):
     """In-memory adapter for hermetic unit testing and zero-cloud environments."""
 
     def __init__(self) -> None:
         self.images: dict[str, bytes] = {}
-        self.crops: dict[tuple[str, str, str, str], dict[str, Any]] = {}
 
     async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:  # noqa: ARG002
         self.images[key] = image_bytes
@@ -519,60 +480,9 @@ class InMemoryEvidenceStore(EvidenceStore):
     async def get_image(self, key: str) -> bytes | None:
         return self.images.get(key)
 
-    async def record_crop(
-        self,
-        *,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-        item_name: str,
-        description: str,
-        timestamp_seconds: int,
-        bounding_box: list[int],
-        image_key: str,
-        threat_level: int | None = None,
-        holder_entity_id: str | None = None,
-        embedding: list[float] | None = None,
-    ) -> dict[str, Any]:
-        record = {
-            "incident_id": incident_id,
-            "model_run_id": model_run_id,
-            "item_type": item_type,
-            "item_id": item_id,
-            "item_name": item_name,
-            "description": description,
-            "timestamp_seconds": timestamp_seconds,
-            "bounding_box": bounding_box,
-            "image": image_key,
-            "threat_level": threat_level,
-            "holder_entity_id": holder_entity_id,
-            "embedding": embedding,
-        }
-        self.crops[(incident_id, model_run_id, item_type, item_id)] = record
-        return record
 
-    async def get_crop(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-    ) -> dict[str, Any] | None:
-        return self.crops.get((incident_id, model_run_id, item_type, item_id))
-
-    async def list_crops_for_incident(
-        self,
-        incident_id: str,
-        model_run_id: str,
-    ) -> list[dict[str, Any]]:
-        return [
-            v for (inc_id, run_id, _, _), v in self.crops.items() if inc_id == incident_id and run_id == model_run_id
-        ]
-
-
-class R2EvidenceStore:
-    """Cloudflare R2 adapter for evidence crop images (object storage half of the evidence catalog)."""
+class R2EvidenceStore(EvidenceStore):
+    """Cloudflare R2 adapter for evidence crop images (the production store)."""
 
     def __init__(self, bucket: str | None = None, client: Any = None) -> None:
         self.bucket = bucket or os.getenv("R2_BUCKET", "")
@@ -597,137 +507,66 @@ class R2EvidenceStore:
             raise
 
 
-class SupabaseEvidenceStore:
-    """Supabase PostgREST adapter for the evidence_crops table (catalog half of the evidence catalog)."""
+def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """The entities, instruments and assets of an incident-contract-v3 report as evidence entries.
 
-    _COLUMNS = (
-        "incident_id,model_run_id,item_type,item_id,item_name,description,threat_level,holder_entity_id,"
-        "timestamp_seconds,bounding_box,image,created_at"
-    )
-
-    def __init__(self, client: Any = None) -> None:
-        self.client = client
-
-    async def _get_client(self) -> Any:
-        if self.client is not None:
-            return self.client
-        db = await incident_db.get_db()
-        if db is None:
-            raise RuntimeError(
-                "Incident Supabase DB is not configured (INCIDENT_SUPABASE_URL and "
-                "INCIDENT_SUPABASE_SERVICE_ROLE_KEY required)"
-            )
-        return db.client
-
-    async def record_crop(
-        self,
-        *,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-        item_name: str,
-        description: str,
-        timestamp_seconds: int,
-        bounding_box: list[int],
-        image_key: str,
-        threat_level: int | None = None,
-        holder_entity_id: str | None = None,
-        embedding: list[float] | None = None,
-    ) -> dict[str, Any]:
-        client = await self._get_client()
-        row = {
-            "incident_id": incident_id,
-            "model_run_id": model_run_id,
-            "item_type": item_type,
-            "item_id": item_id,
-            "item_name": item_name[:256],
-            "description": description,
-            "threat_level": threat_level,
-            "holder_entity_id": holder_entity_id,
-            "timestamp_seconds": timestamp_seconds,
-            "bounding_box": bounding_box,
-            "image": image_key,
-            "embedding": embedding,
-        }
-        await (
-            client.table("evidence_crops")
-            .upsert(row, on_conflict="incident_id,model_run_id,item_type,item_id")
-            .execute()
+    Each entry carries the ``evidence_crops`` item columns (``item_type``, ``item_id``,
+    ``item_name``, ``description``, ``threat_level``, ``holder_entity_id``, ``timestamp_seconds``)
+    plus the detector ``label``; :meth:`CropEvidenceService.process_incident_report` adds
+    ``bounding_box``, ``image`` and ``image_gap``.
+    """
+    items: list[dict[str, Any]] = []
+    for entity in report.get("entities") or []:
+        items.append(
+            {
+                "item_type": "entity",
+                "item_id": str(entity.get("entity_id") or ""),
+                "item_name": str(entity.get("type") or "entity"),
+                "description": str(entity.get("description") or ""),
+                "threat_level": None,
+                "holder_entity_id": None,
+                "timestamp_seconds": _whole_seconds(entity.get("timestamp_seconds")),
+                "label": str(entity.get("label") or entity.get("description") or entity.get("type") or "person"),
+            }
         )
-        return row
-
-    async def get_crop(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-    ) -> dict[str, Any] | None:
-        client = await self._get_client()
-        resp = await (
-            client.table("evidence_crops")
-            .select(self._COLUMNS)
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .eq("item_type", item_type)
-            .eq("item_id", item_id)
-            .limit(1)
-            .execute()
+    for instrument in report.get("instruments") or []:
+        items.append(
+            {
+                "item_type": "instrument",
+                "item_id": str(instrument.get("instrument_id") or ""),
+                "item_name": str(instrument.get("name") or "instrument"),
+                "description": str(instrument.get("description") or ""),
+                "threat_level": instrument.get("threat_level"),
+                "holder_entity_id": instrument.get("entity_id"),
+                "timestamp_seconds": _whole_seconds(instrument.get("timestamp_seconds")),
+                "label": str(instrument.get("label") or instrument.get("name") or "instrument"),
+            }
         )
-        return resp.data[0] if resp.data else None
-
-    async def list_crops_for_incident(
-        self,
-        incident_id: str,
-        model_run_id: str,
-    ) -> list[dict[str, Any]]:
-        client = await self._get_client()
-        resp = await (
-            client.table("evidence_crops")
-            .select(self._COLUMNS)
-            .eq("incident_id", incident_id)
-            .eq("model_run_id", model_run_id)
-            .execute()
+    for asset in report.get("assets") or []:
+        items.append(
+            {
+                "item_type": "asset",
+                "item_id": str(asset.get("asset_id") or ""),
+                "item_name": str(asset.get("name") or "asset"),
+                "description": str(asset.get("description") or ""),
+                "threat_level": None,
+                "holder_entity_id": None,
+                "timestamp_seconds": _whole_seconds(asset.get("timestamp_seconds")),
+                "label": str(asset.get("label") or asset.get("name") or "asset"),
+            }
         )
-        return list(resp.data or [])
+    return [item for item in items if item["item_id"]]
 
 
-class LiveEvidenceStore(EvidenceStore):
-    """Production EvidenceStore: images in Cloudflare R2, crop rows and embeddings in Supabase."""
-
-    def __init__(self, images: R2EvidenceStore | None = None, crops: SupabaseEvidenceStore | None = None) -> None:
-        self.images = images if images is not None else R2EvidenceStore()
-        self.crops = crops if crops is not None else SupabaseEvidenceStore()
-
-    async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
-        return await self.images.put_image(key, image_bytes, content_type)
-
-    async def get_image(self, key: str) -> bytes | None:
-        return await self.images.get_image(key)
-
-    async def record_crop(self, **kwargs: Any) -> dict[str, Any]:
-        return await self.crops.record_crop(**kwargs)
-
-    async def get_crop(
-        self,
-        incident_id: str,
-        model_run_id: str,
-        item_type: str,
-        item_id: str,
-    ) -> dict[str, Any] | None:
-        return await self.crops.get_crop(incident_id, model_run_id, item_type, item_id)
-
-    async def list_crops_for_incident(
-        self,
-        incident_id: str,
-        model_run_id: str,
-    ) -> list[dict[str, Any]]:
-        return await self.crops.list_crops_for_incident(incident_id, model_run_id)
+def _whole_seconds(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0
+    seconds: float = value
+    return max(0, round(seconds))
 
 
 class CropEvidenceService:
-    """Service orchestrating object crop extraction and persistence."""
+    """Service orchestrating object crop extraction and image upload for one analysis run."""
 
     def __init__(
         self,
@@ -735,7 +574,7 @@ class CropEvidenceService:
         store: EvidenceStore | None = None,
     ) -> None:
         self.detector = detector if detector is not None else DefaultDetector()
-        self.store = store if store is not None else InMemoryEvidenceStore()
+        self.store = store
 
     def is_detector_available(self) -> bool:
         """Check whether the active detector is ready and available."""
@@ -752,108 +591,79 @@ class CropEvidenceService:
         label: str,
         detector: Any | None = None,
     ) -> CropResult | None:
-        """Crop an evidence item using the configured detector."""
+        """Crop an evidence item using the configured detector (whole frame when no box is found)."""
         active_detector = detector if detector is not None else self.detector
-        return crop_evidence_item(video_ref, timestamp_seconds, label, active_detector)
+        return crop_evidence_item(video_ref, timestamp_seconds, label, active_detector, whole_frame_fallback=True)
 
     async def process_incident_report(
         self,
         *,
         video_ref: str | Path | np.ndarray,
-        incident_id: str,
-        model_run_id: str,
+        video_id: str,
         report: dict[str, Any],
+        batch_id: str | None = None,
         detector: Any | None = None,
         store: EvidenceStore | None = None,
-    ) -> list[CropResult]:
-        """Crop all entities, instruments, and assets from an incident-contract-v3 report."""
+    ) -> list[dict[str, Any]]:
+        """Crop every entity, instrument and asset of a report and upload each image.
+
+        Returns one evidence entry per item (see :func:`evidence_items`) for the revision's
+        ``evidence`` JSONB. ``image`` is the R2 key ``evidence/<videoId>/<batchId>/<itemId>.jpg``
+        and ``bounding_box`` the normalised crop box; when no image could be produced ``image`` and
+        ``bounding_box`` are null and ``image_gap`` says why. Never raises for a single item.
+        """
         active_detector = detector if detector is not None else self.detector
         active_store = store if store is not None else self.store
+        batch = batch_id or new_evidence_batch_id()
+        items = evidence_items(report)
 
-        if not self.is_detector_available() and detector is None:
-            return []
+        detector_ready = detector is not None or self.is_detector_available()
+        semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
 
-        results: list[CropResult] = []
+        async def _crop_and_upload(entry: dict[str, Any]) -> None:
+            if active_store is None:
+                entry["image_gap"] = "no evidence image store is configured (R2 settings missing)"
+                return
+            if not detector_ready:
+                entry["image_gap"] = "no evidence detector is configured (VLM grounding key missing)"
+                return
+            async with semaphore:
+                try:
+                    crop = await asyncio.to_thread(
+                        self.crop_item, video_ref, entry["timestamp_seconds"], entry["label"], active_detector
+                    )
+                except Exception as exc:
+                    logger.warning("Evidence crop failed for %s %s: %s", video_id, entry["item_id"], exc)
+                    entry["image_gap"] = f"crop failed: {type(exc).__name__}: {exc}"
+                    return
+                if crop is None:
+                    entry["image_gap"] = (
+                        f"no crop produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
+                    )
+                    return
+                key = evidence_key(video_id, batch, entry["item_id"])
+                try:
+                    await active_store.put_image(key, crop.image_bytes)
+                except Exception as exc:
+                    logger.warning("Evidence image upload failed for %s: %s", key, exc)
+                    entry["image_gap"] = f"image upload failed: {type(exc).__name__}: {exc}"
+                    return
+                entry["image"] = key
+                entry["bounding_box"] = crop.normalized_box
 
-        # 1. Process entities
-        for entity in report.get("entities", []):
-            label = entity.get("label") or entity.get("description") or entity.get("type", "entity")
-            ts = entity.get("timestamp_seconds", 0)
-            entity_id = entity.get("entity_id", "E1")
-            crop = self.crop_item(video_ref, ts, label, detector=active_detector)
-            if crop is not None:
-                results.append(crop)
-                key = evidence_key(incident_id, model_run_id, "entities", entity_id)
-                await active_store.put_image(key, crop.image_bytes)
-                await active_store.record_crop(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    item_type="entity",
-                    item_id=entity_id,
-                    item_name=entity.get("type", "entity"),
-                    description=entity.get("description", ""),
-                    timestamp_seconds=ts,
-                    bounding_box=crop.normalized_box,
-                    image_key=key,
-                )
-
-        # 2. Process instruments
-        for instrument in report.get("instruments", []):
-            label = instrument.get("label") or instrument.get("name", "instrument")
-            ts = instrument.get("timestamp_seconds", 0)
-            instrument_id = instrument.get("instrument_id", "I1")
-            crop = self.crop_item(video_ref, ts, label, detector=active_detector)
-            if crop is not None:
-                results.append(crop)
-                key = evidence_key(incident_id, model_run_id, "instruments", instrument_id)
-                await active_store.put_image(key, crop.image_bytes)
-                await active_store.record_crop(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    item_type="instrument",
-                    item_id=instrument_id,
-                    item_name=instrument.get("name", "instrument"),
-                    description=instrument.get("description", ""),
-                    timestamp_seconds=ts,
-                    bounding_box=crop.normalized_box,
-                    image_key=key,
-                    threat_level=instrument.get("threat_level"),
-                    holder_entity_id=instrument.get("entity_id"),
-                )
-
-        # 3. Process assets
-        for asset in report.get("assets", []):
-            label = asset.get("label") or asset.get("name", "asset")
-            ts = asset.get("timestamp_seconds", 0)
-            asset_id = asset.get("asset_id", "A1")
-            crop = self.crop_item(video_ref, ts, label, detector=active_detector)
-            if crop is not None:
-                results.append(crop)
-                key = evidence_key(incident_id, model_run_id, "assets", asset_id)
-                await active_store.put_image(key, crop.image_bytes)
-                await active_store.record_crop(
-                    incident_id=incident_id,
-                    model_run_id=model_run_id,
-                    item_type="asset",
-                    item_id=asset_id,
-                    item_name=asset.get("name", "asset"),
-                    description=asset.get("description", ""),
-                    timestamp_seconds=ts,
-                    bounding_box=crop.normalized_box,
-                    image_key=key,
-                )
-
-        return results
+        entries = [{**item, "bounding_box": None, "image": None, "image_gap": None} for item in items]
+        await asyncio.gather(*(_crop_and_upload(entry) for entry in entries))
+        return entries
 
 
 _default_crop_evidence_service: CropEvidenceService | None = None
 
 
 def get_crop_evidence_service() -> CropEvidenceService:
-    """Retrieve the global CropEvidenceService instance."""
+    """Retrieve the global CropEvidenceService instance (images go to R2 when R2 is configured)."""
     global _default_crop_evidence_service
     if _default_crop_evidence_service is None:
-        _default_crop_evidence_service = CropEvidenceService()
+        _default_crop_evidence_service = CropEvidenceService(store=R2EvidenceStore() if is_r2_configured() else None)
     return _default_crop_evidence_service
 
 

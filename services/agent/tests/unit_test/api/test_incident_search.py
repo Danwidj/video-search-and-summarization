@@ -96,6 +96,7 @@ def sample_candidates() -> list[EvidenceCandidate]:
     return [
         EvidenceCandidate(
             incident_id="Assault001",
+            revision_id=1,
             model_run_id="run-001",
             playback_url="https://pub-r2.example.com/videos/assault1.mp4",
             incident_type="assault",
@@ -117,6 +118,7 @@ def sample_candidates() -> list[EvidenceCandidate]:
         ),
         EvidenceCandidate(
             incident_id="Assault001",
+            revision_id=2,
             model_run_id="run-001",
             playback_url="https://pub-r2.example.com/videos/assault1.mp4",
             incident_type="assault",
@@ -138,6 +140,7 @@ def sample_candidates() -> list[EvidenceCandidate]:
         ),
         EvidenceCandidate(
             incident_id="Burglary002",
+            revision_id=3,
             model_run_id="run-002",
             playback_url="https://pub-r2.example.com/videos/burglary2.mp4",
             incident_type="burglary",
@@ -159,6 +162,7 @@ def sample_candidates() -> list[EvidenceCandidate]:
         ),
         EvidenceCandidate(
             incident_id="Accident003",
+            revision_id=4,
             model_run_id="run-003",
             playback_url="https://pub-r2.example.com/videos/accident3.mp4",
             incident_type="road accident",
@@ -577,6 +581,10 @@ class TestSearchRouteEndToEnd:
         assert len(persisted_results) == 2
         assert persisted_results[0]["critic_verdict"] == "confirmed"
         assert persisted_results[0]["rank"] == 1
+        # Each result is stored against the official revision its evidence came from.
+        valid_revisions = {c.revision_id for c in sample_candidates}
+        assert all(r["revision_id"] in valid_revisions for r in persisted_results)
+        assert all("incident_id" not in r and "model_run_id" not in r for r in persisted_results)
 
     def test_search_route_never_drops_hits_on_critic_failure(self, sample_candidates: list[EvidenceCandidate]) -> None:
         app = FastAPI()
@@ -660,6 +668,7 @@ class TestSearchRouteEndToEnd:
     def test_search_route_default_has_no_similarity_cutoff(self) -> None:
         low = EvidenceCandidate(
             incident_id="I1",
+            revision_id=5,
             model_run_id="run-001",
             playback_url="",
             incident_type="burglary",
@@ -776,7 +785,8 @@ class TestSearchStores:
         mock_client = MagicMock()
         rpc_builder = MagicMock()
         sample_rpc_row = {
-            "incident_id": "Assault007_x264",
+            "video_id": "Assault007_x264",
+            "revision_id": 7,
             "model_run_id": "m86a5c319e26659804b0",
             "video_filepath": "videos/anomaly/assault/Assault007_x264.mp4",
             "incident_type": "assault",
@@ -792,7 +802,7 @@ class TestSearchStores:
             "item_description": "Long curved blade held by assailant.",
             "threat_level": 4,
             "holder_entity_id": "E1",
-            "image": "evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+            "image": "evidence/Assault007_x264/batch1/I1.jpg",
             "timestamp_seconds": 14,
             "bounding_box": [320, 450, 510, 600],
             "similarity_score": 0.89,
@@ -817,11 +827,10 @@ class TestSearchStores:
         assert len(hits) == 1
         cand = hits[0]
         assert cand.incident_id == "Assault007_x264"
+        assert cand.revision_id == 7
         assert cand.model_run_id == "m86a5c319e26659804b0"
         assert cand.playback_url == "https://mock-r2.test/videos/anomaly/assault/Assault007_x264.mp4"
-        assert cand.crop_image_url == (
-            "https://mock-r2.test/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg"
-        )
+        assert cand.crop_image_url == ("https://mock-r2.test/evidence/Assault007_x264/batch1/I1.jpg")
         assert cand.item_type == "instrument"
         assert cand.item_id == "I1"
         assert cand.incident_window == [10.0, 28.0]
@@ -862,8 +871,7 @@ class TestSearchStores:
         results = [
             {
                 "id": "res-1",
-                "incident_id": "Assault007",
-                "model_run_id": "m1",
+                "revision_id": 7,
                 "item_type": "instrument",
                 "item_id": "I1",
                 "rank": 1,
@@ -879,12 +887,15 @@ class TestSearchStores:
         assert len(results_call_args) == 1
         assert results_call_args[0]["query_id"] == "q-123"
         assert results_call_args[0]["critic_verdict"] == "confirmed"
+        assert results_call_args[0]["revision_id"] == 7
+        assert "incident_id" not in results_call_args[0] and "model_run_id" not in results_call_args[0]
 
     def test_search_route_with_supabase_store_e2e(self) -> None:
         mock_client = MagicMock()
         rpc_builder = MagicMock()
         sample_rpc_row = {
-            "incident_id": "Assault007_x264",
+            "video_id": "Assault007_x264",
+            "revision_id": 7,
             "model_run_id": "m86a5c319e26659804b0",
             "video_filepath": "videos/Assault007_x264.mp4",
             "incident_type": "assault",
@@ -900,7 +911,7 @@ class TestSearchStores:
             "item_description": "Long curved blade held by assailant.",
             "threat_level": 4,
             "holder_entity_id": "E1",
-            "image": "evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
+            "image": "evidence/Assault007_x264/batch1/I1.jpg",
             "timestamp_seconds": 14,
             "bounding_box": [320, 450, 510, 600],
             "similarity_score": 0.89,
@@ -933,9 +944,7 @@ class TestSearchStores:
         hit = data["hits"][0]
         assert hit["critic"]["verdict"] == "confirmed"
         assert hit["critic"]["confidence"] == 0.92
-        assert hit["item"]["crop_image_url"] == (
-            "https://real-r2.test/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg"
-        )
+        assert hit["item"]["crop_image_url"] == ("https://real-r2.test/evidence/Assault007_x264/batch1/I1.jpg")
 
 
 # =============================================================================

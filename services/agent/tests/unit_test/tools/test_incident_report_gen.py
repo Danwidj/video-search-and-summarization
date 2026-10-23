@@ -13,11 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for incident_report_gen: the incident contract's P1 -> RP1 calls and persistence."""
+"""Unit tests for incident_report_gen: the incident contract's P1 -> RP1 calls, evidence and the AI revision."""
 
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -27,17 +28,18 @@ import pytest
 
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
+from vss_agents.tools.incident_report_gen import REVIEWER_PROMPT_PREAMBLE
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
+from vss_agents.tools.incident_report_gen import collect_evidence
 from vss_agents.tools.incident_report_gen import incident_report_gen
+from vss_agents.tools.incident_report_gen import normalize_reviewer_prompt
 from vss_agents.tools.incident_report_gen import p1_request_body
-from vss_agents.tools.incident_report_gen import persist_report
+from vss_agents.tools.incident_report_gen import persist_revision
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
-from vss_agents.utils.crop_evidence import CropEvidenceService
-from vss_agents.utils.crop_evidence import FakeDetector
-from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
 MODEL_OUTPUT = {
@@ -109,6 +111,12 @@ class TestRequestBodies:
         assert body["media_io_kwargs"] == {"video": {"num_frames": 64}}
         assert "data:video" not in json.dumps(body)
 
+    def test_p1_appends_the_framed_reviewer_prompt_after_the_contract_prompt(self):
+        parts = p1_request_body("vlm", VIDEO_URL, "look at the door")["messages"][0]["content"]
+        assert len(parts) == 3
+        assert parts[1]["text"] == incident_contract.extraction_prompt()
+        assert parts[2] == {"type": "text", "text": f"{REVIEWER_PROMPT_PREAMBLE}\n<<<\nlook at the door\n>>>"}
+
     def test_rp1_uses_contract_model_and_prompt(self):
         report = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
         body = rp1_request_body(report)
@@ -116,6 +124,20 @@ class TestRequestBodies:
         assert body["chat_template_kwargs"] == {"enable_thinking": False}
         assert '"duration": 5' in body["messages"][0]["content"]
         assert "response_format" not in body and "media_io_kwargs" not in body
+
+
+class TestNormalizeReviewerPrompt:
+    def test_blank_or_missing_is_none(self):
+        assert normalize_reviewer_prompt(None) is None
+        assert normalize_reviewer_prompt("  \x00 \n ") is None
+
+    def test_strips_control_characters_and_normalises_newlines(self):
+        assert normalize_reviewer_prompt(" a\x07b\r\nc ") == "ab\nc"
+
+    def test_rejects_text_over_the_limit(self):
+        assert normalize_reviewer_prompt("x" * MAX_REVIEWER_PROMPT_LENGTH) is not None
+        with pytest.raises(ValueError, match="at most"):
+            normalize_reviewer_prompt("x" * (MAX_REVIEWER_PROMPT_LENGTH + 1))
 
 
 class TestRunP1:
@@ -199,51 +221,83 @@ class TestRunRP1:
         assert text is None and error in message
 
 
-class TestPersistReport:
+class TestCollectEvidence:
     REPORT = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
 
     @pytest.mark.asyncio
-    async def test_writes_contract_rows(self):
-        db = AsyncMock()
+    async def test_failure_becomes_an_image_gap_for_every_item(self):
+        service = MagicMock()
+        service.process_incident_report = AsyncMock(side_effect=RuntimeError("boom"))
+        set_crop_evidence_service(service)
+        try:
+            entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=self.REPORT)
+        finally:
+            set_crop_evidence_service(None)
+        assert [entry["item_id"] for entry in entries] == ["E1", "I1", "A1"]
+        assert all(entry["image"] is None and "boom" in entry["image_gap"] for entry in entries)
+
+
+class TestPersistRevision:
+    REPORT = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
+    EVIDENCE: ClassVar[list[dict]] = [{"item_type": "entity", "item_id": "E1", "image": None, "image_gap": "no store"}]
+
+    async def _persist(self, db, **overrides):
+        kwargs = {
+            "incident_id": "v1",
+            "model_run_id": "run1",
+            "model_name": "vlm",
+            "report": self.REPORT,
+            "evidence": self.EVIDENCE,
+            "caller_owns_run": False,
+        }
         with (
             patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=True),
             patch("vss_agents.tools.incident_report_gen.incident_db.get_db", new_callable=AsyncMock, return_value=db),
         ):
-            await persist_report(incident_id="v1", model_run_id="run1", model_name="vlm", report=self.REPORT)
+            return await persist_revision(**{**kwargs, **overrides})
+
+    @pytest.mark.asyncio
+    async def test_registers_the_run_then_inserts_the_ai_revision(self):
+        db = AsyncMock()
+        db.insert_ai_revision.return_value = {"id": 9}
+        assert await self._persist(db, note="Reviewer prompt: x") == 9
         db.insert_model_run.assert_awaited_once_with(
             "run1", model_name="vlm", prompt_version=incident_contract.contract_version()
         )
-        fields = db.insert_incident.await_args.kwargs["fields"]
-        assert fields == {
-            "type": "burglary",
-            "start_timestamp": "1",
-            "end_timestamp": "6",
-            "duration": 5,
-            "description": "E1 forces the door open.",
-            "severity_level": 2,
-            "confidence_score": None,
-        }
-        db.add_incident_entity.assert_awaited_once_with(
-            "v1", "run1", entity_id="E1", type="human", description="Person in a hood."
+        db.insert_model_run_if_absent.assert_not_called()
+        db.insert_ai_revision.assert_awaited_once_with(
+            "v1", model_run_id="run1", payload=self.REPORT, evidence=self.EVIDENCE, note="Reviewer prompt: x"
         )
-        assert db.add_incident_instrument.await_args.kwargs["entity_id"] == "E1"
-        assert db.add_incident_asset.await_args.kwargs["asset_id"] == "A1"
         db.upsert_video.assert_not_called()  # the console owns videos.filepath (the R2 key)
+
+    @pytest.mark.asyncio
+    async def test_caller_owned_run_is_only_created_when_absent(self):
+        db = AsyncMock()
+        db.insert_ai_revision.return_value = {"id": 3}
+        assert await self._persist(db, caller_owns_run=True) == 3
+        db.insert_model_run_if_absent.assert_awaited_once_with(
+            "run1", model_name="vlm", prompt_version=incident_contract.contract_version()
+        )
+        db.insert_model_run.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_db_failure_is_swallowed(self):
         db = AsyncMock()
-        db.insert_incident.side_effect = RuntimeError("down")
-        with (
-            patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=True),
-            patch("vss_agents.tools.incident_report_gen.incident_db.get_db", new_callable=AsyncMock, return_value=db),
-        ):
-            await persist_report(incident_id="v1", model_run_id="run1", model_name="vlm", report=self.REPORT)
+        db.insert_ai_revision.side_effect = RuntimeError("down")
+        assert await self._persist(db) is None
 
     @pytest.mark.asyncio
     async def test_skips_when_db_not_configured(self):
         with patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=False):
-            await persist_report(incident_id="v1", model_run_id="run1", model_name="vlm", report=self.REPORT)
+            result = await persist_revision(
+                incident_id="v1",
+                model_run_id="run1",
+                model_name="vlm",
+                report=self.REPORT,
+                evidence=[],
+                caller_owns_run=False,
+            )
+        assert result is None
 
 
 class TestEndToEnd:
@@ -259,7 +313,14 @@ class TestEndToEnd:
 
         with (
             patch("vss_agents.tools.incident_report_gen.httpx.AsyncClient", side_effect=client_factory),
-            patch("vss_agents.tools.incident_report_gen.persist_report", new_callable=AsyncMock) as persist,
+            patch(
+                "vss_agents.tools.incident_report_gen.collect_evidence",
+                new_callable=AsyncMock,
+                return_value=[{"item_id": "E1", "image": "evidence/v1/b/E1.jpg", "image_gap": None}],
+            ),
+            patch(
+                "vss_agents.tools.incident_report_gen.persist_revision", new_callable=AsyncMock, return_value=7
+            ) as persist,
             patch.dict("os.environ", {"OPENAI_API_KEY": "secret"}),
         ):
             async with incident_report_gen(_config(), MagicMock()) as function_info:
@@ -269,7 +330,7 @@ class TestEndToEnd:
         return result, persist
 
     @pytest.mark.asyncio
-    async def test_p1_then_rp1_without_persisting_for_a_caller_run_id(self):
+    async def test_p1_then_rp1_then_revision_for_a_caller_run_id(self):
         requests = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -285,7 +346,11 @@ class TestEndToEnd:
         assert result.contract_version == incident_contract.contract_version()
         assert result.model == "nvidia/cosmos-3-nano-reasoner"
         assert result.finish_reason == "stop"
-        persist.assert_not_awaited()  # the caller passed model_run_id, so it records the run
+        assert result.revision_id == 7
+        assert result.evidence == [{"item_id": "E1", "image": "evidence/v1/b/E1.jpg", "image_gap": None}]
+        kwargs = persist.await_args.kwargs
+        assert kwargs["model_run_id"] == "run1" and kwargs["caller_owns_run"] is True
+        assert kwargs["note"] is None  # the caller passed model_run_id, so it owns the run's notes
 
     @pytest.mark.asyncio
     async def test_skip_rp1_makes_only_the_p1_call(self):
@@ -306,6 +371,41 @@ class TestEndToEnd:
         assert result.report["incident"]["duration"] == 5
 
     @pytest.mark.asyncio
+    async def test_reviewer_prompt_and_model_reach_p1_and_the_revision_note(self):
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            requests.append(body)
+            return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
+
+        model = incident_contract.allowed_models()[0]
+        result, persist = await self._run(
+            handler,
+            tool_input=IncidentReportGenInput(
+                incident_id="v1", video_url=VIDEO_URL, model=model, reviewer_prompt=" look at the door "
+            ),
+        )
+        assert requests[0]["model"] == model and result.model == model
+        assert requests[0]["messages"][0]["content"][2]["text"].endswith("<<<\nlook at the door\n>>>")
+        assert persist.await_args.kwargs["note"] == "Reviewer prompt: look at the door"
+        assert persist.await_args.kwargs["caller_owns_run"] is False
+
+    @pytest.mark.asyncio
+    async def test_model_outside_the_allowlist_is_rejected_before_any_call(self):
+        requests = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return _completion(json.dumps(MODEL_OUTPUT))
+
+        with pytest.raises(ValueError, match="allowlist"):
+            await self._run(
+                handler, tool_input=IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, model="not-a-model")
+            )
+        assert requests == []
+
+    @pytest.mark.asyncio
     async def test_standalone_call_persists_under_the_configured_run_id(self):
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
@@ -314,6 +414,7 @@ class TestEndToEnd:
         _, persist = await self._run(handler, tool_input=IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL))
         persist.assert_awaited_once()
         assert persist.await_args.kwargs["model_run_id"] == "incident_report_gen"
+        assert persist.await_args.kwargs["caller_owns_run"] is False
 
     @pytest.mark.asyncio
     async def test_timeline_outside_the_window_is_not_fatal(self):
@@ -353,21 +454,3 @@ class TestEndToEnd:
         result, _ = await self._run(handler)
         assert result.report_text is None and "HTTP 500" in result.report_text_error
         assert result.report["incident"]["duration"] == 5
-
-    @pytest.mark.asyncio
-    async def test_crop_service_called_when_detector_available(self):
-        def handler(request: httpx.Request) -> httpx.Response:
-            body = json.loads(request.content)
-            return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
-
-        detector = FakeDetector()
-        store = InMemoryEvidenceStore()
-        service = CropEvidenceService(detector=detector, store=store)
-        set_crop_evidence_service(service)
-        try:
-            with patch.object(service, "process_incident_report", new_callable=AsyncMock) as mock_process:
-                result, _ = await self._run(handler)
-                assert result.report["incident"]["title"] == "Break-in at a shop"
-                mock_process.assert_awaited_once()
-        finally:
-            set_crop_evidence_service(None)

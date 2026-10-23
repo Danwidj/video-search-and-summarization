@@ -2,7 +2,7 @@
 
 Handoff specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119---eval-system-vs-one-shot-baseline-retrieval)). It states what exists today, what each track measures, how it is scored and what it depends on. Items marked **proposal (P-n)** are not yet agreed; see [§8](#8-proposals-awaiting-approval).
 
-Paths are relative to the profile directory, except paths starting with `services/` or `scripts/backfill_`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
+Paths are relative to the profile directory, except paths starting with `services/`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
 
 ## 1. Where evaluation stands today
 
@@ -47,7 +47,7 @@ Paths are relative to the profile directory, except paths starting with `service
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `kwanz-ws` | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item keyed `(incident_id, model_run_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine (`m=16`, `ef_construction=64`). Only official reports are searchable (`search_evidence_items` joins `videos.selected_model_run_id`). | `supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; in finals `supabase/migrations/20261020000000_finals_baseline.sql` |
 | Corpus size (2026-10-18) | 64 of 69 items from 13 official reports | [status](../status.md) |
-| Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py`; `scripts/backfill_official_timestamps.py` |
+| Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
 | Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
 | Critic | Always on, with no flag. Each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
 | Rejected hits | Dropped from the response when `hide_rejected` is true (the default), but always written to `query_results` | `incident_search.py` |
