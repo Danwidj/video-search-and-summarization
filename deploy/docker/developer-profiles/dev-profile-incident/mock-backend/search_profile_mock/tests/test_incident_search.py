@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -136,3 +137,14 @@ def test_search_hide_rejected_filter(monkeypatch):
     assert resp_shown.status_code == 200
     hits_shown = resp_shown.json()["hits"]
     assert any(h["critic"]["verdict"] == "rejected" for h in hits_shown)
+
+
+def test_search_crop_images_resolve_to_the_mock_placeholder():
+    client = TestClient(create_app())
+    hit = client.post("/api/v1/incidents/search", json={"query": "person"}).json()["hits"][0]
+    url = hit["item"]["crop_image_url"]
+    assert "example.com" not in url
+    image = client.get(urlparse(url).path)
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/jpeg"
+    assert image.content.startswith(b"\xff\xd8")

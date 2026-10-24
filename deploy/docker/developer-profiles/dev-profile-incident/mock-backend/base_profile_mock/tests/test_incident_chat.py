@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -131,3 +132,15 @@ def test_mock_chat_rejects_draft_report_without_version_id():
         json={"messages": [{"role": "user", "content": "weapons?"}], "draft_report": {}},
     )
     assert resp.status_code == 422
+
+
+def test_chat_citation_images_resolve_to_the_mock_placeholder():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/v1/incidents/chat", json={"messages": [{"role": "user", "content": "What weapon was used?"}]}
+    )
+    url = resp.json()["message"]["citations"][0]["crop_image_url"]
+    assert "example.com" not in url
+    image = client.get(urlparse(url).path)
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/jpeg"

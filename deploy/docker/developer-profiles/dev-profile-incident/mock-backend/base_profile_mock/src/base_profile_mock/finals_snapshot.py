@@ -16,6 +16,9 @@ from typing import Any
 
 _SNAPSHOT_PATH = Path(__file__).with_name("finals_snapshot.json")
 
+# Each mock serves its placeholder JPEG here, so evidence thumbnails load without R2.
+EVIDENCE_IMAGE_ROUTE = "/mock/evidence-image"
+
 
 @cache
 def _revisions() -> tuple[dict[str, Any], ...]:
@@ -35,8 +38,13 @@ def match_score(tokens: list[str], text: str) -> float:
     return round(found / len(tokens), 2)
 
 
-def evidence_hits() -> list[dict[str, Any]]:
-    """One evidence hit per finals item, shaped like search-contract-v1 hits (without a score)."""
+def evidence_hits(public_base_url: str) -> list[dict[str, Any]]:
+    """One evidence hit per finals item, shaped like search-contract-v1 hits (without a score).
+
+    crop_image_url points at the calling mock's own placeholder route (public_base_url is that
+    mock's address), because the real agent resolves R2 keys to URLs and the mock has no R2.
+    """
+    image_base = f"{public_base_url.rstrip('/')}{EVIDENCE_IMAGE_ROUTE}"
     hits: list[dict[str, Any]] = []
     for rev in _revisions():
         video_id = rev["video_id"]
@@ -53,7 +61,7 @@ def evidence_hits() -> list[dict[str, Any]]:
             "incident_window": [float(inc["start_seconds"]), float(inc["end_seconds"])],
         }
         for item in rev["items"]:
-            crop_url = f"https://pub-r2.example.com/evidence/{video_id}/{model_run_id}/{item['item_type']}/{item['item_id']}.jpg"
+            crop_url = f"{image_base}/{video_id}/{model_run_id}/{item['item_type']}/{item['item_id']}.jpg"
             hits.append(
                 {
                     "item": {**item, "crop_image_url": crop_url, "bounding_box": None},

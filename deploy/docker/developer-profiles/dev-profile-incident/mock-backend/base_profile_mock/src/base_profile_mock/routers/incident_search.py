@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from base_profile_mock.config import settings
 from base_profile_mock.finals_snapshot import evidence_hits
 from base_profile_mock.finals_snapshot import match_score
 from base_profile_mock.finals_snapshot import query_tokens
@@ -41,7 +42,7 @@ class SearchRequest(BaseModel):
 
 
 # Evidence items of the finals clips (see finals_snapshot.py); the chat mock reads this list too.
-_CANNED_HITS: list[dict[str, Any]] = evidence_hits()
+_CANNED_HITS: list[dict[str, Any]] = evidence_hits(settings.public_base_url)
 
 
 def _searchable_text(candidate: dict[str, Any]) -> str:
