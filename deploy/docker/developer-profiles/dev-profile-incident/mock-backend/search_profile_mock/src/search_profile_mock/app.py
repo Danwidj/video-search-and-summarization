@@ -26,6 +26,7 @@ from search_profile_mock.routers import health
 from search_profile_mock.routers import incident_revision_search
 from search_profile_mock.routers import incident_search
 from search_profile_mock.routers import kibana
+from search_profile_mock.routers import mock_evidence_image
 from search_profile_mock.routers import vst_replay
 from search_profile_mock.routers import vst_sensor
 from search_profile_mock.routers import vst_sensor_list
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(incident_revision_search.router)
     app.include_router(incident_search.router)
+    app.include_router(mock_evidence_image.router)
     app.include_router(agent_video.router)
     app.include_router(agent_rtsp.router)
     app.include_router(agent_search.router)

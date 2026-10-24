@@ -4,7 +4,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { dragRegion, pickSeconds, regionBox, type FramePick, type FramePoint, type SecondsRange } from '@/lib/evidence/frame-picker';
+import {
+  dragRegion,
+  pickSeconds,
+  regionBox,
+  usableRange,
+  type FramePick,
+  type FramePoint,
+  type SecondsRange,
+} from '@/lib/evidence/frame-picker';
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
@@ -40,6 +48,7 @@ export function EvidenceFramePicker({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const region: FrameRegion | null = drag ? dragRegion(drag.from, drag.to) : null;
+  const seen = usableRange(range);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -138,8 +147,8 @@ export function EvidenceFramePicker({
           aria-label="Frame second"
           className="mt-3 w-full"
           disabled={duration === null || busy}
-          max={range === null ? (duration ?? 0) : Math.min(range.last, duration ?? range.last)}
-          min={range?.first ?? 0}
+          max={seen === null ? (duration ?? 0) : Math.min(seen.last, duration ?? seen.last)}
+          min={seen?.first ?? 0}
           onChange={(event) => seek(Number(event.target.value))}
           step={0.1}
           type="range"
