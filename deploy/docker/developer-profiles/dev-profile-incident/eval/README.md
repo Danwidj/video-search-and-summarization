@@ -2,7 +2,7 @@
 
 A standalone Python project that benchmarks structured incident extraction (P1) by three VLMs against human ground truth, and writes an unscored prose report (RP1) per prediction. It shares no runtime with the other services. The recorded benchmark in [`docs/vlm_benchmark_results.md`](docs/vlm_benchmark_results.md) predates the incident contract and is superseded.
 
-> Finals no longer has the ground-truth tables, so do not run a live evaluation against it until eval's storage is decided ([known issue 2](../.docs/status.md#4-known-issues)).
+> Finals no longer has the ground-truth tables, so do not run a live evaluation against it until eval's storage is decided ([eval open item 1](../.docs/mvp2/eval.md)).
 
 ## Run it
 

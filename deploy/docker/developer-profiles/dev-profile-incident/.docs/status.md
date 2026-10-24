@@ -10,7 +10,7 @@
 | Console code layout | `src/app`, `src/modules/<feature>/{domain,application,infrastructure}`, `src/sections`, `src/lib`. `npm test` enforces the import boundaries; `npm run lint` is Biome plus `tsc --noEmit` | [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Append-only `report_revisions` rows plus Cloudflare R2 videos and evidence images; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
-| Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract (see known issue 2) | `eval/README.md` |
+| Evaluation | Everything about the eval (state, handoff, open items) is in [`mvp2/eval.md`](mvp2/eval.md) | `eval/` |
 | Launcher | `./start.sh --mode mock\|vm` with SSH preflight, self-healing VM deploy, stop-on-last-exit coordination via a VM flock, and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777, started by `--mode mock`) and `search_profile_mock` (:7778, standalone) answer incident search and revision search from one finals snapshot; :7777 also answers chat from it ([decision](decisions.md#2026-10-24-the-mocks-answer-search-and-chat-from-one-finals-snapshot)) | `mock-backend/` |
 
@@ -20,9 +20,7 @@ Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; the crop service; the `vss-agent` search route (always-on critic) and chat route; revision-keyed `evidence_crops` and `query_results`; the analyze route writes the AI revision with its evidence crops; `POST /api/v1/incidents/evidence-embeddings` (by stored `revision_id`, or by evidence entries posted before a save); each video's searchable revision is its official revision, else its newest; `/library` Find incidents and Find evidence; the report page chat.
 - **Revision vector search:** migration `20261023120000` adds `report_revisions.embedding`, its HNSW index and `search_report_revisions`; the agent embeds each AI revision's `incident.title` and `incident.description` on insert and serves `POST /api/v1/incidents/revisions/search`, which Find incidents calls.
-- **Live on `kwanz-ws`:** the 2026-10-24 read-only check found the five incident routes in `openapi.json` and the agent running the stock base config; the VM checkout was at `02b543ecf` (#205), three PRs behind main. Search quality on the VM is not measured (Track R).
-- **In progress:** retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval).
-- **Not started:** retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
+- **Live on `kwanz-ws`:** the 2026-10-24 read-only check found the five incident routes in `openapi.json` and the agent running the stock base config; the VM checkout was at `02b543ecf` (#205), three PRs behind main.
 - **Dropped from MVP2 (2026-10-24):** the multi-subagent routing config and full RT-CV / RT-Embed indexing ([decision](decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
 
 ## 3. Database status
@@ -43,16 +41,12 @@ Test data: on 2026-10-24 the rows and R2 objects of the three end-to-end test vi
 Deliberate behaviour that can look like an issue (the Cosmos timeline, chat about the official version, a human revision's search text) is recorded in [`decisions.md`](decisions.md).
 
 1. **TO FIX (not started): the agent does not enforce the video-bounds rules.** `vss_agents.incident_contract` supports `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` when given `video_duration_seconds`, but the analyze route never passes one (it gets only a signed playback URL and reads no MP4 header). In agent mode the console reads the header from R2 and enforces the rules on the agent's output. Fix: the route passes the duration so the agent enforces the rules itself.
-2. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Do not run a live eval against finals until eval's storage is decided.
-3. **Deleting a video leaves its evidence images in R2.** `deleteVideoAndReports` removes the video object and its thumbnail, then the rows; `evidence/<videoId>/` stays, and the orphan sweep refuses an unknown video, so nothing removes those images.
-4. **The mock snapshot holds deleted test videos.** `finals_snapshot.json` was captured before the 2026-10-24 cleanup and still includes `vc35c6116a88c37d51c9`, `v614eba7ad8510751a8c` and `va978aaf39b01270294a`, so mock search can return videos that no longer exist on finals. Refresh it by hand (`mock-backend/base_profile_mock/README.md`).
+2. **Deleting a video leaves its evidence images in R2.** `deleteVideoAndReports` removes the video object and its thumbnail, then the rows; `evidence/<videoId>/` stays, and the orphan sweep refuses an unknown video, so nothing removes those images.
+3. **The mock snapshot holds deleted test videos.** `finals_snapshot.json` was captured before the 2026-10-24 cleanup and still includes `vc35c6116a88c37d51c9`, `v614eba7ad8510751a8c` and `va978aaf39b01270294a`, so mock search can return videos that no longer exist on finals. Refresh it by hand (`mock-backend/base_profile_mock/README.md`).
 
 ## 5. Follow-ups
 
-- Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates), once known issue 2 is resolved.
-- Consider a contract version with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
 - PDF export (parked by the captain, not started): no server PDF endpoint and no Download PDF dialog exist; today a report prints only through the browser, styled by the `@media print` rules in `incident-console-v2/src/app/styles.css`. To build: the endpoint and the dialog, then remove the print path.
-- Retrieval eval (harness, query set, benchmark runs): handed off to the captain's teammate; see the handoff at the top of [`mvp2/eval.md`](mvp2/eval.md).
 - Console hexagonal plan, strict Step 6: inject a `ContractCatalog` port and move `run-contract-analysis.ts`'s `node:crypto` (`randomUUID`) behind a port, which removes the loader and `node:crypto` exceptions in `tests/import-boundaries.test.mjs` (the upload hook's exception is by design).
 
 ## 6. Live VM configuration (`kwanz-ws`)

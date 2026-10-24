@@ -5,10 +5,16 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119--
 > **Handoff**
 > - **Owner:** the captain's teammate owns the retrieval eval, not the captain.
 > - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
-> - **Before a live run:** decide eval storage ([known issue 2](../status.md#4-known-issues): `eval/` targets the dropped `gt_*` tables), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
+> - **Before a live run:** decide eval storage (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
 > - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
 > - **Compute:** `kwanz-ws` uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
 > - **Access:** each developer uses their own credentials in their own local `.env.local`, never committed or shared in chat. The variable names are in [§1.1](#11-eval-p1rp1-extraction-benchmark) (Configuration).
+>
+> **Open items for the eval owner**
+> 1. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Decide eval's storage before any live run against finals.
+> 2. **Retrieval benchmark (Track R):** the specification is this document, with the §8 proposals awaiting approval; the harness, query set and runs are not started.
+> 3. **P1 benchmark under `core-scored-v1`:** run it (malformed-ID frequency, per-model core and enrichment failure rates) once item 1 is resolved.
+> 4. **Contract ID patterns:** consider a contract version with ID patterns only if the malformed-ID evidence justifies it; it changes eval.
 
 Paths are relative to the profile directory, except paths starting with `services/`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
 
@@ -19,7 +25,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Models:** the three allowlisted VLMs in `contracts/inference.json`: `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
-  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open ([status](../status.md#4-known-issues), known issue 2).
+  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open (open item 1 in the handoff).
   - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
