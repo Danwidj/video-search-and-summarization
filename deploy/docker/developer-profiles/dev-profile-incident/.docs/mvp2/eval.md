@@ -48,7 +48,7 @@ Paths are relative to the profile directory, except paths starting with `service
 |---|---|---|
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `kwanz-ws` | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
-| Corpus size (2026-10-24) | The test-data inventory counted 6 `evidence_crops` rows on finals, all belonging to the end-to-end test videos that the cleanup then removed. Not re-counted since: the corpus may be empty until revisions are marked official or saved | [status](../status.md#3-database-status) |
+| Corpus size (2026-10-24) | The finals corpus may be empty: the test-data inventory counted 6 `evidence_crops` rows, all from the end-to-end test videos that the cleanup then removed. Rows return as revisions are marked official, analysed or saved | [status](../status.md#3-database-status) |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
 | Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
 | Critic | Always on, with no flag. Each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
@@ -101,7 +101,7 @@ flowchart LR
   - About 100 items from 20 or more official reports is a **provisional target**, not a validated minimum.
   - Every report states the actual size and diversity: items per incident type, per item type and per report, the share of whole-frame crops, and the number of relevant items per query.
   - Every report includes a Limitations section.
-  - The corpus size is not known today (§1.2); results on a small corpus are pilot grade and should be read as such.
+  - The finals corpus may be empty today (§1.2); results on a small corpus are pilot grade and should be read as such.
 
 ### 3.2 Query set
 

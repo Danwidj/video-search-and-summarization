@@ -19,7 +19,7 @@
 Specification and architecture: [`mvp2/README.md`](mvp2/README.md).
 
 - **Delivered:** `search-contract-v1` and `chat-contract-v1`; the crop service; the `vss-agent` search route (always-on critic) and chat route; revision-keyed `evidence_crops` and `query_results`; the analyze route writes the AI revision with its evidence crops; `POST /api/v1/incidents/evidence-embeddings` (by stored `revision_id`, or by evidence entries posted before a save); each video's searchable revision is its official revision, else its newest; `/library` Find incidents and Find evidence; the report page chat.
-- **Revision vector search:** migration `20261023120000` adds `report_revisions.embedding`, its HNSW index and `search_report_revisions`; the agent embeds each AI revision's `incident.title` and `incident.description` on insert and serves `POST /api/v1/incidents/revisions/search`, which Find incidents calls. Whether the migration is applied to finals is unconfirmed (section 3).
+- **Revision vector search:** migration `20261023120000` adds `report_revisions.embedding`, its HNSW index and `search_report_revisions`; the agent embeds each AI revision's `incident.title` and `incident.description` on insert and serves `POST /api/v1/incidents/revisions/search`, which Find incidents calls.
 - **Live on `kwanz-ws`:** the 2026-10-24 read-only check found the five incident routes in `openapi.json` and the agent running the stock base config; the VM checkout was at `02b543ecf` (#205), three PRs behind main. Search quality on the VM is not measured (Track R).
 - **In progress:** retrieval eval: specification in [`mvp2/eval.md`](mvp2/eval.md) (tracks, metrics, dataset rules, proposals awaiting approval).
 - **Not started:** retrieval benchmark implementation and runs ([`mvp2/eval.md`](mvp2/eval.md) Track R).
@@ -33,8 +33,7 @@ Finals is the live database; the laptop console and the VM agent both point at i
 |---|---|
 | `20261020000000_finals_baseline.sql`, `20261022123252_drop_unused_tables.sql` | Applied |
 | `20261023000000_report_revisions_schema.sql`, `20261023000100_report_revisions_functions.sql` | Applied (the captain applied the schema by hand; these files reproduce it) |
-| `20261023000200_searchable_latest_revision.sql` | **Unconfirmed.** Earlier docs said "not applied"; the 2026-10-23 end-to-end check was dispatched only after the captain applied it. Until it is applied, `set_revision_crops` fails and library cards lack `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` |
-| `20261023120000_report_revision_embeddings.sql` | **Unconfirmed**, as above. Until it is applied the agent's revision insert has no `embedding` column and revision search fails |
+| `20261023000200_searchable_latest_revision.sql`, `20261023120000_report_revision_embeddings.sql` | Applied (confirmed by the captain, 2026-10-24) |
 | `20261024090000_save_human_revision_with_crops.sql` | Applied (by the captain, before #207 merged). Every console Save calls `save_human_revision_with_crops` |
 
 Test data: on 2026-10-24 the rows and R2 objects of the three end-to-end test videos (`vc35c6116a88c37d51c9`, `v614eba7ad8510751a8c`, `va978aaf39b01270294a`), their 10 test `queries` rows and the 2 scout uploads with no `videos` row were removed from finals and R2, with a rollback snapshot kept outside the repo. Three items of unknown origin were kept: upload `uploads/c19fb16d-.../b4d71165-....mp4`, video `veb492932dac2d1d52e0`, and five `queries` rows with the text "car" ([decision](decisions.md#2026-10-24-finals-test-data-is-removed-by-direct-delete-and-unproven-items-are-kept)).
