@@ -67,22 +67,40 @@ async function captureThumbnail(file: File): Promise<Blob> {
   try {
     await new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(() => reject(new Error('Timed out reading video metadata')), 10_000);
-      video.onloadedmetadata = () => { window.clearTimeout(timeout); resolve(); };
-      video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not decode a thumbnail frame')); };
+      video.onloadedmetadata = () => {
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      video.onerror = () => {
+        window.clearTimeout(timeout);
+        reject(new Error('Browser could not decode a thumbnail frame'));
+      };
     });
     const target = thumbnailCaptureTime(video.duration);
     if (target > 0) {
       await new Promise<void>((resolve, reject) => {
         const timeout = window.setTimeout(() => reject(new Error('Timed out seeking thumbnail frame')), 10_000);
-        video.onseeked = () => { window.clearTimeout(timeout); resolve(); };
-        video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not seek the thumbnail frame')); };
+        video.onseeked = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+        video.onerror = () => {
+          window.clearTimeout(timeout);
+          reject(new Error('Browser could not seek the thumbnail frame'));
+        };
         video.currentTime = target;
       });
     } else {
       await new Promise<void>((resolve, reject) => {
         const timeout = window.setTimeout(() => reject(new Error('Timed out decoding thumbnail frame')), 10_000);
-        video.onloadeddata = () => { window.clearTimeout(timeout); resolve(); };
-        video.onerror = () => { window.clearTimeout(timeout); reject(new Error('Browser could not decode the thumbnail frame')); };
+        video.onloadeddata = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+        video.onerror = () => {
+          window.clearTimeout(timeout);
+          reject(new Error('Browser could not decode the thumbnail frame'));
+        };
       });
     }
 
@@ -93,11 +111,9 @@ async function captureThumbnail(file: File): Promise<Blob> {
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Browser could not create a thumbnail canvas');
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error('Browser could not encode the thumbnail')),
-      'image/webp',
-      0.78,
-    ));
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Browser could not encode the thumbnail'))), 'image/webp', 0.78),
+    );
   } finally {
     video.removeAttribute('src');
     video.load();
@@ -144,9 +160,7 @@ export function useVideoUpload() {
     // Mock-backend's chunk-upload response already carries a valid R2 key
     // (it does its own R2 upload); real VST/NvStreamer never returns one,
     // so fall back to uploading the file to R2 ourselves in that case.
-    const filePath = isValidR2Key(uploaded.filePath)
-      ? uploaded.filePath
-      : await uploadToR2(file, uploaded.sensorId, filename, signal);
+    const filePath = isValidR2Key(uploaded.filePath) ? uploaded.filePath : await uploadToR2(file, uploaded.sensorId, filename, signal);
 
     const thumbnailBlob = await thumbnail;
     if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);

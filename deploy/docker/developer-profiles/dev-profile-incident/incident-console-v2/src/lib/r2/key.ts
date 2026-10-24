@@ -8,13 +8,7 @@
  * object key. No AWS SDK dependency so it is safe to import from client code.
  */
 export function isValidR2Key(key: unknown): key is string {
-  return (
-    typeof key === 'string' &&
-    key.length > 0 &&
-    !key.startsWith('/') &&
-    !key.startsWith('.') &&
-    !key.includes('..')
-  );
+  return typeof key === 'string' && key.length > 0 && !key.startsWith('/') && !key.startsWith('.') && !key.includes('..');
 }
 
 export function thumbnailKeyForVideo(videoKey: string): string {

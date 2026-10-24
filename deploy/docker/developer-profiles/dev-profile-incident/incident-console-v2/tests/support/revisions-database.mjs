@@ -39,8 +39,15 @@ export const revisionRpcs = {
     };
     store.report_revisions.push(row);
     return {
-      revisionId: row.id, revisionNo: row.revision_no, videoId: row.video_id, kind: row.kind, parentId: row.parent_id,
-      modelRunId: row.model_run_id, createdBy: row.created_by, createdAt: row.created_at, note: row.note,
+      revisionId: row.id,
+      revisionNo: row.revision_no,
+      videoId: row.video_id,
+      kind: row.kind,
+      parentId: row.parent_id,
+      modelRunId: row.model_run_id,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      note: row.note,
     };
   },
 
@@ -75,7 +82,9 @@ export const revisionRpcs = {
     if (!video) throw new Error(`Video not found: ${args.p_video_id}`);
     const searchable = video.official_revision_id ?? Math.max(0, ...revisionsOf(store, args.p_video_id).map((row) => row.id));
     if (args.p_revision_id !== searchable) {
-      throw new Error(`Revision ${args.p_revision_id} is not the searchable revision of video ${args.p_video_id} (the official revision, else the newest)`);
+      throw new Error(
+        `Revision ${args.p_revision_id} is not the searchable revision of video ${args.p_video_id} (the official revision, else the newest)`,
+      );
     }
     store.evidence_crops = (args.p_crops ?? []).map((crop) => ({ revision_id: args.p_revision_id, ...crop }));
     return { videoId: args.p_video_id, revisionId: args.p_revision_id, crops: store.evidence_crops.length };

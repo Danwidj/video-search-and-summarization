@@ -36,11 +36,14 @@ export interface LegacyAnalysisReport {
 }
 
 interface StoredNotes {
-  incidentConsoleV2?: LegacyAnalysisReport | Record<string, unknown> | {
-    report?: LegacyAnalysisReport | Record<string, unknown>;
-    rawModelOutput?: string;
-    normalizedModelOutput?: string;
-  };
+  incidentConsoleV2?:
+    | LegacyAnalysisReport
+    | Record<string, unknown>
+    | {
+        report?: LegacyAnalysisReport | Record<string, unknown>;
+        rawModelOutput?: string;
+        normalizedModelOutput?: string;
+      };
 }
 
 const LEGACY_KEYS: Record<string, string> = {
@@ -115,8 +118,18 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
       normalizedModelOutput = typeof stored.normalizedModelOutput === 'string' ? stored.normalizedModelOutput : undefined;
     } else if ('report' in stored && stored.report && typeof stored.report === 'object') {
       baseReport = stored.report as Record<string, unknown>;
-      rawModelOutput = typeof stored.rawModelOutput === 'string' ? stored.rawModelOutput : (typeof baseReport.rawModelOutput === 'string' ? baseReport.rawModelOutput : undefined);
-      normalizedModelOutput = typeof stored.normalizedModelOutput === 'string' ? stored.normalizedModelOutput : (typeof baseReport.normalizedModelOutput === 'string' ? baseReport.normalizedModelOutput : undefined);
+      rawModelOutput =
+        typeof stored.rawModelOutput === 'string'
+          ? stored.rawModelOutput
+          : typeof baseReport.rawModelOutput === 'string'
+            ? baseReport.rawModelOutput
+            : undefined;
+      normalizedModelOutput =
+        typeof stored.normalizedModelOutput === 'string'
+          ? stored.normalizedModelOutput
+          : typeof baseReport.normalizedModelOutput === 'string'
+            ? baseReport.normalizedModelOutput
+            : undefined;
     } else {
       return null;
     }
@@ -151,7 +164,8 @@ export function reportFromNotes(notes: unknown): LegacyAnalysisReport | null {
       promptVersion: typeof baseReport.promptVersion === 'string' ? baseReport.promptVersion : undefined,
       rawModelOutput,
       normalizedModelOutput,
-      reviewStatus: typeof baseReport.reviewStatus === 'string' ? (baseReport.reviewStatus as 'unreviewed' | 'under review' | 'verified') : undefined,
+      reviewStatus:
+        typeof baseReport.reviewStatus === 'string' ? (baseReport.reviewStatus as 'unreviewed' | 'under review' | 'verified') : undefined,
       verifiedBy: typeof baseReport.verifiedBy === 'string' ? baseReport.verifiedBy : undefined,
       verifiedAt: typeof baseReport.verifiedAt === 'string' ? baseReport.verifiedAt : undefined,
 

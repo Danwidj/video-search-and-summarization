@@ -23,17 +23,30 @@ beforeEach(() => {
   process.env.INCIDENT_SUPABASE_URL = 'https://supabase.test';
   process.env.INCIDENT_SUPABASE_SERVICE_ROLE_KEY = 'test-key';
 });
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+});
 
 const baseEdit = () => unchangedEdit(repaired);
-const patch = (body, videoId = repaired.videoId) => PATCH(new Request(`http://localhost/api/reports/${videoId}/edit`, {
-  method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-}), { params: Promise.resolve({ videoId }) });
+const patch = (body, videoId = repaired.videoId) =>
+  PATCH(
+    new Request(`http://localhost/api/reports/${videoId}/edit`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ videoId }) },
+  );
 const request = (edit, extra = {}) => ({ parentId: 1, editedBy: 'Rev', edit, ...extra });
 
 function database() {
   const db = fakePostgrest(
-    { videos: [{ ...repaired.video, official_revision_id: null }], model_runs: [repaired.modelRun], report_revisions: [aiRevisionRow(repaired)] },
+    {
+      videos: [{ ...repaired.video, official_revision_id: null }],
+      model_runs: [repaired.modelRun],
+      report_revisions: [aiRevisionRow(repaired)],
+    },
     { rpc: revisionRpcs, identity: { report_revisions: 'id' } },
   );
   globalThis.fetch = db.fetch;
@@ -51,8 +64,14 @@ test('a valid edit goes to save_human_revision_with_crops only; model_runs (note
   assert.equal(response.status, 200);
   const { saved, revision } = await response.json();
   assert.equal(saved, true);
-  assert.deepEqual([revision.revisionNo, revision.kind, revision.parentId, revision.createdBy, revision.note], [2, 'human', 1, 'Rev', 'Lowered']);
-  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision_with_crops']);
+  assert.deepEqual(
+    [revision.revisionNo, revision.kind, revision.parentId, revision.createdBy, revision.note],
+    [2, 'human', 1, 'Rev', 'Lowered'],
+  );
+  assert.deepEqual(
+    writes(db).map((r) => r.path),
+    ['rpc/save_human_revision_with_crops'],
+  );
   const [{ body }] = writes(db);
   assert.deepEqual([body.p_video_id, body.p_parent_id, body.p_created_by, body.p_note], [repaired.videoId, 1, 'Rev', 'Lowered']);
   assert.deepEqual(body.p_crops, [], 'the edit has no images, so the new searchable revision has no crops');
@@ -60,7 +79,11 @@ test('a valid edit goes to save_human_revision_with_crops only; model_runs (note
   assert.equal(db.store.report_revisions[1].severity_level, 2, 'the facet columns follow the saved payload');
   assert.ok(!writes(db).some((r) => r.path === 'model_runs'), 'the edit path never writes model_runs');
   assert.deepEqual(db.store.model_runs, [repaired.modelRun], 'the run notes are unchanged');
-  assert.equal(db.store.report_revisions[0].payload.incident.severity_level, aiRevisionRow(repaired).payload.incident.severity_level, 'the AI revision is untouched');
+  assert.equal(
+    db.store.report_revisions[0].payload.incident.severity_level,
+    aiRevisionRow(repaired).payload.incident.severity_level,
+    'the AI revision is untouched',
+  );
 });
 
 test('with an official revision, Save writes no crops', async () => {
@@ -68,14 +91,18 @@ test('with an official revision, Save writes no crops', async () => {
   db.store.videos[0].official_revision_id = 1;
   const response = await patch(request(baseEdit()));
   assert.equal(response.status, 200);
-  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision_with_crops']);
+  assert.deepEqual(
+    writes(db).map((r) => r.path),
+    ['rpc/save_human_revision_with_crops'],
+  );
   assert.deepEqual(writes(db)[0].body.p_crops, [], 'the official revision keeps its own crops');
 });
 
 test('an embedding failure stops Save: no revision is written and the reviewer is told why', async () => {
   const db = database();
   process.env.INCIDENT_AGENT_BASE_URL = 'https://agent.test';
-  globalThis.fetch = async (url, init) => (String(url).startsWith('https://agent.test/') ? new Response('{"detail":"down"}', { status: 502 }) : db.fetch(url, init));
+  globalThis.fetch = async (url, init) =>
+    String(url).startsWith('https://agent.test/') ? new Response('{"detail":"down"}', { status: 502 }) : db.fetch(url, init);
   const edit = baseEdit();
   assert.ok(edit.entities.length > 0, 'the fixture has an entity to give an image');
   edit.entities[0].image = `evidence/${repaired.videoId}/new-uuid/${edit.entities[0].entity_id}.jpg`;
@@ -104,10 +131,21 @@ test('an edit with an image is embedded first, and its crop is written with the 
   const response = await patch(request(edit));
 
   assert.equal(response.status, 200);
-  assert.deepEqual(posted.map((body) => body.evidence.map((item) => [item.item_type, item.item_id])), [[['entity', 'E1']]], 'the agent embeds the new evidence, not a stored revision');
-  assert.deepEqual(writes(db).map((r) => r.path), ['rpc/save_human_revision_with_crops'], 'the crop is not written in a separate call');
+  assert.deepEqual(
+    posted.map((body) => body.evidence.map((item) => [item.item_type, item.item_id])),
+    [[['entity', 'E1']]],
+    'the agent embeds the new evidence, not a stored revision',
+  );
+  assert.deepEqual(
+    writes(db).map((r) => r.path),
+    ['rpc/save_human_revision_with_crops'],
+    'the crop is not written in a separate call',
+  );
   const [{ body }] = writes(db);
-  assert.deepEqual(body.p_crops.map((crop) => [crop.item_type, crop.item_id, crop.image, crop.embedding.length]), [['entity', 'E1', key, 1024]]);
+  assert.deepEqual(
+    body.p_crops.map((crop) => [crop.item_type, crop.item_id, crop.image, crop.embedding.length]),
+    [['entity', 'E1', key, 1024]],
+  );
 });
 
 test('Class B/C fields are rejected with 400 before any database call', async () => {
@@ -156,7 +194,7 @@ test('an item without a source_id is refused with 422 before any database call',
   assert.equal(db.requests.length, 0);
 });
 
-test('an image that is not one of the incident\'s own is refused with 422 and nothing is written', async () => {
+test("an image that is not one of the incident's own is refused with 422 and nothing is written", async () => {
   const db = database();
   const edit = baseEdit();
   edit.entities[0].image = 'evidence/another-video/u/E1.jpg';

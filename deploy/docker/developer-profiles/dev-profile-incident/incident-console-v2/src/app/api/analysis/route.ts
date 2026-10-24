@@ -79,7 +79,9 @@ export async function POST(request: Request) {
       config.analysisMode,
     );
 
-    const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
+    const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) =>
+      fetchEvidenceEmbeddings(config, id),
+    );
     const report: AnalysisRunSummary = {
       videoId: run.videoId,
       modelRunId: run.modelRunId,

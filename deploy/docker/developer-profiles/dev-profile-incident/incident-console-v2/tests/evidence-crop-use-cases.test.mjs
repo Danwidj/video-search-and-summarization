@@ -24,13 +24,17 @@ function deps({ storageKey = 'videos/a.mp4', duration = 30 } = {}) {
       videos: new InMemoryVideoRepository([video(storageKey)]),
       source: {
         durationSeconds: async () => duration,
-        frame: async (key, seconds, region) => { frames.push({ key, seconds, region }); return Buffer.from('jpeg'); },
+        frame: async (key, seconds, region) => {
+          frames.push({ key, seconds, region });
+          return Buffer.from('jpeg');
+        },
       },
     },
   };
 }
 
-const rejects = (promise, status, pattern) => assert.rejects(promise, (e) => e instanceof FrameRequestError && e.status === status && pattern.test(e.message));
+const rejects = (promise, status, pattern) =>
+  assert.rejects(promise, (e) => e instanceof FrameRequestError && e.status === status && pattern.test(e.message));
 const region = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
 
 test('a frame is read at a timestamp inside the video', async () => {

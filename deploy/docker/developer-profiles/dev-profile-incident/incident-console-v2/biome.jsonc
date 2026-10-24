@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**", "!**/.next", "!**/next-env.d.ts", "!**/package-lock.json"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 140
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "jsxQuoteStyle": "double", "semicolons": "always", "trailingCommas": "all" }
+  },
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      // Rules the code already breaks when Biome was added. They report as warnings so
+      // `npm run lint` passes; fix them in their own changes, then move each back to error.
+      "suspicious": {
+        "noArrayIndexKey": "warn",
+        "useIterableCallbackReturn": "warn",
+        "noControlCharactersInRegex": "warn",
+        "noAssignInExpressions": "warn",
+        "noImplicitAnyLet": "warn",
+        // Tailwind 3 directives (@tailwind, @apply) are not standard CSS at-rules.
+        "noUnknownAtRules": { "level": "error", "options": { "ignore": ["tailwind", "apply", "layer", "screen", "config"] } }
+      },
+      "correctness": { "useExhaustiveDependencies": "warn" },
+      "a11y": {
+        "useMediaCaption": "warn",
+        "useSemanticElements": "warn",
+        "useKeyWithClickEvents": "warn",
+        "noStaticElementInteractions": "warn",
+        "useAriaPropsSupportedByRole": "warn"
+      }
+    }
+  }
+}

@@ -74,11 +74,19 @@ export class PostgrestClient {
   }
 
   /** One page of rows plus the exact total, with raw PostgREST query parameters (select, filters, order). */
-  async selectPage(table: string, params: Record<string, string>, limit: number, offset: number): Promise<{ rows: Array<Record<string, unknown>>; total: number }> {
+  async selectPage(
+    table: string,
+    params: Record<string, string>,
+    limit: number,
+    offset: number,
+  ): Promise<{ rows: Array<Record<string, unknown>>; total: number }> {
     const query = new URLSearchParams({ ...params, limit: String(limit), offset: String(offset) });
     let response: Response;
     try {
-      response = await fetch(`${this.restUrl}/${table}?${query}`, { headers: { ...this.headers(), Prefer: 'count=exact' }, cache: 'no-store' });
+      response = await fetch(`${this.restUrl}/${table}?${query}`, {
+        headers: { ...this.headers(), Prefer: 'count=exact' },
+        cache: 'no-store',
+      });
     } catch (error) {
       throw new Error(`Could not reach PostgREST: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -136,7 +144,6 @@ export class PostgrestClient {
     if (!Array.isArray(result) || result.length === 0) return null;
     return result[0] as Record<string, unknown>;
   }
-
 
   async selectMany(
     table: string,

@@ -7,7 +7,15 @@ import test from 'node:test';
 const components = new URL('../src/sections/', import.meta.url);
 
 test('report page separates structured fields, read-only model output and run details', async () => {
-  const report = (await Promise.all(['reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportRunDetails/ReportRunDetails.tsx', 'reports/components/ReportPage/ReportPage.tsx'].map((name) => readFile(new URL(name, components), 'utf8')))).join('\n');
+  const report = (
+    await Promise.all(
+      [
+        'reports/components/ReportPane/ReportPane.tsx',
+        'reports/components/ReportRunDetails/ReportRunDetails.tsx',
+        'reports/components/ReportPage/ReportPage.tsx',
+      ].map((name) => readFile(new URL(name, components), 'utf8')),
+    )
+  ).join('\n');
 
   assert.match(report, /Severity rationale/);
   assert.match(report, /reviewer set/, 'an edited severity is shown against the model severity');
@@ -30,7 +38,11 @@ test('report page separates structured fields, read-only model output and run de
   assert.match(report, /not consistent with the detected incident window/, 'an inconsistent timeline is labelled as such');
   assert.match(report, /outside incident window/);
   assert.match(report, /outside the video/);
-  assert.match(report, /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/, 'seeking is blocked only for a time outside the video');
+  assert.match(
+    report,
+    /event\.seekable !== false && \(playerDuration === null \|\| timestampWithinVideo\(/,
+    'seeking is blocked only for a time outside the video',
+  );
   assert.match(report, /Validation policy/);
   assert.match(report, /Full contract validity \(first response\)/);
 });
@@ -45,9 +57,23 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   const reanalysis = await readFile(new URL('analysis/components/ReanalysisCard/ReanalysisCard.tsx', components), 'utf8');
   assert.match(reanalysis, /Reviewer prompt \(optional\)/);
   assert.match(reanalysis, /additionalInstruction/);
-  for (const name of ['reports/components/ReportPage/ReportPage.tsx', 'reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportTimeline/ReportTimeline.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/OfficialControls/OfficialControls.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx']) {
+  for (const name of [
+    'reports/components/ReportPage/ReportPage.tsx',
+    'reports/components/ReportPane/ReportPane.tsx',
+    'reports/components/ReportTimeline/ReportTimeline.tsx',
+    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
+    'reports/components/ReportEditPane/ReportEditPane.tsx',
+    'reports/components/ReportVersions/ReportVersions.tsx',
+    'reports/components/OfficialControls/OfficialControls.tsx',
+    'library/components/LibraryScreen/LibraryScreen.tsx',
+    'library/components/IncidentCard/IncidentCard.tsx',
+  ]) {
     const source = await readFile(new URL(name, components), 'utf8');
-    assert.doesNotMatch(source, /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/, `${name} has no verification flow`);
+    assert.doesNotMatch(
+      source,
+      /Unverify|under review|api\/reports\/[^'`]*\/review|review_status|reviewStatus/,
+      `${name} has no verification flow`,
+    );
   }
 });
 
@@ -57,9 +83,31 @@ test('library incident cards show no confidence percentage', async () => {
 });
 
 test('browser components import only browser-safe report modules', async () => {
-  const serverOnly = [/@\/lib\/reports\/view'/, /@\/lib\/reports\/run-notes'/, /@\/lib\/contract\/(load|validate)'/, /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/, /from 'node:/];
+  const serverOnly = [
+    /@\/lib\/reports\/view'/,
+    /@\/lib\/reports\/run-notes'/,
+    /@\/lib\/contract\/(load|validate)'/,
+    /@\/lib\/analysis\/(persistence|run-contract-analysis|build-request)'/,
+    /from 'node:/,
+  ];
   const clientOnly = await readFile(new URL('../src/modules/reports/domain/report-view.ts', import.meta.url), 'utf8');
-  for (const name of ['reports/components/ReportPage/ReportPage.tsx', 'reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportTimeline/ReportTimeline.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/ReportRunDetails/ReportRunDetails.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'analysis/components/RunHistory/RunHistory.tsx', 'analysis/components/ReanalysisCard/ReanalysisCard.tsx', 'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx', 'videos/components/VideosScreen/VideosScreen.tsx', 'reports/components/RunComparison/RunComparison.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx']) {
+  for (const name of [
+    'reports/components/ReportPage/ReportPage.tsx',
+    'reports/components/ReportPane/ReportPane.tsx',
+    'reports/components/ReportTimeline/ReportTimeline.tsx',
+    'reports/components/ReportVersions/ReportVersions.tsx',
+    'reports/components/ReportRunDetails/ReportRunDetails.tsx',
+    'reports/components/ReportEditPane/ReportEditPane.tsx',
+    'analysis/components/RunHistory/RunHistory.tsx',
+    'analysis/components/ReanalysisCard/ReanalysisCard.tsx',
+    'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
+    'videos/components/VideosScreen/VideosScreen.tsx',
+    'reports/components/RunComparison/RunComparison.tsx',
+    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
+    'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx',
+    'library/components/LibraryScreen/LibraryScreen.tsx',
+    'library/components/IncidentCard/IncidentCard.tsx',
+  ]) {
     const source = await readFile(new URL(name, components), 'utf8');
     for (const pattern of serverOnly) assert.doesNotMatch(source, pattern, `${name} must not import ${pattern}`);
   }
@@ -104,7 +152,19 @@ test('the report page offers re-analysis and history', async () => {
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
-  for (const name of ['reports/components/ReportPane/ReportPane.tsx', 'reports/components/ReportEditPane/ReportEditPane.tsx', 'reports/components/ReportVersions/ReportVersions.tsx', 'reports/components/RunComparison/RunComparison.tsx', 'analysis/components/RunHistory/RunHistory.tsx', 'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx', 'videos/components/VideosScreen/VideosScreen.tsx', 'reports/components/AdvancedReportTools/AdvancedReportTools.tsx', 'library/components/LibraryScreen/LibraryScreen.tsx', 'library/components/IncidentCard/IncidentCard.tsx', 'library/components/HitCard/HitCard.tsx']) {
+  for (const name of [
+    'reports/components/ReportPane/ReportPane.tsx',
+    'reports/components/ReportEditPane/ReportEditPane.tsx',
+    'reports/components/ReportVersions/ReportVersions.tsx',
+    'reports/components/RunComparison/RunComparison.tsx',
+    'analysis/components/RunHistory/RunHistory.tsx',
+    'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
+    'videos/components/VideosScreen/VideosScreen.tsx',
+    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
+    'library/components/LibraryScreen/LibraryScreen.tsx',
+    'library/components/IncidentCard/IncidentCard.tsx',
+    'library/components/HitCard/HitCard.tsx',
+  ]) {
     const source = await readFile(new URL(name, components), 'utf8');
     assert.doesNotMatch(source, /new Date\([^)]*\)\.toLocale/, name);
   }
@@ -112,14 +172,21 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
 
 test('the new-analysis model selector shows full model names and never clips them', async () => {
   const workspace = await readFile(new URL('analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', components), 'utf8');
-  const select = /<select className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
+  const select = /<select\s+className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
   assert.ok(select, 'the model selector exists');
   const classes = select[1].split(/\s+/);
   for (const needed of ['sm:w-auto', 'sm:min-w-[19rem]', 'sm:shrink-0']) assert.ok(classes.includes(needed), `select has ${needed}`);
   assert.ok(!classes.some((name) => /max-w-/.test(name)), 'no max width that would clip a model name');
-  assert.match(workspace, /<option key=\{option\.id\} value=\{option\.id\}>\{option\.label\}<\/option>/, 'options show the full friendly label and keep the model id as value');
+  assert.match(
+    workspace,
+    /<option key=\{option\.id\} value=\{option\.id\}>\s*\{option\.label\}\s*<\/option>/,
+    'options show the full friendly label and keep the model id as value',
+  );
   assert.match(workspace, /sm:flex-wrap/, 'on narrow rows the note wraps instead of squeezing the selector');
 
   const inference = JSON.parse(await readFile(new URL('../../contracts/inference.json', import.meta.url), 'utf8'));
-  assert.deepEqual(inference.models.map((model) => model.label), ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning']);
+  assert.deepEqual(
+    inference.models.map((model) => model.label),
+    ['Cosmos 3 Nano Reasoner', 'Cosmos 3 Super Reasoner', 'Nemotron 3 Nano Omni Reasoning'],
+  );
 });

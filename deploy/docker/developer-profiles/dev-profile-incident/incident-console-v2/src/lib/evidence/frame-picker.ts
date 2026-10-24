@@ -8,7 +8,10 @@
 import { MIN_CROP_SIDE } from '@/lib/evidence/frame-request';
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 
-export interface FramePoint { x: number; y: number }
+export interface FramePoint {
+  x: number;
+  y: number;
+}
 
 /** What the picker hands back once a crop exists: the cropped JPEG held in the browser, its object URL for the preview, the frame second and the box. */
 export interface FramePick {

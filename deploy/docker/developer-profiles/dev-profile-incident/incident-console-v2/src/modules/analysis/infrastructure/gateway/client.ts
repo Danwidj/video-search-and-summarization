@@ -47,30 +47,51 @@ export class GatewayClient implements ModelGateway {
       });
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
-      throw new GatewayError(timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE', `Could not reach the VLM gateway: ${networkErrorDetail(error)}`);
+      throw new GatewayError(
+        timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE',
+        `Could not reach the VLM gateway: ${networkErrorDetail(error)}`,
+      );
     }
 
     if (!response.ok) {
       const detail = (await response.text().catch(() => '')).slice(0, 1000);
-      throw new GatewayError('GATEWAY_HTTP_ERROR', `VLM gateway returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`, { httpStatus: response.status, errorBody: detail });
+      throw new GatewayError('GATEWAY_HTTP_ERROR', `VLM gateway returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`, {
+        httpStatus: response.status,
+        errorBody: detail,
+      });
     }
     let text: string;
     try {
       text = await response.text();
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
-      throw new GatewayError(timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE', `Reading the VLM gateway response failed: ${networkErrorDetail(error)}`, { httpStatus: response.status });
+      throw new GatewayError(
+        timedOut ? 'GATEWAY_TIMEOUT' : 'GATEWAY_UNREACHABLE',
+        `Reading the VLM gateway response failed: ${networkErrorDetail(error)}`,
+        { httpStatus: response.status },
+      );
     }
     let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
-      throw new GatewayError('UPSTREAM_NON_JSON', 'VLM gateway returned a non-JSON response', { httpStatus: response.status, errorBody: text.slice(0, 1000) });
+      throw new GatewayError('UPSTREAM_NON_JSON', 'VLM gateway returned a non-JSON response', {
+        httpStatus: response.status,
+        errorBody: text.slice(0, 1000),
+      });
     }
     // A 2xx whose body is not a completion (e.g. JSON null, seen from the gateway
     // for an unfetchable video URL) is a failed call, not an empty answer.
-    if (!body || typeof body !== 'object' || !Array.isArray((body as GatewayCompletionResponse).choices) || !(body as GatewayCompletionResponse).choices.length) {
-      throw new GatewayError('UPSTREAM_NO_COMPLETION', `VLM gateway returned no completion: ${JSON.stringify(body).slice(0, 500)}`, { httpStatus: response.status, errorBody: JSON.stringify(body).slice(0, 1000) });
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      !Array.isArray((body as GatewayCompletionResponse).choices) ||
+      !(body as GatewayCompletionResponse).choices.length
+    ) {
+      throw new GatewayError('UPSTREAM_NO_COMPLETION', `VLM gateway returned no completion: ${JSON.stringify(body).slice(0, 500)}`, {
+        httpStatus: response.status,
+        errorBody: JSON.stringify(body).slice(0, 1000),
+      });
     }
     return body as GatewayCompletionResponse;
   }

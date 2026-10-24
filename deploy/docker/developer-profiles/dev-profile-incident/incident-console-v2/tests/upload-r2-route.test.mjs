@@ -73,8 +73,7 @@ test('rejects a request missing required fields', async () => {
 test('putR2Video refuses a body over the R2 single-upload cap before ever calling S3', async () => {
   puts.length = 0;
   await assert.rejects(
-    () =>
-      putR2Video(getServiceConfiguration(), 'uploads/sensor-1/clip.mp4', new ReadableStream(), 'video/mp4', MAX_R2_PUT_BYTES + 1),
+    () => putR2Video(getServiceConfiguration(), 'uploads/sensor-1/clip.mp4', new ReadableStream(), 'video/mp4', MAX_R2_PUT_BYTES + 1),
     /exceeds the R2 single-upload size limit/,
   );
   assert.equal(puts.length, 0, 'an oversized upload must never reach S3Client.send');
@@ -160,9 +159,11 @@ test('uploads a small image to the deterministic thumbnail key', async () => {
 });
 
 test('thumbnail upload rejects non-image content', async () => {
-  const response = await POST_THUMBNAIL(multipartRequest({
-    file: new Blob([new Uint8Array([1])], { type: 'video/mp4' }),
-    videoKey: 'uploads/sensor-1/video.mp4',
-  }));
+  const response = await POST_THUMBNAIL(
+    multipartRequest({
+      file: new Blob([new Uint8Array([1])], { type: 'video/mp4' }),
+      videoKey: 'uploads/sensor-1/video.mp4',
+    }),
+  );
   assert.equal(response.status, 415);
 });

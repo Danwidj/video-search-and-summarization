@@ -15,12 +15,21 @@ export type { ReportView } from '@/modules/reports/domain/report-view';
 type RawEvent = { startSeconds: number; endSeconds: number | null; description: string };
 
 /** Presentation flags for the model's timeline; the events are passed through unaltered. */
-function timelineView(events: RawEvent[], windowStart: number | null, windowEnd: number | null, videoDurationSeconds: number | null): TimelineEvent[] {
+function timelineView(
+  events: RawEvent[],
+  windowStart: number | null,
+  windowEnd: number | null,
+  videoDurationSeconds: number | null,
+): TimelineEvent[] {
   return events.map((event) => ({
     ...event,
     // Without a known window nothing can be called outside it.
-    insideWindow: windowStart === null || windowEnd === null || (event.startSeconds >= windowStart && event.startSeconds <= windowEnd
-      && (event.endSeconds === null || (event.endSeconds >= event.startSeconds && event.endSeconds <= windowEnd))),
+    insideWindow:
+      windowStart === null ||
+      windowEnd === null ||
+      (event.startSeconds >= windowStart &&
+        event.startSeconds <= windowEnd &&
+        (event.endSeconds === null || (event.endSeconds >= event.startSeconds && event.endSeconds <= windowEnd))),
     seekable: videoDurationSeconds === null ? event.startSeconds >= 0 : timestampWithinVideo(event.startSeconds, videoDurationSeconds),
   }));
 }
@@ -54,8 +63,14 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
       location: report.incident.location,
       severityReason: report.incident.severity_reason,
       timeline: timelineView(
-        report.timeline.map((event) => ({ startSeconds: event.start_seconds, endSeconds: event.end_seconds, description: event.description })),
-        report.incident.start_timestamp, report.incident.end_timestamp, videoDurationSeconds,
+        report.timeline.map((event) => ({
+          startSeconds: event.start_seconds,
+          endSeconds: event.end_seconds,
+          description: event.description,
+        })),
+        report.incident.start_timestamp,
+        report.incident.end_timestamp,
+        videoDurationSeconds,
       ),
       timelineCheck,
       uncertainties: [...report.uncertainties],
@@ -69,7 +84,11 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     };
   } else if (notes.kind === 'legacy') {
     const { report } = notes;
-    const events = report.timeline.map((event) => ({ startSeconds: Math.floor(event.start_seconds), endSeconds: event.end_seconds === null ? null : Math.floor(event.end_seconds), description: event.description }));
+    const events = report.timeline.map((event) => ({
+      startSeconds: Math.floor(event.start_seconds),
+      endSeconds: event.end_seconds === null ? null : Math.floor(event.end_seconds),
+      description: event.description,
+    }));
     modelOutput = {
       source: 'legacy',
       title: text(report.title),
@@ -102,16 +121,36 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
       differences.severity = { model: original.severityLevel, current: current.severityLevel };
       differences.fields.push('severity');
     }
-    if (original.description !== null && current.description !== null && original.description !== current.description) differences.fields.push('description');
+    if (original.description !== null && current.description !== null && original.description !== current.description)
+      differences.fields.push('description');
     if (notes.kind === 'contract') {
       // Legacy start/end were strings the old editor rewrote freely, so only
       // contract runs compare timestamps and evidence exactly.
-      if (original.startSeconds !== current.startSeconds || original.endSeconds !== current.endSeconds) differences.fields.push('incident window');
+      if (original.startSeconds !== current.startSeconds || original.endSeconds !== current.endSeconds)
+        differences.fields.push('incident window');
       const model = notes.report;
       const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-      if (!same(model.entities.map((e) => [e.entity_id, e.type, e.description]), structured.entities.map((e) => [e.entityId, e.type, e.description]))) differences.fields.push('entities');
-      if (!same(model.instruments.map((i) => [i.instrument_id, i.entity_id, i.name, i.description, i.threat_level]), structured.instruments.map((i) => [i.instrumentId, i.entityId, i.name, i.description, i.threatLevel]))) differences.fields.push('instruments');
-      if (!same(model.assets.map((a) => [a.asset_id, a.name, a.description]), structured.assets.map((a) => [a.assetId, a.name, a.description]))) differences.fields.push('assets');
+      if (
+        !same(
+          model.entities.map((e) => [e.entity_id, e.type, e.description]),
+          structured.entities.map((e) => [e.entityId, e.type, e.description]),
+        )
+      )
+        differences.fields.push('entities');
+      if (
+        !same(
+          model.instruments.map((i) => [i.instrument_id, i.entity_id, i.name, i.description, i.threat_level]),
+          structured.instruments.map((i) => [i.instrumentId, i.entityId, i.name, i.description, i.threatLevel]),
+        )
+      )
+        differences.fields.push('instruments');
+      if (
+        !same(
+          model.assets.map((a) => [a.asset_id, a.name, a.description]),
+          structured.assets.map((a) => [a.assetId, a.name, a.description]),
+        )
+      )
+        differences.fields.push('assets');
     }
   }
 

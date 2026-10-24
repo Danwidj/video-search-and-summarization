@@ -16,9 +16,22 @@ export interface ChatTarget {
   label: string;
 }
 
-export function chatTarget({ revision, isOfficial, draft }: { revision: Pick<RevisionSummary, 'revisionId' | 'revisionNo' | 'kind'>; isOfficial: boolean; draft: EditDraft | null }): ChatTarget {
-  if (draft) return { versionId: revision.revisionId, draftReport: draftReport(draft), label: `Draft from v${revision.revisionNo} · unsaved` };
-  return { versionId: revision.revisionId, draftReport: null, label: `v${revision.revisionNo} · ${revision.kind === 'human' ? 'Human' : 'AI'} · ${isOfficial ? 'official' : 'not official'}` };
+export function chatTarget({
+  revision,
+  isOfficial,
+  draft,
+}: {
+  revision: Pick<RevisionSummary, 'revisionId' | 'revisionNo' | 'kind'>;
+  isOfficial: boolean;
+  draft: EditDraft | null;
+}): ChatTarget {
+  if (draft)
+    return { versionId: revision.revisionId, draftReport: draftReport(draft), label: `Draft from v${revision.revisionNo} · unsaved` };
+  return {
+    versionId: revision.revisionId,
+    draftReport: null,
+    label: `v${revision.revisionNo} · ${revision.kind === 'human' ? 'Human' : 'AI'} · ${isOfficial ? 'official' : 'not official'}`,
+  };
 }
 
 /**
@@ -29,7 +42,8 @@ export function chatTarget({ revision, isOfficial, draft }: { revision: Pick<Rev
  */
 export function draftReport(draft: EditDraft): Record<string, unknown> {
   const entityIds = new Map(draft.entities.map((entity, index) => [entity.key, entity.sourceId ?? `new-E${index + 1}`]));
-  const seen = (item: { timestampSeconds: number | null }) => (item.timestampSeconds === null ? {} : { timestamp_seconds: item.timestampSeconds });
+  const seen = (item: { timestampSeconds: number | null }) =>
+    item.timestampSeconds === null ? {} : { timestamp_seconds: item.timestampSeconds };
   const { incident } = draft;
   return {
     incident: {
@@ -39,7 +53,13 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
       description: incident.description,
       ...(incident.severity_level !== null ? { severity_level: incident.severity_level } : {}),
     },
-    entities: draft.entities.map((entity) => ({ entity_id: entityIds.get(entity.key), type: entity.type, description: entity.description, label: entity.label, ...seen(entity) })),
+    entities: draft.entities.map((entity) => ({
+      entity_id: entityIds.get(entity.key),
+      type: entity.type,
+      description: entity.description,
+      label: entity.label,
+      ...seen(entity),
+    })),
     instruments: draft.instruments.map((instrument, index) => ({
       instrument_id: instrument.sourceId ?? `new-I${index + 1}`,
       entity_id: (instrument.holderKey && entityIds.get(instrument.holderKey)) || null,
@@ -49,12 +69,28 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
       ...(instrument.threat_level !== null ? { threat_level: instrument.threat_level } : {}),
       ...seen(instrument),
     })),
-    assets: draft.assets.map((asset, index) => ({ asset_id: asset.sourceId ?? `new-A${index + 1}`, name: asset.name, description: asset.description, label: asset.label, ...seen(asset) })),
+    assets: draft.assets.map((asset, index) => ({
+      asset_id: asset.sourceId ?? `new-A${index + 1}`,
+      name: asset.name,
+      description: asset.description,
+      label: asset.label,
+      ...seen(asset),
+    })),
   };
 }
 
 /** The body of POST /api/chat for one question. */
-export function chatRequestBody({ messages, sessionId, videoId, target }: { messages: Array<{ role: 'user' | 'assistant'; content: string }>; sessionId?: string; videoId: string; target: ChatTarget }) {
+export function chatRequestBody({
+  messages,
+  sessionId,
+  videoId,
+  target,
+}: {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  sessionId?: string;
+  videoId: string;
+  target: ChatTarget;
+}) {
   return {
     messages,
     ...(sessionId ? { sessionId } : {}),

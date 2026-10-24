@@ -32,7 +32,8 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
       return NextResponse.json({ error: 'file and a valid itemId are required' }, { status: 400 });
     }
     if (!IMAGE_TYPES.has(file.type)) return NextResponse.json({ error: 'The image must be JPEG, PNG or WebP' }, { status: 415 });
-    if (file.size <= 0 || file.size > MAX_IMAGE_BYTES) return NextResponse.json({ error: 'The image must be between 1 byte and 5 MB' }, { status: 413 });
+    if (file.size <= 0 || file.size > MAX_IMAGE_BYTES)
+      return NextResponse.json({ error: 'The image must be between 1 byte and 5 MB' }, { status: 413 });
 
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');

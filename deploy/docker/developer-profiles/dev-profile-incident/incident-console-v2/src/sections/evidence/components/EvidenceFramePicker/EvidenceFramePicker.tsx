@@ -16,7 +16,15 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
  * hands the JPEG back to the caller. It is held in the browser: nothing is
  * written to R2 until the draft is saved.
  */
-export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, range, onPick, onClose }: {
+export function EvidenceFramePicker({
+  videoId,
+  videoSrc,
+  label,
+  initialSeconds,
+  range,
+  onPick,
+  onClose,
+}: {
   videoId: string;
   videoSrc: string;
   label: string;
@@ -34,7 +42,9 @@ export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, 
   const region: FrameRegion | null = drag ? dragRegion(drag.from, drag.to) : null;
 
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose(); };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) onClose();
+    };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [busy, onClose]);
@@ -82,18 +92,28 @@ export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, 
   };
 
   return (
-    <div aria-label={`Pick a frame for ${label}`} aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" role="dialog">
+    <div
+      aria-label={`Pick a frame for ${label}`}
+      aria-modal="true"
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4"
+      role="dialog"
+    >
       <div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-xl">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-bold">Pick a frame for {label}</h2>
-          <span className="font-mono text-[11px] text-ink/50" data-testid="frame-picker-time">{formatClock(seconds)}</span>
+          <span className="font-mono text-[11px] text-ink/50" data-testid="frame-picker-time">
+            {formatClock(seconds)}
+          </span>
         </div>
 
         <div className="relative mt-3 aspect-video select-none overflow-hidden rounded-xl bg-black">
           <video
             className="h-full w-full object-fill"
             muted
-            onLoadedMetadata={(event) => { const length = event.currentTarget.duration; setDuration(Number.isFinite(length) && length > 0 ? length : null); }}
+            onLoadedMetadata={(event) => {
+              const length = event.currentTarget.duration;
+              setDuration(Number.isFinite(length) && length > 0 ? length : null);
+            }}
             playsInline
             preload="auto"
             ref={videoRef}
@@ -118,7 +138,7 @@ export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, 
           aria-label="Frame second"
           className="mt-3 w-full"
           disabled={duration === null || busy}
-          max={range === null ? duration ?? 0 : Math.min(range.last, duration ?? range.last)}
+          max={range === null ? (duration ?? 0) : Math.min(range.last, duration ?? range.last)}
           min={range?.first ?? 0}
           onChange={(event) => seek(Number(event.target.value))}
           step={0.1}
@@ -126,11 +146,29 @@ export function EvidenceFramePicker({ videoId, videoSrc, label, initialSeconds, 
           value={seconds}
         />
         <p className="mt-2 text-[11px] text-ink/50">Scrub to the frame, then drag a rectangle on it. The image is cut from that frame.</p>
-        {error && <p className="mt-2 rounded-xl border border-clay/30 bg-clay/5 px-3 py-2 text-xs text-[#9b3518]" role="alert">{error}</p>}
+        {error && (
+          <p className="mt-2 rounded-xl border border-clay/30 bg-clay/5 px-3 py-2 text-xs text-[#9b3518]" role="alert">
+            {error}
+          </p>
+        )}
 
         <div className="mt-3 flex items-center justify-end gap-2 text-sm">
-          <button className="rounded-full border border-ink/20 bg-white px-3 py-1 font-semibold text-ink disabled:opacity-40" disabled={busy} onClick={onClose} type="button">Cancel</button>
-          <button className="rounded-full bg-ink px-3 py-1 font-semibold text-white disabled:opacity-40" disabled={!region || busy} onClick={crop} type="button">{busy ? 'Cropping…' : 'Use this crop'}</button>
+          <button
+            className="rounded-full border border-ink/20 bg-white px-3 py-1 font-semibold text-ink disabled:opacity-40"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-full bg-ink px-3 py-1 font-semibold text-white disabled:opacity-40"
+            disabled={!region || busy}
+            onClick={crop}
+            type="button"
+          >
+            {busy ? 'Cropping…' : 'Use this crop'}
+          </button>
         </div>
       </div>
     </div>

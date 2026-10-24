@@ -11,7 +11,9 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { buildReportView } = await import('./support/report-view.mjs');
 const { reportHeading } = await import('../src/modules/reports/application/report-view.ts');
 const { parseRunNotes } = await import('../src/modules/reports/domain/run-notes.ts');
-const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import('../src/modules/reports/domain/normalize.ts');
+const { canonicalEntityType, canonicalIncidentType, formatClock, parseTimestamp } = await import(
+  '../src/modules/reports/domain/normalize.ts'
+);
 
 // Real rows of the live smoke-test run (see the fixture's description).
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
@@ -23,12 +25,26 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   const notes = JSON.parse(smoke.modelRun.notes).incidentConsoleV2;
 
   assert.deepEqual(view.structured.incident, {
-    type: 'assault', startSeconds: 1, endSeconds: 11, duration: 10,
-    description: smoke.incident.description, severityLevel: 2, confidenceScore: null,
+    type: 'assault',
+    startSeconds: 1,
+    endSeconds: 11,
+    duration: 10,
+    description: smoke.incident.description,
+    severityLevel: 2,
+    confidenceScore: null,
   });
-  assert.deepEqual(view.structured.entities.map((e) => [e.entityId, e.type]), [['E1', 'human'], ['E2', 'human']]);
+  assert.deepEqual(
+    view.structured.entities.map((e) => [e.entityId, e.type]),
+    [
+      ['E1', 'human'],
+      ['E2', 'human'],
+    ],
+  );
   assert.deepEqual(view.structured.instruments, []);
-  assert.deepEqual(view.structured.assets.map((a) => a.assetId), ['A1', 'A2']);
+  assert.deepEqual(
+    view.structured.assets.map((a) => a.assetId),
+    ['A1', 'A2'],
+  );
 
   assert.equal(view.modelOutput.source, 'contract');
   assert.equal(view.modelOutput.title, notes.report.incident.title);
@@ -41,7 +57,10 @@ test('contract-v2 smoke run: Class A from rows, Class B from notes, Class C from
   assert.equal(view.run.notesKind, 'contract');
   assert.equal(view.run.model, 'nvidia/cosmos-3-nano-reasoner');
   assert.equal(view.run.promptVersion, 'incident-contract-v2');
-  assert.deepEqual([view.revisionId, view.revision.kind, view.revision.revisionNo, view.official], [1, 'ai', 1, { officialRevisionId: null, isOfficial: false }]);
+  assert.deepEqual(
+    [view.revisionId, view.revision.kind, view.revision.revisionNo, view.official],
+    [1, 'ai', 1, { officialRevisionId: null, isOfficial: false }],
+  );
   assert.equal(view.run.request.additionalInstruction, null);
   assert.deepEqual(view.run.request.inferenceConfig, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
   assert.equal(view.run.response.finishReason, 'stop');
@@ -74,7 +93,10 @@ test('an inconsistent timeline is shown as model context, never as incident time
   assert.deepEqual([first.insideWindow, first.seekable], [false, true], 'outside the window but inside the video: context, still seekable');
   assert.deepEqual([last.insideWindow, last.seekable], [false, false], 'outside the video: not seekable');
   assert.ok(rest.slice(0, -1).every((event) => event.insideWindow && event.seekable));
-  assert.deepEqual(view.modelOutput.timeline.map((e) => [e.startSeconds, e.endSeconds, e.description]), record.report.timeline.map((e) => [e.start_seconds, e.end_seconds, e.description]));
+  assert.deepEqual(
+    view.modelOutput.timeline.map((e) => [e.startSeconds, e.endSeconds, e.description]),
+    record.report.timeline.map((e) => [e.start_seconds, e.end_seconds, e.description]),
+  );
 });
 
 test('an edited structured severity is reported against the model severity; the rationale stays the model original', () => {
@@ -119,11 +141,32 @@ test('a tampered contract record is shown as unverifiable, not trusted', () => {
 });
 
 const legacyRows = (notes) => ({
-  videoId: 'v-legacy', modelRunId: 'm-legacy', playbackUrl: 'https://signed.example/legacy.mp4',
+  videoId: 'v-legacy',
+  modelRunId: 'm-legacy',
+  playbackUrl: 'https://signed.example/legacy.mp4',
   video: { id: 'v-legacy', filepath: 'uploads/s/legacy.mp4' },
-  modelRun: { id: 'm-legacy', model_name: 'nvidia/cosmos-3-nano-reasoner', prompt_version: 'incident-v2-snake', run_datetime: '2026-09-20T10:00:00', notes },
-  incident: { incident_id: 'v-legacy', model_run_id: 'm-legacy', type: 'fighting', start_timestamp: '0:15', end_timestamp: '1:02:03', duration: 30, description: 'Two people fight.', severity_level: 3, confidence_score: 0.7 },
-  entities: [{ entity_id: 'e02', type: 'person', description: 'Person B' }, { entity_id: 'e01', type: 'person', description: 'Person A punching' }],
+  modelRun: {
+    id: 'm-legacy',
+    model_name: 'nvidia/cosmos-3-nano-reasoner',
+    prompt_version: 'incident-v2-snake',
+    run_datetime: '2026-09-20T10:00:00',
+    notes,
+  },
+  incident: {
+    incident_id: 'v-legacy',
+    model_run_id: 'm-legacy',
+    type: 'fighting',
+    start_timestamp: '0:15',
+    end_timestamp: '1:02:03',
+    duration: 30,
+    description: 'Two people fight.',
+    severity_level: 3,
+    confidence_score: 0.7,
+  },
+  entities: [
+    { entity_id: 'e02', type: 'person', description: 'Person B' },
+    { entity_id: 'e01', type: 'person', description: 'Person A punching' },
+  ],
   instruments: [{ instrument_id: 'i01', entity_id: null, name: 'Bottle', description: 'Swung', threat_level: null }],
   assets: [],
   review: { status: 'verified', verified_by: 'Rev' },
@@ -131,20 +174,41 @@ const legacyRows = (notes) => ({
 });
 
 test('legacy run: normalised Class A, best-effort Class B, earlier reviewer edits surfaced read-only', () => {
-  const notes = JSON.stringify({ incidentConsoleV2: {
-    report: { videoId: 'v-legacy', title: 'Street fight', incident_type: 'fighting', description: 'Two people fight.', severity: 3, severity_reason: 'Punches thrown.', location: 'Main St', timeline: [{ start_seconds: 15.6, end_seconds: null, description: 'Fight starts' }], uncertainties: ['Cause unclear'], rawModelOutput: '{"legacy":true}' },
-    editedReport: { title: 'Street fight near bus stop' },
-  } });
+  const notes = JSON.stringify({
+    incidentConsoleV2: {
+      report: {
+        videoId: 'v-legacy',
+        title: 'Street fight',
+        incident_type: 'fighting',
+        description: 'Two people fight.',
+        severity: 3,
+        severity_reason: 'Punches thrown.',
+        location: 'Main St',
+        timeline: [{ start_seconds: 15.6, end_seconds: null, description: 'Fight starts' }],
+        uncertainties: ['Cause unclear'],
+        rawModelOutput: '{"legacy":true}',
+      },
+      editedReport: { title: 'Street fight near bus stop' },
+    },
+  });
   const view = buildReportView(legacyRows(notes));
   assert.equal(view.structured.incident.type, 'assault');
   assert.equal(view.structured.incident.startSeconds, 15);
   assert.equal(view.structured.incident.endSeconds, 3723);
-  assert.deepEqual(view.structured.entities.map((e) => [e.entityId, e.type]), [['e01', 'human'], ['e02', 'human']]);
+  assert.deepEqual(
+    view.structured.entities.map((e) => [e.entityId, e.type]),
+    [
+      ['e01', 'human'],
+      ['e02', 'human'],
+    ],
+  );
   assert.equal(view.structured.instruments[0].threatLevel, null);
   assert.equal(view.modelOutput.source, 'legacy');
   assert.equal(view.modelOutput.title, 'Street fight');
   assert.equal(view.modelOutput.severityReason, 'Punches thrown.');
-  assert.deepEqual(view.modelOutput.timeline, [{ startSeconds: 15, endSeconds: null, description: 'Fight starts', insideWindow: true, seekable: true }]);
+  assert.deepEqual(view.modelOutput.timeline, [
+    { startSeconds: 15, endSeconds: null, description: 'Fight starts', insideWindow: true, seekable: true },
+  ]);
   assert.equal(view.run.notesKind, 'legacy');
   assert.equal(view.run.rawModelOutput, '{"legacy":true}');
   assert.deepEqual(view.run.legacyReviewerEdits, { title: 'Street fight near bus stop' });
@@ -195,8 +259,17 @@ test('a structurally repaired run stays distinguishable from a first-pass one, w
   Object.assign(notes.incidentConsoleV2, {
     recordType: 'analysis_attempt',
     status: 'valid_after_structural_repair',
-    validation: { firstPass: [{ code: 'ID_NOT_SEQUENTIAL_ENTITY', path: 'entities', message: 'entity_id values ["E2","E1"] are not sequential ["E1","E2"]' }] },
-    repair: { eligible: true, ruleSet: 'id-normalization-v1', operations: [{ op: 'reorder', collection: 'entities', from: ['E2', 'E1'], to: ['E1', 'E2'] }], revalidation: [] },
+    validation: {
+      firstPass: [
+        { code: 'ID_NOT_SEQUENTIAL_ENTITY', path: 'entities', message: 'entity_id values ["E2","E1"] are not sequential ["E1","E2"]' },
+      ],
+    },
+    repair: {
+      eligible: true,
+      ruleSet: 'id-normalization-v1',
+      operations: [{ op: 'reorder', collection: 'entities', from: ['E2', 'E1'], to: ['E1', 'E2'] }],
+      revalidation: [],
+    },
   });
   repaired.modelRun.notes = JSON.stringify(notes);
   const view = buildReportView(rowsFrom(repaired));
@@ -208,7 +281,20 @@ test('a structurally repaired run stays distinguishable from a first-pass one, w
 });
 
 test('failed attempt notes are recognised and never treated as a report', () => {
-  const notes = JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status: 'contract_failed', stage: 'contract_validation', contractVersion: 'incident-contract-v2', videoId: 'v-1', failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' }, request: { model: 'm' }, response: { content: '{}' }, validation: { firstPass: [] }, repair: null } });
+  const notes = JSON.stringify({
+    incidentConsoleV2: {
+      recordType: 'analysis_attempt',
+      status: 'contract_failed',
+      stage: 'contract_validation',
+      contractVersion: 'incident-contract-v2',
+      videoId: 'v-1',
+      failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' },
+      request: { model: 'm' },
+      response: { content: '{}' },
+      validation: { firstPass: [] },
+      repair: null,
+    },
+  });
   const parsed = parseRunNotes(notes);
   assert.equal(parsed.kind, 'failed-attempt');
   assert.equal(parsed.status, 'contract_failed');

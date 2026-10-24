@@ -17,20 +17,55 @@ export const dynamic = 'force-dynamic';
 /** The agent's critic runs about a second per hit, so the page asks for a bounded list. */
 const TOP_K = 20;
 
-async function searchedVersions(config: ReturnType<typeof getServiceConfiguration>, videoIds: Set<string>): Promise<Record<string, SearchedVersion>> {
+async function searchedVersions(
+  config: ReturnType<typeof getServiceConfiguration>,
+  videoIds: Set<string>,
+): Promise<Record<string, SearchedVersion>> {
   if (!videoIds.size) return {};
   try {
     const { items } = await getDbAdapters(config).incidents.listReports({
-      page: 1, pageSize: 1000, search: null, type: null, severity: null, kind: null, generatedAfter: null, generatedBefore: null,
-      timeFrom: null, timeTo: null, entities: null, instruments: null, assets: null, dayOfWeek: null, sort: 'newest',
-      scope: 'all', entityTypes: null, evidenceMatch: 'contains', timezone: 'UTC',
+      page: 1,
+      pageSize: 1000,
+      search: null,
+      type: null,
+      severity: null,
+      kind: null,
+      generatedAfter: null,
+      generatedBefore: null,
+      timeFrom: null,
+      timeTo: null,
+      entities: null,
+      instruments: null,
+      assets: null,
+      dayOfWeek: null,
+      sort: 'newest',
+      scope: 'all',
+      entityTypes: null,
+      evidenceMatch: 'contains',
+      timezone: 'UTC',
     });
     const wanted = items.filter((item: ReportLibraryItem) => videoIds.has(item.videoId));
-    const sign = async (key: string) => { try { return await createR2PlaybackUrl(config, key); } catch { return undefined; } };
-    const entries = await Promise.all(wanted.map(async (item) => {
-      const thumbnailUrl = isValidR2Key(item.r2Key) ? await sign(thumbnailKeyForVideo(item.r2Key)) : undefined;
-      return [item.videoId, { revisionId: item.revisionId, revisionNo: item.revisionNo, isOfficial: item.isOfficial === true, ...(thumbnailUrl ? { thumbnailUrl } : {}) }] as const;
-    }));
+    const sign = async (key: string) => {
+      try {
+        return await createR2PlaybackUrl(config, key);
+      } catch {
+        return undefined;
+      }
+    };
+    const entries = await Promise.all(
+      wanted.map(async (item) => {
+        const thumbnailUrl = isValidR2Key(item.r2Key) ? await sign(thumbnailKeyForVideo(item.r2Key)) : undefined;
+        return [
+          item.videoId,
+          {
+            revisionId: item.revisionId,
+            revisionNo: item.revisionNo,
+            isOfficial: item.isOfficial === true,
+            ...(thumbnailUrl ? { thumbnailUrl } : {}),
+          },
+        ] as const;
+      }),
+    );
     return Object.fromEntries(entries);
   } catch {
     return {};

@@ -38,11 +38,31 @@ export interface ItemEvidence {
 }
 
 // timestampSeconds: when the item is most clearly visible; label: its short detector label.
-interface ItemDetails { timestampSeconds: number | null; label: string; evidence: ItemEvidence | null }
+interface ItemDetails {
+  timestampSeconds: number | null;
+  label: string;
+  evidence: ItemEvidence | null;
+}
 /** firstSeenSeconds / lastSeenSeconds: the span the entity is on screen; null for a revision saved without one (e.g. a human edit). */
-export interface StructuredEntity extends ItemDetails { entityId: string; type: string; description: string; firstSeenSeconds: number | null; lastSeenSeconds: number | null }
-export interface StructuredInstrument extends ItemDetails { instrumentId: string; entityId: string | null; name: string; description: string; threatLevel: number | null }
-export interface StructuredAsset extends ItemDetails { assetId: string; name: string; description: string }
+export interface StructuredEntity extends ItemDetails {
+  entityId: string;
+  type: string;
+  description: string;
+  firstSeenSeconds: number | null;
+  lastSeenSeconds: number | null;
+}
+export interface StructuredInstrument extends ItemDetails {
+  instrumentId: string;
+  entityId: string | null;
+  name: string;
+  description: string;
+  threatLevel: number | null;
+}
+export interface StructuredAsset extends ItemDetails {
+  assetId: string;
+  name: string;
+  description: string;
+}
 
 export interface TimelineEvent {
   startSeconds: number;
@@ -75,7 +95,13 @@ export interface ModelOutput {
   timelineCheck: TimelineCheck;
   uncertainties: string[];
   /** The model's own structured values, for comparison with the (possibly edited) projection. */
-  original: { type: string | null; severityLevel: number | null; startSeconds: number | null; endSeconds: number | null; description: string | null };
+  original: {
+    type: string | null;
+    severityLevel: number | null;
+    startSeconds: number | null;
+    endSeconds: number | null;
+    description: string | null;
+  };
 }
 
 export interface RunDetails {
@@ -107,7 +133,12 @@ export interface ReportView {
   videoId: string;
   revisionId: number;
   modelRunId: string | null;
-  structured: { incident: StructuredIncident; entities: StructuredEntity[]; instruments: StructuredInstrument[]; assets: StructuredAsset[] };
+  structured: {
+    incident: StructuredIncident;
+    entities: StructuredEntity[];
+    instruments: StructuredInstrument[];
+    assets: StructuredAsset[];
+  };
   modelOutput: ModelOutput | null;
   run: RunDetails;
   revision: RevisionSummary;
@@ -119,5 +150,8 @@ export interface ReportView {
 
 /** Heading: the model's title when it gave one, else "<Type> report". */
 export function reportHeading(view: ReportView): string {
-  return view.modelOutput?.title || `${view.structured.incident.type ? view.structured.incident.type[0].toUpperCase() + view.structured.incident.type.slice(1) : 'Incident'} report`;
+  return (
+    view.modelOutput?.title ||
+    `${view.structured.incident.type ? view.structured.incident.type[0].toUpperCase() + view.structured.incident.type.slice(1) : 'Incident'} report`
+  );
 }

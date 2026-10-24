@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import { EMPTY_FILTERS, activeFilters, filterParams, parseFilters, presetAfter } from '../src/lib/library/filters.ts';
 
 test('a dashboard link round-trips through the filters', () => {
-  const query = new URLSearchParams('scope=official&after=2026-09-01T00:00:00&before=2026-09-30T00:00:00&day=2&entityType=vehicle&instrument=Knife&match=exact&fromTime=09:00&toTime=09:59:59.999');
+  const query = new URLSearchParams(
+    'scope=official&after=2026-09-01T00:00:00&before=2026-09-30T00:00:00&day=2&entityType=vehicle&instrument=Knife&match=exact&fromTime=09:00&toTime=09:59:59.999',
+  );
   const filters = parseFilters(query);
   assert.equal(filters.official, true);
   assert.equal(filters.exact, true);
@@ -21,7 +23,10 @@ test('defaults are left out of the query and "all" means no filter', () => {
 test('every active filter is one removable chip that clears only itself', () => {
   const filters = { ...EMPTY_FILTERS, search: ' blade ', type: 'assault', official: true, severity: 'high', after: '2026-09-01T00:00:00' };
   const chips = activeFilters(filters);
-  assert.deepEqual(chips.map((chip) => chip.key), ['search', 'type', 'official', 'severity', 'date']);
+  assert.deepEqual(
+    chips.map((chip) => chip.key),
+    ['search', 'type', 'official', 'severity', 'date'],
+  );
   assert.deepEqual({ ...filters, ...chips[2].clear }.official, false);
   assert.equal(activeFilters({ ...filters, ...chips.reduce((all, chip) => ({ ...all, ...chip.clear }), {}) }).length, 0);
 });

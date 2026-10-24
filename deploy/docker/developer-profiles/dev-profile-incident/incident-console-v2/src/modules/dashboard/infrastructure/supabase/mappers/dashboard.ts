@@ -51,34 +51,44 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
       awaitingSelection: count(videos.awaitingSelection),
       withoutReport: count(videos.withoutReport),
     },
-    previous: previous ? { total: count(previous.total), human: count(previous.human), ai: count(previous.ai), high: count(previous.high) } : null,
+    previous: previous
+      ? { total: count(previous.total), human: count(previous.human), ai: count(previous.ai), high: count(previous.high) }
+      : null,
     averageConfidence: numberOrNull(result.averageConfidence),
     confidenceNotProvided: count(result.confidenceNotProvided),
     severity: severityCounts(result.severity),
     revisions: { ai: count(revisions.ai), human: count(revisions.human) },
-    types: asRows(result.types).map((item): TypeDetail => ({
-      type: text(item.type),
-      count: count(item.count),
-      severity: severityCounts(item.severity),
-      entities: ranked(item.entities),
-      instruments: ranked(item.instruments),
-      assets: ranked(item.assets),
-    })),
+    types: asRows(result.types).map(
+      (item): TypeDetail => ({
+        type: text(item.type),
+        count: count(item.count),
+        severity: severityCounts(item.severity),
+        entities: ranked(item.entities),
+        instruments: ranked(item.instruments),
+        assets: ranked(item.assets),
+      }),
+    ),
     trend: asRows(result.trend).map((item) => ({ date: text(item.date), count: count(item.count) })),
-    heatmap: asRows(result.heatmap).map((item) => ({ day: numberOrNull(item.day), hour: numberOrNull(item.hour), count: count(item.count) })),
+    heatmap: asRows(result.heatmap).map((item) => ({
+      day: numberOrNull(item.day),
+      hour: numberOrNull(item.hour),
+      count: count(item.count),
+    })),
     confidence: asRows(result.confidence).map((item) => ({ bucket: count(item.bucket), count: count(item.count) })),
     entityTypes: ranked(result.entityTypes),
     topInstruments: ranked(result.topInstruments),
     topAssets: ranked(result.topAssets),
     threatLevels: asRows(result.threatLevels).map((item) => ({ level: count(item.level), count: count(item.count) })),
-    modelCoverage: asRows(result.modelCoverage).map((item): ModelCoverage => ({
-      model: text(item.model),
-      withReport: count(item.withReport),
-      validFirstPass: count(item.validFirstPass),
-      repaired: count(item.repaired),
-      legacy: count(item.legacy),
-      contractFailed: count(item.contractFailed),
-      requestFailed: count(item.requestFailed),
-    })),
+    modelCoverage: asRows(result.modelCoverage).map(
+      (item): ModelCoverage => ({
+        model: text(item.model),
+        withReport: count(item.withReport),
+        validFirstPass: count(item.validFirstPass),
+        repaired: count(item.repaired),
+        legacy: count(item.legacy),
+        contractFailed: count(item.contractFailed),
+        requestFailed: count(item.requestFailed),
+      }),
+    ),
   };
 }

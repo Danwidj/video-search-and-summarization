@@ -16,14 +16,26 @@ export const EDITABLE_INCIDENT_TYPES = ['road accident', 'burglary', 'explosion'
 export const EDITABLE_ENTITY_TYPES = ['human', 'animal', 'unknown'] as const;
 
 /** Fields every item carries: when it is most clearly visible, its detector label and its evidence image (an R2 key). */
-interface EditItemDetails { source_id: string | null; timestamp_seconds: number; label: string; image: string | null; image_timestamp_seconds?: number | null; image_box?: number[] | null }
+interface EditItemDetails {
+  source_id: string | null;
+  timestamp_seconds: number;
+  label: string;
+  image: string | null;
+  image_timestamp_seconds?: number | null;
+  image_box?: number[] | null;
+}
 /** An entity's on-screen span, in seconds from the video start (the contract's first/last seen). */
-interface EditEntitySpan { first_seen_seconds: number; last_seen_seconds: number }
+interface EditEntitySpan {
+  first_seen_seconds: number;
+  last_seen_seconds: number;
+}
 
 export interface StructuredEdit {
   incident: { type: string; start_timestamp: number; end_timestamp: number; description: string; severity_level: number };
   entities: Array<{ entity_id: string; type: string; description: string } & EditEntitySpan & EditItemDetails>;
-  instruments: Array<{ instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails>;
+  instruments: Array<
+    { instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails
+  >;
   assets: Array<{ asset_id: string; name: string; description: string } & EditItemDetails>;
 }
 
@@ -33,12 +45,30 @@ export interface StructuredEdit {
  * imageTimestampSeconds and imageBox (the [ymin, xmin, ymax, xmax] box, 0-1000) describe a
  * reviewer-drawn image only; they stay null for an image the opened revision already had.
  */
-interface DraftItemDetails { key: string; sourceId: string | null; timestampSeconds: number | null; label: string; image: string | null; imageUrl: string | null; pendingImage: Blob | null; imageTimestampSeconds: number | null; imageBox: number[] | null }
+interface DraftItemDetails {
+  key: string;
+  sourceId: string | null;
+  timestampSeconds: number | null;
+  label: string;
+  image: string | null;
+  imageUrl: string | null;
+  pendingImage: Blob | null;
+  imageTimestampSeconds: number | null;
+  imageBox: number[] | null;
+}
 
 /** An in-progress edit: values a report may lack (type, times, threat level) start empty and must be chosen. */
 export interface EditDraft {
-  incident: { type: string | null; start_timestamp: number | null; end_timestamp: number | null; description: string; severity_level: number | null };
-  entities: Array<{ type: string; description: string; firstSeenSeconds: number | null; lastSeenSeconds: number | null } & DraftItemDetails>;
+  incident: {
+    type: string | null;
+    start_timestamp: number | null;
+    end_timestamp: number | null;
+    description: string;
+    severity_level: number | null;
+  };
+  entities: Array<
+    { type: string; description: string; firstSeenSeconds: number | null; lastSeenSeconds: number | null } & DraftItemDetails
+  >;
   instruments: Array<{ holderKey: string | null; name: string; description: string; threat_level: number | null } & DraftItemDetails>;
   assets: Array<{ name: string; description: string } & DraftItemDetails>;
 }
@@ -48,7 +78,17 @@ export const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-
 
 /** A new item's details: visible from the incident start, no label or image yet. */
 export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetails {
-  return { key: newKey(prefix), sourceId: null, timestampSeconds: draft.incident.start_timestamp, label: '', image: null, imageUrl: null, pendingImage: null, imageTimestampSeconds: null, imageBox: null };
+  return {
+    key: newKey(prefix),
+    sourceId: null,
+    timestampSeconds: draft.incident.start_timestamp,
+    label: '',
+    image: null,
+    imageUrl: null,
+    pendingImage: null,
+    imageTimestampSeconds: null,
+    imageBox: null,
+  };
 }
 
 /**
@@ -56,8 +96,22 @@ export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetai
  * the contract (e.g. an unknown type, an unrated threat) start empty and must
  * be chosen before saving.
  */
-function details(key: string, sourceId: string, item: { timestampSeconds: number | null; label: string; evidence: { image: string | null; imageUrl: string | null } | null }): DraftItemDetails {
-  return { key, sourceId, timestampSeconds: item.timestampSeconds, label: item.label, image: item.evidence?.image ?? null, imageUrl: item.evidence?.imageUrl ?? null, pendingImage: null, imageTimestampSeconds: null, imageBox: null };
+function details(
+  key: string,
+  sourceId: string,
+  item: { timestampSeconds: number | null; label: string; evidence: { image: string | null; imageUrl: string | null } | null },
+): DraftItemDetails {
+  return {
+    key,
+    sourceId,
+    timestampSeconds: item.timestampSeconds,
+    label: item.label,
+    image: item.evidence?.image ?? null,
+    imageUrl: item.evidence?.imageUrl ?? null,
+    pendingImage: null,
+    imageTimestampSeconds: null,
+    imageBox: null,
+  };
 }
 
 export function draftFromView(view: ReportView): EditDraft {
@@ -70,7 +124,8 @@ export function draftFromView(view: ReportView): EditDraft {
       start_timestamp: incident.startSeconds,
       end_timestamp: incident.endSeconds,
       description: incident.description ?? '',
-      severity_level: incident.severityLevel !== null && incident.severityLevel >= 1 && incident.severityLevel <= 5 ? incident.severityLevel : null,
+      severity_level:
+        incident.severityLevel !== null && incident.severityLevel >= 1 && incident.severityLevel <= 5 ? incident.severityLevel : null,
     },
     entities: entities.map((entity, index) => ({
       ...details(`entity-${index}`, entity.entityId, entity),
@@ -82,18 +137,25 @@ export function draftFromView(view: ReportView): EditDraft {
     })),
     instruments: instruments.map((instrument, index) => ({
       ...details(`instrument-${index}`, instrument.instrumentId, instrument),
-      holderKey: instrument.entityId ? entityKeys.get(instrument.entityId) ?? null : null,
+      holderKey: instrument.entityId ? (entityKeys.get(instrument.entityId) ?? null) : null,
       name: instrument.name,
       description: instrument.description,
-      threat_level: instrument.threatLevel !== null && instrument.threatLevel >= 1 && instrument.threatLevel <= 5 ? instrument.threatLevel : null,
+      threat_level:
+        instrument.threatLevel !== null && instrument.threatLevel >= 1 && instrument.threatLevel <= 5 ? instrument.threatLevel : null,
     })),
-    assets: assets.map((asset, index) => ({ ...details(`asset-${index}`, asset.assetId, asset), name: asset.name, description: asset.description })),
+    assets: assets.map((asset, index) => ({
+      ...details(`asset-${index}`, asset.assetId, asset),
+      name: asset.name,
+      description: asset.description,
+    })),
   };
 }
 
 /** The crops in the draft that Save must upload first, by item key. */
 export function pendingImages(draft: EditDraft): Array<{ itemId: string; blob: Blob }> {
-  return [...draft.entities, ...draft.instruments, ...draft.assets].flatMap((item) => (item.pendingImage ? [{ itemId: item.key, blob: item.pendingImage }] : []));
+  return [...draft.entities, ...draft.instruments, ...draft.assets].flatMap((item) =>
+    item.pendingImage ? [{ itemId: item.key, blob: item.pendingImage }] : [],
+  );
 }
 
 /** The draft with each uploaded crop's R2 key in place of its pending JPEG: the edit Save sends. */
@@ -113,13 +175,16 @@ export function draftProblems(draft: EditDraft): string[] {
   if (incident.start_timestamp === null || incident.end_timestamp === null) problems.push('Enter the incident start and end in seconds.');
   else if (incident.end_timestamp < incident.start_timestamp) problems.push('The incident end must not be before its start.');
   if (incident.severity_level === null) problems.push('Choose a severity level.');
-  if (draft.instruments.some((instrument) => instrument.threat_level === null)) problems.push('Rate the threat level of every instrument (1-5).');
-  if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.timestampSeconds === null)) problems.push('Enter the second each entity, instrument and asset is most clearly visible.');
+  if (draft.instruments.some((instrument) => instrument.threat_level === null))
+    problems.push('Rate the threat level of every instrument (1-5).');
+  if ([...draft.entities, ...draft.instruments, ...draft.assets].some((item) => item.timestampSeconds === null))
+    problems.push('Enter the second each entity, instrument and asset is most clearly visible.');
   for (const entity of draft.entities) {
     const { firstSeenSeconds: first, lastSeenSeconds: last, timestampSeconds: seen } = entity;
     if (first === null || last === null) problems.push('Enter the first and last second each entity is seen.');
-    else if (last < first) problems.push('An entity\'s last seen must not be before its first seen.');
-    else if (seen !== null && (seen < first || seen > last)) problems.push('The second an entity is most clearly visible must lie within its first to last seen.');
+    else if (last < first) problems.push("An entity's last seen must not be before its first seen.");
+    else if (seen !== null && (seen < first || seen > last))
+      problems.push('The second an entity is most clearly visible must lie within its first to last seen.');
   }
   return [...new Set(problems)];
 }
@@ -129,7 +194,9 @@ const sent = (item: DraftItemDetails): EditItemDetails => ({
   timestamp_seconds: item.timestampSeconds!,
   label: item.label,
   image: item.image,
-  ...(item.imageTimestampSeconds !== null || item.imageBox ? { image_timestamp_seconds: item.imageTimestampSeconds, image_box: item.imageBox } : {}),
+  ...(item.imageTimestampSeconds !== null || item.imageBox
+    ? { image_timestamp_seconds: item.imageTimestampSeconds, image_box: item.imageBox }
+    : {}),
 });
 
 /** The edit sent to the server: sequential IDs by position, holders resolved to the renumbered entity IDs, each item's source_id kept. */
@@ -145,15 +212,27 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       description: draft.incident.description,
       severity_level: draft.incident.severity_level!,
     },
-    entities: draft.entities.map((entity, index) => ({ entity_id: `E${index + 1}`, type: entity.type, description: entity.description, first_seen_seconds: entity.firstSeenSeconds!, last_seen_seconds: entity.lastSeenSeconds!, ...sent(entity) })),
+    entities: draft.entities.map((entity, index) => ({
+      entity_id: `E${index + 1}`,
+      type: entity.type,
+      description: entity.description,
+      first_seen_seconds: entity.firstSeenSeconds!,
+      last_seen_seconds: entity.lastSeenSeconds!,
+      ...sent(entity),
+    })),
     instruments: draft.instruments.map((instrument, index) => ({
       instrument_id: `I${index + 1}`,
-      entity_id: instrument.holderKey ? entityIdByKey.get(instrument.holderKey) ?? null : null,
+      entity_id: instrument.holderKey ? (entityIdByKey.get(instrument.holderKey) ?? null) : null,
       name: instrument.name,
       description: instrument.description,
       threat_level: instrument.threat_level!,
       ...sent(instrument),
     })),
-    assets: draft.assets.map((asset, index) => ({ asset_id: `A${index + 1}`, name: asset.name, description: asset.description, ...sent(asset) })),
+    assets: draft.assets.map((asset, index) => ({
+      asset_id: `A${index + 1}`,
+      name: asset.name,
+      description: asset.description,
+      ...sent(asset),
+    })),
   };
 }

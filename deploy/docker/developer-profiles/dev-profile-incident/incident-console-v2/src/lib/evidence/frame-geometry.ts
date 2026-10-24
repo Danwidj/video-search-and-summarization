@@ -7,7 +7,12 @@
 export type BoundingBox = readonly [number, number, number, number];
 
 /** A rectangle as fractions (0-1) of the frame. */
-export interface FrameRegion { x: number; y: number; w: number; h: number }
+export interface FrameRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -32,7 +37,12 @@ export function boxStyle(box: readonly number[] | null | undefined): { left: str
  * heightened to the tile's aspect ratio so nothing is stretched, centred on the
  * box and kept inside the frame. Both aspects are width / height.
  */
-export function cropRegion(box: readonly number[] | null | undefined, frameAspect: number, tileAspect: number, padding = 0.25): FrameRegion | null {
+export function cropRegion(
+  box: readonly number[] | null | undefined,
+  frameAspect: number,
+  tileAspect: number,
+  padding = 0.25,
+): FrameRegion | null {
   const region = boxRegion(box);
   if (!region || !(frameAspect > 0) || !(tileAspect > 0)) return null;
   const padW = region.w * (1 + padding * 2);
@@ -40,8 +50,14 @@ export function cropRegion(box: readonly number[] | null | undefined, frameAspec
   // Region height h and width w satisfy (w * frameAspect) / h = tileAspect.
   let h = Math.max(padH, (padW * frameAspect) / tileAspect);
   let w = (h * tileAspect) / frameAspect;
-  if (w > 1) { w = 1; h = frameAspect / tileAspect; }
-  if (h > 1) { h = 1; w = tileAspect / frameAspect; }
+  if (w > 1) {
+    w = 1;
+    h = frameAspect / tileAspect;
+  }
+  if (h > 1) {
+    h = 1;
+    w = tileAspect / frameAspect;
+  }
   const cx = region.x + region.w / 2;
   const cy = region.y + region.h / 2;
   return { x: clamp(cx - w / 2, 0, 1 - w), y: clamp(cy - h / 2, 0, 1 - h), w, h };
@@ -56,7 +72,13 @@ export function cropImageStyle(region: FrameRegion): { width: string; height: st
 export type EvidenceFrameState = 'image' | 'frame-crop' | 'pending' | 'missing';
 
 /** What an evidence tile can show: its stored image first, else a crop of the frame, else a placeholder. */
-export function evidenceFrameState(input: { src?: string | null; frameSrc?: string | null; box?: readonly number[] | null; pending?: boolean; failed?: boolean }): EvidenceFrameState {
+export function evidenceFrameState(input: {
+  src?: string | null;
+  frameSrc?: string | null;
+  box?: readonly number[] | null;
+  pending?: boolean;
+  failed?: boolean;
+}): EvidenceFrameState {
   if (input.src && !input.failed) return 'image';
   if (input.frameSrc && boxRegion(input.box) && !input.failed) return 'frame-crop';
   return input.pending ? 'pending' : 'missing';

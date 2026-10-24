@@ -31,7 +31,19 @@ export interface EvidenceFrameProps {
 }
 
 /** One evidence tile: the stored image, else a crop of the frame, else a pending or missing placeholder. */
-export function EvidenceFrame({ src, frameSrc, box, frameAspect = 16 / 9, kind, label, seconds, pending, selected, aspect = 4 / 3, className = '' }: EvidenceFrameProps) {
+export function EvidenceFrame({
+  src,
+  frameSrc,
+  box,
+  frameAspect = 16 / 9,
+  kind,
+  label,
+  seconds,
+  pending,
+  selected,
+  aspect = 4 / 3,
+  className = '',
+}: EvidenceFrameProps) {
   const [failed, setFailed] = useState(false);
   const state = evidenceFrameState({ src, frameSrc, box, pending, failed });
   const region = state === 'frame-crop' ? cropRegion(box, frameAspect, aspect) : null;
@@ -46,11 +58,34 @@ export function EvidenceFrame({ src, frameSrc, box, frameAspect = 16 / 9, kind, 
       style={{ aspectRatio: String(aspect) }}
     >
       {state === 'image' && <img alt="" className="h-full w-full object-cover" onError={onError} src={src ?? undefined} />}
-      {state === 'frame-crop' && region && <img alt="" className="absolute max-w-none" onError={onError} src={frameSrc ?? undefined} style={cropImageStyle(region)} />}
-      {state === 'pending' && <div className="grid h-full place-items-center bg-gradient-to-r from-[#e7ebe3] via-[#f5f7f2] to-[#e7ebe3] text-[11px] text-ink/50 motion-safe:animate-pulse">Cropping frame{seconds != null ? ` ${formatClock(seconds)}` : ''}…</div>}
-      {state === 'missing' && <div className="grid h-full place-items-center bg-[repeating-linear-gradient(45deg,#f4efe9,#f4efe9_8px,#efe7de_8px,#efe7de_16px)] p-2 text-center text-[11.5px] text-[#9b3518]"><span><b>Image unavailable</b><br />{failed ? 'The image failed to load.' : 'No stored image or frame for this item.'}</span></div>}
-      {kind && <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10.5px] font-semibold text-ink"><i className={`inline-block h-2 w-2 rounded-full ${KIND_COLOUR[kind]}`} />{KIND_LABEL[kind]}</span>}
-      {seconds != null && <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[10.5px] text-white">{formatClock(seconds)}</span>}
+      {state === 'frame-crop' && region && (
+        <img alt="" className="absolute max-w-none" onError={onError} src={frameSrc ?? undefined} style={cropImageStyle(region)} />
+      )}
+      {state === 'pending' && (
+        <div className="grid h-full place-items-center bg-gradient-to-r from-[#e7ebe3] via-[#f5f7f2] to-[#e7ebe3] text-[11px] text-ink/50 motion-safe:animate-pulse">
+          Cropping frame{seconds != null ? ` ${formatClock(seconds)}` : ''}…
+        </div>
+      )}
+      {state === 'missing' && (
+        <div className="grid h-full place-items-center bg-[repeating-linear-gradient(45deg,#f4efe9,#f4efe9_8px,#efe7de_8px,#efe7de_16px)] p-2 text-center text-[11.5px] text-[#9b3518]">
+          <span>
+            <b>Image unavailable</b>
+            <br />
+            {failed ? 'The image failed to load.' : 'No stored image or frame for this item.'}
+          </span>
+        </div>
+      )}
+      {kind && (
+        <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10.5px] font-semibold text-ink">
+          <i className={`inline-block h-2 w-2 rounded-full ${KIND_COLOUR[kind]}`} />
+          {KIND_LABEL[kind]}
+        </span>
+      )}
+      {seconds != null && (
+        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[10.5px] text-white">
+          {formatClock(seconds)}
+        </span>
+      )}
     </div>
   );
 }

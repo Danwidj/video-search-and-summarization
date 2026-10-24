@@ -23,13 +23,18 @@ function likePattern(pattern) {
 
 /** The values of a PostgREST in-filter list, `("a","b\"c")` or `(a,b)`. */
 function inValues(list) {
-  return [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map(([, quoted, bare]) => (quoted ?? bare).replace(/\\(.)/g, '$1'));
+  return [...list.slice(1, -1).matchAll(/"((?:[^"\\]|\\.)*)"|([^,]+)/g)].map(([, quoted, bare]) =>
+    (quoted ?? bare).replace(/\\(.)/g, '$1'),
+  );
 }
 
 /** `col.desc,other.asc.nullslast` -> rows sorted by it (nulls last). */
 function sorted(rows, order) {
   if (!order) return rows;
-  const keys = order.split(',').map((part) => { const [column, ...flags] = part.split('.'); return { column, sign: flags.includes('desc') ? -1 : 1 }; });
+  const keys = order.split(',').map((part) => {
+    const [column, ...flags] = part.split('.');
+    return { column, sign: flags.includes('desc') ? -1 : 1 };
+  });
   return [...rows].sort((a, b) => {
     for (const { column, sign } of keys) {
       const [x, y] = [a[column], b[column]];
@@ -86,7 +91,10 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
     }
     const rows = (store[path] ??= []);
     if (method === 'GET') {
-      const found = sorted(rows.filter((row) => matches(row, parsed.searchParams)), parsed.searchParams.get('order'));
+      const found = sorted(
+        rows.filter((row) => matches(row, parsed.searchParams)),
+        parsed.searchParams.get('order'),
+      );
       const limit = Number(parsed.searchParams.get('limit') || found.length);
       return json(found.slice(0, limit));
     }
@@ -102,10 +110,15 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
         const index = keys.length ? rows.findIndex((existing) => keys.every((key) => existing[key] === row[key])) : -1;
         // resolution=ignore-duplicates keeps the existing row (insertIfAbsent); otherwise the conflict merges.
         if (index >= 0 && String(init.headers?.Prefer ?? '').includes('ignore-duplicates')) results.push(rows[index]);
-        else if (index >= 0) { rows[index] = { ...rows[index], ...row }; results.push(rows[index]); }
-        else {
+        else if (index >= 0) {
+          rows[index] = { ...rows[index], ...row };
+          results.push(rows[index]);
+        } else {
           const column = identity[path];
-          const stored = column && row[column] === undefined ? { ...row, [column]: Math.max(0, ...rows.map((existing) => existing[column])) + 1 } : { ...row };
+          const stored =
+            column && row[column] === undefined
+              ? { ...row, [column]: Math.max(0, ...rows.map((existing) => existing[column])) + 1 }
+              : { ...row };
           rows.push(stored);
           results.push(stored);
         }

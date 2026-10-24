@@ -22,13 +22,31 @@ mock.module('@aws-sdk/client-s3', {
         return Promise.resolve({ ETag: '"e"' });
       }
     },
-    GetObjectCommand: class { constructor(input) { this.input = input; } },
-    PutObjectCommand: class { constructor(input) { this.input = input; } },
-    HeadObjectCommand: class { constructor(input) { this.input = input; } },
-    DeleteObjectCommand: class { constructor(input) { this.input = input; } },
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    PutObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    HeadObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    DeleteObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
   },
 });
-mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async (_c, command) => `https://signed.r2.test/${command.input.Key}` } });
+mock.module('@aws-sdk/s3-request-presigner', {
+  namedExports: { getSignedUrl: async (_c, command) => `https://signed.r2.test/${command.input.Key}` },
+});
 
 const spawned = [];
 let ffmpegBehaviour = 'ok';
@@ -61,16 +79,29 @@ beforeEach(() => {
   spawned.length = 0;
   ffmpegBehaviour = 'ok';
   Object.assign(process.env, {
-    INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
-    R2_ACCOUNT_ID: 'a', R2_ACCESS_KEY: 'b', R2_SECRET_KEY: 'c', R2_BUCKET: 'd',
+    INCIDENT_SUPABASE_URL: 'https://supabase.test',
+    INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
+    R2_ACCOUNT_ID: 'a',
+    R2_ACCESS_KEY: 'b',
+    R2_SECRET_KEY: 'c',
+    R2_BUCKET: 'd',
   });
-  globalThis.fetch = fakePostgrest({ videos: [{ id: 'v1', filepath: 'videos/v1.mp4', uploaded_datetime: null, source: null, official_revision_id: null }] }).fetch;
+  globalThis.fetch = fakePostgrest({
+    videos: [{ id: 'v1', filepath: 'videos/v1.mp4', uploaded_datetime: null, source: null, official_revision_id: null }],
+  }).fetch;
 });
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+});
 
 const params = (videoId) => ({ params: Promise.resolve({ videoId }) });
 const get = (query, videoId = 'v1') => GET(new Request(`http://localhost/api/reports/${videoId}/frame${query}`), params(videoId));
-const post = (body, videoId = 'v1') => POST(new Request('http://localhost/x', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }), params(videoId));
+const post = (body, videoId = 'v1') =>
+  POST(
+    new Request('http://localhost/x', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    params(videoId),
+  );
 const crop = { timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
 
 test('the frame route answers a JPEG decoded from the signed video URL', async () => {
@@ -100,7 +131,10 @@ test('a crop is answered as JPEG bytes, and nothing is written to R2', async () 
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(await response.text(), 'JPEGBYTES');
   assert.ok(spawned[0].args.some((a) => a.startsWith('crop=')));
-  assert.equal(commands.some((c) => c.constructor.name === 'PutObjectCommand'), false);
+  assert.equal(
+    commands.some((c) => c.constructor.name === 'PutObjectCommand'),
+    false,
+  );
 });
 
 test('a bad crop request is refused before anything is uploaded', async () => {

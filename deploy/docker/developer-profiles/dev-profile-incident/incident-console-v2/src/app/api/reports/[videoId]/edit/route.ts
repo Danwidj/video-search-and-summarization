@@ -15,12 +15,14 @@ import { errorResponse, rejectionResponse } from '@/lib/http';
 // model_runs.notes (original model output, raw response, repair record,
 // outcome) are never modified. Class B model output and Class C provenance are
 // rejected before anything reaches the database.
-const requestSchema = z.object({
-  parentId: z.number().int().positive(),
-  editedBy: z.string().trim().min(1).max(256),
-  note: z.string().trim().max(2000).nullish(),
-  edit: z.unknown(),
-}).strict();
+const requestSchema = z
+  .object({
+    parentId: z.number().int().positive(),
+    editedBy: z.string().trim().min(1).max(256),
+    note: z.string().trim().max(2000).nullish(),
+    edit: z.unknown(),
+  })
+  .strict();
 
 export async function PATCH(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
@@ -34,7 +36,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
       edit = validateStructuredEdit(parsed.data.edit);
     } catch (error) {
       if (error instanceof StructuredEditError) {
-        return NextResponse.json({ error: error.message, violations: error.violations, notEditable: error.notEditable }, { status: error.status });
+        return NextResponse.json(
+          { error: error.message, violations: error.violations, notEditable: error.notEditable },
+          { status: error.status },
+        );
       }
       throw error;
     }

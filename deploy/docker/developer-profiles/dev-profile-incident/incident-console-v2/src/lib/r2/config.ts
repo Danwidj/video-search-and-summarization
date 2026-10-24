@@ -39,11 +39,9 @@ export async function createR2PlaybackUrl(config: ServiceConfiguration, key: str
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
-  return getSignedUrl(
-    client,
-    new GetObjectCommand({ Bucket: r2.bucket, Key: key, ResponseContentDisposition: 'inline' }),
-    { expiresIn: 3600 },
-  );
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: r2.bucket, Key: key, ResponseContentDisposition: 'inline' }), {
+    expiresIn: 3600,
+  });
 }
 
 export async function verifyR2Video(

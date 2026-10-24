@@ -32,13 +32,31 @@ const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', '
 const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
 const [HUMAN, LEGACY, REPAIRED] = summaries.reports;
 const LIBRARY = {
-  page: 1, pageSize: 6, search: null, type: null, severity: null, kind: null, generatedAfter: null, generatedBefore: null,
-  timeFrom: null, timeTo: null, entities: null, instruments: null, assets: null, dayOfWeek: null,
-  sort: 'newest', scope: 'all', entityTypes: null, evidenceMatch: 'contains', timezone: 'UTC',
+  page: 1,
+  pageSize: 6,
+  search: null,
+  type: null,
+  severity: null,
+  kind: null,
+  generatedAfter: null,
+  generatedBefore: null,
+  timeFrom: null,
+  timeTo: null,
+  entities: null,
+  instruments: null,
+  assets: null,
+  dayOfWeek: null,
+  sort: 'newest',
+  scope: 'all',
+  entityTypes: null,
+  evidenceMatch: 'contains',
+  timezone: 'UTC',
 };
 const VIDEO_ID = smoke.videoId;
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function listSummaries(args) {
   const direction = args.p_sort === 'oldest' ? 1 : -1;
@@ -54,18 +72,41 @@ function listSummaries(args) {
 function smokeEdit() {
   const details = (sourceId) => ({ source_id: sourceId, timestamp_seconds: 1, label: '', image: null });
   return {
-    incident: { type: 'assault', start_timestamp: 1, end_timestamp: 9, description: 'Reviewer: one person pushes the other over.', severity_level: 3 },
-    entities: [{ entity_id: 'E1', type: 'human', description: smoke.entities[0].description, first_seen_seconds: 1, last_seen_seconds: 3, ...details('E1') }],
+    incident: {
+      type: 'assault',
+      start_timestamp: 1,
+      end_timestamp: 9,
+      description: 'Reviewer: one person pushes the other over.',
+      severity_level: 3,
+    },
+    entities: [
+      {
+        entity_id: 'E1',
+        type: 'human',
+        description: smoke.entities[0].description,
+        first_seen_seconds: 1,
+        last_seen_seconds: 3,
+        ...details('E1'),
+      },
+    ],
     instruments: [],
     assets: smoke.assets.map((asset, index) => ({
-      asset_id: asset.asset_id, name: index === 0 ? 'white delivery van' : asset.name, description: asset.description, ...details(asset.asset_id),
+      asset_id: asset.asset_id,
+      name: index === 0 ? 'white delivery van' : asset.name,
+      description: asset.description,
+      ...details(asset.asset_id),
     })),
   };
 }
 
 const humanInput = (record, overrides = {}) => ({
-  videoId: VIDEO_ID, parentId: record.revision.revisionId, createdBy: ' Editor ', note: ' Corrected the severity ', crops: [],
-  ...humanRevisionContent(record, smokeEdit()), ...overrides,
+  videoId: VIDEO_ID,
+  parentId: record.revision.revisionId,
+  createdBy: ' Editor ',
+  note: ' Corrected the severity ',
+  crops: [],
+  ...humanRevisionContent(record, smokeEdit()),
+  ...overrides,
 });
 
 // Each implementation seeds the smoke run's one AI revision (id 1); officialRevisionId marks one official.
@@ -77,11 +118,20 @@ const implementations = {
     return { repo, ai: () => structuredClone(repo.revisions[0]) };
   },
   supabase: (officialRevisionId = null, rpc = {}) => {
-    const db = fakePostgrest({
-      videos: [{ ...smoke.video, official_revision_id: officialRevisionId }], model_runs: [smoke.modelRun], report_revisions: [aiRevisionRow(smoke)],
-    }, { rpc: { list_incident_report_summaries: listSummaries, ...revisionRpcs, ...rpc }, identity: { report_revisions: 'id' } });
+    const db = fakePostgrest(
+      {
+        videos: [{ ...smoke.video, official_revision_id: officialRevisionId }],
+        model_runs: [smoke.modelRun],
+        report_revisions: [aiRevisionRow(smoke)],
+      },
+      { rpc: { list_incident_report_summaries: listSummaries, ...revisionRpcs, ...rpc }, identity: { report_revisions: 'id' } },
+    );
     globalThis.fetch = db.fetch;
-    return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), ai: () => structuredClone(db.store.report_revisions[0]), db };
+    return {
+      repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')),
+      ai: () => structuredClone(db.store.report_revisions[0]),
+      db,
+    };
   },
 };
 
@@ -92,9 +142,15 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal(await repo.getRevision('v-none', null), null);
       assert.equal(await repo.getRevision(VIDEO_ID, 99), null);
       const record = await repo.getRevision(VIDEO_ID, 1);
-      assert.deepEqual([record.revision.revisionId, record.revision.revisionNo, record.revision.kind, record.revision.modelRunId], [1, 1, 'ai', smoke.modelRunId]);
+      assert.deepEqual(
+        [record.revision.revisionId, record.revision.revisionNo, record.revision.kind, record.revision.modelRunId],
+        [1, 1, 'ai', smoke.modelRunId],
+      );
       assert.equal(record.modelRun.notes.kind, 'contract');
-      assert.deepEqual(record.entities.map((entity) => entity.entityId), ['E1', 'E2']);
+      assert.deepEqual(
+        record.entities.map((entity) => entity.entityId),
+        ['E1', 'E2'],
+      );
       assert.equal(record.video.officialRevisionId, null);
     });
 
@@ -114,17 +170,40 @@ for (const [name, make] of Object.entries(implementations)) {
       const { repo, ai } = make();
       const aiBefore = ai();
       const saved = await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1)));
-      assert.deepEqual({ ...saved, createdAt: typeof saved.createdAt, model: undefined }, {
-        revisionId: 2, videoId: VIDEO_ID, revisionNo: 2, kind: 'human', createdBy: 'Editor', createdAt: 'string', note: 'Corrected the severity',
-        parentId: 1, modelRunId: smoke.modelRunId, model: undefined, isOfficial: false,
-      });
+      assert.deepEqual(
+        { ...saved, createdAt: typeof saved.createdAt, model: undefined },
+        {
+          revisionId: 2,
+          videoId: VIDEO_ID,
+          revisionNo: 2,
+          kind: 'human',
+          createdBy: 'Editor',
+          createdAt: 'string',
+          note: 'Corrected the severity',
+          parentId: 1,
+          modelRunId: smoke.modelRunId,
+          model: undefined,
+          isOfficial: false,
+        },
+      );
       const record = await repo.getRevision(VIDEO_ID, 2);
       assert.deepEqual(record.incident, {
-        type: 'assault', startSeconds: 1, endSeconds: 9, duration: 8, description: 'Reviewer: one person pushes the other over.', severityLevel: 3,
+        type: 'assault',
+        startSeconds: 1,
+        endSeconds: 9,
+        duration: 8,
+        description: 'Reviewer: one person pushes the other over.',
+        severityLevel: 3,
         confidenceScore: null,
       });
-      assert.deepEqual(record.entities.map((entity) => entity.entityId), ['E1']);
-      assert.deepEqual(record.assets.map((asset) => asset.name), ['white delivery van', 'blue car']);
+      assert.deepEqual(
+        record.entities.map((entity) => entity.entityId),
+        ['E1'],
+      );
+      assert.deepEqual(
+        record.assets.map((asset) => asset.name),
+        ['white delivery van', 'blue car'],
+      );
       assert.deepEqual(ai(), aiBefore);
       const second = await repo.saveHumanRevision(humanInput(record, { note: null }));
       assert.deepEqual([second.revisionNo, second.parentId, second.note], [3, 2, null]);
@@ -135,16 +214,21 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.deepEqual(await repo.listRevisions('v-none'), []);
       await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1)));
       const history = await repo.listRevisions(VIDEO_ID);
-      assert.deepEqual(history.map((row) => [row.revisionId, row.kind, row.createdBy, row.isOfficial, row.parentId]), [
-        [2, 'human', 'Editor', false, 1], [1, 'ai', null, true, null],
-      ]);
+      assert.deepEqual(
+        history.map((row) => [row.revisionId, row.kind, row.createdBy, row.isOfficial, row.parentId]),
+        [
+          [2, 'human', 'Editor', false, 1],
+          [1, 'ai', null, true, null],
+        ],
+      );
       assert.equal(history[1].model, 'nvidia/cosmos-3-nano-reasoner');
     });
 
     test('a save for a missing video or parent, or without a reviewer name, is refused and writes nothing', async () => {
       const { repo } = make();
       const record = await repo.getRevision(VIDEO_ID, 1);
-      const refusal = (reason, message) => (error) => error instanceof StoreRejection && error.reason === reason && message.test(error.message);
+      const refusal = (reason, message) => (error) =>
+        error instanceof StoreRejection && error.reason === reason && message.test(error.message);
       await assert.rejects(repo.saveHumanRevision(humanInput(record, { videoId: 'v-none' })), refusal('not-found', /Video not found/));
       await assert.rejects(repo.saveHumanRevision(humanInput(record, { parentId: 99 })), refusal('not-found', /Revision not found/));
       await assert.rejects(repo.saveHumanRevision(humanInput(record, { createdBy: '  ' })), refusal('invalid', /reviewer name/));
@@ -156,14 +240,22 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal(await repo.listReferencedEvidenceImages('v-none'), null);
       assert.deepEqual(await repo.listReferencedEvidenceImages(VIDEO_ID), []);
       const entry = (itemId, image) => ({ item_type: 'entity', item_id: itemId, image, bounding_box: null, timestamp_seconds: null });
-      const first = await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1), { evidence: [entry('E1', 'evidence/v/u-1/E1.jpg'), entry('E2', null)] }));
-      await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, first.revisionId), { evidence: [entry('E1', 'evidence/v/u-2/E1.jpg')] }));
+      const first = await repo.saveHumanRevision(
+        humanInput(await repo.getRevision(VIDEO_ID, 1), { evidence: [entry('E1', 'evidence/v/u-1/E1.jpg'), entry('E2', null)] }),
+      );
+      await repo.saveHumanRevision(
+        humanInput(await repo.getRevision(VIDEO_ID, first.revisionId), { evidence: [entry('E1', 'evidence/v/u-2/E1.jpg')] }),
+      );
       assert.deepEqual((await repo.listReferencedEvidenceImages(VIDEO_ID)).sort(), ['evidence/v/u-1/E1.jpg', 'evidence/v/u-2/E1.jpg']);
     });
 
     test('the library comes in pages with the exact total, newest first, field for field', async () => {
       const { repo } = make();
-      assert.deepEqual(await repo.listReports({ ...LIBRARY, pageSize: 2 }), { items: [HUMAN, REPAIRED], totalItems: 3, incidentTypes: ['assault', 'road accident'] });
+      assert.deepEqual(await repo.listReports({ ...LIBRARY, pageSize: 2 }), {
+        items: [HUMAN, REPAIRED],
+        totalItems: 3,
+        incidentTypes: ['assault', 'road accident'],
+      });
       assert.deepEqual((await repo.listReports({ ...LIBRARY, page: 2, pageSize: 2 })).items, [LEGACY]);
       assert.deepEqual((await repo.listReports({ ...LIBRARY, sort: 'oldest' })).items, [LEGACY, REPAIRED, HUMAN]);
     });
@@ -182,7 +274,10 @@ describe('Supabase adapter: revisions', () => {
   test('a revision is read from report_revisions and its run; nothing else is touched', async () => {
     const { repo, db } = implementations.supabase();
     await repo.getRevision(VIDEO_ID, 1);
-    assert.deepEqual(db.requests.map((request) => `${request.method} ${request.path}`), ['GET videos', 'GET report_revisions', 'GET model_runs']);
+    assert.deepEqual(
+      db.requests.map((request) => `${request.method} ${request.path}`),
+      ['GET videos', 'GET report_revisions', 'GET model_runs'],
+    );
   });
 
   test('a save is one save_human_revision_with_crops call and nothing else is written', async () => {
@@ -190,19 +285,32 @@ describe('Supabase adapter: revisions', () => {
     const input = humanInput(await repo.getRevision(VIDEO_ID, 1));
     db.requests.length = 0;
     await repo.saveHumanRevision(input);
-    assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/save_human_revision_with_crops',
-      body: {
-        p_video_id: VIDEO_ID, p_parent_id: 1, p_created_by: ' Editor ', p_note: ' Corrected the severity ',
-        p_payload: input.payload, p_evidence: input.evidence,
-        p_incident_type: 'assault', p_severity_level: 3, p_start_seconds: 1, p_end_seconds: 9, p_crops: [],
+    assert.deepEqual(db.requests, [
+      {
+        method: 'POST',
+        path: 'rpc/save_human_revision_with_crops',
+        body: {
+          p_video_id: VIDEO_ID,
+          p_parent_id: 1,
+          p_created_by: ' Editor ',
+          p_note: ' Corrected the severity ',
+          p_payload: input.payload,
+          p_evidence: input.evidence,
+          p_incident_type: 'assault',
+          p_severity_level: 3,
+          p_start_seconds: 1,
+          p_end_seconds: 9,
+          p_crops: [],
+        },
       },
-    }]);
+    ]);
   });
 
   test("an RPC's RAISE is a StoreRejection with its message; any other failure is rethrown", async () => {
     const refusing = implementations.supabase(null, {
-      save_human_revision_with_crops: () => { throw new Error('The report payload must be an object with an incident'); },
+      save_human_revision_with_crops: () => {
+        throw new Error('The report payload must be an object with an incident');
+      },
     });
     await assert.rejects(refusing.repo.saveHumanRevision(humanInput(await refusing.repo.getRevision(VIDEO_ID, 1))), (error) => {
       assert.ok(error instanceof StoreRejection, `${error}`);
@@ -210,18 +318,32 @@ describe('Supabase adapter: revisions', () => {
       return true;
     });
     const record = await refusing.repo.getRevision(VIDEO_ID, 1);
-    globalThis.fetch = async () => new Response(JSON.stringify({ code: '42501', message: 'permission denied for function save_human_revision' }), { status: 401 });
-    await assert.rejects(refusing.repo.saveHumanRevision(humanInput(record)), (error) => !(error instanceof StoreRejection) && /HTTP 401.*permission denied/.test(error.message));
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: '42501', message: 'permission denied for function save_human_revision' }), { status: 401 });
+    await assert.rejects(
+      refusing.repo.saveHumanRevision(humanInput(record)),
+      (error) => !(error instanceof StoreRejection) && /HTTP 401.*permission denied/.test(error.message),
+    );
   });
 
   test('a malformed RPC result maps to safe values', () => {
     assert.deepEqual(savedRevisionFromRpc(null), {
-      revisionId: NaN, videoId: 'undefined', revisionNo: NaN, kind: 'ai', createdBy: null, createdAt: null, note: null, parentId: null, modelRunId: null, model: null, isOfficial: false,
+      revisionId: NaN,
+      videoId: 'undefined',
+      revisionNo: NaN,
+      kind: 'ai',
+      createdBy: null,
+      createdAt: null,
+      note: null,
+      parentId: null,
+      modelRunId: null,
+      model: null,
+      isOfficial: false,
     });
   });
 });
 
-describe('Supabase adapter: references of a video\'s evidence images', () => {
+describe("Supabase adapter: references of a video's evidence images", () => {
   const entry = (itemId, image) => ({ item_type: 'entity', item_id: itemId, image, bounding_box: null, timestamp_seconds: null });
 
   function seeded(extraRevisions, crops = []) {
@@ -234,21 +356,28 @@ describe('Supabase adapter: references of a video\'s evidence images', () => {
     return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), db };
   }
 
-  test('revision evidence of every revision and the evidence_crops images are listed; another video\'s are not', async () => {
-    const { repo } = seeded([
-      { id: 2, video_id: VIDEO_ID, evidence: [entry('E1', 'evidence/v/u-1/E1.jpg')] },
-      { id: 3, video_id: 'v-other', evidence: [entry('E1', 'evidence/other/x/E1.jpg')] },
-    ], [
-      { revision_id: 1, image: 'evidence/v/run/entities/E2.jpg' },
-      { revision_id: 3, image: 'evidence/other/y/E1.jpg' },
-    ]);
+  test("revision evidence of every revision and the evidence_crops images are listed; another video's are not", async () => {
+    const { repo } = seeded(
+      [
+        { id: 2, video_id: VIDEO_ID, evidence: [entry('E1', 'evidence/v/u-1/E1.jpg')] },
+        { id: 3, video_id: 'v-other', evidence: [entry('E1', 'evidence/other/x/E1.jpg')] },
+      ],
+      [
+        { revision_id: 1, image: 'evidence/v/run/entities/E2.jpg' },
+        { revision_id: 3, image: 'evidence/other/y/E1.jpg' },
+      ],
+    );
     assert.deepEqual((await repo.listReferencedEvidenceImages(VIDEO_ID)).sort(), [
-      'evidence/v/run/entities/E1.jpg', 'evidence/v/run/entities/E2.jpg', 'evidence/v/u-1/E1.jpg',
+      'evidence/v/run/entities/E1.jpg',
+      'evidence/v/run/entities/E2.jpg',
+      'evidence/v/u-1/E1.jpg',
     ]);
   });
 
   test('a string anywhere in the evidence counts, so a key under a field this console does not know is kept', async () => {
-    const { repo } = seeded([{ id: 2, video_id: VIDEO_ID, evidence: [{ ...entry('E1', null), extra: { previous_image: 'evidence/v/u-9/E1.jpg' } }] }]);
+    const { repo } = seeded([
+      { id: 2, video_id: VIDEO_ID, evidence: [{ ...entry('E1', null), extra: { previous_image: 'evidence/v/u-9/E1.jpg' } }] },
+    ]);
     assert.ok((await repo.listReferencedEvidenceImages(VIDEO_ID)).includes('evidence/v/u-9/E1.jpg'));
   });
 
@@ -257,7 +386,7 @@ describe('Supabase adapter: references of a video\'s evidence images', () => {
     await assert.rejects(repo.listReferencedEvidenceImages(VIDEO_ID), /not a list/);
   });
 
-  test('an answer as long as PostgREST\'s row limit is refused as possibly cut short', async () => {
+  test("an answer as long as PostgREST's row limit is refused as possibly cut short", async () => {
     const rows = Array.from({ length: 999 }, (_, index) => ({ id: index + 2, video_id: VIDEO_ID, evidence: [] }));
     const { repo } = seeded(rows);
     await assert.rejects(repo.listReferencedEvidenceImages(VIDEO_ID), /Too many records/);
@@ -272,24 +401,80 @@ describe('Supabase adapter: references of a video\'s evidence images', () => {
 
 describe('list_incident_report_summaries mapping', () => {
   test('the query becomes the nineteen RPC arguments', () => {
-    assert.deepEqual(reportListRpcArgs({
-      ...LIBRARY, page: 2, search: 'blade', type: 'assault', severity: '4', kind: 'human', generatedAfter: '2026-09-01T00:00:00',
-      generatedBefore: '2026-09-28T00:00:00', timeFrom: '08:00', timeTo: '17:30', entities: ['person'], instruments: ['knife'], assets: ['door'],
-      dayOfWeek: 1, sort: 'severity-high', scope: 'official', entityTypes: ['human'], evidenceMatch: 'exact', timezone: 'Asia/Singapore',
-    }), {
-      p_page: 2, p_page_size: 6, p_search: 'blade', p_type: 'assault', p_severity: '4', p_kind: 'human',
-      p_generated_after: '2026-09-01T00:00:00', p_generated_before: '2026-09-28T00:00:00', p_time_from: '08:00', p_time_to: '17:30',
-      p_entities: ['person'], p_instruments: ['knife'], p_assets: ['door'], p_day_of_week: 1, p_sort: 'severity-high', p_scope: 'official',
-      p_entity_types: ['human'], p_evidence_match: 'exact', p_timezone: 'Asia/Singapore',
-    });
+    assert.deepEqual(
+      reportListRpcArgs({
+        ...LIBRARY,
+        page: 2,
+        search: 'blade',
+        type: 'assault',
+        severity: '4',
+        kind: 'human',
+        generatedAfter: '2026-09-01T00:00:00',
+        generatedBefore: '2026-09-28T00:00:00',
+        timeFrom: '08:00',
+        timeTo: '17:30',
+        entities: ['person'],
+        instruments: ['knife'],
+        assets: ['door'],
+        dayOfWeek: 1,
+        sort: 'severity-high',
+        scope: 'official',
+        entityTypes: ['human'],
+        evidenceMatch: 'exact',
+        timezone: 'Asia/Singapore',
+      }),
+      {
+        p_page: 2,
+        p_page_size: 6,
+        p_search: 'blade',
+        p_type: 'assault',
+        p_severity: '4',
+        p_kind: 'human',
+        p_generated_after: '2026-09-01T00:00:00',
+        p_generated_before: '2026-09-28T00:00:00',
+        p_time_from: '08:00',
+        p_time_to: '17:30',
+        p_entities: ['person'],
+        p_instruments: ['knife'],
+        p_assets: ['door'],
+        p_day_of_week: 1,
+        p_sort: 'severity-high',
+        p_scope: 'official',
+        p_entity_types: ['human'],
+        p_evidence_match: 'exact',
+        p_timezone: 'Asia/Singapore',
+      },
+    );
   });
 
   test('a malformed result lists what it can with every field the library reads', () => {
     assert.deepEqual(reportListFromRpc(null), { items: [], totalItems: 0, incidentTypes: [] });
     const { items } = reportListFromRpc({ reports: [{ revisionId: 7, isOfficial: 'yes' }], incidentTypes: ['assault', 7] });
     assert.deepEqual(items[0], {
-      revisionId: 7, revisionNo: 0, videoId: '', modelRunId: null, kind: 'ai', createdBy: null, note: null, title: '', filename: '', incident_type: '',
-      description: '', severity: 1, confidence: null, generatedAt: null, uploadedAt: null, model: '', outcome: null, isOfficial: false, officialSince: null, versionCount: 0, evidenceCount: 0, thumbnail: null, r2Key: null, sensorId: null,
+      revisionId: 7,
+      revisionNo: 0,
+      videoId: '',
+      modelRunId: null,
+      kind: 'ai',
+      createdBy: null,
+      note: null,
+      title: '',
+      filename: '',
+      incident_type: '',
+      description: '',
+      severity: 1,
+      confidence: null,
+      generatedAt: null,
+      uploadedAt: null,
+      model: '',
+      outcome: null,
+      isOfficial: false,
+      officialSince: null,
+      versionCount: 0,
+      evidenceCount: 0,
+      thumbnail: null,
+      r2Key: null,
+      sensorId: null,
     });
     assert.deepEqual(reportListFromRpc({ incidentTypes: ['assault', 7] }).incidentTypes, ['assault']);
   });

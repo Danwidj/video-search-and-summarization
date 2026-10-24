@@ -47,17 +47,21 @@ export function revisionSummaryFromRow(row: Row, officialRevisionId: number | nu
 /** save_human_revision's result -> RevisionSummary (the model is not part of it, so it is unknown here). */
 export function savedRevisionFromRpc(result: unknown, officialRevisionId: number | null = null): RevisionSummary {
   const row = asRow(result);
-  return revisionSummaryFromRow({
-    id: row.revisionId,
-    video_id: row.videoId,
-    revision_no: row.revisionNo,
-    kind: row.kind,
-    created_by: row.createdBy,
-    created_at: row.createdAt,
-    note: row.note,
-    parent_id: row.parentId,
-    model_run_id: row.modelRunId,
-  }, officialRevisionId, null);
+  return revisionSummaryFromRow(
+    {
+      id: row.revisionId,
+      video_id: row.videoId,
+      revision_no: row.revisionNo,
+      kind: row.kind,
+      created_by: row.createdBy,
+      created_at: row.createdAt,
+      note: row.note,
+      parent_id: row.parentId,
+      model_run_id: row.modelRunId,
+    },
+    officialRevisionId,
+    null,
+  );
 }
 
 export function revisionRecordFromRows(input: RevisionRows): RevisionRecord {
@@ -77,7 +81,12 @@ export function revisionRecordFromRows(input: RevisionRows): RevisionRecord {
       officialRevisionId,
     },
     modelRun: modelRun
-      ? { modelName, promptVersion: text(modelRun.prompt_version), runAt: text(modelRun.run_datetime), notes: parseRunNotes(modelRun.notes) }
+      ? {
+          modelName,
+          promptVersion: text(modelRun.prompt_version),
+          runAt: text(modelRun.run_datetime),
+          notes: parseRunNotes(modelRun.notes),
+        }
       : null,
     ...structuredFromPayload(payload, evidence),
   };

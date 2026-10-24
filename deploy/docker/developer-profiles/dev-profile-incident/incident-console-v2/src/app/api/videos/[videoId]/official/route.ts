@@ -22,11 +22,16 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
     const parsed = selectSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'revisionId is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, parsed.data.revisionId, (revisionId) => fetchEvidenceEmbeddings(config, revisionId));
+    const result = await setOfficialRevision(getDbAdapters(config), videoId, parsed.data.revisionId, (revisionId) =>
+      fetchEvidenceEmbeddings(config, revisionId),
+    );
     return NextResponse.json({ official: result });
   } catch (error) {
     if (error instanceof AgentUnreachableError) {
-      return NextResponse.json({ error: 'The agent service is not reachable, so this report could not be made official. Start the agent service and try again.' }, { status: 503 });
+      return NextResponse.json(
+        { error: 'The agent service is not reachable, so this report could not be made official. Start the agent service and try again.' },
+        { status: 503 },
+      );
     }
     return rejectionResponse(error) ?? errorResponse(error, 'Could not mark the revision official');
   }
@@ -36,7 +41,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ vid
   try {
     const { videoId } = await context.params;
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, null, (revisionId) => fetchEvidenceEmbeddings(config, revisionId));
+    const result = await setOfficialRevision(getDbAdapters(config), videoId, null, (revisionId) =>
+      fetchEvidenceEmbeddings(config, revisionId),
+    );
     return NextResponse.json({ official: result });
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not clear the official revision');

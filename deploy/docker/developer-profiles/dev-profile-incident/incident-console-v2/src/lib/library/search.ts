@@ -28,7 +28,9 @@ export interface EvidenceFilters {
 }
 
 export function filterHits(hits: EvidenceSearchHit[], { minThreat, videoId }: EvidenceFilters): EvidenceSearchHit[] {
-  return hits.filter((hit) => (!videoId || hit.incident.videoId === videoId) && (minThreat <= 1 || (hit.item.threatLevel ?? 0) >= minThreat));
+  return hits.filter(
+    (hit) => (!videoId || hit.incident.videoId === videoId) && (minThreat <= 1 || (hit.item.threatLevel ?? 0) >= minThreat),
+  );
 }
 
 export interface HitRelationship {
@@ -45,9 +47,12 @@ export function relationshipOf(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]
   const holder = holderId ? sameIncident.find((other) => other.item.itemType === 'entity' && other.item.itemId === holderId) : undefined;
   return {
     heldBy: holderId ? { itemId: holderId, name: holder?.item.name ?? '' } : null,
-    holds: hit.item.itemType === 'entity'
-      ? sameIncident.filter((other) => other.item.holderEntityId === hit.item.itemId).map((other) => ({ itemId: other.item.itemId, name: other.item.name }))
-      : [],
+    holds:
+      hit.item.itemType === 'entity'
+        ? sameIncident
+            .filter((other) => other.item.holderEntityId === hit.item.itemId)
+            .map((other) => ({ itemId: other.item.itemId, name: other.item.name }))
+        : [],
   };
 }
 
@@ -83,7 +88,9 @@ export const matchPercent = (hit: EvidenceSearchHit): number => Math.round(hit.s
 
 /** Hits of the same incident taken at the same video second: the boxes the frame viewer draws together. */
 export function hitsInFrame(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): EvidenceSearchHit[] {
-  return hits.filter((other) => other.incident.videoId === hit.incident.videoId && other.item.timestampSeconds === hit.item.timestampSeconds);
+  return hits.filter(
+    (other) => other.incident.videoId === hit.incident.videoId && other.item.timestampSeconds === hit.item.timestampSeconds,
+  );
 }
 
 /** The report page for a hit: its version, and the second the hit was taken at (?t=). */

@@ -4,7 +4,12 @@
 // native vss-agent. Only a network failure or a timeout is thrown (as
 // AgentRequestError); every HTTP answer is returned for the analysis to judge.
 
-import { AgentRequestError, type AgentAnalyzeRequest, type AgentHttpResponse, type IncidentAgent } from '@/modules/analysis/domain/IncidentAgent';
+import {
+  AgentRequestError,
+  type AgentAnalyzeRequest,
+  type AgentHttpResponse,
+  type IncidentAgent,
+} from '@/modules/analysis/domain/IncidentAgent';
 
 export class HttpIncidentAgent implements IncidentAgent {
   private readonly baseUrl: string;
@@ -21,7 +26,10 @@ export class HttpIncidentAgent implements IncidentAgent {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_url: request.videoUrl, model_run_id: request.modelRunId, model: request.model, skip_rp1: true,
+          video_url: request.videoUrl,
+          model_run_id: request.modelRunId,
+          model: request.model,
+          skip_rp1: true,
           ...(request.additionalInstruction ? { reviewer_prompt: request.additionalInstruction } : {}),
         }),
         signal,

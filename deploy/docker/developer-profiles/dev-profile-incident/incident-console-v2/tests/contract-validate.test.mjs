@@ -9,10 +9,15 @@ import { test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { ContractError, parseReport, validateReport, withDerivedFields } = await import('../src/modules/contract/domain/validate.ts');
-const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256 } = await import('../src/modules/contract/infrastructure/loader.ts');
+const { contractVersion, responseFormat, schema, allowedModels, inferenceSettings, promptSha256, schemaSha256 } = await import(
+  '../src/modules/contract/infrastructure/loader.ts'
+);
 
 const fixturesDir = join(process.cwd(), '..', 'contracts', 'fixtures');
-const fixtures = (kind) => readdirSync(join(fixturesDir, kind)).filter((name) => name.endsWith('.json')).sort();
+const fixtures = (kind) =>
+  readdirSync(join(fixturesDir, kind))
+    .filter((name) => name.endsWith('.json'))
+    .sort();
 const readFixture = (kind, name) => JSON.parse(readFileSync(join(fixturesDir, kind, name), 'utf8'));
 
 test('shared contract fixtures exist (the same set eval/tests/test_contract_fixtures.py validates)', () => {
@@ -35,7 +40,11 @@ for (const name of fixtures('invalid')) {
 test('invalid fixtures fail for the category their name states', () => {
   for (const name of fixtures('invalid')) {
     const expected = name.startsWith('schema-') ? /^schema violation/ : /^cross-field violation/;
-    assert.throws(() => validateReport(readFixture('invalid', name)), (error) => expected.test(error.message), name);
+    assert.throws(
+      () => validateReport(readFixture('invalid', name)),
+      (error) => expected.test(error.message),
+      name,
+    );
   }
 });
 
@@ -62,11 +71,10 @@ test('contract version, hashes and inference settings load from contracts/', () 
   assert.equal(contractVersion(), readFileSync(join(process.cwd(), '..', 'contracts', 'VERSION'), 'utf8').trim());
   assert.match(promptSha256(), /^[0-9a-f]{64}$/);
   assert.match(schemaSha256(), /^[0-9a-f]{64}$/);
-  assert.deepEqual(allowedModels().map((model) => model.id), [
-    'nvidia/cosmos-3-nano-reasoner',
-    'nvidia/cosmos-3-super-reasoner',
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
-  ]);
+  assert.deepEqual(
+    allowedModels().map((model) => model.id),
+    ['nvidia/cosmos-3-nano-reasoner', 'nvidia/cosmos-3-super-reasoner', 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'],
+  );
   assert.deepEqual(inferenceSettings().p1, { temperature: 0, max_tokens: 16384, media_io_kwargs: { video: { num_frames: 64 } } });
 });
 

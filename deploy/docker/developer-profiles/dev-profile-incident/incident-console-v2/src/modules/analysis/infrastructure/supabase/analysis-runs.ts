@@ -49,7 +49,11 @@ export class SupabaseAnalysisRunAdapter implements AnalysisRunRepository {
    * the original upload timestamp.
    */
   async recordUploadedVideo(video: UploadedVideo): Promise<void> {
-    await this.db.insertIfAbsent('videos', { id: video.videoId, filepath: video.r2Key, source: video.sensorId, uploaded_datetime: video.uploadedAt }, 'id');
+    await this.db.insertIfAbsent(
+      'videos',
+      { id: video.videoId, filepath: video.r2Key, source: video.sensorId, uploaded_datetime: video.uploadedAt },
+      'id',
+    );
   }
 
   async saveFailedAttempt(attempt: AnalysisAttemptRecord): Promise<void> {
@@ -79,9 +83,19 @@ export class SupabaseAnalysisRunAdapter implements AnalysisRunRepository {
    * number. revision_no is unique per video, so a concurrent insert that took
    * the same number is retried with the next one.
    */
-  private async insertAiRevision(input: { videoId: string; modelRunId: string; payload: Record<string, unknown>; evidence: EvidenceEntry[] }): Promise<number> {
+  private async insertAiRevision(input: {
+    videoId: string;
+    modelRunId: string;
+    payload: Record<string, unknown>;
+    evidence: EvidenceEntry[];
+  }): Promise<number> {
     for (let attempt = 0; ; attempt += 1) {
-      const [latest] = await this.db.selectMany('report_revisions', { filters: { video_id: input.videoId }, select: 'revision_no', order: 'revision_no.desc', limit: 1 });
+      const [latest] = await this.db.selectMany('report_revisions', {
+        filters: { video_id: input.videoId },
+        select: 'revision_no',
+        order: 'revision_no.desc',
+        limit: 1,
+      });
       const revisionNo = (typeof latest?.revision_no === 'number' ? latest.revision_no : 0) + 1;
       try {
         const row = await this.db.insertRow('report_revisions', {
@@ -102,18 +116,17 @@ export class SupabaseAnalysisRunAdapter implements AnalysisRunRepository {
     }
   }
 
-  private async verifySavedRevision(saved: { videoId: string; modelRunId: string; revisionId: number }, expectedR2Key: string): Promise<void> {
+  private async verifySavedRevision(
+    saved: { videoId: string; modelRunId: string; revisionId: number },
+    expectedR2Key: string,
+  ): Promise<void> {
     const [video, modelRun, revision] = await Promise.all([
       this.db.selectOne('videos', { id: saved.videoId }, 'id,filepath'),
       this.db.selectOne('model_runs', { id: saved.modelRunId }, 'id'),
       this.db.selectOne('report_revisions', { video_id: saved.videoId, id: String(saved.revisionId) }, 'id,model_run_id'),
     ]);
 
-    const missing = [
-      !video && 'videos',
-      !modelRun && 'model_runs',
-      !revision && 'report_revisions',
-    ].filter(Boolean);
+    const missing = [!video && 'videos', !modelRun && 'model_runs', !revision && 'report_revisions'].filter(Boolean);
     if (missing.length > 0) throw new Error(`persistence verification found missing rows: ${missing.join(', ')}`);
     if (video?.filepath !== expectedR2Key) {
       throw new Error('persistence verification found an unexpected videos.filepath value');

@@ -20,13 +20,13 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
   try {
     const { videoId } = await context.params;
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'A JSON body with timestampSeconds and region is required' }, { status: 400 });
+    if (!body || typeof body !== 'object')
+      return NextResponse.json({ error: 'A JSON body with timestampSeconds and region is required' }, { status: 400 });
     const config = r2FrameConfiguration();
-    const jpeg = await cropEvidenceFrame(
-      { videos: getDbAdapters(config).videos, source: r2FrameSource(config) },
-      videoId,
-      { timestampSeconds: body.timestampSeconds, region: body.region },
-    );
+    const jpeg = await cropEvidenceFrame({ videos: getDbAdapters(config).videos, source: r2FrameSource(config) }, videoId, {
+      timestampSeconds: body.timestampSeconds,
+      region: body.region,
+    });
     return new NextResponse(new Uint8Array(jpeg), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'no-store' } });
   } catch (error) {
     if (error instanceof FrameRequestError) return NextResponse.json({ error: error.message }, { status: error.status });

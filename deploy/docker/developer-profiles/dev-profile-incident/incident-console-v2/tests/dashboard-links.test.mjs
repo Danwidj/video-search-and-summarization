@@ -8,10 +8,30 @@ import { href } from '../src/modules/dashboard/domain/links.ts';
 const components = new URL('../src/sections/', import.meta.url);
 
 test('dashboard numbers link to the library page with official scope and exact filters (URL is the state)', async () => {
-  const link = new URL(href({ entityType: 'vehicle', instrument: 'Knife', day: '2', hour: '9' }, { after: '2026-09-01T00:00:00', before: '2026-09-30T00:00:00' }), 'http://localhost');
+  const link = new URL(
+    href(
+      { entityType: 'vehicle', instrument: 'Knife', day: '2', hour: '9' },
+      { after: '2026-09-01T00:00:00', before: '2026-09-30T00:00:00' },
+    ),
+    'http://localhost',
+  );
   assert.equal(link.pathname, '/library');
-  assert.deepEqual(Object.fromEntries(link.searchParams), { scope: 'official', after: '2026-09-01T00:00:00', before: '2026-09-30T00:00:00', day: '2', entityType: 'vehicle', instrument: 'Knife', match: 'exact', fromTime: '09:00', toTime: '09:59:59.999' });
-  assert.equal(new URL(href({}, null), 'http://localhost').searchParams.has('timezone'), false, 'the library page uses the viewer zone, not a link parameter');
+  assert.deepEqual(Object.fromEntries(link.searchParams), {
+    scope: 'official',
+    after: '2026-09-01T00:00:00',
+    before: '2026-09-30T00:00:00',
+    day: '2',
+    entityType: 'vehicle',
+    instrument: 'Knife',
+    match: 'exact',
+    fromTime: '09:00',
+    toTime: '09:59:59.999',
+  });
+  assert.equal(
+    new URL(href({}, null), 'http://localhost').searchParams.has('timezone'),
+    false,
+    'the library page uses the viewer zone, not a link parameter',
+  );
   const dashboard = await readFile(new URL('dashboard/components/Dashboard/Dashboard.tsx', components), 'utf8');
   assert.doesNotMatch(dashboard, /clearFilters|dashboard: '1'/, 'no hidden dashboard-only filter markers');
   assert.match(dashboard, /href="\/videos\?filter=awaiting-selection"/);
@@ -21,6 +41,10 @@ test('dashboard numbers link to the library page with official scope and exact f
     assert.match(filters, new RegExp(`FILTER_KEYS = \\[[^\\]]*'${key}'`), key);
   }
   const library = await readFile(new URL('library/components/LibraryScreen/LibraryScreen.tsx', components), 'utf8');
-  assert.match(library, /if \(FILTER_KEYS\.some\(\(key\) => query\.has\(key\)\)\)/, 'URL filters are applied alone, never mixed with remembered state');
+  assert.match(
+    library,
+    /if \(FILTER_KEYS\.some\(\(key\) => query\.has\(key\)\)\)/,
+    'URL filters are applied alone, never mixed with remembered state',
+  );
   assert.match(await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8'), /library-official-marker/);
 });

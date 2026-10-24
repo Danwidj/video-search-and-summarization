@@ -36,9 +36,17 @@ export async function GET(request: Request) {
     const requestedStart = params.get('after');
     const requestedEnd = params.get('before');
     // after/before are zoneless UTC (like every stored timestamp); read them as UTC, never as server-local time.
-    const periodEnd = period === 'all' ? null : requestedEnd ? parseStoredTimestamp(requestedEnd) ?? new Date(NaN) : new Date();
-    const periodStart = periodEnd ? requestedStart ? parseStoredTimestamp(requestedStart) ?? new Date(NaN) : new Date(periodEnd.getTime() - Number(period) * 86_400_000) : null;
-    if ((periodStart && Number.isNaN(periodStart.getTime())) || (periodEnd && Number.isNaN(periodEnd.getTime())) || (periodStart && periodEnd && periodStart >= periodEnd)) {
+    const periodEnd = period === 'all' ? null : requestedEnd ? (parseStoredTimestamp(requestedEnd) ?? new Date(NaN)) : new Date();
+    const periodStart = periodEnd
+      ? requestedStart
+        ? (parseStoredTimestamp(requestedStart) ?? new Date(NaN))
+        : new Date(periodEnd.getTime() - Number(period) * 86_400_000)
+      : null;
+    if (
+      (periodStart && Number.isNaN(periodStart.getTime())) ||
+      (periodEnd && Number.isNaN(periodEnd.getTime())) ||
+      (periodStart && periodEnd && periodStart >= periodEnd)
+    ) {
       return NextResponse.json({ error: 'Invalid dashboard date range' }, { status: 400 });
     }
     const analytics = await dashboard.getDashboard({

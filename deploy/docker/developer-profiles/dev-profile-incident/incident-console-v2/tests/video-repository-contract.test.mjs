@@ -20,28 +20,68 @@ const { StoreRejection } = await import('../src/modules/shared/domain/common.ts'
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
-const VIDEO = { videoId: 'v1', storageKey: 'uploads/sensor-1/v1.mp4', uploadedAt: '2026-10-01T08:00:00', source: 'sensor-1', officialRevisionId: null };
-const attempt = (id, videoId, status) => ({ id, notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, videoId } }) });
-const CROPS = [{
-  item_type: 'entity', item_id: 'E1', image: 'evidence/v1/u/E1.jpg', bounding_box: [1, 2, 3, 4], timestamp_seconds: 2,
-  item_name: 'human', description: 'A person.', threat_level: null, holder_entity_id: null, embedding: [0.1, 0.2],
-}];
+const VIDEO = {
+  videoId: 'v1',
+  storageKey: 'uploads/sensor-1/v1.mp4',
+  uploadedAt: '2026-10-01T08:00:00',
+  source: 'sensor-1',
+  officialRevisionId: null,
+};
+const attempt = (id, videoId, status) => ({
+  id,
+  notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status, videoId } }),
+});
+const CROPS = [
+  {
+    item_type: 'entity',
+    item_id: 'E1',
+    image: 'evidence/v1/u/E1.jpg',
+    bounding_box: [1, 2, 3, 4],
+    timestamp_seconds: 2,
+    item_name: 'human',
+    description: 'A person.',
+    threat_level: null,
+    holder_entity_id: null,
+    embedding: [0.1, 0.2],
+  },
+];
 const REVISIONS = [
-  { id: 1, video_id: 'v1', revision_no: 1, kind: 'ai', model_run_id: 'm1', evidence: [{ item_type: 'entity', item_id: 'E1', image: 'evidence/v1/u/E1.jpg' }, { item_type: 'asset', item_id: 'A1', image: null }] },
+  {
+    id: 1,
+    video_id: 'v1',
+    revision_no: 1,
+    kind: 'ai',
+    model_run_id: 'm1',
+    evidence: [
+      { item_type: 'entity', item_id: 'E1', image: 'evidence/v1/u/E1.jpg' },
+      { item_type: 'asset', item_id: 'A1', image: null },
+    ],
+  },
   { id: 2, video_id: 'v2', revision_no: 1, kind: 'ai', model_run_id: 'm-other', evidence: [] },
 ];
 
 const implementations = {
   memory: () => ({ repo: new InMemoryVideoRepository([{ ...VIDEO, revisionIds: [1] }]) }),
   supabase: () => {
-    const db = fakePostgrest({
-      videos: [{ id: 'v1', filepath: VIDEO.storageKey, uploaded_datetime: VIDEO.uploadedAt, source: VIDEO.source, official_revision_id: null }],
-      report_revisions: REVISIONS,
-      evidence_crops: [],
-      model_runs: [attempt('m-failed', 'v1', 'contract_failed'), attempt('m-other', 'v2', 'contract_failed'), attempt('m1', 'v1', 'valid_first_pass')],
-    }, { rpc: revisionRpcs });
+    const db = fakePostgrest(
+      {
+        videos: [
+          { id: 'v1', filepath: VIDEO.storageKey, uploaded_datetime: VIDEO.uploadedAt, source: VIDEO.source, official_revision_id: null },
+        ],
+        report_revisions: REVISIONS,
+        evidence_crops: [],
+        model_runs: [
+          attempt('m-failed', 'v1', 'contract_failed'),
+          attempt('m-other', 'v2', 'contract_failed'),
+          attempt('m1', 'v1', 'valid_first_pass'),
+        ],
+      },
+      { rpc: revisionRpcs },
+    );
     globalThis.fetch = db.fetch;
     return { repo: new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k')), store: db.store, db };
   },
@@ -84,7 +124,11 @@ for (const [name, make] of Object.entries(implementations)) {
     test('crops are refused for an unknown video or a revision that is not the searchable one', async () => {
       const { repo } = make();
       await assert.rejects(repo.setRevisionCrops('v-none', 1, []), rejection('not-found', /Video not found/));
-      await assert.rejects(repo.setRevisionCrops('v1', 2, []), rejection('invalid', /not the searchable revision/), "another video's revision");
+      await assert.rejects(
+        repo.setRevisionCrops('v1', 2, []),
+        rejection('invalid', /not the searchable revision/),
+        "another video's revision",
+      );
       await assert.rejects(repo.setRevisionCrops('v1', 99, []), rejection('invalid', /not the searchable revision/));
     });
 
@@ -100,11 +144,17 @@ describe('SupabaseVideoAdapter', () => {
   test('marking official is one set_official_revision call with the crops in the RPC shape', async () => {
     const { repo, db, store } = implementations.supabase();
     await repo.setOfficialRevision('v1', 1, CROPS);
-    assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/set_official_revision',
-      body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
-    }]);
-    assert.deepEqual(store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]), [[1, 'E1', [0.1, 0.2]]]);
+    assert.deepEqual(db.requests, [
+      {
+        method: 'POST',
+        path: 'rpc/set_official_revision',
+        body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
+      },
+    ]);
+    assert.deepEqual(
+      store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]),
+      [[1, 'E1', [0.1, 0.2]]],
+    );
     await repo.setOfficialRevision('v1', null, []);
     assert.deepEqual(store.evidence_crops, []);
   });
@@ -112,11 +162,17 @@ describe('SupabaseVideoAdapter', () => {
   test('storing crops is one set_revision_crops call with the crops in the RPC shape', async () => {
     const { repo, db, store } = implementations.supabase();
     await repo.setRevisionCrops('v1', 1, CROPS);
-    assert.deepEqual(db.requests, [{
-      method: 'POST', path: 'rpc/set_revision_crops',
-      body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
-    }]);
-    assert.deepEqual(store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]), [[1, 'E1', [0.1, 0.2]]]);
+    assert.deepEqual(db.requests, [
+      {
+        method: 'POST',
+        path: 'rpc/set_revision_crops',
+        body: { p_video_id: 'v1', p_revision_id: 1, p_crops: CROPS },
+      },
+    ]);
+    assert.deepEqual(
+      store.evidence_crops.map((crop) => [crop.revision_id, crop.item_id, crop.embedding]),
+      [[1, 'E1', [0.1, 0.2]]],
+    );
   });
 
   test('deleting a video removes only the run records that name it and that no revision uses', async () => {
@@ -132,6 +188,9 @@ describe('SupabaseVideoAdapter', () => {
   test('other PostgREST failures are not turned into rejections', async () => {
     globalThis.fetch = async () => new Response('{"message":"permission denied"}', { status: 401 });
     const repo = new SupabaseVideoAdapter(new PostgrestClient('https://supabase.test', 'k'));
-    await assert.rejects(repo.setOfficialRevision('v1', 1, []), (error) => !(error instanceof StoreRejection) && /HTTP 401/.test(error.message));
+    await assert.rejects(
+      repo.setOfficialRevision('v1', 1, []),
+      (error) => !(error instanceof StoreRejection) && /HTTP 401/.test(error.message),
+    );
   });
 });

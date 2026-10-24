@@ -22,7 +22,10 @@ test('reportFromNotes normalizes legacy camelCase notes to snake_case', () => {
         severityReason: 'High risk detected',
         confidenceScore: 90,
         timeline: [{ startSeconds: 15, endSeconds: 45, description: 'Event' }],
-        entities: [{ type: 'human', description: 'Intruder' }, { type: 'animal', description: 'Guard dog' }],
+        entities: [
+          { type: 'human', description: 'Intruder' },
+          { type: 'animal', description: 'Guard dog' },
+        ],
         instruments: [{ name: 'Crowbar', description: 'Tool', threatLevel: 4 }],
         assets: [{ name: 'Door', description: 'Pried' }],
         uncertainties: ['Unknown suspect identity'],

@@ -52,7 +52,7 @@ npm run dev
 
 Open `http://localhost:3200`. `GET http://localhost:3200/api/health` should report the services as ready before testing the upload-to-report workflow (in `agent` mode, gateway readiness is omitted from the overall readiness check).
 
-Checks: `npm run typecheck` and `npm test` (Node's built-in test runner over `tests/*.test.mjs`).
+Checks: `npm run typecheck`, `npm run lint` (Biome's lint and format check, then `tsc --noEmit`) and `npm test` (Node's built-in test runner over `tests/*.test.mjs`). `npm run format` rewrites files to the Biome style in `biome.jsonc`. Rules the code already broke when Biome was added report as warnings there; fix them in their own changes and move each rule back to error.
 
 ## Analysis contract
 
@@ -71,7 +71,6 @@ See [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md).
 Next.js loads them from `.env.local` in this directory, which is a symlink to the shared
 `dev-profile-incident/.env.local` — edit that file, not the symlink. The application recognizes these variable names
 at runtime:
-
 - `ANALYSIS_MODE` — analysis pipeline mode: `'gateway'` (default, zero-GPU local flow calling `VLM_GATEWAY_URL`) or `'agent'` (VM flow calling the native `vss-agent`'s `POST /api/v1/incidents/{incident_id}/analyze` directly, with no gateway process required). In agent mode the console sends `{video_url, model_run_id, model, skip_rp1: true}` (plus `reviewer_prompt` when one is typed), the agent runs P1 only with that model and reports the model it ran (as gateway mode does), and both modes run through the shared `core-scored-v1` validation policy and attempt recording. The console manages the `videos` row; the agent never writes `videos`.
 - `VLM_GATEWAY_URL` — URL of the credential-holding VLM gateway, such as `http://127.0.0.1:8600`. Required when `ANALYSIS_MODE=gateway`.
 - `VLM_MODEL` — optional default selection in the model picker; must be one of the models in `contracts/inference.json` (defaults to `nvidia/cosmos-3-nano-reasoner`).
@@ -118,7 +117,6 @@ The report provides timestamp seeking, explicit empty states, a copy-link action
 ## Phase 4 incident library
 
 `/library` (the old `/reports` listing redirects there, keeping its query string) has two tabs.
-
 - **Find incidents** lists one card per video as server-paginated pages of six lightweight summaries
   (`list_incident_report_summaries`): the official revision, else the newest. A text search asks the agent
   (`POST /api/v1/incidents/revisions/search`, `src/lib/adapters/agent/revision-search.ts`) for the revisions it ranks, keeps
@@ -163,7 +161,6 @@ Each answer says which version it came from, and its citations show the crop and
 ## Evidence frames and crops
 
 A reviewer replacing or adding evidence picks a frame and draws a rectangle on it. Both routes decode with the `ffmpeg` on the console host's PATH (a missing binary answers 503), reading the signed R2 video by range request:
-
 - `GET /api/reports/<videoId>/frame?t=<seconds>` answers the frame as a JPEG. A malformed `t` is 400, a `t` at or past the video's length 422, an unknown video 404.
 - `POST /api/reports/<videoId>/evidence-crop` takes `{"timestampSeconds", "region": {"x","y","w","h"}}`, the region as fractions (0-1) of the frame from the top-left. It answers the crop as a JPEG and writes nothing to R2. The picker holds that JPEG in the browser, and Save uploads it through `POST /api/reports/<videoId>/evidence-image` (a new key under `evidence/<videoId>/<uuid>/<itemId>.jpg`) and writes the key into the next human revision. A region outside the frame or under 1% wide or high is 422. Nothing is overwritten or deleted.
 - `POST /api/reports/<videoId>/evidence-sweep` finds, and on request removes, evidence images under `evidence/<videoId>/` that no revision of that video references (a crop uploaded by a save that then failed, or abandoned). Body `{"dryRun"?: boolean (default true), "minAgeHours"?: number (default 24, at least 1)}`; the answer lists `scanned`, `referenced`, `tooRecent` and the `orphans` (and, when `dryRun` is false, `removed` and `failed`). It never removes a key that any revision's evidence or any `evidence_crops` row names, older revisions included, so an image a reviewer replaced stays; nor an object younger than `minAgeHours`, which may belong to a save still in flight. It reads the R2 listing first, then the database, and removes nothing if either read fails. An unknown video is 404 (images left by a deleted video are not covered). Run a dry run first and check the `orphans`.

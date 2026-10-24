@@ -80,8 +80,5 @@
     }
   ],
   "totalItems": 13,
-  "incidentTypes": [
-    "assault",
-    "road accident"
-  ]
+  "incidentTypes": ["assault", "road accident"]
 }

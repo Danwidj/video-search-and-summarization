@@ -17,6 +17,8 @@ export function useRunHistory(videoId: string) {
       })
       .catch((cause: Error) => setError(cause.message));
   }, [videoId]);
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
   return { history, error, reload };
 }

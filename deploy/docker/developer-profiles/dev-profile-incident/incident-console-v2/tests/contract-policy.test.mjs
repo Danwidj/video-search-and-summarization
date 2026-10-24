@@ -13,11 +13,14 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { ContractError, decodeContent, validateCore, validateReport, violationScope, timestampWithinVideo, VALIDATION_POLICY } = await import('../src/modules/contract/domain/validate.ts');
+const { ContractError, decodeContent, validateCore, validateReport, violationScope, timestampWithinVideo, VALIDATION_POLICY } =
+  await import('../src/modules/contract/domain/validate.ts');
 const { mp4DurationSeconds } = await import('../src/lib/video/mp4-duration.ts');
 
 const policyDir = join(process.cwd(), '..', 'contracts', 'fixtures', 'policy');
-const cases = readdirSync(policyDir).filter((name) => name.endsWith('.json')).sort();
+const cases = readdirSync(policyDir)
+  .filter((name) => name.endsWith('.json'))
+  .sort();
 
 /** The TypeScript verdict in the fixture's terms. */
 function verdict(content, videoDurationSeconds) {
@@ -36,7 +39,13 @@ function verdict(content, videoDurationSeconds) {
   try {
     const result = validateCore(decoded, { videoDurationSeconds });
     assert.equal(result.fullContractValid, fullContractOk);
-    return { fullContractOk, coreOk: true, core: [], enrichment: result.enrichment.map((v) => v.code), videoBoundsChecked: result.videoBoundsChecked };
+    return {
+      fullContractOk,
+      coreOk: true,
+      core: [],
+      enrichment: result.enrichment.map((v) => v.code),
+      videoBoundsChecked: result.videoBoundsChecked,
+    };
   } catch (error) {
     assert.ok(error instanceof ContractError);
     const scoped = (scope) => error.violations.filter((v) => violationScope(v.code) === scope).map((v) => v.code);
@@ -70,7 +79,11 @@ test('a core-valid report is returned exactly as the model sent it (no repair, c
 });
 
 test('whole-second video bounds: T is within a D-second video iff 0 <= T < D + 1', () => {
-  for (const [duration, accepted, rejected] of [[12.54, 13, 14], [22, 22, 23], [22.83, 23, 24]]) {
+  for (const [duration, accepted, rejected] of [
+    [12.54, 13, 14],
+    [22, 22, 23],
+    [22.83, 23, 24],
+  ]) {
     assert.ok(timestampWithinVideo(accepted, duration), `${accepted} within ${duration}`);
     assert.ok(!timestampWithinVideo(rejected, duration), `${rejected} beyond ${duration}`);
   }
@@ -78,8 +91,23 @@ test('whole-second video bounds: T is within a D-second video iff 0 <= T < D + 1
 });
 
 test('scopes: only timeline problems are enrichment; everything else is core', () => {
-  for (const code of ['TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_END_OUTSIDE_WINDOW', 'TIMELINE_NOT_CHRONOLOGICAL', 'TIMELINE_BEYOND_VIDEO']) assert.equal(violationScope(code), 'enrichment');
-  for (const code of ['EMPTY_CONTENT', 'INVALID_JSON', 'SCHEMA_VIOLATION', 'WINDOW_END_BEFORE_START', 'WINDOW_BEYOND_VIDEO', 'ID_NOT_SEQUENTIAL_ENTITY', 'INSTRUMENT_HOLDER_UNKNOWN']) assert.equal(violationScope(code), 'core');
+  for (const code of [
+    'TIMELINE_START_OUTSIDE_WINDOW',
+    'TIMELINE_END_OUTSIDE_WINDOW',
+    'TIMELINE_NOT_CHRONOLOGICAL',
+    'TIMELINE_BEYOND_VIDEO',
+  ])
+    assert.equal(violationScope(code), 'enrichment');
+  for (const code of [
+    'EMPTY_CONTENT',
+    'INVALID_JSON',
+    'SCHEMA_VIOLATION',
+    'WINDOW_END_BEFORE_START',
+    'WINDOW_BEYOND_VIDEO',
+    'ID_NOT_SEQUENTIAL_ENTITY',
+    'INSTRUMENT_HOLDER_UNKNOWN',
+  ])
+    assert.equal(violationScope(code), 'core');
 });
 
 // --- MP4 length ---------------------------------------------------------------
@@ -114,7 +142,11 @@ function reader(bytes, calls) {
 }
 
 test('MP4 length with moov after mdat: only box headers and moov are read', async () => {
-  const bytes = Buffer.concat([box('ftyp', Buffer.alloc(16)), box('mdat', Buffer.alloc(500_000)), box('moov', Buffer.concat([box('trak', Buffer.alloc(24)), mvhd(1000, 12539)]))]);
+  const bytes = Buffer.concat([
+    box('ftyp', Buffer.alloc(16)),
+    box('mdat', Buffer.alloc(500_000)),
+    box('moov', Buffer.concat([box('trak', Buffer.alloc(24)), mvhd(1000, 12539)])),
+  ]);
   const calls = [];
   assert.equal(await mp4DurationSeconds(reader(bytes, calls), bytes.length), 12.539);
   assert.ok(calls.reduce((sum, [, length]) => sum + length, 0) < 2_000, 'the media data is skipped, never read');
@@ -143,6 +175,8 @@ test('MP4 length is unknown (null) whenever the header cannot be read', async ()
   ]) {
     assert.equal(await mp4DurationSeconds(reader(bytes), bytes.length), null);
   }
-  const failing = async () => { throw new Error('R2 read failed'); };
+  const failing = async () => {
+    throw new Error('R2 read failed');
+  };
   assert.equal(await mp4DurationSeconds(failing, 1000), null);
 });

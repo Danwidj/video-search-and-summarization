@@ -18,11 +18,27 @@ export function ffmpegFrameArguments(inputUrl: string, seconds: number, region: 
     ? ['-vf', `crop=w=trunc(iw*${region.w}):h=trunc(ih*${region.h}):x=trunc(iw*${region.x}):y=trunc(ih*${region.y})`]
     : [];
   return [
-    '-v', 'error', '-nostdin',
-    '-protocol_whitelist', 'https,tls,tcp,crypto',
-    '-ss', String(seconds), '-i', inputUrl,
-    '-frames:v', '1', ...crop,
-    '-c:v', 'mjpeg', '-pix_fmt', 'yuvj420p', '-q:v', '2', '-f', 'image2pipe', 'pipe:1',
+    '-v',
+    'error',
+    '-nostdin',
+    '-protocol_whitelist',
+    'https,tls,tcp,crypto',
+    '-ss',
+    String(seconds),
+    '-i',
+    inputUrl,
+    '-frames:v',
+    '1',
+    ...crop,
+    '-c:v',
+    'mjpeg',
+    '-pix_fmt',
+    'yuvj420p',
+    '-q:v',
+    '2',
+    '-f',
+    'image2pipe',
+    'pipe:1',
   ];
 }
 
@@ -53,14 +69,24 @@ export async function extractFrameJpeg(inputUrl: string, seconds: number, region
       }
       chunks.push(chunk);
     });
-    child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-400); });
-    child.on('error', (error: NodeJS.ErrnoException) => finish(() => reject(error.code === 'ENOENT'
-      ? new FrameRequestError(503, 'ffmpeg is not installed on the console host, so frames cannot be extracted')
-      : error)));
-    child.on('close', (code) => finish(() => {
-      if (code === 0 && size > 0) resolve(Buffer.concat(chunks as unknown as Uint8Array[]));
-      else if (code === 0) reject(new FrameRequestError(422, 'The video has no frame at that timestamp'));
-      else reject(new FrameRequestError(502, `ffmpeg could not read the video: ${stderr.trim() || `exit code ${code}`}`));
-    }));
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-400);
+    });
+    child.on('error', (error: NodeJS.ErrnoException) =>
+      finish(() =>
+        reject(
+          error.code === 'ENOENT'
+            ? new FrameRequestError(503, 'ffmpeg is not installed on the console host, so frames cannot be extracted')
+            : error,
+        ),
+      ),
+    );
+    child.on('close', (code) =>
+      finish(() => {
+        if (code === 0 && size > 0) resolve(Buffer.concat(chunks as unknown as Uint8Array[]));
+        else if (code === 0) reject(new FrameRequestError(422, 'The video has no frame at that timestamp'));
+        else reject(new FrameRequestError(502, `ffmpeg could not read the video: ${stderr.trim() || `exit code ${code}`}`));
+      }),
+    );
   });
 }

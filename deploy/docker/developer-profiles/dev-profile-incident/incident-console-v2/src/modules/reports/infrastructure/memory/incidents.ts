@@ -11,7 +11,11 @@
 
 import { StoreRejection } from '@/modules/shared/domain/common';
 import {
-  type HumanRevisionInput, type IncidentRepository, type ReportList, type ReportListQuery, type RevisionRecord,
+  type HumanRevisionInput,
+  type IncidentRepository,
+  type ReportList,
+  type ReportListQuery,
+  type RevisionRecord,
 } from '@/modules/reports/domain/IncidentRepository';
 import { structuredFromPayload } from '@/modules/reports/domain/payload-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
@@ -21,8 +25,18 @@ import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 const storedNow = () => new Date().toISOString().replace('Z', '');
 
 const UNMODELLED_FILTERS = [
-  'search', 'type', 'severity', 'generatedAfter', 'generatedBefore', 'timeFrom', 'timeTo',
-  'entities', 'instruments', 'assets', 'dayOfWeek', 'entityTypes',
+  'search',
+  'type',
+  'severity',
+  'generatedAfter',
+  'generatedBefore',
+  'timeFrom',
+  'timeTo',
+  'entities',
+  'instruments',
+  'assets',
+  'dayOfWeek',
+  'entityTypes',
 ] as const;
 
 export class InMemoryIncidentRepository implements IncidentRepository {
@@ -66,9 +80,10 @@ export class InMemoryIncidentRepository implements IncidentRepository {
     if (!all.length) return null;
     const official = all[0].video.officialRevisionId;
     const wanted = revisionId ?? official;
-    const found = wanted === null
-      ? all.reduce((newest, record) => (record.revision.revisionNo > newest.revision.revisionNo ? record : newest))
-      : all.find((record) => record.revision.revisionId === wanted);
+    const found =
+      wanted === null
+        ? all.reduce((newest, record) => (record.revision.revisionNo > newest.revision.revisionNo ? record : newest))
+        : all.find((record) => record.revision.revisionId === wanted);
     if (!found) return null;
     return { ...found, revision: { ...found.revision, isOfficial: official === found.revision.revisionId } };
   }
@@ -83,7 +98,9 @@ export class InMemoryIncidentRepository implements IncidentRepository {
   async listReferencedEvidenceImages(videoId: string): Promise<string[] | null> {
     const all = this.ofVideo(videoId);
     if (!all.length) return null;
-    return [...new Set(all.flatMap((record) => record.evidence.flatMap((entry) => (typeof entry.image === 'string' ? [entry.image] : []))))];
+    return [
+      ...new Set(all.flatMap((record) => record.evidence.flatMap((entry) => (typeof entry.image === 'string' ? [entry.image] : [])))),
+    ];
   }
 
   async saveHumanRevision(input: HumanRevisionInput): Promise<RevisionSummary> {
@@ -107,7 +124,13 @@ export class InMemoryIncidentRepository implements IncidentRepository {
       model: parent.revision.model,
       isOfficial: false,
     };
-    this.revisions.push({ ...parent, revision, payload: input.payload, evidence: input.evidence, ...structuredFromPayload(input.payload, input.evidence) });
+    this.revisions.push({
+      ...parent,
+      revision,
+      payload: input.payload,
+      evidence: input.evidence,
+      ...structuredFromPayload(input.payload, input.evidence),
+    });
     return revision;
   }
 }

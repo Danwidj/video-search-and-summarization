@@ -21,8 +21,24 @@ import { crossFieldViolations, type ContractViolation } from '@/modules/contract
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 
 export const EDITABLE_INCIDENT_FIELDS = ['type', 'start_timestamp', 'end_timestamp', 'description', 'severity_level'] as const;
-export const EDITABLE_ENTITY_FIELDS = ['entity_id', 'type', 'description', 'timestamp_seconds', 'first_seen_seconds', 'last_seen_seconds', 'label'] as const;
-export const EDITABLE_INSTRUMENT_FIELDS = ['instrument_id', 'entity_id', 'name', 'description', 'threat_level', 'timestamp_seconds', 'label'] as const;
+export const EDITABLE_ENTITY_FIELDS = [
+  'entity_id',
+  'type',
+  'description',
+  'timestamp_seconds',
+  'first_seen_seconds',
+  'last_seen_seconds',
+  'label',
+] as const;
+export const EDITABLE_INSTRUMENT_FIELDS = [
+  'instrument_id',
+  'entity_id',
+  'name',
+  'description',
+  'threat_level',
+  'timestamp_seconds',
+  'label',
+] as const;
 export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description', 'timestamp_seconds', 'label'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
 // Not contract fields: the opened revision's item ID as stored (up to evidence_crops' 20 characters),
@@ -66,7 +82,13 @@ function editValidator(): ValidateFunction {
       type: 'object',
       additionalProperties: false,
       required: [...fields, 'source_id', 'image'],
-      properties: { ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])), source_id: SOURCE_ID_SCHEMA, image: IMAGE_SCHEMA, image_timestamp_seconds: IMAGE_TIMESTAMP_SCHEMA, image_box: IMAGE_BOX_SCHEMA },
+      properties: {
+        ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])),
+        source_id: SOURCE_ID_SCHEMA,
+        image: IMAGE_SCHEMA,
+        image_timestamp_seconds: IMAGE_TIMESTAMP_SCHEMA,
+        image_box: IMAGE_BOX_SCHEMA,
+      },
     },
   });
   const editSchema = {
@@ -95,7 +117,11 @@ export function notEditableKeys(edit: unknown): string[] {
   const blocked = Object.keys(edit).filter((key) => !(EDIT_COLLECTIONS as readonly string[]).includes(key));
   const incident = (edit as { incident?: unknown }).incident;
   if (incident && typeof incident === 'object' && !Array.isArray(incident)) {
-    blocked.push(...Object.keys(incident).filter((key) => !(EDITABLE_INCIDENT_FIELDS as readonly string[]).includes(key)).map((key) => `incident.${key}`));
+    blocked.push(
+      ...Object.keys(incident)
+        .filter((key) => !(EDITABLE_INCIDENT_FIELDS as readonly string[]).includes(key))
+        .map((key) => `incident.${key}`),
+    );
   }
   return blocked;
 }
@@ -104,7 +130,12 @@ export function notEditableKeys(edit: unknown): string[] {
 function entitySpanViolations(edit: StructuredEdit): ContractViolation[] {
   return edit.entities.flatMap((entity, index): ContractViolation[] => {
     const { first_seen_seconds: first, last_seen_seconds: last, timestamp_seconds: seen } = entity;
-    const bad = last < first ? 'last_seen_seconds is before first_seen_seconds' : seen < first || seen > last ? 'timestamp_seconds lies outside first_seen_seconds to last_seen_seconds' : null;
+    const bad =
+      last < first
+        ? 'last_seen_seconds is before first_seen_seconds'
+        : seen < first || seen > last
+          ? 'timestamp_seconds lies outside first_seen_seconds to last_seen_seconds'
+          : null;
     return bad ? [{ code: 'SCHEMA_VIOLATION', path: `entities/${index}`, message: `entities[${index}]: ${bad}` }] : [];
   });
 }
@@ -120,14 +151,22 @@ export function validateStructuredEdit(edit: unknown): StructuredEdit {
       const path = error.instancePath ? error.instancePath.slice(1) : '<root>';
       return { code: 'SCHEMA_VIOLATION', path, message: `${path}: ${error.message ?? error.keyword}` };
     });
-    throw new StructuredEditError(422, `The edit does not satisfy the incident contract: ${violations.map((v) => v.message).join('; ')}`, violations);
+    throw new StructuredEditError(
+      422,
+      `The edit does not satisfy the incident contract: ${violations.map((v) => v.message).join('; ')}`,
+      violations,
+    );
   }
   const typed = edit as StructuredEdit;
   // The contract's own cross-field rules; the timeline is model output and not part of an edit.
   const pseudoReport = { ...typed, incident: { ...typed.incident }, timeline: [], uncertainties: [] } as unknown as IncidentContractReport;
   const violations = [...crossFieldViolations(pseudoReport), ...entitySpanViolations(typed)];
   if (violations.length) {
-    throw new StructuredEditError(422, `The edit does not satisfy the incident contract: ${violations.map((v) => v.message).join('; ')}`, violations);
+    throw new StructuredEditError(
+      422,
+      `The edit does not satisfy the incident contract: ${violations.map((v) => v.message).join('; ')}`,
+      violations,
+    );
   }
   return typed;
 }

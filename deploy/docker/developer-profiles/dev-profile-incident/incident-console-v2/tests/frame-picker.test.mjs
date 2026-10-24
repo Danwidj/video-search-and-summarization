@@ -14,8 +14,16 @@ const components = new URL('../src/sections/', import.meta.url);
 
 test('a drag in either direction becomes one rectangle clipped to the frame', () => {
   assert.deepEqual(dragRegion({ x: 0.25, y: 0.125 }, { x: 0.75, y: 0.375 }), { x: 0.25, y: 0.125, w: 0.5, h: 0.25 });
-  assert.deepEqual(dragRegion({ x: 0.75, y: 0.375 }, { x: 0.25, y: 0.125 }), { x: 0.25, y: 0.125, w: 0.5, h: 0.25 }, 'dragging up and left gives the same rectangle');
-  assert.deepEqual(dragRegion({ x: -0.3, y: 0.5 }, { x: 0.4, y: 1.4 }), { x: 0, y: 0.5, w: 0.4, h: 0.5 }, 'a drag past the frame edge is clipped');
+  assert.deepEqual(
+    dragRegion({ x: 0.75, y: 0.375 }, { x: 0.25, y: 0.125 }),
+    { x: 0.25, y: 0.125, w: 0.5, h: 0.25 },
+    'dragging up and left gives the same rectangle',
+  );
+  assert.deepEqual(
+    dragRegion({ x: -0.3, y: 0.5 }, { x: 0.4, y: 1.4 }),
+    { x: 0, y: 0.5, w: 0.4, h: 0.5 },
+    'a drag past the frame edge is clipped',
+  );
 });
 
 test('a stray click or a sliver under the crop minimum gives no region', () => {
@@ -57,18 +65,25 @@ test('the picker is a dialog that crops through the evidence-crop route and hand
   assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-crop/);
   assert.match(picker, /body: JSON\.stringify\(\{ timestampSeconds: seconds, region \}\)/);
   assert.match(picker, /const blob = await response\.blob\(\);/, 'the crop is held as a blob in the browser');
-  assert.match(picker, /onPick\(\{ blob, previewUrl: URL\.createObjectURL\(blob\), timestampSeconds: seconds, box: regionBox\(region\) \}\)/);
+  assert.match(
+    picker,
+    /onPick\(\{ blob, previewUrl: URL\.createObjectURL\(blob\), timestampSeconds: seconds, box: regionBox\(region\) \}\)/,
+  );
   assert.doesNotMatch(picker, /itemId/, 'the crop needs no item ID: Save uploads it under the item key');
   assert.match(picker, /Escape/, 'Escape closes the picker unless a crop is running');
 });
 
 test('Edit mode offers Replace image on each draft card and applies the pick to the draft item', async () => {
   const pane = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
-  assert.match(pane, />Replace image</);
+  assert.match(pane, />\s*Replace image\s*</);
   assert.match(pane, /<EvidenceFramePicker/);
   assert.match(pane, /pendingImage: pick\.blob/, 'the crop waits in the draft item until Save uploads it');
-  assert.match(pane, /imageTimestampSeconds: pick\.timestampSeconds, imageBox: pick\.box/, 'the frame second and box are stored for the save path');
-  assert.match(pane, /timestampSeconds: pick\.timestampSeconds/, 'the picked frame becomes the item\'s most visible second');
+  assert.match(
+    pane,
+    /imageTimestampSeconds: pick\.timestampSeconds,\s*imageBox: pick\.box/,
+    'the frame second and box are stored for the save path',
+  );
+  assert.match(pane, /timestampSeconds: pick\.timestampSeconds/, "the picked frame becomes the item's most visible second");
   const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(page, /videoSrc=\{report\.run\.playbackUrl\}/);
 });

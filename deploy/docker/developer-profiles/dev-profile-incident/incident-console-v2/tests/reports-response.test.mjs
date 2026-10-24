@@ -16,7 +16,11 @@ register('./support/alias-loader.mjs', import.meta.url);
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {},
-    GetObjectCommand: class { constructor(input) { this.input = input; } },
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
     PutObjectCommand: class {},
     HeadObjectCommand: class {},
     DeleteObjectCommand: class {},
@@ -88,7 +92,11 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     reports: [
-      { ...summaries.reports[0], thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp', evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-assault-1/u1/I1.jpg' },
+      {
+        ...summaries.reports[0],
+        thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp',
+        evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-assault-1/u1/I1.jpg',
+      },
       summaries.reports[1],
       { ...summaries.reports[2], evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-repaired-3/m/E1.jpg' },
     ],
@@ -100,7 +108,9 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
 
 test('the full export (all=true) asks for up to 1000 reports and signs no thumbnails', async () => {
   const bodies = serve(summaries);
-  const response = await GET(new Request('http://localhost/api/reports?all=true&page=0&search=%20blade%20&kind=human&type=all&severity=all&sort=oldest'));
+  const response = await GET(
+    new Request('http://localhost/api/reports?all=true&page=0&search=%20blade%20&kind=human&type=all&severity=all&sort=oldest'),
+  );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     reports: summaries.reports,
@@ -131,7 +141,11 @@ test('an empty RPC result lists nothing', async () => {
   serve(null);
   const response = await GET(new Request('http://localhost/api/reports'));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { reports: [], incidentTypes: [], pagination: { page: 1, pageSize: 6, totalItems: 0, totalPages: 0 } });
+  assert.deepEqual(await response.json(), {
+    reports: [],
+    incidentTypes: [],
+    pagination: { page: 1, pageSize: 6, totalItems: 0, totalPages: 0 },
+  });
 });
 
 test('a database failure is a 500 with its message, and an unconfigured database is refused before any validation', async () => {

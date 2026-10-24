@@ -11,11 +11,7 @@ import type { RemoveStoredVideo } from '@/modules/reports/application/types';
  * that name only this video. Revisions are append-only, so there is no
  * deleting a single one. Evidence images under evidence/<videoId>/ are left in R2.
  */
-export async function deleteVideoAndReports(
-  videos: VideoRepository,
-  videoId: string,
-  removeStoredVideo: RemoveStoredVideo,
-): Promise<void> {
+export async function deleteVideoAndReports(videos: VideoRepository, videoId: string, removeStoredVideo: RemoveStoredVideo): Promise<void> {
   const video = await videos.getVideo(videoId);
   if (video?.storageKey == null) throw new Error('Video has no R2 object key');
   await removeStoredVideo(video.storageKey);

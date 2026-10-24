@@ -113,7 +113,9 @@ async function uploadChunk(
           else if (errorData.detail) {
             message = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
           }
-        } catch { /* use default message */ }
+        } catch {
+          /* use default message */
+        }
         reject(new Error(message));
       }
     });

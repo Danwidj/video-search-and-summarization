@@ -8,7 +8,13 @@
 
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
-  type OfficialChange, type RevisionCropsChange, type RunHistoryRecords, type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type OfficialChange,
+  type RevisionCropsChange,
+  type RunHistoryRecords,
+  type VideoListFilter,
+  type VideoListItem,
+  type VideoRecord,
+  type VideoRepository,
 } from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
@@ -31,11 +37,21 @@ export class InMemoryVideoRepository implements VideoRepository {
 
   async listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>> {
     const all = [...this.videos.values()]
-      .filter((video) => filter === 'all'
-        || (filter === 'without-report' && video.revisionIds.length === 0)
-        || (filter === 'awaiting-selection' && video.revisionIds.length > 0 && video.officialRevisionId === null))
-      .sort((a, b) => (a.uploadedAt === b.uploadedAt ? a.videoId.localeCompare(b.videoId)
-        : a.uploadedAt === null ? 1 : b.uploadedAt === null ? -1 : b.uploadedAt.localeCompare(a.uploadedAt)));
+      .filter(
+        (video) =>
+          filter === 'all' ||
+          (filter === 'without-report' && video.revisionIds.length === 0) ||
+          (filter === 'awaiting-selection' && video.revisionIds.length > 0 && video.officialRevisionId === null),
+      )
+      .sort((a, b) =>
+        a.uploadedAt === b.uploadedAt
+          ? a.videoId.localeCompare(b.videoId)
+          : a.uploadedAt === null
+            ? 1
+            : b.uploadedAt === null
+              ? -1
+              : b.uploadedAt.localeCompare(a.uploadedAt),
+      );
     const items = all.slice((page - 1) * pageSize, page * pageSize).map((video) => ({
       videoId: video.videoId,
       filename: (video.storageKey ?? '').split('/').pop() || video.videoId,
@@ -64,7 +80,8 @@ export class InMemoryVideoRepository implements VideoRepository {
   async setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange> {
     const video = this.videos.get(videoId);
     if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
-    if (revisionId !== null && !video.revisionIds.includes(revisionId)) throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
+    if (revisionId !== null && !video.revisionIds.includes(revisionId))
+      throw new StoreRejection('not-found', `Revision not found for this video: ${revisionId}`);
     this.officialCalls.push({ videoId, revisionId, crops });
     video.officialRevisionId = revisionId;
     return { videoId, officialRevisionId: revisionId, crops: revisionId === null ? 0 : crops.length };
@@ -74,7 +91,8 @@ export class InMemoryVideoRepository implements VideoRepository {
     const video = this.videos.get(videoId);
     if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
     const searchable = video.officialRevisionId ?? video.revisionIds.at(-1) ?? null;
-    if (revisionId !== searchable) throw new StoreRejection('invalid', `Revision ${revisionId} is not the searchable revision of video ${videoId}`);
+    if (revisionId !== searchable)
+      throw new StoreRejection('invalid', `Revision ${revisionId} is not the searchable revision of video ${videoId}`);
     this.cropCalls.push({ videoId, revisionId, crops });
     return { videoId, revisionId, crops: crops.length };
   }

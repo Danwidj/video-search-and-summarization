@@ -28,12 +28,19 @@ beforeEach(() => {
     return new Response(JSON.stringify(upstream.body), { status: upstream.status });
   };
 });
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+});
 
 const post = (body) => POST(new Request('http://console.test/api/chat', { method: 'POST', body: JSON.stringify(body) }));
 
 test('the route calls POST /api/v1/incidents/chat with a chat-contract-v1 request scoped to the incident', async () => {
-  const response = await post({ messages: [{ role: 'user', content: 'What weapon?' }], sessionId: 'session_abc', incidentId: 'Assault007' });
+  const response = await post({
+    messages: [{ role: 'user', content: 'What weapon?' }],
+    sessionId: 'session_abc',
+    incidentId: 'Assault007',
+  });
   assert.equal(response.status, 200);
   assert.equal(upstream.calls.length, 1);
   assert.equal(upstream.calls[0].url, 'http://agent.test:8000/api/v1/incidents/chat');
@@ -57,8 +64,11 @@ test('the response carries the session and the cited evidence in camelCase', asy
   assert.equal(body.message.content, agentResponse.message.content);
   const [first] = agentResponse.message.citations;
   assert.deepEqual(body.message.citations[0], {
-    incidentId: first.incident_id, itemId: first.item_id, itemType: first.item_type,
-    timestampSeconds: first.timestamp_seconds, cropImageUrl: first.crop_image_url,
+    incidentId: first.incident_id,
+    itemId: first.item_id,
+    itemType: first.item_type,
+    timestampSeconds: first.timestamp_seconds,
+    cropImageUrl: first.crop_image_url,
   });
   assert.equal(body.message.citations.length, agentResponse.message.citations.length);
 });

@@ -8,7 +8,14 @@ import { useEffect, useState } from 'react';
 
 import { formatTimestamp } from '@/lib/time';
 
-interface VideoItem { videoId: string; filename: string; uploadedAt: string | null; source: string | null; analysesWithReport: number; officialRunId: string | null }
+interface VideoItem {
+  videoId: string;
+  filename: string;
+  uploadedAt: string | null;
+  source: string | null;
+  analysesWithReport: number;
+  officialRunId: string | null;
+}
 
 /** Videos and their analysis history; `?filter=without-report` shows uploads with no successful analysis. */
 export function VideosScreen() {
@@ -24,9 +31,17 @@ export function VideosScreen() {
     setState(null);
     void fetch(`/api/videos?filter=${filter}&page=${page}`, { cache: 'no-store' })
       .then(async (response) => {
-        const payload = (await response.json()) as { videos?: VideoItem[]; pagination?: { totalItems: number; totalPages: number }; error?: string };
+        const payload = (await response.json()) as {
+          videos?: VideoItem[];
+          pagination?: { totalItems: number; totalPages: number };
+          error?: string;
+        };
         if (!response.ok || !payload.videos) throw new Error(payload.error || 'Could not load videos');
-        setState({ videos: payload.videos, totalItems: payload.pagination?.totalItems ?? 0, totalPages: payload.pagination?.totalPages ?? 0 });
+        setState({
+          videos: payload.videos,
+          totalItems: payload.pagination?.totalItems ?? 0,
+          totalPages: payload.pagination?.totalPages ?? 0,
+        });
       })
       .catch((cause: Error) => setError(cause.message));
   }, [filter, page]);
@@ -39,32 +54,61 @@ export function VideosScreen() {
       <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em]">Uploaded videos</h1>
       <p className="mt-2 text-sm text-ink/55">Each video keeps its full analysis history. Reports list only successful analyses.</p>
       <div className="mt-6 flex gap-2" role="tablist">
-        {([['all', 'All videos'], ['awaiting-selection', 'Awaiting official report'], ['without-report', 'Without a report']] as const).map(([value, label]) => (
-          <button aria-selected={filter === value} className={`rounded-full px-4 py-2 text-xs font-semibold ${filter === value ? 'bg-ink text-white' : 'border border-ink/15'}`} key={value} onClick={() => go({ filter: value })} role="tab" type="button">{label}</button>
+        {(
+          [
+            ['all', 'All videos'],
+            ['awaiting-selection', 'Awaiting official report'],
+            ['without-report', 'Without a report'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            aria-selected={filter === value}
+            className={`rounded-full px-4 py-2 text-xs font-semibold ${filter === value ? 'bg-ink text-white' : 'border border-ink/15'}`}
+            key={value}
+            onClick={() => go({ filter: value })}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
         ))}
       </div>
       {error && <p className="mt-6 text-clay">{error}</p>}
       {!state && !error && <div className="mt-6 h-40 animate-pulse rounded-2xl bg-white" role="status" />}
       {state && (
         <>
-          <p className="mt-6 text-sm text-ink/50">{state.totalItems} {state.totalItems === 1 ? 'video' : 'videos'}</p>
+          <p className="mt-6 text-sm text-ink/50">
+            {state.totalItems} {state.totalItems === 1 ? 'video' : 'videos'}
+          </p>
           <ul className="mt-3 divide-y divide-ink/10 overflow-hidden rounded-2xl border border-ink/10 bg-white">
             {state.videos.map((video) => (
               <li className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between" key={video.videoId}>
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{video.filename}</p>
-                  <p className="text-xs text-ink/50">Uploaded {formatTimestamp(video.uploadedAt)} · {video.analysesWithReport} {video.analysesWithReport === 1 ? 'report' : 'reports'}{video.officialRunId ? ' · official report selected' : ''}</p>
+                  <p className="text-xs text-ink/50">
+                    Uploaded {formatTimestamp(video.uploadedAt)} · {video.analysesWithReport}{' '}
+                    {video.analysesWithReport === 1 ? 'report' : 'reports'}
+                    {video.officialRunId ? ' · official report selected' : ''}
+                  </p>
                 </div>
-                <Link className="shrink-0 text-xs font-semibold text-moss" href={`/videos/${encodeURIComponent(video.videoId)}`}>Analysis history →</Link>
+                <Link className="shrink-0 text-xs font-semibold text-moss" href={`/videos/${encodeURIComponent(video.videoId)}`}>
+                  Analysis history →
+                </Link>
               </li>
             ))}
             {!state.videos.length && <li className="p-6 text-sm italic text-ink/45">No videos match.</li>}
           </ul>
           {state.totalPages > 1 && (
             <div className="mt-4 flex items-center justify-center gap-3 text-sm">
-              <button className="action" disabled={page <= 1} onClick={() => go({ page: String(page - 1) })} type="button">Previous</button>
-              <span>Page {page} of {state.totalPages}</span>
-              <button className="action" disabled={page >= state.totalPages} onClick={() => go({ page: String(page + 1) })} type="button">Next</button>
+              <button className="action" disabled={page <= 1} onClick={() => go({ page: String(page - 1) })} type="button">
+                Previous
+              </button>
+              <span>
+                Page {page} of {state.totalPages}
+              </span>
+              <button className="action" disabled={page >= state.totalPages} onClick={() => go({ page: String(page + 1) })} type="button">
+                Next
+              </button>
             </div>
           )}
         </>
