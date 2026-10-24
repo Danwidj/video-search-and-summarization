@@ -38,7 +38,14 @@ function optional(params: URLSearchParams, key: string): string | null {
 }
 
 function evidenceFilters(params: URLSearchParams, key: string): string[] | null {
-  const values = [...new Set(params.getAll(key).map((value) => value.trim()).filter(Boolean))];
+  const values = [
+    ...new Set(
+      params
+        .getAll(key)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
   if (values.length > MAX_EVIDENCE_FILTERS || values.some((value) => value.length > MAX_EVIDENCE_FILTER_LENGTH)) {
     throw new RangeError(`Invalid ${key} filter`);
   }
@@ -53,8 +60,10 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
 async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<Set<string> | null> {
   if (!config.agentUrl) return null;
   try {
-    const hits = await new AgentRevisionSearchRepository(config.agentUrl, AbortSignal.timeout(REVISION_SEARCH_TIMEOUT_MS))
-      .search({ query: text, topK: REVISION_TOP_K });
+    const hits = await new AgentRevisionSearchRepository(config.agentUrl, AbortSignal.timeout(REVISION_SEARCH_TIMEOUT_MS)).search({
+      query: text,
+      topK: REVISION_TOP_K,
+    });
     return hits.length ? new Set(hits.map((hit) => hit.videoId)) : null;
   } catch {
     return null;
@@ -62,7 +71,13 @@ async function videosMatchingText(config: ServiceConfiguration, text: string): P
 }
 
 /** The incidents the other filters allow, narrowed to the ones the agent matched; the sort is kept. */
-async function listMatchingIncidents(incidents: IncidentRepository, query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>, videoIds: Set<string>, page: number, pageSize: number): Promise<ReportList> {
+async function listMatchingIncidents(
+  incidents: IncidentRepository,
+  query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>,
+  videoIds: Set<string>,
+  page: number,
+  pageSize: number,
+): Promise<ReportList> {
   const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
   const matched = all.items.filter((item) => videoIds.has(item.videoId));
   return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
@@ -88,13 +103,21 @@ export async function GET(request: Request) {
     if (kind !== null && kind !== 'ai' && kind !== 'human') return NextResponse.json({ error: 'Invalid revision kind' }, { status: 400 });
     const scope = params.get('scope') || 'all';
     const match = params.get('match') || 'contains';
-    const entityTypes = [...new Set(params.getAll('entityType').map((value) => value.trim().toLowerCase()).filter(Boolean))];
+    const entityTypes = [
+      ...new Set(
+        params
+          .getAll('entityType')
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ];
     if (!isSort(sort)) return NextResponse.json({ error: 'Invalid report sort' }, { status: 400 });
     if (!isScope(scope)) return NextResponse.json({ error: 'Invalid report scope' }, { status: 400 });
     if (!isMatch(match)) return NextResponse.json({ error: 'Invalid evidence match' }, { status: 400 });
     if (entityTypes.some((value) => !ENTITY_TYPES.has(value))) return NextResponse.json({ error: 'Invalid entity type' }, { status: 400 });
     if (!SEVERITIES.has(severity)) return NextResponse.json({ error: 'Invalid report severity' }, { status: 400 });
-    if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
+    if (dayOfWeek !== null && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6))
+      return NextResponse.json({ error: 'Invalid report weekday' }, { status: 400 });
 
     const search = optional(params, 'search');
     const filters: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'> = {
@@ -116,17 +139,32 @@ export async function GET(request: Request) {
       timezone,
     };
     const videoIds = search === null ? null : await videosMatchingText(config, search);
-    const { items: summaries, totalItems, incidentTypes } = videoIds
+    const {
+      items: summaries,
+      totalItems,
+      incidentTypes,
+    } = videoIds
       ? await listMatchingIncidents(incidents, filters, videoIds, page, pageSize)
       : await incidents.listReports({ ...filters, search, page, pageSize });
-    const sign = async (key: string) => { try { return await createR2PlaybackUrl(config, key); } catch { return undefined; } };
-    const reports = params.get('all') === 'true' ? summaries : await Promise.all(summaries.map(async (report) => {
-      const [thumbnailUrl, evidenceThumbnailUrl] = await Promise.all([
-        isValidR2Key(report.r2Key) ? sign(thumbnailKeyForVideo(report.r2Key)) : undefined,
-        report.thumbnail ? sign(report.thumbnail) : undefined,
-      ]);
-      return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(evidenceThumbnailUrl ? { evidenceThumbnailUrl } : {}) };
-    }));
+    const sign = async (key: string) => {
+      try {
+        return await createR2PlaybackUrl(config, key);
+      } catch {
+        return undefined;
+      }
+    };
+    const reports =
+      params.get('all') === 'true'
+        ? summaries
+        : await Promise.all(
+            summaries.map(async (report) => {
+              const [thumbnailUrl, evidenceThumbnailUrl] = await Promise.all([
+                isValidR2Key(report.r2Key) ? sign(thumbnailKeyForVideo(report.r2Key)) : undefined,
+                report.thumbnail ? sign(report.thumbnail) : undefined,
+              ]);
+              return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(evidenceThumbnailUrl ? { evidenceThumbnailUrl } : {}) };
+            }),
+          );
 
     return NextResponse.json({
       reports,

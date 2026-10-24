@@ -10,11 +10,31 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
-    S3Client: class { send(command) { return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: 2048 } : {}); } },
-    GetObjectCommand: class { constructor(input) { this.input = input; } },
-    PutObjectCommand: class { constructor(input) { this.input = input; } },
-    HeadObjectCommand: class HeadObjectCommand { constructor(input) { this.input = input; } },
-    DeleteObjectCommand: class { constructor(input) { this.input = input; } },
+    S3Client: class {
+      send(command) {
+        return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: 2048 } : {});
+      }
+    },
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    PutObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    HeadObjectCommand: class HeadObjectCommand {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    DeleteObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
   },
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/stored.mp4' } });
@@ -26,7 +46,9 @@ const { revisionRpcs } = await import('./support/revisions-database.mjs');
 const { contractVersion } = await import('../src/modules/contract/infrastructure/loader.ts');
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const validReport = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'valid', 'full-report.json'), 'utf8');
-const timelineFailure = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8')).rawContent;
+const timelineFailure = JSON.parse(
+  readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'cosmos-3-super-timeline-window.json'), 'utf8'),
+).rawContent;
 const coreFailure = readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', 'invalid', 'cross-end-before-start.json'), 'utf8');
 const V = repaired.videoId;
 const originalFetch = globalThis.fetch;
@@ -34,17 +56,30 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   Object.assign(process.env, {
-    ANALYSIS_MODE: 'gateway', VLM_GATEWAY_URL: 'http://gateway.test:8600', INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
-    R2_ACCOUNT_ID: 'a', R2_ACCESS_KEY: 'b', R2_SECRET_KEY: 'c', R2_BUCKET: 'd',
+    ANALYSIS_MODE: 'gateway',
+    VLM_GATEWAY_URL: 'http://gateway.test:8600',
+    INCIDENT_SUPABASE_URL: 'https://supabase.test',
+    INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
+    R2_ACCOUNT_ID: 'a',
+    R2_ACCESS_KEY: 'b',
+    R2_SECRET_KEY: 'c',
+    R2_BUCKET: 'd',
   });
 });
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+});
 
 /** The repaired video with its AI revision (and optionally the failed attempt), plus a gateway that answers with `completionContent`. */
 function services(completionContent, { extraRuns = [], official = null } = {}) {
   const gatewayCalls = [];
   const db = fakePostgrest(
-    { videos: [{ ...repaired.video, official_revision_id: official }], model_runs: [repaired.modelRun, ...extraRuns], report_revisions: [aiRevisionRow(repaired)] },
+    {
+      videos: [{ ...repaired.video, official_revision_id: official }],
+      model_runs: [repaired.modelRun, ...extraRuns],
+      report_revisions: [aiRevisionRow(repaired)],
+    },
     { identity: { report_revisions: 'id' }, rpc: revisionRpcs },
   );
   globalThis.fetch = async (url, init = {}) => {
@@ -56,13 +91,24 @@ function services(completionContent, { extraRuns = [], official = null } = {}) {
   };
   return { db, gatewayCalls };
 }
-const post = (body) => POST(new Request(`http://localhost/api/videos/${V}/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ videoId: V }) });
+const post = (body) =>
+  POST(
+    new Request(`http://localhost/api/videos/${V}/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ videoId: V }) },
+  );
 const history = () => GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
 const writes = (db) => db.requests.filter((r) => r.method !== 'GET');
 
 test('re-analysis uses the stored video object, creates a new run and a new AI revision, and never writes the videos row', async () => {
   const { db, gatewayCalls } = services(validReport);
-  const response = await post({ model: 'nvidia/cosmos-3-super-reasoner', additionalInstruction: 'Pay particular attention to the person entering from the left side of the frame.' });
+  const response = await post({
+    model: 'nvidia/cosmos-3-super-reasoner',
+    additionalInstruction: 'Pay particular attention to the person entering from the left side of the frame.',
+  });
   assert.equal(response.status, 200);
   const { run } = await response.json();
   assert.equal(run.videoId, V);
@@ -78,8 +124,15 @@ test('re-analysis uses the stored video object, creates a new run and a new AI r
   assert.equal(notes.request.additionalInstruction, 'Pay particular attention to the person entering from the left side of the frame.');
   assert.equal(notes.videoId, V);
   const revision = db.store.report_revisions.find((row) => row.id === 2);
-  assert.deepEqual([revision.video_id, revision.revision_no, revision.kind, revision.model_run_id, revision.parent_id], [V, 2, 'ai', run.modelRunId, null]);
-  assert.deepEqual(db.store.report_revisions[0], aiRevisionRow(repaired), 'the earlier revision is untouched; edits are not carried across');
+  assert.deepEqual(
+    [revision.video_id, revision.revision_no, revision.kind, revision.model_run_id, revision.parent_id],
+    [V, 2, 'ai', run.modelRunId, null],
+  );
+  assert.deepEqual(
+    db.store.report_revisions[0],
+    aiRevisionRow(repaired),
+    'the earlier revision is untouched; edits are not carried across',
+  );
   assert.equal(db.store.videos[0].official_revision_id, null, 'the new version is not made official');
   assert.deepEqual(run.searchable, { crops: 0 }, 'with no official revision the new revision becomes the searched one');
   const cropCall = db.requests.find((r) => r.path === 'rpc/set_revision_crops');
@@ -101,7 +154,11 @@ test('a failed re-run is recorded in history only and returns its reason', async
   const payload = await response.json();
   assert.equal(payload.outcome, 'contract_failed');
   assert.deepEqual(payload.codes, ['WINDOW_END_BEFORE_START'], 'the failure names the core violation only');
-  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs'], 'only the attempt record; no revision, evidence or video rows');
+  assert.deepEqual(
+    writes(db).map((r) => r.path),
+    ['model_runs'],
+    'only the attempt record; no revision, evidence or video rows',
+  );
   assert.equal(db.store.report_revisions.length, 1);
 });
 
@@ -109,7 +166,10 @@ test('a re-run whose only problem is its timeline gets its own revision (core-sc
   const { db } = services(timelineFailure);
   const response = await post({ model: 'nvidia/cosmos-3-super-reasoner' });
   assert.equal(response.status, 200);
-  assert.deepEqual(writes(db).map((r) => r.path), ['model_runs', 'report_revisions', 'rpc/set_revision_crops']);
+  assert.deepEqual(
+    writes(db).map((r) => r.path),
+    ['model_runs', 'report_revisions', 'rpc/set_revision_crops'],
+  );
   const notes = JSON.parse(db.store.model_runs.at(-1).notes).incidentConsoleV2;
   assert.equal(notes.status, 'valid_first_pass');
   assert.equal(notes.validation.fullContractValid, false);
@@ -126,7 +186,15 @@ test('agent-mode re-analysis sends the chosen model and reviewer prompt to the a
     if (!String(url).includes('/api/v1/incidents/')) return gatewayFetch(url, init);
     agentBodies.push(JSON.parse(String(init.body)));
     // The mock agent answers with the model it ran, which here differs from the one requested.
-    return new Response(JSON.stringify({ model: 'nvidia/cosmos-3-super-reasoner', contract_version: contractVersion(), raw_output: validReport, finish_reason: 'stop' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(
+      JSON.stringify({
+        model: 'nvidia/cosmos-3-super-reasoner',
+        contract_version: contractVersion(),
+        raw_output: validReport,
+        finish_reason: 'stop',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
   };
   const response = await post({ model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', additionalInstruction: 'Focus on the van.' });
   assert.equal(response.status, 200);
@@ -147,7 +215,25 @@ test('re-analysis refuses unknown models and a missing video', async () => {
 });
 
 test('history GET combines revision-backed runs with explicitly associated attempts', async () => {
-  const failed = { id: 'm-cf', model_name: 'nvidia/cosmos-3-super-reasoner', run_datetime: '2026-09-27T12:00:00', notes: JSON.stringify({ incidentConsoleV2: { recordType: 'analysis_attempt', status: 'contract_failed', contractVersion: 'incident-contract-v2', videoId: V, attemptedAt: '2026-09-27T12:00:00Z', stage: 'contract_validation', failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' }, request: { model: 'nvidia/cosmos-3-super-reasoner' }, validation: { firstPass: [] }, repair: null } }) };
+  const failed = {
+    id: 'm-cf',
+    model_name: 'nvidia/cosmos-3-super-reasoner',
+    run_datetime: '2026-09-27T12:00:00',
+    notes: JSON.stringify({
+      incidentConsoleV2: {
+        recordType: 'analysis_attempt',
+        status: 'contract_failed',
+        contractVersion: 'incident-contract-v2',
+        videoId: V,
+        attemptedAt: '2026-09-27T12:00:00Z',
+        stage: 'contract_validation',
+        failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' },
+        request: { model: 'nvidia/cosmos-3-super-reasoner' },
+        validation: { firstPass: [] },
+        repair: null,
+      },
+    }),
+  };
   // The fake PostgREST does not embed, so the run's model_runs row sits on its revision row.
   const { db } = services(validReport, { extraRuns: [failed], official: 1 });
   db.store.report_revisions[0].model_runs = repaired.modelRun;
@@ -155,7 +241,13 @@ test('history GET combines revision-backed runs with explicitly associated attem
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.video.uploadedAt, repaired.video.uploaded_datetime);
-  assert.deepEqual(body.runs.map((run) => [run.modelRunId, run.outcome, run.revision?.revisionId ?? null, run.isOfficial]), [['m-cf', 'contract_failed', null, false], [repaired.modelRunId, 'valid_after_structural_repair', 1, true]]);
+  assert.deepEqual(
+    body.runs.map((run) => [run.modelRunId, run.outcome, run.revision?.revisionId ?? null, run.isOfficial]),
+    [
+      ['m-cf', 'contract_failed', null, false],
+      [repaired.modelRunId, 'valid_after_structural_repair', 1, true],
+    ],
+  );
   assert.equal(body.counts.withReport, 1);
   assert.equal(body.officialRevisionId, 1);
 });

@@ -24,7 +24,11 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1);
     const { videos } = getDbAdapters();
     const { items, totalItems } = await videos.listVideos(filter as VideoListFilter, page, PAGE_SIZE);
-    return NextResponse.json({ videos: items, pagination: { page, pageSize: PAGE_SIZE, totalItems, totalPages: Math.ceil(totalItems / PAGE_SIZE) }, filter });
+    return NextResponse.json({
+      videos: items,
+      pagination: { page, pageSize: PAGE_SIZE, totalItems, totalPages: Math.ceil(totalItems / PAGE_SIZE) },
+      filter,
+    });
   } catch (error) {
     return errorResponse(error, 'Could not load videos');
   }

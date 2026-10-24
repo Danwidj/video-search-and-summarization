@@ -19,14 +19,29 @@ const OUTCOME_STYLES: Record<RunOutcome, string> = {
 
 export function OutcomeBadge({ outcome, inferred = false }: { outcome: RunOutcome; inferred?: boolean }) {
   return (
-    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${OUTCOME_STYLES[outcome]}`} data-outcome={outcome} title={OUTCOME_DESCRIPTIONS[outcome]}>
-      {OUTCOME_LABELS[outcome]}{inferred && outcome !== 'legacy' ? ' (not recorded)' : ''}
+    <span
+      className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${OUTCOME_STYLES[outcome]}`}
+      data-outcome={outcome}
+      title={OUTCOME_DESCRIPTIONS[outcome]}
+    >
+      {OUTCOME_LABELS[outcome]}
+      {inferred && outcome !== 'legacy' ? ' (not recorded)' : ''}
     </span>
   );
 }
 
 /** A video's analysis history. Failed attempts are listed with their reason and never as reports. */
-export function RunHistoryList({ history, currentRunId, compact = false, onChanged }: { history: VideoRunHistory; currentRunId?: string | null; compact?: boolean; onChanged?: () => void }) {
+export function RunHistoryList({
+  history,
+  currentRunId,
+  compact = false,
+  onChanged,
+}: {
+  history: VideoRunHistory;
+  currentRunId?: string | null;
+  compact?: boolean;
+  onChanged?: () => void;
+}) {
   const runs = compact ? history.runs.slice(0, 6) : history.runs;
   const { counts } = history;
   return (
@@ -39,17 +54,43 @@ export function RunHistoryList({ history, currentRunId, compact = false, onChang
         {counts.legacy ? ` · ${counts.legacy} earlier` : ''}
       </p>
       <ol className="mt-3 space-y-2">
-        {runs.map((run) => <RunRow current={run.modelRunId === currentRunId} hasOfficial={history.officialRevisionId !== null} key={run.modelRunId} onChanged={onChanged} run={run} videoId={history.video.videoId} />)}
+        {runs.map((run) => (
+          <RunRow
+            current={run.modelRunId === currentRunId}
+            hasOfficial={history.officialRevisionId !== null}
+            key={run.modelRunId}
+            onChanged={onChanged}
+            run={run}
+            videoId={history.video.videoId}
+          />
+        ))}
       </ol>
-      {compact && history.runs.length > runs.length && <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>}
+      {compact && history.runs.length > runs.length && (
+        <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>
+      )}
     </div>
   );
 }
 
-function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHistoryEntry; videoId: string; current: boolean; hasOfficial: boolean; onChanged?: () => void }) {
+function RunRow({
+  run,
+  videoId,
+  current,
+  hasOfficial,
+  onChanged,
+}: {
+  run: RunHistoryEntry;
+  videoId: string;
+  current: boolean;
+  hasOfficial: boolean;
+  onChanged?: () => void;
+}) {
   const failed = run.outcome === 'contract_failed' || run.outcome === 'request_failed';
   return (
-    <li className={`rounded-xl border p-3 text-xs ${current ? 'border-signal bg-signal/5' : 'border-ink/10 bg-white'}`} data-run={run.modelRunId}>
+    <li
+      className={`rounded-xl border p-3 text-xs ${current ? 'border-signal bg-signal/5' : 'border-ink/10 bg-white'}`}
+      data-run={run.modelRunId}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <strong className="text-ink">{run.model}</strong>
         <OutcomeBadge inferred={run.outcomeInferred} outcome={run.outcome} />
@@ -67,22 +108,43 @@ function RunRow({ run, videoId, current, hasOfficial, onChanged }: { run: RunHis
         <div className="mt-2 rounded-lg bg-[#fff6f2] p-2 text-[#8c3d25]">
           <p className="font-semibold">{run.outcome === 'request_failed' ? describeCode(run.failure.code) : 'Contract violations'}</p>
           {run.outcome === 'contract_failed' && (
-            <ul className="mt-1 list-disc pl-4">{run.failure.violations.map((violation, index) => <li key={index}>{describeCode(violation.code)}: {violation.message}</li>)}</ul>
+            <ul className="mt-1 list-disc pl-4">
+              {run.failure.violations.map((violation, index) => (
+                <li key={index}>
+                  {describeCode(violation.code)}: {violation.message}
+                </li>
+              ))}
+            </ul>
           )}
           {run.outcome === 'request_failed' && run.failure.message && <p className="mt-1 text-[#8c3d25]/80">{run.failure.message}</p>}
         </div>
       )}
       {run.enrichmentIssues && run.enrichmentIssues.length > 0 && (
-        <p className="mt-2 text-ink/55" data-testid="enrichment-issues">Unscored model output: {run.enrichmentIssues.map(describeCode).join('; ')}</p>
+        <p className="mt-2 text-ink/55" data-testid="enrichment-issues">
+          Unscored model output: {run.enrichmentIssues.map(describeCode).join('; ')}
+        </p>
       )}
       {run.repair && (
-        <p className="mt-2 text-[#765300]">Contract repair applied (IDs only) · {run.repair.ruleSet}: {run.repair.operations.map((operation) => String(operation.op)).join(', ')}</p>
+        <p className="mt-2 text-[#765300]">
+          Contract repair applied (IDs only) · {run.repair.ruleSet}:{' '}
+          {run.repair.operations.map((operation) => String(operation.op)).join(', ')}
+        </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-3">
         {run.revision && !current && (
-          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?revision=${run.revision.revisionId}`}>Open report →</Link>
+          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?revision=${run.revision.revisionId}`}>
+            Open report →
+          </Link>
         )}
-        {run.revision && onChanged && <OfficialControls hasOfficial={hasOfficial} isOfficial={Boolean(run.isOfficial)} onChanged={onChanged} revisionId={run.revision.revisionId} videoId={videoId} />}
+        {run.revision && onChanged && (
+          <OfficialControls
+            hasOfficial={hasOfficial}
+            isOfficial={Boolean(run.isOfficial)}
+            onChanged={onChanged}
+            revisionId={run.revision.revisionId}
+            videoId={videoId}
+          />
+        )}
       </div>
     </li>
   );

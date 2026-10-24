@@ -4,16 +4,23 @@
 // (search-contract-v1): camelCase request in, camelCase result out.
 
 import { readUpstream } from '@/lib/http';
-import type { EvidenceSearchHit, EvidenceSearchRepository, EvidenceSearchRequest, EvidenceSearchResult } from '@/modules/search/domain/search';
+import type {
+  EvidenceSearchHit,
+  EvidenceSearchRepository,
+  EvidenceSearchRequest,
+  EvidenceSearchResult,
+} from '@/modules/search/domain/search';
 
 export function toAgentSearchBody(request: EvidenceSearchRequest): Record<string, unknown> {
   const { query, topK, minSimilarity, hideRejected, filters } = request;
-  const agentFilters = filters ? {
-    ...(filters.incidentTypes?.length ? { incident_types: filters.incidentTypes } : {}),
-    ...(filters.minSeverity != null ? { min_severity: filters.minSeverity } : {}),
-    ...(filters.maxSeverity != null ? { max_severity: filters.maxSeverity } : {}),
-    ...(filters.itemTypes?.length ? { item_types: filters.itemTypes } : {}),
-  } : {};
+  const agentFilters = filters
+    ? {
+        ...(filters.incidentTypes?.length ? { incident_types: filters.incidentTypes } : {}),
+        ...(filters.minSeverity != null ? { min_severity: filters.minSeverity } : {}),
+        ...(filters.maxSeverity != null ? { max_severity: filters.maxSeverity } : {}),
+        ...(filters.itemTypes?.length ? { item_types: filters.itemTypes } : {}),
+      }
+    : {};
   return {
     query,
     ...(topK != null ? { top_k: topK } : {}),
@@ -34,7 +41,10 @@ function fromAgentHit(raw: unknown): EvidenceSearchHit {
   const item = row(hit.item);
   const incident = row(hit.incident);
   const critic = row(hit.critic);
-  const box = Array.isArray(item.bounding_box) && item.bounding_box.length === 4 && item.bounding_box.every((n) => typeof n === 'number') ? (item.bounding_box as [number, number, number, number]) : null;
+  const box =
+    Array.isArray(item.bounding_box) && item.bounding_box.length === 4 && item.bounding_box.every((n) => typeof n === 'number')
+      ? (item.bounding_box as [number, number, number, number])
+      : null;
   const window = Array.isArray(incident.incident_window) ? incident.incident_window : [];
   return {
     resultId: text(hit.result_id),
@@ -63,7 +73,9 @@ function fromAgentHit(raw: unknown): EvidenceSearchHit {
       incidentWindow: [num(window[0]), num(window[1])],
     },
     critic: {
-      verdict: (['confirmed', 'rejected', 'unverified'].includes(text(critic.verdict)) ? critic.verdict : 'unverified') as EvidenceSearchHit['critic']['verdict'],
+      verdict: (['confirmed', 'rejected', 'unverified'].includes(text(critic.verdict))
+        ? critic.verdict
+        : 'unverified') as EvidenceSearchHit['critic']['verdict'],
       confidence: numOrNull(critic.confidence),
       rationale: text(critic.rationale),
     },
@@ -93,7 +105,10 @@ export class AgentSearchRepository implements EvidenceSearchRepository {
 
   async search(request: EvidenceSearchRequest): Promise<EvidenceSearchResult> {
     const response = await fetch(`${this.agentUrl.replace(/\/$/, '')}/api/v1/incidents/search`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toAgentSearchBody(request)), signal: this.signal,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toAgentSearchBody(request)),
+      signal: this.signal,
     });
     return fromAgentSearchResponse(await readUpstream(response, 'Agent /api/v1/incidents/search'));
   }

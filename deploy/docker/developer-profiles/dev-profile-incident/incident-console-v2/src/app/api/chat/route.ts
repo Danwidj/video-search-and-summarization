@@ -9,10 +9,19 @@ import type { ChatMessage } from '@/modules/chat/domain/chat';
 export const maxDuration = 120;
 export async function POST(request: Request) {
   try {
-    const input = (await request.json()) as { messages?: ChatMessage[]; sessionId?: string; incidentId?: string; evidenceCropIds?: string[]; versionId?: number; draftReport?: Record<string, unknown> };
+    const input = (await request.json()) as {
+      messages?: ChatMessage[];
+      sessionId?: string;
+      incidentId?: string;
+      evidenceCropIds?: string[];
+      versionId?: number;
+      draftReport?: Record<string, unknown>;
+    };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
-    if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1)) return NextResponse.json({ error: 'versionId must be a positive integer' }, { status: 400 });
-    if (input.draftReport != null && input.versionId == null) return NextResponse.json({ error: 'A draft report needs the versionId it was edited from' }, { status: 400 });
+    if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1))
+      return NextResponse.json({ error: 'versionId must be a positive integer' }, { status: 400 });
+    if (input.draftReport != null && input.versionId == null)
+      return NextResponse.json({ error: 'A draft report needs the versionId it was edited from' }, { status: 400 });
     const config = getServiceConfiguration();
     if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
     const result = await sendAgentChat(
@@ -20,12 +29,22 @@ export async function POST(request: Request) {
       {
         messages: input.messages,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-        ...(input.incidentId ? { context: { scope: 'incident' as const, incidentId: input.incidentId, ...(input.evidenceCropIds?.length ? { evidenceCropIds: input.evidenceCropIds } : {}) } } : {}),
+        ...(input.incidentId
+          ? {
+              context: {
+                scope: 'incident' as const,
+                incidentId: input.incidentId,
+                ...(input.evidenceCropIds?.length ? { evidenceCropIds: input.evidenceCropIds } : {}),
+              },
+            }
+          : {}),
         ...(input.versionId != null ? { versionId: input.versionId } : {}),
         ...(input.draftReport != null ? { draftReport: input.draftReport } : {}),
       },
       AbortSignal.timeout(115000),
     );
     return NextResponse.json(result);
-  } catch (error) { return errorResponse(error, 'Follow-up chat failed'); }
+  } catch (error) {
+    return errorResponse(error, 'Follow-up chat failed');
+  }
 }

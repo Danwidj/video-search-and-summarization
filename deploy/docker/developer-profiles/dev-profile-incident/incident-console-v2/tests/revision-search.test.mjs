@@ -12,7 +12,11 @@ register('./support/alias-loader.mjs', import.meta.url);
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {},
-    GetObjectCommand: class { constructor(input) { this.input = input; } },
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
     PutObjectCommand: class {},
     HeadObjectCommand: class {},
     DeleteObjectCommand: class {},
@@ -28,12 +32,38 @@ const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
 const AGENT_HIT = {
-  revision_id: 41, video_id: 'v2', revision_no: 3, kind: 'ai', model_run_id: 'm2', title: 'Knife in a shop', description: 'A man holds a knife.',
-  incident_type: 'assault', severity_level: 4, start_seconds: 6, end_seconds: 20, similarity_score: 0.83,
+  revision_id: 41,
+  video_id: 'v2',
+  revision_no: 3,
+  kind: 'ai',
+  model_run_id: 'm2',
+  title: 'Knife in a shop',
+  description: 'A man holds a knife.',
+  incident_type: 'assault',
+  severity_level: 4,
+  start_seconds: 6,
+  end_seconds: 20,
+  similarity_score: 0.83,
 };
 const RPC_ROWS = [
-  { reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road accident', r2Key: 'uploads/sensor-1/video.mp4', outcome: 'valid_after_structural_repair', isOfficial: true },
-  { reportId: 'r2', videoId: 'v2', modelRunId: 'm2', title: 'Knife in a shop', r2Key: 'uploads/sensor-2/video.mp4', outcome: 'legacy', isOfficial: false },
+  {
+    reportId: 'r1',
+    videoId: 'v1',
+    modelRunId: 'm1',
+    title: 'Road accident',
+    r2Key: 'uploads/sensor-1/video.mp4',
+    outcome: 'valid_after_structural_repair',
+    isOfficial: true,
+  },
+  {
+    reportId: 'r2',
+    videoId: 'v2',
+    modelRunId: 'm2',
+    title: 'Knife in a shop',
+    r2Key: 'uploads/sensor-2/video.mp4',
+    outcome: 'legacy',
+    isOfficial: false,
+  },
 ];
 
 /** Routes the stubbed fetch: the RPC returns RPC_ROWS, the agent returns agentResponse (a status and body). */
@@ -43,11 +73,21 @@ function stubUpstream(agentResponse) {
     if (String(url).endsWith('/rpc/list_incident_report_summaries')) {
       const body = JSON.parse(String(init?.body));
       calls.rpc.push(body);
-      return new Response(JSON.stringify({ reports: body.p_search === null ? RPC_ROWS : RPC_ROWS.slice(1), totalItems: body.p_search === null ? RPC_ROWS.length : 1, incidentTypes: ['assault'] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          reports: body.p_search === null ? RPC_ROWS : RPC_ROWS.slice(1),
+          totalItems: body.p_search === null ? RPC_ROWS.length : 1,
+          incidentTypes: ['assault'],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
     }
     if (String(url) === 'https://agent.test/api/v1/incidents/revisions/search') {
       calls.agent.push(JSON.parse(String(init?.body)));
-      return new Response(JSON.stringify(agentResponse.body), { status: agentResponse.status, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(agentResponse.body), {
+        status: agentResponse.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     throw new Error(`unexpected fetch ${url}`);
   };
@@ -74,11 +114,25 @@ afterEach(() => {
 
 test('a revision search becomes the agent body with only what was set, and its hits in camelCase', () => {
   assert.deepEqual(toAgentRevisionSearchBody({ query: 'knife' }), { query: 'knife' });
-  assert.deepEqual(toAgentRevisionSearchBody({ query: 'knife', topK: 50, minSimilarity: 0 }), { query: 'knife', top_k: 50, min_similarity: 0 });
+  assert.deepEqual(toAgentRevisionSearchBody({ query: 'knife', topK: 50, minSimilarity: 0 }), {
+    query: 'knife',
+    top_k: 50,
+    min_similarity: 0,
+  });
   const [hit] = fromAgentRevisionSearchResponse([AGENT_HIT]);
   assert.deepEqual(hit, {
-    revisionId: 41, videoId: 'v2', revisionNo: 3, kind: 'ai', modelRunId: 'm2', title: 'Knife in a shop', description: 'A man holds a knife.',
-    incidentType: 'assault', severityLevel: 4, startSeconds: 6, endSeconds: 20, similarityScore: 0.83,
+    revisionId: 41,
+    videoId: 'v2',
+    revisionNo: 3,
+    kind: 'ai',
+    modelRunId: 'm2',
+    title: 'Knife in a shop',
+    description: 'A man holds a knife.',
+    incidentType: 'assault',
+    severityLevel: 4,
+    startSeconds: 6,
+    endSeconds: 20,
+    similarityScore: 0.83,
   });
   assert.throws(() => fromAgentRevisionSearchResponse({ hits: [] }), /invalid revision search response/);
 });
@@ -95,7 +149,10 @@ test('text search keeps the incidents the agent matched, under the other filters
   assert.equal(calls.rpc[0].p_page_size, 1000);
   assert.equal(calls.rpc[0].p_type, 'assault');
   assert.equal(calls.rpc[0].p_sort, 'oldest');
-  assert.deepEqual(payload.reports.map((report) => report.videoId), ['v2']);
+  assert.deepEqual(
+    payload.reports.map((report) => report.videoId),
+    ['v2'],
+  );
   assert.deepEqual(payload.pagination, { page: 1, pageSize: 6, totalItems: 1, totalPages: 1 });
   assert.equal(payload.searchMode, 'semantic');
 });

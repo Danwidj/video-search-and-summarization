@@ -27,7 +27,12 @@ test('a box without usable geometry gives no region', () => {
 test('a crop region keeps the tile aspect, contains the box and stays inside the frame', () => {
   const frameAspect = 16 / 9;
   const tileAspect = 4 / 3;
-  for (const box of [[400, 400, 600, 500], [0, 0, 100, 60], [900, 940, 1000, 1000], [100, 100, 900, 900]]) {
+  for (const box of [
+    [400, 400, 600, 500],
+    [0, 0, 100, 60],
+    [900, 940, 1000, 1000],
+    [100, 100, 900, 900],
+  ]) {
     const region = cropRegion(box, frameAspect, tileAspect, 0);
     assert.ok(region, JSON.stringify(box));
     assert.ok(Math.abs((region.w * frameAspect) / region.h - tileAspect) < 1e-9, 'not stretched');
@@ -35,7 +40,10 @@ test('a crop region keeps the tile aspect, contains the box and stays inside the
   }
   const small = cropRegion([400, 400, 600, 500], frameAspect, tileAspect, 0);
   const inner = boxRegion([400, 400, 600, 500]);
-  assert.ok(small.x <= inner.x && small.y <= inner.y && small.x + small.w >= inner.x + inner.w && small.y + small.h >= inner.y + inner.h, 'contains the box');
+  assert.ok(
+    small.x <= inner.x && small.y <= inner.y && small.x + small.w >= inner.x + inner.w && small.y + small.h >= inner.y + inner.h,
+    'contains the box',
+  );
 });
 
 test('a box as large as the frame shows the largest region of the tile aspect', () => {
@@ -53,7 +61,11 @@ test('an evidence tile prefers the stored image, then a frame crop, then a place
   assert.equal(evidenceFrameState({ frameSrc: 'https://x/f.jpg', box: null }), 'missing', 'a frame without a box cannot be cropped');
   assert.equal(evidenceFrameState({ pending: true }), 'pending');
   assert.equal(evidenceFrameState({}), 'missing');
-  assert.equal(evidenceFrameState({ src: 'https://x/crop.jpg', failed: true, pending: true }), 'pending', 'a failed image falls back to the placeholder');
+  assert.equal(
+    evidenceFrameState({ src: 'https://x/crop.jpg', failed: true, pending: true }),
+    'pending',
+    'a failed image falls back to the placeholder',
+  );
 });
 
 test('EvidenceFrame and FrameViewer render the states and boxes the report page needs', async () => {

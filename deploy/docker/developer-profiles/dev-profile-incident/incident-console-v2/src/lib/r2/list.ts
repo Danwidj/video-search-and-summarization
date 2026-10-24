@@ -8,7 +8,10 @@ import { isValidR2Key } from '@/lib/r2/key';
 import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 
 /** Every object whose key starts with `prefix`, across all pages of the listing. */
-export async function listR2Objects(config: ServiceConfiguration, prefix: string): Promise<Array<{ key: string; lastModified: Date | null }>> {
+export async function listR2Objects(
+  config: ServiceConfiguration,
+  prefix: string,
+): Promise<Array<{ key: string; lastModified: Date | null }>> {
   const r2 = createR2Configuration(config);
   if (!r2) throw new Error('R2 is not configured');
   if (!isValidR2Key(prefix)) throw new Error('Invalid R2 key prefix');

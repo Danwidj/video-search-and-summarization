@@ -22,7 +22,9 @@ const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const BOUNDED = {
   periodStart: new Date('2026-08-30T00:00:00.000Z'),
@@ -38,11 +40,17 @@ const ALL_TIME = { ...BOUNDED, periodStart: null, periodEnd: null };
 const implementations = {
   memory: () => new InMemoryDashboardRepository(analytics),
   supabase: () => {
-    const db = fakePostgrest({}, {
-      rpc: {
-        get_incident_dashboard: (args) => ({ ...analytics, previous: args.p_period_start === null || args.p_period_end === null ? null : analytics.previous }),
+    const db = fakePostgrest(
+      {},
+      {
+        rpc: {
+          get_incident_dashboard: (args) => ({
+            ...analytics,
+            previous: args.p_period_start === null || args.p_period_end === null ? null : analytics.previous,
+          }),
+        },
       },
-    });
+    );
     globalThis.fetch = db.fetch;
     return new SupabaseDashboardAdapter(new PostgrestClient('https://supabase.test', 'k'));
   },
@@ -62,17 +70,26 @@ for (const [name, make] of Object.entries(implementations)) {
 
 describe('get_incident_dashboard mapping', () => {
   test('the query becomes the seven RPC arguments, with the period as naive UTC', () => {
-    assert.deepEqual(dashboardRpcArgs({ ...BOUNDED, type: 'assault', severity: 'high', dayOfWeek: 2, hour: 23, timezone: 'Asia/Singapore' }), {
-      p_period_start: '2026-08-30T00:00:00.000',
-      p_period_end: '2026-09-29T00:00:00.000',
-      p_type: 'assault',
-      p_severity: 'high',
-      p_day_of_week: 2,
-      p_hour: 23,
-      p_timezone: 'Asia/Singapore',
-    });
+    assert.deepEqual(
+      dashboardRpcArgs({ ...BOUNDED, type: 'assault', severity: 'high', dayOfWeek: 2, hour: 23, timezone: 'Asia/Singapore' }),
+      {
+        p_period_start: '2026-08-30T00:00:00.000',
+        p_period_end: '2026-09-29T00:00:00.000',
+        p_type: 'assault',
+        p_severity: 'high',
+        p_day_of_week: 2,
+        p_hour: 23,
+        p_timezone: 'Asia/Singapore',
+      },
+    );
     assert.deepEqual(dashboardRpcArgs(ALL_TIME), {
-      p_period_start: null, p_period_end: null, p_type: null, p_severity: null, p_day_of_week: null, p_hour: null, p_timezone: 'UTC',
+      p_period_start: null,
+      p_period_end: null,
+      p_type: null,
+      p_severity: null,
+      p_day_of_week: null,
+      p_hour: null,
+      p_timezone: 'UTC',
     });
   });
 
@@ -82,7 +99,9 @@ describe('get_incident_dashboard mapping', () => {
     assert.deepEqual(mapped.videos, { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 });
     assert.equal(mapped.previous, null);
     assert.deepEqual(mapped.revisions, { ai: 0, human: 0 });
-    assert.deepEqual(mapped.types, [{ type: 'assault', count: 0, severity: { low: 0, medium: 0, high: 0 }, entities: [], instruments: [], assets: [] }]);
+    assert.deepEqual(mapped.types, [
+      { type: 'assault', count: 0, severity: { low: 0, medium: 0, high: 0 }, entities: [], instruments: [], assets: [] },
+    ]);
     assert.deepEqual(mapped.heatmap, [{ day: null, hour: null, count: 2 }]);
     assert.deepEqual(mapped.modelCoverage, []);
     assert.deepEqual(dashboardFromRpc(null).trend, []);

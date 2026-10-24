@@ -124,7 +124,10 @@ test('domain, application and section code keep the hexagonal import boundaries'
 test('every import-boundary exception still matches an import', async () => {
   const edges = await importEdges();
   const stale = ALLOWED.filter((entry) => !edges.some((edge) => edge.from === entry.from && edge.to === entry.to));
-  assert.deepEqual(stale.map((entry) => `${entry.from} -> ${entry.to}`), []);
+  assert.deepEqual(
+    stale.map((entry) => `${entry.from} -> ${entry.to}`),
+    [],
+  );
 });
 
 test('the boundary rules catch forbidden imports and allow the shared pure helpers', () => {

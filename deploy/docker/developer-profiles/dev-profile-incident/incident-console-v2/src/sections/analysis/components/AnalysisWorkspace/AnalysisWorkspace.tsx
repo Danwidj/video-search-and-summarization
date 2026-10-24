@@ -71,7 +71,9 @@ export function AnalysisWorkspace() {
         setModel(payload.defaultModel || payload.models?.[0]?.id || '');
       })
       .catch(() => undefined);
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -139,7 +141,10 @@ export function AnalysisWorkspace() {
   const busy = ['uploading', 'preparing', 'analyzing', 'saving'].includes(stage);
 
   return (
-    <section className="relative rounded-[2rem] border border-ink/10 bg-white/80 p-4 shadow-panel backdrop-blur md:p-6" aria-labelledby="upload-title">
+    <section
+      className="relative rounded-[2rem] border border-ink/10 bg-white/80 p-4 shadow-panel backdrop-blur md:p-6"
+      aria-labelledby="upload-title"
+    >
       <input
         accept="video/mp4,video/x-matroska,video/quicktime,video/webm,.mp4,.mkv,.mov,.webm"
         className="sr-only"
@@ -151,13 +156,28 @@ export function AnalysisWorkspace() {
       {models.length > 0 && (
         <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
           {/* The select keeps its natural width (the longest model name) and never shrinks; the note wraps below it instead. */}
-          <label className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3" htmlFor="analysis-model">
+          <label
+            className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3"
+            htmlFor="analysis-model"
+          >
             <span className="whitespace-nowrap">Vision-language model</span>
-            <select className="control normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" disabled={busy} id="analysis-model" onChange={(event) => setModel(event.target.value)} value={model}>
-              {models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            <select
+              className="control normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0"
+              disabled={busy}
+              id="analysis-model"
+              onChange={(event) => setModel(event.target.value)}
+              value={model}
+            >
+              {models.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
-          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">Choose before selecting a video. Analysis can take several minutes.</p>
+          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">
+            Choose before selecting a video. Analysis can take several minutes.
+          </p>
         </div>
       )}
 
@@ -180,20 +200,35 @@ export function AnalysisWorkspace() {
         <button
           className={`block w-full rounded-[1.45rem] border border-dashed px-6 py-16 text-center transition sm:px-10 sm:py-24 ${dragging ? 'border-signal bg-signal/10' : 'border-ink/20 bg-[#e9eee5] hover:border-moss/50'}`}
           onClick={() => inputRef.current?.click()}
-          onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
           onDragLeave={() => setDragging(false)}
           onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => { event.preventDefault(); setDragging(false); chooseFile(event.dataTransfer.files[0] || null); }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            chooseFile(event.dataTransfer.files[0] || null);
+          }}
           type="button"
         >
           <span className="upload-orbit mx-auto grid h-20 w-20 place-items-center rounded-full border border-moss/20 bg-white shadow-lg shadow-moss/10">
             <svg aria-hidden="true" className="h-8 w-8 text-moss" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 007.5 20h9a2.5 2.5 0 002.5-2.5v-3" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 007.5 20h9a2.5 2.5 0 002.5-2.5v-3"
+              />
             </svg>
           </span>
           <span className="mt-7 block font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-moss">New analysis</span>
-          <span className="mt-3 block text-2xl font-semibold tracking-tight" id="upload-title">Drop a video here</span>
-          <span className="mx-auto mt-3 block max-w-sm text-sm leading-6 text-ink/55">MP4, MKV, MOV, or WebM. Analysis starts automatically after selection.</span>
+          <span className="mt-3 block text-2xl font-semibold tracking-tight" id="upload-title">
+            Drop a video here
+          </span>
+          <span className="mx-auto mt-3 block max-w-sm text-sm leading-6 text-ink/55">
+            MP4, MKV, MOV, or WebM. Analysis starts automatically after selection.
+          </span>
         </button>
       )}
 
@@ -205,7 +240,10 @@ export function AnalysisWorkspace() {
                 const done = stage === 'complete' || index < activeIndex;
                 const active = index === activeIndex;
                 return (
-                  <li className={`rounded-xl border px-3 py-3 text-xs ${done ? 'border-signal/30 bg-signal/10 text-moss' : active ? 'border-moss/30 bg-moss/5 text-moss' : 'border-ink/8 text-ink/35'}`} key={item.key}>
+                  <li
+                    className={`rounded-xl border px-3 py-3 text-xs ${done ? 'border-signal/30 bg-signal/10 text-moss' : active ? 'border-moss/30 bg-moss/5 text-moss' : 'border-ink/8 text-ink/35'}`}
+                    key={item.key}
+                  >
                     <span className="mb-2 block font-mono">{done ? '✓' : String(index + 1).padStart(2, '0')}</span>
                     {item.label}
                   </li>
@@ -230,7 +268,15 @@ export function AnalysisWorkspace() {
             >
               {busy ? stageLabels.find((item) => item.key === stage)?.label : stage === 'error' ? 'Retry analysis' : 'Analyze video'}
             </button>
-            {busy && <button className="rounded-full border border-ink/15 px-5 text-sm font-semibold" onClick={() => abortRef.current?.abort()} type="button">Cancel</button>}
+            {busy && (
+              <button
+                className="rounded-full border border-ink/15 px-5 text-sm font-semibold"
+                onClick={() => abortRef.current?.abort()}
+                type="button"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </div>
       )}

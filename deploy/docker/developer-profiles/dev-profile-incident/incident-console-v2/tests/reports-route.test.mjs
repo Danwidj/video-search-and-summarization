@@ -11,7 +11,11 @@ register('./support/alias-loader.mjs', import.meta.url);
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {},
-    GetObjectCommand: class { constructor(input) { this.input = input; } },
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
     PutObjectCommand: class {},
     HeadObjectCommand: class {},
     DeleteObjectCommand: class {},
@@ -48,17 +52,40 @@ test('report library requests one filtered six-item summary page without video U
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), 'https://supabase.test/rest/v1/rpc/list_incident_report_summaries');
     rpcBody = JSON.parse(String(init?.body));
-    return new Response(JSON.stringify({
-      reports: [
-        { reportId: 'r1', videoId: 'v1', modelRunId: 'm1', title: 'Road Accident report', r2Key: 'uploads/sensor-1/video.mp4', outcome: 'valid_after_structural_repair', isOfficial: true },
-        { reportId: 'r2', videoId: 'v2', modelRunId: 'm2', title: 'Older report', r2Key: 'uploads/sensor-2/video.mp4', outcome: 'legacy', isOfficial: false },
-      ],
-      totalItems: 13,
-      incidentTypes: ['road accident'],
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(
+      JSON.stringify({
+        reports: [
+          {
+            reportId: 'r1',
+            videoId: 'v1',
+            modelRunId: 'm1',
+            title: 'Road Accident report',
+            r2Key: 'uploads/sensor-1/video.mp4',
+            outcome: 'valid_after_structural_repair',
+            isOfficial: true,
+          },
+          {
+            reportId: 'r2',
+            videoId: 'v2',
+            modelRunId: 'm2',
+            title: 'Older report',
+            r2Key: 'uploads/sensor-2/video.mp4',
+            outcome: 'legacy',
+            isOfficial: false,
+          },
+        ],
+        totalItems: 13,
+        incidentTypes: ['road accident'],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
   };
 
-  const response = await GET(new Request('http://localhost/api/reports?page=2&severity=high&entity=person&entity=red%20jacket&instrument=knife&asset=door&after=2026-09-01T00%3A00%3A00&before=2026-09-27T23%3A59%3A59.999&fromTime=08%3A00&toTime=17%3A30&day=1&sort=newest'));
+  const response = await GET(
+    new Request(
+      'http://localhost/api/reports?page=2&severity=high&entity=person&entity=red%20jacket&instrument=knife&asset=door&after=2026-09-01T00%3A00%3A00&before=2026-09-27T23%3A59%3A59.999&fromTime=08%3A00&toTime=17%3A30&day=1&sort=newest',
+    ),
+  );
   const payload = await response.json();
 
   assert.equal(response.status, 200);
@@ -96,7 +123,10 @@ test('report library accepts timezone parameter and rejects invalid timezone', a
   assert.equal(rpcBody.p_timezone, 'Asia/Singapore');
 
   let called = false;
-  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response('{}');
+  };
   const badTz = await GET(new Request('http://localhost/api/reports?timezone=Invalid%2FTimezone'));
   assert.equal(badTz.status, 400);
   assert.equal(called, false);
@@ -121,7 +151,10 @@ test('a dashboard heatmap link filters the reports RPC by the same weekday and w
 
 test('report library rejects excessive evidence filters before calling Supabase', async () => {
   let called = false;
-  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response('{}');
+  };
   const params = new URLSearchParams();
   for (let index = 0; index < 11; index += 1) params.append('entity', `entity-${index}`);
   const response = await GET(new Request(`http://localhost/api/reports?${params}`));
@@ -131,7 +164,10 @@ test('report library rejects excessive evidence filters before calling Supabase'
 
 test('report library rejects a severity that could make the RPC cast fail', async () => {
   let called = false;
-  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response('{}');
+  };
   const response = await GET(new Request('http://localhost/api/reports?severity=urgent'));
   assert.equal(response.status, 400);
   assert.equal(called, false);
@@ -147,7 +183,10 @@ test('report library accepts severity bands and rejects an invalid weekday', asy
   assert.equal(rpcBody.p_severity, 'medium');
   assert.equal(rpcBody.p_day_of_week, 6);
   let called = false;
-  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response('{}');
+  };
   assert.equal((await GET(new Request('http://localhost/api/reports?day=7'))).status, 400);
   assert.equal(called, false);
 });
@@ -174,8 +213,15 @@ test('thumbnail capture samples exactly one quarter into the video', () => {
 
 test('dashboard links: official scope, exact evidence names and entity types reach the RPC; invalid values are refused', async () => {
   let rpcBody;
-  globalThis.fetch = async (_url, init) => { rpcBody = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] })); };
-  const ok = await GET(new Request('http://localhost/api/reports?scope=official&type=burglary&entityType=human&entityType=Animal&instrument=knife&match=exact&after=2026-09-01T00%3A00%3A00&before=2026-09-28T00%3A00%3A00'));
+  globalThis.fetch = async (_url, init) => {
+    rpcBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ reports: [], totalItems: 0, incidentTypes: [] }));
+  };
+  const ok = await GET(
+    new Request(
+      'http://localhost/api/reports?scope=official&type=burglary&entityType=human&entityType=Animal&instrument=knife&match=exact&after=2026-09-01T00%3A00%3A00&before=2026-09-28T00%3A00%3A00',
+    ),
+  );
   assert.equal(ok.status, 200);
   assert.equal(rpcBody.p_scope, 'official');
   assert.equal(rpcBody.p_type, 'burglary');

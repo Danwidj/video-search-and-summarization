@@ -56,7 +56,10 @@ export class AgentRevisionSearchRepository implements RevisionSearchRepository {
 
   async search(request: RevisionSearchRequest): Promise<RevisionSearchHit[]> {
     const response = await fetch(`${this.agentUrl.replace(/\/$/, '')}/api/v1/incidents/revisions/search`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toAgentRevisionSearchBody(request)), signal: this.signal,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toAgentRevisionSearchBody(request)),
+      signal: this.signal,
     });
     return fromAgentRevisionSearchResponse(await readUpstream(response, 'Agent /api/v1/incidents/revisions/search'));
   }

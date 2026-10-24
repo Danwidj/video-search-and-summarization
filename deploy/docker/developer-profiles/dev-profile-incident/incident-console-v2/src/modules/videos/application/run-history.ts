@@ -36,15 +36,22 @@ function fromNotes(entry: RunHistoryEntry, notes: unknown): RunHistoryEntry {
       source: 'console',
       attemptedAt: parsed.attemptedAt ?? entry.attemptedAt,
       additionalInstruction: parsed.request.additionalInstruction ?? null,
-      repair: parsed.status === 'valid_after_structural_repair' && parsed.repair
-        ? { ruleSet: String(parsed.repair.ruleSet ?? ''), operations: Array.isArray(parsed.repair.operations) ? (parsed.repair.operations as Array<Record<string, unknown>>) : [] }
-        : null,
+      repair:
+        parsed.status === 'valid_after_structural_repair' && parsed.repair
+          ? {
+              ruleSet: String(parsed.repair.ruleSet ?? ''),
+              operations: Array.isArray(parsed.repair.operations) ? (parsed.repair.operations as Array<Record<string, unknown>>) : [],
+            }
+          : null,
       enrichmentIssues: [...new Set(parsed.enrichment.map((violation) => violation.code))],
     };
   }
   if (parsed.kind === 'failed-attempt') {
     const violations = parsed.validation.firstPass.map((violation) => ({ code: violation.code, message: violation.message }));
-    const revalidation = parsed.repair && Array.isArray(parsed.repair.revalidation) ? (parsed.repair.revalidation as Array<{ code: string; message: string }>) : [];
+    const revalidation =
+      parsed.repair && Array.isArray(parsed.repair.revalidation)
+        ? (parsed.repair.revalidation as Array<{ code: string; message: string }>)
+        : [];
     return {
       ...entry,
       outcome: parsed.status,
@@ -64,7 +71,6 @@ function fromNotes(entry: RunHistoryEntry, notes: unknown): RunHistoryEntry {
   // no notes: a successful earlier analysis whose outcome was not recorded.
   return { ...entry, outcome: 'legacy', outcomeInferred: true, source: parsed.kind === 'legacy' ? 'console' : entry.source };
 }
-
 
 export function buildRunHistory(inputs: HistoryInputs): { runs: RunHistoryEntry[]; counts: OutcomeCounts } {
   const runs: RunHistoryEntry[] = [];
@@ -112,7 +118,15 @@ export function buildRunHistory(inputs: HistoryInputs): { runs: RunHistoryEntry[
   }
 
   runs.sort((a, b) => (b.attemptedAt ?? '').localeCompare(a.attemptedAt ?? '') || a.modelRunId.localeCompare(b.modelRunId));
-  const counts: OutcomeCounts = { attempts: runs.length, withReport: 0, valid_first_pass: 0, valid_after_structural_repair: 0, contract_failed: 0, request_failed: 0, legacy: 0 };
+  const counts: OutcomeCounts = {
+    attempts: runs.length,
+    withReport: 0,
+    valid_first_pass: 0,
+    valid_after_structural_repair: 0,
+    contract_failed: 0,
+    request_failed: 0,
+    legacy: 0,
+  };
   for (const run of runs) {
     counts[run.outcome] += 1;
     if (run.revision) counts.withReport += 1;

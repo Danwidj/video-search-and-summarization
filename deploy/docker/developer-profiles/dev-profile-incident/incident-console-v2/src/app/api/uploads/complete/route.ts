@@ -12,15 +12,12 @@ export async function POST(request: Request) {
     const config = getServiceConfiguration();
     if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
 
-    const response = await fetch(
-      `${config.agentUrl.replace(/\/$/, '')}/api/v1/videos/${encodeURIComponent(sensorId)}/complete`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename }),
-        cache: 'no-store',
-      },
-    );
+    const response = await fetch(`${config.agentUrl.replace(/\/$/, '')}/api/v1/videos/${encodeURIComponent(sensorId)}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+      cache: 'no-store',
+    });
     const payload = await readUpstream(response, 'Video upload completion');
     return NextResponse.json(payload);
   } catch (error) {

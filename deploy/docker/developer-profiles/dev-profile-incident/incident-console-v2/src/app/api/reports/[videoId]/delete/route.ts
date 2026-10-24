@@ -15,10 +15,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ vid
   try {
     const { videoId } = await context.params;
     const config = getServiceConfiguration();
-    await deleteVideoAndReports(getDbAdapters(config).videos, videoId, (storageKey: string) => Promise.all([
-      deleteR2Video(config, storageKey),
-      deleteR2Video(config, thumbnailKeyForVideo(storageKey)),
-    ]));
+    await deleteVideoAndReports(getDbAdapters(config).videos, videoId, (storageKey: string) =>
+      Promise.all([deleteR2Video(config, storageKey), deleteR2Video(config, thumbnailKeyForVideo(storageKey))]),
+    );
     return NextResponse.json({ deleted: true });
   } catch (error) {
     return errorResponse(error, 'Could not delete the video');

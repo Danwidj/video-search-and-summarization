@@ -45,10 +45,29 @@ export interface AttemptAudit {
 }
 
 export type RunNotes =
-  | ({ kind: 'contract'; status: ValidStatus; contractVersion: string; videoId: string | null; attemptedAt: string | null; report: DerivedContractReport; request: ContractRunRequest; response: ContractRunResponse;
-    /** Violations confined to the unscored enrichment fields of the stored report (e.g. the timeline); the report itself is unaltered. */
-    enrichment: ContractViolation[] } & AttemptAudit)
-  | ({ kind: 'failed-attempt'; status: FailedStatus; contractVersion: string; videoId: string | null; attemptedAt: string | null; stage: string | null; failure: { code: string; message: string } | null; request: ContractRunRequest; response: ContractRunResponse | null } & AttemptAudit)
+  | ({
+      kind: 'contract';
+      status: ValidStatus;
+      contractVersion: string;
+      videoId: string | null;
+      attemptedAt: string | null;
+      report: DerivedContractReport;
+      request: ContractRunRequest;
+      response: ContractRunResponse;
+      /** Violations confined to the unscored enrichment fields of the stored report (e.g. the timeline); the report itself is unaltered. */
+      enrichment: ContractViolation[];
+    } & AttemptAudit)
+  | ({
+      kind: 'failed-attempt';
+      status: FailedStatus;
+      contractVersion: string;
+      videoId: string | null;
+      attemptedAt: string | null;
+      stage: string | null;
+      failure: { code: string; message: string } | null;
+      request: ContractRunRequest;
+      response: ContractRunResponse | null;
+    } & AttemptAudit)
   | { kind: 'invalid-contract'; contractVersion: string; error: string; request: ContractRunRequest; response: ContractRunResponse }
   | { kind: 'legacy'; report: LegacyAnalysisReport; rawModelOutput?: string; legacyReviewerEdits?: Record<string, unknown> }
   | { kind: 'none' };
@@ -123,17 +142,27 @@ export function parseRunNotes(notes: unknown): RunNotes {
     if (rawStatus === 'contract_failed' || rawStatus === 'request_failed') {
       const failure = asObject(wrapper.failure);
       return {
-        kind: 'failed-attempt', status: rawStatus, contractVersion: wrapper.contractVersion,
+        kind: 'failed-attempt',
+        status: rawStatus,
+        contractVersion: wrapper.contractVersion,
         videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null,
         attemptedAt: typeof wrapper.attemptedAt === 'string' ? wrapper.attemptedAt : null,
         stage: typeof wrapper.stage === 'string' ? wrapper.stage : null,
         failure: failure && typeof failure.code === 'string' ? { code: failure.code, message: String(failure.message ?? '') } : null,
-        request, response: asObject(wrapper.response) ? response : null, ...audit,
+        request,
+        response: asObject(wrapper.response) ? response : null,
+        ...audit,
       };
     }
     const status: ValidStatus = rawStatus === 'valid_after_structural_repair' ? 'valid_after_structural_repair' : 'valid_first_pass';
     if (rawStatus !== null && rawStatus !== 'valid_first_pass' && rawStatus !== 'valid_after_structural_repair') {
-      return { kind: 'invalid-contract', contractVersion: wrapper.contractVersion, error: `unknown attempt status ${rawStatus}`, request, response };
+      return {
+        kind: 'invalid-contract',
+        contractVersion: wrapper.contractVersion,
+        error: `unknown attempt status ${rawStatus}`,
+        request,
+        response,
+      };
     }
     const stored = asObject(wrapper.report);
     const incident = asObject(stored?.incident);
@@ -148,13 +177,35 @@ export function parseRunNotes(notes: unknown): RunNotes {
       const videoDurationSeconds = typeof request.videoDurationSeconds === 'number' ? request.videoDurationSeconds : null;
       const { report, enrichment } = validateCore(
         { ...stored, incident: modelIncident },
-        { videoDurationSeconds, contractVersion: wrapper.contractVersion }
+        { videoDurationSeconds, contractVersion: wrapper.contractVersion },
       );
       const expected = report.incident.end_timestamp - report.incident.start_timestamp;
       if (duration !== expected) throw new Error(`stored incident.duration ${String(duration)} is not ${expected}`);
-      return { kind: 'contract', status, contractVersion: wrapper.contractVersion, videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null, attemptedAt: typeof wrapper.attemptedAt === 'string' ? wrapper.attemptedAt : typeof wrapper.generatedAt === 'string' ? wrapper.generatedAt : null, report: { ...report, incident: { ...report.incident, duration: expected } }, request, response, enrichment, ...audit };
+      return {
+        kind: 'contract',
+        status,
+        contractVersion: wrapper.contractVersion,
+        videoId: typeof wrapper.videoId === 'string' ? wrapper.videoId : null,
+        attemptedAt:
+          typeof wrapper.attemptedAt === 'string'
+            ? wrapper.attemptedAt
+            : typeof wrapper.generatedAt === 'string'
+              ? wrapper.generatedAt
+              : null,
+        report: { ...report, incident: { ...report.incident, duration: expected } },
+        request,
+        response,
+        enrichment,
+        ...audit,
+      };
     } catch (error) {
-      return { kind: 'invalid-contract', contractVersion: wrapper.contractVersion, error: error instanceof Error ? error.message : String(error), request, response };
+      return {
+        kind: 'invalid-contract',
+        contractVersion: wrapper.contractVersion,
+        error: error instanceof Error ? error.message : String(error),
+        request,
+        response,
+      };
     }
   }
 

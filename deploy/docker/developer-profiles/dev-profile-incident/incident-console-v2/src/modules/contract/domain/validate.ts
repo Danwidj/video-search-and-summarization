@@ -91,14 +91,22 @@ export function videoBoundsViolations(report: IncidentContractReport, videoDurat
   for (const key of ['start_timestamp', 'end_timestamp'] as const) {
     const value = report.incident[key];
     if (!timestampWithinVideo(value, videoDurationSeconds)) {
-      violations.push({ code: 'WINDOW_BEYOND_VIDEO', path: `incident/${key}`, message: `${key} ${value} is outside the ${length} s video` });
+      violations.push({
+        code: 'WINDOW_BEYOND_VIDEO',
+        path: `incident/${key}`,
+        message: `${key} ${value} is outside the ${length} s video`,
+      });
     }
   }
   report.timeline.forEach((event, index) => {
     for (const key of ['start_seconds', 'end_seconds'] as const) {
       const value = event[key];
       if (value !== null && !timestampWithinVideo(value, videoDurationSeconds)) {
-        violations.push({ code: 'TIMELINE_BEYOND_VIDEO', path: `timeline/${index}/${key}`, message: `timeline[${index}].${key} ${value} is outside the ${length} s video` });
+        violations.push({
+          code: 'TIMELINE_BEYOND_VIDEO',
+          path: `timeline/${index}/${key}`,
+          message: `timeline[${index}].${key} ${value} is outside the ${length} s video`,
+        });
       }
     }
   });
@@ -149,8 +157,8 @@ export function validator(version = 'incident-contract-v4'): ValidateFunction {
     // strict:false only relaxes Ajv's authoring lint (e.g. minimum on a
     // ["number","null"] union); validation semantics are standard draft 2020-12.
     const ajv = new Ajv2020({ allErrors: true, strict: false });
-    const targetSchema = version === 'incident-contract-v2' ? olderSchema(V2_FIELDS)
-      : version === 'incident-contract-v3' ? olderSchema(V3_FIELDS) : schema();
+    const targetSchema =
+      version === 'incident-contract-v2' ? olderSchema(V2_FIELDS) : version === 'incident-contract-v3' ? olderSchema(V3_FIELDS) : schema();
     v = ajv.compile(targetSchema);
     compiledValidators.set(version, v);
   }
@@ -159,11 +167,12 @@ export function validator(version = 'incident-contract-v4'): ValidateFunction {
 
 function schemaViolation(error: ErrorObject): ContractViolation {
   const location = error.instancePath ? error.instancePath.slice(1) : '<root>';
-  const extra = error.keyword === 'additionalProperties'
-    ? ` (${String((error.params as { additionalProperty?: string }).additionalProperty)})`
-    : error.keyword === 'enum'
-      ? ` (${JSON.stringify((error.params as { allowedValues?: unknown }).allowedValues)})`
-      : '';
+  const extra =
+    error.keyword === 'additionalProperties'
+      ? ` (${String((error.params as { additionalProperty?: string }).additionalProperty)})`
+      : error.keyword === 'enum'
+        ? ` (${JSON.stringify((error.params as { allowedValues?: unknown }).allowedValues)})`
+        : '';
   return { code: 'SCHEMA_VIOLATION', path: location, message: `${location}: ${error.message ?? error.keyword}${extra}` };
 }
 
@@ -190,7 +199,11 @@ export function crossFieldViolations(report: IncidentContractReport): ContractVi
   const entityIds = new Set(report.entities.map((item) => item.entity_id));
   report.instruments.forEach((instrument, index) => {
     if (instrument.entity_id !== null && !entityIds.has(instrument.entity_id)) {
-      add('INSTRUMENT_HOLDER_UNKNOWN', `instruments/${index}/entity_id`, `${instrument.instrument_id} references unknown entity_id ${instrument.entity_id}`);
+      add(
+        'INSTRUMENT_HOLDER_UNKNOWN',
+        `instruments/${index}/entity_id`,
+        `${instrument.instrument_id} references unknown entity_id ${instrument.entity_id}`,
+      );
     }
   });
 
@@ -198,10 +211,18 @@ export function crossFieldViolations(report: IncidentContractReport): ContractVi
   report.timeline.forEach((event, index) => {
     const { start_seconds: eventStart, end_seconds: eventEnd } = event;
     if (eventStart < start || eventStart > end) {
-      add('TIMELINE_START_OUTSIDE_WINDOW', `timeline/${index}/start_seconds`, `timeline[${index}].start_seconds ${eventStart} is outside [${start}, ${end}]`);
+      add(
+        'TIMELINE_START_OUTSIDE_WINDOW',
+        `timeline/${index}/start_seconds`,
+        `timeline[${index}].start_seconds ${eventStart} is outside [${start}, ${end}]`,
+      );
     }
     if (eventEnd !== null && (eventEnd < eventStart || eventEnd > end)) {
-      add('TIMELINE_END_OUTSIDE_WINDOW', `timeline/${index}/end_seconds`, `timeline[${index}].end_seconds ${eventEnd} is outside [${eventStart}, ${end}]`);
+      add(
+        'TIMELINE_END_OUTSIDE_WINDOW',
+        `timeline/${index}/end_seconds`,
+        `timeline[${index}].end_seconds ${eventEnd} is outside [${eventStart}, ${end}]`,
+      );
     }
     if (previousStart !== null && eventStart < previousStart) {
       add('TIMELINE_NOT_CHRONOLOGICAL', `timeline/${index}`, `timeline[${index}] is not in chronological order`);
@@ -220,9 +241,17 @@ export function missingItemFields(payload: Record<string, unknown>): ContractVio
   const contract = schema() as { properties: Record<string, { items: { required: string[] } }> };
   return ['entities', 'instruments', 'assets'].flatMap((collection) => {
     const items = Array.isArray(payload[collection]) ? (payload[collection] as Array<Record<string, unknown>>) : [];
-    return items.flatMap((item, index) => contract.properties[collection].items.required
-      .filter((field) => item?.[field] === undefined)
-      .map((field): ContractViolation => ({ code: 'SCHEMA_VIOLATION', path: `${collection}/${index}/${field}`, message: `${collection}/${index}: must have required property '${field}'` })));
+    return items.flatMap((item, index) =>
+      contract.properties[collection].items.required
+        .filter((field) => item?.[field] === undefined)
+        .map(
+          (field): ContractViolation => ({
+            code: 'SCHEMA_VIOLATION',
+            path: `${collection}/${index}/${field}`,
+            message: `${collection}/${index}: must have required property '${field}'`,
+          }),
+        ),
+    );
   });
 }
 
@@ -235,9 +264,7 @@ export function crossFieldErrors(report: IncidentContractReport): string[] {
 export function validateReport(report: unknown, version = 'incident-contract-v4'): IncidentContractReport {
   const validate = validator(version);
   if (!validate(report)) {
-    const violations = [...(validate.errors ?? [])]
-      .sort((a, b) => a.instancePath.localeCompare(b.instancePath))
-      .map(schemaViolation);
+    const violations = [...(validate.errors ?? [])].sort((a, b) => a.instancePath.localeCompare(b.instancePath)).map(schemaViolation);
     throw new ContractError(`schema violation: ${violations.map((v) => v.message).join('; ')}`, violations);
   }
   const typed = report as IncidentContractReport;
@@ -265,9 +292,7 @@ export interface CoreValidation {
 export function validateCore(report: unknown, context?: ValidationContext): CoreValidation {
   const validate = validator(context?.contractVersion);
   if (!validate(report)) {
-    const violations = [...(validate.errors ?? [])]
-      .sort((a, b) => a.instancePath.localeCompare(b.instancePath))
-      .map(schemaViolation);
+    const violations = [...(validate.errors ?? [])].sort((a, b) => a.instancePath.localeCompare(b.instancePath)).map(schemaViolation);
     throw new ContractError(`schema violation: ${violations.map((v) => v.message).join('; ')}`, violations);
   }
   const typed = report as IncidentContractReport;
@@ -293,7 +318,8 @@ export function withDerivedFields(report: IncidentContractReport): DerivedContra
 
 /** Strict JSON decoding of a model's message content (no fence stripping or brace extraction). */
 export function decodeContent(content: string | null | undefined): unknown {
-  if (!content) throw new ContractError('empty response content', [{ code: 'EMPTY_CONTENT', path: '<root>', message: 'empty response content' }]);
+  if (!content)
+    throw new ContractError('empty response content', [{ code: 'EMPTY_CONTENT', path: '<root>', message: 'empty response content' }]);
   try {
     return JSON.parse(content);
   } catch (error) {

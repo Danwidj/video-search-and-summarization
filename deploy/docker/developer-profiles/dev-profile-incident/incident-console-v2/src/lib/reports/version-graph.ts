@@ -38,7 +38,9 @@ export function layoutVersions(revisions: RevisionSummary[]): { rows: VersionGra
   const rows = revisions.map((revision, index) => ({
     revision,
     lane: laneOf.get(revision.revisionId)!,
-    segments: [...extent].filter(([, { first, last }]) => index >= first && index <= last).map(([lane, { first, last }]) => ({ lane, fromAbove: index > first, toBelow: index < last })),
+    segments: [...extent]
+      .filter(([, { first, last }]) => index >= first && index <= last)
+      .map(([lane, { first, last }]) => ({ lane, fromAbove: index > first, toBelow: index < last })),
   }));
   return { rows, laneCount };
 }

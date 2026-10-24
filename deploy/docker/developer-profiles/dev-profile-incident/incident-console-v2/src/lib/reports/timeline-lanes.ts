@@ -35,7 +35,12 @@ function validSpan(start: number | null, end: number | null): { start: number; e
 
 export function buildTimelineLanes({ entities, instruments, assets }: Structured): TimelineLane[] {
   const holders = new Set(entities.map((entity) => entity.entityId));
-  const instrumentMarker = (instrument: Structured['instruments'][number]): LaneMarker => ({ id: instrument.instrumentId, kind: 'instrument', label: instrument.name, seconds: instrument.timestampSeconds });
+  const instrumentMarker = (instrument: Structured['instruments'][number]): LaneMarker => ({
+    id: instrument.instrumentId,
+    kind: 'instrument',
+    label: instrument.name,
+    seconds: instrument.timestampSeconds,
+  });
 
   const lanes: TimelineLane[] = entities.map((entity) => ({
     id: entity.entityId,
@@ -50,8 +55,24 @@ export function buildTimelineLanes({ entities, instruments, assets }: Structured
   }));
 
   const unheld = instruments.filter((instrument) => !instrument.entityId || !holders.has(instrument.entityId));
-  if (unheld.length) lanes.push({ id: 'unknown-holder', kind: 'unknown-holder', title: 'Holder unknown', span: null, markers: unheld.map(instrumentMarker), imageUrl: null });
-  if (assets.length) lanes.push({ id: 'assets', kind: 'assets', title: 'Assets', span: null, markers: assets.map((asset) => ({ id: asset.assetId, kind: 'asset', label: asset.name, seconds: asset.timestampSeconds })), imageUrl: null });
+  if (unheld.length)
+    lanes.push({
+      id: 'unknown-holder',
+      kind: 'unknown-holder',
+      title: 'Holder unknown',
+      span: null,
+      markers: unheld.map(instrumentMarker),
+      imageUrl: null,
+    });
+  if (assets.length)
+    lanes.push({
+      id: 'assets',
+      kind: 'assets',
+      title: 'Assets',
+      span: null,
+      markers: assets.map((asset) => ({ id: asset.assetId, kind: 'asset', label: asset.name, seconds: asset.timestampSeconds })),
+      imageUrl: null,
+    });
   return lanes;
 }
 

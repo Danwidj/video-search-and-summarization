@@ -84,6 +84,8 @@ export function reportListFromRpc(value: unknown): ReportList {
   return {
     items: Array.isArray(result.reports) ? result.reports.map((item) => reportSummary(asRow(item))) : [],
     totalItems: typeof result.totalItems === 'number' ? result.totalItems : 0,
-    incidentTypes: Array.isArray(result.incidentTypes) ? result.incidentTypes.filter((type): type is string => typeof type === 'string') : [],
+    incidentTypes: Array.isArray(result.incidentTypes)
+      ? result.incidentTypes.filter((type): type is string => typeof type === 'string')
+      : [],
   };
 }

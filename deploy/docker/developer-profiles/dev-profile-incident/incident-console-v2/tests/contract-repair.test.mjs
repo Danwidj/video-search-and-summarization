@@ -31,7 +31,8 @@ function assertOnlyIdsChanged(before, after) {
   assert.deepEqual(after.incident, before.incident);
   assert.deepEqual(after.timeline, before.timeline);
   assert.deepEqual(after.uncertainties, before.uncertainties);
-  const content = (items, drop) => items.map((item) => JSON.stringify(Object.fromEntries(Object.entries(item).filter(([key]) => !drop.includes(key))))).sort();
+  const content = (items, drop) =>
+    items.map((item) => JSON.stringify(Object.fromEntries(Object.entries(item).filter(([key]) => !drop.includes(key))))).sort();
   assert.deepEqual(content(after.entities, ['entity_id']), content(before.entities, ['entity_id']));
   assert.deepEqual(content(after.instruments, ['instrument_id', 'entity_id']), content(before.instruments, ['instrument_id', 'entity_id']));
   assert.deepEqual(content(after.assets, ['asset_id']), content(before.assets, ['asset_id']));
@@ -50,10 +51,13 @@ test('real Nemotron response (E2,E1 and instrument id ",") is repaired by reorde
   assert.deepEqual(outcome.repair.revalidation, []);
   const original = JSON.parse(rawContent);
   assertOnlyIdsChanged(original, outcome.report);
-  assert.deepEqual(outcome.report.entities.map((e) => [e.entity_id, e.description]), [
-    ['E1', 'Person attacking victim with object'],
-    ['E2', 'Person walking on sidewalk, becomes victim of assault'],
-  ]);
+  assert.deepEqual(
+    outcome.report.entities.map((e) => [e.entity_id, e.description]),
+    [
+      ['E1', 'Person attacking victim with object'],
+      ['E2', 'Person walking on sidewalk, becomes victim of assault'],
+    ],
+  );
   assert.equal(outcome.report.instruments.find((i) => i.name === 'bag').entity_id, 'E1', 'the bag is still held by the attacker');
 });
 
@@ -63,7 +67,10 @@ test('real Cosmos Super response (timeline outside the incident window) is valid
   assert.equal(outcome.kind, 'valid');
   assert.equal(outcome.repair, null, 'an unscored-field problem never triggers repair');
   assert.equal(outcome.fullContractValid, false);
-  assert.deepEqual([...new Set(outcome.firstPass.map((v) => v.code))].sort(), ['TIMELINE_END_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+  assert.deepEqual([...new Set(outcome.firstPass.map((v) => v.code))].sort(), [
+    'TIMELINE_END_OUTSIDE_WINDOW',
+    'TIMELINE_START_OUTSIDE_WINDOW',
+  ]);
   assert.ok(outcome.firstPass.every((v) => v.scope === 'enrichment'));
   assert.deepEqual(outcome.report, JSON.parse(rawContent), 'the report, timeline included, is exactly the model output');
 });
@@ -75,8 +82,18 @@ test('ID repair considers core violations only: an inconsistent timeline neither
   const outcome = evaluateContent(JSON.stringify(report));
   assert.equal(outcome.kind, 'valid');
   assert.equal(outcome.repair.eligible, true);
-  assert.deepEqual(outcome.firstPass.map((v) => [v.code, v.scope]), [['ID_NOT_SEQUENTIAL_ENTITY', 'core'], ['TIMELINE_END_OUTSIDE_WINDOW', 'enrichment']]);
-  assert.deepEqual(outcome.repair.revalidation.map((v) => v.code), ['TIMELINE_END_OUTSIDE_WINDOW'], 'the enrichment issue remains, recorded');
+  assert.deepEqual(
+    outcome.firstPass.map((v) => [v.code, v.scope]),
+    [
+      ['ID_NOT_SEQUENTIAL_ENTITY', 'core'],
+      ['TIMELINE_END_OUTSIDE_WINDOW', 'enrichment'],
+    ],
+  );
+  assert.deepEqual(
+    outcome.repair.revalidation.map((v) => v.code),
+    ['TIMELINE_END_OUTSIDE_WINDOW'],
+    'the enrichment issue remains, recorded',
+  );
   assert.equal(outcome.report.timeline[1].end_seconds, 99, 'the timeline is not altered');
   assertOnlyIdsChanged(report, outcome.report);
 });
@@ -147,8 +164,12 @@ test('an out-of-range well-formed ID is renamed only when neither it nor its tar
 function withoutIdMentions(report) {
   const scrub = (text) => text.replace(/\b[EIA][0-9]+\b/g, 'someone');
   report.incident.description = scrub(report.incident.description);
-  report.assets.forEach((asset) => { asset.description = scrub(asset.description); });
-  report.timeline.forEach((event) => { event.description = scrub(event.description); });
+  report.assets.forEach((asset) => {
+    asset.description = scrub(asset.description);
+  });
+  report.timeline.forEach((event) => {
+    event.description = scrub(event.description);
+  });
   report.uncertainties = report.uncertainties.map(scrub);
   return report;
 }
@@ -185,7 +206,15 @@ test('a lowercase malformed ID that free text mentions is not renamed (free text
 test('duplicate IDs and unresolvable holders are ineligible', () => {
   const duplicate = validReport();
   duplicate.entities[1].entity_id = 'E1';
-  duplicate.entities.push({ entity_id: 'E3', type: 'unknown', description: 'Third.', timestamp_seconds: 3, first_seen_seconds: 3, last_seen_seconds: 3, label: 'person' });
+  duplicate.entities.push({
+    entity_id: 'E3',
+    type: 'unknown',
+    description: 'Third.',
+    timestamp_seconds: 3,
+    first_seen_seconds: 3,
+    last_seen_seconds: 3,
+    label: 'person',
+  });
   assert.equal(attemptIdNormalization(duplicate, violationsOf(duplicate)).reason, 'DUPLICATE_ID');
 
   const holder = validReport();

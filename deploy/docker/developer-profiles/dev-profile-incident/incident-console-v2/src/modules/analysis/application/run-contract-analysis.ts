@@ -93,7 +93,8 @@ export interface ContractAnalysisResult {
 
 export function resolveAllowedModel(model: unknown) {
   const allowed = typeof model === 'string' ? findAllowedModel(model.trim()) : undefined;
-  if (!allowed) throw new AnalysisRequestError(400, `Unsupported model: ${typeof model === 'string' && model.trim() ? model.trim() : '(none)'}`);
+  if (!allowed)
+    throw new AnalysisRequestError(400, `Unsupported model: ${typeof model === 'string' && model.trim() ? model.trim() : '(none)'}`);
   return allowed;
 }
 
@@ -106,9 +107,15 @@ export interface PolicyVerdict {
 
 type Outcome =
   | ({ kind: 'valid'; report: IncidentContractReport; repair: AttemptRepair | null } & PolicyVerdict)
-  | ({ kind: 'contract_failed'; stage: 'contract_validation' | 'structural_repair'; repair: AttemptRepair | null; message: string } & PolicyVerdict);
+  | ({
+      kind: 'contract_failed';
+      stage: 'contract_validation' | 'structural_repair';
+      repair: AttemptRepair | null;
+      message: string;
+    } & PolicyVerdict);
 
-const withScope = (violations: ContractViolation[]) => violations.map((violation) => ({ ...violation, scope: violationScope(violation.code) }));
+const withScope = (violations: ContractViolation[]) =>
+  violations.map((violation) => ({ ...violation, scope: violationScope(violation.code) }));
 
 /**
  * core-scored-v1 validation, then id-normalization-v1 only when every core
@@ -121,7 +128,14 @@ export function evaluateContent(content: string, context: ValidationContext = {}
   try {
     decoded = decodeContent(content);
     const core = validateCore(decoded, context);
-    return { kind: 'valid', report: core.report, repair: null, firstPass: withScope(core.violations), fullContractValid: core.fullContractValid, videoBoundsChecked: core.videoBoundsChecked };
+    return {
+      kind: 'valid',
+      report: core.report,
+      repair: null,
+      firstPass: withScope(core.violations),
+      fullContractValid: core.fullContractValid,
+      videoBoundsChecked: core.videoBoundsChecked,
+    };
   } catch (error) {
     if (!(error instanceof ContractError)) throw error;
     const firstPass = withScope(error.violations);
@@ -131,7 +145,9 @@ export function evaluateContent(content: string, context: ValidationContext = {}
     // video rules never affect it, so it fails only on a contract violation.
     const verdict: PolicyVerdict = {
       firstPass,
-      fullContractValid: structural && !firstPass.some((violation) => violation.code !== 'WINDOW_BEYOND_VIDEO' && violation.code !== 'TIMELINE_BEYOND_VIDEO'),
+      fullContractValid:
+        structural &&
+        !firstPass.some((violation) => violation.code !== 'WINDOW_BEYOND_VIDEO' && violation.code !== 'TIMELINE_BEYOND_VIDEO'),
       videoBoundsChecked: structural && videoBoundsChecked,
     };
     if (!structural) {
@@ -147,11 +163,22 @@ export function evaluateContent(content: string, context: ValidationContext = {}
     const attempt = attemptIdNormalization(decoded as IncidentContractReport, coreViolations);
     if (!attempt.eligible) {
       const { eligible, ruleSet, reason, blockingCodes, detail } = attempt;
-      return { kind: 'contract_failed', stage: 'contract_validation', repair: { eligible, ruleSet, reason, blockingCodes, detail }, message: error.message, ...verdict };
+      return {
+        kind: 'contract_failed',
+        stage: 'contract_validation',
+        repair: { eligible, ruleSet, reason, blockingCodes, detail },
+        message: error.message,
+        ...verdict,
+      };
     }
     try {
       const repaired = validateCore(attempt.repaired, context);
-      return { kind: 'valid', report: repaired.report, repair: { eligible: true, ruleSet: attempt.ruleSet, operations: attempt.operations, revalidation: repaired.violations }, ...verdict };
+      return {
+        kind: 'valid',
+        report: repaired.report,
+        repair: { eligible: true, ruleSet: attempt.ruleSet, operations: attempt.operations, revalidation: repaired.violations },
+        ...verdict,
+      };
     } catch (revalidationError) {
       if (!(revalidationError instanceof ContractError)) throw revalidationError;
       return {
@@ -203,7 +230,11 @@ async function recordFailure(runs: AnalysisRunRepository, attempt: AnalysisAttem
   }
 }
 
-export async function runContractAnalysis(input: ContractAnalysisInput, ports: AnalysisPorts, mode: AnalysisMode): Promise<ContractAnalysisResult> {
+export async function runContractAnalysis(
+  input: ContractAnalysisInput,
+  ports: AnalysisPorts,
+  mode: AnalysisMode,
+): Promise<ContractAnalysisResult> {
   let model = resolveAllowedModel(input.model);
   let additionalInstruction: string | null;
   try {
@@ -217,7 +248,12 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
     const { contentLength } = await ports.videos.verify(input.r2Key);
     if (input.newVideo) {
       operation = 'recording the uploaded video';
-      await ports.runs.recordUploadedVideo({ videoId: input.videoId, r2Key: input.r2Key, sensorId: input.newVideo.sensorId, uploadedAt: input.newVideo.uploadedAt });
+      await ports.runs.recordUploadedVideo({
+        videoId: input.videoId,
+        r2Key: input.r2Key,
+        sensorId: input.newVideo.sensorId,
+        uploadedAt: input.newVideo.uploadedAt,
+      });
     }
     operation = 'creating the signed R2 video URL';
     const playbackUrl = await ports.videos.playbackUrl(input.r2Key);
@@ -259,16 +295,35 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
       } catch (error) {
         if (!(error instanceof AgentRequestError)) throw error;
         const { code, message } = error;
-        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code, message }, response: null, validation: { firstPass: [] }, repair: null };
+        const attempt: AnalysisAttemptRecord = {
+          ...base,
+          status: 'request_failed',
+          stage: 'gateway',
+          failure: { code, message },
+          response: null,
+          validation: { firstPass: [] },
+          repair: null,
+        };
         const recorded = await recordFailure(ports.runs, attempt);
         throw new AnalysisRequestError(code === 'AGENT_TIMEOUT' ? 504 : 502, `The agent request failed (${code}): ${message}`, {
-          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
+          outcome: 'request_failed',
+          code,
+          model: model.id,
+          attemptId: modelRunId,
+          attemptRecorded: recorded,
         });
       }
 
       // A 422 is the agent rejecting the model output under core-scored-v1; its detail
       // carries the raw output, which is validated and recorded here like a success.
-      type AgentP1 = { raw_output?: unknown; finish_reason?: unknown; model?: unknown; contract_version?: unknown; revision_id?: unknown; evidence?: unknown };
+      type AgentP1 = {
+        raw_output?: unknown;
+        finish_reason?: unknown;
+        model?: unknown;
+        contract_version?: unknown;
+        revision_id?: unknown;
+        evidence?: unknown;
+      };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
         agentP1 = JSON.parse(agentResponse.text) as AgentP1;
@@ -280,13 +335,26 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
         const errorText = agentResponse.text;
         const code = agentResponse.status === 504 ? 'AGENT_TIMEOUT' : `AGENT_HTTP_${agentResponse.status}`;
         const attempt: AnalysisAttemptRecord = {
-          ...base, status: 'request_failed', stage: 'gateway', failure: { code, message: errorText || agentResponse.statusText },
-          response: { httpStatus: agentResponse.status, errorBody: errorText }, validation: { firstPass: [] }, repair: null,
+          ...base,
+          status: 'request_failed',
+          stage: 'gateway',
+          failure: { code, message: errorText || agentResponse.statusText },
+          response: { httpStatus: agentResponse.status, errorBody: errorText },
+          validation: { firstPass: [] },
+          repair: null,
         };
         const recorded = await recordFailure(ports.runs, attempt);
-        throw new AnalysisRequestError(agentResponse.status === 504 ? 504 : 502, `The agent returned HTTP ${agentResponse.status}: ${errorText}`, {
-          outcome: 'request_failed', code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
-        });
+        throw new AnalysisRequestError(
+          agentResponse.status === 504 ? 504 : 502,
+          `The agent returned HTTP ${agentResponse.status}: ${errorText}`,
+          {
+            outcome: 'request_failed',
+            code,
+            model: model.id,
+            attemptId: modelRunId,
+            attemptRecorded: recorded,
+          },
+        );
       }
 
       // P1 ran on the agent's own VLM, so its model is the one recorded.
@@ -331,14 +399,34 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
         );
       } catch (error) {
         if (!(error instanceof GatewayError)) throw error;
-        const resp: AnalysisAttemptRecord['response'] = error.httpStatus !== undefined || error.errorBody !== undefined
-          ? { ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}), ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}) }
-          : null;
-        const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'gateway', failure: { code: error.code, message: error.message }, response: resp, validation: { firstPass: [] }, repair: null };
+        const resp: AnalysisAttemptRecord['response'] =
+          error.httpStatus !== undefined || error.errorBody !== undefined
+            ? {
+                ...(error.httpStatus !== undefined ? { httpStatus: error.httpStatus } : {}),
+                ...(error.errorBody !== undefined ? { errorBody: error.errorBody } : {}),
+              }
+            : null;
+        const attempt: AnalysisAttemptRecord = {
+          ...base,
+          status: 'request_failed',
+          stage: 'gateway',
+          failure: { code: error.code, message: error.message },
+          response: resp,
+          validation: { firstPass: [] },
+          repair: null,
+        };
         const recorded = await recordFailure(ports.runs, attempt);
-        throw new AnalysisRequestError(error.code === 'GATEWAY_TIMEOUT' ? 504 : 502, `The model request failed (${error.code}): ${error.message}`, {
-          outcome: 'request_failed', code: error.code, model: model.id, attemptId: modelRunId, attemptRecorded: recorded,
-        });
+        throw new AnalysisRequestError(
+          error.code === 'GATEWAY_TIMEOUT' ? 504 : 502,
+          `The model request failed (${error.code}): ${error.message}`,
+          {
+            outcome: 'request_failed',
+            code: error.code,
+            model: model.id,
+            attemptId: modelRunId,
+            attemptRecorded: recorded,
+          },
+        );
       }
       response = completionResponse(completion);
     }
@@ -350,25 +438,55 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
       const message = content
         ? `The model stopped with finish_reason "${finishReason}" before a usable response`
         : 'The model returned no response content';
-      const attempt: AnalysisAttemptRecord = { ...base, status: 'request_failed', stage: 'upstream_response', failure: { code, message }, response, validation: { firstPass: [] }, repair: null };
+      const attempt: AnalysisAttemptRecord = {
+        ...base,
+        status: 'request_failed',
+        stage: 'upstream_response',
+        failure: { code, message },
+        response,
+        validation: { firstPass: [] },
+        repair: null,
+      };
       const recorded = await recordFailure(ports.runs, attempt);
-      throw new AnalysisRequestError(502, `${message} (${code}).`, { outcome: 'request_failed', code, model: base.request.model, finishReason, attemptId: modelRunId, attemptRecorded: recorded });
+      throw new AnalysisRequestError(502, `${message} (${code}).`, {
+        outcome: 'request_failed',
+        code,
+        model: base.request.model,
+        finishReason,
+        attemptId: modelRunId,
+        attemptRecorded: recorded,
+      });
     }
 
     operation = 'validating the VLM response against the incident contract';
     const outcome = evaluateContent(content, { videoDurationSeconds });
     if (outcome.kind === 'contract_failed') {
       // The failure is decided by core violations; enrichment ones stay in validation.firstPass.
-      const codes = [...new Set([...outcome.firstPass, ...(outcome.repair?.eligible ? outcome.repair.revalidation : [])]
-        .filter((violation) => violationScope(violation.code) === 'core')
-        .map((violation) => violation.code))];
+      const codes = [
+        ...new Set(
+          [...outcome.firstPass, ...(outcome.repair?.eligible ? outcome.repair.revalidation : [])]
+            .filter((violation) => violationScope(violation.code) === 'core')
+            .map((violation) => violation.code),
+        ),
+      ];
       const attempt: AnalysisAttemptRecord = {
-        ...base, status: 'contract_failed', stage: outcome.stage, failure: { code: codes.join(','), message: outcome.message },
-        response, validation: validationRecord(outcome), repair: outcome.repair,
+        ...base,
+        status: 'contract_failed',
+        stage: outcome.stage,
+        failure: { code: codes.join(','), message: outcome.message },
+        response,
+        validation: validationRecord(outcome),
+        repair: outcome.repair,
       };
       const recorded = await recordFailure(ports.runs, attempt);
       throw new AnalysisRequestError(422, `The model's response did not satisfy the incident contract: ${outcome.message}`, {
-        outcome: 'contract_failed', codes, model: base.request.model, finishReason, rawContent: content.slice(0, 20000), attemptId: modelRunId, attemptRecorded: recorded,
+        outcome: 'contract_failed',
+        codes,
+        model: base.request.model,
+        finishReason,
+        rawContent: content.slice(0, 20000),
+        attemptId: modelRunId,
+        attemptRecorded: recorded,
       });
     }
 
@@ -383,7 +501,9 @@ export async function runContractAnalysis(input: ContractAnalysisInput, ports: A
       generatedAt: attemptedAt,
       report: withDerivedFields(outcome.report),
     };
-    const revisionId = await ports.runs.saveRun(run, fromAgent, (nextOperation) => { operation = nextOperation; });
+    const revisionId = await ports.runs.saveRun(run, fromAgent, (nextOperation) => {
+      operation = nextOperation;
+    });
     return { run, playbackUrl, revisionId };
   } catch (error) {
     if (error instanceof AnalysisRequestError) throw error;

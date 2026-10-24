@@ -59,7 +59,17 @@ export async function sweepOrphanEvidence(
   if (references === null) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
   const referenced = new Set(references);
 
-  const report: SweepReport = { videoId, dryRun, minAgeHours, scanned: objects.length, referenced: 0, tooRecent: 0, orphans: [], removed: [], failed: [] };
+  const report: SweepReport = {
+    videoId,
+    dryRun,
+    minAgeHours,
+    scanned: objects.length,
+    referenced: 0,
+    tooRecent: 0,
+    orphans: [],
+    removed: [],
+    failed: [],
+  };
   for (const { key, lastModified } of objects) {
     if (!isEvidenceKeyOfVideo(key, videoId)) continue;
     if (referenced.has(key)) report.referenced += 1;

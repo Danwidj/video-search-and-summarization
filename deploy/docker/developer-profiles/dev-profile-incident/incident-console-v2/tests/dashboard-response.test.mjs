@@ -44,28 +44,42 @@ function serve(result) {
 
 test('the analytics reach the browser exactly as get_incident_dashboard returns them', async () => {
   const bodies = serve(analytics);
-  const response = await GET(new Request('http://localhost/api/dashboard?days=30&after=2026-08-30T00:00:00.000&before=2026-09-29T00:00:00.000&timezone=Asia%2FSingapore'));
+  const response = await GET(
+    new Request(
+      'http://localhost/api/dashboard?days=30&after=2026-08-30T00:00:00.000&before=2026-09-29T00:00:00.000&timezone=Asia%2FSingapore',
+    ),
+  );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { analytics });
-  assert.deepEqual(bodies, [{
-    p_period_start: '2026-08-30T00:00:00.000',
-    p_period_end: '2026-09-29T00:00:00.000',
-    p_type: null,
-    p_severity: null,
-    p_day_of_week: null,
-    p_hour: null,
-    p_timezone: 'Asia/Singapore',
-  }]);
+  assert.deepEqual(bodies, [
+    {
+      p_period_start: '2026-08-30T00:00:00.000',
+      p_period_end: '2026-09-29T00:00:00.000',
+      p_type: null,
+      p_severity: null,
+      p_day_of_week: null,
+      p_hour: null,
+      p_timezone: 'Asia/Singapore',
+    },
+  ]);
 });
 
 test('an all-time dashboard sends no period and keeps the null comparison and a heatmap cell without a time', async () => {
   // The SQL emits a null day and hour for an official report without generated_datetime.
-  const allTime = { ...analytics, previous: null, averageConfidence: null, confidenceNotProvided: 3, heatmap: [...analytics.heatmap, { day: null, hour: null, count: 1 }] };
+  const allTime = {
+    ...analytics,
+    previous: null,
+    averageConfidence: null,
+    confidenceNotProvided: 3,
+    heatmap: [...analytics.heatmap, { day: null, hour: null, count: 1 }],
+  };
   const bodies = serve(allTime);
   const response = await GET(new Request('http://localhost/api/dashboard?days=all&type=%20assault%20&severity=high&day=2&hour=23'));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { analytics: allTime });
-  assert.deepEqual(bodies, [{ p_period_start: null, p_period_end: null, p_type: 'assault', p_severity: 'high', p_day_of_week: 2, p_hour: 23, p_timezone: 'UTC' }]);
+  assert.deepEqual(bodies, [
+    { p_period_start: null, p_period_end: null, p_type: 'assault', p_severity: 'high', p_day_of_week: 2, p_hour: 23, p_timezone: 'UTC' },
+  ]);
 });
 
 test('a database failure is a 500 with its message, and the configuration is checked between the filter checks', async () => {
@@ -75,7 +89,11 @@ test('a database failure is a 500 with its message, and the configuration is che
   assert.match((await failed.json()).error, /^PostgREST returned HTTP 500/);
 
   delete process.env.INCIDENT_SUPABASE_URL;
-  assert.equal((await GET(new Request('http://localhost/api/dashboard?days=9'))).status, 400, 'period, severity and timezone are checked first');
+  assert.equal(
+    (await GET(new Request('http://localhost/api/dashboard?days=9'))).status,
+    400,
+    'period, severity and timezone are checked first',
+  );
   for (const query of ['', '?day=7', '?after=not-a-date']) {
     const unconfigured = await GET(new Request(`http://localhost/api/dashboard${query}`));
     assert.equal(unconfigured.status, 500, query);

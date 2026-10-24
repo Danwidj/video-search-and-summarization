@@ -18,11 +18,21 @@ const { SupabaseAnalysisRunAdapter } = await import('../src/modules/analysis/inf
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const KEY = 'uploads/sensor-1/v1.mp4';
 const UPLOAD = { videoId: 'v1', r2Key: KEY, sensorId: 'sensor-1', uploadedAt: '2026-10-01T08:00:00.000Z' };
-const INCIDENT = { type: 'assault', start_timestamp: 10, end_timestamp: 20, duration: 10, description: 'A scuffle.', severity_level: 3, confidence_score: 0.9 };
+const INCIDENT = {
+  type: 'assault',
+  start_timestamp: 10,
+  end_timestamp: 20,
+  duration: 10,
+  description: 'A scuffle.',
+  severity_level: 3,
+  confidence_score: 0.9,
+};
 
 /** A valid run, as runContractAnalysis builds one. */
 const validRun = (overrides = {}) => ({
@@ -35,7 +45,13 @@ const validRun = (overrides = {}) => ({
   modelRunId: 'm1',
   attemptedAt: '2026-10-22T10:00:00.000Z',
   generatedAt: '2026-10-22T10:00:00.000Z',
-  request: { model: 'nvidia/cosmos-3-super-reasoner', inferenceConfig: {}, additionalInstruction: null, promptSha256: 'p', schemaSha256: 's' },
+  request: {
+    model: 'nvidia/cosmos-3-super-reasoner',
+    inferenceConfig: {},
+    additionalInstruction: null,
+    promptSha256: 'p',
+    schemaSha256: 's',
+  },
   response: null,
   validation: { firstPass: [] },
   repair: null,
@@ -43,7 +59,15 @@ const validRun = (overrides = {}) => ({
   ...overrides,
 });
 
-const failedAttempt = (overrides = {}) => ({ ...validRun(), status: 'request_failed', stage: 'gateway', failure: { code: 'GATEWAY_TIMEOUT', message: 'timed out' }, report: undefined, generatedAt: undefined, ...overrides });
+const failedAttempt = (overrides = {}) => ({
+  ...validRun(),
+  status: 'request_failed',
+  stage: 'gateway',
+  failure: { code: 'GATEWAY_TIMEOUT', message: 'timed out' },
+  report: undefined,
+  generatedAt: undefined,
+  ...overrides,
+});
 
 const implementations = {
   memory: () => {
