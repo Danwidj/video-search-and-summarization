@@ -44,7 +44,7 @@ def test_mock_chat_scoped_to_incident():
         json={
             "session_id": "session_mock_1",
             "messages": [{"role": "user", "content": "Tell me about instruments"}],
-            "context": {"scope": "incident", "incident_id": "Burglary004"},
+            "context": {"scope": "incident", "incident_id": "Assault032"},
         },
     )
     assert resp.status_code == 200
@@ -52,7 +52,7 @@ def test_mock_chat_scoped_to_incident():
     assert data["session_id"] == "session_mock_1"
     assert len(data["message"]["citations"]) > 0
     for cit in data["message"]["citations"]:
-        assert "Burglary004" in cit["incident_id"]
+        assert "Assault032" in cit["incident_id"]
 
 
 def test_mock_chat_empty_results():
