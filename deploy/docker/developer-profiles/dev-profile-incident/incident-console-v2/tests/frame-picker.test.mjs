@@ -8,7 +8,7 @@ import test from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { boxRegion } = await import('../src/lib/evidence/frame-geometry.ts');
-const { dragRegion, pickSeconds, regionBox } = await import('../src/lib/evidence/frame-picker.ts');
+const { dragRegion, pickSeconds, regionBox, usableRange } = await import('../src/lib/evidence/frame-picker.ts');
 const { parseRegion, ITEM_ID } = await import('../src/lib/evidence/frame-request.ts');
 const components = new URL('../src/sections/', import.meta.url);
 
@@ -57,6 +57,21 @@ test('a picked second stays inside the seconds an entity is on screen', () => {
   assert.equal(pickSeconds(7, 60, seen), 7);
   assert.equal(pickSeconds(12, 60, seen), 10, 'a frame after the entity leaves moves to its last second');
   assert.equal(pickSeconds(12, null, seen), 10, 'the range still applies when the length is unknown');
+});
+
+test('an entity range of 0 to 0 is no range: the picked second may use the whole video', () => {
+  assert.equal(usableRange({ first: 0, last: 0 }), null);
+  assert.deepEqual(usableRange({ first: 0, last: 4 }), { first: 0, last: 4 });
+  assert.deepEqual(usableRange({ first: 3, last: 3 }), { first: 3, last: 3 }, 'a single real second still pins the frame');
+  assert.equal(usableRange(null), null);
+  assert.equal(pickSeconds(12.5, 60, { first: 0, last: 0 }), 12.5);
+  assert.equal(pickSeconds(72, 60, { first: 0, last: 0 }), 60, 'the end of the video still caps it');
+});
+
+test('the frame slider reads the usable range, so a 0 to 0 range does not pin it to zero', async () => {
+  const picker = await readFile(new URL('evidence/components/EvidenceFramePicker/EvidenceFramePicker.tsx', components), 'utf8');
+  assert.match(picker, /const seen = usableRange\(range\);/);
+  assert.match(picker, /max=\{seen === null \? \(duration \?\? 0\)/);
 });
 
 test('the picker is a dialog that crops through the evidence-crop route and hands back the frame second and box', async () => {

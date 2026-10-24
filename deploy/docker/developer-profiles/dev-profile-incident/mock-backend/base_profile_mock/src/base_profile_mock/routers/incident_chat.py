@@ -204,7 +204,9 @@ async def chat_incidents(req: ChatRequest) -> ChatResponse:
     else:
         basis = "the unsaved draft of " if req.draft_report is not None else ""
         scope_text = f"In {basis}report version {req.version_id}"
-    content = f"{scope_text}, {len(citations)} relevant evidence item(s) were identified: {summary_text}."
+    content = (
+        f"{scope_text}, {len(citations)} evidence item(s) matched on keywords (mock answer, no model): {summary_text}."
+    )
 
     return ChatResponse(
         session_id=session_id,

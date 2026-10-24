@@ -18,6 +18,8 @@ import socket
 
 import pytest
 
+EMBEDDING_KEY_ENV_VARS = ("EVIDENCE_EMBEDDING_API_KEY", "NVIDIA_API_KEY", "NGC_CLI_API_KEY")
+
 
 @pytest.fixture(autouse=True)
 def block_outbound_network(monkeypatch):
@@ -29,3 +31,10 @@ def block_outbound_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", _deny_network)
     monkeypatch.setattr(socket.socket, "connect", _deny_network, raising=True)
     monkeypatch.setattr(socket.socket, "connect_ex", _deny_network, raising=True)
+
+
+@pytest.fixture(autouse=True)
+def no_embedding_api_key(monkeypatch):
+    """Keep a key in the developer's environment from sending query embeddings to the hosted endpoint."""
+    for name in EMBEDDING_KEY_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)

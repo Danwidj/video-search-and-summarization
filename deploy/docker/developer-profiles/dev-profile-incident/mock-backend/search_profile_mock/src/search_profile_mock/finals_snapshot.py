@@ -34,7 +34,9 @@ def _load():
 
 
 _snapshot = _load()
+EVIDENCE_IMAGE_ROUTE = _snapshot.EVIDENCE_IMAGE_ROUTE
 evidence_hits = _snapshot.evidence_hits
+keyword_score = _snapshot.keyword_score
 match_score = _snapshot.match_score
 query_tokens = _snapshot.query_tokens
 revision_hits = _snapshot.revision_hits

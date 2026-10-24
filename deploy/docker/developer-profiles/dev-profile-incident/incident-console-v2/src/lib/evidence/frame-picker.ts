@@ -52,11 +52,21 @@ export interface SecondsRange {
 }
 
 /**
+ * The range a picked frame must stay in. An entity whose first and last second are both 0 carries
+ * no real on-screen window (the model gave none), and pinning to it would leave a slider that
+ * cannot move, so it falls back to the whole video.
+ */
+export function usableRange(range: SecondsRange | null): SecondsRange | null {
+  return range !== null && range.first === 0 && range.last === 0 ? null : range;
+}
+
+/**
  * A picked second: never negative, never past the end of the video when its length is known,
- * and inside the given range when there is one.
+ * and inside the given range when there is one (see usableRange).
  */
 export function pickSeconds(seconds: number, durationSeconds: number | null, range: SecondsRange | null = null): number {
-  const floor = Math.max(range?.first ?? 0, seconds);
-  const ceiling = range === null ? durationSeconds : Math.min(range.last, durationSeconds ?? range.last);
+  const seen = usableRange(range);
+  const floor = Math.max(seen?.first ?? 0, seconds);
+  const ceiling = seen === null ? durationSeconds : Math.min(seen.last, durationSeconds ?? seen.last);
   return ceiling === null ? floor : Math.min(floor, ceiling);
 }
