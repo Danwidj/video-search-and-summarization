@@ -10,7 +10,7 @@
 | Console code layout | `src/app`, `src/modules/<feature>/{domain,application,infrastructure}`, `src/sections`, `src/lib`. `npm test` enforces the import boundaries; `npm run lint` is Biome plus `tsc --noEmit` | [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Append-only `report_revisions` rows plus Cloudflare R2 videos and evidence images; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
-| Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract (see known issue 9) | `eval/README.md` |
+| Evaluation | Standalone P1/RP1 pipeline in `eval/` on the same contract (see known issue 2) | `eval/README.md` |
 | Launcher | `./start.sh --mode mock\|vm` with SSH preflight, self-healing VM deploy, stop-on-last-exit coordination via a VM flock, and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777, started by `--mode mock`) and `search_profile_mock` (:7778, standalone) answer incident search and revision search from one finals snapshot; :7777 also answers chat from it ([decision](decisions.md#2026-10-24-the-mocks-answer-search-and-chat-from-one-finals-snapshot)) | `mock-backend/` |
 
@@ -40,23 +40,16 @@ Test data: on 2026-10-24 the rows and R2 objects of the three end-to-end test vi
 
 ## 4. Known issues
 
-1. **The AI revision has two writers.** In agent mode the agent inserts it and returns `revision_id`; in gateway mode the console inserts it. Both are append-only and the console verifies the agent's row, but there is no single writer.
-2. **Attempt records live in `model_runs.notes` (TEXT).** The validated report itself is in `report_revisions.payload`; the notes keep the request, raw response, validation and repair record, queried via `try_parse_jsonb` and a `like` pre-filter. A JSONB column or index would be needed at volume.
-3. **Cosmos models often break the timeline rule** (lead-up or aftermath events outside the incident window). Recorded, never repaired; see [`analysis-schema.md`](analysis-schema.md) section 7.
-4. **One run has no recorded outcome.** `m86a5c319e26659804b0` predates recorded outcomes and shows as `valid_first_pass` (inferred).
-5. **`other` incident type in one run's notes** (`m5629b0938e679c9873d`, no revision) stays, because attempt notes are immutable.
-6. **Fixed P1 eval run ids overwrite benchmark rows** in the database; runs also keep an immutable copy under `eval/eval_data/results/runs/`.
-7. **Two re-run models are unconfirmed on the Brev endpoint.** `nvidia/cosmos-3-nano-reasoner` and `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` are in the allowlist, but the VM check could not list the served models (401 without a LiteLLM key). If the agent rejects one, that run is recorded as `request_failed`.
-8. **Agent runtime video-bounds exception.** `vss_agents.incident_contract` supports `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` when given `video_duration_seconds`, but the analyze route never passes one (it gets only a signed playback URL and reads no MP4 header). In agent mode the console reads the header from R2 and enforces the video-bounds rule on the agent's output.
-9. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Do not run a live eval against finals until eval's storage is decided.
-10. **Deleting a video leaves its evidence images in R2.** `deleteVideoAndReports` removes the video object and its thumbnail, then the rows; `evidence/<videoId>/` stays, and the orphan sweep refuses an unknown video, so nothing removes those images.
-11. **Chat about the official version finds no evidence.** With `version_id` naming the official revision and no draft, the agent's chat asks its search client, which is still the in-memory canned client, so a finals video gets "No matching incidents...". Other versions and drafts are answered from their saved evidence ([`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat)).
-12. **A human revision's search text is stale or empty.** The embedding passage is `"{item_name}: {description}"` from the evidence entry. On Save, an item that keeps its image copies the parent entry, so its passage is the parent's text, not the reviewer's edit; an item with a replaced or added image gets an entry with neither field, so its vector is close to empty (`humanRevisionContent`; noted in #207).
-13. **The mock snapshot holds deleted test videos.** `finals_snapshot.json` was captured before the 2026-10-24 cleanup and still includes `vc35c6116a88c37d51c9`, `v614eba7ad8510751a8c` and `va978aaf39b01270294a`, so mock search can return videos that no longer exist on finals. Refresh it by hand (`mock-backend/base_profile_mock/README.md`).
+Deliberate behaviour that can look like an issue (the Cosmos timeline, chat about the official version, a human revision's search text) is recorded in [`decisions.md`](decisions.md).
+
+1. **TO FIX (not started): the agent does not enforce the video-bounds rules.** `vss_agents.incident_contract` supports `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` when given `video_duration_seconds`, but the analyze route never passes one (it gets only a signed playback URL and reads no MP4 header). In agent mode the console reads the header from R2 and enforces the rules on the agent's output. Fix: the route passes the duration so the agent enforces the rules itself.
+2. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Do not run a live eval against finals until eval's storage is decided.
+3. **Deleting a video leaves its evidence images in R2.** `deleteVideoAndReports` removes the video object and its thumbnail, then the rows; `evidence/<videoId>/` stays, and the orphan sweep refuses an unknown video, so nothing removes those images.
+4. **The mock snapshot holds deleted test videos.** `finals_snapshot.json` was captured before the 2026-10-24 cleanup and still includes `vc35c6116a88c37d51c9`, `v614eba7ad8510751a8c` and `va978aaf39b01270294a`, so mock search can return videos that no longer exist on finals. Refresh it by hand (`mock-backend/base_profile_mock/README.md`).
 
 ## 5. Follow-ups
 
-- Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates), once known issue 9 is resolved.
+- Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates), once known issue 2 is resolved.
 - Consider a contract version with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
 - Console hexagonal plan, strict Step 6: inject a `ContractCatalog` port and move the analysis hashing behind a port, which removes the remaining exceptions in `tests/import-boundaries.test.mjs`.
 

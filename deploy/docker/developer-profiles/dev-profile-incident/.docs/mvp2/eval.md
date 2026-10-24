@@ -11,7 +11,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Models:** the three allowlisted VLMs in `contracts/inference.json`: `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
-  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open ([status](../status.md#4-known-issues), known issue 9).
+  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open ([status](../status.md#4-known-issues), known issue 2).
   - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
@@ -38,7 +38,7 @@ Paths are relative to the profile directory, except paths starting with `service
   - No latency is recorded.
   - Token `usage` is kept only for the P1 call. No cost is recorded.
   - `chat_completion` in `eval/scripts/eval_vlm_client.py` has no retry or 429 handling, so a failed request is scored as a miss.
-  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows ([status](../status.md#4-known-issues), known issue 6).
+  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows.
 - **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../decisions.md), 2026-10-16). The pilot report is kept outside the repository.
 - `eval/docs/vlm_benchmark_results.md` is marked superseded (P1-v1 few-shot prompt).
 

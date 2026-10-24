@@ -2,6 +2,18 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-24: Chat about the official version uses the in-memory chat search client for MVP2
+- **Decision:** A chat question about the official revision with no draft goes to the agent chat route's search client, which stays the in-memory canned client for MVP2, so it finds no evidence for a finals video. Other versions and drafts are answered from their saved evidence.
+- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
+- **Rejected:** none recorded.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat).
+
+### 2026-10-24: A human revision's search text comes from its evidence entries as they are
+- **Decision:** On Save, an item that keeps its image copies the parent's evidence entry, so its search passage (`"{item_name}: {description}"`) is the parent's text, not the reviewer's edit; an item with a replaced or added image gets an entry with neither field, so its vector is close to empty (`humanRevisionContent`). This is deliberate.
+- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
+- **Rejected:** none recorded.
+- **Links:** [pull/207](https://github.com/Danwidj/video-search-and-summarization/pull/207); [`data.md`](data.md#save_human_revision_with_crops).
+
 ### 2026-10-24: Drop multi-subagent routing and full RT-CV / RT-Embed indexing from MVP2
 - **Decision:** Both items leave the MVP2 plan; they are not "not started" work. No incident `top_agent` config, no routing prompt, no RT-CV / RT-Embed / Elasticsearch indexing, and no R2-to-VST ingest bridge. Track F of the retrieval eval stays deferred with no planned pipeline.
 - **Why:**
@@ -66,7 +78,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-10-23: The console cuts evidence frames with ffmpeg on its own host
 - **Decision:** `GET /api/reports/[videoId]/frame?t=` decodes one frame, and `POST /api/reports/[videoId]/evidence-crop` cuts a reviewer-dragged rectangle from it and returns the JPEG (since 2026-10-24 it stores nothing; Save uploads it). Both run `ffmpeg` on the console host's PATH over a signed R2 URL (range reads). No npm dependency is added.
-- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md) known issue 8); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
+- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md#4-known-issues) known issue 1); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
 - **Rejected:** a new npm video library (ffmpeg is already the standard tool and needs no dependency); cutting crops in the agent (it has no R2 credentials).
 - **Links:** [pull/183](https://github.com/Danwidj/video-search-and-summarization/pull/183); [`architecture.md`](architecture.md#report-versions-view-edit-and-history); [`incident-profile-operations.md`](incident-profile-operations.md).
 
@@ -332,6 +344,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-09-27: Validation policy core-scored-v1
 - **Decision:** Only database-backed fields (type, window, description, severity, confidence, entities, instruments, assets) decide persistence and scoring. `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment: a `TIMELINE_*` failure is recorded and shown but neither rejects the report nor empties the eval prediction, and is never repaired. A contextual core rule requires the window to lie within the video when its length is readable (`0 <= T < duration + 1`). Schema violations stay fatal. `full_contract_ok` keeps contract validity; `core_ok` decides.
+  This covers the Cosmos models, which often put lead-up or aftermath events outside their own incident window: the timeline is recorded as returned, never repaired, and the report page labels it ([`analysis-schema.md`](analysis-schema.md#3-validation-id-only-repair-and-outcomes)).
 - **Why:** In a 12-call pilot the strict timeline rule rejected 7 answers, 4 with windows matching ground truth, yet accepted a 29-36 s window on a 12.5 s clip. Recovered answers rose from 6 of 15 to 13 of 15.
 - **Rejected:** a whole-video timeline (deferred); isolating enrichment schema errors (needs partial parsing).
 - **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/src/modules/contract/domain/validate.ts`](../incident-console-v2/src/modules/contract/domain/validate.ts).
