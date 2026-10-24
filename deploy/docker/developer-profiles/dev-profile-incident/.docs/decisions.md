@@ -2,6 +2,74 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-24: Chat about the official version uses the in-memory chat search client for MVP2
+- **Decision:** A chat question about the official revision with no draft goes to the agent chat route's search client, which stays the in-memory canned client for MVP2, so it finds no evidence for a finals video. Other versions and drafts are answered from their saved evidence.
+- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
+- **Rejected:** none recorded.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat).
+
+### 2026-10-24: A human revision's search text comes from its evidence entries as they are
+- **Decision:** On Save, an item that keeps its image copies the parent's evidence entry, so its search passage (`"{item_name}: {description}"`) is the parent's text, not the reviewer's edit; an item with a replaced or added image gets an entry with neither field, so its vector is close to empty (`humanRevisionContent`). This is deliberate.
+- **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
+- **Rejected:** none recorded.
+- **Links:** [pull/207](https://github.com/Danwidj/video-search-and-summarization/pull/207); [`data.md`](data.md#save_human_revision_with_crops).
+
+### 2026-10-24: Drop multi-subagent routing and full RT-CV / RT-Embed indexing from MVP2
+- **Decision:** Both items leave the MVP2 plan; they are not "not started" work. No incident `top_agent` config, no routing prompt, no RT-CV / RT-Embed / Elasticsearch indexing, and no R2-to-VST ingest bridge. Track F of the retrieval eval stays deferred with no planned pipeline.
+- **Why:**
+  - Routing is a leftover from the v1 MVP2 plan, which assumed a `search_agent` over Elasticsearch. The v2 plan dropped that design. The five incident routes are plain FastAPI routes that bypass subagent selection, and the VM agent runs the stock base config with one subagent (`report_agent`). Nothing consumes a routing config except the deferred Track F.
+  - RT-Embed indexing is a different product from MVP2 search. It indexes 5-second video chunks (Cosmos-Embed1, 768-d in Elasticsearch) and RT-CV object embeddings (1152-d), while MVP2 searches VLM-extracted evidence items as 1024-d text embeddings in Supabase pgvector. The embedding spaces are incompatible, so it would be a second parallel index, not an upgrade. Nothing feeds it: uploads go straight to R2 and never reach VST. It also needs the full search stack (RT-CV, RT-Embed, Kafka, Elasticsearch, Logstash, analytics) on a shared VM where only GPU 0 is available.
+- **Rejected:** a minimal routing config exposing only `incident_search` and `incident_chat` as tools (no consumer and no routing-accuracy evidence); an offline RT-Embed spike against Track R (worth doing only if temporal video-chunk search becomes a product goal; [`mvp2/eval.md`](mvp2/eval.md) §6 still allows offline experiments).
+- **Links:** routing and indexing investigation (firstmate scout report, 2026-10-24); [`mvp2/README.md`](mvp2/README.md#7-still-not-final-planned-not-final--master-todo-index); [GPU rule](incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote).
+
+### 2026-10-24: Finals test data is removed by direct delete, and unproven items are kept
+- **Decision:** The rows and R2 objects of the three end-to-end test videos, their 10 test `queries` rows and the 2 scout uploads that have no `videos` row were removed with direct statements (one transaction for `videos`, `model_runs` and `queries`, then the R2 keys), after a JSON rollback snapshot. Items that could not be proved to be test data stay: one upload of unknown origin, video `veb492932dac2d1d52e0`, and five "car" queries.
+- **Why:** The console's delete path leaves evidence JPEGs, `queries` rows and uploads with no `videos` row behind, and cannot delete the last at all. Deleting only what is proved by id, source and time keeps real data safe.
+- **Rejected:** the app delete path alone (it leaves the 8 evidence JPEGs, the 10 `queries` rows and the scout uploads behind); deleting the unproven items.
+- **Links:** [`status.md`](status.md#3-database-status); [`data.md`](data.md).
+
+### 2026-10-24: Biome lints and formats incident-console-v2
+- **Decision:** `@biomejs/biome` 2.6.2 (pinned) with `biome.jsonc`. `npm run lint` is `biome check . && tsc --noEmit`; `npm run format` is `biome format --write .`. The style follows the existing code (single quotes, semicolons, two spaces, trailing commas, line width 140), import sorting is off, and the rules the code already broke report as warnings until each is fixed in its own change.
+- **Why:** The console had no linter or formatter (`lint` was only `tsc --noEmit`). The console plan deferred Biome until the tree was stable, because its formatter rewrites most files and collides with open branches; it landed once the module moves were merged.
+- **Rejected:** a line width of 80 (reformats far more); fixing the existing findings in the same PR.
+- **Links:** [pull/210](https://github.com/Danwidj/video-search-and-summarization/pull/210); [`../incident-console-v2/biome.jsonc`](../incident-console-v2/biome.jsonc).
+
+### 2026-10-24: Orphan evidence images are removed by an explicit, per-video sweep
+- **Decision:** `POST /api/reports/<videoId>/evidence-sweep` lists `evidence/<videoId>/` in R2, then reads every image the video's revisions and `evidence_crops` rows name, and removes only unreferenced objects older than `minAgeHours` (default 24, floor 1). Dry run is the default; any read failure removes nothing. Images of a deleted video are not covered.
+- **Why:** Save uploads an image before it writes the revision, so a failed or abandoned save leaves an image nothing names. An image an older revision names is history, not an orphan.
+- **Rejected:** treating an image only an older revision names as an orphan (it is part of that revision); removing young objects (one may belong to a save still in flight).
+- **Links:** [pull/209](https://github.com/Danwidj/video-search-and-summarization/pull/209); [`data.md`](data.md#2-cloudflare-r2-storage-architecture).
+
+### 2026-10-24: The mocks answer search and chat from one finals snapshot
+- **Decision:** `base_profile_mock` (:7777) answers incident search, revision search and chat from `finals_snapshot.json` (the finals AI revisions and their evidence items, captured 2026-10-24), scoring a hit by the share of query words it contains. `search_profile_mock` (:7778) answers incident search and revision search from the same file, loaded by path, so there is one copy. Critic verdicts (always `confirmed`) and crop URLs are placeholders, so mock results are not real.
+- **Why:** The fixture video ids (`Assault007_x264` and similar) are not in finals, so mock-mode search, chat and Find evidence linked to nothing.
+- **Rejected:** a live database query from the mock (it must stay offline and hermetic); a second copy of the snapshot for :7778. Trade-off: the snapshot is a fixed copy, so uploads after the capture are missing from mock search until it is refreshed by hand ([steps](../mock-backend/base_profile_mock/README.md#refresh-the-finals-snapshot)); a refresh script is a possible follow-up.
+- **Links:** [pull/208](https://github.com/Danwidj/video-search-and-summarization/pull/208); [pull/209](https://github.com/Danwidj/video-search-and-summarization/pull/209); [`../mock-backend/base_profile_mock/README.md`](../mock-backend/base_profile_mock/README.md).
+
+### 2026-10-24: npm test enforces the console's hexagonal import boundaries
+- **Decision:** `tests/import-boundaries.test.mjs` fails when domain or application code imports infrastructure, `app`, `sections`, `next`, `react` or `node:*`, or when a section imports infrastructure or `node:*`. Each existing exception is listed in `ALLOWED` with its reason, and an entry that matches no import also fails. Two console files are allowlisted exceptions: `src/modules/analysis/application/build-request.ts` and `run-contract-analysis.ts` import the contract loader, and `run-contract-analysis.ts` also imports `node:crypto`; removing them is the `ContractCatalog` follow-up in [`status.md`](status.md#5-follow-ups).
+- **Why:** The rules were conventions upheld in review, and the move into feature modules made them easy to break unnoticed. This reverses the 2026-10-19 rejection of an import-matching test, as the captain approved for Step 8 of the console plan.
+- **Rejected:** ESLint `no-restricted-imports` or dependency-cruiser (a new dependency for one check).
+- **Links:** [pull/208](https://github.com/Danwidj/video-search-and-summarization/pull/208); [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#3-dependency-rules).
+
+### 2026-10-24: A human save writes its revision and its searchable crops in one call, or nothing
+- **Decision:** On a video with no official revision, Save asks the agent to embed the new revision's evidence entries (`POST /api/v1/incidents/evidence-embeddings` with `evidence` in the body), then calls `save_human_revision_with_crops`, which inserts the revision and replaces the video's `evidence_crops` in one transaction. An embedding failure answers 502 and writes no revision. On a video with an official revision, Save embeds nothing and the official rows stay. Analysis and re-run keep `storeSearchableCrops`, which logs a crop failure after the revision is written.
+- **Why:** A saved revision without its crops left the video unsearchable with no signal to the reviewer. The database cannot embed, so the embedding must come first.
+- **Rejected:** keeping the logged, after-the-fact crop write for Save; the agent embedding a stored revision after the insert (a revision would exist before its crops).
+- **Links:** [pull/207](https://github.com/Danwidj/video-search-and-summarization/pull/207); [`../supabase/migrations/20261024090000_save_human_revision_with_crops.sql`](../supabase/migrations/20261024090000_save_human_revision_with_crops.sql); [`data.md`](data.md#save_human_revision_with_crops).
+
+### 2026-10-24: An evidence crop is held in the browser and uploaded on Save
+- **Decision:** "Use this crop" writes nothing to R2. `POST /api/reports/<videoId>/evidence-crop` returns the cropped JPEG, the browser holds it with a preview, and Save uploads each held crop through `POST /api/reports/<videoId>/evidence-image` before it writes the revision. The crop is still cut on the console server with `ffmpeg`.
+- **Why:** Writing at crop time left an R2 object for every cancelled crop. The captain chose the browser-held crop on 2026-10-24. R2 has no CORS rule for the console origin, so a canvas crop of the signed video would be tainted, and the server crop stays.
+- **Rejected:** cropping on a browser canvas (needs an R2 CORS change); writing at crop time and sweeping afterwards.
+- **Links:** [pull/207](https://github.com/Danwidj/video-search-and-summarization/pull/207); [`architecture.md`](architecture.md#report-versions-view-edit-and-history).
+
+### 2026-10-23: incident-console-v2 uses a feature-module layout under src/
+- **Decision:** The console moved under `src/` and into feature modules in small PRs (Steps 1 to 8 of the console hexagonal plan): `src/app` (routes and pages), `src/modules/<feature>/{domain,application,infrastructure}` for analysis, chat, contract, dashboard, health, reports, search, shared and videos, `src/sections/<feature>/components` for UI, and `src/lib` for shared technical code. `src/lib/container.ts` is the composition root and the only place that picks adapters. Routes get ports from `getDbAdapters()` and `getAnalysisPorts()`; use cases are one folder each. Analysis saving and run history went behind ports (`AnalysisRunRepository`, `ModelGateway`, `IncidentAgent`, `VideoObjectStore`) in #205, so no route builds a PostgREST query. The contract loader stays a documented exception for the domain validators (Step 6 minimum).
+- **Why:** Files were grouped by technical area, so one feature's code was spread over `app`, `components` and `lib`, and the database rules lived in HTTP handlers. Feature modules keep each port, use case and adapter together, and in-memory fakes with contract suites keep use cases testable without a database. Console search goes through the agent, which already embeds the query, runs the critic and records queries and hits, so the console needs no embedding model.
+- **Rejected:** one large move PR (hard to review and revert); a `Result` type instead of exceptions and `StoreRejection` (a semantic rewrite); shared `src/components/ui` primitives before a second consumer exists; the strict Step 6 (`ContractCatalog` port), deferred.
+- **Links:** [PR 120](https://github.com/Danwidj/video-search-and-summarization/pull/120) (the first ports and adapters); [pull/198](https://github.com/Danwidj/video-search-and-summarization/pull/198) to [pull/206](https://github.com/Danwidj/video-search-and-summarization/pull/206); [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md).
+
 ### 2026-10-23: Save as new version keeps the entity seen span and the drawn image's second and box
 - **Decision:** Edit mode saves only as a new `human` revision, with a required note (no Restore). Entities keep `first_seen_seconds` and `last_seen_seconds`. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry, not in the payload. `saveHumanEdit` checks the built entities, instruments and assets against contract v4 required fields and returns 422 when one is missing. A draft from a v2 or v3 revision, which has no span, starts from the item's most-visible second.
 - **Why:** Without these fields a save dropped the span the report timeline draws and the time and box the frame view needs (gap G3). Edit mode opens the chosen version as the read-only A side, so copying an older version back needs no Restore.
@@ -9,19 +77,19 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [pull/193](https://github.com/Danwidj/video-search-and-summarization/pull/193); [pull/189](https://github.com/Danwidj/video-search-and-summarization/pull/189); [`analysis-schema.md`](analysis-schema.md#report-revisions-ai-and-human).
 
 ### 2026-10-23: The console cuts evidence frames with ffmpeg on its own host
-- **Decision:** `GET /api/reports/[videoId]/frame?t=` decodes one frame, and `POST /api/reports/[videoId]/evidence-crop` cuts a reviewer-dragged rectangle from it and stores the image under a new `evidence/<videoId>/<uuid>/<itemId>.jpg` key. Both run `ffmpeg` on the console host's PATH over a signed R2 URL (range reads). No npm dependency is added. Existing images are never overwritten.
-- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md) known issue 7); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
+- **Decision:** `GET /api/reports/[videoId]/frame?t=` decodes one frame, and `POST /api/reports/[videoId]/evidence-crop` cuts a reviewer-dragged rectangle from it and returns the JPEG (since 2026-10-24 it stores nothing; Save uploads it). Both run `ffmpeg` on the console host's PATH over a signed R2 URL (range reads). No npm dependency is added.
+- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md#4-known-issues) known issue 1); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
 - **Rejected:** a new npm video library (ffmpeg is already the standard tool and needs no dependency); cutting crops in the agent (it has no R2 credentials).
 - **Links:** [pull/183](https://github.com/Danwidj/video-search-and-summarization/pull/183); [`architecture.md`](architecture.md#report-versions-view-edit-and-history); [`incident-profile-operations.md`](incident-profile-operations.md).
 
-### 2026-10-23: The console writes searchable crops for a newly saved revision
-- **Decision:** After an analysis, a re-run or an Edit save, a video with no official revision gets its newest revision made searchable by the console: `storeSearchableCrops` asks the agent for the revision's embeddings and calls `set_revision_crops`. A crop failure is logged and returned as `searchable.error`; the save still succeeds.
+### 2026-10-23: The console writes searchable crops for a new AI revision
+- **Decision:** After an analysis or a re-run, a video with no official revision gets its newest revision made searchable by the console: `storeSearchableCrops` asks the agent for the revision's embeddings and calls `set_revision_crops`. A crop failure is logged and returned as `searchable.error`; the analysis still succeeds. An Edit save no longer works this way: it writes its crops in the same call or fails (2026-10-24 entry).
 - **Why:** The revision is already saved, so a failed crop write should not lose it or fail the request. The database cannot compute embeddings, so a writer must, and the agent already serves them for marking official.
-- **Rejected:** failing the save when crops fail; the agent writing crops for every revision (see the searchable-revision entry below).
+- **Rejected:** failing the analysis when crops fail; the agent writing crops for every revision (see the searchable-revision entry below).
 - **Links:** [pull/192](https://github.com/Danwidj/video-search-and-summarization/pull/192); [`data.md`](data.md) (`set_revision_crops`).
 
 ### 2026-10-23: /library replaces the reports listing and carries both searches
-- **Decision:** `/library` has two tabs, Find incidents (one card per video, its official version else its newest) and Find evidence (`POST /api/search`, which the console sends to the agent's `POST /api/v1/incidents/search`, top 20, critic rejections kept). `/reports` redirects to `/library` with its query string, and dashboard links point there. `EvidenceSearchRepository` now has its agent adapter, `lib/adapters/agent/search.ts`.
+- **Decision:** `/library` has two tabs, Find incidents (one card per video, its official version else its newest) and Find evidence (`POST /api/search`, which the console sends to the agent's `POST /api/v1/incidents/search`, top 20, critic rejections kept). `/reports` redirects to `/library` with its query string, and dashboard links point there. `EvidenceSearchRepository` now has its agent adapter, `src/lib/adapters/agent/search.ts`.
 - **Why:** One page holds incident and evidence search with shared filters. Old `/reports` links and the dashboard keep working through the redirect.
 - **Rejected:** a separate `/search` page (the PR 118 plan); the mockup's "Find similar" and "Download crop", and the "No report yet" card, were left out for now.
 - **Links:** [pull/185](https://github.com/Danwidj/video-search-and-summarization/pull/185); [`mvp2/README.md`](mvp2/README.md).
@@ -87,7 +155,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`analysis-schema.md`](analysis-schema.md); [`../contracts/README.md`](../contracts/README.md).
 
 ### 2026-10-23: Console chat route calls POST /api/v1/incidents/chat
-- **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`lib/chat/agent-chat.ts`, types in `lib/ports/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.
+- **Decision:** `incident-console-v2` `/api/chat` sends a `chat-contract-v1` request (`src/modules/chat/infrastructure/agent/agent-chat.ts`, types in `src/modules/chat/domain/chat.ts`) with `context.scope: "incident"` and `incident_id` set to the report's video ID, and returns `{sessionId, message: {content, citations}}`. The report follow-up chat shows each citation as a link to its crop with the timestamp. The old report-context system prompt to the generic `/chat` is gone, because the contract has no free-text context field.
 - **Why:** The route called the generic NAT `/chat`, so the cited-evidence chat was unreachable from the UI (chat model audit, finding 5). The agent answers from stored evidence, which is still canned seed data (see [`vm-api-contracts.md`](vm-api-contracts.md)).
 - **Rejected:** keeping the report context in a system message (the contract's strict models accept it but the agent ignores it); a new port and repository (one adapter function is enough until a second caller exists).
 - **Links:** [`../contracts/chat-contract-v1/`](../contracts/chat-contract-v1/).
@@ -130,7 +198,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`../start.sh`](../start.sh); [`../.scripts/vm-stop-backend.sh`](../.scripts/vm-stop-backend.sh); [`../.scripts/test-vm-stop-backend.sh`](../.scripts/test-vm-stop-backend.sh); [`incident-profile-operations.md`](incident-profile-operations.md); [`../skills/incident-start/SKILL.md`](../skills/incident-start/SKILL.md).
 
 ### 2026-10-22: Drop retired v1 tables (matches and notifications) from finals schema
-- **Decision:** Drop `asset_matches`, `entity_matches`, `instrument_matches`, and `notifications` via migration `20261022123252_drop_unused_tables.sql`. The unused notification methods in `services/agent/src/vss_agents/utils/incident_db.py` are removed. Evaluation match persistence in `eval/` is left alone and handled separately. Ground-truth tables (`gt_*`) and `severity_eval_log` remain intact.
+- **Decision:** Drop `asset_matches`, `entity_matches`, `instrument_matches`, and `notifications` via migration `20261022123252_drop_unused_tables.sql`. The unused notification methods in `services/agent/src/vss_agents/utils/incident_db.py` are removed. Evaluation match persistence in `eval/` is left alone and handled separately. (`gt_*` and `severity_eval_log` were dropped later, by `20261023000000`.)
 - **Why:** These tables were only used by the retired v1 Streamlit console. The live finals Supabase database already dropped them. Removing them brings repository migrations, tests, and documentation in sync with the live database.
 - **Rejected:** Retaining empty tables or recreating them on finals.
 - **Links:** [`../supabase/migrations/20261022123252_drop_unused_tables.sql`](../supabase/migrations/20261022123252_drop_unused_tables.sql); [`data.md`](data.md); [`status.md`](status.md).
@@ -192,28 +260,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** more migrations on the shared database (the history is inconsistent and the lockdown and clean-up were never applied); a separate `supabase/finals/` workdir (changes every doc path, and the old folder stays pushable at midterm); pausing midterm at once (no longer a readable record); a bucket per phase (doubles 59.5 GB for no gain); copying the orphan and test runs or the pre-v1 tables (no reader can reach them).
 - **Links:** [`../supabase/README.md`](../supabase/README.md); [`../supabase/midterm/README.md`](../supabase/midterm/README.md); [`data.md`](data.md); [`architecture.md`](architecture.md#two-supabase-projects-one-per-phase).
 
-### 2026-10-19: Hexagonal architecture for incident-console-v2 UI and database decoupling
-- **Decision:** (adopted 2026-10-16 in PR 120; scope amended 2026-10-17 and 2026-10-19)
-  - `incident-console-v2` route handlers (`app/api/*`) depend on domain ports (`lib/ports/`) and reach Supabase only through PostgREST adapters (`lib/adapters/supabase/`) wired by `getDbAdapters()`. Ports, thin use cases (`lib/application/`, only for the multi-step routes: report detail, save, restore, official, delete) and adapters are the console's middle layer, inside the app. Components keep calling `/api` and never touch the database.
-  - Ports keep everything the routes use: revisions and their facets, editors and timestamps, and the full filter sets and results of `get_incident_dashboard` and `list_incident_report_summaries`.
-  - On the ports: health, dashboard, report library, videos list, official revision, report detail, save, restore and delete. Not yet: ground truth (untouched) and analysis saving.
-  - Console search goes through the vss-agent's `POST /api/v1/incidents/search` (search-contract-v1). `EvidenceSearchRepository` mirrors that contract; its adapter and a console search route come later. The search tables and RPC were delivered in PR 134; the remaining database work and VM persistence checks are PR 126.
-  - The dependency rules are conventions upheld in review (spec §2), with the callers not yet migrated listed in spec §7.
-- **Why:** Routes built PostgREST queries and RPC arguments themselves and passed rows or RPC JSON to the browser with only a cast, so the API did not translate data properly. The adapters now own every table, column and `p_*` name, map rows and RPC JSON field by field into camelCase domain types, and turn database refusals into `StoreRejection`. In-memory fakes make use cases testable without a database; contract suites keep them faithful to the adapters. Use cases keep orchestration and domain rules (R2 before the database on whole-video delete, embeddings before the official mark) out of HTTP handlers. The agent already embeds the query, runs the critic and records queries and hits, so the console needs no embedding model of its own.
-- **Rejected:** an ad-hoc `lib/db/` helper without refactoring the routes (they stay coupled to PostgREST); one PR combining the console refactor with the live migration (harder to review and roll back); routes calling ports directly for multi-step flows (the rules would stay in HTTP handlers); console search straight against Supabase (no critic, and it would duplicate the agent's embedding and query recording); a test that regex-matches `import` lines (proves nothing about behaviour); ESLint `no-restricted-imports` or dependency-cruiser (a new dependency).
-- **Links:** [PR 120](https://github.com/Danwidj/video-search-and-summarization/pull/120); [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md); [`vm-api-contracts.md`](vm-api-contracts.md); [`../incident-console-v2/`](../incident-console-v2/).
-
 ### 2026-10-19: Pin all VSS Docker appliances and native services to GPU 0 only
 - **Decision:** Restrict the entire VSS system on `kwanz-ws` to GPU 0. Set `RT_EMBED_DEVICE_ID='0'`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES='0'`, `FIXED_SHARED_DEVICE_IDS='0'`, `CUDA_VISIBLE_DEVICES='0'`, and `NVIDIA_VISIBLE_DEVICES='0'` in `dev-profile-incident/.env`. Override `streamprocessing-ms`, `sensor-ms`, and `rtvi-embed` in `compose.override.yml` with explicit GPU 0 device reservations (`device_ids: ["0"]`) and `NVIDIA_VISIBLE_DEVICES=0` / `CUDA_VISIBLE_DEVICES=0` environment variables (alongside `nvstreamer-2d-fusion` and `perception-2d-fusion`). Export `CUDA_VISIBLE_DEVICES=0` and `NVIDIA_VISIBLE_DEVICES=0` in `native-services.sh`, `vm-ensure-docker.sh`, and `start.sh`. Pin `vss-rtvi-embed` to GPU 0 even though it is unused by MVP2 (MVP2 uses remote `nvidia/llama-nemotron-embed-vl-1b-v2` text embeddings and remote Brev VLM).
 - **Why:** `kwanz-ws` is shared with another user whose training job occupies GPU 1 (46.9 / 49 GB at 87°C). VSS must leave GPU 1 completely untouched. Previously `RT_EMBED_DEVICE_ID` and `FIXED_SHARED_DEVICE_IDS` defaulted to `1`, while `streamprocessing-ms` and `sensor-ms` ran with `runtime: nvidia` without a device reservation or visible device pin, exposing all GPUs.
 - **Rejected:** Removing `vss-rtvi-embed` completely (pinning to GPU 0 preserves compatibility if stock VSS embedding flows are ever re-evaluated); dynamically sharing GPU 1 (the co-tenant workload leaves negligible memory and runs at high thermal load).
 - **Links:** [`compose.override.yml`](../compose.override.yml); [`.env`](../.env); [`architecture.md`](architecture.md); [`status.md`](status.md).
-
-### 2026-10-18: Drop retired Streamlit incident-console from compose.yml
-- **Decision:** Remove `./incident-console/compose.yml` from `deploy/docker/developer-profiles/dev-profile-incident/compose.yml` and correct the comments stating it is the profile-exclusive service.
-- **Why:** The Streamlit v1 console is retired (`incident-console-v2` is the sole UI). Nothing depends on including `vss-incident-console` in the profile's compose stack.
-- **Rejected:** keeping the inactive include in `compose.yml`.
-- **Links:** [`compose.yml`](../compose.yml); [`../archived/incident-console/README.md`](../archived/incident-console/README.md); [`AGENTS.md`](../AGENTS.md).
 
 ### 2026-10-18: Console and agent bind loopback
 - **Decision:** `incident-console-v2` runs with `-H 127.0.0.1` (npm `dev`/`start` scripts and `start.sh`). `VSS_AGENT_HOST` defaults to `127.0.0.1`; haproxy's agent backend uses `VSS_AGENT_BACKEND_HOST=127.0.0.1` (profile override of a new shared-template variable defaulting to `HOST_IP`) and the tunnel forwards to the VM loopback.
@@ -289,19 +340,20 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Decision:** `get_incident_dashboard` and `list_incident_report_summaries` take `p_timezone` (default `'UTC'`) and convert `reports.generated_datetime` (naive UTC) for weekday and hour grouping and filtering. The console sends the viewer's IANA zone (offsets rejected) detected after mount; labels show local hours with the zone name. Migration `20260928000000` must be applied before or with the console deploy.
 - **Why:** Operators analyse by local shift. Dashboard drill-down links stay count-exact because both pages detect the same zone.
 - **Rejected:** client-side re-bucketing; converting the column to `timestamptz`.
-- **Links:** [`../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/lib/time.ts`](../incident-console-v2/lib/time.ts).
+- **Links:** [`../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql`](../supabase/midterm/migrations/20260928000000_local_time_heatmap_and_time_filters.sql); [`../incident-console-v2/src/lib/time.ts`](../incident-console-v2/src/lib/time.ts).
 
 ### 2026-09-27: Validation policy core-scored-v1
 - **Decision:** Only database-backed fields (type, window, description, severity, confidence, entities, instruments, assets) decide persistence and scoring. `title`, `severity_reason`, `location`, `timeline` and `uncertainties` are best-effort enrichment: a `TIMELINE_*` failure is recorded and shown but neither rejects the report nor empties the eval prediction, and is never repaired. A contextual core rule requires the window to lie within the video when its length is readable (`0 <= T < duration + 1`). Schema violations stay fatal. `full_contract_ok` keeps contract validity; `core_ok` decides.
+  This covers the Cosmos models, which often put lead-up or aftermath events outside their own incident window: the timeline is recorded as returned, never repaired, and the report page labels it ([`analysis-schema.md`](analysis-schema.md#3-validation-id-only-repair-and-outcomes)).
 - **Why:** In a 12-call pilot the strict timeline rule rejected 7 answers, 4 with windows matching ground truth, yet accepted a 29-36 s window on a 12.5 s clip. Recovered answers rose from 6 of 15 to 13 of 15.
 - **Rejected:** a whole-video timeline (deferred); isolating enrichment schema errors (needs partial parsing).
-- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/lib/contract/validate.ts`](../incident-console-v2/lib/contract/validate.ts).
+- **Links:** [`../contracts/README.md`](../contracts/README.md); [`../eval/contract.py`](../eval/contract.py); [`../incident-console-v2/src/modules/contract/domain/validate.ts`](../incident-console-v2/src/modules/contract/domain/validate.ts).
 
 ### 2026-09-27: Console on the shared contract with ID-only repair
 - **Decision:** Gateway analysis sends eval's exact P1 request (allowlisted model from `contracts/inference.json`, canonical prompt, strict `response_format`, 16384 tokens, 64 frames) plus an optional fenced reviewer instruction. It validates strictly and records every attempt immutably in `model_runs.notes` with outcome `valid_first_pass`, `valid_after_structural_repair`, `contract_failed` or `request_failed`. The only repair is `id-normalization-v1`: it applies only when every violation is ID-only, changes only IDs, holder references and order, then re-validates. Eval never credits repaired output.
 - **Why:** The endpoint enforces the schema, but cross-field rules (sequential IDs, timeline window) can only be checked afterwards. Malformed IDs are safely repairable; timeline content is a model judgement.
 - **Rejected:** LLM repair passes; retrying the same request (deterministic at temperature 0); ID patterns in the schema (only if malformed-ID evidence justifies a v4).
-- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../incident-console-v2/lib/contract/repair.ts`](../incident-console-v2/lib/contract/repair.ts).
+- **Links:** [`analysis-schema.md`](analysis-schema.md); [`../incident-console-v2/src/modules/contract/domain/repair.ts`](../incident-console-v2/src/modules/contract/domain/repair.ts).
 
 ### 2026-09-27: Unified contract decisions (eval, console, agent)
 - **Decision:** The eval P1 prompt is the base. Nested snake_case output enforced by `response_format: json_schema`, with the prompt describing field meaning only. One request pattern everywhere: P1 (video to JSON) then RP1 (JSON to prose). Strict parsing, no few-shot, no alias normalisation. Taxonomy is eval's five labels: road accident, burglary, explosion, assault, animal attack. Video is a 1 h signed R2 URL in every path. `confidence_score` is null unless the API gives a native score. `incident.duration` is computed as `end_timestamp - start_timestamp` and is not in the schema. Files live in `contracts/`, validated in Python with `jsonschema` plus cross-field checks in `eval/contract.py`.
@@ -310,22 +362,16 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [`../contracts/README.md`](../contracts/README.md); [`analysis-schema.md`](analysis-schema.md).
 
 ### 2026-09-27: Report library and thumbnails
-- **Decision:** `/reports` is served by the `list_incident_report_summaries` RPC (`SECURITY INVOKER`, `service_role` only), six summaries per page, returning no notes, evidence arrays or signed URLs. Cards never load video. The browser captures a frame 25% into each new upload (at most 640x360 WebP) and uploads it to `thumbnails/<video-key>.webp`; a missing thumbnail shows a skeleton, and deleting a video deletes its thumbnail. `GET /api/reports/<videoId>?run=<modelRunId>` is the only path that signs and loads a video.
+- **Decision:** The report library (now `/library`) is served by the `list_incident_report_summaries` RPC (`SECURITY INVOKER`, `service_role` only), six summaries per page, returning no notes, evidence arrays or signed URLs. Cards never load video. The browser captures a frame 25% into each new upload (at most 640x360 WebP) and uploads it to `thumbnails/<video-key>.webp`; a missing thumbnail shows a skeleton, and deleting a video deletes its thumbnail. `GET /api/reports/<videoId>?revision=<revisionId>` is the only path that signs and loads a video.
 - **Why:** The old library read eight tables, parsed every report and signed every video before becoming usable.
 - **Rejected:** a summary table; client-side slicing; per-card video loading; server-side frame extraction per request.
-- **Links:** [`../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/app/api/reports/route.ts`](../incident-console-v2/app/api/reports/route.ts).
+- **Links:** [`../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql`](../supabase/midterm/migrations/20260926120000_list_incident_report_summaries.sql); [`../incident-console-v2/src/app/api/reports/route.ts`](../incident-console-v2/src/app/api/reports/route.ts).
 
 ### 2026-09-26: Durability checks and upload key layout
-- **Decision:** `incident-console-v2` verifies direct uploads with R2 `HeadObject`, verifies again before inference, then reads back `videos`, `model_runs`, `incidents` and `reports` and confirms `videos.filepath` is the submitted R2 key before `POST /api/analysis` returns 200. All new uploads go under `uploads/<sensorId>/<uuid>.<ext>`; `anomaly/<category>/` is reserved for classified seed and eval media.
+- **Decision:** `incident-console-v2` verifies direct uploads with R2 `HeadObject`, verifies again before inference, then reads back `videos`, `model_runs` and the AI revision and confirms `videos.filepath` is the submitted R2 key before `POST /api/analysis` returns 200. All new uploads go under `uploads/<sensorId>/<uuid>.<ext>`; `anomaly/<category>/` is reserved for classified seed and eval media.
 - **Why:** A valid-looking key does not prove the object exists, independent PostgREST writes can partly succeed, and an upload path cannot encode a classification that happens after storage.
 - **Rejected:** trusting individual write responses; moving objects after analysis.
-- **Links:** [`../incident-console-v2/lib/r2/config.ts`](../incident-console-v2/lib/r2/config.ts); [`data.md`](data.md).
-
-### 2026-09-25: Database defaults, atomic RPC writers and error surfacing
-- **Decision:** Server-side UTC defaults on timestamp columns, `review_status.status` default `'unreviewed'`, `notifications.acknowledged` default `FALSE`, and `insert_incident` with `p_confidence_score DOUBLE PRECISION` (migration `20260925031000`). PostgREST writers call `/rpc/insert_incident` atomically. The agent returns HTTP 422/504 on extraction failure instead of persisting a default report. Composite `ON DELETE CASCADE` stays.
-- **Why:** Defaults were client-side only, leaving NULL timestamps; the `REAL` parameter lost precision; non-RPC writes were not atomic; failures persisted a fake default report. Cascade is intentional for re-analysis under one run id.
-- **Rejected:** dropping `ON DELETE CASCADE`; overloading `insert_incident` (PostgREST reports ambiguity).
-- **Links:** [`../supabase/midterm/migrations/20260925031000_schema_defaults_and_precision.sql`](../supabase/midterm/migrations/20260925031000_schema_defaults_and_precision.sql); [`data.md`](data.md).
+- **Links:** [`../incident-console-v2/src/lib/r2/config.ts`](../incident-console-v2/src/lib/r2/config.ts); [`data.md`](data.md).
 
 ### 2026-09-25: Remote Brev inference, no local GPU NIMs
 - **Decision:** `vss-agent` and the eval judge use the Brev Switchyard endpoint with `_type: openai` (never `nim`) and bare base URLs, `LLM_NAME=nvidia/nemotron-3-ultra`, `VLM_NAME=nvidia/cosmos-3-super-reasoner`. On-prem GPU NIM deployment is retired.
@@ -339,10 +385,10 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Rejected:** skills in root `skills/` (merge conflicts with upstream); editing shared SDRC files.
 - **Links:** [`../AGENTS.md`](../AGENTS.md); [`../skills/README.md`](../skills/README.md); [`../compose.override.yml`](../compose.override.yml).
 
-### 2026-09-24: Retire the Streamlit console; separate eval pipeline; R2 upload fallback
-- **Decision:** `incident-console-v2` (Next.js) is the sole UI; the Streamlit `incident-console` is retired (fixes only). Evaluation is a standalone P1/RP1 pipeline in `eval/`, not `nat eval`, because it scores per-field extraction against tabular ground truth rather than chat trajectories. When a real VST chunk upload returns no durable R2 key, the console uploads directly to R2 via `/api/uploads/r2`.
-- **Why:** The Streamlit UI was slow; real VST never returns an R2 key, only the mock faked it.
-- **Links:** [`../eval/`](../eval/); [`../incident-console-v2/app/api/uploads/r2/route.ts`](../incident-console-v2/app/api/uploads/r2/route.ts).
+### 2026-09-24: Separate eval pipeline; R2 upload fallback
+- **Decision:** Evaluation is a standalone P1/RP1 pipeline in `eval/`, not `nat eval`, because it scores per-field extraction against tabular ground truth rather than chat trajectories. When a real VST chunk upload returns no durable R2 key, the console uploads directly to R2 via `/api/uploads/r2`.
+- **Why:** Real VST never returns an R2 key; only the mock faked it.
+- **Links:** [`../eval/`](../eval/); [`../incident-console-v2/src/app/api/uploads/r2/route.ts`](../incident-console-v2/src/app/api/uploads/r2/route.ts).
 
 ### 2026-09-21: Native services on kwanz-ws
 - **Decision:** Run `vss-agent`, `video-analytics-api` and `behavior-analytics` as native host processes via `.scripts/native-services.sh`; VIOS/VST media and infrastructure stay in Docker.

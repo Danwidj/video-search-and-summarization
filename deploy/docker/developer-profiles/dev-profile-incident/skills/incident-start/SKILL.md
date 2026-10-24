@@ -44,7 +44,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
    ```bash
    for d in incident-console-v2 vlm-gateway mock-backend; do ln -sfn ../.env.local "$d/.env.local"; done
    ```
-   If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees. It never overwrites an existing `.env.local` copy, so a worktree made before the finals switch still holds the midterm values: refresh it.
+   If you ran `.githooks/activate.sh` once for the clone, it keeps these links in sync across worktrees and refreshes a worktree's `.env.local` that differs from the main worktree's copy ([`.githooks/README.md`](../../../../../../.githooks/README.md)).
 
    The Supabase values must name the finals project. Midterm (`rfevukimyftzbxlehwel`) is a frozen read-only record ([`.docs/architecture.md`](../../.docs/architecture.md#two-supabase-projects-one-per-phase)). Mock mode passes these credentials to the mock backend too, and its analyse route writes `mock-run-*` rows into that database.
 4. **vm mode only: SSH identity.** Set up `Host kwanz-ws` with `HostName` and your own `User` in `~/.ssh/config`, or export `VSS_SSH_USER` or `VSS_SSH_TARGET`. Resolution is non-interactive. See [`.docs/incident-profile-operations.md` §3](../../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).

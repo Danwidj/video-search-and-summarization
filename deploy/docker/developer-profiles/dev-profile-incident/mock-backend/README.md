@@ -1,17 +1,8 @@
 # mock-backend
 
-Parent directory for independent mock backends used in local development. Each
-sibling is its own package with its own `pyproject.toml` - `uv sync`/run one without
-touching another.
+Two independent zero-GPU mock backends for local development; each is its own `uv` project.
 
-- [`base_profile_mock/`](base_profile_mock/README.md) - mocks the entire
-  `bp_developer_base` backend (vss-agent API + VIOS/VST + LLM/VLM inference) so the
-  real UI can be developed against it with zero GPU and zero NIM containers.
-- [`search_profile_mock/`](search_profile_mock/README.md) - strict superset of
-  `base_profile_mock` for `bp_developer_search`: all base routes plus agent
-  search endpoints, VST sensor list, video-analytics-api `/frames`, Kibana
-  stubs, and Elasticsearch/Logstash info stubs (port 7778, zero GPU). Its incident search
-  answers from the same finals snapshot as `base_profile_mock`.
-The mock backends do not provide an offline CSV or Postgres mode for the
-incident console. Use the database-backed console and its documented seed or
-evaluation commands instead.
+- [`base_profile_mock/`](base_profile_mock/README.md) (:7777): the agent, VST and inference in one process. `./start.sh --mode mock` uses it.
+- [`search_profile_mock/`](search_profile_mock/README.md) (:7778): the stock search profile's routes plus incident search, run on its own.
+
+What each one serves: [`../.docs/architecture.md`](../.docs/architecture.md#component-reference-table).

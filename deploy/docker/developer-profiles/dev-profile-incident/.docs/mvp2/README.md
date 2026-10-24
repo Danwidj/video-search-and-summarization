@@ -1,8 +1,8 @@
 # MVP2: Natural-Language Evidence Search with Object Crops
 
 **Profile:** `dev-profile-incident`
-**Target:** Zero-GPU local workstation and `kwanz-ws` (2x NVIDIA RTX A6000 48 GB)
-**Status:** Planning (contracts and schema defined, VM backend steps in progress)
+**Target:** Zero-GPU local workstation and `kwanz-ws` (2x NVIDIA RTX A6000 48 GB, of which VSS uses GPU 0 only: [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote))
+**Status:** search, chat and crops delivered; the retrieval eval is in progress ([status](../status.md#2-mvp2-natural-language-evidence-search))
 
 ---
 
@@ -79,26 +79,22 @@ Search & Retrieval
 
 2. **Crop Pipeline**: When an incident report is generated, a lightweight CPU utility extracts the video frame at `timestamp_seconds`, then the detector port runs on the single frame with the item name as prompt and returns a bounding box (with 5% padding). Today the port is backed by the remote VLM (`DefaultDetector`, whole-frame fallback when no box is found); local open-vocabulary detectors (Grounding DINO, OWLv2) are evaluated offline in [`eval.md`](eval.md) §6 ([decisions](../decisions.md), 2026-10-18). The cropped JPEG is uploaded to Cloudflare R2 and the metadata (`timestamp_seconds`, `bounding_box`, `image` R2 key, `item_name`, `item_description`) is stored in the `evidence_crops` table. A text embedding model generates the pgvector embedding from the item description/text.
 
-3. **evidence_crops table** (new, unified):
-   - Consolidates entities, instruments, and assets into one table
-   - Columns: `incident_id, model_run_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image (R2 key), embedding vector(1024)`
-   - HNSW index on `embedding` for cosine distance search
-   - RLS: `service_role` only
+3. **evidence_crops table:** one table for entities, instruments and assets, keyed by `revision_id` and holding each video's searchable revision only (its official revision, else its newest). Columns, index, writers and RLS: [`data.md`](../data.md#evidence_crops).
 
 4. **Search Route & Database RPC**:
    - Frontend calls REST route `POST /api/v1/incidents/search` (`search-contract-v1`) with natural-language query text and optional filters.
    - The backend service generates `query_embedding` and executes the `search_evidence_items` RPC (Supabase Postgres, restricted to `service_role`).
    - The RPC takes `p_query_embedding`, `top_k`, `min_similarity`, and applies filters (`item_type`, `incident_type`, `severity_level`, `min_similarity`).
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
-   - Joins with `videos` (via `selected_model_run_id`) and `incidents` to return candidate metadata.
+   - Returns only crops of each video's searchable revision, with the revision's facets as candidate metadata.
    - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
-   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`lib/adapters/agent/search.ts`) calls this route ([console spec §3.1](console-hexagonal-architecture.md#libportssearchts-mvp2-extension-port)).
+   - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`src/lib/adapters/agent/search.ts`) calls this route ([console layout](console-hexagonal-architecture.md#2-ports-and-adapters)).
 
 5. **Query Results** (new table):
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
    - Enables audit trails and critic feedback loops
 
-6. **Chat Endpoint**: Follow-up conversational queries against the same search infrastructure. The chat REST endpoint receives conversational history, generates query embeddings, and invokes the `search_evidence_items` RPC with the resolved query context.
+6. **Chat Endpoint**: Follow-up questions with evidence citations. The chat route makes no model call and no embedding: it keyword-matches a report version's saved evidence, or asks its search client, which is still in-memory canned data ([`vm-api-contracts.md`](../vm-api-contracts.md#post-apiv1incidentschat)).
 
 ---
 
@@ -107,7 +103,7 @@ Search & Retrieval
 | Contract / Schema | Description | Consumed By |
 |---|---|---|
 | **incident-contract-v4** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; entities also `first_seen_seconds` and `last_seen_seconds`, INT; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
-| **evidence_crops** (new Supabase table) | Unified table: `(revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route, chat endpoint; rows written by the console from `POST /api/v1/incidents/evidence-embeddings` for official revisions |
+| **evidence_crops** (new Supabase table) | Unified table: `(revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route; rows written by the console from `POST /api/v1/incidents/evidence-embeddings` for each video's searchable revision |
 | **query_results** (new Supabase table) | Records: `id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
 | **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true), `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
 | **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
@@ -137,7 +133,7 @@ The PR workstreams and the VM backend steps form a chain of dependencies. Each w
 |---|---|---|---|
 | **PR 118** (frontend) | Search box, results display, chat endpoint, theming | VM backend Step 4 (search REST route), Step 5 (chat REST route) | Cannot display search results or chat without REST API routes |
 | **PR 119** (eval) | Proposed tracks (pending approval, [`eval.md`](eval.md) P-1): retrieval benchmark (one-shot vs critic), extraction parity, detector and embedding studies; full-system comparison deferred | VM backend Step 3 (evidence_crops with embeddings), Step 4 (search RPC / REST route) | Cannot run retrieval benchmarks without embeddings and search RPC |
-| **PR 120** (console middle layer) | Hexagonal ports and adapters in `incident-console-v2` (`lib/ports/`, `lib/adapters/supabase/`, `lib/application/`); evidence search port shaped on search-contract-v1 | VM backend Step 4 (search REST route) for the search adapter | Console search needs the port's agent adapter |
+| **PR 120** (console middle layer) | Hexagonal ports and adapters in `incident-console-v2` (now `src/modules/*/`, see [layout](console-hexagonal-architecture.md)); evidence search port shaped on search-contract-v1 | VM backend Step 4 (search REST route) for the search adapter | Console search needs the port's agent adapter |
 | **PR 126** (data & search layer) | Live RLS & RPC lockdown, connection & VM persistence verification (the `evidence_crops` / `query_results` / `search_evidence_items` migration was delivered in PR 134) | VM backend Step 1 (contract-v3), Step 2 (mock backend) | Cannot verify the live schema without the contract and mock backend |
 
 **Order of operations:**
@@ -157,21 +153,18 @@ The PR task docs assume the following conventions and environment setup. This se
 ### Environment
 
 - **Zero-GPU local development:** `mock-backend/base_profile_mock/` (port 7777) provides a full mock of vss-agent API + VST + inference behind one FastAPI process. `mock-backend/search_profile_mock/` (port 7778) adds search-profile mock for MVP2 prep. `vlm-gateway/` (port 8600) holds the Brev key server-side.
-- **GPU-backed VM:** `kwanz-ws` with 2x NVIDIA RTX A6000 48 GB. `start.sh --mode vm` launches native `vss-agent` on port 8000. Docker appliances (HAProxy, VIOS, Redis, Kafka, Elasticsearch) run in compose.
+- **GPU-backed VM:** `kwanz-ws`, GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). `start.sh --mode vm` launches native `vss-agent` on port 8000. Docker appliances (HAProxy, VIOS, Redis, Kafka; Elasticsearch only with `ENABLE_ANALYTICS=true`) run in compose.
 - **Secrets:** Server-side only. `VLM_GATEWAY_API_KEY` owned by gateway, not browser (`NEXT_PUBLIC_` never used for credentials). `/api/health` returns booleans only.
 
 ### Conventions
 
 - **Item ID formats:** Sequential `E1..`, `I1..`, `A1..` (contract-v2). Enforced by `id-normalization-v1` repair.
-- **Timestamp format:** Integer seconds (`timestamp_seconds INT`) at the application and contract boundary for evidence items (entities, instruments, assets); incident temporal boundaries use `start_timestamp` and `end_timestamp`. DB stores `VARCHAR(32)` for legacy compatibility (`M:SS` clock strings), but contract and app layer use integer seconds.
+- **Timestamp format:** Integer seconds (`timestamp_seconds INT`) for evidence items (entities, instruments, assets); incident temporal boundaries use `start_timestamp` and `end_timestamp`. Storage: [`data.md`](../data.md#report_revisions).
 - **Taxonomy:** `incident-contract-v2` taxonomy retained: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. Entity type: `human`, `animal`, `unknown`. Instrument `threat_level` 1-5.
-- **RLS and RPC lockdown:** New MVP2 tables (`evidence_crops`, `query_results`) enable RLS; privileges revoked from `anon`/`authenticated`; granted to `service_role` only. RPC execution permissions restricted to `service_role` via `REVOKE EXECUTE ON FUNCTION search_evidence_items FROM anon, authenticated; GRANT EXECUTE ON FUNCTION search_evidence_items TO service_role;`.
-- **pgvector:** Supabase Postgres `vector` extension enabled. HNSW index `m=16, ef_construction=64` on `evidence_crops.embedding` for cosine distance (`<=>`).
+- **RLS, RPC lockdown and pgvector:** [`data.md`](../data.md#row-level-security-rls--access-control).
 - **Critic always on:** Every search candidate is evaluated by the VLM critic; both ranking and verdict are persisted. No opt-in `--search` flag; search starts automatically with `start.sh`.
-- **R2 key layout:** `evidence/<videoId>/<batchId>/<itemId>.jpg` (e.g. `evidence/Explosion001/1f9c2a7b4e6d8035a1c2e4f6b8d0a2c4/E1.jpg`), where `<batchId>` is a fresh UUID per analysis run and item ids (`E#`, `I#`, `A#`) are unique across types.
-- **Search parameters:**
-  - REST route: `query` (natural-language string), `top_k DEFAULT 10`, `min_similarity DEFAULT 0.0`, `hide_rejected DEFAULT true`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
-  - Database RPC: `p_query_embedding vector(1024)`, `top_k DEFAULT 10`, `min_similarity DEFAULT 0.2`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`.
+- **R2 key layout:** [`data.md`](../data.md#2-cloudflare-r2-storage-architecture).
+- **Search parameters:** the REST route in [`vm-api-contracts.md`](../vm-api-contracts.md#post-apiv1incidentssearch), the RPC in [`data.md`](../data.md#search_evidence_items).
 
 ### Definitions (for PR task doc consistency)
 
@@ -190,7 +183,7 @@ The PR task docs assume the following conventions and environment setup. This se
 **File:** `.docs/mvp2/frontend.md` (to be created by PR assignee)
 
 > [!IMPORTANT]
-> **Status (2026-10-23): console search and chat are merged.** There is no separate `/search` page: `/library` (`app/library/page.tsx`) holds Find incidents and Find evidence. Find evidence posts to `POST /api/search`, which calls the agent's `POST /api/v1/incidents/search` through `lib/adapters/agent/search.ts`. The report page's chat (`components/report-chat.tsx`) posts to `POST /api/chat` (agent adapter `lib/chat/agent-chat.ts`) and follows the selected version. Find incidents text search runs the agent's revision search (`POST /api/v1/incidents/revisions/search`) and a hit's link seeks the report to its second. The frame picker (Edit mode, Replace image) is merged. Not yet built: the theme tokens and saved searches. Versions and endpoints are in [`../architecture.md`](../architecture.md#report-versions-view-edit-and-history).
+> **Status (2026-10-23): console search and chat are merged.** There is no separate `/search` page: `/library` (`src/app/library/page.tsx`) holds Find incidents and Find evidence. Find evidence posts to `POST /api/search`, which calls the agent's `POST /api/v1/incidents/search` through `src/lib/adapters/agent/search.ts`. The report page's chat (`src/sections/reports/components/ReportChat/`) posts to `POST /api/chat` (agent adapter `src/modules/chat/infrastructure/agent/agent-chat.ts`) and follows the selected version. Find incidents text search runs the agent's revision search (`POST /api/v1/incidents/revisions/search`) and a hit's link seeks the report to its second. The frame picker (Edit mode, Replace image) is merged. Not yet built: the theme tokens and saved searches. Versions and endpoints are in [`../architecture.md`](../architecture.md#report-versions-view-edit-and-history).
 
 **What PR 118 needs from this overview:**
 - The `POST /api/v1/incidents/search` REST contract (query text, filter parameters, return shape, critic verdict format)
@@ -222,7 +215,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - The `search_evidence_items` RPC and search REST route contracts for running retrieval benchmarks
 - The difference between **one-shot baseline** (retrieval only, no critic) and **system baseline** (retrieval + critic always on)
 - Taxonomy and item type filters (`item_type IN ('entity','instrument','asset')`, `incident_types`)
-- Mock backends (:7777 launched by `start.sh --mode mock`, :7778 standalone) for harness plumbing tests only; they ignore the query text
+- Mock backends (:7777 launched by `start.sh --mode mock`, :7778 standalone) for harness plumbing tests only; they answer from a fixed finals snapshot by query-word overlap, with placeholder critic verdicts, so their relevance means nothing
 - VM backend Steps 3 and 4 must be live: crop service producing embeddings, and search RPC with pgvector
 
 **Key metrics for eval:**
@@ -245,7 +238,7 @@ Hexagonal ports and adapters between the console's API routes and Supabase (no d
 > - **Owner:** PR 126 (`docs(dev-profile-incident): MVP2 database migration and search layer workstream tasks`)
 > - **Stand-in Placeholder:** Table definitions in §2 and the migration checklist below; the console never queries these tables (it searches through the vss-agent route).
 
-The DDL, RLS and RPC items below are delivered and applied (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`, PR 134; in finals they are part of `supabase/migrations/20261020000000_finals_baseline.sql`, which reads the reviewer version through the effective views); PR 126 keeps the live verification.
+The DDL, RLS and RPC items below are delivered and applied (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`, PR 134; in finals they are part of `supabase/migrations/20261020000000_finals_baseline.sql`, and `20261023000000` rebuilt `evidence_crops` and `query_results` keyed by `revision_id`); PR 126 keeps the live verification.
 
 **What PR 126 needs from this overview:**
 - The complete `evidence_crops` migration DDL (table definition, HNSW index, RLS lockdown)
@@ -315,6 +308,9 @@ The following specifications are planned, not final, pending completion of the o
 > - **Delivered:** `scripts/backfill_official_timestamps.py` with bounded concurrency, batch sizing, idempotent resumability, and per-item failure isolation.
 > - **Production Adapters:** `LiveCropClient` (remote VLM detector + R2 upload), `RemoteTextEmbedderAdapter` (NVIDIA-hosted `nvidia/llama-nemotron-embed-vl-1b-v2` embeddings at 1024 dimensions), and `LiveEvidenceStore` (`SupabaseEvidenceStore` upserting into `evidence_crops`). In-memory fakes retained for unit tests and `--dry-run`.
 
+> [!NOTE]
+> **DROPPED (2026-10-24): multi-subagent routing config and full RT-CV / RT-Embed indexing.** Neither is part of MVP2; the reasons are in [`../decisions.md`](../decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2).
+
 ---
 
 ### Master Workstream TODO Index
@@ -334,7 +330,7 @@ The following specifications are planned, not final, pending completion of the o
 | 11 | `evidence_crops` & `query_results` Migration | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
 | 12 | `search_evidence_items` Database RPC | PR 134 | Delivered (`supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; applied to midterm; part of the finals baseline) |
 | 13 | Crop Embedding Generator & Ingestion | Backfill | Replaced: the analyze route crops and uploads, `POST /api/v1/incidents/evidence-embeddings` embeds, the console stores |
-| 14 | Console Middle Layer (ports and adapters) | PR 120 | `incident-console-v2/lib/ports/`, `lib/adapters/supabase/` |
+| 14 | Console Middle Layer (ports and adapters) | PR 120 | Done: `incident-console-v2/src/modules/*/` and `src/lib/container.ts` ([layout](console-hexagonal-architecture.md)) |
 | 15 | `search-contract-v1` REST Schemas | `fm/vss-mvp2-contracts` | `search_request.schema.json` & `search_response.schema.json` |
 | 16 | Mock Search Backend (port 7778) | `fm/vss-mvp2-contracts` | Search mock routers in `mock-backend/search_profile_mock` |
 | 17 | Targeted Timestamp Backfill Script | `fm/vss-mvp2-backfill-timestamps` | Retired (script and tests removed) |

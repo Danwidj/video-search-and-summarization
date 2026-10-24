@@ -11,7 +11,7 @@ Like NVIDIA's skills, these are for **deploying and operating** the profile from
 ## Orientation
 
 ```
-  LAPTOP                                    kwanz-ws (shared GPU VM)
+  LAPTOP                                    kwanz-ws (shared, GPU 0)
   ┌───────────────────────────┐ SSH tunnel  ┌──────────────────────────────┐
   │ incident-console-v2 :3200 │─8000, 7777─▶│ vss-agent :8000 (native)     │
   │                           │             │ HAProxy :7777 → VIOS/VST     │
@@ -61,7 +61,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | [incident-operate-vm](incident-operate-vm/SKILL.md) | Operate `kwanz-ws`: the native-vs-Docker split, `native-services.sh`, Compose appliances, `generated.env.remote` rules, the agent editable reinstall, and the troubleshooting order. Includes the never-run list. |
 | [incident-analyze-video](incident-analyze-video/SKILL.md) | Upload → analyse → persist → version flow in both modes. Covers agent and console API contracts, error codes, where each row comes from, and verification. |
 | [incident-search](incident-search/SKILL.md) | Search and chat requests, critic verdicts, evidence crops, and the local/VM verification path. |
-| [incident-manage-database](incident-manage-database/SKILL.md) | Finals schema (baseline, reviewer version, RPCs), the SQL harness and security check, `supabase db push` with dry-run first, PostgREST vs direct-Postgres access, and the R2 key layout. Never writes to the frozen midterm project. |
+| [incident-manage-database](incident-manage-database/SKILL.md) | Finals schema (baseline, revision schema, RPCs), the SQL harness and security check, `supabase db push` with dry-run first, PostgREST vs direct-Postgres access, and the R2 key layout. Never writes to the frozen midterm project. |
 | [incident-run-eval](incident-run-eval/SKILL.md) | Standalone `eval/` pipeline: embedding server, GT ingest, seeded split, batch run, aggregation, and hermetic tests. |
 
 ---

@@ -24,7 +24,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Decision log](.docs/decisions.md)
 - [MVP2 natural-language search overview](.docs/mvp2/README.md)
 - [MVP2 evaluation plan (retrieval, critic, detector, embeddings)](.docs/mvp2/eval.md)
-- [incident-console-v2 middle layer (ports and adapters)](.docs/mvp2/console-hexagonal-architecture.md)
+- [incident-console-v2 hexagonal layout](.docs/mvp2/console-hexagonal-architecture.md)
 
 **Components**
 - [Next.js console (v2, active)](incident-console-v2/README.md)
@@ -35,7 +35,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Supabase schema, SQL harness and midterm-to-finals copy](supabase/README.md); [frozen midterm record](supabase/midterm/README.md)
 - [Lifecycle scripts](.scripts/README.md)
 - [VM dotfiles](.dotfiles/README.md)
-- [Archived components](archived/README.md), including the [Streamlit console (v1)](archived/incident-console/README.md)
+- [Archived components](archived/README.md) (read-only)
 
 ## Steps to set up and deploy
 
@@ -58,14 +58,9 @@ ln -sfn ../.env.local mock-backend/.env.local
 
 Run `start.sh` with your chosen mode:
 
-- **Mock Mode (Zero-GPU development):**
-  ```bash
-  ./start.sh --mode mock
-  ```
-  Starts the local mock backend (`mock-backend/base_profile_mock` on `127.0.0.1:7777`), the local VLM gateway (`vlm-gateway` on `127.0.0.1:8600`), and launches `incident-console-v2` on `127.0.0.1:3200` (never touches SSH). `--mode local` is a deprecated alias for `--mode mock`.
+```bash
+./start.sh --mode mock   # zero GPU: local mock backend and VLM gateway, no SSH
+./start.sh --mode vm     # kwanz-ws over an SSH tunnel (VSS uses GPU 0 only there)
+```
 
-- **VM Mode (Full blueprint stack on kwanz-ws):**
-  ```bash
-  ./start.sh --mode vm
-  ```
-  Connects to `kwanz-ws` over SSH (explaining the cause if the VM is unreachable), checks running services, automatically deploys or self-heals missing Docker appliances and native services (`vss-agent`, cloning/pulling what is missing under timeouts), opens the backgrounded SSH port tunnel (8000, 7777), and launches `incident-console-v2` on `127.0.0.1:3200` (`--no-console` stops after the tunnel).
+What each mode starts and how to troubleshoot it: [`incident-start`](skills/incident-start/SKILL.md).

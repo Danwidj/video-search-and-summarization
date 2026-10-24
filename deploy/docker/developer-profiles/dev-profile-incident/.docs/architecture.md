@@ -87,8 +87,9 @@ flowchart TB
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
 | `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, report versions (View and Edit modes, History, official), `/library` search, report chat, report display |
-| `vlm-gateway` | Laptop (or VM) | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds Brev upstream credential server-side; exposes `/v1/chat/completions` for mock mode |
-| `mock-backend` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU local mock simulating VST upload, streaming, base profile responses, search, and chat |
+| `vlm-gateway` | Laptop | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds the Brev credential (`VLM_GATEWAY_API_KEY`) server-side and forwards `POST /v1/chat/completions` unchanged to `VLM_GATEWAY_BASE_URL` (default `https://switchyard-13doh4lsz.brevlab.com/v1`), model-agnostic, no streaming, `VLM_GATEWAY_TIMEOUT_SECONDS` (default 330, longer than the slowest per-model timeout in `contracts/inference.json`); `GET /health` answers `{"status": "ok"}`. Used in mock mode. A VM compose service (`vss-vlm-gateway`, `vlm-gateway/compose.yml`) exists, but `start.sh` never starts it |
+| `base_profile_mock` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU mock of the agent, VST and inference, started by `--mode mock`. Uploads go to R2; analyze writes a real AI revision to finals (`mock: true` in the response); evidence embeddings are deterministic; incident search, revision search and chat answer from `finals_snapshot.json`; stock chat, WebSocket HITL, RTSP and VST routes are canned |
+| `search_profile_mock` | Laptop | 7778 | Python (FastAPI / Uvicorn) | `mock-backend/search_profile_mock/` | Standalone mock of the stock search profile (agent search, VST sensor list, video-analytics `/frames`, Kibana and Elasticsearch stubs), plus incident search and revision search from the same snapshot; no incident chat or analyze |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
 | `behavior-analytics` | `kwanz-ws` | none (8080 is a HAProxy/label placeholder) | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
@@ -98,14 +99,14 @@ flowchart TB
 | `vss-vios-ingress` | `kwanz-ws` | 30888 | Docker container | `deploy/docker/services/vios/` (foundational) | Nginx VST ingress: /vst/api/v1/sensor → sensor-ms :30000; other /vst/api/v1 and /vst/storage → streamprocessing :10000 |
 | `vss-vios-sensor` | `kwanz-ws` | 30000 | Docker container (GPU 0) | `deploy/docker/services/vios/initiator/` | VST sensor registration service (`sensor-ms`; pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh`) |
 | `vss-vios-postgres` | `kwanz-ws` | none (Unix socket only) | Docker container | `deploy/docker/services/vios/` | VIOS internal database for camera sensors and stream registrations |
-| `perception-2d-fusion` (`vss-rtvi-cv`) | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-search/video-analytics-2d-app/compose.yml` | Stock DeepStream perception service (pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh` and not used in MVP2) |
-| `rtvi-embed` (`vss-rtvi-embed`) | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 0, bridged) | `deploy/docker/services/rtvi/rtvi-embed/` | Stock Triton inference server for video embeddings (pinned to GPU 0 in `compose.override.yml`, but not started by `start.sh` and unused in MVP2; text embeddings and VLM are remote) |
+| `perception-2d-fusion` (`vss-rtvi-cv`) | `kwanz-ws` | 9000 | Docker container (GPU 0) | `deploy/docker/developer-profiles/dev-profile-search/video-analytics-2d-app/compose.yml` | Stock DeepStream perception service (pinned to GPU 0 in `compose.override.yml`; not started by `start.sh`; RT-CV indexing is dropped from MVP2) |
+| `rtvi-embed` (`vss-rtvi-embed`) | `kwanz-ws` | 8017 (→8000) | Docker container (GPU 0, bridged) | `deploy/docker/services/rtvi/rtvi-embed/` | Stock Triton inference server for video embeddings (pinned to GPU 0 in `compose.override.yml`; not started by `start.sh`; RT-Embed indexing is dropped from MVP2, whose text embeddings and VLM are remote) |
 | `redis` | `kwanz-ws` | 6379 (int) | Docker container | Stock compose infra | Message broker and caching layer |
 | `phoenix` | `kwanz-ws` | 6006 (int) | Docker container (bridged mdx_default) | Stock compose infra | LLM/VLM telemetry, trace logging, and performance monitoring |
 | `kafka` | `kwanz-ws` | 9092 | Docker container | Stock compose infra | Heavy event bus for analytics (always started by start.sh) |
 | `elasticsearch` | `kwanz-ws` | Internal | Docker container | Stock compose infra | JVM search index appliance (optional, only with `ENABLE_ANALYTICS=true`) |
 | `Supabase` | Cloud | 443 (HTTPS) | Managed PostgREST / Postgres | `supabase/migrations/` (finals, including the versioned-report schema and functions); `supabase/midterm/` (frozen record) | Store for videos, runs, versioned report revisions, evidence crops and search history. One project per phase: see [Two Supabase projects](#two-supabase-projects-one-per-phase) |
-| `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
+| `Cloudflare R2` | Cloud | 443 (HTTPS) | S3-Compatible Object Store | `incident-console-v2/src/lib/r2/` | Canonical persistent object storage for video clips and screenshots |
 | `Brev Switchyard` | Cloud | 443 (HTTPS) | Remote Switchyard Proxy | Upstream endpoint | Hosted VLM/LLM inference used by both `vss-agent` (VM) and `vlm-gateway` (laptop) |
 
 ### Native vs. Docker Service Split Policy
@@ -155,13 +156,7 @@ flowchart TD
 
 ### SSH Tunnel Port Forwards
 
-When running in VM mode, `start.sh` opens a backgrounded SSH tunnel (the standalone equivalent is `.scripts/tunnel.sh`) forwarding the following
-ports from `localhost` to `kwanz-ws` (`<vm-ip>`, detected dynamically via `ip -4 route get 1.1.1.1`, fallback `10.131.1.5`, currently `10.132.56.251`):
-
-| Local Port | Remote Destination | Target Service | Usage |
-|---|---|---|---|
-| `8000` | `127.0.0.1:8000` (loopback) | Native `vss-agent` | Agent REST API (`/health`, `POST /api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`) |
-| `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` | VIOS/NvStreamer chunked upload and video storage API |
+VM mode forwards `localhost:8000` to the native `vss-agent` and `localhost:7777` to `vss-haproxy-ingress`. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
 ### Two Supabase projects (one per phase)
 
@@ -177,7 +172,7 @@ What points at the database, and how it switches at the cutover:
 | Where | Settings | Read by | How it switches |
 |---|---|---|---|
 | `dev-profile-incident/.env.local` on each laptop (symlinked into `incident-console-v2/`, `vlm-gateway/`, `mock-backend/`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | Console, eval, mock backend in local mode, the copy and parity scripts | Each teammate sets the 3 finals values |
-| `.env.local` copies in other worktrees | same | Console or eval started from those worktrees | `.githooks/setup-worktree.sh` never overwrites an existing copy, so old worktrees keep midterm values: refresh or delete them. The freeze makes a stale one fail loudly |
+| `.env.local` copies in other worktrees | same | Console or eval started from those worktrees | `.githooks/setup-worktree.sh` refreshes a copy that differs from the main worktree's file (never a symlink, never the main file); the freeze makes a stale one fail loudly |
 | `generated.env.remote` on `kwanz-ws` | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Native `vss-agent` (search, chat, AI revision insert, evidence embeddings); `.scripts/native-services.sh` | Back up, set the two finals values, restart `vss-agent` ("ask first"; [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
 | `deploy/docker/services/agent/compose.yml` | `INCIDENT_SUPABASE_*` passthrough | The Docker `vss-agent` (not used; the native one owns :8000) | Nothing |
 | `eval/` | `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_*` from the same `.env.local` | P1/RP1 batch (outside this change) | Same `.env.local`; eval's storage is outside this change |
@@ -200,7 +195,7 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
    - **VLM (`nvidia/cosmos-3-super-reasoner`):** Must support base64 MP4 `video_url` inlining (`data:video/mp4;base64,...`) and frame-by-frame JPEG extraction.
 3. **URL Format Rule:** Set `*_BASE_URL` without a trailing `/v1` (`https://switchyard-13doh4lsz.brevlab.com`). Agent and LangChain client instantiations append `/v1` automatically.
 4. **Authentication Rule:** Set `OPENAI_API_KEY` to the Brev Switchyard key; it is shared across LLM, VLM, and `eval_llm_judge`.
-5. **GPU Device Allocation:** The active incident stack started by `start.sh` runs on GPU 0 alone (`streamprocessing-ms`, `nvstreamer-2d-fusion`, and native processes via `CUDA_VISIBLE_DEVICES=0` / `NVIDIA_VISIBLE_DEVICES=0`), leaving GPU 1 completely untouched for co-tenant training workloads on `kwanz-ws`. All other GPU-capable Docker services in the profile (`sensor-ms`, `perception-2d-fusion`, and `rtvi-embed`) are pinned strictly to GPU 0 in `compose.override.yml` (`device_ids=['0']`, `NVIDIA_VISIBLE_DEVICES=0`, `CUDA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`) for safety if ever launched, but `start.sh` never starts them. Neither `perception-2d-fusion` nor `rtvi-embed` is used in MVP2 (MVP2 uses remote `nvidia/llama-nemotron-embed-vl-1b-v2` text embeddings and remote Brev VLM). No local LLM/VLM NIM uses either GPU in remote mode.
+5. **GPU:** only GPU 0 is used; see the [GPU rule](incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote) (item 10). No local LLM/VLM NIM runs on either GPU.
 
 ---
 
@@ -208,20 +203,33 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
 
 ### Console middle layer (ports and adapters)
 
-`incident-console-v2` reaches Supabase through a hexagonal middle layer ([`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md)):
+`incident-console-v2` reaches Supabase, R2, the gateway and the agent through ports and adapters; the layout and dependency rules are in [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md).
 
-```
-components/*.tsx --fetch /api--> app/api/**/route.ts --> lib/application/* (multi-step use cases)
-                                         |                       |
-                                         +-----> lib/ports/* <---+   (domain types + port interfaces)
-                                                      ^
-                                     lib/adapters/supabase/* (getDbAdapters, mappers) --> lib/postgrest/client.ts --> PostgREST
-```
+- A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by a database write function becomes a `StoreRejection`, which the route returns as 422 with the database's reason.
+- `/library` Find evidence posts to `POST /api/search`, which calls the agent's `POST /api/v1/incidents/search`. The Find incidents text search calls the agent's `POST /api/v1/incidents/revisions/search`, then filters the result in the console. A hit's report link carries `?t=` and the report page seeks to that second.
 
-- Routes depend on ports only and get adapters from `getDbAdapters()` / `getDbHealth()` (`lib/adapters/supabase/index.ts`). Only the adapters know table names, filters, RPC argument names and snake_case columns. The adapters and `lib/adapters/supabase/mappers/` map rows and RPC JSON field by field into camelCase domain types (one run's report rows, the report library, the dashboard) and database refusals into `StoreRejection`.
-- Report detail, History, Save as new version, official marking and delete go through `lib/application/reports.ts` (`getReport`, `listRevisions`, `saveHumanEdit`, `setOfficialRevision`, `deleteVideoAndReports`); R2 signing and deletion, and the agent's embedding call, are passed in as functions. After an analysis, a re-run or a save, `storeSearchableCrops` writes the crops of a revision that becomes searchable (no official revision yet). A report is read from one `report_revisions` row (`?revision=<id>`, else the official one, else the newest). A refusal by `save_human_revision` or `set_official_revision` becomes a `StoreRejection`, which the route returns as 422 with the database's reason. Health, the dashboard, the report library, the videos list and the History list call a port directly; the report library route signs thumbnails itself.
-- `EvidenceSearchRepository` has its agent adapter (`lib/adapters/agent/search.ts`), which calls the vss-agent's `POST /api/v1/incidents/search`. The console exposes it as `POST /api/search` for `/library`. The Find incidents text search calls the agent's `POST /api/v1/incidents/revisions/search` through `RevisionSearchRepository` (`AgentRevisionSearchRepository`), then filters the result in the console. A hit's report link carries `?t=` and the report page seeks to that second.
-- Analysis saving (`lib/analysis/persistence.ts`) writes `model_runs` and the AI revision through the same `PostgrestClient`; see §7 of [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md#7-deferred-in-this-round) for what is still outside the ports.
+### Console configuration
+
+Server-only variables, read from `incident-console-v2/.env.local` (a symlink to the profile's shared `.env.local`); none may be exposed through `NEXT_PUBLIC_`:
+
+| Variable | Use |
+|---|---|
+| `ANALYSIS_MODE` | `gateway` (default) or `agent` |
+| `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
+| `INCIDENT_AGENT_BASE_URL` | the agent or the mock (upload, chat, search, embeddings, and analysis in agent mode) |
+| `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
+| `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
+| `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | video and evidence storage |
+
+`GET /api/health` answers `status` (`ready` or `degraded`) and per-service booleans only; gateway readiness is skipped in agent mode.
+
+### Console pages
+
+- **`/library`** (the old `/reports` redirects here with its query string): Find incidents shows six cards per page, one per video (official revision, else newest), with severity, "Official vN" or "No official version", summary, evidence and version counts, and a thumbnail (falling back to the first evidence image, then a skeleton); filters are text, type, official only, severity band, added date and sort, shown as chips and kept in the URL. The text search falls back to the library's ILIKE match, with a note, when the agent fails or finds nothing. Find evidence shows the agent's top 20 hits with crop, match percentage, verdict, time, kind, threat and holder; rejected hits stay behind "Show N rejected"; kind, threat and type filters and "Group by incident" work on the returned hits. A hit opens a viewer with the full frame and every box at that second (or the enlarged crop) and a link to the report at that second. "Search evidence" on a card scopes Find evidence to that incident.
+- **`/videos` and `/videos/<id>`:** the video list ("Awaiting official report", "Without a report"), and one video's re-generation card and full attempt history.
+- **`/reports/<videoId>`:** View mode has a fixed top band (video; a timeline with one lane per entity over its seen span, its held instruments, then "Holder unknown" and Assets lanes; the versions graph, where each AI run is a branch and the star marks the official version), a scrolling pane (report fields, evidence cards by holder, read-only model output, run details, the version chat) and a bottom bar with "Edit from vN". Edit mode is described below.
+- **`/dashboard`:** see [Dashboard analytics](#dashboard-analytics-and-cross-filtering). The browser uploads a WebP thumbnail (the frame 25% into each new upload, at most 640×360) to `thumbnails/<video-key>.webp`; a failure never blocks analysis.
 
 ### Report library pagination and deferred report loading
 
@@ -265,18 +273,16 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 The report page has two modes. **View** shows the version on screen (its timeline lanes, versions graph, official star, evidence cards and run details); **Edit from vN** opens **Edit** mode, where the version being edited is the read-only A side and the unsaved draft is the editable B side, with one evidence row per entity and its held instruments as sub-rows. Deleting an entity deletes the instruments it holds; Revert restores an item as in A. The page's **History** lists every revision of the incident (kind, author, time, note), newest first.
 - **Save as new version** always appends a `human` revision and needs a note. There is no Restore: copying an older version back is an Edit from that version.
-- **Editable:** incident type, start/end seconds, summary, severity level, and entities, instruments (with holder and threat level) and assets, including each item's description, detail and image, and each entity's first and last seen seconds. IDs are renumbered by position; each item sends the item it came from as `source_id` (null for an added item) so its evidence follows it through a delete or reorder. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry.
-- **Model-generated, never editable:** title, severity rationale, location, timeline and uncertainties (copied unchanged into the new revision).
-- **Provenance:** never editable.
+- **What a reviewer may edit:** the structured (Class A) fields and each item's image; model output and provenance are read-only ([field classes](analysis-schema.md#three-classes-of-report-fields)). IDs are renumbered by position; each item sends the item it came from as `source_id` (null for an added item) so its evidence follows it through a delete or reorder. A reviewer-drawn image keeps its `image_timestamp_seconds` and `image_box` (`[ymin, xmin, ymax, xmax]`, 0-1000) on its evidence entry.
 - **Unsaved edits** exist only in the form. A refresh reloads the stored revision. There is no draft.
 
-`PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision`, which appends a `human` revision whose parent is the revision that was opened. `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` uploads a replacement image to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg` (never overwriting or deleting) and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
+`PATCH /api/reports/[videoId]/edit {parentId, editedBy, edit, note?}` rejects Class B/C keys (400), validates the edit against the contract's own sub-schemas and ID/holder/window rules (422), builds the new payload and evidence (`humanRevisionContent`) and calls `save_human_revision_with_crops`, which appends a `human` revision whose parent is the revision that was opened. On a video with no official revision the route first asks the agent to embed the new evidence and the same call stores the crops; an embedding failure answers 502 and saves nothing ([`data.md`](data.md#save_human_revision_with_crops)). `GET /api/reports/[videoId]/revisions` is the History list. `POST /api/reports/[videoId]/evidence-image` stores an image under a new R2 key and returns the key for the edit to use. No route changes a revision, `model_runs.notes` or an existing R2 object, and there is no verify step.
 
 The report shows "Reviewer-edited after generation", "Model assessed N/5; reviewer set M/5" beside the model severity rationale, and the model's original window beside a reviewer-set one.
 
-- **Frames and crops (API):** `GET /api/reports/[videoId]/frame?t=` returns one frame as a JPEG, and `POST /api/reports/[videoId]/evidence-crop {itemId, timestampSeconds, region}` cuts a rectangle (fractions 0-1) from that frame and stores it under a new key. Both use `ffmpeg` on the console host's PATH (a host prerequisite, see [`incident-profile-operations.md`](incident-profile-operations.md)). In Edit mode, **Replace image** on a draft card opens the frame picker: scrub to a second, drag a rectangle, **Use this crop**. Nothing is uploaded until the draft is saved; the picked second and box are saved on the evidence entry.
+- **Frames and crops (API):** `GET /api/reports/[videoId]/frame?t=` returns one frame as a JPEG, and `POST /api/reports/[videoId]/evidence-crop {timestampSeconds, region}` cuts a rectangle (fractions 0-1 from the top-left) from that frame and returns it as a JPEG, writing nothing. A malformed `t` is 400, a `t` at or past the video's length or a region outside the frame or under 1% wide or high is 422, an unknown video is 404, and a missing `ffmpeg` is 503. The crop is cut on the server because R2 has no CORS rule for the console origin, so a browser canvas crop of the signed video would be tainted. Both use `ffmpeg` on the console host's PATH (a laptop prerequisite, see [`incident-start`](../skills/incident-start/SKILL.md)). In Edit mode, **Replace image** on a draft card opens the frame picker: scrub to a second (an entity's picker stays within its seen span), drag a rectangle, **Use this crop**. The browser holds the crop; Save uploads it through `evidence-image` before it writes the revision, and the picked second and box are saved on the evidence entry. `POST /api/reports/[videoId]/evidence-sweep` removes images a failed save left behind ([`data.md`](data.md#2-cloudflare-r2-storage-architecture)).
 - **Report chat:** `POST /api/chat` sends `version_id` (the version on screen in View, or the version an Edit draft came from) and, in Edit, `draft_report`; the agent answers from that version's evidence (see [`vm-api-contracts.md`](vm-api-contracts.md)). Each answer is tagged with the version it came from.
-- **Searchable crops:** a save, re-run or analysis of a video with no official revision also writes that revision's crops through `set_revision_crops`, so `/library` can find the video (see [`data.md`](data.md)).
+- **Searchable crops:** an analysis or re-run of a video with no official revision also writes the new revision's crops (`set_revision_crops`; a failure is logged, the run stands), and a Save writes them in the same call as the revision, so `/library` can find the video ([`data.md`](data.md#evidence_crops)).
 
 ### Run history, re-generation and the official version
 
@@ -395,7 +401,7 @@ sequenceDiagram
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed
     alt valid_first_pass / valid_after_structural_repair
         UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
-        UI->>DB: report_revisions (kind ai: payload, evidence, facets)
+        UI->>DB: Verify the agent's AI revision (insert it only when revision_id is missing)
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]
     else contract_failed / request_failed

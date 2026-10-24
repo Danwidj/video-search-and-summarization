@@ -12,15 +12,15 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 
 | Path | Stack | Role | Status |
 |---|---|---|---|
-| `incident-console-v2/` | Next.js 15, TypeScript, Zod | Primary UI :3200: upload, analysis orchestration, report page (video, timeline, versions graph, official star) | Active |
+| `incident-console-v2/` | Next.js 15, TypeScript, Zod, Biome | Primary UI :3200: upload, analysis orchestration, report page (video, timeline, versions graph, official star) | Active |
 | `vlm-gateway/` | FastAPI, `uv` | Holds the Brev key server-side; `/v1/chat/completions` :8600 | Active |
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
-| `mock-backend/search_profile_mock/` | FastAPI, `uv` | Search-profile superset mock :7778 | Active (MVP2 prep) |
+| `mock-backend/search_profile_mock/` | FastAPI, `uv` | Standalone search mock :7778 (stock search-profile routes plus incident search from the :7777 finals snapshot) | Active |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
 | `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`), midterm-to-finals copy (`copy/`) | Active. `supabase/midterm/` is the frozen midterm record: never push |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
-| `archived/incident-console/` | Streamlit | v1 console | **Archived.** Read-only history; never launched, set up, tested or changed. `incident-console-v2/` is the only console. |
+| `archived/` | - | Retired v1 console, kept as read-only history | **Archived** (see Boundaries) |
 | `services/agent/` (outside this dir) | Python, NAT | `POST /api/v1/incidents/{id}/analyze`, `incident_report_gen` (writes `report_revisions`), `POST /api/v1/incidents/evidence-embeddings`, search over `evidence_crops`, `utils/incident_db.py` | Follow [`services/agent/AGENTS.md`](../../../../services/agent/AGENTS.md) |
 
 ## Commands
@@ -28,7 +28,8 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 Run from each component's directory. Run a component's checks after every change to it.
 
 ```bash
-# incident-console-v2 (tests need a Node build with TypeScript stripping; otherwise use npx -y node@22)
+# incident-console-v2 (lint is Biome plus tsc; `npm run format` applies Biome's formatter;
+# tests, including the import-boundary check, need a Node build with TypeScript stripping; otherwise use npx -y node@22)
 npm install && npm run lint && npm run typecheck && npm test
 
 # vlm-gateway (no tests dir yet)
@@ -49,18 +50,18 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Architecture rules
 
 - **Reports are versioned snapshots:** each analysis writes an append-only `report_revisions` row (`kind='ai'`, JSONB `payload` and `evidence`, new `model_run_id`); a human edit is a later `kind='human'` revision. Re-generation is a new AI branch (`parent_id` NULL) and copies no earlier edits. `evidence_crops` and `query_results` key on `revision_id`.
-- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`) and `agent` (console calls the native `vss-agent` for P1 only, `skip_rp1`). In agent mode the agent writes the AI revision and its evidence crops in R2; gateway mode calls the `vlm-gateway` instead, so no revision or crops are written there. The agent never writes `videos`; in agent mode the console owns the `model_runs` row, so the agent only inserts a placeholder if it is absent. Check a persistence change against both modes. Details: [`.docs/analysis-schema.md`](.docs/analysis-schema.md).
+- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`; the console writes the AI revision, and no crops are made) and `agent` (console calls the native `vss-agent` for P1 only; the agent writes the AI revision and its R2 crops, and the console verifies it). Check a persistence change against both modes. Who writes which row: [`.docs/analysis-schema.md`](.docs/analysis-schema.md#6-agent-mode).
 - **Both modes use `incident-contract-v4`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
-- **Console database access goes through the middle layer:** `incident-console-v2` routes get ports from `getDbAdapters()`; only `src/lib/adapters/supabase/` and `src/modules/*/infrastructure/supabase/` build PostgREST queries or names tables, columns and `p_*` arguments, and maps them to camelCase domain types. Callers not yet migrated are listed in [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md) §7.
+- **Console code keeps the hexagonal layout:** routes get ports from `src/lib/container.ts`; only `src/modules/*/infrastructure/supabase/` and `src/lib/postgrest/` name tables, columns and `p_*` arguments. `npm test` enforces the import boundaries. Layout and rules: [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md).
 - **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.
 - **Secrets are server-side only:** never `NEXT_PUBLIC_` for a credential or URL; `/api/health` returns booleans only; the gateway owns `VLM_GATEWAY_API_KEY`.
-- **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`).
+- **Remote models use `_type: openai`,** never `_type: nim`, with bare base URLs (no `/v1`); why: [`.docs/architecture.md`](.docs/architecture.md#inference-rules--requirements).
 
 ## Boundaries
 
@@ -71,7 +72,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
   - Write to, push to or apply anything to the frozen midterm Supabase project (`rfevukimyftzbxlehwel`), or edit `supabase/midterm/`; the only exceptions are its freeze and unfreeze files at the cutover.
   - Run `dev-profile.sh down` or `up` for this profile (it wipes the VM model cache and does not know the profile).
   - Start the Docker `vss-agent` while the native one runs.
-  - Change, run or import from anything under `archived/` (the v1 console lives there as read-only history).
+  - Change, run or import from anything under `archived/`.
   - Skip failing tests.
 
 ## Docs rule
