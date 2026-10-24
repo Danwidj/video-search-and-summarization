@@ -1,0 +1,509 @@
+{
+  "source": "finals database: report_revisions where kind = 'ai' (one row per AI revision), captured 2026-10-24",
+  "note": "Mock fixture. Video, revision and model-run IDs and item fields are copied from the finals rows; crops, bounding boxes and critic verdicts are mock placeholders. The refresh steps are in the mock README (Layout section).",
+  "revisions": [
+    {
+      "revision_id": 1,
+      "video_id": "Assault018",
+      "revision_no": 1,
+      "model_run_id": "as7927373890",
+      "incident": {
+        "incident_type": "assault",
+        "severity_level": 4,
+        "title": "Assault on sidewalk",
+        "description": "A person in dark clothing suddenly attacks a person in a white shirt, causing them to fall to the ground.",
+        "start_seconds": 2,
+        "end_seconds": 3
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person in white shirt",
+          "label": "person in white shirt",
+          "description": "A person wearing a white shirt and dark pants, walking on the sidewalk.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "person in dark clothing",
+          "label": "person in dark clothing",
+          "description": "A person wearing dark clothing, walking on the sidewalk.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "van",
+          "label": "white van",
+          "description": "A white van parked on the right side of the sidewalk, facing away from the camera.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "car",
+          "label": "blue car",
+          "description": "A blue car parked on the left side of the sidewalk, facing towards the camera.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 2,
+      "video_id": "Assault030",
+      "revision_no": 1,
+      "model_run_id": "as7927374201",
+      "incident": {
+        "incident_type": "assault",
+        "severity_level": 3,
+        "title": "Physical altercation inside elevator",
+        "description": "Two individuals enter an elevator, engage in a physical altercation, and one individual exits the elevator while the other remains inside.",
+        "start_seconds": 21,
+        "end_seconds": 58
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person in white shirt",
+          "label": "person in white shirt",
+          "description": "A person wearing a white shirt and dark pants, initially standing near the elevator door.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "person in white shirt",
+          "label": "person in white shirt",
+          "description": "A person wearing a white shirt and dark pants, entering the elevator and interacting with E1.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "elevator",
+          "label": "elevator interior",
+          "description": "Elevator interior with metallic walls, control panel, and floor.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 3,
+      "video_id": "Assault032",
+      "revision_no": 1,
+      "model_run_id": "as7927375582",
+      "incident": {
+        "incident_type": "assault",
+        "severity_level": 4,
+        "title": "Assault on a sidewalk with a weapon.",
+        "description": "A person in a dark hoodie is walking on the sidewalk when two other individuals in dark hoodies approach from behind. One of the attackers grabs the victim, and the other strikes the victim with a long, dark object, causing the victim to fall to the ground.",
+        "start_seconds": 3,
+        "end_seconds": 18
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person in dark hoodie",
+          "label": "person in dark hoodie",
+          "description": "A person wearing a dark hoodie and dark pants, walking on the sidewalk.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "person in dark hoodie",
+          "label": "person in dark hoodie",
+          "description": "A person wearing a dark hoodie and dark pants, approaching E1 from behind.",
+          "timestamp_seconds": 3,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E3",
+          "name": "person in dark hoodie",
+          "label": "person in dark hoodie",
+          "description": "A person wearing a dark hoodie and dark pants, approaching E1 from behind.",
+          "timestamp_seconds": 3,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "instrument",
+          "item_id": "I1",
+          "name": "object",
+          "label": "long dark object",
+          "description": "A long, dark object held by one of the attackers, used to strike the victim.",
+          "timestamp_seconds": 7,
+          "threat_level": 4,
+          "holder_entity_id": "E2"
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "car",
+          "label": "black parked car",
+          "description": "A black car parked on the right side of the street, partially visible.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "trash bin",
+          "label": "black trash bin",
+          "description": "A black trash bin located on the left side of the sidewalk.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 4,
+      "video_id": "Assault036",
+      "revision_no": 1,
+      "model_run_id": "as7927376913",
+      "incident": {
+        "incident_type": "assault",
+        "severity_level": 3,
+        "title": "Physical altercation between two men on a sidewalk",
+        "description": "Two men are standing on a sidewalk; one is bending over while the other stands nearby. A person in a yellow top walks past them. The man who was bending over suddenly stands up and appears to strike or push the other man, causing him to fall to the ground. The man who fell remains on the ground while the other man stands over him.",
+        "start_seconds": 3,
+        "end_seconds": 30
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "man in white t-shirt",
+          "label": "man in white t-shirt",
+          "description": "A man wearing a white t-shirt and dark pants, initially standing and then bending over.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "man in white t-shirt and shorts",
+          "label": "man in white t-shirt and shorts",
+          "description": "A man wearing a white t-shirt and dark shorts, initially bending over and then standing up.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E3",
+          "name": "person in yellow top",
+          "label": "person in yellow top",
+          "description": "A person wearing a yellow top and carrying a backpack, walking past the two men.",
+          "timestamp_seconds": 1,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "backpack",
+          "label": "dark backpack",
+          "description": "A dark-colored backpack lying on the ground.",
+          "timestamp_seconds": 10,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 5,
+      "video_id": "Assault050",
+      "revision_no": 1,
+      "model_run_id": "as7927378324",
+      "incident": {
+        "incident_type": "assault",
+        "severity_level": 4,
+        "title": "Violent physical assault in a store aisle",
+        "description": "A person in a purple shirt enters the aisle and aggressively attacks a person in a green shirt, knocking them to the ground. The attacker then stands over the victim, continuing to strike them. Another person in a green shirt enters the scene and attempts to intervene.",
+        "start_seconds": 2,
+        "end_seconds": 20
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person in green shirt",
+          "label": "person in green shirt",
+          "description": "A person wearing a light green long-sleeved shirt and blue jeans, standing near a shelf.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "person in purple shirt",
+          "label": "person in purple shirt",
+          "description": "A person wearing a purple long-sleeved shirt and blue jeans, entering the aisle from the left.",
+          "timestamp_seconds": 2,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E3",
+          "name": "person in green shirt",
+          "label": "person in green shirt",
+          "description": "A person wearing a light green long-sleeved shirt and blue jeans, entering the aisle from the bottom right.",
+          "timestamp_seconds": 12,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "display rack",
+          "label": "display rack with packaged goods",
+          "description": "A display rack filled with various packaged goods, positioned on the left side of the aisle.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "shelf unit",
+          "label": "shelf unit with products",
+          "description": "A shelf unit stocked with products, located on the right side of the aisle.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 6,
+      "video_id": "veb492932dac2d1d52e0",
+      "revision_no": 1,
+      "model_run_id": "m2d7d6ca46208bfbf950",
+      "incident": {
+        "incident_type": "animal attack",
+        "severity_level": 2,
+        "title": "Monkey Destroys Sunflower Bouquet in Living Room",
+        "description": "A monkey knocks over a vase of sunflowers on a coffee table, causing the vase to shatter and the flowers to scatter across the floor. The monkey then jumps onto the sofa, moves around, and eventually returns to the coffee table.",
+        "start_seconds": 0,
+        "end_seconds": 5
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "brown monkey",
+          "label": "brown monkey",
+          "description": "A brown monkey with a long tail, standing on its hind legs and interacting with a vase of sunflowers.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "sunflower bouquet",
+          "label": "sunflower bouquet in vase",
+          "description": "A bouquet of sunflowers in a clear glass vase, placed on a wooden coffee table.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "coffee table",
+          "label": "wooden coffee table",
+          "description": "A wooden coffee table with a rectangular top and a lower shelf.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A3",
+          "name": "sectional sofa",
+          "label": "beige sectional sofa",
+          "description": "A large beige sectional sofa with multiple cushions.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A4",
+          "name": "broken vase",
+          "label": "broken glass vase",
+          "description": "A glass vase that has been knocked over, with broken pieces scattered on the floor.",
+          "timestamp_seconds": 1,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 7,
+      "video_id": "vc35c6116a88c37d51c9",
+      "revision_no": 1,
+      "model_run_id": "m9a7f176456cbb27db7d",
+      "incident": {
+        "incident_type": "road accident",
+        "severity_level": 1,
+        "title": "Static television test pattern",
+        "description": "The video displays a static television test pattern with no observable incident or human activity.",
+        "start_seconds": 0,
+        "end_seconds": 11
+      },
+      "items": []
+    },
+    {
+      "revision_id": 9,
+      "video_id": "v614eba7ad8510751a8c",
+      "revision_no": 1,
+      "model_run_id": "m6fb60d7f3af1b5a08fb",
+      "incident": {
+        "incident_type": "road accident",
+        "severity_level": 3,
+        "title": "white van and white SUV collision at intersection",
+        "description": "A white van and a white SUV collide in the middle of an intersection. The van is deflected out of the frame, while the SUV comes to a stop and a person stands nearby.",
+        "start_seconds": 2,
+        "end_seconds": 10
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person standing near white SUV",
+          "label": "person standing near white SUV",
+          "description": "A person standing near the white SUV after the collision.",
+          "timestamp_seconds": 5,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "car",
+          "label": "white SUV",
+          "description": "A white SUV that collides with another vehicle and comes to a stop in the middle of the intersection.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "car",
+          "label": "white van",
+          "description": "A white van that collides with the white SUV and is deflected out of the frame.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A3",
+          "name": "car",
+          "label": "yellow taxi",
+          "description": "A yellow taxi partially visible on the right side of the frame.",
+          "timestamp_seconds": 0,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    },
+    {
+      "revision_id": 11,
+      "video_id": "va978aaf39b01270294a",
+      "revision_no": 1,
+      "model_run_id": "m0a902db7f674778c6e6",
+      "incident": {
+        "incident_type": "road accident",
+        "severity_level": 3,
+        "title": "White van and white SUV collide in intersection.",
+        "description": "A white van and a white SUV collide in the middle of an intersection. The van is deflected to the left, while the SUV comes to a stop. Two people are seen standing near the vehicles after the collision.",
+        "start_seconds": 2,
+        "end_seconds": 10
+      },
+      "items": [
+        {
+          "item_type": "entity",
+          "item_id": "E1",
+          "name": "person standing near white SUV",
+          "label": "person standing near white SUV",
+          "description": "A person standing near the white SUV after the collision.",
+          "timestamp_seconds": 5,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "entity",
+          "item_id": "E2",
+          "name": "person standing near white van",
+          "label": "person standing near white van",
+          "description": "A person standing near the white van after the collision.",
+          "timestamp_seconds": 5,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A1",
+          "name": "car",
+          "label": "white SUV",
+          "description": "A white SUV that collides with another vehicle and comes to a stop in the middle of the intersection.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A2",
+          "name": "car",
+          "label": "white van",
+          "description": "A white van that collides with the white SUV and is deflected to the left.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        },
+        {
+          "item_type": "asset",
+          "item_id": "A3",
+          "name": "car",
+          "label": "white pickup truck",
+          "description": "A white pickup truck that enters the intersection and is deflected by the collision.",
+          "timestamp_seconds": 4,
+          "threat_level": null,
+          "holder_entity_id": null
+        }
+      ]
+    }
+  ]
+}

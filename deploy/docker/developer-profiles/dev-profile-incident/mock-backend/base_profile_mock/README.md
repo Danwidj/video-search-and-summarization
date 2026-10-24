@@ -94,12 +94,14 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
 - `POST /api/v1/incidents/evidence-embeddings` - deterministic 1024-dimension
   embeddings for a revision's evidence items (`{"revision_id"}`), mirroring the agent.
 - `POST /api/v1/incidents/search` - natural-language evidence search conforming to
-  `search-contract-v1` with canned hits, crop URLs, and critic verdicts.
+  `search-contract-v1`. Hits are the evidence items of the finals snapshot (below), with
+  placeholder crop URLs and a fixed `confirmed` critic verdict. `similarity_score` is the
+  share of query words found in the hit text.
 - `POST /api/v1/incidents/chat` - conversational evidence Q&A conforming to
   `chat-contract-v1` with multi-turn support and grounded evidence citations. Accepts
-  `version_id` and `draft_report` (the answer names the version; evidence is the same canned set).
-- `POST /api/v1/incidents/revisions/search` - canned incident-level report revision hits
-  shaped like the agent's `RevisionSearchHit`.
+  `version_id` and `draft_report` (the answer names the version; evidence comes from the same snapshot).
+- `POST /api/v1/incidents/revisions/search` - incident-level hits, one per finals AI
+  revision, with the real `revision_id` and `video_id`, shaped like the agent's `RevisionSearchHit`.
 - `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
   canned RTSP add/delete responses.
 - `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,
@@ -118,6 +120,14 @@ stock VSS search/alerts endpoints (`POST /api/v1/search`), Redis, Phoenix.
 
 - `src/base_profile_mock/app.py` - `create_app()` factory, mounts all routers.
 - `src/base_profile_mock/state.py` - single in-memory `AppState`.
+- `src/base_profile_mock/finals_snapshot.py` and `finals_snapshot.json` - the finals
+  snapshot the search, chat and revision-search mocks answer from. The JSON holds the
+  finals AI revisions (IDs, incident fields and evidence items) captured 2026-10-24, so
+  search, chat and Find evidence return clips that exist in the finals database. It is a
+  static copy: videos uploaded later do not appear in mock search until it is refreshed.
+  To refresh, read `report_revisions` where `kind = 'ai'` through the console's PostgREST
+  (`INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`) and reshape the rows
+  into the JSON's `revisions` list.
 - `src/base_profile_mock/templates.py` - canned text, intent classification,
   Markdown report builder, and the real `hitl_vlm_prompt_template` text copied
   verbatim from

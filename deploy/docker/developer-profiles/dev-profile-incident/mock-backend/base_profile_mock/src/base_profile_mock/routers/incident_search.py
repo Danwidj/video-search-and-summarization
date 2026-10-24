@@ -14,6 +14,10 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from base_profile_mock.finals_snapshot import evidence_hits
+from base_profile_mock.finals_snapshot import match_score
+from base_profile_mock.finals_snapshot import query_tokens
+
 router = APIRouter(prefix="/api/v1")
 
 
@@ -36,158 +40,26 @@ class SearchRequest(BaseModel):
     filters: SearchFilters | None = None
 
 
-_CANNED_HITS: list[dict[str, Any]] = [
-    {
-        "item": {
-            "item_type": "instrument",
-            "item_id": "I1",
-            "name": "machete",
-            "label": "machete",
-            "description": "Long curved blade held by assailant during storefront altercation.",
-            "threat_level": 4,
-            "holder_entity_id": "E1",
-            "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I1.jpg",
-            "timestamp_seconds": 14,
-            "bounding_box": [320, 450, 510, 600],
-        },
-        "incident": {
-            "incident_id": "Assault007_x264",
-            "model_run_id": "m86a5c319e26659804b0",
-            "incident_type": "assault",
-            "severity_level": 4,
-            "title": "Physical altercation with edged weapon in ATM lobby",
-            "description": "An altercation ensues where a perpetrator brandishes a large blade against a victim.",
-            "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
-            "incident_window": [10.0, 28.0],
-        },
-        "critic": {
-            "verdict": "confirmed",
-            "confidence": 0.96,
-            "rationale": "The cropped screenshot clearly shows a machete with a curved metal blade held in the subject's right hand.",
-        },
-        "similarity_score": 0.89,
-    },
-    {
-        "item": {
-            "item_type": "entity",
-            "item_id": "E1",
-            "name": "perpetrator",
-            "label": "person",
-            "description": "Adult wearing dark hooded jacket lunging toward victim.",
-            "threat_level": 5,
-            "holder_entity_id": None,
-            "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/entities/E1.jpg",
-            "timestamp_seconds": 12,
-            "bounding_box": [210, 390, 820, 640],
-        },
-        "incident": {
-            "incident_id": "Assault007_x264",
-            "model_run_id": "m86a5c319e26659804b0",
-            "incident_type": "assault",
-            "severity_level": 4,
-            "title": "Physical altercation with edged weapon in ATM lobby",
-            "description": "An altercation ensues where a perpetrator brandishes a large blade against a victim.",
-            "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
-            "incident_window": [10.0, 28.0],
-        },
-        "critic": {
-            "verdict": "confirmed",
-            "confidence": 0.94,
-            "rationale": "The crop clearly depicts the primary aggressor in active motion.",
-        },
-        "similarity_score": 0.81,
-    },
-    {
-        "item": {
-            "item_type": "instrument",
-            "item_id": "I1",
-            "name": "crowbar",
-            "label": "crowbar",
-            "description": "Heavy metal pry bar used to force open the storefront entrance door.",
-            "threat_level": 3,
-            "holder_entity_id": "E1",
-            "crop_image_url": "https://pub-r2.example.com/evidence/Burglary004_x264/m71b9c240a15549703f1/instruments/I1.jpg",
-            "timestamp_seconds": 22,
-            "bounding_box": [410, 520, 580, 690],
-        },
-        "incident": {
-            "incident_id": "Burglary004_x264",
-            "model_run_id": "m71b9c240a15549703f1",
-            "incident_type": "burglary",
-            "severity_level": 3,
-            "title": "Storefront forced entry with pry bar",
-            "description": "Perpetrator uses a metal pry bar to breach commercial storefront doors.",
-            "playback_url": "https://pub-r2.example.com/videos/anomaly/burglary/Burglary004_x264.mp4",
-            "incident_window": [15.0, 45.0],
-        },
-        "critic": {
-            "verdict": "confirmed",
-            "confidence": 0.92,
-            "rationale": "The crop shows an angled pry bar applied against the glass door frame.",
-        },
-        "similarity_score": 0.78,
-    },
-    {
-        "item": {
-            "item_type": "asset",
-            "item_id": "A1",
-            "name": "silver hatchback",
-            "label": "car",
-            "description": "Silver compact sedan involved in front-quarter collision at street intersection.",
-            "threat_level": 2,
-            "holder_entity_id": None,
-            "crop_image_url": "https://pub-r2.example.com/evidence/RoadAccidents010_x264/m42c8d119e34418602a8/assets/A1.jpg",
-            "timestamp_seconds": 6,
-            "bounding_box": None,
-        },
-        "incident": {
-            "incident_id": "RoadAccidents010_x264",
-            "model_run_id": "m42c8d119e34418602a8",
-            "incident_type": "road accident",
-            "severity_level": 2,
-            "title": "Vehicle collision at suburban intersection",
-            "description": "A silver vehicle fails to yield and collides with another car.",
-            "playback_url": "https://pub-r2.example.com/videos/anomaly/road_accidents/RoadAccidents010_x264.mp4",
-            "incident_window": [4.0, 14.0],
-        },
-        "critic": {
-            "verdict": "confirmed",
-            "confidence": 0.95,
-            "rationale": "The crop shows the damaged front bumper and side panel of the silver hatchback.",
-        },
-        "similarity_score": 0.74,
-    },
-    {
-        "item": {
-            "item_type": "instrument",
-            "item_id": "I2",
-            "name": "cell phone",
-            "label": "cell phone",
-            "description": "Black handheld mobile smartphone held by bystander.",
-            "threat_level": 1,
-            "holder_entity_id": "E2",
-            "crop_image_url": "https://pub-r2.example.com/evidence/Assault007_x264/m86a5c319e26659804b0/instruments/I2.jpg",
-            "timestamp_seconds": 18,
-            "bounding_box": [500, 310, 560, 370],
-        },
-        "incident": {
-            "incident_id": "Assault007_x264",
-            "model_run_id": "m86a5c319e26659804b0",
-            "incident_type": "assault",
-            "severity_level": 4,
-            "title": "Physical altercation with edged weapon in ATM lobby",
-            "description": "An altercation ensues where a perpetrator brandishes a large blade against a victim.",
-            "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
-            "incident_window": [10.0, 28.0],
-        },
-        "critic": {
-            "verdict": "rejected",
-            "confidence": 0.88,
-            "rationale": "Candidate is a handheld electronic device, not a weapon or threat.",
-        },
-        "similarity_score": 0.42,
-    },
-]
+# Evidence items of the finals clips (see finals_snapshot.py); the chat mock reads this list too.
+_CANNED_HITS: list[dict[str, Any]] = evidence_hits()
+
+
+def _searchable_text(candidate: dict[str, Any]) -> str:
+    item = candidate["item"]
+    incident = candidate["incident"]
+    return " ".join(
+        str(part or "")
+        for part in (
+            item["item_type"],
+            item["name"],
+            item["label"],
+            item["description"],
+            incident["incident_id"],
+            incident["incident_type"],
+            incident["title"],
+            incident["description"],
+        )
+    )
 
 
 @router.post("/incidents/search")
@@ -198,14 +70,15 @@ async def search_incidents(req: SearchRequest) -> dict[str, Any]:
     incident_types = set(req.filters.incident_types) if req.filters and req.filters.incident_types else None
     min_sev = req.filters.min_severity if req.filters else None
     max_sev = req.filters.max_severity if req.filters else None
+    tokens = query_tokens(req.query)
 
     matched = []
     for candidate in _CANNED_HITS:
         item = candidate["item"]
         incident = candidate["incident"]
-        sim = candidate["similarity_score"]
+        sim = match_score(tokens, _searchable_text(candidate))
 
-        if sim < req.min_similarity:
+        if sim == 0.0 or sim < req.min_similarity:
             continue
         if req.hide_rejected and candidate.get("critic", {}).get("verdict") == "rejected":
             continue
@@ -218,7 +91,7 @@ async def search_incidents(req: SearchRequest) -> dict[str, Any]:
         if max_sev is not None and incident["severity_level"] > max_sev:
             continue
 
-        matched.append(candidate)
+        matched.append({**candidate, "similarity_score": sim})
 
     # Sort descending by similarity
     matched.sort(key=lambda h: h["similarity_score"], reverse=True)
