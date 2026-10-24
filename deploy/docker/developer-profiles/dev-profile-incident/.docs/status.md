@@ -52,7 +52,7 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 - Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates), once known issue 2 is resolved.
 - Consider a contract version with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
 - PDF export (parked by the captain, not started): no server PDF endpoint and no Download PDF dialog exist; today a report prints only through the browser, styled by the `@media print` rules in `incident-console-v2/src/app/styles.css`. To build: the endpoint and the dialog, then remove the print path.
-- Retrieval eval (harness, query set, benchmark runs): owned by the captain's teammate. It starts at [`mvp2/eval.md`](mvp2/eval.md#10-work-order-and-definition-of-done) §10 once the §8 proposals are agreed, and no live run happens until known issue 2 is resolved.
+- Retrieval eval (harness, query set, benchmark runs): handed off to the captain's teammate; see the handoff at the top of [`mvp2/eval.md`](mvp2/eval.md).
 - Console hexagonal plan, strict Step 6: inject a `ContractCatalog` port and move `run-contract-analysis.ts`'s `node:crypto` (`randomUUID`) behind a port, which removes the loader and `node:crypto` exceptions in `tests/import-boundaries.test.mjs` (the upload hook's exception is by design).
 
 ## 6. Live VM configuration (`kwanz-ws`)

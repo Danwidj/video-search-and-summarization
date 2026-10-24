@@ -1,6 +1,14 @@
 # MVP2 Eval: Retrieval Benchmark, Critic Ablation and System Comparison
 
-Handoff specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119---eval-system-vs-one-shot-baseline-retrieval)). It states what exists today, what each track measures, how it is scored and what it depends on. Items marked **proposal (P-n)** are not yet agreed; see [§8](#8-proposals-awaiting-approval).
+Specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119---eval-system-vs-one-shot-baseline-retrieval)): what exists today, what each track measures, how it is scored and what it depends on. Items marked **proposal (P-n)** are not yet agreed; see [§8](#8-proposals-awaiting-approval).
+
+> **Handoff**
+> - **Owner:** the captain's teammate owns the retrieval eval, not the captain.
+> - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
+> - **Before a live run:** decide eval storage ([known issue 2](../status.md#4-known-issues): `eval/` targets the dropped `gt_*` tables), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
+> - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
+> - **Compute:** `kwanz-ws` uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
+> - **Access:** each developer keeps their own credentials in their own local `.env.local`, obtained from the captain out of band and never committed or pasted in chat. The variable names are in §1.1 (Configuration).
 
 Paths are relative to the profile directory, except paths starting with `services/`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
 
