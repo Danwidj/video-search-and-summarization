@@ -10,7 +10,8 @@ touching another.
 - [`search_profile_mock/`](search_profile_mock/README.md) - strict superset of
   `base_profile_mock` for `bp_developer_search`: all base routes plus agent
   search endpoints, VST sensor list, video-analytics-api `/frames`, Kibana
-  stubs, and Elasticsearch/Logstash info stubs (port 7778, zero GPU).
+  stubs, and Elasticsearch/Logstash info stubs (port 7778, zero GPU). Its incident search
+  answers from the same finals snapshot as `base_profile_mock`.
 The mock backends do not provide an offline CSV or Postgres mode for the
 incident console. Use the database-backed console and its documented seed or
 evaluation commands instead.

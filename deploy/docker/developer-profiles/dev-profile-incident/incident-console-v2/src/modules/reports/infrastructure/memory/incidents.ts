@@ -79,6 +79,13 @@ export class InMemoryIncidentRepository implements IncidentRepository {
     return [...all].reverse().map((record) => ({ ...record.revision, isOfficial: official === record.revision.revisionId }));
   }
 
+  /** Revision evidence only: evidence_crops rows are not modelled here. */
+  async listReferencedEvidenceImages(videoId: string): Promise<string[] | null> {
+    const all = this.ofVideo(videoId);
+    if (!all.length) return null;
+    return [...new Set(all.flatMap((record) => record.evidence.flatMap((entry) => (typeof entry.image === 'string' ? [entry.image] : []))))];
+  }
+
   async saveHumanRevision(input: HumanRevisionInput): Promise<RevisionSummary> {
     const all = this.ofVideo(input.videoId);
     if (!all.length) throw new StoreRejection('not-found', `Video not found: ${input.videoId}`);

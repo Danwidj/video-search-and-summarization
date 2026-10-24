@@ -72,6 +72,10 @@ one synchronous canned answer instead of the approve/edit/cancel round-trip.
 
 Everything `base_profile_mock` mocks (same routes, same behavior), plus:
 
+- `POST /api/v1/incidents/search` and `POST /api/v1/incidents/revisions/search`
+  answer from the finals snapshot (real video, revision and model-run IDs), scored by
+  the share of query words found in the hit text, exactly as in `base_profile_mock`.
+  Critic verdicts and crop URLs are placeholders.
 - `POST /api/v1/search` - visual/text search; request/response shapes mirror
   `search/lib-src/hooks/useSearch.ts` (`{data: [...]}` with video_name,
   similarity, screenshot_url, description, start_time/end_time, sensor_id,
@@ -113,6 +117,11 @@ indexed embeddings and frame bboxes - is what `/api/v1/search` and
 
 - `src/search_profile_mock/app.py` - `create_app()` factory, mounts all routers.
 - `src/search_profile_mock/state.py` - single in-memory `AppState`.
+- `src/search_profile_mock/finals_snapshot.py` - loads
+  `base_profile_mock/src/base_profile_mock/finals_snapshot.py` (and the JSON beside it)
+  by path, so there is one copy of the snapshot. It is loaded by path rather than
+  imported so this mock does not need base's Supabase and boto3 dependencies. Refresh the
+  snapshot in `base_profile_mock` (see its README); nothing to do here.
 - `src/search_profile_mock/templates.py` - canned text, intent classification,
   Markdown report builder, search-result/frames/Kibana builders, and the real
   `hitl_vlm_prompt_template` text copied verbatim from

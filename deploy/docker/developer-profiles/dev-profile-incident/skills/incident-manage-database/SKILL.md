@@ -109,6 +109,7 @@ Follow-ups (not in this change): pin a minimum `supabase` version in `services/a
 - **Durability check:** `verifyR2Video` uses `HeadObject`; direct uploads require an exact nonzero byte-length match, and analysis requires a nonempty object before inference.
 - **Playback** is by 1-hour presigned GET only. The bucket is private.
 - **Report-card thumbnails:** new uploads use `thumbnails/<video-key>.webp`, derived by `thumbnailKeyForVideo`; legacy videos may have no thumbnail and use the UI skeleton. Deleting a video deletes this derived object too.
+- **Evidence images** live under `evidence/<videoId>/`. A revision's `evidence` (and `evidence_crops.image`) names the keys it shows, and older revisions keep naming images a reviewer later replaced, so an image is only an orphan when no revision of that video names it. `POST /api/reports/<videoId>/evidence-sweep` (dry run by default) lists such orphans older than `minAgeHours` (default 24); `{"dryRun": false}` removes them. Deleting a video leaves its `evidence/<videoId>/` objects behind, and the sweep cannot reach them (it needs the video row).
 
 ## After changing anything
 
