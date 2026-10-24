@@ -20,7 +20,11 @@ export async function GET(request: Request, context: { params: Promise<{ videoId
   try {
     const { videoId } = await context.params;
     const config = r2FrameConfiguration();
-    const jpeg = await getVideoFrame({ videos: getDbAdapters(config).videos, source: r2FrameSource(config) }, videoId, new URL(request.url).searchParams.get('t'));
+    const jpeg = await getVideoFrame(
+      { videos: getDbAdapters(config).videos, source: r2FrameSource(config) },
+      videoId,
+      new URL(request.url).searchParams.get('t'),
+    );
     return new NextResponse(new Uint8Array(jpeg), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=300' } });
   } catch (error) {
     if (error instanceof FrameRequestError) return NextResponse.json({ error: error.message }, { status: error.status });

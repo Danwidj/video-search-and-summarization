@@ -6,7 +6,13 @@
 // Supabase and in-memory adapters so both read a payload the same way.
 
 import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
-import type { ItemEvidence, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type {
+  ItemEvidence,
+  StructuredAsset,
+  StructuredEntity,
+  StructuredIncident,
+  StructuredInstrument,
+} from '@/modules/reports/domain/report-view';
 import type { EvidenceEntry, EvidenceItemType, ReportPayload } from '@/modules/reports/domain/revision';
 
 type Row = Record<string, unknown>;
@@ -48,17 +54,48 @@ export function structuredFromPayload(payload: ReportPayload, evidence: Evidence
       severityLevel: num(incident.severity_level),
       confidenceScore: num(incident.confidence_score),
     },
-    entities: rows(payload.entities).sort(byId('entity_id')).map((row) => {
-      const entityId = String(row.entity_id ?? '');
-      return { entityId, type: canonicalEntityType(row.type), description: String(row.description ?? ''), timestampSeconds: num(row.timestamp_seconds), firstSeenSeconds: num(row.first_seen_seconds), lastSeenSeconds: num(row.last_seen_seconds), label: String(row.label ?? ''), evidence: evidenceOf(evidence, 'entity', entityId) };
-    }),
-    instruments: rows(payload.instruments).sort(byId('instrument_id')).map((row) => {
-      const instrumentId = String(row.instrument_id ?? '');
-      return { instrumentId, entityId: text(row.entity_id), name: String(row.name ?? ''), description: String(row.description ?? ''), threatLevel: num(row.threat_level), timestampSeconds: num(row.timestamp_seconds), label: String(row.label ?? ''), evidence: evidenceOf(evidence, 'instrument', instrumentId) };
-    }),
-    assets: rows(payload.assets).sort(byId('asset_id')).map((row) => {
-      const assetId = String(row.asset_id ?? '');
-      return { assetId, name: String(row.name ?? ''), description: String(row.description ?? ''), timestampSeconds: num(row.timestamp_seconds), label: String(row.label ?? ''), evidence: evidenceOf(evidence, 'asset', assetId) };
-    }),
+    entities: rows(payload.entities)
+      .sort(byId('entity_id'))
+      .map((row) => {
+        const entityId = String(row.entity_id ?? '');
+        return {
+          entityId,
+          type: canonicalEntityType(row.type),
+          description: String(row.description ?? ''),
+          timestampSeconds: num(row.timestamp_seconds),
+          firstSeenSeconds: num(row.first_seen_seconds),
+          lastSeenSeconds: num(row.last_seen_seconds),
+          label: String(row.label ?? ''),
+          evidence: evidenceOf(evidence, 'entity', entityId),
+        };
+      }),
+    instruments: rows(payload.instruments)
+      .sort(byId('instrument_id'))
+      .map((row) => {
+        const instrumentId = String(row.instrument_id ?? '');
+        return {
+          instrumentId,
+          entityId: text(row.entity_id),
+          name: String(row.name ?? ''),
+          description: String(row.description ?? ''),
+          threatLevel: num(row.threat_level),
+          timestampSeconds: num(row.timestamp_seconds),
+          label: String(row.label ?? ''),
+          evidence: evidenceOf(evidence, 'instrument', instrumentId),
+        };
+      }),
+    assets: rows(payload.assets)
+      .sort(byId('asset_id'))
+      .map((row) => {
+        const assetId = String(row.asset_id ?? '');
+        return {
+          assetId,
+          name: String(row.name ?? ''),
+          description: String(row.description ?? ''),
+          timestampSeconds: num(row.timestamp_seconds),
+          label: String(row.label ?? ''),
+          evidence: evidenceOf(evidence, 'asset', assetId),
+        };
+      }),
   };
 }

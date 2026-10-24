@@ -31,7 +31,8 @@ mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
-        if (command.constructor.name === 'HeadObjectCommand') return Promise.resolve({ ContentLength: videoBytes ? videoBytes.length : headContentLength });
+        if (command.constructor.name === 'HeadObjectCommand')
+          return Promise.resolve({ ContentLength: videoBytes ? videoBytes.length : headContentLength });
         if (command.constructor.name === 'GetObjectCommand' && command.input?.Range && videoBytes) {
           const [, from, to] = /bytes=(\d+)-(\d+)/.exec(command.input.Range);
           const slice = new Uint8Array(videoBytes.subarray(Number(from), Number(to) + 1));
@@ -152,9 +153,7 @@ test('analysis route: rejects an R2 key whose object is empty before calling inf
     return new Response('{}', { status: 200 });
   };
 
-  const response = await POST(
-    jsonRequest({ sensorId: 'sensor-empty', filepath: 'uploads/sensor-empty/clip.mp4', filename: 'clip.mp4' }),
-  );
+  const response = await POST(jsonRequest({ sensorId: 'sensor-empty', filepath: 'uploads/sensor-empty/clip.mp4', filename: 'clip.mp4' }));
 
   assert.equal(response.status, 500);
   assert.equal(inferenceCalled, false);
@@ -287,9 +286,23 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
   process.env.ANALYSIS_MODE = 'agent';
   const content = contractFixture('invalid/cross-end-before-start.json');
   const recordedCalls = [];
-  globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
-    detail: { message: 'Incident contract violation: core violation', raw_output: content, finish_reason: 'stop', model: 'agent/vlm-on-the-vm', contract_version: contractVersion() },
-  }), { status: 422, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-a422/clip.mp4');
+  globalThis.fetch = agentFetch(
+    recordedCalls,
+    () =>
+      new Response(
+        JSON.stringify({
+          detail: {
+            message: 'Incident contract violation: core violation',
+            raw_output: content,
+            finish_reason: 'stop',
+            model: 'agent/vlm-on-the-vm',
+            contract_version: contractVersion(),
+          },
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      ),
+    'uploads/s-a422/clip.mp4',
+  );
 
   const response = await POST(jsonRequest({ sensorId: 's-a422', filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
 
@@ -304,17 +317,35 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
   assert.equal(row.model_name, 'agent/vlm-on-the-vm');
   assert.equal(notes.status, 'contract_failed');
   assert.equal(notes.response.content, content, 'the original response is stored unaltered');
-  assert.deepEqual(notes.validation.firstPass.map((v) => v.code), ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']);
+  assert.deepEqual(
+    notes.validation.firstPass.map((v) => v.code),
+    ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW'],
+  );
 });
 
-for (const [label, version] of [['an older', 'incident-contract-v1'], ['a missing', undefined]]) {
+for (const [label, version] of [
+  ['an older', 'incident-contract-v1'],
+  ['a missing', undefined],
+]) {
   test(`agent mode: ${label} agent contract_version is a request_failed attempt, never a report`, async () => {
     process.env.ANALYSIS_MODE = 'agent';
     const content = JSON.stringify(validContractReport());
     const recordedCalls = [];
-    globalThis.fetch = agentFetch(recordedCalls, () => new Response(JSON.stringify({
-      report: JSON.parse(content), model: 'agent/vlm-on-the-vm', contract_version: version, raw_output: content, finish_reason: 'stop',
-    }), { status: 200, headers: { 'Content-Type': 'application/json' } }), 'uploads/s-cv/clip.mp4');
+    globalThis.fetch = agentFetch(
+      recordedCalls,
+      () =>
+        new Response(
+          JSON.stringify({
+            report: JSON.parse(content),
+            model: 'agent/vlm-on-the-vm',
+            contract_version: version,
+            raw_output: content,
+            finish_reason: 'stop',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      'uploads/s-cv/clip.mp4',
+    );
 
     const response = await POST(jsonRequest({ sensorId: 's-cv', filepath: 'uploads/s-cv/clip.mp4', filename: 'clip.mp4' }));
 
@@ -334,9 +365,18 @@ for (const [label, version] of [['an older', 'incident-contract-v1'], ['a missin
 
 function agentReply(extra = {}) {
   const raw = validContractReport();
-  return () => new Response(JSON.stringify({
-    report: raw, model: 'agent/vlm-on-the-vm', contract_version: contractVersion(), raw_output: JSON.stringify(raw), finish_reason: 'stop', ...extra,
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return () =>
+    new Response(
+      JSON.stringify({
+        report: raw,
+        model: 'agent/vlm-on-the-vm',
+        contract_version: contractVersion(),
+        raw_output: JSON.stringify(raw),
+        finish_reason: 'stop',
+        ...extra,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
 }
 
 test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt and recorded; none is sent when empty', async () => {
@@ -345,7 +385,14 @@ test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt an
   const recordedCalls = [];
   globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-ai/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4', additionalInstruction: '  Focus on the van.  ' }));
+  const response = await POST(
+    jsonRequest({
+      sensorId: 's-ai',
+      filepath: 'uploads/s-ai/clip.mp4',
+      filename: 'clip.mp4',
+      additionalInstruction: '  Focus on the van.  ',
+    }),
+  );
   assert.equal(response.status, 200);
   const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
   assert.equal(JSON.parse(agentCall.options.body).reviewer_prompt, 'Focus on the van.');
@@ -364,7 +411,9 @@ test('agent mode: a chosen model is sent to the agent as model, not refused', as
   const recordedCalls = [];
   globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-am/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-am', filepath: 'uploads/s-am/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+  const response = await POST(
+    jsonRequest({ sensorId: 's-am', filepath: 'uploads/s-am/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
+  );
   assert.equal(response.status, 200);
   const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
   assert.equal(JSON.parse(agentCall.options.body).model, 'nvidia/cosmos-3-super-reasoner');
@@ -374,12 +423,22 @@ test('agent mode: a revision the agent already stored is verified, not inserted 
   process.env.ANALYSIS_MODE = 'agent';
   videoBytes = mp4Bytes(30);
   const recordedCalls = [];
-  globalThis.fetch = agentFetch(recordedCalls, () => {
-    const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
-    // The agent writes its AI revision against the console's model run before it answers.
-    testDb.store.report_revisions.push({ id: 41, video_id: compactVideoId('s-ag'), revision_no: 1, kind: 'ai', model_run_id: body.model_run_id });
-    return agentReply({ revision_id: 41 })();
-  }, 'uploads/s-ag/clip.mp4');
+  globalThis.fetch = agentFetch(
+    recordedCalls,
+    () => {
+      const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
+      // The agent writes its AI revision against the console's model run before it answers.
+      testDb.store.report_revisions.push({
+        id: 41,
+        video_id: compactVideoId('s-ag'),
+        revision_no: 1,
+        kind: 'ai',
+        model_run_id: body.model_run_id,
+      });
+      return agentReply({ revision_id: 41 })();
+    },
+    'uploads/s-ag/clip.mp4',
+  );
 
   const response = await POST(jsonRequest({ sensorId: 's-ag', filepath: 'uploads/s-ag/clip.mp4', filename: 'clip.mp4' }));
   const payload = await response.json();
@@ -389,12 +448,15 @@ test('agent mode: a revision the agent already stored is verified, not inserted 
 });
 
 function completion(content, extra = {}) {
-  return new Response(JSON.stringify({
-    choices: [{ message: { role: 'assistant', content, reasoning_content: 'model reasoning' }, finish_reason: 'stop' }],
-    model: 'nvidia/cosmos-3-super-reasoner',
-    usage: { prompt_tokens: 100, completion_tokens: 50 },
-    ...extra,
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { role: 'assistant', content, reasoning_content: 'model reasoning' }, finish_reason: 'stop' }],
+      model: 'nvidia/cosmos-3-super-reasoner',
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+      ...extra,
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
 }
 
 function gatewayFetch(recordedCalls, content, r2Key) {
@@ -418,12 +480,14 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/sensor-cam-02/night.mp4');
 
-  const response = await POST(jsonRequest({
-    sensorId: 'sensor-cam-02',
-    filepath: 'uploads/sensor-cam-02/night.mp4',
-    filename: 'night.mp4',
-    model: 'nvidia/cosmos-3-super-reasoner',
-  }));
+  const response = await POST(
+    jsonRequest({
+      sensorId: 'sensor-cam-02',
+      filepath: 'uploads/sensor-cam-02/night.mp4',
+      filename: 'night.mp4',
+      model: 'nvidia/cosmos-3-super-reasoner',
+    }),
+  );
 
   assert.equal(response.status, 200);
   const { report } = await response.json();
@@ -451,7 +515,13 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
   assert.equal(notes.recordType, 'analysis_attempt');
   assert.equal(notes.status, 'valid_first_pass');
-  assert.deepEqual(notes.validation, { firstPass: [], policy: 'core-scored-v1', fullContractValid: true, coreValid: true, videoBoundsChecked: true });
+  assert.deepEqual(notes.validation, {
+    firstPass: [],
+    policy: 'core-scored-v1',
+    fullContractValid: true,
+    coreValid: true,
+    videoBoundsChecked: true,
+  });
   assert.equal(notes.request.videoDurationSeconds, 60, 'the video length is read from the stored MP4 header');
   assert.equal(notes.repair, null);
   assert.equal(notes.contractVersion, 'incident-contract-v4');
@@ -471,16 +541,49 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   assert.deepEqual(
     { ...revisionWrite, payload: undefined, evidence: undefined },
     {
-      video_id: report.videoId, revision_no: 1, kind: 'ai', model_run_id: report.modelRunId, parent_id: null, payload: undefined, evidence: undefined,
-      incident_type: 'assault', severity_level: 3, start_seconds: 3, end_seconds: 11,
+      video_id: report.videoId,
+      revision_no: 1,
+      kind: 'ai',
+      model_run_id: report.modelRunId,
+      parent_id: null,
+      payload: undefined,
+      evidence: undefined,
+      incident_type: 'assault',
+      severity_level: 3,
+      start_seconds: 3,
+      end_seconds: 11,
     },
   );
-  assert.deepEqual(revisionWrite.payload.entities.map((row) => [row.entity_id, row.type]), [['E1', 'human'], ['E2', 'human']]);
-  assert.deepEqual(revisionWrite.payload.instruments.map((row) => [row.instrument_id, row.entity_id, row.threat_level]), [['I1', 'E1', 3]]);
-  assert.deepEqual(revisionWrite.payload.assets.map((row) => row.asset_id), ['A1']);
-  assert.deepEqual(revisionWrite.evidence.map((entry) => [entry.item_type, entry.item_id]), [['entity', 'E1'], ['entity', 'E2'], ['instrument', 'I1'], ['asset', 'A1']]);
+  assert.deepEqual(
+    revisionWrite.payload.entities.map((row) => [row.entity_id, row.type]),
+    [
+      ['E1', 'human'],
+      ['E2', 'human'],
+    ],
+  );
+  assert.deepEqual(
+    revisionWrite.payload.instruments.map((row) => [row.instrument_id, row.entity_id, row.threat_level]),
+    [['I1', 'E1', 3]],
+  );
+  assert.deepEqual(
+    revisionWrite.payload.assets.map((row) => row.asset_id),
+    ['A1'],
+  );
+  assert.deepEqual(
+    revisionWrite.evidence.map((entry) => [entry.item_type, entry.item_id]),
+    [
+      ['entity', 'E1'],
+      ['entity', 'E2'],
+      ['instrument', 'I1'],
+      ['asset', 'A1'],
+    ],
+  );
   const videoCall = recordedCalls.find((c) => c.url.includes('/rest/v1/videos') && c.options.method === 'POST');
-  assert.match(videoCall.options.headers.Prefer, /resolution=ignore-duplicates/, 'an existing video row is never updated (upload time preserved)');
+  assert.match(
+    videoCall.options.headers.Prefer,
+    /resolution=ignore-duplicates/,
+    'an existing video row is never updated (upload time preserved)',
+  );
   const video = writes.find((w) => w.table === 'videos').body;
   assert.equal(video.filepath, 'uploads/sensor-cam-02/night.mp4');
   assert.equal(video.source, 'sensor-cam-02');
@@ -511,7 +614,9 @@ test('gateway mode: rejects a model outside the allowlist before calling anythin
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, '{}', 'uploads/s-x/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-x', filepath: 'uploads/s-x/clip.mp4', filename: 'clip.mp4', model: 'some/other-model' }));
+  const response = await POST(
+    jsonRequest({ sensorId: 's-x', filepath: 'uploads/s-x/clip.mp4', filename: 'clip.mp4', model: 'some/other-model' }),
+  );
 
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /Unsupported model/);
@@ -533,13 +638,19 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     ['```json\n' + JSON.stringify(validContractReport()) + '\n```', ['INVALID_JSON'], ['INVALID_JSON']],
     [contractFixture('invalid/cross-unknown-instrument-holder.json'), ['INSTRUMENT_HOLDER_UNKNOWN'], ['INSTRUMENT_HOLDER_UNKNOWN']],
     [contractFixture('invalid/schema-legacy-incident-type.json'), ['SCHEMA_VIOLATION'], ['SCHEMA_VIOLATION']],
-    [contractFixture('invalid/cross-end-before-start.json'), ['WINDOW_END_BEFORE_START'], ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW']],
+    [
+      contractFixture('invalid/cross-end-before-start.json'),
+      ['WINDOW_END_BEFORE_START'],
+      ['WINDOW_END_BEFORE_START', 'TIMELINE_START_OUTSIDE_WINDOW', 'TIMELINE_START_OUTSIDE_WINDOW'],
+    ],
   ];
   for (const [content, codes, firstPassCodes] of cases) {
     const recordedCalls = [];
     globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-bad/clip.mp4');
 
-    const response = await POST(jsonRequest({ sensorId: 's-bad', filepath: 'uploads/s-bad/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+    const response = await POST(
+      jsonRequest({ sensorId: 's-bad', filepath: 'uploads/s-bad/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
+    );
 
     assert.equal(response.status, 422);
     const payload = await response.json();
@@ -561,7 +672,10 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     assert.equal(notes.stage, 'contract_validation');
     assert.equal(notes.videoId, compactVideoId('s-bad'));
     assert.equal(notes.response.content, content, 'the original response is stored unaltered');
-    assert.deepEqual(notes.validation.firstPass.map((v) => v.code), firstPassCodes);
+    assert.deepEqual(
+      notes.validation.firstPass.map((v) => v.code),
+      firstPassCodes,
+    );
     assert.equal(notes.validation.coreValid, false);
     assert.equal(notes.repair.eligible, false);
     assert.ok(!('report' in notes));
@@ -571,12 +685,17 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
 test('gateway mode: a timeline outside the incident window is recorded, not fatal; the report is saved unaltered', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
   videoBytes = mp4Bytes(60);
-  for (const [fixture, code] of [['invalid/cross-timeline-outside-incident.json', 'TIMELINE_END_OUTSIDE_WINDOW'], ['invalid/cross-timeline-not-chronological.json', 'TIMELINE_NOT_CHRONOLOGICAL']]) {
+  for (const [fixture, code] of [
+    ['invalid/cross-timeline-outside-incident.json', 'TIMELINE_END_OUTSIDE_WINDOW'],
+    ['invalid/cross-timeline-not-chronological.json', 'TIMELINE_NOT_CHRONOLOGICAL'],
+  ]) {
     const content = contractFixture(fixture);
     const recordedCalls = [];
     globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-tl/clip.mp4');
 
-    const response = await POST(jsonRequest({ sensorId: 's-tl', filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }));
+    const response = await POST(
+      jsonRequest({ sensorId: 's-tl', filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
+    );
 
     assert.equal(response.status, 200, fixture);
     const tables = supabaseWrites(recordedCalls).map((w) => w.table);
@@ -590,7 +709,10 @@ test('gateway mode: a timeline outside the incident window is recorded, not fata
     assert.equal(notes.validation.fullContractValid, false);
     assert.equal(notes.validation.coreValid, true);
     assert.ok(notes.validation.firstPass.length > 0);
-    assert.ok(notes.validation.firstPass.every((v) => v.scope === 'enrichment' && v.code === code), fixture);
+    assert.ok(
+      notes.validation.firstPass.every((v) => v.scope === 'enrichment' && v.code === code),
+      fixture,
+    );
     assert.equal(notes.repair, null, 'no repair is attempted for an unscored field');
   }
 });
@@ -604,7 +726,14 @@ test('gateway mode: an incident window outside the video is a core failure (422)
   videoBytes = mp4Bytes(end - 1.5);
   let recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
-  let response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  let response = await POST(
+    jsonRequest({
+      sensorId: 's-len',
+      filepath: 'uploads/s-len/clip.mp4',
+      filename: 'clip.mp4',
+      model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    }),
+  );
   assert.equal(response.status, 422);
   const payload = await response.json();
   assert.ok(payload.codes.includes('WINDOW_BEYOND_VIDEO'));
@@ -612,12 +741,24 @@ test('gateway mode: an incident window outside the video is a core failure (422)
   assert.equal(notes.status, 'contract_failed');
   assert.equal(notes.validation.fullContractValid, true, 'the video rule never changes full contract validity');
   assert.equal(notes.validation.videoBoundsChecked, true);
-  for (const table of REPORT_TABLES) assert.ok(!supabaseWrites(recordedCalls).map((w) => w.table).includes(table));
+  for (const table of REPORT_TABLES)
+    assert.ok(
+      !supabaseWrites(recordedCalls)
+        .map((w) => w.table)
+        .includes(table),
+    );
 
   videoBytes = null;
   recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
-  response = await POST(jsonRequest({ sensorId: 's-len', filepath: 'uploads/s-len/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  response = await POST(
+    jsonRequest({
+      sensorId: 's-len',
+      filepath: 'uploads/s-len/clip.mp4',
+      filename: 'clip.mp4',
+      model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    }),
+  );
   assert.equal(response.status, 200);
   ({ notes } = attemptNotesFrom(recordedCalls));
   assert.equal(notes.request.videoDurationSeconds, null);
@@ -626,11 +767,20 @@ test('gateway mode: an incident window outside the video is a core failure (422)
 
 test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and saved as valid_after_structural_repair', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
-  const { rawContent } = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'nemotron-3-omni-malformed-ids.json'), 'utf8'));
+  const { rawContent } = JSON.parse(
+    readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-failures', 'nemotron-3-omni-malformed-ids.json'), 'utf8'),
+  );
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, rawContent, 'uploads/s-rep/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-rep', filepath: 'uploads/s-rep/clip.mp4', filename: 'clip.mp4', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning' }));
+  const response = await POST(
+    jsonRequest({
+      sensorId: 's-rep',
+      filepath: 'uploads/s-rep/clip.mp4',
+      filename: 'clip.mp4',
+      model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    }),
+  );
 
   assert.equal(response.status, 200);
   const { report } = await response.json();
@@ -643,10 +793,22 @@ test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and 
   assert.equal(notes.repair.ruleSet, 'id-normalization-v1');
   assert.deepEqual(notes.repair.revalidation, []);
   assert.equal(notes.repair.operations.length, 2);
-  assert.deepEqual(notes.report.entities.map((e) => e.entity_id), ['E1', 'E2']);
+  assert.deepEqual(
+    notes.report.entities.map((e) => e.entity_id),
+    ['E1', 'E2'],
+  );
   const [revision] = testDb.store.report_revisions;
-  assert.deepEqual(revision.payload.entities.map((e) => e.entity_id), ['E1', 'E2']);
-  assert.deepEqual(revision.payload.instruments.map((i) => [i.instrument_id, i.entity_id, i.name]), [['I1', 'E1', 'bag'], ['I2', null, 'white van']]);
+  assert.deepEqual(
+    revision.payload.entities.map((e) => e.entity_id),
+    ['E1', 'E2'],
+  );
+  assert.deepEqual(
+    revision.payload.instruments.map((i) => [i.instrument_id, i.entity_id, i.name]),
+    [
+      ['I1', 'E1', 'bag'],
+      ['I2', null, 'white van'],
+    ],
+  );
   assert.equal(revision.kind, 'ai');
 });
 
@@ -654,28 +816,55 @@ test('gateway mode: request failures are recorded as request_failed with only th
   process.env.ANALYSIS_MODE = 'gateway';
   const scenarios = [
     {
-      name: 'gateway HTTP error', status: 502, code: 'GATEWAY_HTTP_ERROR', stage: 'gateway',
+      name: 'gateway HTTP error',
+      status: 502,
+      code: 'GATEWAY_HTTP_ERROR',
+      stage: 'gateway',
       reply: () => new Response('upstream exploded', { status: 500 }),
       response: { httpStatus: 500, errorBody: 'upstream exploded' },
     },
     {
-      name: 'timeout', status: 504, code: 'GATEWAY_TIMEOUT', stage: 'gateway',
-      reply: () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); },
+      name: 'timeout',
+      status: 504,
+      code: 'GATEWAY_TIMEOUT',
+      stage: 'gateway',
+      reply: () => {
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      },
       response: null,
     },
     {
-      name: 'no completion', status: 502, code: 'UPSTREAM_NO_COMPLETION', stage: 'gateway',
+      name: 'no completion',
+      status: 502,
+      code: 'UPSTREAM_NO_COMPLETION',
+      stage: 'gateway',
       reply: () => new Response('null', { status: 200 }),
       response: { httpStatus: 200, errorBody: 'null' },
     },
     {
-      name: 'token budget exhausted', status: 502, code: 'FINISH_LENGTH', stage: 'upstream_response',
-      reply: () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '{"incident": {' }, finish_reason: 'length' }], usage: { completion_tokens: 16384 } }), { status: 200 }),
+      name: 'token budget exhausted',
+      status: 502,
+      code: 'FINISH_LENGTH',
+      stage: 'upstream_response',
+      reply: () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content: '{"incident": {' }, finish_reason: 'length' }],
+            usage: { completion_tokens: 16384 },
+          }),
+          { status: 200 },
+        ),
       response: { content: '{"incident": {', finishReason: 'length', usage: { completion_tokens: 16384 } },
     },
     {
-      name: 'empty content', status: 502, code: 'UPSTREAM_EMPTY_CONTENT', stage: 'upstream_response',
-      reply: () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'stop' }] }), { status: 200 }),
+      name: 'empty content',
+      status: 502,
+      code: 'UPSTREAM_EMPTY_CONTENT',
+      stage: 'upstream_response',
+      reply: () =>
+        new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'stop' }] }), {
+          status: 200,
+        }),
       response: { content: '', finishReason: 'stop' },
     },
   ];
@@ -687,7 +876,9 @@ test('gateway mode: request failures are recorded as request_failed with only th
       return testDb.fetch(url, options);
     };
 
-    const response = await POST(jsonRequest({ sensorId: 's-req', filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+    const response = await POST(
+      jsonRequest({ sensorId: 's-req', filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
+    );
 
     assert.equal(response.status, scenario.status, scenario.name);
     const payload = await response.json();
@@ -711,7 +902,14 @@ test('gateway mode: every analysis of the same video creates a new model run', a
   for (let index = 0; index < 2; index += 1) {
     const recordedCalls = [];
     globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/s-same/clip.mp4');
-    const response = await POST(jsonRequest({ sensorId: 's-same', filepath: 'uploads/s-same/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }));
+    const response = await POST(
+      jsonRequest({
+        sensorId: 's-same',
+        filepath: 'uploads/s-same/clip.mp4',
+        filename: 'clip.mp4',
+        model: 'nvidia/cosmos-3-nano-reasoner',
+      }),
+    );
     assert.equal(response.status, 200);
     runIds.add((await response.json()).report.modelRunId);
   }

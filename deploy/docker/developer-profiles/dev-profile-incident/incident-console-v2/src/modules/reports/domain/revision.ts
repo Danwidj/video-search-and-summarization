@@ -52,10 +52,15 @@ export interface RevisionSummary {
 export type ReportPayload = Record<string, unknown>;
 
 const ITEM_ID: Record<EvidenceItemType, string> = { entity: 'entity_id', instrument: 'instrument_id', asset: 'asset_id' };
-const COLLECTION: Record<EvidenceItemType, 'entities' | 'instruments' | 'assets'> = { entity: 'entities', instrument: 'instruments', asset: 'assets' };
+const COLLECTION: Record<EvidenceItemType, 'entities' | 'instruments' | 'assets'> = {
+  entity: 'entities',
+  instrument: 'instruments',
+  asset: 'assets',
+};
 const ITEM_TYPES: EvidenceItemType[] = ['entity', 'instrument', 'asset'];
 
-const asRecord = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const integerOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isInteger(value) ? value : null);
 
 /** report_revisions.evidence -> its well-formed entries; anything else is dropped. */
@@ -64,26 +69,40 @@ export function evidenceEntries(value: unknown): EvidenceEntry[] {
   return value.flatMap((raw): EvidenceEntry[] => {
     const entry = asRecord(raw);
     const type = entry.item_type;
-    if (typeof type !== 'string' || !ITEM_TYPES.includes(type as EvidenceItemType) || typeof entry.item_id !== 'string' || !entry.item_id) return [];
-    const box = Array.isArray(entry.bounding_box) && entry.bounding_box.length === 4 && entry.bounding_box.every((n) => typeof n === 'number')
-      ? (entry.bounding_box as number[]) : null;
-    return [{
-      ...entry,
-      item_type: type as EvidenceItemType,
-      item_id: entry.item_id,
-      image: typeof entry.image === 'string' && entry.image.trim() ? entry.image : null,
-      bounding_box: box,
-      timestamp_seconds: integerOrNull(entry.timestamp_seconds),
-    }];
+    if (typeof type !== 'string' || !ITEM_TYPES.includes(type as EvidenceItemType) || typeof entry.item_id !== 'string' || !entry.item_id)
+      return [];
+    const box =
+      Array.isArray(entry.bounding_box) && entry.bounding_box.length === 4 && entry.bounding_box.every((n) => typeof n === 'number')
+        ? (entry.bounding_box as number[])
+        : null;
+    return [
+      {
+        ...entry,
+        item_type: type as EvidenceItemType,
+        item_id: entry.item_id,
+        image: typeof entry.image === 'string' && entry.image.trim() ? entry.image : null,
+        bounding_box: box,
+        timestamp_seconds: integerOrNull(entry.timestamp_seconds),
+      },
+    ];
   });
 }
 
 /** The evidence placeholder of a run that cropped nothing: one image-less entry per item. */
 export function placeholderEvidence(payload: ReportPayload, reason: string): EvidenceEntry[] {
-  return ITEM_TYPES.flatMap((type) => (Array.isArray(payload[COLLECTION[type]]) ? (payload[COLLECTION[type]] as unknown[]) : [])
-    .map(asRecord)
-    .filter((item) => typeof item[ITEM_ID[type]] === 'string')
-    .map((item) => ({ item_type: type, item_id: String(item[ITEM_ID[type]]), image: null, bounding_box: null, timestamp_seconds: integerOrNull(item.timestamp_seconds), missing: reason })));
+  return ITEM_TYPES.flatMap((type) =>
+    (Array.isArray(payload[COLLECTION[type]]) ? (payload[COLLECTION[type]] as unknown[]) : [])
+      .map(asRecord)
+      .filter((item) => typeof item[ITEM_ID[type]] === 'string')
+      .map((item) => ({
+        item_type: type,
+        item_id: String(item[ITEM_ID[type]]),
+        image: null,
+        bounding_box: null,
+        timestamp_seconds: integerOrNull(item.timestamp_seconds),
+        missing: reason,
+      })),
+  );
 }
 
 /** The R2 key of a newly uploaded evidence image; unique, so no object is ever overwritten. */
@@ -105,7 +124,10 @@ export function isEvidenceKeyOfVideo(key: string, videoId: string): boolean {
  * an image gets none. Model-only fields (title, severity rationale,
  * confidence, location, timeline, uncertainties) are kept from the parent.
  */
-export function humanRevisionContent(parent: { payload: ReportPayload; evidence: EvidenceEntry[] }, edit: StructuredEdit): { payload: ReportPayload; evidence: EvidenceEntry[] } {
+export function humanRevisionContent(
+  parent: { payload: ReportPayload; evidence: EvidenceEntry[] },
+  edit: StructuredEdit,
+): { payload: ReportPayload; evidence: EvidenceEntry[] } {
   const incident = asRecord(parent.payload.incident);
   const payload: ReportPayload = {
     ...parent.payload,
@@ -115,25 +137,53 @@ export function humanRevisionContent(parent: { payload: ReportPayload; evidence:
       duration: edit.incident.end_timestamp - edit.incident.start_timestamp,
     },
     entities: edit.entities.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
-    instruments: edit.instruments.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
+    instruments: edit.instruments.map(
+      ({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item,
+    ),
     assets: edit.assets.map(({ source_id: _source, image: _image, image_timestamp_seconds: _at, image_box: _box, ...item }) => item),
   };
   const evidence: EvidenceEntry[] = [];
-  const follow = (type: EvidenceItemType, itemId: string, sourceId: string | null, image: string | null, crop: { box?: number[] | null; seconds?: number | null }) => {
+  const follow = (
+    type: EvidenceItemType,
+    itemId: string,
+    sourceId: string | null,
+    image: string | null,
+    crop: { box?: number[] | null; seconds?: number | null },
+  ) => {
     if (!image) return;
     const base = sourceId ? parent.evidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
-    evidence.push(base && base.image === image
-      ? { ...base, item_id: itemId }
-      : { item_type: type, item_id: itemId, image, bounding_box: crop.box ?? null, timestamp_seconds: crop.seconds ?? null, source: 'upload' });
+    evidence.push(
+      base && base.image === image
+        ? { ...base, item_id: itemId }
+        : {
+            item_type: type,
+            item_id: itemId,
+            image,
+            bounding_box: crop.box ?? null,
+            timestamp_seconds: crop.seconds ?? null,
+            source: 'upload',
+          },
+    );
   };
-  edit.entities.forEach((item) => follow('entity', item.entity_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
-  edit.instruments.forEach((item) => follow('instrument', item.instrument_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
-  edit.assets.forEach((item) => follow('asset', item.asset_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }));
+  edit.entities.forEach((item) =>
+    follow('entity', item.entity_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
+  );
+  edit.instruments.forEach((item) =>
+    follow('instrument', item.instrument_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
+  );
+  edit.assets.forEach((item) =>
+    follow('asset', item.asset_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
+  );
   return { payload, evidence };
 }
 
 /** The facet columns of a revision, read from its payload (written by the caller, not generated). */
-export function revisionFacets(payload: ReportPayload): { incident_type: string | null; severity_level: number | null; start_seconds: number | null; end_seconds: number | null } {
+export function revisionFacets(payload: ReportPayload): {
+  incident_type: string | null;
+  severity_level: number | null;
+  start_seconds: number | null;
+  end_seconds: number | null;
+} {
   const incident = asRecord(payload.incident);
   return {
     incident_type: typeof incident.type === 'string' && incident.type.trim() ? incident.type.trim().toLowerCase() : null,
@@ -165,9 +215,22 @@ export interface OfficialCrop {
 }
 
 /** The item details the payload holds, used when an evidence entry (e.g. a gateway-mode placeholder) lacks them. */
-function payloadDetails(payload: ReportPayload): Map<string, { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }> {
-  const details = new Map<string, { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }>();
-  const add = (type: EvidenceItemType, id: unknown, name: unknown, description: unknown, threat: unknown, holder: unknown, fallback: string) => {
+function payloadDetails(
+  payload: ReportPayload,
+): Map<string, { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }> {
+  const details = new Map<
+    string,
+    { item_name: string; description: string; threat_level: number | null; holder_entity_id: string | null }
+  >();
+  const add = (
+    type: EvidenceItemType,
+    id: unknown,
+    name: unknown,
+    description: unknown,
+    threat: unknown,
+    holder: unknown,
+    fallback: string,
+  ) => {
     if (typeof id !== 'string' || !id) return;
     details.set(`${type}:${id}`, {
       item_name: typeof name === 'string' && name.trim() ? name : fallback,
@@ -182,7 +245,15 @@ function payloadDetails(payload: ReportPayload): Map<string, { item_name: string
   }
   for (const item of Array.isArray(payload.instruments) ? payload.instruments : []) {
     const instrument = asRecord(item);
-    add('instrument', instrument.instrument_id, instrument.name, instrument.description, instrument.threat_level, instrument.entity_id, 'instrument');
+    add(
+      'instrument',
+      instrument.instrument_id,
+      instrument.name,
+      instrument.description,
+      instrument.threat_level,
+      instrument.entity_id,
+      'instrument',
+    );
   }
   for (const item of Array.isArray(payload.assets) ? payload.assets : []) {
     const asset = asRecord(item);
@@ -205,17 +276,23 @@ export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[],
     const embedding = vectors.get(`${entry.item_type}:${entry.item_id}`);
     if (!embedding) return [];
     const fallback = details.get(`${entry.item_type}:${entry.item_id}`);
-    return [{
-      item_type: entry.item_type,
-      item_id: entry.item_id,
-      image: entry.image,
-      bounding_box: entry.bounding_box,
-      timestamp_seconds: entry.timestamp_seconds ?? 0,
-      item_name: typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : fallback?.item_name ?? entry.item_type,
-      description: typeof entry.description === 'string' ? entry.description : fallback?.description ?? '',
-      threat_level: integerOrNull(entry.threat_level) ?? fallback?.threat_level ?? null,
-      holder_entity_id: typeof entry.holder_entity_id === 'string' && entry.holder_entity_id ? entry.holder_entity_id : fallback?.holder_entity_id ?? null,
-      embedding,
-    }];
+    return [
+      {
+        item_type: entry.item_type,
+        item_id: entry.item_id,
+        image: entry.image,
+        bounding_box: entry.bounding_box,
+        timestamp_seconds: entry.timestamp_seconds ?? 0,
+        item_name:
+          typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : (fallback?.item_name ?? entry.item_type),
+        description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
+        threat_level: integerOrNull(entry.threat_level) ?? fallback?.threat_level ?? null,
+        holder_entity_id:
+          typeof entry.holder_entity_id === 'string' && entry.holder_entity_id
+            ? entry.holder_entity_id
+            : (fallback?.holder_entity_id ?? null),
+        embedding,
+      },
+    ];
   });
 }

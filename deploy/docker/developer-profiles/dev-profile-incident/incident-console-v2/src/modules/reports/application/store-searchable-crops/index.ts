@@ -33,7 +33,9 @@ export async function storeSearchableCrops(
     const record = await incidents.getRevision(videoId, revisionId);
     if (!record) return { crops: null };
     const embeddings = record.evidence.some((entry) => entry.image) ? await embed(revisionId) : [];
-    return { crops: (await videos.setRevisionCrops(videoId, revisionId, officialCrops(record.payload, record.evidence, embeddings))).crops };
+    return {
+      crops: (await videos.setRevisionCrops(videoId, revisionId, officialCrops(record.payload, record.evidence, embeddings))).crops,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Could not store the evidence crops of revision ${revisionId} of ${videoId}: ${message}`);

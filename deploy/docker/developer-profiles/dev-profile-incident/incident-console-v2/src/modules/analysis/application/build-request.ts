@@ -23,7 +23,10 @@ export function normalizeAdditionalInstruction(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') throw new RangeError('The additional instruction must be text');
   // eslint-disable-next-line no-control-regex
-  const cleaned = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\r\n?/g, '\n').trim();
+  const cleaned = value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
   if (!cleaned) return null;
   if (cleaned.length > MAX_ADDITIONAL_INSTRUCTION_LENGTH) {
     throw new RangeError(`The additional instruction must be at most ${MAX_ADDITIONAL_INSTRUCTION_LENGTH} characters`);

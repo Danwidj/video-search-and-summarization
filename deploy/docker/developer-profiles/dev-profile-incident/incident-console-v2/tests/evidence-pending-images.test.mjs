@@ -14,14 +14,47 @@ const { uploadEvidenceImage } = await import('../src/lib/evidence/evidence-image
 const crop = new Blob(['jpeg'], { type: 'image/jpeg' });
 const draft = () => ({
   incident: { type: 'burglary', start_timestamp: 0, end_timestamp: 10, description: 'A break-in.', severity_level: 3 },
-  entities: [{ key: 'entity-0', sourceId: 'E1', timestampSeconds: 2, label: 'person', image: 'evidence/v1/old/E1.jpg', imageUrl: 'https://signed/old', pendingImage: null, imageTimestampSeconds: null, imageBox: null, type: 'human', description: 'Man in a hat.', firstSeenSeconds: 1, lastSeenSeconds: 5 }],
+  entities: [
+    {
+      key: 'entity-0',
+      sourceId: 'E1',
+      timestampSeconds: 2,
+      label: 'person',
+      image: 'evidence/v1/old/E1.jpg',
+      imageUrl: 'https://signed/old',
+      pendingImage: null,
+      imageTimestampSeconds: null,
+      imageBox: null,
+      type: 'human',
+      description: 'Man in a hat.',
+      firstSeenSeconds: 1,
+      lastSeenSeconds: 5,
+    },
+  ],
   instruments: [],
-  assets: [{ key: 'asset-0', sourceId: 'A1', timestampSeconds: 3, label: 'bag', image: null, imageUrl: 'blob:preview', pendingImage: crop, imageTimestampSeconds: 3, imageBox: [1, 2, 3, 4], name: 'bag', description: 'Black bag.' }],
+  assets: [
+    {
+      key: 'asset-0',
+      sourceId: 'A1',
+      timestampSeconds: 3,
+      label: 'bag',
+      image: null,
+      imageUrl: 'blob:preview',
+      pendingImage: crop,
+      imageTimestampSeconds: 3,
+      imageBox: [1, 2, 3, 4],
+      name: 'bag',
+      description: 'Black bag.',
+    },
+  ],
 });
 
 test('only the crops still held in the browser need an upload, under their item keys', () => {
   const pending = pendingImages(draft());
-  assert.deepEqual(pending.map((p) => p.itemId), ['asset-0']);
+  assert.deepEqual(
+    pending.map((p) => p.itemId),
+    ['asset-0'],
+  );
   assert.equal(pending[0].blob, crop);
 });
 
@@ -44,7 +77,10 @@ test('the crop is posted as a file under its item key and the key the server wro
   const sent = [];
   globalThis.fetch = async (url, init) => {
     sent.push({ url, init });
-    return new Response(JSON.stringify({ image: 'evidence/v1/uuid/asset-0.jpg' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ image: 'evidence/v1/uuid/asset-0.jpg' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   };
   try {
     assert.equal(await uploadEvidenceImage('v 1', 'asset-0', crop), 'evidence/v1/uuid/asset-0.jpg');
@@ -59,7 +95,11 @@ test('the crop is posted as a file under its item key and the key the server wro
 
 test('a refused upload throws the server reason so Save stops before the revision is written', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ error: 'The image must be between 1 byte and 5 MB' }), { status: 413, headers: { 'content-type': 'application/json' } });
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: 'The image must be between 1 byte and 5 MB' }), {
+      status: 413,
+      headers: { 'content-type': 'application/json' },
+    });
   try {
     await assert.rejects(uploadEvidenceImage('v1', 'asset-0', crop), /between 1 byte and 5 MB/);
   } finally {

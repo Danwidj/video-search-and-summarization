@@ -8,13 +8,14 @@
 // instruments it holds), revert to A, and the change count the bottom bar
 // shows. Everything here is pure and browser-safe.
 
-import {
-  EDITABLE_ENTITY_TYPES,
-  EDITABLE_INCIDENT_TYPES,
-  newKey,
-  type EditDraft,
-} from '@/modules/reports/domain/edit-draft';
-import type { ReportView, StructuredAsset, StructuredEntity, StructuredIncident, StructuredInstrument } from '@/modules/reports/domain/report-view';
+import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, newKey, type EditDraft } from '@/modules/reports/domain/edit-draft';
+import type {
+  ReportView,
+  StructuredAsset,
+  StructuredEntity,
+  StructuredIncident,
+  StructuredInstrument,
+} from '@/modules/reports/domain/report-view';
 
 export type PairKind = 'entity' | 'instrument' | 'asset';
 export type Structured = ReportView['structured'];
@@ -78,7 +79,7 @@ const pairTimestamp = (row: PairRow) => Math.min(draftTimestamp(row.b), savedTim
 function pairCollection(kind: PairKind, saved: SavedItem[], draft: DraftItem[]): PairRow[] {
   const paired: PairRow[] = draft.map((item) => ({
     kind,
-    a: item.sourceId ? saved.find((candidate) => savedItemId(candidate) === item.sourceId) ?? null : null,
+    a: item.sourceId ? (saved.find((candidate) => savedItemId(candidate) === item.sourceId) ?? null) : null,
     b: item,
   }));
   const onlyA: PairRow[] = saved
@@ -126,7 +127,9 @@ export function rowDiffers(row: PairRow, draft: EditDraft): boolean {
   if (isSavedEntity(a) && isDraftEntity(b)) return a.type !== b.type || a.description !== b.description;
   if (isSavedInstrument(a) && isDraftInstrument(b)) {
     const holder = draftEntityFor(draft, a.entityId);
-    return a.name !== b.name || a.description !== b.description || a.threatLevel !== b.threat_level || (holder?.key ?? null) !== b.holderKey;
+    return (
+      a.name !== b.name || a.description !== b.description || a.threatLevel !== b.threat_level || (holder?.key ?? null) !== b.holderKey
+    );
   }
   if (isSavedAsset(a) && !isDraftEntity(b) && !isDraftInstrument(b)) return a.name !== b.name || a.description !== b.description;
   return false;
@@ -142,8 +145,9 @@ export function draftChangeCount(base: Structured, draft: EditDraft): number {
     [incident.description ?? '', draft.incident.description],
     [incident.severityLevel, draft.incident.severity_level],
   ];
-  return pairReport(base, draft).rows.filter((row) => rowDiffers(row, draft)).length
-    + fields.filter(([left, right]) => left !== right).length;
+  return (
+    pairReport(base, draft).rows.filter((row) => rowDiffers(row, draft)).length + fields.filter(([left, right]) => left !== right).length
+  );
 }
 
 /** An instrument can only go back to A while the entity that holds it in A is in the draft. */
@@ -165,7 +169,8 @@ export function deleteDraftItem(draft: EditDraft, kind: PairKind, key: string): 
 }
 
 const editableEntityType = (type: string): string => ((EDITABLE_ENTITY_TYPES as readonly string[]).includes(type) ? type : 'unknown');
-const editableIncidentType = (type: string | null): string | null => (type && (EDITABLE_INCIDENT_TYPES as readonly string[]).includes(type) ? type : null);
+const editableIncidentType = (type: string | null): string | null =>
+  type && (EDITABLE_INCIDENT_TYPES as readonly string[]).includes(type) ? type : null;
 const editableThreat = (value: number | null): number | null => (value !== null && value >= 1 && value <= 5 ? value : null);
 
 function entityFromSaved(item: StructuredEntity, key: string): DraftEntity {
@@ -223,7 +228,9 @@ function assetFromSaved(item: StructuredAsset, key: string): DraftAsset {
 function restoreEntity(draft: EditDraft, a: Structured, entity: StructuredEntity): EditDraft {
   const existing = draft.entities.find((candidate) => candidate.sourceId === entity.entityId);
   const restored = entityFromSaved(entity, existing?.key ?? newKey('entity'));
-  const entities = existing ? draft.entities.map((candidate) => (candidate.key === existing.key ? restored : candidate)) : [...draft.entities, restored];
+  const entities = existing
+    ? draft.entities.map((candidate) => (candidate.key === existing.key ? restored : candidate))
+    : [...draft.entities, restored];
   const instruments = [...draft.instruments];
   for (const instrument of a.instruments.filter((candidate) => candidate.entityId === entity.entityId)) {
     if (instruments.some((candidate) => candidate.sourceId === instrument.instrumentId)) continue;
@@ -239,7 +246,11 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
   if (isSavedInstrument(row.a)) {
     const instrument = row.a;
     const existing = draft.instruments.find((candidate) => candidate.sourceId === instrument.instrumentId);
-    const restored = instrumentFromSaved(instrument, existing?.key ?? newKey('instrument'), draftEntityFor(draft, instrument.entityId)?.key ?? null);
+    const restored = instrumentFromSaved(
+      instrument,
+      existing?.key ?? newKey('instrument'),
+      draftEntityFor(draft, instrument.entityId)?.key ?? null,
+    );
     const instruments = existing
       ? draft.instruments.map((candidate) => (candidate.key === existing.key ? restored : candidate))
       : [...draft.instruments, restored];
@@ -247,7 +258,9 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
   }
   const existing = draft.assets.find((candidate) => candidate.sourceId === (row.a as StructuredAsset).assetId);
   const restored = assetFromSaved(row.a, existing?.key ?? newKey('asset'));
-  const assets = existing ? draft.assets.map((candidate) => (candidate.key === existing.key ? restored : candidate)) : [...draft.assets, restored];
+  const assets = existing
+    ? draft.assets.map((candidate) => (candidate.key === existing.key ? restored : candidate))
+    : [...draft.assets, restored];
   return { ...draft, assets };
 }
 
@@ -257,13 +270,21 @@ export function draftToStructured(draft: EditDraft): Structured {
     type: editableIncidentType(draft.incident.type),
     startSeconds: draft.incident.start_timestamp,
     endSeconds: draft.incident.end_timestamp,
-    duration: draft.incident.start_timestamp !== null && draft.incident.end_timestamp !== null
-      ? draft.incident.end_timestamp - draft.incident.start_timestamp : null,
+    duration:
+      draft.incident.start_timestamp !== null && draft.incident.end_timestamp !== null
+        ? draft.incident.end_timestamp - draft.incident.start_timestamp
+        : null,
     description: draft.incident.description,
     severityLevel: draft.incident.severity_level,
     confidenceScore: null,
   };
-  const evidence = (image: string | null, imageUrl: string | null, seconds: number | null) => ({ image, imageUrl, boundingBox: null, timestampSeconds: seconds, uploaded: false });
+  const evidence = (image: string | null, imageUrl: string | null, seconds: number | null) => ({
+    image,
+    imageUrl,
+    boundingBox: null,
+    timestampSeconds: seconds,
+    uploaded: false,
+  });
   return {
     incident,
     entities: draft.entities.map((entity) => ({

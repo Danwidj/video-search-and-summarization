@@ -35,17 +35,36 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
   edit.incident.severity_level = 2;
   edit.incident.end_timestamp = 12;
   edit.entities[1].type = 'unknown';
-  edit.assets.push({ asset_id: 'A1', source_id: null, name: 'white van', description: 'Parked van beside the sidewalk.', timestamp_seconds: 1, label: '', image: null });
+  edit.assets.push({
+    asset_id: 'A1',
+    source_id: null,
+    name: 'white van',
+    description: 'Parked van beside the sidewalk.',
+    timestamp_seconds: 1,
+    label: '',
+    image: null,
+  });
 
   const db = fakePostgrest(
-    { videos: [{ ...fixture.video, official_revision_id: null }], model_runs: [structuredClone(fixture.modelRun)], report_revisions: [aiRevisionRow(fixture)] },
+    {
+      videos: [{ ...fixture.video, official_revision_id: null }],
+      model_runs: [structuredClone(fixture.modelRun)],
+      report_revisions: [aiRevisionRow(fixture)],
+    },
     { rpc: revisionRpcs },
   );
   const originalFetch = globalThis.fetch;
   Object.assign(process.env, { INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k' });
   globalThis.fetch = db.fetch;
   try {
-    const response = await PATCH(new Request('http://localhost/x', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: 1, editedBy: 'Reviewer A', edit }) }), { params: Promise.resolve({ videoId: fixture.videoId }) });
+    const response = await PATCH(
+      new Request('http://localhost/x', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentId: 1, editedBy: 'Reviewer A', edit }),
+      }),
+      { params: Promise.resolve({ videoId: fixture.videoId }) },
+    );
     assert.equal(response.status, 200);
   } finally {
     globalThis.fetch = originalFetch;
@@ -68,7 +87,10 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
   globalThis.fetch = db.fetch;
   let view;
   try {
-    view = toReportView(await new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')).getRevision(fixture.videoId, 2), 'x');
+    view = toReportView(
+      await new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')).getRevision(fixture.videoId, 2),
+      'x',
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -76,7 +98,10 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
   assert.equal(view.structured.incident.severityLevel, 2);
   assert.equal(view.structured.incident.endSeconds, 12);
   assert.equal(view.structured.entities[1].type, 'unknown');
-  assert.deepEqual(view.structured.assets.map((a) => a.assetId), ['A1']);
+  assert.deepEqual(
+    view.structured.assets.map((a) => a.assetId),
+    ['A1'],
+  );
   // Class B and the outcome remain the model's, and the difference is explicit.
   assert.equal(view.run.status, 'valid_after_structural_repair');
   assert.equal(view.modelOutput.original.severityLevel, 3);

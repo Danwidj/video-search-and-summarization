@@ -8,22 +8,36 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { deleteDraftItem, draftChangeCount, draftToStructured, pairReport, revertBlocked, revertDraftItem, rowDiffers } = await import('../src/lib/reports/compare.ts');
+const { deleteDraftItem, draftChangeCount, draftToStructured, pairReport, revertBlocked, revertDraftItem, rowDiffers } = await import(
+  '../src/lib/reports/compare.ts'
+);
 const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
 const { buildReportView } = await import('./support/report-view.mjs');
 
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const view = buildReportView({ ...structuredClone(fixture), playbackUrl: 'https://signed.example/v.mp4' });
 const base = () => draftFromView(view);
-const rowOf = (pairing, kind, name) => pairing.rows.find((row) => row.kind === kind && (row.b?.name === name || row.b?.description === name));
+const rowOf = (pairing, kind, name) =>
+  pairing.rows.find((row) => row.kind === kind && (row.b?.name === name || row.b?.description === name));
 
 test('an unchanged draft pairs every A item with B, groups holders, and shows no changes', () => {
   const pairing = pairReport(view.structured, base());
   assert.equal(pairing.rows.length, 4);
   assert.equal(pairing.liveCount, 4);
-  assert.deepEqual(pairing.units.map((unit) => unit.kind), ['entity', 'entity', 'loose']);
-  assert.deepEqual(pairing.units[0].rows.map((row) => row.b.name), ['bag'], 'the bag sits under the entity that holds it');
-  assert.deepEqual(pairing.units[2].rows.map((row) => row.b.name), ['white van'], 'an instrument without a holder is loose');
+  assert.deepEqual(
+    pairing.units.map((unit) => unit.kind),
+    ['entity', 'entity', 'loose'],
+  );
+  assert.deepEqual(
+    pairing.units[0].rows.map((row) => row.b.name),
+    ['bag'],
+    'the bag sits under the entity that holds it',
+  );
+  assert.deepEqual(
+    pairing.units[2].rows.map((row) => row.b.name),
+    ['white van'],
+    'an instrument without a holder is loose',
+  );
   assert.equal(draftChangeCount(view.structured, base()), 0);
   assert.ok(pairing.rows.every((row) => !rowDiffers(row, base())));
 });
@@ -79,13 +93,28 @@ test('reverting an edited or deleted item puts A values back', () => {
 
 test('an item the draft adds is new in B, not a deleted A row', () => {
   const draft = base();
-  draft.instruments.push({ key: 'instrument-new', sourceId: null, timestampSeconds: 1, label: '', image: null, imageUrl: null, holderKey: draft.entities[1].key, name: 'phone', description: 'Dropped', threat_level: 1 });
+  draft.instruments.push({
+    key: 'instrument-new',
+    sourceId: null,
+    timestampSeconds: 1,
+    label: '',
+    image: null,
+    imageUrl: null,
+    holderKey: draft.entities[1].key,
+    name: 'phone',
+    description: 'Dropped',
+    threat_level: 1,
+  });
   const pairing = pairReport(view.structured, draft);
   const added = pairing.rows.find((row) => row.b?.key === 'instrument-new');
   assert.equal(added.a, null);
   assert.equal(pairing.liveCount, 5);
   assert.equal(draftChangeCount(view.structured, draft), 1);
-  assert.equal(pairing.units[1].rows.some((row) => row.b?.key === 'instrument-new'), true, 'it groups under its holder');
+  assert.equal(
+    pairing.units[1].rows.some((row) => row.b?.key === 'instrument-new'),
+    true,
+    'it groups under its holder',
+  );
 });
 
 test('the draft renders as structured evidence with its holder names resolved', () => {

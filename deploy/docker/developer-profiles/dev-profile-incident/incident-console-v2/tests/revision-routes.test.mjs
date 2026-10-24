@@ -20,10 +20,26 @@ mock.module('@aws-sdk/client-s3', {
         return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: command.input.size ?? 4 } : {});
       }
     },
-    GetObjectCommand: class GetObjectCommand { constructor(input) { this.input = input; } },
-    PutObjectCommand: class PutObjectCommand { constructor(input) { this.input = input; } },
-    HeadObjectCommand: class HeadObjectCommand { constructor(input) { this.input = input; } },
-    DeleteObjectCommand: class DeleteObjectCommand { constructor(input) { this.input = input; } },
+    GetObjectCommand: class GetObjectCommand {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    PutObjectCommand: class PutObjectCommand {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    HeadObjectCommand: class HeadObjectCommand {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    DeleteObjectCommand: class DeleteObjectCommand {
+      constructor(input) {
+        this.input = input;
+      }
+    },
   },
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/x' } });
@@ -43,15 +59,26 @@ const originalEnv = { ...process.env };
 beforeEach(() => {
   r2Commands.length = 0;
   Object.assign(process.env, {
-    INCIDENT_SUPABASE_URL: 'https://supabase.test', INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
-    R2_ACCOUNT_ID: 'a', R2_ACCESS_KEY: 'b', R2_SECRET_KEY: 'c', R2_BUCKET: 'd',
+    INCIDENT_SUPABASE_URL: 'https://supabase.test',
+    INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
+    R2_ACCOUNT_ID: 'a',
+    R2_ACCESS_KEY: 'b',
+    R2_SECRET_KEY: 'c',
+    R2_BUCKET: 'd',
   });
 });
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+});
 
 function database() {
   const db = fakePostgrest(
-    { videos: [{ ...repaired.video, official_revision_id: 1 }], model_runs: [repaired.modelRun], report_revisions: [aiRevisionRow(repaired)] },
+    {
+      videos: [{ ...repaired.video, official_revision_id: 1 }],
+      model_runs: [repaired.modelRun],
+      report_revisions: [aiRevisionRow(repaired)],
+    },
     { rpc: revisionRpcs, identity: { report_revisions: 'id' } },
   );
   globalThis.fetch = db.fetch;
@@ -66,14 +93,31 @@ const image = (type = 'image/png', size = 4) => new Blob([new Uint8Array(size)],
 
 test('History lists every revision newest first with kind, author, time, note and the official flag', async () => {
   const db = database();
-  db.store.report_revisions.push({ ...aiRevisionRow(repaired), id: 2, revision_no: 2, kind: 'human', parent_id: 1, created_by: 'Lead', note: 'Edited by hand' });
+  db.store.report_revisions.push({
+    ...aiRevisionRow(repaired),
+    id: 2,
+    revision_no: 2,
+    kind: 'human',
+    parent_id: 1,
+    created_by: 'Lead',
+    note: 'Edited by hand',
+  });
   const response = await history(new Request(`http://localhost/api/reports/${V}/revisions`), params);
   assert.equal(response.status, 200);
   const { revisions } = await response.json();
-  assert.deepEqual(revisions.map((r) => [r.revisionNo, r.kind, r.createdBy, r.isOfficial]), [[2, 'human', 'Lead', false], [1, 'ai', null, true]]);
+  assert.deepEqual(
+    revisions.map((r) => [r.revisionNo, r.kind, r.createdBy, r.isOfficial]),
+    [
+      [2, 'human', 'Lead', false],
+      [1, 'ai', null, true],
+    ],
+  );
   assert.equal(revisions[0].note, 'Edited by hand');
   assert.equal(revisions[1].model, repaired.modelRun.model_name);
-  assert.ok(revisions.every((r) => r.createdAt), 'each revision carries its time');
+  assert.ok(
+    revisions.every((r) => r.createdAt),
+    'each revision carries its time',
+  );
   assert.equal(db.store.report_revisions.length, 2);
 });
 
@@ -87,7 +131,10 @@ test('an uploaded evidence image gets a new unique key under evidence/<videoId>/
   for (const key of keys) assert.match(key, new RegExp(`^evidence/${V}/[0-9a-f-]{36}/E1\\.jpg$`));
   assert.notEqual(keys[0], keys[1], 'the same item uploaded twice gets two keys');
   const puts = r2Commands.filter((c) => c.name === 'PutObjectCommand');
-  assert.deepEqual(puts.map((c) => c.input.Key), keys);
+  assert.deepEqual(
+    puts.map((c) => c.input.Key),
+    keys,
+  );
   assert.ok(!r2Commands.some((c) => c.name === 'DeleteObjectCommand'), 'nothing is deleted');
 });
 

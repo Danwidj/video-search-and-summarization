@@ -12,10 +12,16 @@ import { R2EvidenceObjectStore } from '@/modules/reports/infrastructure/r2/evide
 export const maxDuration = 60;
 
 // Both fields are optional; the body may be empty. Nothing is removed unless dryRun is false.
-const requestSchema = z.object({
-  dryRun: z.boolean().optional(),
-  minAgeHours: z.number().positive().max(24 * 365).optional(),
-}).strict();
+const requestSchema = z
+  .object({
+    dryRun: z.boolean().optional(),
+    minAgeHours: z
+      .number()
+      .positive()
+      .max(24 * 365)
+      .optional(),
+  })
+  .strict();
 
 /**
  * Orphan sweep for one video: lists evidence/<videoId>/ in R2 and, with
@@ -27,9 +33,22 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
   try {
     const { videoId } = await context.params;
     const text = (await request.text()).trim();
-    const parsed = requestSchema.safeParse(text ? (() => { try { return JSON.parse(text) as unknown; } catch { return null; } })() : {});
+    const parsed = requestSchema.safeParse(
+      text
+        ? (() => {
+            try {
+              return JSON.parse(text) as unknown;
+            } catch {
+              return null;
+            }
+          })()
+        : {},
+    );
     if (!parsed.success) {
-      return NextResponse.json({ error: 'The body must be empty or contain dryRun (boolean) and minAgeHours (number) only' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'The body must be empty or contain dryRun (boolean) and minAgeHours (number) only' },
+        { status: 400 },
+      );
     }
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');

@@ -8,46 +8,569 @@ import { getViewerTimeZone } from '@/lib/time';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const EMPTY: DashboardAnalytics = { total: 0, videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 }, previous: null, averageConfidence: null, confidenceNotProvided: 0, severity: { low: 0, medium: 0, high: 0 }, revisions: { ai: 0, human: 0 }, types: [], trend: [], heatmap: [], confidence: [], entityTypes: [], topInstruments: [], topAssets: [], threatLevels: [], modelCoverage: [] };
+const EMPTY: DashboardAnalytics = {
+  total: 0,
+  videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
+  previous: null,
+  averageConfidence: null,
+  confidenceNotProvided: 0,
+  severity: { low: 0, medium: 0, high: 0 },
+  revisions: { ai: 0, human: 0 },
+  types: [],
+  trend: [],
+  heatmap: [],
+  confidence: [],
+  entityTypes: [],
+  topInstruments: [],
+  topAssets: [],
+  threatLevels: [],
+  modelCoverage: [],
+};
 
 export function Dashboard() {
-  const [data, setData] = useState(EMPTY); const [days, setDays] = useState('30'); const [compare, setCompare] = useState(true);
-  const [filters, setFilters] = useState<Filters>(NONE); const [expanded, setExpanded] = useState(''); const [error, setError] = useState('');
+  const [data, setData] = useState(EMPTY);
+  const [days, setDays] = useState('30');
+  const [compare, setCompare] = useState(true);
+  const [filters, setFilters] = useState<Filters>(NONE);
+  const [expanded, setExpanded] = useState('');
+  const [error, setError] = useState('');
   const [timeZone, setTimeZone] = useState('UTC');
   // The period window and client timezone depend on the browser, so they are initialized after mount (hydration safe).
   const [range, setRange] = useState<Range | undefined>(undefined);
-  useEffect(() => { setTimeZone(getViewerTimeZone()); }, []);
-  useEffect(() => { if (days === 'all') { setRange(null); return; } const end = new Date(); setRange({ after: new Date(end.getTime() - Number(days) * 86_400_000).toISOString().replace('Z', ''), before: end.toISOString().replace('Z', '') }); }, [days]);
-  useEffect(() => { if (range === undefined) return; const controller = new AbortController(); const params = new URLSearchParams({ days, timezone: timeZone }); if (range) { params.set('after', range.after); params.set('before', range.before); } Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); }); setError(''); fetch(`/api/dashboard?${params}`, { cache: 'no-store', signal: controller.signal }).then(async (r) => { const p = await r.json() as { analytics?: DashboardAnalytics; error?: string }; if (!r.ok || !p.analytics) throw new Error(p.error || 'Could not load dashboard'); setData({ ...EMPTY, ...p.analytics }); }).catch((e: Error) => { if (e.name !== 'AbortError') setError(e.message); }); return () => controller.abort(); }, [days, filters, range, timeZone]);
-  const previous = compare ? data.previous : null; const active = Object.values(filters).some(Boolean); const maxType = Math.max(1, ...data.types.map((x) => x.count));
+  useEffect(() => {
+    setTimeZone(getViewerTimeZone());
+  }, []);
+  useEffect(() => {
+    if (days === 'all') {
+      setRange(null);
+      return;
+    }
+    const end = new Date();
+    setRange({
+      after: new Date(end.getTime() - Number(days) * 86_400_000).toISOString().replace('Z', ''),
+      before: end.toISOString().replace('Z', ''),
+    });
+  }, [days]);
+  useEffect(() => {
+    if (range === undefined) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ days, timezone: timeZone });
+    if (range) {
+      params.set('after', range.after);
+      params.set('before', range.before);
+    }
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v) params.set(k, v);
+    });
+    setError('');
+    fetch(`/api/dashboard?${params}`, { cache: 'no-store', signal: controller.signal })
+      .then(async (r) => {
+        const p = (await r.json()) as { analytics?: DashboardAnalytics; error?: string };
+        if (!r.ok || !p.analytics) throw new Error(p.error || 'Could not load dashboard');
+        setData({ ...EMPTY, ...p.analytics });
+      })
+      .catch((e: Error) => {
+        if (e.name !== 'AbortError') setError(e.message);
+      });
+    return () => controller.abort();
+  }, [days, filters, range, timeZone]);
+  const previous = compare ? data.previous : null;
+  const active = Object.values(filters).some(Boolean);
+  const maxType = Math.max(1, ...data.types.map((x) => x.count));
   const toggle = (key: keyof Filters, value: string) => setFilters((f) => ({ ...f, [key]: f[key] === value ? '' : value }));
   const link = (extra: LinkFilters = {}) => href({ ...filters, ...extra }, range ?? null);
-  return <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-[.2em] text-moss">Official incidents</p><h1 className="mt-2 text-4xl font-semibold sm:text-5xl">Operations dashboard</h1><p className="mt-3 max-w-3xl text-sm text-ink/50">Incident statistics count each video once, through its explicitly selected official report. Videos without an official report are counted separately and never assigned to a category. Every number opens the matching reports.</p></div><div className="flex items-center gap-3"><label className="text-sm"><input checked={compare} disabled={days === 'all'} onChange={(e) => setCompare(e.target.checked)} type="checkbox" /> <span className="ml-1">vs. previous period</span></label><select className="control w-auto" onChange={(e) => setDays(e.target.value)} value={days}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="all">All time</option></select></div></div>
-    {active && <div className="mt-5 flex items-center rounded-2xl border border-moss/20 bg-white p-4 text-sm"><strong className="text-moss">Dashboard filters active</strong><span className="ml-3 text-ink/50">{[filters.type, filters.severity, filters.day && DAYS[+filters.day], filters.hour && `${filters.hour}:00 ${timeZone}`].filter(Boolean).join(' · ')}</span><button className="ml-auto font-semibold text-moss" onClick={() => setFilters(NONE)} type="button">Reset</button></div>}
-    {error && <p className="mt-6 rounded-2xl border border-clay/30 bg-white p-4 text-clay">{error}</p>}
-    <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="video-metrics"><Metric href="/videos" label="Uploaded videos" note="all time" value={data.videos.uploaded} /><Metric change={delta(data.total, previous?.total)} href={link()} label="Official incidents" note="in the selected period" value={data.total} /><Metric href="/videos?filter=awaiting-selection" label="Awaiting official report" note="have reports, none selected" value={data.videos.awaitingSelection} /><Metric href="/videos?filter=without-report" label="Without a report" note="no successful analysis yet" value={data.videos.withoutReport} /></section>
-    <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Metric change={delta(data.revisions.human, previous?.human)} href={link({ kind: 'human' })} label="Human-edited" value={data.revisions.human} /><Metric change={delta(data.revisions.ai, previous?.ai)} href={link({ kind: 'ai' })} label="AI as generated" value={data.revisions.ai} /><Metric change={delta(data.severity.high, previous?.high)} href={link({ severity: 'high' })} label="High severity" value={data.severity.high} /><Metric href={link()} label="Model confidence" note={data.averageConfidence === null ? `not provided by the models (${data.confidenceNotProvided})` : `${data.confidenceNotProvided} not provided`} value={data.averageConfidence === null ? '—' : `${Math.round(data.averageConfidence * 100)}%`} /></section>
-    <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_.8fr]"><Panel title="Official incidents over time" subtitle="By official report date (UTC days)"><Trend points={data.trend} /></Panel><Panel title="Severity breakdown" subtitle="Click a segment to cross-filter"><Severity counts={data.severity} selected={filters.severity} onSelect={(v) => toggle('severity', v)} /></Panel></div>
-    <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><Panel title="Incidents by type" subtitle="Expand a row for evidence and severity"><div className="space-y-2">{data.types.map((item) => <TypeRow expanded={expanded === item.type} filters={filters} item={item} key={item.type} max={maxType} onToggle={() => setExpanded(expanded === item.type ? '' : item.type)} range={range ?? null} />)}{!data.types.length && <Empty />}</div></Panel><Panel title="Official reports by version" subtitle="As the model generated them, or saved by a reviewer"><Funnel data={data} /></Panel></div>
-    <div className="mt-6 grid gap-6 xl:grid-cols-3"><Panel title="Entities by type" subtitle="Incidents involving each entity type"><Leaders items={data.entityTypes} linkFor={(x) => link({ entityType: x.label })} /></Panel><Panel title="Top instruments" subtitle="Incidents per instrument (exact name)"><Leaders items={data.topInstruments} linkFor={(x) => link({ instrument: x.label })} /></Panel><Panel title="Top assets" subtitle="Incidents per asset (exact name)"><Leaders items={data.topAssets} linkFor={(x) => link({ asset: x.label })} /></Panel></div>
-    <div className="mt-6 grid gap-6 xl:grid-cols-2"><Panel title="Report activity by day and time" subtitle={`Official report generation time (${timeZone}); click a cell to cross-filter`}><Heatmap data={data.heatmap} selected={`${filters.day}-${filters.hour}`} onSelect={(d, h) => setFilters((f) => f.day === String(d) && f.hour === String(h) ? { ...f, day: '', hour: '' } : { ...f, day: String(d), hour: String(h) })} timeZone={timeZone} /></Panel><Panel title="Instrument threat levels" subtitle="Instruments in official incidents, by rated threat"><ThreatLevels data={data.threatLevels} /></Panel></div>
-    <div className="mt-6 grid gap-6 xl:grid-cols-2"><Panel title="Confidence distribution" subtitle={data.averageConfidence === null ? 'No model provided a confidence value' : `Average ${Math.round(data.averageConfidence * 100)}% · ${data.confidenceNotProvided} not provided`}><Histogram data={data.confidence} /></Panel><Panel title="Analyses by model" subtitle="Every analysis attempt in the period, by outcome (all runs, not only official reports)"><Coverage rows={data.modelCoverage} /></Panel></div>
-  </div>;
+  return (
+    <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[.2em] text-moss">Official incidents</p>
+          <h1 className="mt-2 text-4xl font-semibold sm:text-5xl">Operations dashboard</h1>
+          <p className="mt-3 max-w-3xl text-sm text-ink/50">
+            Incident statistics count each video once, through its explicitly selected official report. Videos without an official report
+            are counted separately and never assigned to a category. Every number opens the matching reports.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-sm">
+            <input checked={compare} disabled={days === 'all'} onChange={(e) => setCompare(e.target.checked)} type="checkbox" />{' '}
+            <span className="ml-1">vs. previous period</span>
+          </label>
+          <select className="control w-auto" onChange={(e) => setDays(e.target.value)} value={days}>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+      </div>
+      {active && (
+        <div className="mt-5 flex items-center rounded-2xl border border-moss/20 bg-white p-4 text-sm">
+          <strong className="text-moss">Dashboard filters active</strong>
+          <span className="ml-3 text-ink/50">
+            {[filters.type, filters.severity, filters.day && DAYS[+filters.day], filters.hour && `${filters.hour}:00 ${timeZone}`]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          <button className="ml-auto font-semibold text-moss" onClick={() => setFilters(NONE)} type="button">
+            Reset
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-6 rounded-2xl border border-clay/30 bg-white p-4 text-clay">{error}</p>}
+      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="video-metrics">
+        <Metric href="/videos" label="Uploaded videos" note="all time" value={data.videos.uploaded} />
+        <Metric
+          change={delta(data.total, previous?.total)}
+          href={link()}
+          label="Official incidents"
+          note="in the selected period"
+          value={data.total}
+        />
+        <Metric
+          href="/videos?filter=awaiting-selection"
+          label="Awaiting official report"
+          note="have reports, none selected"
+          value={data.videos.awaitingSelection}
+        />
+        <Metric
+          href="/videos?filter=without-report"
+          label="Without a report"
+          note="no successful analysis yet"
+          value={data.videos.withoutReport}
+        />
+      </section>
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric
+          change={delta(data.revisions.human, previous?.human)}
+          href={link({ kind: 'human' })}
+          label="Human-edited"
+          value={data.revisions.human}
+        />
+        <Metric
+          change={delta(data.revisions.ai, previous?.ai)}
+          href={link({ kind: 'ai' })}
+          label="AI as generated"
+          value={data.revisions.ai}
+        />
+        <Metric
+          change={delta(data.severity.high, previous?.high)}
+          href={link({ severity: 'high' })}
+          label="High severity"
+          value={data.severity.high}
+        />
+        <Metric
+          href={link()}
+          label="Model confidence"
+          note={
+            data.averageConfidence === null
+              ? `not provided by the models (${data.confidenceNotProvided})`
+              : `${data.confidenceNotProvided} not provided`
+          }
+          value={data.averageConfidence === null ? '—' : `${Math.round(data.averageConfidence * 100)}%`}
+        />
+      </section>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_.8fr]">
+        <Panel title="Official incidents over time" subtitle="By official report date (UTC days)">
+          <Trend points={data.trend} />
+        </Panel>
+        <Panel title="Severity breakdown" subtitle="Click a segment to cross-filter">
+          <Severity counts={data.severity} selected={filters.severity} onSelect={(v) => toggle('severity', v)} />
+        </Panel>
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
+        <Panel title="Incidents by type" subtitle="Expand a row for evidence and severity">
+          <div className="space-y-2">
+            {data.types.map((item) => (
+              <TypeRow
+                expanded={expanded === item.type}
+                filters={filters}
+                item={item}
+                key={item.type}
+                max={maxType}
+                onToggle={() => setExpanded(expanded === item.type ? '' : item.type)}
+                range={range ?? null}
+              />
+            ))}
+            {!data.types.length && <Empty />}
+          </div>
+        </Panel>
+        <Panel title="Official reports by version" subtitle="As the model generated them, or saved by a reviewer">
+          <Funnel data={data} />
+        </Panel>
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <Panel title="Entities by type" subtitle="Incidents involving each entity type">
+          <Leaders items={data.entityTypes} linkFor={(x) => link({ entityType: x.label })} />
+        </Panel>
+        <Panel title="Top instruments" subtitle="Incidents per instrument (exact name)">
+          <Leaders items={data.topInstruments} linkFor={(x) => link({ instrument: x.label })} />
+        </Panel>
+        <Panel title="Top assets" subtitle="Incidents per asset (exact name)">
+          <Leaders items={data.topAssets} linkFor={(x) => link({ asset: x.label })} />
+        </Panel>
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <Panel
+          title="Report activity by day and time"
+          subtitle={`Official report generation time (${timeZone}); click a cell to cross-filter`}
+        >
+          <Heatmap
+            data={data.heatmap}
+            selected={`${filters.day}-${filters.hour}`}
+            onSelect={(d, h) =>
+              setFilters((f) =>
+                f.day === String(d) && f.hour === String(h) ? { ...f, day: '', hour: '' } : { ...f, day: String(d), hour: String(h) },
+              )
+            }
+            timeZone={timeZone}
+          />
+        </Panel>
+        <Panel title="Instrument threat levels" subtitle="Instruments in official incidents, by rated threat">
+          <ThreatLevels data={data.threatLevels} />
+        </Panel>
+      </div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <Panel
+          title="Confidence distribution"
+          subtitle={
+            data.averageConfidence === null
+              ? 'No model provided a confidence value'
+              : `Average ${Math.round(data.averageConfidence * 100)}% · ${data.confidenceNotProvided} not provided`
+          }
+        >
+          <Histogram data={data.confidence} />
+        </Panel>
+        <Panel title="Analyses by model" subtitle="Every analysis attempt in the period, by outcome (all runs, not only official reports)">
+          <Coverage rows={data.modelCoverage} />
+        </Panel>
+      </div>
+    </div>
+  );
 }
 
-function delta(now: number, before?: number) { if (before === undefined) return null; return before ? Math.round((now - before) / before * 100) : now ? 100 : 0; }
-function Metric({ label, value, href: url, change = null, note }: { label: string; value: number | string; href: string; change?: number | null; note?: string }) { return <Link className="rounded-2xl border border-ink/10 bg-white p-5 hover:shadow-panel" href={url}><p className="text-sm text-ink/50">{label}</p><p className="mt-2 text-4xl font-semibold">{value}</p>{note && <p className="mt-1 text-[11px] text-ink/40">{note}</p>}{change !== null && <p className="mt-2 text-xs text-ink/45">{change > 0 ? '+' : ''}{change}% vs. previous</p>}</Link>; }
-function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) { return <section className="rounded-3xl border border-ink/10 bg-white p-6"><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 text-xs text-ink/45">{subtitle}</p><div className="mt-5">{children}</div></section>; }
+function delta(now: number, before?: number) {
+  if (before === undefined) return null;
+  return before ? Math.round(((now - before) / before) * 100) : now ? 100 : 0;
+}
+function Metric({
+  label,
+  value,
+  href: url,
+  change = null,
+  note,
+}: {
+  label: string;
+  value: number | string;
+  href: string;
+  change?: number | null;
+  note?: string;
+}) {
+  return (
+    <Link className="rounded-2xl border border-ink/10 bg-white p-5 hover:shadow-panel" href={url}>
+      <p className="text-sm text-ink/50">{label}</p>
+      <p className="mt-2 text-4xl font-semibold">{value}</p>
+      {note && <p className="mt-1 text-[11px] text-ink/40">{note}</p>}
+      {change !== null && (
+        <p className="mt-2 text-xs text-ink/45">
+          {change > 0 ? '+' : ''}
+          {change}% vs. previous
+        </p>
+      )}
+    </Link>
+  );
+}
+function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+  return (
+    <section className="rounded-3xl border border-ink/10 bg-white p-6">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="mt-1 text-xs text-ink/45">{subtitle}</p>
+      <div className="mt-5">{children}</div>
+    </section>
+  );
+}
 
-function TypeRow({ item, expanded, max, onToggle, filters, range }: { item: TypeDetail; expanded: boolean; max: number; onToggle: () => void; filters: Filters; range: Range }) { const typeFilters = { ...filters, type: item.type }; return <article className="rounded-2xl border border-ink/8"><div className="flex items-center gap-3 p-4"><Link className="min-w-0 flex-1" href={href(typeFilters, range)}><div className="flex justify-between text-sm"><strong className="capitalize">{item.type}</strong><span>{item.count}</span></div><div className="mt-2 h-2 rounded-full bg-ink/8"><div className="h-2 rounded-full bg-signal" style={{ width: `${item.count / max * 100}%` }} /></div></Link><button aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.type}`} className="text-sm text-ink/50" onClick={onToggle} type="button">{expanded ? '−' : '+'}</button></div>{expanded && <div className="border-t border-ink/8 p-4"><div className="grid gap-4 md:grid-cols-3"><Evidence title="Entity types" items={item.entities} linkFor={(x) => href({ ...typeFilters, entityType: x.label }, range)} /><Evidence title="Instruments" items={item.instruments} linkFor={(x) => href({ ...typeFilters, instrument: x.label }, range)} /><Evidence title="Assets affected" items={item.assets} linkFor={(x) => href({ ...typeFilters, asset: x.label }, range)} /></div><div className="mt-5"><p className="text-[10px] font-bold uppercase text-ink/40">Severity split</p><Severity compact counts={item.severity} selected="" onSelect={() => undefined} /></div><Link className="mt-5 inline-block text-sm font-semibold text-moss" href={href(typeFilters, range)}>View all {item.type} reports →</Link></div>}</article>; }
-function Evidence({ title, items, linkFor }: { title: string; items: RankedValue[]; linkFor: (x: RankedValue) => string }) { return <div><p className="text-[10px] font-bold uppercase text-ink/40">{title}</p><div className="mt-2 space-y-1">{items.map((x) => <Link className="flex gap-2 text-sm text-moss" href={linkFor(x)} key={x.label}><span className="min-w-0 flex-1 truncate">{x.label}</span><span>{x.count}</span></Link>)}{!items.length && <span className="text-xs text-ink/35">None identified</span>}</div></div>; }
-function Severity({ counts, selected, onSelect, compact = false }: { counts: SeverityCounts; selected: string; onSelect: (v: string) => void; compact?: boolean }) { const total = counts.low + counts.medium + counts.high; const rows = [['low', 'Low', 'bg-signal'], ['medium', 'Medium', 'bg-amber-400'], ['high', 'High', 'bg-clay']] as const; return <div><div className={`flex overflow-hidden rounded-full bg-ink/8 ${compact ? 'mt-2 h-2' : 'h-5'}`}>{rows.map(([k, label, color]) => <button aria-label={`${label} severity`} className={`${color} ${selected && selected !== k ? 'opacity-25' : ''}`} disabled={compact} key={k} onClick={() => onSelect(k)} style={{ width: `${total ? counts[k] / total * 100 : 0}%` }} type="button" />)}</div><div className="mt-3 grid grid-cols-3 text-xs">{rows.map(([k, label]) => <button disabled={compact} key={k} onClick={() => onSelect(k)} type="button"><strong className="block text-base">{counts[k]}</strong>{label}</button>)}</div></div>; }
-function Trend({ points }: { points: DashboardAnalytics['trend'] }) { const max = Math.max(1, ...points.map((x) => x.count)); const line = points.map((x, i) => `${points.length === 1 ? 50 : i / (points.length - 1) * 100},${38 - x.count / max * 32}`).join(' '); return points.length && points.some((x) => x.count) ? <div><svg aria-label="Daily official incident trend" className="h-48 w-full" preserveAspectRatio="none" role="img" viewBox="0 0 100 40"><polyline fill="none" points={line} stroke="#315b3a" strokeWidth="1.5" vectorEffect="non-scaling-stroke" /></svg><div className="flex justify-between text-[10px] text-ink/40"><span>{points[0].date}</span><span>{points.at(-1)?.date}</span></div></div> : <Empty />; }
-function Heatmap({ data, selected, onSelect, timeZone }: { data: DashboardAnalytics['heatmap']; selected: string; onSelect: (d: number, h: number) => void; timeZone: string }) { const map = useMemo(() => new Map(data.map((x) => [`${x.day}-${x.hour}`, x.count])), [data]); const max = Math.max(1, ...data.map((x) => x.count)); return <div className="overflow-x-auto"><div className="min-w-[650px]">{DAYS.map((name, d) => <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}><span className="text-[10px]">{name}</span>{Array.from({ length: 24 }, (_, h) => { const count = map.get(`${d}-${h}`) || 0; return <button aria-label={`${name} ${h}:00 ${timeZone}: ${count}`} className={`aspect-square rounded-sm ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`} key={h} onClick={() => onSelect(d, h)} style={{ background: `rgba(49,91,58,${count ? .15 + count / max * .85 : .04})` }} title={`${name} ${h}:00 ${timeZone} · ${count}`} type="button" />; })}</div>)}</div></div>; }
-function Funnel({ data }: { data: DashboardAnalytics }) { const rows = [['AI as generated', data.revisions.ai, 'bg-clay/50'], ['Human-edited', data.revisions.human, 'bg-signal']] as const; const max = Math.max(1, ...rows.map((x) => x[1])); return <div className="space-y-4">{rows.map(([label, count, color]) => <div key={label}><div className="flex justify-between text-sm"><span>{label}</span><strong>{count}</strong></div><div className="mt-2 h-7 rounded bg-ink/5"><div className={`h-7 rounded ${color}`} style={{ width: `${count / max * 100}%` }} /></div></div>)}</div>; }
-function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) { if (!data.length) return <p className="text-sm text-ink/40">No confidence values were provided.</p>; const map = new Map(data.map((x) => [x.bucket, x.count])); const max = Math.max(1, ...data.map((x) => x.count)); return <div className="flex h-48 items-end gap-2">{Array.from({ length: 10 }, (_, b) => <div className="flex h-full flex-1 flex-col justify-end text-center" key={b}><span className="text-[9px]">{map.get(b) || ''}</span><div className="min-h-1 bg-moss/75" style={{ height: `${(map.get(b) || 0) / max * 100}%` }} /><span className="mt-1 text-[9px]">{b * 10}</span></div>)}</div>; }
-function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) { const map = new Map(data.map((x) => [x.level, x.count])); const max = Math.max(1, ...data.map((x) => x.count)); return data.length ? <div className="space-y-3">{[5, 4, 3, 2, 1].map((level) => <div className="flex items-center gap-3 text-sm" key={level}><span className="w-16 text-ink/55">Threat {level}</span><div className="h-3 flex-1 rounded bg-ink/5"><div className="h-3 rounded bg-clay/60" style={{ width: `${(map.get(level) || 0) / max * 100}%` }} /></div><strong className="w-8 text-right">{map.get(level) || 0}</strong></div>)}</div> : <Empty />; }
-function Leaders({ items, linkFor }: { items: RankedValue[]; linkFor: (x: RankedValue) => string }) { const max = Math.max(1, ...items.map((x) => x.count)); return <div className="space-y-4">{items.map((x, i) => <Link className="block" href={linkFor(x)} key={x.label}><div className="flex gap-3 text-sm"><span className="text-ink/30">{i + 1}</span><span className="min-w-0 flex-1 truncate capitalize">{x.label}</span><strong>{x.count}</strong></div><div className="ml-6 mt-2 h-1.5 bg-ink/8"><div className="h-1.5 bg-signal" style={{ width: `${x.count / max * 100}%` }} /></div></Link>)}{!items.length && <Empty />}</div>; }
-function Coverage({ rows }: { rows: ModelCoverage[] }) { return rows.length ? <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-ink/45"><tr><th className="py-1 pr-3 font-semibold">Model</th><th className="px-2">With report</th><th className="px-2">Valid</th><th className="px-2">IDs repaired</th><th className="px-2">Earlier</th><th className="px-2">Contract failed</th><th className="px-2">Request failed</th></tr></thead><tbody>{rows.map((row) => <tr className="border-t border-ink/8" key={row.model}><td className="max-w-[220px] truncate py-2 pr-3 font-semibold">{row.model}</td><td className="px-2">{row.withReport}</td><td className="px-2">{row.validFirstPass}</td><td className="px-2">{row.repaired}</td><td className="px-2">{row.legacy}</td><td className="px-2">{row.contractFailed}</td><td className="px-2">{row.requestFailed}</td></tr>)}</tbody></table></div> : <Empty />; }
-function Empty() { return <p className="text-sm text-ink/40">No official incidents in this selection.</p>; }
+function TypeRow({
+  item,
+  expanded,
+  max,
+  onToggle,
+  filters,
+  range,
+}: {
+  item: TypeDetail;
+  expanded: boolean;
+  max: number;
+  onToggle: () => void;
+  filters: Filters;
+  range: Range;
+}) {
+  const typeFilters = { ...filters, type: item.type };
+  return (
+    <article className="rounded-2xl border border-ink/8">
+      <div className="flex items-center gap-3 p-4">
+        <Link className="min-w-0 flex-1" href={href(typeFilters, range)}>
+          <div className="flex justify-between text-sm">
+            <strong className="capitalize">{item.type}</strong>
+            <span>{item.count}</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-ink/8">
+            <div className="h-2 rounded-full bg-signal" style={{ width: `${(item.count / max) * 100}%` }} />
+          </div>
+        </Link>
+        <button
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.type}`}
+          className="text-sm text-ink/50"
+          onClick={onToggle}
+          type="button"
+        >
+          {expanded ? '−' : '+'}
+        </button>
+      </div>
+      {expanded && (
+        <div className="border-t border-ink/8 p-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Evidence title="Entity types" items={item.entities} linkFor={(x) => href({ ...typeFilters, entityType: x.label }, range)} />
+            <Evidence title="Instruments" items={item.instruments} linkFor={(x) => href({ ...typeFilters, instrument: x.label }, range)} />
+            <Evidence title="Assets affected" items={item.assets} linkFor={(x) => href({ ...typeFilters, asset: x.label }, range)} />
+          </div>
+          <div className="mt-5">
+            <p className="text-[10px] font-bold uppercase text-ink/40">Severity split</p>
+            <Severity compact counts={item.severity} selected="" onSelect={() => undefined} />
+          </div>
+          <Link className="mt-5 inline-block text-sm font-semibold text-moss" href={href(typeFilters, range)}>
+            View all {item.type} reports →
+          </Link>
+        </div>
+      )}
+    </article>
+  );
+}
+function Evidence({ title, items, linkFor }: { title: string; items: RankedValue[]; linkFor: (x: RankedValue) => string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase text-ink/40">{title}</p>
+      <div className="mt-2 space-y-1">
+        {items.map((x) => (
+          <Link className="flex gap-2 text-sm text-moss" href={linkFor(x)} key={x.label}>
+            <span className="min-w-0 flex-1 truncate">{x.label}</span>
+            <span>{x.count}</span>
+          </Link>
+        ))}
+        {!items.length && <span className="text-xs text-ink/35">None identified</span>}
+      </div>
+    </div>
+  );
+}
+function Severity({
+  counts,
+  selected,
+  onSelect,
+  compact = false,
+}: {
+  counts: SeverityCounts;
+  selected: string;
+  onSelect: (v: string) => void;
+  compact?: boolean;
+}) {
+  const total = counts.low + counts.medium + counts.high;
+  const rows = [
+    ['low', 'Low', 'bg-signal'],
+    ['medium', 'Medium', 'bg-amber-400'],
+    ['high', 'High', 'bg-clay'],
+  ] as const;
+  return (
+    <div>
+      <div className={`flex overflow-hidden rounded-full bg-ink/8 ${compact ? 'mt-2 h-2' : 'h-5'}`}>
+        {rows.map(([k, label, color]) => (
+          <button
+            aria-label={`${label} severity`}
+            className={`${color} ${selected && selected !== k ? 'opacity-25' : ''}`}
+            disabled={compact}
+            key={k}
+            onClick={() => onSelect(k)}
+            style={{ width: `${total ? (counts[k] / total) * 100 : 0}%` }}
+            type="button"
+          />
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-3 text-xs">
+        {rows.map(([k, label]) => (
+          <button disabled={compact} key={k} onClick={() => onSelect(k)} type="button">
+            <strong className="block text-base">{counts[k]}</strong>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function Trend({ points }: { points: DashboardAnalytics['trend'] }) {
+  const max = Math.max(1, ...points.map((x) => x.count));
+  const line = points.map((x, i) => `${points.length === 1 ? 50 : (i / (points.length - 1)) * 100},${38 - (x.count / max) * 32}`).join(' ');
+  return points.length && points.some((x) => x.count) ? (
+    <div>
+      <svg aria-label="Daily official incident trend" className="h-48 w-full" preserveAspectRatio="none" role="img" viewBox="0 0 100 40">
+        <polyline fill="none" points={line} stroke="#315b3a" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-ink/40">
+        <span>{points[0].date}</span>
+        <span>{points.at(-1)?.date}</span>
+      </div>
+    </div>
+  ) : (
+    <Empty />
+  );
+}
+function Heatmap({
+  data,
+  selected,
+  onSelect,
+  timeZone,
+}: {
+  data: DashboardAnalytics['heatmap'];
+  selected: string;
+  onSelect: (d: number, h: number) => void;
+  timeZone: string;
+}) {
+  const map = useMemo(() => new Map(data.map((x) => [`${x.day}-${x.hour}`, x.count])), [data]);
+  const max = Math.max(1, ...data.map((x) => x.count));
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-[650px]">
+        {DAYS.map((name, d) => (
+          <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
+            <span className="text-[10px]">{name}</span>
+            {Array.from({ length: 24 }, (_, h) => {
+              const count = map.get(`${d}-${h}`) || 0;
+              return (
+                <button
+                  aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
+                  className={`aspect-square rounded-sm ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`}
+                  key={h}
+                  onClick={() => onSelect(d, h)}
+                  style={{ background: `rgba(49,91,58,${count ? 0.15 + (count / max) * 0.85 : 0.04})` }}
+                  title={`${name} ${h}:00 ${timeZone} · ${count}`}
+                  type="button"
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function Funnel({ data }: { data: DashboardAnalytics }) {
+  const rows = [
+    ['AI as generated', data.revisions.ai, 'bg-clay/50'],
+    ['Human-edited', data.revisions.human, 'bg-signal'],
+  ] as const;
+  const max = Math.max(1, ...rows.map((x) => x[1]));
+  return (
+    <div className="space-y-4">
+      {rows.map(([label, count, color]) => (
+        <div key={label}>
+          <div className="flex justify-between text-sm">
+            <span>{label}</span>
+            <strong>{count}</strong>
+          </div>
+          <div className="mt-2 h-7 rounded bg-ink/5">
+            <div className={`h-7 rounded ${color}`} style={{ width: `${(count / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) {
+  if (!data.length) return <p className="text-sm text-ink/40">No confidence values were provided.</p>;
+  const map = new Map(data.map((x) => [x.bucket, x.count]));
+  const max = Math.max(1, ...data.map((x) => x.count));
+  return (
+    <div className="flex h-48 items-end gap-2">
+      {Array.from({ length: 10 }, (_, b) => (
+        <div className="flex h-full flex-1 flex-col justify-end text-center" key={b}>
+          <span className="text-[9px]">{map.get(b) || ''}</span>
+          <div className="min-h-1 bg-moss/75" style={{ height: `${((map.get(b) || 0) / max) * 100}%` }} />
+          <span className="mt-1 text-[9px]">{b * 10}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) {
+  const map = new Map(data.map((x) => [x.level, x.count]));
+  const max = Math.max(1, ...data.map((x) => x.count));
+  return data.length ? (
+    <div className="space-y-3">
+      {[5, 4, 3, 2, 1].map((level) => (
+        <div className="flex items-center gap-3 text-sm" key={level}>
+          <span className="w-16 text-ink/55">Threat {level}</span>
+          <div className="h-3 flex-1 rounded bg-ink/5">
+            <div className="h-3 rounded bg-clay/60" style={{ width: `${((map.get(level) || 0) / max) * 100}%` }} />
+          </div>
+          <strong className="w-8 text-right">{map.get(level) || 0}</strong>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <Empty />
+  );
+}
+function Leaders({ items, linkFor }: { items: RankedValue[]; linkFor: (x: RankedValue) => string }) {
+  const max = Math.max(1, ...items.map((x) => x.count));
+  return (
+    <div className="space-y-4">
+      {items.map((x, i) => (
+        <Link className="block" href={linkFor(x)} key={x.label}>
+          <div className="flex gap-3 text-sm">
+            <span className="text-ink/30">{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate capitalize">{x.label}</span>
+            <strong>{x.count}</strong>
+          </div>
+          <div className="ml-6 mt-2 h-1.5 bg-ink/8">
+            <div className="h-1.5 bg-signal" style={{ width: `${(x.count / max) * 100}%` }} />
+          </div>
+        </Link>
+      ))}
+      {!items.length && <Empty />}
+    </div>
+  );
+}
+function Coverage({ rows }: { rows: ModelCoverage[] }) {
+  return rows.length ? (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-xs">
+        <thead className="text-ink/45">
+          <tr>
+            <th className="py-1 pr-3 font-semibold">Model</th>
+            <th className="px-2">With report</th>
+            <th className="px-2">Valid</th>
+            <th className="px-2">IDs repaired</th>
+            <th className="px-2">Earlier</th>
+            <th className="px-2">Contract failed</th>
+            <th className="px-2">Request failed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr className="border-t border-ink/8" key={row.model}>
+              <td className="max-w-[220px] truncate py-2 pr-3 font-semibold">{row.model}</td>
+              <td className="px-2">{row.withReport}</td>
+              <td className="px-2">{row.validFirstPass}</td>
+              <td className="px-2">{row.repaired}</td>
+              <td className="px-2">{row.legacy}</td>
+              <td className="px-2">{row.contractFailed}</td>
+              <td className="px-2">{row.requestFailed}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <Empty />
+  );
+}
+function Empty() {
+  return <p className="text-sm text-ink/40">No official incidents in this selection.</p>;
+}

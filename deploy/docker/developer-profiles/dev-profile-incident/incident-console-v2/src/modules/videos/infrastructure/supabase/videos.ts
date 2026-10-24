@@ -2,8 +2,15 @@
 
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import {
-  type AttemptRunRecord, type OfficialChange, type RevisionCropsChange, type RevisionRunRecord, type RunHistoryRecords,
-  type VideoListFilter, type VideoListItem, type VideoRecord, type VideoRepository,
+  type AttemptRunRecord,
+  type OfficialChange,
+  type RevisionCropsChange,
+  type RevisionRunRecord,
+  type RunHistoryRecords,
+  type VideoListFilter,
+  type VideoListItem,
+  type VideoRecord,
+  type VideoRepository,
 } from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
@@ -65,10 +72,13 @@ export class SupabaseVideoAdapter implements VideoRepository {
     const base = 'id,filepath,uploaded_datetime,source,official_revision_id';
     const embed = 'report_revisions!report_revisions_video_id_fkey';
     const query: Record<string, string> = {
-      select: filter === 'without-report' ? `${base},${embed}(id)`
-        // Awaiting selection: at least one revision, and none marked official.
-        : filter === 'awaiting-selection' ? `${base},${embed}!inner(id)`
-          : `${base},${embed}(id)`,
+      select:
+        filter === 'without-report'
+          ? `${base},${embed}(id)`
+          : // Awaiting selection: at least one revision, and none marked official.
+            filter === 'awaiting-selection'
+            ? `${base},${embed}!inner(id)`
+            : `${base},${embed}(id)`,
       order: 'uploaded_datetime.desc.nullslast,id.asc',
     };
     if (filter === 'without-report') query.report_revisions = 'is.null';
@@ -115,7 +125,14 @@ export class SupabaseVideoAdapter implements VideoRepository {
       notes: text(attempt.notes),
     }));
     // A run used by more than one video is a batch run; its history is not this video's alone.
-    const usage = revisions.length ? await this.db.selectIn('report_revisions', 'model_run_id', revisions.map((revision) => revision.modelRunId), 'model_run_id,video_id') : [];
+    const usage = revisions.length
+      ? await this.db.selectIn(
+          'report_revisions',
+          'model_run_id',
+          revisions.map((revision) => revision.modelRunId),
+          'model_run_id,video_id',
+        )
+      : [];
     const videosPerRun = new Map<string, Set<string>>();
     for (const usageRow of usage) {
       const set = videosPerRun.get(String(usageRow.model_run_id)) ?? new Set<string>();
@@ -127,11 +144,15 @@ export class SupabaseVideoAdapter implements VideoRepository {
   }
 
   async setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange> {
-    const result = asRow(await this.db.rpc('set_official_revision', {
-      p_video_id: videoId,
-      p_revision_id: revisionId,
-      p_crops: crops,
-    }).catch(officialRefusal));
+    const result = asRow(
+      await this.db
+        .rpc('set_official_revision', {
+          p_video_id: videoId,
+          p_revision_id: revisionId,
+          p_crops: crops,
+        })
+        .catch(officialRefusal),
+    );
     // The RPC returns exactly these keys (the sibling's supabase/functions-final.sql).
     return {
       videoId: text(result.videoId) ?? videoId,
@@ -141,12 +162,20 @@ export class SupabaseVideoAdapter implements VideoRepository {
   }
 
   async setRevisionCrops(videoId: string, revisionId: number, crops: OfficialCrop[]): Promise<RevisionCropsChange> {
-    const result = asRow(await this.db.rpc('set_revision_crops', {
-      p_video_id: videoId,
-      p_revision_id: revisionId,
-      p_crops: crops,
-    }).catch(officialRefusal));
-    return { videoId: text(result.videoId) ?? videoId, revisionId: numberOrNull(result.revisionId) ?? revisionId, crops: numberOrNull(result.crops) ?? 0 };
+    const result = asRow(
+      await this.db
+        .rpc('set_revision_crops', {
+          p_video_id: videoId,
+          p_revision_id: revisionId,
+          p_crops: crops,
+        })
+        .catch(officialRefusal),
+    );
+    return {
+      videoId: text(result.videoId) ?? videoId,
+      revisionId: numberOrNull(result.revisionId) ?? revisionId,
+      crops: numberOrNull(result.crops) ?? 0,
+    };
   }
 
   async deleteVideo(videoId: string): Promise<void> {

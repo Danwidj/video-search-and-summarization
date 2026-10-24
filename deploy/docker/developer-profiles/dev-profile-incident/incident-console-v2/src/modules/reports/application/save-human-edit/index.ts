@@ -67,9 +67,21 @@ export async function saveHumanEdit(
   checkImages(parent, input.edit);
   const { payload, evidence } = humanRevisionContent(parent, input.edit);
   const missing = missingItemFields(payload);
-  if (missing.length) throw new StoreRejection('invalid', `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`);
+  if (missing.length)
+    throw new StoreRejection(
+      'invalid',
+      `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`,
+    );
   const video = await videos.getVideo(input.videoId);
   if (!video) throw new StoreRejection('not-found', `Video not found: ${input.videoId}`);
   const crops = video.officialRevisionId === null ? await searchableCrops(payload, evidence, embed) : [];
-  return incidents.saveHumanRevision({ videoId: input.videoId, parentId: input.parentId, payload, evidence, crops, createdBy: input.createdBy, note: input.note?.trim() || null });
+  return incidents.saveHumanRevision({
+    videoId: input.videoId,
+    parentId: input.parentId,
+    payload,
+    evidence,
+    crops,
+    createdBy: input.createdBy,
+    note: input.note?.trim() || null,
+  });
 }

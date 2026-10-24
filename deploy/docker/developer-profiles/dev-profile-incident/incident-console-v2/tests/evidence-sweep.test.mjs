@@ -9,7 +9,9 @@ import { describe, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { sweepOrphanEvidence, DEFAULT_SWEEP_AGE_HOURS, MIN_SWEEP_AGE_HOURS } = await import('../src/modules/reports/application/sweep-orphan-evidence/index.ts');
+const { sweepOrphanEvidence, DEFAULT_SWEEP_AGE_HOURS, MIN_SWEEP_AGE_HOURS } = await import(
+  '../src/modules/reports/application/sweep-orphan-evidence/index.ts'
+);
 const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
 
 const NOW = new Date('2026-10-24T12:00:00Z');
@@ -44,7 +46,8 @@ const fakeIncidents = (references, calls = []) => ({
   },
 });
 
-const sweep = (references, store, options = {}) => sweepOrphanEvidence(fakeIncidents(references, store.calls), store, VIDEO, { now: NOW, ...options });
+const sweep = (references, store, options = {}) =>
+  sweepOrphanEvidence(fakeIncidents(references, store.calls), store, VIDEO, { now: NOW, ...options });
 const removals = (store) => store.calls.filter((call) => call.startsWith('remove '));
 
 describe('sweepOrphanEvidence', () => {
@@ -115,15 +118,26 @@ describe('sweepOrphanEvidence', () => {
     assert.deepEqual(store.calls.slice(0, 2), ['list evidence/v-1/', 'references v-1']);
   });
 
-  test('only the video\'s own prefix is listed, so a video whose id extends this one is not touched', async () => {
+  test("only the video's own prefix is listed, so a video whose id extends this one is not touched", async () => {
     const store = fakeStore({ 'evidence/v-1/a/E1.jpg': OLD, 'evidence/v-10/a/E1.jpg': OLD, 'evidence/v-1x/a/E1.jpg': OLD });
     const report = await sweep([], store, { dryRun: false });
     assert.deepEqual(report.removed, ['evidence/v-1/a/E1.jpg']);
     assert.ok(store.objects.has('evidence/v-10/a/E1.jpg') && store.objects.has('evidence/v-1x/a/E1.jpg'));
   });
 
-  test('a listed key outside the video\'s evidence area is never removed, even if a store returns it', async () => {
-    const store = { calls: [], async list() { return [{ key: 'uploads/other.mp4', lastModified: OLD }, { key: 'evidence/v-1/../v-2/E1.jpg', lastModified: OLD }]; }, async remove(key) { this.calls.push(`remove ${key}`); } };
+  test("a listed key outside the video's evidence area is never removed, even if a store returns it", async () => {
+    const store = {
+      calls: [],
+      async list() {
+        return [
+          { key: 'uploads/other.mp4', lastModified: OLD },
+          { key: 'evidence/v-1/../v-2/E1.jpg', lastModified: OLD },
+        ];
+      },
+      async remove(key) {
+        this.calls.push(`remove ${key}`);
+      },
+    };
     const report = await sweepOrphanEvidence(fakeIncidents([]), store, VIDEO, { now: NOW, dryRun: false });
     assert.deepEqual([report.orphans, store.calls], [[], []]);
   });
@@ -142,7 +156,14 @@ describe('sweepOrphanEvidence', () => {
 
   test('when the listing fails, no reference is read and nothing is removed', async () => {
     const calls = [];
-    const store = { async list() { throw new Error('R2 listing was cut short'); }, async remove(key) { calls.push(key); } };
+    const store = {
+      async list() {
+        throw new Error('R2 listing was cut short');
+      },
+      async remove(key) {
+        calls.push(key);
+      },
+    };
     await assert.rejects(sweepOrphanEvidence(fakeIncidents([], calls), store, VIDEO, { dryRun: false }), /cut short/);
     assert.deepEqual(calls, []);
   });

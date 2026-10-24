@@ -32,11 +32,20 @@ export async function GET(_request: Request, context: { params: Promise<{ videoI
     const records = await getDbAdapters(config).videos.listRunHistory(videoId);
     if (!records) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     const { video } = records;
-    const { runs, counts } = buildRunHistory({ videoId, revisions: records.revisions, attempts: records.attempts, sharedRunIds: records.sharedRunIds });
+    const { runs, counts } = buildRunHistory({
+      videoId,
+      revisions: records.revisions,
+      attempts: records.attempts,
+      sharedRunIds: records.sharedRunIds,
+    });
     const filepath = video.storageKey ?? '';
     let playbackUrl: string | null = null;
     if (isValidR2Key(filepath)) {
-      try { playbackUrl = await createR2PlaybackUrl(config, filepath); } catch { playbackUrl = null; }
+      try {
+        playbackUrl = await createR2PlaybackUrl(config, filepath);
+      } catch {
+        playbackUrl = null;
+      }
     }
     const officialRevisionId = video.officialRevisionId;
     const history: VideoRunHistory = {
@@ -77,7 +86,8 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     }
     const video = await getDbAdapters(config).videos.getVideo(videoId);
     if (!video) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    if (!isValidR2Key(video.storageKey)) return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
+    if (!isValidR2Key(video.storageKey))
+      return NextResponse.json({ error: 'This video has no stored R2 object to analyse' }, { status: 409 });
 
     const { run, revisionId } = await runContractAnalysis(
       { videoId, r2Key: video.storageKey, model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction },
@@ -86,7 +96,15 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     );
     const searchable = await storeSearchableCrops(getDbAdapters(config), videoId, revisionId, (id) => fetchEvidenceEmbeddings(config, id));
     return NextResponse.json({
-      run: { videoId: run.videoId, modelRunId: run.modelRunId, revisionId, model: run.request.model, promptVersion: run.contractVersion, outcome: run.status, searchable },
+      run: {
+        videoId: run.videoId,
+        modelRunId: run.modelRunId,
+        revisionId,
+        model: run.request.model,
+        promptVersion: run.contractVersion,
+        outcome: run.status,
+        searchable,
+      },
     });
   } catch (error) {
     return analysisErrorResponse(error, 'Re-analysis failed');

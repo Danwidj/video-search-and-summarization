@@ -98,10 +98,12 @@ function semanticProjection(report: IncidentContractReport): string {
     timeline: report.timeline,
     uncertainties: report.uncertainties,
     entities: sorted(report.entities.map(({ entity_id: _id, ...rest }) => rest)),
-    instruments: sorted(report.instruments.map(({ instrument_id: _id, entity_id: holder, ...rest }) => {
-      const entity = holder === null ? null : entityById.get(holder);
-      return { ...rest, holder: entity ? { type: entity.type, description: entity.description } : holder };
-    })),
+    instruments: sorted(
+      report.instruments.map(({ instrument_id: _id, entity_id: holder, ...rest }) => {
+        const entity = holder === null ? null : entityById.get(holder);
+        return { ...rest, holder: entity ? { type: entity.type, description: entity.description } : holder };
+      }),
+    ),
     assets: sorted(report.assets.map(({ asset_id: _id, ...rest }) => rest)),
   });
 }
@@ -112,9 +114,15 @@ function semanticProjection(report: IncidentContractReport): string {
  * exact operations, or why it is not eligible. The caller re-validates.
  */
 export function attemptIdNormalization(report: IncidentContractReport, violations: ContractViolation[]): RepairResult {
-  const blocking = violations.filter((violation) => !ELIGIBLE_CODES.has(violation.code) && !CONDITIONALLY_ELIGIBLE_CODES.has(violation.code));
+  const blocking = violations.filter(
+    (violation) => !ELIGIBLE_CODES.has(violation.code) && !CONDITIONALLY_ELIGIBLE_CODES.has(violation.code),
+  );
   if (blocking.length || !violations.length) {
-    return ineligible('INELIGIBLE_VIOLATION', [...new Set(blocking.map((violation) => violation.code))], blocking.map((violation) => violation.message).join('; ') || 'no violations to repair');
+    return ineligible(
+      'INELIGIBLE_VIOLATION',
+      [...new Set(blocking.map((violation) => violation.code))],
+      blocking.map((violation) => violation.message).join('; ') || 'no violations to repair',
+    );
   }
 
   const texts = freeTexts(report);
@@ -169,11 +177,16 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     if (instrument.entity_id === null) return instrument;
     const target = entityMapping.get(instrument.entity_id);
     if (target === undefined) return null;
-    if (target !== instrument.entity_id) operations.push({ op: 'remap-reference', path: `instruments/${index}/entity_id`, from: instrument.entity_id, to: target });
+    if (target !== instrument.entity_id)
+      operations.push({ op: 'remap-reference', path: `instruments/${index}/entity_id`, from: instrument.entity_id, to: target });
     return { ...instrument, entity_id: target };
   });
   if (instruments.some((instrument) => instrument === null)) {
-    return ineligible('INSTRUMENT_HOLDER_UNRESOLVABLE', ['INSTRUMENT_HOLDER_UNKNOWN'], 'an instrument holder matches no entity ID, so ID normalization cannot resolve it');
+    return ineligible(
+      'INSTRUMENT_HOLDER_UNRESOLVABLE',
+      ['INSTRUMENT_HOLDER_UNKNOWN'],
+      'an instrument holder matches no entity ID, so ID normalization cannot resolve it',
+    );
   }
 
   const repaired: IncidentContractReport = {

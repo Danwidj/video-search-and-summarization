@@ -9,7 +9,17 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 mock.module('@aws-sdk/client-s3', {
-  namedExports: { S3Client: class {}, GetObjectCommand: class { constructor(input) { this.input = input; } }, PutObjectCommand: class {}, HeadObjectCommand: class {}, DeleteObjectCommand: class {} },
+  namedExports: {
+    S3Client: class {},
+    GetObjectCommand: class {
+      constructor(input) {
+        this.input = input;
+      }
+    },
+    PutObjectCommand: class {},
+    HeadObjectCommand: class {},
+    DeleteObjectCommand: class {},
+  },
 });
 mock.module('@aws-sdk/s3-request-presigner', {
   namedExports: { getSignedUrl: async (_client, command) => `https://signed.r2.test/${command.input.Key}` },
@@ -26,8 +36,20 @@ const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures
 test('a request becomes the agent body with only what was set', () => {
   assert.deepEqual(toAgentSearchBody({ query: 'knife' }), { query: 'knife' });
   assert.deepEqual(
-    toAgentSearchBody({ query: 'knife', topK: 20, minSimilarity: 0, hideRejected: false, filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3 } }),
-    { query: 'knife', top_k: 20, min_similarity: 0, hide_rejected: false, filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'] } },
+    toAgentSearchBody({
+      query: 'knife',
+      topK: 20,
+      minSimilarity: 0,
+      hideRejected: false,
+      filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3 },
+    }),
+    {
+      query: 'knife',
+      top_k: 20,
+      min_similarity: 0,
+      hide_rejected: false,
+      filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'] },
+    },
   );
 });
 
@@ -52,8 +74,14 @@ test('hits filter by threat and incident, group by incident and relate holder to
   assert.ok(filterHits(hits, { minThreat: 5, videoId: null }).every((hit) => (hit.item.threatLevel ?? 0) >= 5));
   assert.deepEqual(filterHits(hits, { minThreat: 1, videoId: 'nope' }), []);
   const groups = groupByIncident(hits);
-  assert.equal(groups.reduce((total, group) => total + group.hits.length, 0), hits.length);
-  assert.deepEqual(groups.map((group) => group.best), [...groups.map((group) => group.best)].sort((a, b) => b - a));
+  assert.equal(
+    groups.reduce((total, group) => total + group.hits.length, 0),
+    hits.length,
+  );
+  assert.deepEqual(
+    groups.map((group) => group.best),
+    [...groups.map((group) => group.best)].sort((a, b) => b - a),
+  );
   const instrument = hits.find((hit) => hit.item.holderEntityId);
   assert.equal(relationshipOf(instrument, hits).heldBy.itemId, instrument.item.holderEntityId);
   assert.ok(hitsInFrame(instrument, hits).includes(instrument));
@@ -65,21 +93,32 @@ beforeEach(() => {
   process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test';
   process.env.INCIDENT_SUPABASE_URL = 'https://supabase.test';
   process.env.INCIDENT_SUPABASE_SERVICE_ROLE_KEY = 'key';
-  process.env.R2_ACCOUNT_ID = 'a'; process.env.R2_ACCESS_KEY = 'b'; process.env.R2_SECRET_KEY = 'c'; process.env.R2_BUCKET = 'd';
+  process.env.R2_ACCOUNT_ID = 'a';
+  process.env.R2_ACCESS_KEY = 'b';
+  process.env.R2_SECRET_KEY = 'c';
+  process.env.R2_BUCKET = 'd';
 });
 afterEach(() => {
-  for (const key of Object.keys(process.env)) if (!(key in env)) delete process.env[key]; else process.env[key] = env[key];
+  for (const key of Object.keys(process.env))
+    if (!(key in env)) delete process.env[key];
+    else process.env[key] = env[key];
   globalThis.fetch = fetchBefore;
 });
 
 const post = (body) => POST(new Request('http://localhost/api/search', { method: 'POST', body: JSON.stringify(body) }));
 
-test('/api/search asks the agent for every ranked hit and adds each video\'s searched version', async () => {
+test("/api/search asks the agent for every ranked hit and adds each video's searched version", async () => {
   const agentBodies = [];
   globalThis.fetch = async (url, init) => {
     if (String(url) === 'http://agent.test/api/v1/incidents/search') {
       agentBodies.push(JSON.parse(String(init.body)));
-      return new Response(JSON.stringify({ ...full, hits: full.hits.map((hit) => ({ ...hit, incident: { ...hit.incident, incident_id: summaries.reports[0].videoId } })) }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          ...full,
+          hits: full.hits.map((hit) => ({ ...hit, incident: { ...hit.incident, incident_id: summaries.reports[0].videoId } })),
+        }),
+        { status: 200 },
+      );
     }
     assert.match(String(url), /rpc\/list_incident_report_summaries$/);
     return new Response(JSON.stringify(summaries), { status: 200 });
@@ -117,6 +156,9 @@ test('the viewer cuts its frame through the report frame route and falls back to
 test('rejected hits are hidden unless the switch shows them', async () => {
   const { withoutRejected } = await import('../src/lib/library/search.ts');
   const hits = [{ critic: { verdict: 'confirmed' } }, { critic: { verdict: 'rejected' } }, { critic: { verdict: 'unverified' } }];
-  assert.deepEqual(withoutRejected(hits, false).map((hit) => hit.critic.verdict), ['confirmed', 'unverified']);
+  assert.deepEqual(
+    withoutRejected(hits, false).map((hit) => hit.critic.verdict),
+    ['confirmed', 'unverified'],
+  );
   assert.equal(withoutRejected(hits, true).length, 3);
 });

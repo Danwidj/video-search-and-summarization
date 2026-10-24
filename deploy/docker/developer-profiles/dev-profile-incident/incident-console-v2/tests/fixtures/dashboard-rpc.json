@@ -24,22 +24,23 @@
       "assets": [{ "label": "car", "count": 1 }]
     }
   ],
-  "trend": [
-    { "date": "2026-09-27", "count": 1 },
-    { "date": "2026-09-28", "count": 0 },
-    { "date": "2026-09-29", "count": 2 }
-  ],
-  "heatmap": [
-    { "day": 0, "hour": 9, "count": 1 },
-    { "day": 2, "hour": 23, "count": 2 }
-  ],
+  "trend": [{ "date": "2026-09-27", "count": 1 }, { "date": "2026-09-28", "count": 0 }, { "date": "2026-09-29", "count": 2 }],
+  "heatmap": [{ "day": 0, "hour": 9, "count": 1 }, { "day": 2, "hour": 23, "count": 2 }],
   "confidence": [{ "bucket": 7, "count": 1 }, { "bucket": 8, "count": 2 }],
   "entityTypes": [{ "label": "human", "count": 3 }, { "label": "unknown", "count": 1 }],
   "topInstruments": [{ "label": "machete", "count": 1 }],
   "topAssets": [{ "label": "car", "count": 1 }],
   "threatLevels": [{ "level": 4, "count": 1 }],
   "modelCoverage": [
-    { "model": "qwen/qwen3-vl-8b-instruct", "withReport": 3, "validFirstPass": 2, "repaired": 1, "legacy": 0, "contractFailed": 1, "requestFailed": 0 },
+    {
+      "model": "qwen/qwen3-vl-8b-instruct",
+      "withReport": 3,
+      "validFirstPass": 2,
+      "repaired": 1,
+      "legacy": 0,
+      "contractFailed": 1,
+      "requestFailed": 0
+    },
     { "model": "Unknown model", "withReport": 1, "validFirstPass": 0, "repaired": 0, "legacy": 1, "contractFailed": 0, "requestFailed": 0 }
   ]
 }
