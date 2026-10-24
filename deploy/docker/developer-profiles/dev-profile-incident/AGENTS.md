@@ -29,7 +29,7 @@ Run from each component's directory. Run a component's checks after every change
 
 ```bash
 # incident-console-v2 (tests need a Node build with TypeScript stripping; otherwise use npx -y node@22)
-npm install && npm run typecheck && npm test
+npm install && npm run lint && npm run typecheck && npm test
 
 # vlm-gateway (no tests dir yet)
 uv sync && uv run ruff check .
