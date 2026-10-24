@@ -29,7 +29,7 @@ Canonical facts:
 
 ## Search saved report revisions
 
-Finds whole incident reports by meaning, using one summary embedding per saved revision (the title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the local mock does not serve it.
+Finds whole incident reports by meaning, using one summary embedding per saved revision (the title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
@@ -67,7 +67,7 @@ The route persists the query and ranked verdicts in `queries` and `query_results
 
 Use chat for a follow-up question rather than treating a free-form answer as an ungrounded report. Send the full conversation history and, when narrowing the question, the incident or evidence crop IDs in `context`.
 
-The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft.
+The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft. A question about the official version with no draft currently finds no evidence ([known issue 11](../../.docs/status.md#4-known-issues)).
 
 The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query"}`), which calls the agent with `top_k` 20, `min_similarity` 0 and `hide_rejected` false, then adds each video's searched version to the hits. Search takes about a second per hit (the critic), so the route allows up to 115 seconds.
 
@@ -88,7 +88,7 @@ Use `context.scope: "incident"` with `incident_id` for one incident, or include 
 
 ## How evidence crops reach search
 
-There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): when a revision is made official, or a video with no official revision gets a newer revision, the console calls `POST /api/v1/incidents/evidence-embeddings` with `{"revision_id": <id>}`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself (`set_official_revision`, or `set_revision_crops` when there is no official revision).
+There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): the console calls `POST /api/v1/incidents/evidence-embeddings`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself. Which call writes them for each event (mark official, analysis or re-run, Save) is in [`.docs/data.md`](../../.docs/data.md#evidence_crops).
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \

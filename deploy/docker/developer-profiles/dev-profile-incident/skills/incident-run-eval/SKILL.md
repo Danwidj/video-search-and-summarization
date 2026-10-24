@@ -14,12 +14,12 @@ metadata:
 Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
 - Methodology and recorded 3-model results: [`eval/docs/vlm_benchmark_results.md`](../../eval/docs/vlm_benchmark_results.md)
-- `gt_*` tables: [`.docs/data.md`](../../.docs/data.md)
+- Open issue: finals no longer has the `gt_*` tables ([`.docs/status.md`](../../.docs/status.md#4-known-issues), known issue 9)
 
 ## Prerequisites
 
 1. `cd deploy/docker/developer-profiles/dev-profile-incident/eval && uv sync`
-2. `eval/.env.local` is a symlink to `../.env.local`. Its Supabase values (`INCIDENT_DB_DSN`, `INCIDENT_SUPABASE_*`) must name the **finals** project, which holds the ground truth (79 `gt_incidents`) and the `P1-*` eval runs copied from midterm; midterm is a frozen read-only record and refuses writes. `init_schema()` is a no-op on finals (every table exists). Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
+2. `eval/.env.local` is a symlink to `../.env.local`. Its Supabase values (`INCIDENT_DB_DSN`, `INCIDENT_SUPABASE_*`) must name the **finals** project; midterm is a frozen read-only record and refuses writes. Finals dropped the `gt_*` and relational report tables (`20261023000000`), and `init_schema()` creates any of eval's tables that are missing, so do not run a live eval against finals until eval's storage is decided ([known issue 9](../../.docs/status.md#4-known-issues)). Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
 3. The ground-truth workbook and all working data stay under `eval/eval_data/`, which `eval/.gitignore` excludes. Never commit it.
 
 ## What a run sends

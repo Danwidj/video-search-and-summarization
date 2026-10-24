@@ -11,7 +11,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Models:** the three allowlisted VLMs in `contracts/inference.json`: `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
-  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`; on finals they are part of the baseline `supabase/migrations/20261020000000_finals_baseline.sql`.
+  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open ([status](../status.md#4-known-issues), known issue 9).
   - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
@@ -19,6 +19,8 @@ Paths are relative to the profile directory, except paths starting with `service
   - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate.
 - **Runner:** `eval/scripts/eval_run.py` sends the contract P1 request (`incident-contract-v4`) straight to the upstream model with a signed R2 URL.
   - It does not go through the `vlm-gateway` service, which is a pure proxy for the same request.
+- **Configuration** (from `eval/.env.local`, a symlink to the profile's shared `.env.local`): `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (database); `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` (signed video URLs); `VLM_GATEWAY_API_KEY` or `INCIDENT_LLM_API_KEY` and `INCIDENT_LLM_BASE_URL` (P1/RP1, the real Switchyard endpoint, not the mock); `INCIDENT_JUDGE_MODEL` (the description judge); `INCIDENT_EMBEDDING_BASE_URL` (the local MiniLM server below). The last four are not in the committed `.env`.
+- **Results:** each run also writes a never-overwritten copy of every results file under `eval/eval_data/results/runs/<run start>/`, so past runs can be re-scored without another VLM call. The five former few-shot demonstration videos per category stay excluded.
 - **Validation:** `core-scored-v1` (`eval/contract.py`) separates full contract validity (`contract_ok`) from core validity (`core_ok`).
   - Timeline-only defects are scored.
   - Any schema violation is scored as a miss.
@@ -36,7 +38,7 @@ Paths are relative to the profile directory, except paths starting with `service
   - No latency is recorded.
   - Token `usage` is kept only for the P1 call. No cost is recorded.
   - `chat_completion` in `eval/scripts/eval_vlm_client.py` has no retry or 429 handling, so a failed request is scored as a miss.
-  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows ([status](../status.md), known issue 8).
+  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows ([status](../status.md#4-known-issues), known issue 6).
 - **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../decisions.md), 2026-10-16). The pilot report is kept outside the repository.
 - `eval/docs/vlm_benchmark_results.md` is marked superseded (P1-v1 few-shot prompt).
 
@@ -45,16 +47,16 @@ Paths are relative to the profile directory, except paths starting with `service
 | Piece | Current implementation | Source |
 |---|---|---|
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `kwanz-ws` | `services/agent/src/vss_agents/api/incident_search.py` |
-| Corpus | `evidence_crops`: one row per evidence item keyed `(incident_id, model_run_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine (`m=16`, `ef_construction=64`). Only official reports are searchable (`search_evidence_items` joins `videos.selected_model_run_id`). | `supabase/midterm/migrations/20261016120000_mvp2_evidence_search_and_crops.sql`; in finals `supabase/migrations/20261020000000_finals_baseline.sql` |
-| Corpus size (2026-10-18) | 64 of 69 items from 13 official reports | [status](../status.md) |
+| Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
+| Corpus size (2026-10-24) | The test-data inventory counted 6 `evidence_crops` rows on finals, all belonging to the end-to-end test videos that the cleanup then removed. Not re-counted since: the corpus may be empty until revisions are marked official or saved | [status](../status.md#3-database-status) |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
 | Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
 | Critic | Always on, with no flag. Each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
 | Rejected hits | Dropped from the response when `hide_rejected` is true (the default), but always written to `query_results` | `incident_search.py` |
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box, the whole frame is stored (`[0,0,1000,1000]`, confidence 0.0). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
-| `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model is fixed per deployment by `VLM_NAME`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), kept in an in-memory store. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
-| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000`. Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) return five canned hits and ignore the query text. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
+| `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model defaults to the VM's `VLM_NAME`; a request may name any allowlisted `model`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), uploaded to R2 when R2 is configured and listed in the AI revision's `evidence`. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
+| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on `kwanz-ws` VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot still holds the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks (proposed, P-1)
 
@@ -91,15 +93,15 @@ flowchart LR
 
 ### 3.1 Corpus
 
-- **What is searched:** the `evidence_crops` rows that `search_evidence_items` returns, i.e. official reports only. An item is identified by `(incident_id, model_run_id, item_type, item_id)`.
+- **What is searched:** the `evidence_crops` rows that `search_evidence_items` returns, i.e. each video's searchable revision (official, else newest). An item is identified by `(revision_id, item_type, item_id)`.
 - **Pinning (P-3):**
   - Each benchmark version has a **corpus manifest**: every item key, the SHA-256 of its embedded text, the embedding model and the migration version.
-  - Before scoring, the harness re-reads the live corpus through PostgREST (`eval/db_postgrest.py`) and refuses to score if it has drifted. Drift means a changed official selection, items added or removed, or text changed.
+  - Before scoring, the harness re-reads the live corpus through PostgREST (`eval/db_postgrest.py`) and refuses to score if it has drifted. Drift means a changed searchable revision (a new official selection, or a newer revision of a video with none), items added or removed, or text changed.
 - **Size:**
   - About 100 items from 20 or more official reports is a **provisional target**, not a validated minimum.
   - Every report states the actual size and diversity: items per incident type, per item type and per report, the share of whole-frame crops, and the number of relevant items per query.
   - Every report includes a Limitations section.
-  - Today's corpus (64 items, 13 reports) supports a pilot, and results on it should be read as such.
+  - The corpus size is not known today (§1.2); results on a small corpus are pilot grade and should be read as such.
 
 ### 3.2 Query set
 
@@ -257,9 +259,9 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 - **Question:** whether two routes to the *same* one-shot P1 call give equivalent results. This tests transport overhead, reliability and drift between the vendored and shared contracts. It is not a test of a compound system.
 - **Arm 1:** `eval_vlm_client.analyze_video_with_p1`, the same request the console sends through `vlm-gateway`.
 - **Arm 2:** agent `POST /api/v1/incidents/{id}/analyze` with `skip_rp1: true` and a caller-supplied `model_run_id`, on the live VM.
-  - **Response handling** matches the console (`incident-console-v2/lib/analysis/run-contract-analysis.ts`). A 200 response and a 422 response whose `detail` carries a string `raw_output` both go through `contract.evaluate_policy`, so the agent's own rejection never replaces `core-scored-v1`. Only transport failures (no response, timeouts, 504, and other non-422 errors, or a 422 without `raw_output`) are `request_failed`.
+  - **Response handling** matches the console (`incident-console-v2/src/modules/analysis/application/run-contract-analysis.ts`). A 200 response and a 422 response whose `detail` carries a string `raw_output` both go through `contract.evaluate_policy`, so the agent's own rejection never replaces `core-scored-v1`. Only transport failures (no response, timeouts, 504, and other non-422 errors, or a 422 without `raw_output`) are `request_failed`.
   - **Cropping:** arm 2 responses include post-P1 cropping when the VM's detector is available (§1.2). Arm 2 wall-clock latency is therefore reported as "P1 plus cropping" and is not compared directly with arm 1's P1-only latency; a P1-only figure for arm 2 depends on the agent item in §7. The crop calls count towards the paid-call budget: up to (entities + instruments + assets) × 4 remote VLM calls per video.
-- **Model:** only the model set in the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`). Changing it is an ask-first VM edit.
+- **Model:** the agent defaults to the VM's `VLM_NAME` (currently `nvidia/cosmos-3-super-reasoner`); since #188 `/analyze` also takes any allowlisted `model` per request, so a VM edit is not needed to change it.
 - **Controls:**
   - Same 55 held-out videos.
   - Same retry policy for both arms, and the `inference.json` P1 request timeout of 300 s. Both the agent (`services/agent/src/vss_agents/tools/incident_report_gen.py`, `DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0`), the console (`timeout_seconds` from `inference.json`), and `eval_vlm_client.chat_completion` (defaulting to `DEFAULT_TIMEOUT` read directly from `contracts/inference.json`) use 300 s.
@@ -270,14 +272,14 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - `request_failed` is counted separately and never folded into accuracy.
   - Wall-clock latency per call.
   - Token usage where the response includes it; agent mode currently does not (§7).
-- **Run ids (P-5):** each arm gets its own `model_run_id` namespace, e.g. `X-gw-c3super` and `X-ag-c3super`. Ids must be 1-20 characters: `/analyze` validates `model_run_id` with `max_length=20`, and `model_runs.id` and `evidence_crops.model_run_id` are `VARCHAR(20)`. The eval never calls `select_official_report`.
+- **Run ids (P-5):** each arm gets its own `model_run_id` namespace, e.g. `X-gw-c3super` and `X-ag-c3super`. Ids must be 1-20 characters: `/analyze` validates `model_run_id` with `max_length=20`, and `model_runs.id` is `VARCHAR(20)`. The eval never calls `set_official_revision`.
 - **Acceptance:** per-field score differences with paired intervals, reliability and latency tables, and an explanation of any difference outside run-to-run variation.
 
 ## 5. Track F: full-system extraction (deferred)
 
 - The original question stands: does a compound VSS pipeline (perception, tool calling, subagents) beat one-shot P1 on the same videos and ground truth?
 - **Entry criteria:** such a pipeline exists and emits `incident-contract-v4`. It then joins Track X as a third arm with the same scorer.
-- **Status:** multi-subagent routing and RT-CV / RT-Embed indexing are not started ([status](../status.md)).
+- **Status:** no compound pipeline is planned: the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped from MVP2 on 2026-10-24 ([decision](../decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
 - **Still open:** how to normalise token budgets and timeouts between a single call and a multi-call pipeline (Q2 in §9).
 
 ## 6. Offline tracks: detector (D) and embeddings (E)
@@ -289,7 +291,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
   - MiniLM and OpenAI embeddings
   - image or hybrid embeddings
   - an image-only critic
-- **Where experiments run:** off `kwanz-ws` (developer GPU or CPU), against snapshots, with no change to the route, migrations or VM.
+- **Where experiments run:** off `kwanz-ws` (developer GPU or CPU; on `kwanz-ws` VSS may use GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)), against snapshots, with no change to the route, migrations or VM.
 - **Ask first:** new dependencies and new API keys.
 - **Adoption is separate:** using a result in production needs a new `decisions.md` entry superseding the current one, agreed by the owning workstream.
 
@@ -343,7 +345,7 @@ These belong to their owning workstreams. Where this work needs something from t
 | A source tag on `query_results` (eval vs user) | Search route and database | Clean search analytics | Harness lists its `query_id`s |
 | Token usage in agent `/analyze` responses | Agent | Track X tokens | Report tokens for arm 1 only |
 | P1-only timing in `/analyze` responses, or a way to skip post-P1 cropping per request | Agent | A P1-only latency comparison in Track X | Report arm 2 as "P1 plus cropping"; budget the crop calls |
-| More official reports in the corpus, and the 5 items from video `v5c609184047f88c720e` that failed to load | VM operations and reviewers | Results beyond pilot grade | State the corpus limits |
+| More searchable revisions with stored crops in the corpus (see the corpus size in §1.2) | VM operations and reviewers | Results beyond pilot grade | State the corpus limits |
 | Changes to dimensions or HNSW settings | Database | Acting on Track E | Recommendation only |
 | `contracts/search-contract-v1/README.md` says boxes are "never a direct VLM output" and `bounding_box` is nullable, while the code uses VLM boxes and a `NOT NULL` column | Contracts | Doc accuracy | Noted here |
 
@@ -369,7 +371,7 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 
 1. **Query sourcing:** human-written operator queries, or LLM-proposed queries with human verification, within §3.3?
 2. **Track F fairness:** how to normalise token budgets and timeouts between one call and a multi-call pipeline.
-3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that no local GPU model may run on `kwanz-ws`?
+3. **Detector hosting:** if a candidate clearly beats `DefaultDetector`, where could it run, given that on `kwanz-ws` only GPU 0 is available ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)) and a local detector on the VM was rejected (2026-10-18)?
 4. **Optional direct timing runs:** not planned. Direct timing at production `top_k = K` (§3.6) may be added later as a separate experiment if its paid critic calls get budget approval.
 
 ## 10. Work order and definition of done
@@ -398,6 +400,6 @@ These are current decisions that evaluation results could support or challenge. 
 | `DefaultDetector` uses VLM boxes, and local detectors are rejected for the VM (2026-10-18). This conflicts with "VLM bounding boxes" being rejected in 2026-10-16. | Track D framing results for the baseline and the candidates |
 | Text-only embeddings of descriptions (2026-10-18) | Track E image and hybrid embedding results |
 | Critic always on, with no flag (2026-10-16) | §3.6 trade-offs |
-| Search scoped to official reports only (2026-10-17) | Corpus limits in §3.1, if they stay binding |
+| Search scoped to each video's searchable revision (2026-10-23) | Corpus limits in §3.1, if they stay binding |
 | No similarity cutoff (2026-10-18) | Score distributions from Track R, for `min_similarity` tuning |
 | MiniLM as the P1 matching embedder (eval) | Track E instrument-sensitivity study |

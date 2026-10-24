@@ -2,34 +2,28 @@
 
 The old `mdx-*` shell aliases / `ngc-env-on` from
 [`deploy/docker/developer-profiles/dev-profile-incident/.dotfiles/`](../.dotfiles/README.md) moved here as standalone,
-executable scripts, ready to run individually. Since the native split (see the profile README's
-"Native vs. Docker Service Split"), the VM-side scripts cover both halves: native processes through
+executable scripts, ready to run individually. Since the native split ([architecture](../.docs/architecture.md#native-vs-docker-service-split-policy)), the VM-side scripts cover both halves: native processes through
 `native-services.sh`, Docker appliance containers through `docker compose -p mdx`.
 
-| Script                            | Was                         | Runs on    | What it does                                                                                                                                                                                                    |
-| --------------------------------- | --------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `../start.sh`                     | — (new)                     | **laptop** | One-command daily entry point (lives in the parent `dev-profile-incident/`): checks the VM backend deploy state over SSH, deploys fresh if nothing is running, starts missing services when the state is partial, opens the tunnel in the background, then runs incident-console-v2 |
-| `.scripts/tunnel.sh`              | `mdx-tunnel-incident`       | **laptop** | Open the SSH tunnel to the kwanz-ws backend in the foreground (agent 8000, ingress 7777; Ctrl-C closes it)                                                                                   |
-| `.scripts/tunnel-check.sh`        | `mdx-tunnel-incident-check` | **laptop** | Prove the tunnel from the laptop end (agent health, search route, proxy)                                                                                                        |
-| `.scripts/vm-preflight.sh`        | — (new)                     | **laptop** | Sourced by `start.sh` / `tunnel.sh`: resolves `VSS_SSH_TARGET` non-interactively, then `vm_preflight_ssh` probes SSH and, on failure, classifies the cause (Tailscale missing/stopped/logged out, VM offline in the tailnet, DNS, timeout, refused, no route, auth, host key) with the next step; `vm_detect_ip` finds the VM LAN address (`VSS_VM_IP` wins); `vm_ssh_limited` runs ssh under a hard time limit. Tests: `test-vm-preflight.sh` (fake ssh/tailscale) |
-| `.scripts/vm-ensure-docker.sh`    | — (new)                     | VM (piped by `start.sh`) | Bounded Docker step: clone the repo if missing, require `generated.env.remote`, fix a stale `HOST_IP` (backup first), pull missing images, `docker compose up -d` under a timeout with diagnostics (exit 10 repo, 11 env, 12 docker, 13 pull, 14 up, 124 timeout). Tests: `test-vm-ensure-docker.sh` (fake docker) |
-| `.scripts/vm-stop-backend.sh`     | — (new)                     | VM (piped by `start.sh`) | Stop backend services on last exit: tries a non-blocking exclusive flock on `.run/active-runs.lock`; only when it succeeds (no concurrent active runs hold a shared lock), stops native services via `native-services.sh stop` and expected Docker appliances via `docker stop` (never `rm`, `down`, or removing volumes). Tests: `test-vm-stop-backend.sh` |
-| `.scripts/native-services.sh`     | — (new)                     | VM         | `start`/`stop`/`restart`/`status [--porcelain]`/`logs` for the native services (`vss-agent`, `video-analytics-api`, `behavior-analytics`; `all` / `analytics` shorthands). Concurrency-safe across multi-user VM starts (`flock`, `umask 002`, `/health` probe, atomic PID write/cleanup). Status lists only expected services (analytics only if `ENABLE_ANALYTICS=true` or named). PID files and logs under `<repo>/.run/` (`VSS_RUN_DIR` overrides). Tests: `test-native-services.sh` |
-| `.scripts/status.sh`              | `mdx-ps`                    | VM         | `docker compose -p mdx ps`, then `native-services.sh status` and one-shot `nvidia-smi` status                                                                                                                    |
-| `.scripts/down.sh`                | `mdx-down`                  | VM         | `native-services.sh stop`, then `docker compose -p mdx stop` - **no `-v`** (stops containers without removing them, preserving containers and the ~35 GB model-weight cache; never run `dev-profile.sh down`). Exited orphan containers are no longer cleaned up by `down.sh`; use manual `docker compose -p mdx down --remove-orphans` when a clean slate is wanted (still never `-v`). Restart is `./start.sh --mode vm`. |
-| `.scripts/health.sh`              | `mdx-health`                | laptop/VM  | Agent health probe on `:8000/health`                                                                                                                                                                            |
-| `.scripts/logs.sh`                | `mdx-logs`                  | VM         | Tail one service's logs (default `vss-agent`): native services via `native-services.sh logs`, anything else via `docker logs -f`                                                                               |
-| `.scripts/rebuild-svc.sh`         | `mdx-rebuild-svc`           | VM         | Fast per-service refresh: native services are restarted (`native-services.sh restart`); Docker services are rebuilt (`docker compose up -d --build --force-recreate` with the incident profile's `generated.env.remote`) |
-| `skills/incident-operate-vm/scripts/prune-native-images.sh` | — (new)          | VM         | Remove the Docker images (and leftover containers) of the services that now run natively; asks for confirmation if `services/agent/.venv/bin/nat` is missing, or accepts `--non-interactive` |
-| `.scripts/ngc-env.sh`             | `ngc-env-on`                | VM         | `source ./ngc-env.sh` to export the shared NGC credentials (`/srv/rise-up/.ngc_env`; `VSS_NGC_ENV` overrides)                                                                                                   |
+| Script | Was | Runs on | What it does |
+|---|---|---|---|
+| `../start.sh` | — (new) | **laptop** | Laptop entry point: checks and heals the VM backend, opens the tunnel, runs the console |
+| `.scripts/tunnel.sh` | `mdx-tunnel-incident` | **laptop** | Open the SSH tunnel in the foreground (Ctrl-C closes it) |
+| `.scripts/tunnel-check.sh` | `mdx-tunnel-incident-check` | **laptop** | Check the tunnel from the laptop (agent health, search route, proxy) |
+| `.scripts/vm-preflight.sh` | — (new) | **laptop** | Sourced by `start.sh` and `tunnel.sh`: SSH target, SSH probe with the cause of a failure, VM address. Tests: `test-vm-preflight.sh` |
+| `.scripts/vm-ensure-docker.sh` | — (new) | VM (piped by `start.sh`) | Bounded Docker deploy on the VM (clone, env check, `HOST_IP` fix, pull, `compose up`). Tests: `test-vm-ensure-docker.sh` |
+| `.scripts/vm-stop-backend.sh` | — (new) | VM (piped by `start.sh`) | Stop the backend when the last `start.sh` session exits (never removes containers or volumes). Tests: `test-vm-stop-backend.sh` |
+| `.scripts/native-services.sh` | — (new) | VM | `start`/`stop`/`restart`/`status`/`logs` for the native services. Tests: `test-native-services.sh` |
+| `.scripts/status.sh` | `mdx-ps` | VM | Containers, native services and `nvidia-smi` |
+| `.scripts/down.sh` | `mdx-down` | VM | Stop native services and containers without removing them (never `-v`, never `dev-profile.sh down`) |
+| `.scripts/health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |
+| `.scripts/logs.sh` | `mdx-logs` | VM | Tail one service's logs (default `vss-agent`) |
+| `.scripts/rebuild-svc.sh` | `mdx-rebuild-svc` | VM | Restart a native service, or rebuild one Docker service with the profile overrides |
+| `skills/incident-operate-vm/scripts/prune-native-images.sh` | — (new) | VM | Remove the Docker images of services that now run natively |
+| `.scripts/ngc-env.sh` | `ngc-env-on` | VM | `source` it to export the shared NGC credentials |
 
 ## Laptop-side scripts & start.sh modes
 
 `tunnel.sh`, `tunnel-check.sh`, and top-level `start.sh` are **laptop-side only** (SSH tunnel from developer laptops to the `kwanz-ws` backend); never run them on `kwanz-ws` itself.
 
-`start.sh` (at the top level of `dev-profile-incident/`) is the laptop-side one-command daily entry point for **incident-console-v2** (the Streamlit v1 console is archived under [`../archived/incident-console/`](../archived/incident-console/README.md) and is never launched):
-- **Modes:** Accepts `--mode local|vm` (or `VSS_START_MODE` env var, default `vm`) to select the backend.
-  - **`vm` mode:** Probes SSH first (explaining the cause if the VM is unreachable), checks the remote deployment state on `kwanz-ws` over SSH (deploying fresh if nothing is running, starting missing services for a partial deploy, cloning/pulling what is missing, every step under a timeout), opens the background SSH tunnel, and exports `ANALYSIS_MODE=agent`. `--no-console` stops after the tunnel is up. The search route (`POST /api/v1/incidents/search`) is always mounted.
-  - **`mock` mode:** Skips SSH, starts `mock-backend` (127.0.0.1:7777) and `vlm-gateway` (127.0.0.1:8600) locally with `--env-file .env.local`, verifies health readiness (<5s), and exports `ANALYSIS_MODE=gateway`. The search route (`POST /api/v1/incidents/search`) is always mounted. `local` is a deprecated alias that prints a warning and runs `mock`.
-- **Frontend execution:** Both modes launch `incident-console-v2` via `npm run dev -- -H 127.0.0.1 --port 3200`, so the console listens on loopback only (it holds database and storage admin keys and has no authentication).
-- **Process cleanup:** A cleanup trap stops local background processes on exit (tunnel, mock, gateway) and coordinates VM backend shutdown on last exit via shared/exclusive flock on the VM.
+`start.sh` modes (`--mode mock|vm`, default `vm`), what each starts, and its cleanup on exit: [`incident-start`](../skills/incident-start/SKILL.md) and [`incident-profile-operations.md`](../.docs/incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).

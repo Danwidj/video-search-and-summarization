@@ -14,8 +14,9 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023000100_report_revisions_functions.sql` — `save_human_revision`, `set_official_revision`, and the rewritten `search_evidence_items`, `list_incident_report_summaries` and `get_incident_dashboard`.
 - `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
+- `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
 
-Schema authority is the migrations, not the archived Streamlit v1 console's `archived/incident-console/db.py`. The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
+Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
 Finals holds six tables: `videos`, `queries`, `model_runs`, `report_revisions`, `evidence_crops`
 and `query_results`. Every report is a `report_revisions` snapshot; there are no relational report
@@ -51,7 +52,7 @@ Primary registry of ingested video assets.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(sensorId)` for uploads (20 chars); clip-name ids (`Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Raw sensor ids are never used directly as `id`. |
-| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<sensorId>/<uuid>.<ext>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`). Legacy v1-console rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
+| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<sensorId>/<uuid>.<ext>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Some historical rows are NULL. |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
@@ -124,7 +125,8 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | Event | Searchable revision | Rows |
 |---|---|---|
 | `set_revision_crops(video, newest, crops)` on a video with no official revision | newest | stored for the newest revision, every other row of the video deleted |
-| A newer revision is saved (`save_human_revision` or the agent's insert) and the video has **no** official revision | the new revision | the old rows stay but are never returned by search; the video is not searchable until the writer calls `set_revision_crops` for the new revision, which deletes the old rows |
+| A human revision is saved with `save_human_revision_with_crops` and the video has **no** official revision | the new revision | replaced with the call's crop list in the same transaction |
+| A newer revision is saved another way (`save_human_revision` or the agent's insert) and the video has **no** official revision | the new revision | the old rows stay but are never returned by search; the video is not searchable until the writer calls `set_revision_crops` for the new revision, which deletes the old rows |
 | A newer revision is saved and the video **has** an official revision | unchanged | unchanged |
 | `set_official_revision(video, rev, crops)` with a crop list | `rev` | replaced with `crops` |
 | `set_official_revision(video, rev)` with no crop list | `rev` | `rev` keeps the rows it has; the video's other rows are deleted |
@@ -156,7 +158,7 @@ Audit log and hit persistence for natural-language search and critic evaluation.
 |---|---|---|---|
 | `id` | `VARCHAR(36)` | PRIMARY KEY | Unique result identifier (UUID or hex) |
 | `query_id` | `VARCHAR(20)` | NOT NULL; FK → `queries.id` ON DELETE CASCADE | Associated search query |
-| `revision_id` | `BIGINT` | NOT NULL; FK → `report_revisions.id` ON DELETE CASCADE | The official revision the hit came from |
+| `revision_id` | `BIGINT` | NOT NULL; FK → `report_revisions.id` ON DELETE CASCADE | The searchable revision the hit came from |
 | `item_type` | `VARCHAR(16)` | NOT NULL; CHECK `IN ('entity','instrument','asset')` | Evidence item type |
 | `item_id` | `VARCHAR(20)` | NOT NULL | Evidence item identifier |
 | `rank` | `INTEGER` | NOT NULL | Retrieval rank position (1-based) |
@@ -212,6 +214,14 @@ video; the new revision inherits its `model_run_id`. The four facet arguments ar
 (the caller derives them from the payload). `p_payload` must be an object with an `incident`; `p_evidence`
 must be an array; `p_created_by` must be 1-256 characters after trimming. Returns
 `{revisionId, revisionNo, videoId, kind, parentId, modelRunId, createdBy, createdAt, note}`.
+
+#### `save_human_revision_with_crops`
+
+```
+save_human_revision_with_crops(<the ten save_human_revision arguments>, p_crops JSONB DEFAULT '[]') RETURNS JSONB
+```
+
+The console's Save. In one transaction it calls `save_human_revision`, then, when the video has no official revision, replaces the video's `evidence_crops` with `p_crops` for the new revision (same row format as `set_official_revision`). With an official revision `p_crops` is ignored and the official rows stay. `p_crops` must be a list. Returns the `save_human_revision` result plus `crops`, the rows now stored (0 when the video has an official revision). The console embeds the crops before the call, so a failed embedding writes nothing.
 
 #### `set_official_revision`
 
@@ -305,7 +315,7 @@ AI revisions).
 
 ### Revision search (`search_report_revisions`)
 
-Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches crops of official revisions only.
+Cosine search over `report_revisions.embedding`, across every revision that has a vector (AI revisions; human revisions have none today). It returns one row per revision, best first, with the title and description from the payload and the facet columns. It is `SECURITY INVOKER`, pins `search_path`, and is executable by `service_role` only. The agent calls it through `IncidentDB.search_revisions` for `POST /api/v1/incidents/revisions/search`. It is separate from `search_evidence_items`, which searches the crops of each video's searchable revision.
 
 ### Agent report writes (`report_revisions`)
 
@@ -336,11 +346,8 @@ revision. The same insert carries `embedding`: the agent embeds `incident.title`
 
 Database access is split across two client implementations according to operational requirements:
 
-1. **Tooling & Archived v1 Console (Direct Postgres):**
-   The archived v1 console (`archived/incident-console/db.py`) used direct Postgres via SQLAlchemy
-   Core and `psycopg2` (`INCIDENT_DB_DSN`). Active UI development in `incident-console-v2` uses
-   Supabase PostgREST (`lib/postgrest/client.ts`). The console is database-backed only; there is no
-   offline CSV-preview UI mode.
+1. **Console and laptop tooling:**
+   `incident-console-v2` uses Supabase PostgREST (`src/lib/postgrest/client.ts`, reached only from the adapters). Laptop tooling (the `supabase` CLI, the copy and parity scripts) uses direct Postgres (`INCIDENT_DB_DSN`). The console is database-backed only; there is no offline mode.
 
 2. **Agent Side & Service Writers (Supabase PostgREST):**
    `services/agent/src/vss_agents/utils/incident_db.py` is the agent-side counterpart: an async
@@ -374,13 +381,6 @@ Database access is split across two client implementations according to operatio
 
 **Midterm** had RLS on only `evidence_crops` and `query_results` and gave `anon`/`authenticated` full access to the other tables. `supabase/midterm/freeze_midterm.sql` closes that at the cutover and makes midterm read-only ([`../supabase/midterm/README.md`](../supabase/midterm/README.md)).
 
-### Fixture CSV Seed Data Quirk
-
-Fixture data in `deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/fixtures/data/*.csv` (archived v1)
-(72 rows on disk, 36 real + 36 synthetic `SYN-`-prefixed placeholders with no matching R2 video) is the seed source for the Postgres importer
-(`deploy/docker/developer-profiles/dev-profile-incident/archived/incident-console/scripts/seed_supabase.py`, archived), which drops the `SYN-`-prefixed rows and seeds only the
-36 real incidents under one shared `model_run_id`.
-
 ---
 
 ## 2. Cloudflare R2 Storage Architecture
@@ -403,33 +403,37 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── thumbnails/                      # browser-captured report-card screenshots for new uploads
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/<sensor>/<uuid>.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
-└── evidence/                        # crop evidence (CropEvidenceService)
-    └── <videoId>/<batchId>/<itemId>.jpg
+└── evidence/                        # evidence images: agent crops and reviewer replacements
+    └── <videoId>/<uuid>/<itemId>.jpg
 ```
 
 > [!NOTE]
 > The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<sensorId>/<uuid>.<ext>` in both local-mock and real-VST flows; the VLM's later incident classification does not move or rename the object.
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
-> The `evidence/` tree stores cropped entity/instrument/asset evidence images generated by `CropEvidenceService` (`services/agent/src/vss_agents/utils/crop_evidence.py`). Key pattern: `evidence/<videoId>/<uuid>/<itemId>.jpg` (item ids `E#`, `I#` and `A#` are unique across types; a new `<uuid>` per analysis run, so a key is never overwritten). The analyze route uploads the crops (`R2EvidenceStore`) and lists them in `report_revisions.evidence`; an item without an image carries an `image_gap` reason. `evidence_crops` rows exist only for official revisions: `set_official_revision` writes them in the same transaction as `videos.official_revision_id`, from the crop list the console sends (embeddings come from the agent's evidence-embeddings endpoint).
+> The `evidence/` tree holds two writers' images under one key pattern, `evidence/<videoId>/<uuid>/<itemId>.jpg` (item ids `E#`, `I#` and `A#` are unique across types; a new `<uuid>` per write, so a key is never overwritten):
+> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, one `<uuid>` per run), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
+> - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save.
+>
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video leaves its `evidence/<videoId>/` images, and the sweep refuses an unknown video.
 
 ### Key Validation & Generation Rules
 
-1. **Validity Rule (`isValidR2Key` in `incident-console-v2/lib/r2/key.ts`):**
+1. **Validity Rule (`isValidR2Key` in `incident-console-v2/src/lib/r2/key.ts`):**
    A valid R2 object key must:
    - Be a non-empty string.
    - Not start with `/` (absolute filesystem path).
    - Not start with `.` or contain `..` (relative filesystem path).
    - Guard against VST/NvStreamer `filePath` outputs (which return `./streamer/media/...` or local file paths).
 2. **Upload & Evidence Key Patterns:**
-   Direct uploads from `incident-console-v2/app/api/uploads/r2/route.ts` format keys as:
+   Direct uploads from `incident-console-v2/src/app/api/uploads/r2/route.ts` format keys as:
    `uploads/${encodeURIComponent(sensorId.trim())}/${randomUUID()}${ext}`.
    Thumbnail keys are deterministic: `thumbnailKeyForVideo(videoKey)` returns
    `thumbnails/${videoKey}.webp`; no database column is required.
-   Evidence crop keys are generated by `evidence_key(video_id, batch_id, item_id)` in
-   `services/agent/src/vss_agents/utils/crop_evidence.py`, which returns
-   `evidence/${video_id}/${batch_id}/${item_id}.jpg`. `batch_id` is a fresh `uuid4().hex` per
-   analysis run; there is no collection folder because `E#`/`I#`/`A#` are unique across types.
+   Agent crop keys come from `evidence_key(video_id, batch_id, item_id)` in
+   `services/agent/src/vss_agents/utils/crop_evidence.py` (`batch_id` is a fresh `uuid4().hex` per
+   analysis run); reviewer replacements from `uploadedEvidenceKey` in
+   `incident-console-v2/src/modules/reports/domain/revision.ts` (a fresh `randomUUID()` per image).
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.

@@ -1,36 +1,10 @@
 # base_profile_mock
 
-A lightweight mock of the `bp_developer_base` backend - `vss-agent` API + VIOS/VST
-(video storage) + LLM/VLM inference - so you can run the real, unmodified UI
-(`services/ui/apps/nv-metropolis-bp-vss-ui`) against it with **zero GPU, zero NIM
-containers, and no VM deployment**.
-
-Since only `vss-agent` itself ever calls the LLM/VLM (the UI never does), this mock
-replaces vss-agent's own logic with canned/templated text generation. There is no
-separate inference mock - one process plays the role that HAProxy + vss-agent + VIOS +
-LLM/VLM NIMs jointly play in a real deployment, all on one port.
-
-Most mock state is in-memory only and resets on restart. Completed uploads are
-also copied to R2 immediately under a classification-neutral
-`uploads/<sensorId>/<uuid>.<ext>` key; the returned `filePath` is the durable object
-key. The incident Analyze route writes report records to the shared
-incident-console Postgres database.
-
-When exercising the incident flow, set `INCIDENT_SUPABASE_URL` and
-`INCIDENT_SUPABASE_SERVICE_ROLE_KEY` in the backend environment to the same
-Supabase project used by the console (`incident-console-v2` uses PostgREST with these
-same keys; the retired v1 console historically used `INCIDENT_DB_DSN`).
-Also load the
-Cloudflare R2 upload settings used by the console: `R2_ACCOUNT_ID`,
-`R2_ACCESS_KEY`, `R2_SECRET_KEY`, and `R2_BUCKET` from an env file (the shared
-`dev-profile-incident/.env.local`, as in the command below). R2 upload
-returns `503` when those settings are unset or unreachable. In `incident-console-v2`,
-upload and analysis are orchestrated via Next.js route handlers (`app/api/analysis/route.ts`).
-The response is explicitly marked `mock: true`, and Analyze writes
-the model run, incident entity, review status, and report through
-`services/agent/src/vss_agents/utils/incident_db.py`.
+A zero-GPU mock of the agent API, VIOS/VST and inference in one process on port 7777, for local work on `incident-console-v2` and the stock VSS UI (`services/ui/apps/nv-metropolis-bp-vss-ui`). It is not a real agent: answers are canned or come from a fixed snapshot of finals, and most state resets on restart. Uploads and analyses do write to the real R2 bucket and finals database.
 
 ## Run it
+
+`./start.sh --mode mock` starts it with the VLM gateway and the console. To run it alone:
 
 ```sh
 cd deploy/docker/developer-profiles/dev-profile-incident/mock-backend/base_profile_mock
@@ -39,14 +13,7 @@ uv run --env-file ../../.env.local \
   uvicorn base_profile_mock.app:create_app --factory --host 127.0.0.1 --port 7777 --reload
 ```
 
-For the complete local v2 loop, from `dev-profile-incident/` run
-`./start.sh --mode local`. It loads the shared `.env.local`, starts this mock
-backend and the VLM gateway, and launches `incident-console-v2`; no secret
-exports are needed.
-
-`GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`.
-For local runs, keep `MOCK_PUBLIC_BASE_URL=http://127.0.0.1:7777` if you override it; using
-`localhost` can fail on systems where clients try IPv6 while uvicorn is bound to IPv4.
+The shared `.env.local` must hold the `R2_*` and `INCIDENT_SUPABASE_*` values. `GET http://127.0.0.1:7777/health` should return `{"value": {"isAlive": true}}`. Keep `MOCK_PUBLIC_BASE_URL` on `127.0.0.1`, not `localhost` (IPv6 clients cannot reach the IPv4 bind).
 
 ## Point the real UI at it
 
@@ -67,70 +34,10 @@ NEXT_PUBLIC_ENABLE_VIDEO_MANAGEMENT_TAB=true
 NEXT_PUBLIC_SEARCH_TAB_MEDIA_WITH_OBJECTS_BBOX=true
 ```
 
-The last var isn't backend-related, but the UI's `pages/index.tsx` calls `fetchSearchData()` in
-`getServerSideProps` unconditionally (even with the search tab disabled), and that function
-serializes this env var directly with no fallback - leaving it unset causes Next.js to fail
-the page with "`undefined` cannot be serialized as JSON" on every load. Set it to any defined
-value (matching the real deployment's default of `true`) to avoid that.
+Set `NEXT_PUBLIC_SEARCH_TAB_MEDIA_WITH_OBJECTS_BBOX` even though it is not backend-related: the UI serialises it on every page load and fails when it is unset.
 
-These match the base deployment profile's own defaults
-(`deploy/docker/developer-profiles/dev-profile-base/.env` and
-`deploy/docker/services/ui/compose.yml`) - the sidebar chat is the real chat surface
-for base profile (not the main chat tab), and WebSocket is its default transport.
+## Refresh the finals snapshot
 
-**HITL (human-in-the-loop report-generation prompts) is WebSocket-only.** The UI
-client has no HITL support over HTTP/SSE, so a report request over HTTP/SSE returns
-one synchronous canned answer instead of the approve/edit/cancel round-trip.
+Search, revision search and chat answer from `src/base_profile_mock/finals_snapshot.json`, a static copy of the finals AI revisions (captured 2026-10-24), so newer uploads do not appear in mock search. To refresh it, read `report_revisions` where `kind = 'ai'` through PostgREST (`INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`) and reshape the rows into the JSON's `revisions` list. `search_profile_mock` reads the same file.
 
-## What's mocked
-
-- `POST /api/v1/videos`, `POST /api/v1/videos/{sensor_id}/complete`,
-  `DELETE /api/v1/videos/{id}` - video upload/delete, mirroring
-  `services/agent/src/vss_agents/api/video_ingest.py` / `video_delete.py`.
-- `POST /api/v1/incidents/{id}/analyze` - deterministic mock incident report
-  generation, persisted as an AI `report_revisions` row through the shared
-  incident DB writer (response carries `revision_id`); invoked automatically by
-  the console's upload flow.
-- `POST /api/v1/incidents/evidence-embeddings` - deterministic 1024-dimension
-  embeddings for a revision's evidence items (`{"revision_id"}`), mirroring the agent.
-- `POST /api/v1/incidents/search` - natural-language evidence search conforming to
-  `search-contract-v1`. Hits are the evidence items of the finals snapshot (below), with
-  placeholder crop URLs and a fixed `confirmed` critic verdict. `similarity_score` is the
-  share of query words found in the hit text.
-- `POST /api/v1/incidents/chat` - conversational evidence Q&A conforming to
-  `chat-contract-v1` with multi-turn support and grounded evidence citations. Accepts
-  `version_id` and `draft_report` (the answer names the version; evidence comes from the same snapshot).
-- `POST /api/v1/incidents/revisions/search` - incident-level hits, one per finals AI
-  revision, with the real `revision_id` and `video_id`, shaped like the agent's `RevisionSearchHit`.
-- `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}` -
-  canned RTSP add/delete responses.
-- `GET/POST /chat`, `/chat/stream`, `/generate`, `/generate/stream` - HTTP/SSE chat,
-  no HITL.
-- `WS /websocket` - primary chat transport, full HITL round-trip for report
-  generation (approve, edit-once, or `/cancel`).
-- `GET /static/{filename}` - fabricated Markdown reports.
-- `/vst/api/v1/storage/file*`, `sensor/*`, `replay/*` - chunked video upload,
-  stream catalog, timelines, and a static placeholder thumbnail for every
-  snapshot/picture request.
-
-Out of scope (base profile disables these tabs, so the UI never calls them):
-stock VSS search/alerts endpoints (`POST /api/v1/search`), Redis, Phoenix.
-
-## Layout
-
-- `src/base_profile_mock/app.py` - `create_app()` factory, mounts all routers.
-- `src/base_profile_mock/state.py` - single in-memory `AppState`.
-- `src/base_profile_mock/finals_snapshot.py` and `finals_snapshot.json` - the finals
-  snapshot the search, chat and revision-search mocks answer from. The JSON holds the
-  finals AI revisions (IDs, incident fields and evidence items) captured 2026-10-24, so
-  search, chat and Find evidence return clips that exist in the finals database. It is a
-  static copy: videos uploaded later do not appear in mock search until it is refreshed.
-  To refresh, read `report_revisions` where `kind = 'ai'` through the console's PostgREST
-  (`INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`) and reshape the rows
-  into the JSON's `revisions` list.
-- `src/base_profile_mock/templates.py` - canned text, intent classification,
-  Markdown report builder, and the real `hitl_vlm_prompt_template` text copied
-  verbatim from
-  `deploy/docker/developer-profiles/dev-profile-base/vss-agent/configs/config.yml`.
-- `src/base_profile_mock/routers/` - one module per route group; see each file's
-  docstring for which real file it mirrors.
+What the mock serves: [`../../.docs/architecture.md`](../../.docs/architecture.md#component-reference-table). Tests: `uv run pytest`.

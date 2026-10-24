@@ -26,6 +26,7 @@ supabase/
                 20261023000100_report_revisions_functions.sql — revision RPCs
                 20261023000200_searchable_latest_revision.sql — crops for the newest revision, official_since, card fields
                 20261023120000_report_revision_embeddings.sql — revision summary vectors, HNSW index, search RPC
+                20261024090000_save_human_revision_with_crops.sql — a human save that stores its crops in the same call
   tests/        SQL harness (test_baseline.py, test_freeze.py), security_check.sql, supabase_stub.sql,
                 parity_check.py, rehearse.py, probe_api.sh
   copy/         copy_midterm_to_finals.py + transform.sql: the one-way midterm -> finals copy (historical)
@@ -34,55 +35,7 @@ supabase/
 
 ## Current finals schema
 
-The migrations build the original midterm-shaped model, drop the tables no live code uses, then
-replace the relational report model with versioned snapshots. The **current** schema has six tables:
-
-- `videos` — upload registry, now with `official_revision_id` (composite FK to one of its own
-  revisions) and `official_since` (when it was marked); the old `selected_model_run_id`/`selected_by`/`selected_at` columns are gone.
-- `queries`, `model_runs` — unchanged search audit and run registry. Model runs keep the immutable
-  analysis-attempt record in `notes`.
-- `report_revisions` — append-only `ai`/`human` snapshots: full contract report in `payload`,
-  evidence list in `evidence`, plain facets (`incident_type`, `severity_level`, timestamps), and
-  links to the video (`revision_no` per video), run (`model_run_id`) and parent revision
-  (`parent_id`).
-- `evidence_crops` — searchable crops keyed by `revision_id` with the pgvector embedding; rows belong
-  to the video's **searchable revision**: the official one, else the newest.
-- `query_results` — search audit keyed by `query_id` and `revision_id`.
-
-`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_reports*`, `review_status`,
-`gt_*` and `severity_eval_log`, and the functions that read them, are gone. Every report read goes
-through `report_revisions`, directly or via the library/dashboard RPCs. Details, columns and
-constraints: [`../.docs/data.md`](../.docs/data.md).
-
-### Functions
-
-- `save_human_revision` — atomically appends a human revision (`max(revision_no)+1`, inherits the
-  parent's run) and returns its JSON descriptor.
-- `set_official_revision` — in one transaction sets `videos.official_revision_id` and
-  `official_since` and moves the video's `evidence_crops` to the new official revision (the caller's
-  crop list, or the rows it already has); NULL clears the pointer and leaves the newest revision
-  searchable.
-- `set_revision_crops` — stores the crops of the video's searchable revision (official, else newest)
-  without changing the pointer; refused for any other revision.
-- `search_evidence_items` — HNSW cosine search over each video's searchable revision, returning the
-  incident, revision, run, facets and similarity.
-- `list_incident_report_summaries` — one card per video (official, else newest), filtered by
-  `p_kind` (`ai`/`human`), type, severity, evidence and text; cards carry `officialSince`,
-  `versionCount`, `evidenceCount` and `thumbnail`.
-- `get_incident_dashboard` — aggregates official revisions only.
-- `search_report_revisions` — cosine search over each revision's summary `embedding` (all revisions with a vector, not only official ones), returning title, facets and similarity.
-
-Every function is `SECURITY INVOKER`, pins `SET search_path = ''`, and is executable by
-`service_role` only.
-
-### Security
-
-RLS is on for all six tables with no policies. Default privileges are set before any object is
-created, so `PUBLIC`/`anon`/`authenticated` get nothing on tables, sequences, views or functions;
-`service_role` gets everything. A self-check block in the baseline **fails the migration** if a table
-has RLS off, anything is exposed, or any function is `SECURITY DEFINER` or lacks a fixed
-`search_path`. Run `tests/security_check.sql` after every applied migration (expect 0 rows), and
-`tests/probe_api.sh` to confirm over REST that the public key is refused.
+Tables, functions, security and R2 keys: [`../.docs/data.md`](../.docs/data.md); which migrations are applied to finals: [`../.docs/status.md`](../.docs/status.md#3-database-status).
 
 ## Tests (no Supabase, no network)
 
@@ -92,7 +45,7 @@ anon/authenticated**, so the lockdown is tested against what a new project start
 
 ```bash
 cd supabase/tests
-# Finals schema: applies every file in ../migrations/ in order; 17 tests (security and behaviour)
+# Finals schema: applies every file in ../migrations/ in order; 28 tests (security and behaviour)
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 # Midterm freeze/unfreeze on a local replica of midterm
 uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_freeze.py
@@ -128,7 +81,7 @@ skill.
 
 The one-way midterm → finals copy in [`copy/`](copy/) was used for the original cutover and is kept
 for the record. It targets the pre-revision schema; do not run it against the current finals schema.
-Its design and the per-run decisions are in [`copy/README.md`](copy/README.md) and the copy script.
+Its design and the per-run decisions are in the copy script's comments.
 R2 objects were never copied: same bucket, same keys.
 
 ## Adding a finals migration

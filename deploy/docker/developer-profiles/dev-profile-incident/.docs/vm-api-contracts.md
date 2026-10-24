@@ -1,6 +1,6 @@
 # VM API contracts (frontend reference)
 
-HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the frontend uses to reach them. VM side only. Source of truth: `services/agent/src/vss_agents/api/` (Pydantic models) and `custom_fastapi_worker.py` (route registration). Last checked against main at `8f9b6d1b7` and the live VM on 2026-10-18.
+HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the frontend uses to reach them. VM side only. Source of truth: `services/agent/src/vss_agents/api/` (Pydantic models) and `custom_fastapi_worker.py` (route registration). Last checked against main on 2026-10-24; the live VM was last checked on 2026-10-24 (below).
 
 ## Tunnel
 
@@ -11,25 +11,14 @@ HTTP contracts of the native `vss-agent` on `kwanz-ws` and the SSH tunnel the fr
 | `8000` | `127.0.0.1:8000` (loopback) | native `vss-agent` (FastAPI) | all endpoints below; set `INCIDENT_AGENT_BASE_URL=http://localhost:8000` (start.sh exports it) |
 | `7777` | `<vm-ip>:7777` | `vss-haproxy-ingress` (VIOS/VST) | video upload and storage API |
 
-- In mock mode `7777` is the mock backend instead, and it also serves `POST /api/v1/incidents/search`. There is no tunnel.
-- `VSS_VM_IP`: used as given if set. Otherwise start.sh runs `ip -4 route get 1.1.1.1` on the VM over SSH and takes the `src` address. If that fails it prints `could not detect the VM address; falling back to 10.131.1.5` and uses `10.131.1.5`. Override with `VSS_VM_IP=<lan-ip>` when the tunnel cannot reach the address.
+- In mock mode `7777` is the mock backend instead (it also serves the incident search, revision search, chat, analyze and evidence-embeddings routes). There is no tunnel.
+- `<vm-ip>` is detected over SSH unless `VSS_VM_IP` is set ([how](incident-profile-operations.md#ssh-port-tunneling-manual--standalone)).
 - A local port already in use stops start.sh before the tunnel opens: `laptop port <p> is already in use by <holder>`.
 - After opening, start.sh polls `localhost:8000/health` and `localhost:7777/storage` (HEAD) for up to 60 s each. Run `./.scripts/tunnel-check.sh` to check tunneled routes.
 
 ### When the VM is unreachable
 
-start.sh probes SSH first (`vm_preflight_ssh`, `.scripts/vm-preflight.sh`), exits 1 and prints to stderr, with no tunnel opened:
-
-```
-start.sh: cannot reach the VM over SSH ('daniel@kwanz-ws').
-  SSH said: <ssh stderr>
-  Cause: <classified cause>
-  Fix:   <next step>
-```
-
-Classified causes: Tailscale not logged in, stopped or daemon down, VM offline in the tailnet, host does not resolve, SSH timeout (`VSS_SSH_CONNECT_TIMEOUT`, default 10 s), connection refused, no route, host key changed, permission denied, connection dropped, otherwise unclassified.
-
-When SSH works but a tunnelled health check fails, start.sh says whether the agent or proxy is healthy on the VM (SSH forward blocked or wrong host bind) or dead on the VM (crashed agent or stopped vss-haproxy-ingress container), then exits non-zero.
+start.sh probes SSH before it opens the tunnel and, when the VM or a tunnelled health check fails, prints the cause and the next step; the causes are listed in [`incident-profile-operations.md`](incident-profile-operations.md#ssh-username-resolution--troubleshooting).
 
 ## Common behaviour
 
@@ -121,13 +110,13 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
 
 ## `POST /api/v1/incidents/evidence-embeddings`
 
-Called by the console when a revision becomes a video's searchable revision (made official, or the newest revision of a video with no official one). It reads that revision's `evidence` from `report_revisions` and embeds each item with the model search uses (`nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions, `passage` input of `"{item_name}: {description}"`). The agent writes nothing; the console writes the `evidence_crops` rows.
+Called by the console when a revision becomes a video's searchable revision: made official, a new AI revision of a video with no official one, or, before a Save, the new human revision's evidence. It embeds each item with the model search uses (`nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions, `passage` input of `"{item_name}: {description}"`). The agent writes nothing; the console writes the `evidence_crops` rows.
 
-Request: `{"revision_id": <int >= 1>}`. Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when the revision has no items). Errors: `404` unknown revision, `502` embedding service failed, `503` database or embedding key not configured.
+Request: exactly one of `{"revision_id": <int >= 1>}` (the route reads that revision's `evidence`) or `{"evidence": [{"item_type", "item_id", "item_name"?, "description"?}, ...]}` (nothing is read). Response `200`: a list of `{"item_type", "item_id", "embedding"}` (empty when there are no items). Errors: `404` unknown revision, `422` neither or both sources, `502` embedding service failed, `503` database or embedding key not configured.
 
 ## `POST /api/v1/incidents/revisions/search`
 
-Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only revisions with a stored vector are searched: AI revisions saved with an embedding; human revisions and AI revisions saved while the embedding endpoint was unavailable are not. The zero-GPU mocks serve a canned answer on this route.
+Searches saved report revisions by their summary embedding. The route embeds `query` with the search query model (1024 dimensions, `query` input type), then calls `search_report_revisions`. Only revisions with a stored vector are searched: AI revisions saved with an embedding; human revisions and AI revisions saved while the embedding endpoint was unavailable are not. The zero-GPU mocks answer this route from their finals snapshot.
 
 Request: `{"query": <1-1000 chars>, "top_k": <1-50, default 10>, "min_similarity": <-1.0 to 1.0, default 0.0>}`. Response `200`: a list, best first, of `{revision_id, video_id, revision_no, kind, model_run_id, title, description, incident_type, severity_level, start_seconds, end_seconds, similarity_score}`; empty when nothing matches. Errors: `422` invalid body, `502` embedding service failed, `503` database or query embedding key not configured.
 
@@ -183,7 +172,7 @@ Request:
 
 Response `200`: `{"session_id", "message": {"role": "assistant", "content", "citations": [{"incident_id","item_id","item_type","timestamp_seconds","crop_image_url"}]}}`. No match gives a "No matching incidents..." message with empty `citations`.
 
-With `version_id` the answer is read from the database, not the canned data: the official revision (`videos.official_revision_id`) goes through search (`evidence_crops`), any other revision uses its own saved `report_revisions.evidence` (crop keys resolved to URLs), and a `draft_report` uses the draft's items with each crop taken from the same item in `version_id`'s evidence. Items match the query by keyword; with no keyword match the revision's items are returned in order. `context.incident_id`, if given, must be the revision's video.
+With `version_id` the revision is read from the database. The official revision with no draft goes to the route's search client, which is still the in-memory canned client (no live search is wired), so for a finals video it finds no evidence and answers "No matching incidents...". Any other revision uses its own saved `report_revisions.evidence` (crop keys resolved to URLs), and a `draft_report` uses the draft's items with each crop taken from the same item in `version_id`'s evidence. Items match the query by keyword; with no keyword match the revision's items are returned in order. `context.incident_id`, if given, must be the revision's video.
 
 Models are strict (`extra="forbid"`): unknown fields, an invalid `role` or `scope` and an empty `session_id` are `422`. Response citations require `item_type` of `entity`, `instrument` or `asset`, non-empty ids and `timestamp_seconds` >= 0, and `citations` is always present.
 
@@ -195,16 +184,13 @@ Example: `{"messages":[{"role":"user","content":"edged weapon"}]}` returns `200`
 
 Registered by the same worker; documented upstream. Video: `POST /api/v1/videos`, `POST /api/v1/videos/{sensor_id}/complete`, `DELETE /api/v1/videos/{video_id}`, `PUT /api/v1/videos-for-search/{filename}` (deprecated). RTSP: `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}`. Plus NAT's standard routes (`/docs`, `/openapi.json`, `/generate`, `/chat`, ...). Use `/docs` on the tunnel for the full generated schema.
 
-## Live VM check (2026-10-18, read-only)
+## Live VM check (2026-10-24, read-only)
 
 | Check | Result |
 |---|---|
-| `GET /health` | `200` `{"value":{"isAlive":true}}` |
-| `/openapi.json` incident paths | `analyze`, `search`, `chat` present |
-| `POST search` `{"query":"edged weapon","top_k":5}` | `200` in 2.5 s, envelope matches, `total_hits: 0` |
-| `POST search` `{}` / `top_k: 99` | `422` FastAPI detail list, as documented |
-| `POST analyze` `{}` | `422` missing `video_url`, as documented |
-| `POST chat` | `200`, canned `Assault007` citations |
-| listening ports | `8000`, `7777` yes; `30081`, `30082` no (dropped from tunnel) |
+| `/openapi.json` incident paths | `analyze`, `search`, `revisions/search`, `chat`, `evidence-embeddings` present |
+| Agent log | stock base config: `top_agent` with 4 tools and 1 subagent (`report_agent`) |
+| VM checkout | `02b543ecf` (#205), behind main |
+| listening ports | `127.0.0.1:8000`, `7777`, `30888`, `6379`, `9092` |
 
-Differences from main: the VM checkout was at `f7847e1d2` (PR 134), before the evidence changes of PR 138, and its search returned no hits. Hit contents above are therefore documented from main's models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).
+Hit contents above are documented from the Pydantic models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).
