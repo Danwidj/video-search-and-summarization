@@ -27,3 +27,6 @@ pnpm-debug.log*
 *.swp
 *.swo
 *~
+
+# Re-include src/lib/: a global "lib/" ignore rule would otherwise hide it
+!src/lib/
