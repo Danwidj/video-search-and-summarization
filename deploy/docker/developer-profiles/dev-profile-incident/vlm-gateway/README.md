@@ -1,88 +1,17 @@
 # VLM Gateway
 
-Thin proxy service for NVIDIA-hosted OpenAI-compatible LLM/VLM inference.
+A thin proxy that keeps the Brev inference key on the server, so `incident-console-v2` can call the hosted VLMs in mock (gateway) mode without exposing it.
 
-## Purpose
+## Run it
 
-Holds the single real API credential server-side so that browser-facing consumers
-(the `incident-console-v2` Next.js app, via its `VLM_GATEWAY_URL`) can call LLM/VLM
-inference without exposing the key client-side. The archived v1 Streamlit app does not call
-the gateway; the standalone evaluation pipeline uses the same upstream
-`VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` directly
-(`../eval/scripts/eval_vlm_client.py`).
-
-## Contract
-
-- **One inference route**: `POST /v1/chat/completions` (OpenAI chat completions compatible), plus `GET /health` (`{"status": "ok"}`)
-- **Authentication**: Gateway adds `Authorization: Bearer <VLM_GATEWAY_API_KEY>` header server-side
-- **Upstream**: Configured via `VLM_GATEWAY_BASE_URL` (default: `https://switchyard-13doh4lsz.brevlab.com/v1`)
-- **Model selection**: Caller specifies model in request body's `model` field; gateway is model-agnostic
-- **No streaming** in this first version (returns full response verbatim)
-- **Upstream timeout**: `VLM_GATEWAY_TIMEOUT_SECONDS` (default `330`). It must exceed the slowest per-model timeout the console uses (`timeout_seconds` in [`../contracts/inference.json`](../contracts/inference.json)), because reasoning VLMs with a 16k-token budget can run for minutes
-
-## Available Models (upstream)
-
-### Text Models
-
-- `nvidia/nemotron-3-nano-30b-a3b`
-- `nvidia/nemotron-3-super-120b-a12b`
-- `nvidia/nemotron-3-ultra`
-- `nvidia/nemotron-3-ultra-nvfp4`
-- `nvidia/nemotron-3.5-lightning-30b-a3b`
-- `nvidia/nemotron-3-auto` (auto-routing)
-
-### Vision-Language Models (VLM)
-
-- `nvidia/cosmos-3-nano-reasoner`
-- `nvidia/cosmos-3-super-reasoner`
-- `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
-- `nvidia/cosmos-3-auto` (auto-routing)
-
-## Local Development
+`./start.sh --mode mock` starts it for you. To run it alone:
 
 ```bash
-# From this directory
+cd deploy/docker/developer-profiles/dev-profile-incident/vlm-gateway
 uv sync
-uv run --env-file .env.local uvicorn app:app --port 8600
+uv run --env-file .env.local uvicorn app:app --host 127.0.0.1 --port 8600
 ```
 
-`app.py` reads `VLM_GATEWAY_BASE_URL` / `VLM_GATEWAY_API_KEY` from the process environment
-only (it does not load any `.env` file itself), hence `--env-file .env.local`. The port
-comes from uvicorn's `--port`; `VLM_GATEWAY_PORT` is not read by the app.
+`.env.local` is a symlink to the profile's shared `../.env.local`, which must set `VLM_GATEWAY_API_KEY`. Check it with `curl http://127.0.0.1:8600/health`.
 
-The gateway will be available at `http://localhost:8600/v1/chat/completions`.
-
-### Environment Setup
-
-Local developer secrets across all services in this profile are consolidated into
-the shared root file at `dev-profile-incident/.env.local`. In this directory,
-`.env.local` is a symlink pointing to `../.env.local`:
-
-```bash
-# If the symlink is missing or points to the wrong file:
-ln -sfn ../.env.local .env.local
-
-# Ensure VLM_GATEWAY_API_KEY is set in dev-profile-incident/.env.local (captain provides)
-```
-
-## Example Usage
-
-```bash
-curl -X POST http://localhost:8600/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "nvidia/nemotron-3-auto",
-    "messages": [
-      {"role": "user", "content": "Describe this incident in one sentence."}
-    ]
-  }'
-```
-
-## VM Deployment
-
-Deployed as part of the `dev-profile-incident` stack via `docker compose --profile bp_developer_search_2d up -d vlm-gateway`.
-
-The real `VLM_GATEWAY_API_KEY` is injected at deploy time via `generated.env.remote` (never committed).
-
-Container name: `vss-vlm-gateway`
-Port: `8600` (host networking)
+Its route, settings and defaults: [`../.docs/architecture.md`](../.docs/architecture.md#component-reference-table).

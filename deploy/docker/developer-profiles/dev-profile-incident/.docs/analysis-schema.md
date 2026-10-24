@@ -9,14 +9,14 @@ This document describes how incident analysis output is defined, validated, stor
 
 ## 1. Principle
 
-1. **`contracts/` defines the complete model output.** `incident_report.schema.json` (JSON Schema draft 2020-12), `incident_extraction_prompt.txt` and `VERSION` are the source of truth for what the VLM must return and what counts as a valid response. In `incident-contract-v3`, entities, instruments, and assets require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localization. `incident-contract-v4` also requires `first_seen_seconds` and `last_seen_seconds` (integers >= 0) on every entity: the span in which it is seen, with `timestamp_seconds` (its clearest moment) inside it. The schema cannot express `first <= last` or the containment of `timestamp_seconds`, so the prompt asks for them and no cross-field rule enforces them; consumers treat the span as advisory. Reports stored under v2 or v3 lack the span: readers fall back to `timestamp_seconds` for both ends, and the console validates such a report against its own version (`lib/contract/validate.ts`). Spatial bounding boxes are detector-produced and optional in search hits, not VLM outputs.
+1. **`contracts/` defines the complete model output.** `incident_report.schema.json` (JSON Schema draft 2020-12), `incident_extraction_prompt.txt` and `VERSION` are the source of truth for what the VLM must return and what counts as a valid response. The schema is strict-mode compatible: every object has `additionalProperties: false` and lists all its properties in `required`, so an optional value is a nullable type. `incident.duration` is not in the schema; every consumer derives it after validation, and a model that sends it fails the schema. In `incident-contract-v3`, entities, instruments, and assets require `timestamp_seconds` (integer >= 0) and `label` (short detector string) for temporal grounding and evidence crop localization. `incident-contract-v4` also requires `first_seen_seconds` and `last_seen_seconds` (integers >= 0) on every entity: the span in which it is seen, with `timestamp_seconds` (its clearest moment) inside it. The schema cannot express `first <= last` or the containment of `timestamp_seconds`, so the prompt asks for them and no cross-field rule enforces them; consumers treat the span as advisory. Reports stored under v2 or v3 lack the span: readers fall back to `timestamp_seconds` for both ends, and the console validates such a report against its own version (`src/modules/contract/domain/validate.ts`). Spatial bounding boxes are detector-produced and optional in search hits, not VLM outputs.
 2. **`model_runs.notes` stores the complete validated report and its provenance, immutably.** Nothing ever edits it.
-3. **A report is a JSONB snapshot with queryable facets.** `report_revisions.payload` holds the whole contract report and `report_revisions.evidence` the evidence list; only the fields statistics filter on are copied into columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`, `revision_no`). `evidence_crops` is the search projection, rebuilt from the official revision.
-4. **What the report page shows follows reviewer usefulness**, drawing from one revision and its run. The console maps one `report_revisions` row and its `model_runs` row into a `ReportView` (`lib/adapters/supabase/mappers/report.ts`, `lib/reports/view.ts`); nothing is reassembled from several tables.
+3. **A report is a JSONB snapshot with queryable facets.** `report_revisions.payload` holds the whole contract report and `report_revisions.evidence` the evidence list; only the fields statistics filter on are copied into columns (`incident_type`, `severity_level`, `start_seconds`, `end_seconds`, `revision_no`). `evidence_crops` is the search projection of each video's searchable revision ([`data.md`](data.md#evidence_crops)).
+4. **What the report page shows follows reviewer usefulness**, drawing from one revision and its run. The console maps one `report_revisions` row and its `model_runs` row into a `ReportView` (`src/modules/reports/infrastructure/supabase/mappers/report.ts`, `src/modules/reports/application/report-view.ts`); nothing is reassembled from several tables.
 
 ## 2. The analysis request (identical to eval P1)
 
-`incident-console-v2/lib/analysis/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
+`incident-console-v2/src/modules/analysis/application/build-request.ts` builds exactly the request of `eval/scripts/eval_vlm_client.py:analyze_video_with_p1`:
 
 - **Model:** one of the allowlisted models in [`contracts/inference.json`](../contracts/inference.json): `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **`messages`:** one user message:
@@ -28,7 +28,7 @@ This document describes how incident analysis output is defined, validated, stor
 
 ## 3. Validation, ID-only repair and outcomes
 
-`lib/contract/validate.ts` is a strict port of `eval/contract.py`:
+`src/modules/contract/domain/validate.ts` is a strict port of `eval/contract.py`:
 - `JSON.parse` of the raw content, with no fence stripping, brace extraction, aliasing or defaults;
 - Ajv validation against the shared schema file;
 - the cross-field rules;
@@ -36,20 +36,20 @@ This document describes how incident analysis output is defined, validated, stor
 
 Every violation carries a machine-readable code: `EMPTY_CONTENT`, `INVALID_JSON`, `SCHEMA_VIOLATION`, `WINDOW_END_BEFORE_START`, `ID_NOT_SEQUENTIAL_{ENTITY,INSTRUMENT,ASSET}`, `INSTRUMENT_HOLDER_UNKNOWN`, `TIMELINE_{START,END}_OUTSIDE_WINDOW`, `TIMELINE_NOT_CHRONOLOGICAL`, and the contextual `WINDOW_BEYOND_VIDEO` / `TIMELINE_BEYOND_VIDEO`. Shared fixtures in `contracts/fixtures/` (including `fixtures/policy/`) are checked by both the Python and the TypeScript validator.
 
-**Validation policy `core-scored-v1`** (`validateCore`; same as eval's `evaluate_policy`, see [`../contracts/README.md`](../contracts/README.md)):
+**Validation policy `core-scored-v1`** (`validateCore`; eval's `evaluate_policy`; the agent's `core_violations`). Its id is recorded beside the contract version; it changed nothing sent to or returned by the model, so it carries no `VERSION` bump:
 - **Decides the outcome:** the database-backed (Class A) fields.
 - **Scope of each violation:**
   - The `TIMELINE_*` codes are *enrichment*: recorded with `scope: "enrichment"`, never fatal and never repaired.
   - Every other code is *core*.
   - Schema violations stay fatal.
-- **Video length:** the analysis reads the video's length from its MP4 header in R2 (`lib/video/mp4-duration.ts`, ranged reads) and records it as `request.videoDurationSeconds`.
+- **Video length:** the analysis reads the video's length from its MP4 header in R2 (`src/lib/video/mp4-duration.ts`, ranged reads) and records it as `request.videoDurationSeconds`.
   - When known, a whole-second window time T must satisfy `0 <= T < length + 1` (`WINDOW_BEYOND_VIDEO`, core).
   - When unknown (`null`), the rule is not applied and `videoBoundsChecked` is `false`.
 - **Recorded on each attempt:** `validation: { firstPass (all violations, each with scope), policy, fullContractValid, coreValid, videoBoundsChecked }`.
   - `fullContractValid` is incident-contract validity exactly as before.
   - `coreValid` is the original response's validity under the policy, before any ID repair.
 
-**`id-normalization-v1`** (`lib/contract/repair.ts`, mirrored in `vss_agents/incident_contract`) is the only repair the application applies:
+**`id-normalization-v1`** (`src/modules/contract/domain/repair.ts`, mirrored in `vss_agents/incident_contract`) is the only repair the application applies:
 - **When it runs:** only when *every* core first-pass violation is `ID_NOT_SEQUENTIAL_*`, or an `INSTRUMENT_HOLDER_UNKNOWN` that renumbering resolves, and the response passed the schema. Enrichment (timeline) violations neither block nor trigger it and are left as they are.
 - **What it may change:** identifiers, `instruments[].entity_id` references and list order. Nothing else.
   - Well-formed IDs keep their number, and lists are reordered.
@@ -115,7 +115,7 @@ Records written before attempt statuses existed lack `status`; they are shown as
 
 ### Report revisions (AI and human)
 
-A report is a list of immutable revisions in `report_revisions`: the full contract report as `payload` JSONB, the evidence list as `evidence` JSONB, the facet columns, `kind` (`ai` or `human`) and `parent_id` (the revision that was opened). The AI report is written once by analysis; a reviewer's Save as new version appends a `human` revision and never touches the AI one. Entities carry `first_seen_seconds` and `last_seen_seconds` (contract v4), which a save keeps. The schema and the append-only trigger are in [`data.md`](data.md#agent-report-writes-report_revisions); the console's writer is `save_human_revision`.
+A report is a list of immutable revisions in `report_revisions`; the columns, the append-only trigger and the official and searchable revisions are in [`data.md`](data.md#the-report-model). Entities carry `first_seen_seconds` and `last_seen_seconds` (contract v4), which a save keeps; the console's writer is `save_human_revision_with_crops`.
 
 | Event | Revision written |
 |---|---|
@@ -126,10 +126,10 @@ A report is a list of immutable revisions in `report_revisions`: the full contra
 | Mark official | none; `videos.official_revision_id` changes and `evidence_crops` is rebuilt |
 | Delete video | cascade removes every revision |
 
-- **One official revision per video** (`videos.official_revision_id`, NULL = none), chosen explicitly. It is the version statistics count. Search reads the video's searchable revision: the official one, else the newest (`evidence_crops` belong to it).
+- **The official revision** is the version statistics count.
 - **The report page** opens `?revision=<id>`, else the official revision, else the newest one. History lists every revision newest first; opening one loads it into the editor.
-- **Edits** (`save_human_revision`) are validated against the contract's own sub-schemas and the ID/holder/window rules before the call. Each item keeps the id of the item it came from through the editor's renumbering, so its evidence and image follow it.
-- **Evidence images** are never overwritten or deleted. An edit or a replacement uploads to a new R2 key `evidence/<videoId>/<uuid>/<itemId>.jpg`; an item without an image records an `image_gap` reason.
+- **Edits** are validated against the contract's own sub-schemas and the ID/holder/window rules before the call. Each item keeps the id of the item it came from through the editor's renumbering, so its evidence and image follow it.
+- **Evidence images** are never overwritten; a replacement is uploaded on Save to a new key ([R2 layout](data.md#2-cloudflare-r2-storage-architecture)). An item without an image records an `image_gap` reason.
 - **There is no verification status and no draft.** `kind='human'` with `created_by` and `created_at` says a person saved it; unsaved edits live only in the form.
 
 The report page:
@@ -144,16 +144,15 @@ Older rows are shown in contract form for display and querying. The midterm-to-f
 - entity `person` → `human`;
 - `M:SS` / `H:MM:SS` → seconds.
 
-Their notes are parsed best-effort for the read-only Class B fields. Saving an edit or restoring a legacy run writes a contract-form `human` revision (`e01` → `E1`, `"0:18"` → 18); its `model_runs.notes` are untouched.
+Their notes are parsed best-effort for the read-only Class B fields. Saving an edit of a legacy run writes a contract-form `human` revision (`e01` → `E1`, `"0:18"` → 18); its `model_runs.notes` are untouched.
 
 ## 6. Agent mode
 
 `ANALYSIS_MODE=agent` posts to `vss-agent`'s `/api/v1/incidents/{id}/analyze` with `{ video_url, model_run_id?, model?, reviewer_prompt?, skip_rp1? }`.
 - `vss-agent` uses its vendored `incident-contract-v4` (`vss_agents/incident_contract/`) to run P1 (direct VLM call with JSON Schema response format) and RP1 (prose report generation). P1 and RP1 request settings come from the shared `contracts/inference.json` `p1` and `rp1` blocks (the agent reads its vendored copy; eval asserts its constants match). The request's `skip_rp1` flag runs P1 only; the console always sets it, because gateway mode runs P1 only too.
-- The agent validates P1 with strict Pydantic models under the same `core-scored-v1` policy and `id-normalization-v1` repair as the console (timeline-only violations are not fatal), derives `incident.duration` and, unless `skip_rp1`, runs RP1 on the result. Only a schema or unrepairable core violation is a 422, whose `detail` carries `raw_output`, `finish_reason`, `model` and `contract_version`. `vss_agents.incident_contract` supports contextual video bounds rules (`WINDOW_BEYOND_VIDEO`, `TIMELINE_BEYOND_VIDEO`) when `video_duration_seconds` is known; at runtime in agent mode, the agent receives only signed playback URLs without R2 credentials to perform byte-range reads on MP4 headers, so the video-length rule is left to the calling console, which reads the video length from R2 and re-evaluates the policy.
-- After a valid report the agent appends a `report_revisions` row (`kind='ai'`, `payload` = the report, `evidence`, facet columns, `parent_id` NULL) best-effort, for both agent variants (P1 only and P1+RP1). It crops each evidence item, uploads it to R2 under `evidence/<videoId>/<uuid>/<itemId>.jpg` (a new `<uuid>` per run, so keys are never overwritten) and records a plain `image_gap` reason in the evidence JSONB when it cannot (no detector, no R2 store, no box, upload failed). With a caller `model_run_id` it only inserts a placeholder `model_runs` row if absent (the console writes its `notes` record afterwards). Without one it creates its own run. A `reviewer_prompt` reaches the model run only; re-generation copies no earlier edits. It never writes `videos`.
-- In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason, and writes the `model_runs` notes itself; it inserts the AI revision too unless the agent's response carries `revision_id`, in which case it only verifies it (`persistContractRun`). Its timeout is the model's, as in gateway mode, since only P1 runs. A non-empty `additionalInstruction` is sent to the agent as `reviewer_prompt` (the agent's own field for a direct caller), so the reviewer prompt works in both modes; only the model choice stays gateway-only. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
-- Legacy agent-mode contract files (`lib/analysis/schema.ts`, `lib/analysis/incident-report-contract.json`, and `tests/contract-parity.test.mjs`) have been retired.
+- The agent validates P1 with strict Pydantic models under the same `core-scored-v1` policy and `id-normalization-v1` repair as the console (timeline-only violations are not fatal), derives `incident.duration` and, unless `skip_rp1`, runs RP1 on the result. Only a schema or unrepairable core violation is a 422, whose `detail` carries `raw_output`, `finish_reason`, `model` and `contract_version`. The video-length rule is left to the console ([status](status.md#4-known-issues), known issue 1).
+- After a valid report the agent appends a `report_revisions` row (`kind='ai'`, `payload` = the report, `evidence`, facet columns, `parent_id` NULL) best-effort, for both agent variants (P1 only and P1+RP1). It crops each evidence item, uploads it to R2 ([key layout](data.md#2-cloudflare-r2-storage-architecture)) and records a plain `image_gap` reason in the evidence JSONB when it cannot (no detector, no R2 store, no box, upload failed). With a caller `model_run_id` it only inserts a placeholder `model_runs` row if absent (the console writes its `notes` record afterwards). Without one it creates its own run. A `reviewer_prompt` reaches the model run only; re-generation copies no earlier edits. It never writes `videos`.
+- In `incident-console-v2`, `runContractAnalysis` routes the agent's raw P1 output (from a 200 or a 422) through the identical validation policy (`core-scored-v1`) and ID repair (`id-normalization-v1`) as gateway mode, records the attempt with the agent's model and finish reason, and writes the `model_runs` notes itself (through the `AnalysisRunRepository` port); it inserts the AI revision too unless the agent's response carries `revision_id`, in which case it only verifies it. Its timeout is the model's, as in gateway mode, since only P1 runs. The chosen model is sent as `model` and a non-empty `additionalInstruction` as `reviewer_prompt`, so both work in both modes; the run records the model the agent reports. If the agent's `contract_version` (from a 200 or a 422) is missing or differs from the console's, the attempt is a `request_failed` with code `CONTRACT_VERSION_MISMATCH` (HTTP 502, agent output kept in the notes, no report rows).
 
 ## 7. Model inference findings
 
