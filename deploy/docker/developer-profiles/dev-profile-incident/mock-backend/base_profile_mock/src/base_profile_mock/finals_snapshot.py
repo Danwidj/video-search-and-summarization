@@ -19,6 +19,9 @@ _SNAPSHOT_PATH = Path(__file__).with_name("finals_snapshot.json")
 # Each mock serves its placeholder JPEG here, so evidence thumbnails load without R2.
 EVIDENCE_IMAGE_ROUTE = "/mock/evidence-image"
 
+# A keyword hit never scores above this, so the console cannot show a mock as a "100% match".
+KEYWORD_SCORE_CEILING = 0.5
+
 
 @cache
 def _revisions() -> tuple[dict[str, Any], ...]:
@@ -36,6 +39,11 @@ def match_score(tokens: list[str], text: str) -> float:
     lowered = text.lower()
     found = sum(1 for tok in tokens if tok in lowered or (len(tok) > 3 and tok.rstrip("s") in lowered))
     return round(found / len(tokens), 2)
+
+
+def keyword_score(tokens: list[str], text: str) -> float:
+    """match_score scaled to KEYWORD_SCORE_CEILING: the evidence mocks match words, not meaning."""
+    return round(match_score(tokens, text) * KEYWORD_SCORE_CEILING, 2)
 
 
 def evidence_hits(public_base_url: str) -> list[dict[str, Any]]:
@@ -67,9 +75,9 @@ def evidence_hits(public_base_url: str) -> list[dict[str, Any]]:
                     "item": {**item, "crop_image_url": crop_url, "bounding_box": None},
                     "incident": incident,
                     "critic": {
-                        "verdict": "confirmed",
-                        "confidence": 0.9,
-                        "rationale": "Mock critic verdict: no crop was reviewed.",
+                        "verdict": "unverified",
+                        "confidence": None,
+                        "rationale": "Mock result: matched on keywords and no critic reviewed the crop.",
                     },
                 }
             )

@@ -16,7 +16,7 @@ from pydantic import Field
 
 from base_profile_mock.config import settings
 from base_profile_mock.finals_snapshot import evidence_hits
-from base_profile_mock.finals_snapshot import match_score
+from base_profile_mock.finals_snapshot import keyword_score
 from base_profile_mock.finals_snapshot import query_tokens
 
 router = APIRouter(prefix="/api/v1")
@@ -77,7 +77,7 @@ async def search_incidents(req: SearchRequest) -> dict[str, Any]:
     for candidate in _CANNED_HITS:
         item = candidate["item"]
         incident = candidate["incident"]
-        sim = match_score(tokens, _searchable_text(candidate))
+        sim = keyword_score(tokens, _searchable_text(candidate))
 
         if sim == 0.0 or sim < req.min_similarity:
             continue

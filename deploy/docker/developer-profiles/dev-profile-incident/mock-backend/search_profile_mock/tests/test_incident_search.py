@@ -148,3 +148,14 @@ def test_search_crop_images_resolve_to_the_mock_placeholder():
     assert image.status_code == 200
     assert image.headers["content-type"] == "image/jpeg"
     assert image.content.startswith(b"\xff\xd8")
+
+
+def test_search_does_not_present_a_keyword_mock_as_semantic():
+    client = TestClient(create_app())
+    hits = client.post("/api/v1/incidents/search", json={"query": "person", "top_k": 50}).json()["hits"]
+    assert hits
+    assert all(h["similarity_score"] <= 0.5 for h in hits)
+    for hit in hits:
+        assert hit["critic"]["verdict"] == "unverified"
+        assert hit["critic"]["confidence"] is None
+        assert "keywords" in hit["critic"]["rationale"]

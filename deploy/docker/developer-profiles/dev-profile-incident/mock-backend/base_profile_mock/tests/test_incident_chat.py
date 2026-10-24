@@ -144,3 +144,11 @@ def test_chat_citation_images_resolve_to_the_mock_placeholder():
     image = client.get(urlparse(url).path)
     assert image.status_code == 200
     assert image.headers["content-type"] == "image/jpeg"
+
+
+def test_mock_chat_answer_says_it_is_a_keyword_mock():
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/v1/incidents/chat", json={"messages": [{"role": "user", "content": "What weapon was used?"}]}
+    )
+    assert "mock answer, no model" in resp.json()["message"]["content"]
