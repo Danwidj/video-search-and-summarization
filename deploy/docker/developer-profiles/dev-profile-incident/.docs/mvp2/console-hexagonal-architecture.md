@@ -38,5 +38,5 @@ Not checked by the test, upheld in review: routes reach the database only throug
 
 ## 4. Open work
 
-- **Strict Step 6:** inject a `ContractCatalog` port so domain and application code stop importing the loader, and move the analysis hashing behind a port. This removes the remaining `ALLOWED` entries.
+- **Strict Step 6:** the `ContractCatalog` follow-up in [`../status.md`](../status.md#5-follow-ups).
 - **Keys built in SQL:** report library items keep snake_case keys their RPC builds (for example `incident_type`), because the sections read them; renaming them means changing the mapper and the sections together.

@@ -51,7 +51,7 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 
 - Run the eval benchmark under `core-scored-v1` (malformed-ID frequency, per-model core and enrichment failure rates), once known issue 2 is resolved.
 - Consider a contract version with ID patterns only if the malformed-ID evidence justifies it (it changes eval).
-- Console hexagonal plan, strict Step 6: inject a `ContractCatalog` port and move the analysis hashing behind a port, which removes the remaining exceptions in `tests/import-boundaries.test.mjs`.
+- Console hexagonal plan, strict Step 6: inject a `ContractCatalog` port and move `run-contract-analysis.ts`'s `node:crypto` (`randomUUID`) behind a port, which removes the loader and `node:crypto` exceptions in `tests/import-boundaries.test.mjs` (the upload hook's exception is by design).
 
 ## 6. Live VM configuration (`kwanz-ws`)
 
