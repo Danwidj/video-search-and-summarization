@@ -151,6 +151,16 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal((await repo.listRevisions(VIDEO_ID)).length, 1);
     });
 
+    test('the references of a video are every image any of its revisions names, older ones included; an unknown video has none to list', async () => {
+      const { repo } = make();
+      assert.equal(await repo.listReferencedEvidenceImages('v-none'), null);
+      assert.deepEqual(await repo.listReferencedEvidenceImages(VIDEO_ID), []);
+      const entry = (itemId, image) => ({ item_type: 'entity', item_id: itemId, image, bounding_box: null, timestamp_seconds: null });
+      const first = await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, 1), { evidence: [entry('E1', 'evidence/v/u-1/E1.jpg'), entry('E2', null)] }));
+      await repo.saveHumanRevision(humanInput(await repo.getRevision(VIDEO_ID, first.revisionId), { evidence: [entry('E1', 'evidence/v/u-2/E1.jpg')] }));
+      assert.deepEqual((await repo.listReferencedEvidenceImages(VIDEO_ID)).sort(), ['evidence/v/u-1/E1.jpg', 'evidence/v/u-2/E1.jpg']);
+    });
+
     test('the library comes in pages with the exact total, newest first, field for field', async () => {
       const { repo } = make();
       assert.deepEqual(await repo.listReports({ ...LIBRARY, pageSize: 2 }), { items: [HUMAN, REPAIRED], totalItems: 3, incidentTypes: ['assault', 'road accident'] });
@@ -208,6 +218,55 @@ describe('Supabase adapter: revisions', () => {
     assert.deepEqual(savedRevisionFromRpc(null), {
       revisionId: NaN, videoId: 'undefined', revisionNo: NaN, kind: 'ai', createdBy: null, createdAt: null, note: null, parentId: null, modelRunId: null, model: null, isOfficial: false,
     });
+  });
+});
+
+describe('Supabase adapter: references of a video\'s evidence images', () => {
+  const entry = (itemId, image) => ({ item_type: 'entity', item_id: itemId, image, bounding_box: null, timestamp_seconds: null });
+
+  function seeded(extraRevisions, crops = []) {
+    const db = fakePostgrest({
+      videos: [{ ...smoke.video, official_revision_id: null }, { id: 'v-other' }],
+      report_revisions: [aiRevisionRow(smoke, { evidence: [entry('E1', 'evidence/v/run/entities/E1.jpg')] }), ...extraRevisions],
+      evidence_crops: crops,
+    });
+    globalThis.fetch = db.fetch;
+    return { repo: new SupabaseIncidentAdapter(new PostgrestClient('https://supabase.test', 'k')), db };
+  }
+
+  test('revision evidence of every revision and the evidence_crops images are listed; another video\'s are not', async () => {
+    const { repo } = seeded([
+      { id: 2, video_id: VIDEO_ID, evidence: [entry('E1', 'evidence/v/u-1/E1.jpg')] },
+      { id: 3, video_id: 'v-other', evidence: [entry('E1', 'evidence/other/x/E1.jpg')] },
+    ], [
+      { revision_id: 1, image: 'evidence/v/run/entities/E2.jpg' },
+      { revision_id: 3, image: 'evidence/other/y/E1.jpg' },
+    ]);
+    assert.deepEqual((await repo.listReferencedEvidenceImages(VIDEO_ID)).sort(), [
+      'evidence/v/run/entities/E1.jpg', 'evidence/v/run/entities/E2.jpg', 'evidence/v/u-1/E1.jpg',
+    ]);
+  });
+
+  test('a string anywhere in the evidence counts, so a key under a field this console does not know is kept', async () => {
+    const { repo } = seeded([{ id: 2, video_id: VIDEO_ID, evidence: [{ ...entry('E1', null), extra: { previous_image: 'evidence/v/u-9/E1.jpg' } }] }]);
+    assert.ok((await repo.listReferencedEvidenceImages(VIDEO_ID)).includes('evidence/v/u-9/E1.jpg'));
+  });
+
+  test('evidence that is not a list is refused, never read as having no references', async () => {
+    const { repo } = seeded([{ id: 2, video_id: VIDEO_ID, evidence: { image: 'evidence/v/u-1/E1.jpg' } }]);
+    await assert.rejects(repo.listReferencedEvidenceImages(VIDEO_ID), /not a list/);
+  });
+
+  test('an answer as long as PostgREST\'s row limit is refused as possibly cut short', async () => {
+    const rows = Array.from({ length: 999 }, (_, index) => ({ id: index + 2, video_id: VIDEO_ID, evidence: [] }));
+    const { repo } = seeded(rows);
+    await assert.rejects(repo.listReferencedEvidenceImages(VIDEO_ID), /Too many records/);
+  });
+
+  test('a failing read is an error, not an empty list', async () => {
+    const { repo } = seeded([]);
+    globalThis.fetch = async () => new Response('down', { status: 503 });
+    await assert.rejects(repo.listReferencedEvidenceImages(VIDEO_ID), /HTTP 503/);
   });
 });
 

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 import pytest
 
 from search_profile_mock.app import create_app
+from search_profile_mock.routers import incident_search
 from search_profile_mock.routers.incident_search import SearchRequest
 
 FIXTURES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "search-contract-v1" / "fixtures"
@@ -19,10 +20,10 @@ FIXTURES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "search-contr
 
 def test_search_minimal_request_returns_200():
     client = TestClient(create_app())
-    resp = client.post("/api/v1/incidents/search", json={"query": "knife"})
+    resp = client.post("/api/v1/incidents/search", json={"query": "assault"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["query"] == "knife"
+    assert data["query"] == "assault"
     assert data["total_hits"] > 0
     assert len(data["hits"]) == data["total_hits"]
     hit = data["hits"][0]
@@ -39,6 +40,7 @@ def test_search_filters_by_item_type():
     resp = client.post("/api/v1/incidents/search", json={"query": "vehicle", "filters": {"item_types": ["asset"]}})
     assert resp.status_code == 200
     data = resp.json()
+    assert data["total_hits"] > 0
     for hit in data["hits"]:
         assert hit["item"]["item_type"] == "asset"
 
@@ -47,12 +49,13 @@ def test_search_filters_by_incident_type():
     client = TestClient(create_app())
     resp = client.post(
         "/api/v1/incidents/search",
-        json={"query": "burglary tool", "filters": {"incident_types": ["burglary"]}},
+        json={"query": "assault", "filters": {"incident_types": ["assault"]}},
     )
     assert resp.status_code == 200
     data = resp.json()
+    assert data["total_hits"] > 0
     for hit in data["hits"]:
-        assert hit["incident"]["incident_type"] == "burglary"
+        assert hit["incident"]["incident_type"] == "assault"
 
 
 def test_search_filters_by_road_accident_taxonomy():
@@ -63,13 +66,13 @@ def test_search_filters_by_road_accident_taxonomy():
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_hits"] == 1
-    assert data["hits"][0]["incident"]["incident_type"] == "road accident"
+    assert data["total_hits"] > 0
+    assert all(hit["incident"]["incident_type"] == "road accident" for hit in data["hits"])
 
 
 def test_search_respects_top_k():
     client = TestClient(create_app())
-    resp = client.post("/api/v1/incidents/search", json={"query": "threat", "top_k": 2})
+    resp = client.post("/api/v1/incidents/search", json={"query": "person", "top_k": 2})
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["hits"]) <= 2
@@ -113,16 +116,22 @@ def test_contract_fixture_invalid_requests():
             SearchRequest.model_validate(data)
 
 
-def test_search_hide_rejected_filter():
+def test_search_hide_rejected_filter(monkeypatch):
+    # The finals snapshot has no rejected critic verdicts, so add one for this test only.
+    van_hit = next(h for h in incident_search._CANNED_HITS if "van" in h["item"]["name"])
+    rejected = {**van_hit, "critic": {"verdict": "rejected", "confidence": 0.8, "rationale": "Test-only verdict."}}
+    monkeypatch.setattr(incident_search, "_CANNED_HITS", [*incident_search._CANNED_HITS, rejected])
+
     client = TestClient(create_app())
-    resp_hidden = client.post("/api/v1/incidents/search", json={"query": "device", "min_similarity": 0.0})
+    resp_hidden = client.post("/api/v1/incidents/search", json={"query": "van", "top_k": 50})
     assert resp_hidden.status_code == 200
     hits_hidden = resp_hidden.json()["hits"]
+    assert hits_hidden
     assert all(h["critic"]["verdict"] != "rejected" for h in hits_hidden)
 
     resp_shown = client.post(
         "/api/v1/incidents/search",
-        json={"query": "device", "min_similarity": 0.0, "hide_rejected": False},
+        json={"query": "van", "top_k": 50, "hide_rejected": False},
     )
     assert resp_shown.status_code == 200
     hits_shown = resp_shown.json()["hits"]

@@ -103,6 +103,13 @@ export interface IncidentRepository {
   /** The incident's History: every revision, newest first. Empty for an unknown video. */
   listRevisions(videoId: string): Promise<RevisionSummary[]>;
   /**
+   * Every evidence R2 key (evidence/...) the video's stored records can still show: any string in
+   * the evidence of any revision (older ones included) and the image of any evidence_crops row. Null for an unknown
+   * video. Throws, rather than answering with fewer keys, when a record cannot be read in full:
+   * a caller deletes whatever is not listed here.
+   */
+  listReferencedEvidenceImages(videoId: string): Promise<string[] | null>;
+  /**
    * Appends a human revision with the next revision number, the given parent
    * and the parent's run. Throws StoreRejection: 'not-found' for an unknown
    * video or a parent that is not one of its revisions, 'invalid' for content

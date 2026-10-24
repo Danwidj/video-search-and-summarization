@@ -19,7 +19,7 @@ const ITEM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /**
  * Stores a replacement evidence image under a new, unique R2 key
  * (evidence/<videoId>/<uuid>/<itemId>.jpg). It never overwrites an object, and
- * nothing deletes one: any revision may still reference it. The key is saved
+ * nothing deletes one here: any revision may still reference it. Only the evidence-sweep route removes an image, and only one no revision names. The key is saved
  * into the next human revision's evidence by Save.
  */
 export async function POST(request: Request, context: { params: Promise<{ videoId: string }> }) {
