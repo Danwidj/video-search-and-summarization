@@ -2,6 +2,24 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-25: The agent applies the video-bounds rules, and an unknown length is a recorded outcome
+- **Decision:** `/analyze` validates P1 with the video length, so `WINDOW_BEYOND_VIDEO` (core, a 422) and `TIMELINE_BEYOND_VIDEO` (enrichment, recorded) apply in the agent as in the console. The length is the request's optional `video_duration_seconds` (the console sends the one it read from the MP4 header) or, without one, the agent reads the MP4 `mvhd` through the signed `video_url` with ranged GETs on a client that carries no model key. A `video_duration_seconds` that is not a finite number above 0 is a 422. When no length can be read (non-MP4, a server that ignores `Range`, HTTP errors), the rules do not apply, the agent logs a warning and the 200 response says so (`video_bounds_checked: false` with `video_bounds_unchecked_reason`). The console keeps its own enforcement on the agent's raw output.
+- **Why:** The agent only received a signed URL, so the rules never ran there and a standalone caller (such as eval Track X) got no bounds check at all (known issue 1). Failing an analysis whose length is unknown would make agent mode stricter than gateway mode and eval, which share `core-scored-v1`: there an unknown length means the rule is not applied and the attempt records `videoBoundsChecked: false`. The console's check is not redundant: it records every attempt's validation in `model_runs.notes`, and an older agent build or a failed header read leaves the agent unchecked.
+- **Rejected:** failing closed on an unknown length (diverges from the shared policy and blocks videos whose header cannot be read); giving the agent R2 credentials to read the header (the signed URL already allows ranged reads); dropping the console's agent-mode check (it covers older agents and records the outcome).
+- **Links:** [`analysis-schema.md`](analysis-schema.md#6-agent-mode); [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentsincident_idanalyze); `services/agent/src/vss_agents/utils/video_duration.py`.
+
+### 2026-10-25: Deleting a video removes its evidence images before its rows
+- **Decision:** `deleteVideoAndReports` removes the video object and its thumbnail, then lists `evidence/<videoId>/` through the `EvidenceObjectStore` port and removes every image of that video, and only then deletes the rows. Any listing or removal failure throws and keeps the rows; repeating the delete is safe, because removing an absent object succeeds.
+- **Why:** The orphan sweep needs the video row, so images left behind by a delete could never be found again (known issue 2). Removing objects before rows keeps the row as the handle for a retry.
+- **Rejected:** deleting the rows first and sweeping afterwards (the sweep refuses an unknown video); a background job (no scheduler in the console). Images of videos deleted before this change stay in R2 until someone decides to remove them ([status](status.md#4-known-issues)). As with videos, a removed finals image may still be named by the frozen midterm record ([architecture](architecture.md)).
+- **Links:** [`data.md`](data.md#2-cloudflare-r2-storage-architecture); [`../incident-console-v2/src/modules/reports/application/delete-video-and-reports/index.ts`](../incident-console-v2/src/modules/reports/application/delete-video-and-reports/index.ts).
+
+### 2026-10-25: start.sh waits on the console and stops each local process tree
+- **Decision:** `start.sh` runs `npm run dev` as a background job and `wait`s on it, traps `INT`, `TERM` and `HUP`, and its cleanup stops each local job together with every process it started (found through parent pids with `pgrep -P`, listed before any kill).
+- **Why:** Reproduced on 2026-10-25 (known issue 8): a SIGTERM to `start.sh` alone left `next-server`, the mock and the gateway listening, because bash runs a trap only after the foreground command returns, and killing a wrapper (`uv run`, `npm run`) does not stop the server it started. Ctrl-C from a terminal worked only because the terminal signals the whole process group.
+- **Rejected:** `setsid` or `set -m` per child (`setsid` is not on macOS laptops, and `set -m` changes terminal and signal handling for every background job, including the VM lock's `ssh -tt`); killing process groups (all children share `start.sh`'s group, so it would signal `start.sh` too).
+- **Links:** [`incident-profile-operations.md`](incident-profile-operations.md); `eval/tests/test_start_script.py`.
+
 ### 2026-10-24: Chat about the official version uses the in-memory chat search client for MVP2
 - **Decision:** A chat question about the official revision with no draft goes to the agent chat route's search client, which stays the in-memory canned client for MVP2, so it finds no evidence for a finals video. Other versions and drafts are answered from their saved evidence.
 - **Why:** A deliberate choice by the captain (2026-10-24); no reason was recorded.
@@ -35,7 +53,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [pull/210](https://github.com/Danwidj/video-search-and-summarization/pull/210); [`../incident-console-v2/biome.jsonc`](../incident-console-v2/biome.jsonc).
 
 ### 2026-10-24: Orphan evidence images are removed by an explicit, per-video sweep
-- **Decision:** `POST /api/reports/<videoId>/evidence-sweep` lists `evidence/<videoId>/` in R2, then reads every image the video's revisions and `evidence_crops` rows name, and removes only unreferenced objects older than `minAgeHours` (default 24, floor 1). Dry run is the default; any read failure removes nothing. Images of a deleted video are not covered.
+- **Decision:** `POST /api/reports/<videoId>/evidence-sweep` lists `evidence/<videoId>/` in R2, then reads every image the video's revisions and `evidence_crops` rows name, and removes only unreferenced objects older than `minAgeHours` (default 24, floor 1). Dry run is the default; any read failure removes nothing. Images of a deleted video are not covered (since 2026-10-25 the delete itself removes them).
 - **Why:** Save uploads an image before it writes the revision, so a failed or abandoned save leaves an image nothing names. An image an older revision names is history, not an orphan.
 - **Rejected:** treating an image only an older revision names as an orphan (it is part of that revision); removing young objects (one may belong to a save still in flight).
 - **Links:** [pull/209](https://github.com/Danwidj/video-search-and-summarization/pull/209); [`data.md`](data.md#2-cloudflare-r2-storage-architecture).
@@ -78,7 +96,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 
 ### 2026-10-23: The console cuts evidence frames with ffmpeg on its own host
 - **Decision:** `GET /api/reports/[videoId]/frame?t=` decodes one frame, and `POST /api/reports/[videoId]/evidence-crop` cuts a reviewer-dragged rectangle from it and returns the JPEG (since 2026-10-24 it stores nothing; Save uploads it). Both run `ffmpeg` on the console host's PATH over a signed R2 URL (range reads). No npm dependency is added.
-- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads (see [`status.md`](status.md#4-known-issues) known issue 1); the agent does not. This reverses the 2026-09-27 rejection of server-side frame extraction.
+- **Why:** Choosing a frame needs the exact second decoded from the video. The console already holds the R2 credentials and does the byte-range reads; the agent does not (since 2026-10-25 it reads only the MP4 header, through the signed URL). This reverses the 2026-09-27 rejection of server-side frame extraction.
 - **Rejected:** a new npm video library (ffmpeg is already the standard tool and needs no dependency); cutting crops in the agent (it has no R2 credentials).
 - **Links:** [pull/183](https://github.com/Danwidj/video-search-and-summarization/pull/183); [`architecture.md`](architecture.md#report-versions-view-edit-and-history); [`incident-profile-operations.md`](incident-profile-operations.md).
 
