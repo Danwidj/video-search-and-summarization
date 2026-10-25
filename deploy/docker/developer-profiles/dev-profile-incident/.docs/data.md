@@ -415,7 +415,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, one `<uuid>` per run), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save.
 >
-> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video leaves its `evidence/<videoId>/` images, and the sweep refuses an unknown video.
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes every object under `evidence/<videoId>/` before the video row; if a listing or removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#4-known-issues)), and the sweep refuses an unknown video.
 
 ### Key Validation & Generation Rules
 

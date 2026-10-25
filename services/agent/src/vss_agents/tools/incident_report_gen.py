@@ -24,7 +24,12 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
    settings from ``inference.json``. The response is validated under ``core-scored-v1`` with the
    ``id-normalization-v1`` recovery (``incident_contract.parse_report``), like the console;
    a core or schema violation raises :class:`IncidentExtractionError` carrying the raw output,
-   and nothing is persisted.
+   and nothing is persisted. The video-bounds rules (``WINDOW_BEYOND_VIDEO``,
+   ``TIMELINE_BEYOND_VIDEO``) apply whenever the video length is known: the caller's
+   ``video_duration_seconds``, else the MP4 header read from the signed URL by byte ranges
+   (``utils/video_duration.py``). When neither gives a length the rules cannot apply, as in the
+   console and eval; the response says so (``video_bounds_checked`` false with a reason) and a
+   warning is logged, so an unchecked report is never silent.
 2. **RP1** - a text-only prose report from the validated P1 JSON. A
    failed RP1 never discards a valid P1 report; the error is returned instead. ``skip_rp1``
    leaves it out (``incident-console-v2`` agent mode, which, like gateway mode, uses P1 only).
@@ -47,6 +52,7 @@ import logging
 import os
 import re
 from typing import Any
+from typing import Literal
 
 import httpx
 from nat.builder.builder import Builder
@@ -61,12 +67,15 @@ from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
+from vss_agents.utils import video_duration
 from vss_agents.utils.embeddings import RemoteTextEmbedder
 
 logger = logging.getLogger(__name__)
 
 # P1 with 64 frames or a reasoning model can take minutes; matches the console and gateway.
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0
+# Reading the MP4 header takes a few small ranged reads of the signed URL.
+VIDEO_HEADER_TIMEOUT_SECONDS = 30.0
 
 # Same limit and framing as the console's additional instruction (incident-console-v2
 # lib/analysis/build-request.ts), so a reviewer prompt reads the same in both analysis modes.
@@ -121,6 +130,13 @@ class IncidentReportGenInput(BaseModel):
     reviewer_prompt: str | None = Field(
         default=None, description="Extra reviewer instruction for a re-generation, added after the P1 prompt."
     )
+    video_duration_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        strict=True,
+        description="The video length the caller read; when absent the agent reads the MP4 header itself.",
+    )
 
 
 class IncidentReportGenOutput(BaseModel):
@@ -139,6 +155,26 @@ class IncidentReportGenOutput(BaseModel):
     evidence: list[dict[str, Any]] = Field(
         default_factory=list, description="The revision's evidence entries (R2 image keys or image_gap reasons)."
     )
+    video_duration_seconds: float | None = Field(
+        default=None, description="The video length the bounds rules used; null when it could not be read."
+    )
+    video_duration_source: Literal["request", "mp4_header"] | None = Field(
+        default=None, description="Where the length came from: the caller's request or the MP4 header."
+    )
+    video_bounds_checked: bool = Field(
+        default=False, description="Whether WINDOW_BEYOND_VIDEO and TIMELINE_BEYOND_VIDEO were applied."
+    )
+    video_bounds_unchecked_reason: str | None = Field(
+        default=None, description="Why the video-bounds rules were not applied; null when they were."
+    )
+
+
+class VideoLength(BaseModel):
+    """The video length the bounds rules use, or why there is none."""
+
+    seconds: float | None
+    source: Literal["request", "mp4_header"] | None
+    unchecked_reason: str | None
 
 
 def normalize_reviewer_prompt(value: str | None) -> str | None:
@@ -195,6 +231,23 @@ def _message_content(body: Any) -> tuple[str, str | None]:
     return (choice.get("message") or {}).get("content") or "", choice.get("finish_reason")
 
 
+async def resolve_video_length(video_url: str, supplied_seconds: float | None) -> VideoLength:
+    """The caller's length when given, else the MP4 header's. Never raises: no length carries its reason."""
+    if supplied_seconds is not None:
+        if not video_duration.valid_duration_seconds(supplied_seconds):
+            # The input model already rejects these; this guards a direct call.
+            raise ValueError(f"video_duration_seconds must be a finite number above 0, got {supplied_seconds!r}")
+        return VideoLength(seconds=supplied_seconds, source="request", unchecked_reason=None)
+    try:
+        # A client of its own: the model endpoint's bearer key must never reach the object store.
+        async with httpx.AsyncClient(timeout=VIDEO_HEADER_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            seconds = await video_duration.url_duration_seconds(client, video_url)
+        return VideoLength(seconds=seconds, source="mp4_header", unchecked_reason=None)
+    except Exception as exc:  # Any failure means "length unknown", never a guess.
+        reason = str(exc) if isinstance(exc, video_duration.VideoDurationError) else f"{type(exc).__name__}: {exc}"
+        return VideoLength(seconds=None, source=None, unchecked_reason=f"video length unknown: {reason}")
+
+
 async def run_p1(
     client: httpx.AsyncClient,
     config: IncidentReportGenConfig,
@@ -202,8 +255,12 @@ async def run_p1(
     *,
     model: str | None = None,
     reviewer_prompt: str | None = None,
+    video_duration_seconds: float | None = None,
 ) -> tuple[dict[str, Any], str, str | None]:
-    """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``."""
+    """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``.
+
+    With ``video_duration_seconds`` the video-bounds rules apply; without it they cannot.
+    """
     model_name = model or config.vlm_model_name
     response = await client.post(
         _chat_completions_url(config.vlm_base_url), json=p1_request_body(model_name, video_url, reviewer_prompt)
@@ -216,7 +273,8 @@ async def run_p1(
             raise IncidentExtractionError(
                 "the VLM ran out of tokens before returning the report (finish_reason=length)"
             )
-        return incident_contract.parse_report(content), content, finish_reason
+        report = incident_contract.parse_report(content, video_duration_seconds=video_duration_seconds)
+        return report, content, finish_reason
     except IncidentExtractionError as exc:
         raise IncidentExtractionError(
             str(exc), raw_output=content, finish_reason=finish_reason, model=model_name
@@ -324,12 +382,24 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         if tool_input.model is not None and tool_input.model not in incident_contract.allowed_models():
             raise ValueError(f"Model {tool_input.model!r} is not in the incident contract allowlist")
         reviewer_prompt = normalize_reviewer_prompt(tool_input.reviewer_prompt)
+        video_length = await resolve_video_length(tool_input.video_url, tool_input.video_duration_seconds)
+        if video_length.seconds is None:
+            logger.warning(
+                "incident_report_gen: video-bounds rules not applied for %s (%s)",
+                tool_input.incident_id,
+                video_length.unchecked_reason,
+            )
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         async with httpx.AsyncClient(timeout=config.request_timeout_seconds, headers=headers) as client:
             try:
                 report, raw_output, finish_reason = await run_p1(
-                    client, config, tool_input.video_url, model=model_name, reviewer_prompt=reviewer_prompt
+                    client,
+                    config,
+                    tool_input.video_url,
+                    model=model_name,
+                    reviewer_prompt=reviewer_prompt,
+                    video_duration_seconds=video_length.seconds,
                 )
             except httpx.TimeoutException as exc:
                 raise TimeoutError(f"P1 call timed out after {config.request_timeout_seconds}s") from exc
@@ -360,6 +430,10 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             finish_reason=finish_reason,
             revision_id=revision_id,
             evidence=evidence,
+            video_duration_seconds=video_length.seconds,
+            video_duration_source=video_length.source,
+            video_bounds_checked=video_length.seconds is not None,
+            video_bounds_unchecked_reason=video_length.unchecked_reason,
         )
 
     yield FunctionInfo.create(

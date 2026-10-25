@@ -61,10 +61,11 @@
 #      the console exits (Ctrl-C).
 #   4. v2 runs the profile's standard local dev loop:
 #      `cd incident-console-v2 && npm run dev -- -H 127.0.0.1 --port 3200` (see
-#      incident-console-v2/README.md). It occupies the foreground; Ctrl-C when
+#      incident-console-v2/README.md). start.sh waits on it; Ctrl-C when
 #      you're done.
-#   5. Cleanup on exit (Ctrl-C, SIGTERM, normal exit): tears down local
-#      processes and the SSH tunnel, releases the VM active-run flock, and if
+#   5. Cleanup on exit (Ctrl-C, SIGTERM, SIGHUP, normal exit): tears down each
+#      local process with everything it started (uv -> uvicorn, npm -> next dev
+#      -> next-server) and the SSH tunnel, releases the VM active-run flock, and if
 #      this run was the last active session on kwanz-ws, stops VM native
 #      services and Docker containers in-place (.scripts/vm-stop-backend.sh).
 #
@@ -153,6 +154,7 @@ TUNNEL_PID=""
 TUNNEL_LOG=""
 MOCK_BACKEND_PID=""
 VLM_GATEWAY_PID=""
+CONSOLE_PID=""
 LOCK_SSH_PID=""
 LOCK_LOG=""
 LOCK_HELD=0
@@ -169,6 +171,26 @@ map_docker_service() {
   esac
 }
 
+# Every process below pid, found through parent pids (pgrep -P works on Linux and macOS).
+descendants() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    echo "$child"
+    descendants "$child"
+  done
+}
+
+# Stops a background job and everything it started. The job pid is only the
+# wrapper (uv, npm); its children (uvicorn, next dev, next-server) keep
+# listening when only the wrapper is killed. The tree is listed before any
+# kill, because a killed parent's children are re-parented and lost to pgrep.
+stop_tree() {
+  local pids
+  pids="$1 $(descendants "$1" | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+}
+
 cleanup() {
   if [ -n "$CLEANUP_RUNNING" ]; then
     return
@@ -180,13 +202,18 @@ cleanup() {
     VM_SSH_PID=""
   fi
   [ -n "$TUNNEL_LOG" ] && rm -f "$TUNNEL_LOG"
+  if [ -n "$CONSOLE_PID" ] && kill -0 "$CONSOLE_PID" 2>/dev/null; then
+    stop_tree "$CONSOLE_PID"
+    echo "start.sh: stopped incident-console-v2 (pid $CONSOLE_PID)."
+    CONSOLE_PID=""
+  fi
   if [ -n "$VLM_GATEWAY_PID" ] && kill -0 "$VLM_GATEWAY_PID" 2>/dev/null; then
-    kill "$VLM_GATEWAY_PID" 2>/dev/null || true
+    stop_tree "$VLM_GATEWAY_PID"
     echo "start.sh: stopped the local vlm-gateway (pid $VLM_GATEWAY_PID)."
     VLM_GATEWAY_PID=""
   fi
   if [ -n "$MOCK_BACKEND_PID" ] && kill -0 "$MOCK_BACKEND_PID" 2>/dev/null; then
-    kill "$MOCK_BACKEND_PID" 2>/dev/null || true
+    stop_tree "$MOCK_BACKEND_PID"
     echo "start.sh: stopped the local mock backend (pid $MOCK_BACKEND_PID)."
     MOCK_BACKEND_PID=""
   fi
@@ -220,7 +247,7 @@ cleanup() {
     fi
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT INT TERM HUP
 
 if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
@@ -581,7 +608,12 @@ cd "${SCRIPT_DIR}/incident-console-v2"
 npm install
 
 echo "  v2 running at http://localhost:3200 — Ctrl-C here (or close this terminal) stops v2 and any backgrounded local services/tunnel."
-npm run dev -- -H 127.0.0.1 --port 3200
-console_rc=$?
+# A background job and wait, not a foreground command: bash runs a trap only
+# after the foreground command returns, so a SIGTERM to start.sh alone would
+# wait on npm forever. wait returns as soon as a trapped signal arrives.
+npm run dev -- -H 127.0.0.1 --port 3200 &
+CONSOLE_PID=$!
+console_rc=0
+wait "$CONSOLE_PID" || console_rc=$?
 cleanup
 exit "$console_rc"

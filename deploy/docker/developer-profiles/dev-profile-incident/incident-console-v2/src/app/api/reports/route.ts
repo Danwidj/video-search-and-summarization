@@ -158,11 +158,9 @@ export async function GET(request: Request) {
         ? summaries
         : await Promise.all(
             summaries.map(async (report) => {
-              const [thumbnailUrl, evidenceThumbnailUrl] = await Promise.all([
-                isValidR2Key(report.r2Key) ? sign(thumbnailKeyForVideo(report.r2Key)) : undefined,
-                report.thumbnail ? sign(report.thumbnail) : undefined,
-              ]);
-              return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}), ...(evidenceThumbnailUrl ? { evidenceThumbnailUrl } : {}) };
+              // Only the video's screenshot is signed: a card shows MVP1's skeleton when it is missing, never an evidence crop.
+              const thumbnailUrl = isValidR2Key(report.r2Key) ? await sign(thumbnailKeyForVideo(report.r2Key)) : undefined;
+              return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}) };
             }),
           );
 

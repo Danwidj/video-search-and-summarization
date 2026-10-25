@@ -12,7 +12,7 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119--
 >
 > **Open items for the eval owner**
 > 1. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Decide eval's storage before any live run against finals.
-> 2. **Retrieval benchmark (Track R):** the specification is this document, with the §8 proposals awaiting approval; the harness, query set and runs are not started.
+> 2. **Retrieval benchmark (Track R):** the specification is this document, with the §8 proposals awaiting approval. Work-order step 1, the offline metrics module `eval/retrieval_metrics.py`, landed on 2026-10-25 ([§10.1](#101-step-1-retrieval-metrics-module-landed)); the query set, labels, corpus manifest, harness and runs are not started.
 > 3. **P1 benchmark under `core-scored-v1`:** run it (malformed-ID frequency, per-model core and enrichment failure rates) once item 1 is resolved.
 > 4. **Contract ID patterns:** consider a contract version with ID patterns only if the malformed-ID evidence justifies it; it changes eval.
 
@@ -62,7 +62,7 @@ Paths are relative to the profile directory, except paths starting with `service
 |---|---|---|
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `kwanz-ws` | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
-| Corpus size (2026-10-24) | The finals corpus may be empty: the test-data inventory counted 6 `evidence_crops` rows, all from the end-to-end test videos that the cleanup then removed. Rows return as revisions are marked official, analysed or saved | [status](../status.md#3-database-status) |
+| Corpus size (2026-10-25) | The finals corpus is empty: a read-only count found 0 `evidence_crops` rows (the 6 that existed belonged to the end-to-end test videos the 2026-10-24 cleanup removed) and a NULL `embedding` on all 6 AI revisions; 12 of the 18 videos have no revision. Rows return as revisions are marked official, analysed or saved | [status](../status.md#3-database-status) |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
 | Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
 | Critic | Always on, with no flag. Each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
@@ -70,7 +70,7 @@ Paths are relative to the profile directory, except paths starting with `service
 | Detector | `DefaultDetector` asks the remote VLM for one `bbox_2d` on the keyframe at the item's `timestamp_seconds`. With no box, the whole frame is stored (`[0,0,1000,1000]`, confidence 0.0). It sits behind the `OpenVocabularyDetector` port. | `services/agent/src/vss_agents/utils/crop_evidence.py`; [decisions](../decisions.md) 2026-10-18 |
 | Latency and cost signals | Only the end-to-end `execution_time_ms`. Critic token usage and per-call latency are not recorded. | `incident_search.py` |
 | `/analyze` | Runs the **same one-shot P1 call** as gateway mode and `eval/`, using the vendored copy of the same contract. It skips RP1 when `skip_rp1` is set. The model defaults to the VM's `VLM_NAME`; a request may name any allowlisted `model`. When the detector is available (`DefaultDetector` needs `VLM_GATEWAY_API_KEY` or `OPENAI_API_KEY`), best-effort cropping runs after P1 inside the same request: one remote VLM box call per entity, instrument and asset (up to 4 attempts each on 429/5xx), uploaded to R2 when R2 is configured and listed in the AI revision's `evidence`. It does not change the report, but it adds paid calls and wall-clock time to every `/analyze` response. There is no perception, tool calling or subagents. | `services/agent/src/vss_agents/tools/incident_report_gen.py`; `services/agent/src/vss_agents/api/incident_analyze.py` |
-| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on `kwanz-ws` VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot still holds the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
+| Backends | Live agent on VM loopback, reached through the SSH tunnel at `http://localhost:8000` (its models and embeddings are remote; on `kwanz-ws` VSS uses GPU 0 only, [GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)). Both mocks (:7777, launched by `start.sh --mode mock`, and standalone :7778) answer from one finals snapshot captured 2026-10-24, scoring hits by the share of query words they contain, with placeholder critic verdicts and crop URLs; the snapshot was regenerated on 2026-10-25 and holds the six finals AI revisions, without the three test videos the cleanup removed. Both mocks implement `hide_rejected` and the 0.0 `min_similarity` default. | [VM API contracts](../vm-api-contracts.md); `mock-backend/` |
 
 ## 2. Tracks (proposed, P-1)
 
@@ -266,7 +266,7 @@ For a query `q` with relevant set `Rel(q)`, a list `L` (one of `B_K`, `S_K`, `F_
 
 - The scenario brief, query set, labels, κ, leakage report and corpus manifest are committed.
 - One valid N = 3 run reports all §3.5 metrics for `B_K`, `S_K` and `F_K` at every K, plus the §3.6 differences and latency/cost, broken down by class, with the corpus description and limitations.
-- Hermetic tests in `eval/tests/` cover every edge case in §3.4 and §3.5.
+- Hermetic tests in `eval/tests/` cover every edge case in §3.4 and §3.5. Done for the metrics (`eval/tests/test_retrieval_metrics.py`, [§10.1](#101-step-1-retrieval-metrics-module-landed)); the corpus-drift and request-failure cases belong to steps 2 and 3.
 
 ## 4. Track X: extraction parity (gateway vs agent)
 
@@ -392,11 +392,35 @@ These are proposed evaluation policies, not agreed decisions. Once one is approv
 
 Each item is its own PR from `main`, rebased onto `main` before merge. This handoff PR merges by itself.
 
-1. **Retrieval metrics** (hermetic): a pure module implementing §3.4–3.5, with tests.
+1. **Retrieval metrics** (hermetic): a pure module implementing §3.4–3.5, with tests. **Landed 2026-10-25** ([§10.1](#101-step-1-retrieval-metrics-module-landed)).
 2. **Query set, labels and corpus manifest** (§3.1–3.3): the format, validators and the leakage check, with tests, plus the labelled set itself.
 3. **Retrieval harness:** `eval/scripts/eval_retrieval.py`, using the live agent as in §3.7; tests run against a fake transport.
 4. **Critic ablation report** (§3.6), from the step 3 output.
 5. **Track E**, **Track D** and **Track X** can proceed in parallel once their inputs exist. Track F waits for its entry criteria.
+
+### 10.1 Step 1: retrieval metrics module (landed)
+
+`eval/retrieval_metrics.py`, standard library plus numpy (already an eval dependency), no I/O. Tests: `eval/tests/test_retrieval_metrics.py` (part of `uv run pytest tests/`).
+
+- **Input:** one `QueryInstance` per (seed, variant, repeat): `seed_id`, `variant_id`, `repeat`, `query_class`, the candidate `pool` in returned order (`Candidate(key, similarity, verdict)`) and the variant's `relevant` keys. An empty `relevant` set makes a zero-relevant (negative) variant. `validate_instances` refuses a repeated instance, a seed with two classes and a variant whose labels change between repeats.
+- **Lists and metrics:** `cut_list` gives `B`, `S` and `F` exactly as §3.4 defines them (`drop_unverified=True` for the sensitivity variant; `B` never changes); `list_metrics` gives every §3.5 metric, `None` where undefined; `boundary_tie` reports a K / K+1 similarity tie.
+- **Aggregation and intervals:** `seed_values` (repeats, then eligible variants), `estimate` (macro mean over seeds with a cluster-bootstrap interval), `paired_difference` (per-seed differences, then bootstrapped; returned precision on the instances where both lists are non-empty, with `returned_precision_drops`), and `summarize`, which returns all of it per K, list, comparison and class as JSON data.
+- **Choices the spec left open** ([decision](../decisions.md#2026-10-25-retrieval-metrics-semantics-for-the-cases-the-eval-spec-leaves-open)):
+  - A duplicate key in a pool keeps its slot but is never a second hit: it counts in `|L|`, coverage, MRR positions and false positives, and is counted in `duplicates`.
+  - Intervals are 95% percentile intervals (linear interpolation) over 10,000 resamples by default; `seed` has no default, so every result names its bootstrap seed. Draws come from `random.Random(seed).random()`, so a result is reproducible from its seed and does not depend on input order.
+  - Coverage and the empty share use every instance; zero-relevant metrics use only zero-relevant variants, aggregated the same way (repeats, variants, seeds).
+- **Not in step 1:** the critic-call cost per list and the latency tables (§3.6, step 4), request handling, run metadata and validity flags (§3.7, steps 3 and P-4), the corpus manifest and drift check (§3.1, P-3), and no number of repeats is assumed (P-7).
+
+### 10.2 What steps 2 to 5 still need
+
+| Step | Needs before it can start | Open decision or dependency |
+|---|---|---|
+| 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: eval storage is undecided and `eval/db.py` still maps tables finals dropped) |
+| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (stopped since 2026-10-24, [status](../status.md#4-known-issues) item 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
+| 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
+| 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X needs eval storage (open item 1) |
+
+The finals corpus is empty today (§1.2), so no step past 2 can produce more than a plumbing run until reviewers mark official revisions or re-analyse videos with the agent.
 
 **Definition of done:**
 - Each track's acceptance criteria are met.

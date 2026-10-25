@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -79,16 +78,12 @@ def test_invalid_response_fixtures():
         assert len(errors) > 0, f"Expected {path.name} to fail validation, but it passed."
 
 
-def test_mock_backend_response_validates_against_contract():
-    mock_src = Path(__file__).resolve().parents[2] / "mock-backend" / "base_profile_mock" / "src"
-    sys.path.insert(0, str(mock_src))
-
-    from base_profile_mock.routers.incident_search import router as search_router
+def test_mock_backend_response_validates_against_contract(mock_search_router):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    app.include_router(search_router)
+    app.include_router(mock_search_router)
     client = TestClient(app)
     resp = client.post("/api/v1/incidents/search", json={"query": "machete or weapon", "top_k": 5})
     assert resp.status_code == 200

@@ -38,7 +38,7 @@ def test_search_minimal_request_returns_200():
 
 def test_search_filters_by_item_type():
     client = TestClient(create_app())
-    resp = client.post("/api/v1/incidents/search", json={"query": "vehicle", "filters": {"item_types": ["asset"]}})
+    resp = client.post("/api/v1/incidents/search", json={"query": "car", "filters": {"item_types": ["asset"]}})
     assert resp.status_code == 200
     data = resp.json()
     assert data["total_hits"] > 0
@@ -59,16 +59,17 @@ def test_search_filters_by_incident_type():
         assert hit["incident"]["incident_type"] == "assault"
 
 
-def test_search_filters_by_road_accident_taxonomy():
+def test_search_filters_by_a_multi_word_incident_type():
+    # Finals holds no road accident since the 2026-10-24 test-data cleanup; animal attack is the multi-word type left.
     client = TestClient(create_app())
     resp = client.post(
         "/api/v1/incidents/search",
-        json={"query": "collision", "filters": {"incident_types": ["road accident"]}},
+        json={"query": "monkey", "filters": {"incident_types": ["animal attack"]}},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["total_hits"] > 0
-    assert all(hit["incident"]["incident_type"] == "road accident" for hit in data["hits"])
+    assert all(hit["incident"]["incident_type"] == "animal attack" for hit in data["hits"])
 
 
 def test_search_respects_top_k():
@@ -159,3 +160,18 @@ def test_search_does_not_present_a_keyword_mock_as_semantic():
         assert hit["critic"]["verdict"] == "unverified"
         assert hit["critic"]["confidence"] is None
         assert "keywords" in hit["critic"]["rationale"]
+
+
+# The end-to-end test videos removed from finals and R2 on 2026-10-24 (status.md, database status).
+DELETED_FINALS_VIDEOS = ("vc35c6116a88c37d51c9", "v614eba7ad8510751a8c", "va978aaf39b01270294a")
+
+
+def test_the_snapshot_holds_no_video_deleted_from_finals():
+    client = TestClient(create_app())
+    served = set()
+    for query in ("person", "car", "monkey", "assault"):
+        hits = client.post("/api/v1/incidents/search", json={"query": query, "top_k": 50}).json()["hits"]
+        rows = client.post("/api/v1/incidents/revisions/search", json={"query": query, "top_k": 50}).json()
+        served |= {hit["incident"]["incident_id"] for hit in hits} | {row["video_id"] for row in rows}
+    assert len(served) == 6, "the mock still serves every finals video in the snapshot"
+    assert served.isdisjoint(DELETED_FINALS_VIDEOS)

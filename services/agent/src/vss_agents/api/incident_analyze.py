@@ -19,11 +19,15 @@
 ``incident_id`` and a signed R2 URL for the uploaded video. The route runs the
 ``incident_report_gen`` tool - the shared incident contract's P1 -> RP1 calls - and returns
 the validated contract report plus the ``report_revisions`` id of the AI revision the agent
-inserted (``revision_id``). Re-generation is the same call with an optional ``model`` and a
+inserted (``revision_id``). The video-bounds rules apply with the caller's
+``video_duration_seconds`` or, without one, the length the agent reads from the MP4 header; the
+response's ``video_bounds_checked`` and ``video_bounds_unchecked_reason`` say whether they did.
+Re-generation is the same call with an optional ``model`` and a
 human-typed ``reviewer_prompt``; it starts a new AI revision and copies nothing from earlier ones.
 The agent needs no VST lookup: the console owns the ``videos`` row and signs the URL.
 
-Status codes: 422 when the model output fails ``core-scored-v1`` (nothing is persisted; the
+Status codes: 422 for an invalid body (including a ``video_duration_seconds`` that is not a
+finite number above 0) or when the model output fails ``core-scored-v1`` (nothing is persisted; the
 detail carries ``message``, ``raw_output``, ``finish_reason``, ``model`` and ``contract_version``
 so the caller can record the attempt), 400 for a ``model`` outside the contract allowlist,
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
@@ -78,6 +82,16 @@ class AnalyzeIncidentRequest(BaseModel):
     skip_rp1: bool = Field(
         default=False, description="Run P1 only (incident-console-v2 agent mode); report_text stays null."
     )
+    video_duration_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        strict=True,
+        description=(
+            "Video length in seconds as the caller read it (incident-console-v2 reads the MP4 header in R2). "
+            "When absent the agent reads the header from video_url itself."
+        ),
+    )
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
@@ -120,6 +134,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["model"] = body.model
         if body.reviewer_prompt:
             tool_input["reviewer_prompt"] = body.reviewer_prompt
+        if body.video_duration_seconds is not None:
+            tool_input["video_duration_seconds"] = body.video_duration_seconds
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)

@@ -95,7 +95,7 @@ export function HitCard({
         <RelationshipLine relationship={relationship} />
       </div>
       <Link className="flex items-center gap-3 border-t border-ink/8 bg-canvas/60 p-3 text-xs" href={reportHref(hit, version)}>
-        <IncidentThumbnail className="h-10 w-16 shrink-0 rounded-md" urls={[version?.thumbnailUrl]} />
+        <IncidentThumbnail className="h-10 w-16 shrink-0 rounded-md" url={version?.thumbnailUrl} />
         <span className="min-w-0 flex-1">
           <b className="block truncate">{incident.title || incident.incidentType}</b>
           <span className="block truncate text-ink/50">
