@@ -9,7 +9,7 @@
 import { useState } from 'react';
 
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
-import { reportThumbnailView } from '@/lib/ui/thumbnail';
+import { libraryCardThumbnail } from '@/lib/ui/thumbnail';
 import { severityClass } from '@/sections/library/components/Shared';
 
 export function ReportThumbnail({
@@ -23,7 +23,7 @@ export function ReportThumbnail({
 }) {
   // One failed load shows the skeleton for good: the image is not requested again.
   const [failed, setFailed] = useState(false);
-  const view = reportThumbnailView(thumbnailUrl, failed);
+  const { image: view, severityLabel, kindLabel } = libraryCardThumbnail({ thumbnailUrl, severity, kind }, failed);
   return (
     // A figure (not a div) so the label belongs to a role that supports it; Tailwind's base styles zero its margins.
     <figure aria-label="Video screenshot preview" className="relative aspect-video overflow-hidden bg-[#dfe3dc]">
@@ -43,14 +43,12 @@ export function ReportThumbnail({
           </div>
         </div>
       )}
-      <span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(severity)}`}>
-        Severity {severity}
-      </span>
+      <span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-xs font-bold ${severityClass(severity)}`}>{severityLabel}</span>
       <span
         className="absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink"
         data-testid="library-kind-badge"
       >
-        {kind === 'human' ? 'Human' : 'AI'}
+        {kindLabel}
       </span>
     </figure>
   );
