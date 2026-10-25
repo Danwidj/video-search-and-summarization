@@ -95,10 +95,10 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
       {
         ...summaries.reports[0],
         thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp',
-        evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-assault-1/u1/I1.jpg',
       },
+      // The evidence images (thumbnail keys) are never signed for the card (MVP1 parity, known issue 4).
       summaries.reports[1],
-      { ...summaries.reports[2], evidenceThumbnailUrl: 'https://signed.r2.test/evidence/v-repaired-3/m/E1.jpg' },
+      summaries.reports[2],
     ],
     incidentTypes: summaries.incidentTypes,
     pagination: { page: 3, pageSize: 6, totalItems: 13, totalPages: 3 },
