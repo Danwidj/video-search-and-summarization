@@ -7,12 +7,30 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const deletedObjects = [];
+// The keys an R2 listing returns, by prefix; and keys whose removal fails.
+let storedEvidence = [];
+let failingKeys = new Set();
+const listedPrefixes = [];
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
+        if (command.constructor.name === 'ListObjectsV2Command') {
+          listedPrefixes.push(command.input.Prefix);
+          const keys = storedEvidence.filter((key) => key.startsWith(command.input.Prefix));
+          return Promise.resolve({
+            Contents: keys.map((Key) => ({ Key, LastModified: new Date('2026-10-01T00:00:00Z') })),
+            IsTruncated: false,
+          });
+        }
+        if (failingKeys.has(command.input?.Key)) return Promise.reject(new Error('R2 refused'));
         deletedObjects.push(command.input?.Key);
         return Promise.resolve({});
+      }
+    },
+    ListObjectsV2Command: class ListObjectsV2Command {
+      constructor(input) {
+        this.input = input;
       }
     },
     GetObjectCommand: class {
@@ -30,7 +48,7 @@ mock.module('@aws-sdk/client-s3', {
         this.input = input;
       }
     },
-    DeleteObjectCommand: class {
+    DeleteObjectCommand: class DeleteObjectCommand {
       constructor(input) {
         this.input = input;
       }
@@ -53,6 +71,9 @@ beforeEach(() => {
     R2_BUCKET: 'd',
   });
   deletedObjects.length = 0;
+  listedPrefixes.length = 0;
+  storedEvidence = [];
+  failingKeys = new Set();
 });
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -81,6 +102,12 @@ const call = () =>
   });
 
 test('deleting a video removes its objects, the video row, and the run records that name only it and no revision uses', async () => {
+  storedEvidence = [
+    'evidence/v-target/0b9c/E1.jpg',
+    'evidence/v-target/0b9c/I1.jpg',
+    'evidence/v-target/7f21/E1.jpg',
+    'evidence/v-target-2/aa11/E1.jpg',
+  ];
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
@@ -127,11 +154,33 @@ test('deleting a video removes its objects, the video row, and the run records t
     deletes.indexOf('videos?id=eq.v-target') < deletes.indexOf('model_runs?id=eq.m-failed'),
     'the video (and its cascaded revisions) goes first',
   );
+  assert.deepEqual(listedPrefixes, ['evidence/v-target/'], 'the trailing slash keeps v-target-2 out');
   assert.deepEqual(
     deletedObjects.sort(),
-    ['thumbnails/uploads/s/v.mp4.webp', 'uploads/s/v.mp4'],
-    'only the video object and its thumbnail; evidence images stay',
+    [
+      'evidence/v-target/0b9c/E1.jpg',
+      'evidence/v-target/0b9c/I1.jpg',
+      'evidence/v-target/7f21/E1.jpg',
+      'thumbnails/uploads/s/v.mp4.webp',
+      'uploads/s/v.mp4',
+    ],
+    'the video object, its thumbnail and every evidence image of the video (known issue 2), and nothing of another video',
   );
+});
+
+test('an evidence image that cannot be removed keeps the video row, so the delete can be repeated', async () => {
+  storedEvidence = ['evidence/v-target/0b9c/E1.jpg', 'evidence/v-target/0b9c/I1.jpg'];
+  failingKeys = new Set(['evidence/v-target/0b9c/E1.jpg']);
+  const deletes = [];
+  globalThis.fetch = async (url, init = {}) => {
+    if (init.method === 'DELETE') deletes.push(String(url));
+    return new Response(JSON.stringify([{ id: 'v-target', filepath: 'uploads/s/v.mp4' }]));
+  };
+  const response = await call();
+  assert.equal(response.status, 500);
+  assert.match((await response.json()).error, /1 of 2 evidence images.*evidence\/v-target\/0b9c\/E1\.jpg: R2 refused/);
+  assert.deepEqual(deletes, [], 'no row is deleted');
+  assert.ok(deletedObjects.includes('evidence/v-target/0b9c/I1.jpg'), 'the other images are still removed');
 });
 
 test('a video without a stored object is refused and nothing is deleted', async () => {

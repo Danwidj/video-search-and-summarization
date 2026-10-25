@@ -8,14 +8,15 @@ import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { deleteR2Video } from '@/lib/r2/config';
 import { thumbnailKeyForVideo } from '@/lib/r2/key';
+import { R2EvidenceObjectStore } from '@/modules/reports/infrastructure/r2/evidence-object-store';
 
 // Revisions are append-only, so the only delete is the whole video and every
-// revision of it. Evidence images under evidence/<videoId>/ stay in R2 (evidence-sweep cannot reach them once the video is gone).
+// revision of it, with its video, thumbnail and evidence images in R2.
 export async function DELETE(_request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
     const { videoId } = await context.params;
     const config = getServiceConfiguration();
-    await deleteVideoAndReports(getDbAdapters(config).videos, videoId, (storageKey: string) =>
+    await deleteVideoAndReports(getDbAdapters(config).videos, new R2EvidenceObjectStore(config), videoId, (storageKey: string) =>
       Promise.all([deleteR2Video(config, storageKey), deleteR2Video(config, thumbnailKeyForVideo(storageKey))]),
     );
     return NextResponse.json({ deleted: true });
