@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -66,3 +68,25 @@ def db_reports(incident_db, monkeypatch):
     _db.reset_cache()
     monkeypatch.setattr("db.get_db", lambda: incident_db)
     return DBReports(incident_db)
+
+
+MOCK_BACKEND_SRC = Path(__file__).resolve().parents[2] / "mock-backend" / "base_profile_mock" / "src"
+
+
+@pytest.fixture
+def mock_search_router(monkeypatch):
+    """The base_profile_mock search router, imported from the mock's source tree.
+
+    eval's environment does not install the mock's own dependencies. The router
+    reads one setting at import time (``settings.public_base_url``) from a
+    pydantic-settings module, so when pydantic-settings is missing that module
+    is replaced by its defaults from ``base_profile_mock/config.py``.
+    """
+    monkeypatch.syspath_prepend(str(MOCK_BACKEND_SRC))
+    if importlib.util.find_spec("pydantic_settings") is None and "base_profile_mock.config" not in sys.modules:
+        config = ModuleType("base_profile_mock.config")
+        config.settings = SimpleNamespace(port=7777, public_base_url="http://127.0.0.1:7777")
+        monkeypatch.setitem(sys.modules, "base_profile_mock.config", config)
+    from base_profile_mock.routers.incident_search import router
+
+    return router

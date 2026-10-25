@@ -11,6 +11,11 @@ import {
   type IncidentAgent,
 } from '@/modules/analysis/domain/IncidentAgent';
 
+/** The agent accepts only a finite length above zero; anything else is left for it to read itself. */
+function isUsableDuration(seconds: number | null): seconds is number {
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0;
+}
+
 export class HttpIncidentAgent implements IncidentAgent {
   private readonly baseUrl: string;
 
@@ -31,6 +36,7 @@ export class HttpIncidentAgent implements IncidentAgent {
           model: request.model,
           skip_rp1: true,
           ...(request.additionalInstruction ? { reviewer_prompt: request.additionalInstruction } : {}),
+          ...(isUsableDuration(request.videoDurationSeconds) ? { video_duration_seconds: request.videoDurationSeconds } : {}),
         }),
         signal,
       });

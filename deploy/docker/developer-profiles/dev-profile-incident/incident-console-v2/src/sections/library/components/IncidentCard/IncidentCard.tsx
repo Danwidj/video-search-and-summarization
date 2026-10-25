@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 
-import { IncidentThumbnail, SeverityChip } from '@/sections/library/components/Shared';
+import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { formatTimestamp } from '@/lib/time';
 
@@ -29,12 +29,7 @@ export function IncidentCard({
       id={`report-${item.revisionId}`}
       tabIndex={-1}
     >
-      <div className="relative">
-        <IncidentThumbnail urls={[item.thumbnailUrl, item.evidenceThumbnailUrl]} />
-        <span className="absolute left-3 top-3">
-          <SeverityChip level={item.severity} />
-        </span>
-      </div>
+      <ReportThumbnail kind={item.kind} severity={item.severity} thumbnailUrl={item.thumbnailUrl} />
       <div className="flex flex-1 flex-col p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p>
         <h2 className="mt-2 line-clamp-2 min-h-[3.2rem] text-xl font-semibold tracking-[-0.025em]">{item.title}</h2>

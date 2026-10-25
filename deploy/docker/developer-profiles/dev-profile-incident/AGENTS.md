@@ -45,6 +45,7 @@ uv sync && uv run pytest tests/
 cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'psycopg[binary]' python test_baseline.py
 
 # services/agent incident code: see services/agent/AGENTS.md (ruff, ruff format, mypy, pytest)
+# off NVIDIA's network `uv sync` there fails (stale uv.lock, nvdataset index, pycairo build); the venv workaround is in .docs/status.md known issue 6
 ```
 
 ## Architecture rules

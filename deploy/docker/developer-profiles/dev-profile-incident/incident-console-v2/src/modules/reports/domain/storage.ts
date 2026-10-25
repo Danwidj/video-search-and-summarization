@@ -207,10 +207,9 @@ export interface ReportLibraryItem {
   generatedAt: string | null;
   uploadedAt?: string | null;
   model: string;
+  /** Signed URL of the video's upload-time screenshot, the card's only image (as in MVP1). */
   thumbnailUrl?: string;
-  /** Signed URL of the first evidence image, the card's fallback when the video has no screenshot. */
-  evidenceThumbnailUrl?: string;
-  /** R2 key of the shown revision's first evidence image; the route signs it into evidenceThumbnailUrl. */
+  /** R2 key of the shown revision's first evidence image, as the summary RPC returns it; the library does not show it. */
   thumbnail?: string | null;
   /** When the official revision was marked official (stored, naive UTC); null with no official revision. */
   officialSince?: string | null;

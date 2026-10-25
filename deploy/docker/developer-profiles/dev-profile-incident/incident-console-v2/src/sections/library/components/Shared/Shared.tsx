@@ -15,21 +15,14 @@ export function SeverityChip({ level }: { level: number }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${severityClass(level)}`}>Severity {level}</span>;
 }
 
-/** The video screenshot, else the incident's first evidence image, else a placeholder. */
-export function IncidentThumbnail({ urls, className = 'aspect-video' }: { urls: (string | undefined)[]; className?: string }) {
-  const candidates = urls.filter((url): url is string => Boolean(url));
-  const [failed, setFailed] = useState(0);
-  const view = reportThumbnailView(candidates[failed], failed >= candidates.length);
+/** A small video screenshot (an evidence hit's incident), else a placeholder; a failed load is not retried. */
+export function IncidentThumbnail({ url, className = 'aspect-video' }: { url?: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  const view = reportThumbnailView(url, failed);
   return (
     <div aria-label="Video screenshot preview" className={`relative overflow-hidden bg-[#dfe3dc] ${className}`}>
       {view.kind === 'image' ? (
-        <img
-          alt=""
-          className="h-full w-full object-cover"
-          loading={view.loading}
-          onError={() => setFailed((count) => count + 1)}
-          src={view.src}
-        />
+        <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={() => setFailed(true)} src={view.src} />
       ) : (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-white/35 to-transparent">
           <div className="h-10 w-14 rounded-xl bg-white/55" />

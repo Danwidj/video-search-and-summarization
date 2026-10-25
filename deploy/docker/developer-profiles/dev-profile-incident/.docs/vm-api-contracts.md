@@ -133,14 +133,15 @@ Request:
 | `model` | string | agent `VLM_NAME` | a model id from the `contracts/inference.json` allowlist; anything else is `400` |
 | `reviewer_prompt` | string | none | max 1000 chars (`422` above). Added to the report prompt for this run only, framed as `ADDITIONAL REVIEWER CONTEXT FOR THIS VIDEO`; copies nothing from earlier revisions |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
+| `video_duration_seconds` | number | none | video length in seconds as the caller read it; a finite number above 0, else `422`. Without it the agent reads the MP4 header from `video_url` (ranged GETs) |
 
-Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `timestamp_seconds`, for entities also `first_seen_seconds` and `last_seen_seconds` (falling back to `timestamp_seconds` for reports without them), `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image). Takes tens of seconds to minutes (VLM calls); use a long timeout.
+Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `timestamp_seconds`, for entities also `first_seen_seconds` and `last_seen_seconds` (falling back to `timestamp_seconds` for reports without them), `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image), and the video-bounds outcome: `video_duration_seconds` (the length `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` used, or `null`), `video_duration_source` (`request`, `mp4_header` or `null`), `video_bounds_checked` and `video_bounds_unchecked_reason` (why the rules did not apply, e.g. `video length unknown: a ranged read of the video returned HTTP 403`). Takes tens of seconds to minutes (VLM calls); use a long timeout.
 
 Errors:
 
 | Status | `detail` |
 |---|---|
-| 422 | validation, or contract violation: object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted by the agent; the caller records the attempt) |
+| 422 | validation (including an invalid `video_duration_seconds`), or contract violation (including a window beyond the video): object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted by the agent; the caller records the attempt) |
 | 501 | string: `incident_report_gen tool is not configured on this profile` |
 | 504 | string: `Incident analysis timed out: ...` (P1 timeout) |
 | 500 | string: `Analysis failed: ...` |
