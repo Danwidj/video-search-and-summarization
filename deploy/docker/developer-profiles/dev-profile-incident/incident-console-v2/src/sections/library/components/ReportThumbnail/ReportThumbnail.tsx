@@ -25,8 +25,10 @@ export function ReportThumbnail({
   const [failed, setFailed] = useState(false);
   const view = reportThumbnailView(thumbnailUrl, failed);
   return (
-    <div aria-label="Video screenshot preview" className="relative aspect-video overflow-hidden bg-[#dfe3dc]">
+    // A figure (not a div) so the label belongs to a role that supports it; Tailwind's base styles zero its margins.
+    <figure aria-label="Video screenshot preview" className="relative aspect-video overflow-hidden bg-[#dfe3dc]">
       {view.kind === 'image' ? (
+        // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server; MVP1 used a plain lazy img
         <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={() => setFailed(true)} src={view.src} />
       ) : (
         <div data-testid="library-thumbnail-skeleton">
@@ -50,6 +52,6 @@ export function ReportThumbnail({
       >
         {kind === 'human' ? 'Human' : 'AI'}
       </span>
-    </div>
+    </figure>
   );
 }
