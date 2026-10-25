@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from vss_agents import incident_contract
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
@@ -153,3 +154,51 @@ def test_reported_model_is_the_model_the_tool_ran():
     client, _ = _client(result=OUTPUT.model_copy(update={"model": model}))
     response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model": model})
     assert response.json()["model"] == model
+
+
+def test_the_callers_video_length_is_forwarded_to_the_tool():
+    client, tool = _client(result=OUTPUT)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "skip_rp1": True, "video_duration_seconds": 12.5}
+    )
+    assert response.status_code == 200
+    tool.ainvoke.assert_awaited_once_with(
+        {"incident_id": "v1", "video_url": VIDEO_URL, "skip_rp1": True, "video_duration_seconds": 12.5}
+    )
+
+
+@pytest.mark.parametrize("raw_value", ["0", "-3", "true", '"12"', "[]"])
+def test_an_invalid_video_length_is_422_and_never_reaches_the_tool(raw_value):
+    client, tool = _client(result=OUTPUT)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze",
+        content=f'{{"video_url": "{VIDEO_URL}", "video_duration_seconds": {raw_value}}}',
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "video_duration_seconds"]
+    tool.ainvoke.assert_not_awaited()
+
+
+def test_the_video_bounds_outcome_reaches_the_caller():
+    unchecked = OUTPUT.model_copy(update={"video_bounds_unchecked_reason": "video length unknown: HTTP 403"})
+    client, _ = _client(result=unchecked)
+    body = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()
+    assert body["video_bounds_checked"] is False
+    assert body["video_duration_seconds"] is None
+    assert body["video_bounds_unchecked_reason"] == "video length unknown: HTTP 403"
+
+
+@pytest.mark.parametrize("raw_value", ["NaN", "Infinity", "1e400"])
+def test_a_non_finite_video_length_never_reaches_the_tool(raw_value):
+    # Python's JSON parser accepts these non-standard literals. Pydantic rejects them, but FastAPI cannot
+    # echo a non-finite input back in the 422 body, so the client sees an error status either way.
+    client, tool = _client(result=OUTPUT)
+    client = TestClient(client.app, raise_server_exceptions=False)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze",
+        content=f'{{"video_url": "{VIDEO_URL}", "video_duration_seconds": {raw_value}}}',
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code >= 400
+    tool.ainvoke.assert_not_awaited()

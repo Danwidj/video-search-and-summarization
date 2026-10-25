@@ -256,6 +256,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.equal(agentBody.model_run_id, report.modelRunId);
   assert.equal(agentBody.skip_rp1, true, 'agent mode runs P1 only, like gateway mode');
   assert.equal(agentBody.video_url, 'https://signed.r2.test/uploads/sensor-1/video.mp4');
+  assert.equal(agentBody.video_duration_seconds, 30, 'the agent applies the video-bounds rules with the same length');
 
   // Database persistence verification: records via persistContractRun
   const supabaseWrites = recordedCalls
@@ -272,6 +273,20 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   assert.equal(modelRun.model_name, 'agent/vlm-on-the-vm');
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
   assert.deepEqual(notes.response, { content: JSON.stringify(rawContract), finishReason: 'stop' }, 'only what the agent returned');
+});
+
+test('agent mode: an unreadable video length is not sent, so the agent reads the header itself', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  videoBytes = null; // HeadObject answers, but the ranged reads find no MP4 header
+  const recordedCalls = [];
+  globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-nolen/clip.mp4');
+  const response = await POST(jsonRequest({ sensorId: 's-nolen', filepath: 'uploads/s-nolen/clip.mp4', filename: 'clip.mp4' }));
+  assert.equal(response.status, 200);
+  const agentBody = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
+  assert.ok(!('video_duration_seconds' in agentBody));
+  const { notes } = attemptNotesFrom(recordedCalls);
+  assert.equal(notes.request.videoDurationSeconds, null);
+  assert.equal(notes.validation.videoBoundsChecked, false, 'the console records the rule as unchecked');
 });
 
 function agentFetch(recordedCalls, reply, r2Key) {

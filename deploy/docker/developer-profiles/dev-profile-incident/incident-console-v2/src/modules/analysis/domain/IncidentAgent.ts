@@ -12,6 +12,12 @@ export interface AgentAnalyzeRequest {
   model: string;
   /** The reviewer prompt, sent only when present. */
   additionalInstruction: string | null;
+  /**
+   * The video length the console read from the MP4 header, so the agent applies the
+   * video-bounds rules with the same length; null when unknown (the agent then reads
+   * the header itself).
+   */
+  videoDurationSeconds: number | null;
 }
 
 export interface AgentHttpResponse {

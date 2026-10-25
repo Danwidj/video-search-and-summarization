@@ -289,7 +289,7 @@ export async function runContractAnalysis(
       let agentResponse: AgentHttpResponse;
       try {
         agentResponse = await ports.agent.analyze(
-          { videoId: input.videoId, videoUrl: playbackUrl, modelRunId, model: model.id, additionalInstruction },
+          { videoId: input.videoId, videoUrl: playbackUrl, modelRunId, model: model.id, additionalInstruction, videoDurationSeconds },
           AbortSignal.timeout(model.timeout_seconds * 1000),
         );
       } catch (error) {

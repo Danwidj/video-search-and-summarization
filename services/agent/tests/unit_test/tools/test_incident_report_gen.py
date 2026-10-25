@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 from typing import ClassVar
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -37,11 +39,15 @@ from vss_agents.tools.incident_report_gen import incident_report_gen
 from vss_agents.tools.incident_report_gen import normalize_reviewer_prompt
 from vss_agents.tools.incident_report_gen import p1_request_body
 from vss_agents.tools.incident_report_gen import persist_revision
+from vss_agents.tools.incident_report_gen import resolve_video_length
 from vss_agents.tools.incident_report_gen import revision_embedding
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
+
+from ..utils.test_video_duration import mp4
+from ..utils.test_video_duration import range_server
 
 MODEL_OUTPUT = {
     "incident": {
@@ -391,8 +397,9 @@ class TestEndToEnd:
             return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
 
         result, persist = await self._run(handler)
-        assert len(requests) == 2
-        assert all(r.headers["authorization"] == "Bearer secret" for r in requests)
+        posts = [r for r in requests if r.method == "POST"]  # the GETs are the video-header read
+        assert len(posts) == 2
+        assert all(r.headers["authorization"] == "Bearer secret" for r in posts)
         assert result.report["incident"]["duration"] == 5
         assert result.report_text == "INCIDENT REPORT"
         assert result.contract_version == incident_contract.contract_version()
@@ -506,3 +513,120 @@ class TestEndToEnd:
         result, _ = await self._run(handler)
         assert result.report_text is None and "HTTP 500" in result.report_text_error
         assert result.report["incident"]["duration"] == 5
+
+
+def _model_and_video_handler(content: str, video: httpx.Response | bytes, requests: list[httpx.Request] | None = None):
+    """Completions for POSTs to the model endpoint; the object store (ranged GETs of ``video``) for GETs."""
+    store = range_server(video) if isinstance(video, bytes) else (lambda _request: video)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        if request.method == "GET":
+            return store(request)
+        body = json.loads(request.content)
+        return _completion(content if "response_format" in body else "INCIDENT REPORT")
+
+    return handler
+
+
+class TestVideoBounds:
+    """Known issue 1: the agent enforces WINDOW_BEYOND_VIDEO and TIMELINE_BEYOND_VIDEO itself."""
+
+    _run = TestEndToEnd._run
+
+    @pytest.mark.asyncio
+    async def test_window_beyond_the_header_length_is_rejected_and_nothing_is_persisted(self):
+        content = json.dumps(MODEL_OUTPUT)  # end_timestamp 6
+        with pytest.raises(IncidentExtractionError, match="end_timestamp 6 is outside the 4 s video") as excinfo:
+            await self._run(_model_and_video_handler(content, mp4(4.0)))
+        assert excinfo.value.raw_output == content
+        assert excinfo.value.model == "nvidia/cosmos-3-nano-reasoner"
+
+    @pytest.mark.asyncio
+    async def test_window_beyond_the_callers_length_is_rejected_without_reading_the_header(self):
+        requests: list[httpx.Request] = []
+        with pytest.raises(IncidentExtractionError, match="end_timestamp 6 is outside the 4 s video"):
+            await self._run(
+                _model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(30.0), requests),
+                tool_input=IncidentReportGenInput(
+                    incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=4.0
+                ),
+            )
+        assert [r.method for r in requests] == ["POST"]
+
+    @pytest.mark.asyncio
+    async def test_the_last_partial_second_is_inside_the_video(self):
+        # end_timestamp 6 names the second that starts at 6 s, which a 5.5 s video still has (0 <= T < length + 1).
+        result, _ = await self._run(_model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(5.5)))
+        assert result.video_bounds_checked is True and result.video_duration_seconds == 5.5
+
+    @pytest.mark.asyncio
+    async def test_a_window_inside_the_header_length_is_checked_and_recorded(self):
+        result, persist = await self._run(_model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(30.0)))
+        assert result.video_bounds_checked is True
+        assert result.video_duration_seconds == 30.0
+        assert result.video_duration_source == "mp4_header"
+        assert result.video_bounds_unchecked_reason is None
+        persist.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_the_callers_length_is_used_and_recorded(self):
+        requests: list[httpx.Request] = []
+        result, _ = await self._run(
+            _model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(4.0), requests),
+            tool_input=IncidentReportGenInput(
+                incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=30
+            ),
+        )
+        assert result.video_bounds_checked is True
+        assert result.video_duration_seconds == 30.0 and result.video_duration_source == "request"
+        assert all(r.method == "POST" for r in requests)
+
+    @pytest.mark.asyncio
+    async def test_timeline_beyond_the_video_is_recorded_enrichment_not_fatal(self):
+        # The timeline is outside both the incident window and the 7 s video: enrichment codes only.
+        content = json.dumps(
+            {**MODEL_OUTPUT, "timeline": [{"start_seconds": 1, "end_seconds": 40, "description": "aftermath"}]}
+        )
+        result, _ = await self._run(_model_and_video_handler(content, mp4(7.0)))
+        assert result.video_bounds_checked is True
+        assert result.report["timeline"][0]["end_seconds"] == 40
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("video", "reason"),
+        [
+            (httpx.Response(403, text="SignatureDoesNotMatch"), "HTTP 403"),
+            (httpx.Response(200, content=b"whole file"), "HTTP 200"),
+            (b"not an mp4 file at all, just text", "not an MP4"),
+        ],
+    )
+    async def test_an_unreadable_length_is_a_visible_unchecked_outcome(self, video, reason, caplog):
+        with caplog.at_level(logging.WARNING, logger="vss_agents.tools.incident_report_gen"):
+            result, persist = await self._run(_model_and_video_handler(json.dumps(MODEL_OUTPUT), video))
+        assert result.video_bounds_checked is False
+        assert result.video_duration_seconds is None and result.video_duration_source is None
+        assert result.video_bounds_unchecked_reason.startswith("video length unknown: ")
+        assert reason in result.video_bounds_unchecked_reason
+        assert any("video-bounds rules not applied for v1" in r.getMessage() for r in caplog.records)
+        persist.assert_awaited_once()  # same policy as the console and eval: an unknown length is not a failure
+
+    @pytest.mark.asyncio
+    async def test_the_model_key_never_reaches_the_object_store(self):
+        requests: list[httpx.Request] = []
+        await self._run(_model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(30.0), requests))
+        gets = [r for r in requests if r.method == "GET"]
+        posts = [r for r in requests if r.method == "POST"]
+        assert gets and all("authorization" not in r.headers for r in gets)
+        assert posts and all(r.headers["authorization"] == "Bearer secret" for r in posts)
+
+    @pytest.mark.parametrize("value", [0, -1.5, math.nan, math.inf, True, "10"])
+    def test_an_invalid_caller_length_is_rejected(self, value):
+        with pytest.raises(ValueError, match="video_duration_seconds"):
+            IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, video_duration_seconds=value)
+
+    @pytest.mark.asyncio
+    async def test_resolve_rejects_an_invalid_length_passed_directly(self):
+        with pytest.raises(ValueError, match="finite number above 0"):
+            await resolve_video_length(VIDEO_URL, math.nan)
