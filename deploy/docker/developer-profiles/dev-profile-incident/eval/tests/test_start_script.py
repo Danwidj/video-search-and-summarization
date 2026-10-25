@@ -155,20 +155,13 @@ def test_vm_helper_scripts_hermetic_tests(name: str):
     assert res.returncode == 0, f"{name} failed:\n{res.stdout}\n{res.stderr}"
 
 
-def test_start_script_always_mounts_search_route():
+def test_start_script_always_mounts_search_route(mock_search_router):
     """Verify that the search route is mounted unconditionally and responds with expected status codes."""
-    import sys
-
-    mock_src = INCIDENT_PROFILE_DIR / "mock-backend" / "base_profile_mock" / "src"
-    if str(mock_src) not in sys.path:
-        sys.path.insert(0, str(mock_src))
-
-    from base_profile_mock.routers.incident_search import router as search_router
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    app.include_router(search_router)
+    app.include_router(mock_search_router)
     client = TestClient(app)
 
     resp = client.post(
@@ -188,21 +181,14 @@ def test_start_script_always_mounts_search_route():
     assert get_resp.status_code == 405
 
 
-def test_local_search_route_launches_under_5_seconds():
+def test_local_search_route_launches_under_5_seconds(mock_search_router):
     """Acceptance check: base_profile_mock search route responds in under 5 seconds."""
-    import sys
-
-    mock_src = INCIDENT_PROFILE_DIR / "mock-backend" / "base_profile_mock" / "src"
-    if str(mock_src) not in sys.path:
-        sys.path.insert(0, str(mock_src))
-
-    from base_profile_mock.routers.incident_search import router as search_router
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     t0 = time.perf_counter()
     app = FastAPI()
-    app.include_router(search_router)
+    app.include_router(mock_search_router)
     client = TestClient(app)
     response = client.post(
         "/api/v1/incidents/search",
@@ -215,3 +201,4 @@ def test_local_search_route_launches_under_5_seconds():
     data = response.json()
     assert data["total_hits"] > 0
     assert "critic" in data["hits"][0]
+
