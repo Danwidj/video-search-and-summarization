@@ -38,6 +38,12 @@ Set `NEXT_PUBLIC_SEARCH_TAB_MEDIA_WITH_OBJECTS_BBOX` even though it is not backe
 
 ## Refresh the finals snapshot
 
-Search, revision search and chat answer from `src/base_profile_mock/finals_snapshot.json`, a static copy of the finals AI revisions (captured 2026-10-24), so newer uploads do not appear in mock search. To refresh it, read `report_revisions` where `kind = 'ai'` through PostgREST (`INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`) and reshape the rows into the JSON's `revisions` list. `search_profile_mock` reads the same file.
+Search, revision search and chat answer from `src/base_profile_mock/finals_snapshot.json`, a static copy of the finals AI revisions (last captured 2026-10-25: six revisions), so newer uploads do not appear in mock search. To refresh it, read `report_revisions` where `kind = 'ai'` through PostgREST (`INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`; a `GET` only, `select=id,video_id,revision_no,model_run_id,payload&order=id.asc`) and reshape each row into one entry of the JSON's `revisions` list:
+
+- `revision_id`, `video_id`, `revision_no`, `model_run_id` from the row;
+- `incident`: `incident_type`, `severity_level`, `title`, `description`, `start_seconds`, `end_seconds` from `payload.incident` (`type`, `severity_level`, `title`, `description`, `start_timestamp`, `end_timestamp`);
+- `items`: the payload's entities, then instruments, then assets, each `{item_type, item_id, name, label, description, timestamp_seconds, threat_level, holder_entity_id}`. An entity's `name` is its `label`; an instrument's `holder_entity_id` is its `entity_id`; fields an item type lacks are `null`.
+
+Update `source` with the capture date. A refresh changes no other field of the surviving rows, so the diff shows only added and removed revisions. `search_profile_mock` reads the same file; both mocks' `tests/test_incident_search.py` check that no video deleted from finals is served.
 
 What the mock serves: [`../../.docs/architecture.md`](../../.docs/architecture.md#component-reference-table). Tests: `uv run pytest`.
