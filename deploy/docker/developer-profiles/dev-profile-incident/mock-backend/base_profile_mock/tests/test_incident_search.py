@@ -162,8 +162,6 @@ def test_search_does_not_present_a_keyword_mock_as_semantic():
         assert "keywords" in hit["critic"]["rationale"]
 
 
-
-
 # The end-to-end test videos removed from finals and R2 on 2026-10-24 (status.md, database status).
 DELETED_FINALS_VIDEOS = ("vc35c6116a88c37d51c9", "v614eba7ad8510751a8c", "va978aaf39b01270294a")
 
