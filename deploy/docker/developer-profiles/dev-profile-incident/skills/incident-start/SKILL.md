@@ -57,7 +57,7 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 
-The console runs in the foreground. Ctrl-C stops it, along with the backgrounded mock, gateway and tunnel. In vm mode, exiting also stops the VM backend services (`vss-agent` and Docker containers in-place via `docker stop`, never removed) if this run was the last active session on `kwanz-ws`.
+`start.sh` waits on the console. Ctrl-C, closing the terminal or `kill <start.sh pid>` stops it, along with the backgrounded mock, gateway and tunnel, including the servers those wrappers started (no `next-server` or `uvicorn` is left listening). In vm mode, exiting also stops the VM backend services (`vss-agent` and Docker containers in-place via `docker stop`, never removed) if this run was the last active session on `kwanz-ws`.
 
 Environment overrides such as `ENABLE_ANALYTICS`, `VSS_VM_IP`, `VSS_REPO_ROOT`, `INCIDENT_DOCKER_SERVICES` and `INCIDENT_NATIVE_SERVICES` are documented in the header of [`start.sh`](../../start.sh). In vm mode `VSS_VM_IP` is detected from the VM over SSH when unset (fallback `10.131.1.5`); set it only to force an address.
 

@@ -202,3 +202,88 @@ def test_local_search_route_launches_under_5_seconds(mock_search_router):
     assert data["total_hits"] > 0
     assert "critic" in data["hits"][0]
 
+
+# A wrapper that, like `uv run` or `npm run`, starts the real server as a child and does not pass a
+# SIGTERM on: it records the child's pid, ignores TERM itself and exits once the child is gone.
+_FAKE_WRAPPER = """#!/usr/bin/env bash
+case "$1" in sync|install) exit 0 ;; esac
+sleep 300 &
+echo "$!" > "$FAKE_PIDS_DIR/$(basename "$0")-$$.child"
+trap '' TERM
+wait
+"""
+
+
+def _fake_mock_mode_profile(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
+    """A copy of start.sh in a profile tree whose uv, npm and curl are fakes, so --mode mock starts no real service."""
+    profile = tmp_path / "profile"
+    for directory in ("mock-backend/base_profile_mock", "vlm-gateway", "incident-console-v2"):
+        (profile / directory).mkdir(parents=True)
+    (profile / "mock-backend" / ".env.local").write_text("")
+    (profile / "vlm-gateway" / ".env.local").write_text("")
+    shutil.copy2(START_SH_PATH, profile / "start.sh")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("uv", "npm"):
+        (fake_bin / name).write_text(_FAKE_WRAPPER)
+        (fake_bin / name).chmod(0o755)
+    (fake_bin / "curl").write_text('#!/bin/sh\necho \'{"isAlive": true}\'\n')
+    (fake_bin / "curl").chmod(0o755)
+
+    pids_dir = tmp_path / "pids"
+    pids_dir.mkdir()
+    env = os.environ.copy()
+    env.pop("VSS_START_MODE", None)
+    env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
+    env["FAKE_PIDS_DIR"] = str(pids_dir)
+    return profile, env, pids_dir
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize(("signal_name", "exit_code"), [("SIGTERM", 143), ("SIGINT", 130), ("SIGHUP", 129)])
+def test_a_signal_to_start_sh_alone_stops_every_local_process(tmp_path: Path, signal_name: str, exit_code: int):
+    """Known issue 8: a signal sent only to start.sh (not its process group) used to leave the console,
+    the mock and the gateway running: bash deferred the trap while `npm run dev` held the foreground, and
+    cleanup killed only each wrapper, not the server it started."""
+    import signal
+
+    if not shutil.which("pgrep"):
+        pytest.skip("pgrep not installed on PATH")
+    profile, env, pids_dir = _fake_mock_mode_profile(tmp_path)
+    proc = subprocess.Popen(
+        [str(profile / "start.sh"), "--mode", "mock"],
+        cwd=profile,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    children: list[int] = []
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not any(p.name.startswith("npm-") for p in pids_dir.iterdir()):
+            time.sleep(0.1)
+        children = [int(p.read_text()) for p in pids_dir.iterdir()]
+        assert len(children) == 3, "the mock backend, the gateway and the console were started"
+
+        proc.send_signal(getattr(signal, signal_name))
+        output, _ = proc.communicate(timeout=20)
+        assert proc.returncode == exit_code, output
+        assert "stopped incident-console-v2" in output
+        time.sleep(0.5)
+        assert [pid for pid in children if _alive(pid)] == [], output
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        for pid in children:
+            if _alive(pid):
+                os.kill(pid, signal.SIGKILL)
