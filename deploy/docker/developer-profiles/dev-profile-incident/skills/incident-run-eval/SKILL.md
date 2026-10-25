@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -15,6 +15,7 @@ Canonical facts:
 - Setup and variables: [`eval/README.md`](../../eval/README.md)
 - Methodology and recorded 3-model results: [`eval/docs/vlm_benchmark_results.md`](../../eval/docs/vlm_benchmark_results.md)
 - Handoff and open items (including the dropped `gt_*` tables): [`.docs/mvp2/eval.md`](../../.docs/mvp2/eval.md)
+- Retrieval benchmark (Track R): only the offline metrics module `eval/retrieval_metrics.py` exists (work-order step 1, tested by `tests/test_retrieval_metrics.py`). There is no retrieval run command yet; the harness is step 3 of [`.docs/mvp2/eval.md` §10](../../.docs/mvp2/eval.md#10-work-order-and-definition-of-done).
 
 ## Prerequisites
 
