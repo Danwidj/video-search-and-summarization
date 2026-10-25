@@ -329,6 +329,33 @@ test('a failed evidence removal or listing keeps the video row', async () => {
   assert.notEqual(await videos.getVideo(V), null);
 });
 
+test('a delete that failed part-way can be repeated until the video and all its images are gone', async () => {
+  const { videos } = official([aiRunReport(smoke)]);
+  // An object store that forgets what it removed, refuses one key once, and treats an absent key as removed (as R2 does).
+  const stored = new Set([`evidence/${V}/u1/E1.jpg`, `evidence/${V}/u2/A1.jpg`, `evidence/${V}/u3/I1.jpg`]);
+  const refuseOnce = new Set([`evidence/${V}/u2/A1.jpg`]);
+  const evidence = {
+    async list(prefix) {
+      return [...stored].filter((key) => key.startsWith(prefix)).map((key) => ({ key, lastModified: null }));
+    },
+    async remove(key) {
+      if (refuseOnce.delete(key)) throw new Error('R2 refused');
+      stored.delete(key);
+    },
+  };
+  const videoRemovals = [];
+  const removeStoredVideo = async (storageKey) => videoRemovals.push(storageKey);
+
+  await assert.rejects(deleteVideoAndReports(videos, evidence, V, removeStoredVideo), /Could not remove 1 of 3 evidence images/);
+  assert.deepEqual([...stored], [`evidence/${V}/u2/A1.jpg`], 'the other images were removed');
+  assert.notEqual(await videos.getVideo(V), null, 'the row stays as the handle for a retry');
+
+  await deleteVideoAndReports(videos, evidence, V, removeStoredVideo);
+  assert.deepEqual([...stored], []);
+  assert.equal(await videos.getVideo(V), null);
+  assert.deepEqual(videoRemovals, [smoke.video.filepath, smoke.video.filepath], 'removing the already-removed video again is harmless');
+});
+
 test('a video without a stored object is refused and nothing is deleted', async () => {
   const videos = new InMemoryVideoRepository([
     { videoId: V, storageKey: null, uploadedAt: null, source: null, officialRevisionId: null, revisionIds: [] },
