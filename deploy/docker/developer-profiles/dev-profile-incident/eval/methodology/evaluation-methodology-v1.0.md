@@ -1,5 +1,7 @@
 # Evaluation Methodology v1.0
 
+> **Superseded by [v1.1](evaluation-methodology-v1.1.md) (2026-10-27):** the judge's output is limited to 1,500 tokens, and truncated, out-of-range or reasoning-only replies are failures. Everything else below is unchanged in v1.1.
+
 > **Status: implemented in PR 1B (2026-10-27), including §6 (Option C, approved 2026-10-27).** Version id `evaluation-methodology-v1.0`. The pinned values are in [`../methodology.py`](../methodology.py) and recorded in every result file (`methodology`).
 
 This document fixes how the P1 extraction benchmark scores a prediction against the ground truth. It is shared by every prompt experiment and by both arms of the direct-VLM vs VSS comparison ([plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) §B.2, §F). What a correct label is belongs to [`annotation-guidelines-v1.0`](../ground_truth/annotation-guidelines-v1.0.md), not to this document. A change to any pin is a new methodology version, and results from different versions are never pooled (`eval_aggregate.py` refuses to).
