@@ -2,7 +2,9 @@
   "arm": "direct-vlm",
   "baseline_ref": null,
   "budget": {
-    "max_p1_calls": 50
+    "max_p1_calls": 50,
+    "max_p1_tokens": 1050000,
+    "max_judge_calls": 400
   },
   "description": "Stage 1: fixed direct-VLM baseline (C1 on dev). Frozen after its first complete run; later stages reuse its saved outputs.",
   "experiment_id": "direct-vlm-baseline",
@@ -20,6 +22,7 @@
     "agent_base_url": null
   },
   "prompt_id": "p1-v4-base",
+  "purpose": "experiment",
   "repeats": 2,
   "selection_record": null,
   "split": "dev",

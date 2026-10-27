@@ -21,3 +21,5 @@ ground_truth/review/backups/
 # AI video-review proposals (PR 4): they quote and rewrite annotation text, so they stay local
 # like the workbooks. Their SHA-256 and counts are in candidate-<version>-manifest.json.
 ground_truth/review/ai-proposals-*.jsonl
+# Review-package overrides (suggested pronoun fixes, case notes) quote annotation text too.
+ground_truth/review/review-overrides-*.json

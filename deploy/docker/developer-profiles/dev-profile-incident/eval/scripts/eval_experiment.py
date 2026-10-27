@@ -19,14 +19,16 @@ Usage (from ``eval/``)::
 
     uv run python scripts/eval_experiment.py plan experiments/configs/direct-vlm-baseline.json   # no calls
     uv run python scripts/eval_experiment.py run  experiments/configs/direct-vlm-baseline.json --confirm-paid
+    uv run python scripts/eval_experiment.py run  <config> <config> ... --confirm-paid   # interleaved stage (D10)
     uv run python scripts/eval_experiment.py rescore <results.json> --confirm-paid   # judge calls, no P1 calls
     uv run python scripts/eval_experiment.py compare C1=<results.json> C2=<…> C3=<…> C4=<…>
     uv run python scripts/eval_experiment.py report --title "…" C1=<results.json> …  > report.md
     uv run python scripts/eval_experiment.py verify <results dir>
-    uv run python scripts/eval_experiment.py budget experiments/configs/*.json [--pilot measured.json]
+    uv run python scripts/eval_experiment.py budget experiments/configs/*.json [--measured measured.json]
+    uv run python scripts/eval_experiment.py measure <results.json> ...   # pilot figures for budget --measured
 
 ``run`` and ``rescore`` make paid calls (P1 and/or the LLM judge) and refuse without
-``--confirm-paid``; ``plan``, ``compare``, ``report``, ``verify`` and ``budget`` make none.
+``--confirm-paid``; ``plan``, ``compare``, ``report``, ``verify``, ``budget`` and ``measure`` make none.
 """
 
 from __future__ import annotations
@@ -109,34 +111,43 @@ def cmd_plan(args) -> int:
     return 0
 
 
+def call_factory_for(config: dict):
+    """The P1 call of a configuration's arm (``experiment_runner.direct_call`` or ``vss_call``)."""
+    item = prompt_registry.entry(config["prompt_id"])
+    text = prompt_registry.prompt_text(config["prompt_id"])
+    if config["arm"] == "direct-vlm":
+        return lambda incident_id, run_id, duration: er.direct_call(text)
+    return lambda incident_id, run_id, duration: er.vss_call(config, item, incident_id=incident_id, run_id=run_id,
+                                                             duration=duration)
+
+
 def cmd_run(args) -> int:
+    """One configuration, or several run interleaved as one stage (D10), under their hard caps (D11)."""
     import eval_run
 
-    config = er.load_config(args.config)
+    configs = [er.load_config(path) for path in args.configs]
     split = json.loads(er.SPLIT_PATH.read_text())
     try:
-        plan = er.preflight(config, split)
+        out = er.run_stage(configs, split=split, gt_index={}, store=None, video_source=None, call_factory_for=None,
+                           run_one=None, confirm_paid=False)
         if not args.confirm_paid:
-            print(json.dumps({"dry_run": True, "plan": plan}, indent=2))
-            print("Nothing sent. Re-run with --confirm-paid after the budget for this stage is approved.", file=sys.stderr)
+            print(json.dumps({"dry_run": True, "plans": out["plans"],
+                              "order_seed": er.ORDER_SEED, "pricing": er.load_pricing()}, indent=2))
+            print("Nothing sent. Re-run with --confirm-paid after this stage's budget is approved.", file=sys.stderr)
             return 0
-        gt_index, sheets = load_gt(config)
+        if len({c["ground_truth"]["dir"] for c in configs}) != 1:
+            raise er.ExperimentRefused("configurations in one stage must use the same ground truth")
+        gt_index, sheets = load_gt(configs[0])
         eval_run.evaluator_preflight()
-        item = prompt_registry.entry(config["prompt_id"])
-        text = prompt_registry.prompt_text(config["prompt_id"])
-        if config["arm"] == "direct-vlm":
-            factory = lambda incident_id, run_id, duration: er.direct_call(text)  # noqa: E731
-        else:
-            factory = lambda incident_id, run_id, duration: er.vss_call(  # noqa: E731
-                config, item, incident_id=incident_id, run_id=run_id, duration=duration)
-        result = er.run_experiment(config, split=split, gt_index=gt_index, store=frozen_store(sheets),
-                                   video_source=video_source_from_manifest(), call_factory=factory,
-                                   run_one=eval_run.run_one_video, confirm_paid=True)
+        result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
+                              video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
+                              run_one=eval_run.run_one_video, confirm_paid=True)
     except er.ExperimentRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
-    print(json.dumps({"results": result["results"], "reliability": result["record"]["reliability"]}, indent=2))
-    return 0
+    print(json.dumps({"results": result["results_files"], "stage": result["stage_dir"], "stopped": result["stopped"],
+                      "usage": {r["experiment_id"]: r["usage"] for r in result["records"]}}, indent=2))
+    return 0 if result["stopped"] is None else 3
 
 
 def cmd_rescore(args) -> int:
@@ -215,9 +226,19 @@ def cmd_verify(args) -> int:
 def cmd_budget(args) -> int:
     import experiment_report
 
-    pilot = json.loads(args.pilot.read_text()) if args.pilot else None
+    measured = json.loads(args.measured.read_text()) if args.measured else None
     configs = [er.load_config(path) for path in args.configs]
-    print(json.dumps(experiment_report.budget(configs, json.loads(er.SPLIT_PATH.read_text()), pilot=pilot), indent=2))
+    print(json.dumps(experiment_report.budget(configs, json.loads(er.SPLIT_PATH.read_text()), measured=measured),
+                     indent=2))
+    return 0
+
+
+def cmd_measure(args) -> int:
+    """Pilot measurements (tokens and judge calls per call, rate limiting, latency) for ``budget --measured``."""
+    import experiment_report
+
+    records = [json.loads(path.read_text()) for path in args.results]
+    print(json.dumps(experiment_report.measure(records), indent=2))
     return 0
 
 
@@ -226,8 +247,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     plan = sub.add_parser("plan")
     plan.add_argument("config", type=Path)
-    run = sub.add_parser("run")
-    run.add_argument("config", type=Path)
+    run = sub.add_parser("run", help="One config, or several interleaved as one stage")
+    run.add_argument("configs", nargs="+", type=Path)
     run.add_argument("--confirm-paid", action="store_true")
     rescore = sub.add_parser("rescore")
     rescore.add_argument("results", type=Path)
@@ -241,10 +262,12 @@ def main() -> int:
     verify.add_argument("results_dir", type=Path)
     budget = sub.add_parser("budget")
     budget.add_argument("configs", nargs="+", type=Path)
-    budget.add_argument("--pilot", type=Path, help="Measured per-call tokens and cost from the Stage 0 pilot")
+    budget.add_argument("--measured", type=Path, help="Pilot measurements from 'measure' (replaces the estimates)")
+    measure = sub.add_parser("measure")
+    measure.add_argument("results", nargs="+", type=Path)
     args = parser.parse_args()
     return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "compare": cmd_compare, "report": cmd_report,
-            "verify": cmd_verify, "budget": cmd_budget}[args.command](args)
+            "verify": cmd_verify, "budget": cmd_budget, "measure": cmd_measure}[args.command](args)
 
 
 if __name__ == "__main__":

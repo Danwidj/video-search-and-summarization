@@ -103,11 +103,12 @@ def test_budget_counts_calls_and_prices_only_measured_pilots():
     statement = rep.budget(configs, split)
     rows = {r["experiment_id"]: r for r in statement["rows"]}
     assert rows["direct-vlm-baseline"]["p1_calls"] == 50 and rows["pilot-direct-vlm"]["p1_calls"] == 5
-    assert rows["pilot-vss-crops"]["crop_calls"] is None  # unknown until the pilot measures it
-    assert statement["measured"] is False and "cost_estimate" not in rows["vss-baseline"]
-    priced = rep.budget(configs[:1], split, pilot={"tokens_per_p1_call": 1000, "cost_per_p1_call": 0.01,
-                                                   "cost_per_judge_call": 0.001})
-    assert priced["measured"] and priced["rows"][0]["cost_estimate"] is not None
+    assert rows["pilot-vss"]["crop_calls"] == 0 and rows["pilot-vss"]["purpose"] == "pilot"
+    assert statement["pricing_provisional"] is True and statement["basis"].startswith("planning")
+    assert rows["pilot-direct-vlm"]["p1_tokens_estimate"] == 5 * er.P1_TOKENS_PLANNING_MEAN
+    measured = rep.budget(configs[:1], split, measured={"tokens_per_p1_call": 1000, "judge_calls_per_video": 2})
+    assert measured["basis"] == "pilot measurements" and measured["rows"][0]["judge_calls_estimate"] == \
+        2 * er.planned_calls(configs[0], split)
 
 
 def _dev(record, score):
