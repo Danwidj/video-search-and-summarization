@@ -2,6 +2,26 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Annotation guidelines v1.0 are the approved definition of a correct annotation
+- **Decision:** `eval/ground_truth/annotation-guidelines-v1.0.md` is the single definition of a correct annotation. Ground-truth review and correction and VSS prompt variants all use it, and it is separate from every prompt (plan decisions D1 and D2). The severity and instrument-threat scales are the workbook's, unchanged. It adds:
+  - decision rules (observed harm and demonstrated danger, no inferred outcomes, counting people) and category calibration examples;
+  - entity significance, the hand-held test for instruments, and asset relevance;
+  - description templates and uncertainty handling.
+
+  The fourteen interpretations A1-A14 are decided in its §11, all approved on 2026-10-27. The ones most likely to matter later:
+  - **vehicles** are assets, and **unseen drivers** are not entities;
+  - **explosives** are rated by plausible capability and context;
+  - **age and gender words** need visual support, and ethnicity is never inferred;
+  - **`burglary`** means property crime at premises, an intentional convention separated from the ordinary meanings of burglary, robbery and theft; incidental force keeps that type;
+  - **`explosion`** includes sudden ignition;
+  - **clips outside the five types** are marked `out_of_taxonomy`, never forced into a type;
+  - **responders' equipment** follows the hand-held test;
+  - **primary type** is decided by centrality (the event actively under way for more than half the window, passive aftermath excluded), then severity, then the initiating event.
+- **Why:** the ground truth, the correction pass and the prompt experiments must measure against one definition, fixed before any label changes. Interpretations that could move labels were decided explicitly rather than silently. Centrality comes before severity because time spans are more reproducible than adjacent-level severity judgments: in the 2026-10-02 benchmark, start and end were within ±5 s for 30-81% of videos, but severity was exact for only 22-27%.
+- **Rejected:** putting the definitions in a prompt (prompts change per experiment; definitions must not); new severity or threat levels; severity-first primary-type selection (the type would flip with one-level severity changes and fall back on chronology); forcing out-of-taxonomy clips into the nearest type; treating robbery with incidental force as assault.
+- **Open:** how `out_of_taxonomy` clips are scored or excluded is decided by PR 1B and applied in PR 5. No label changes until the PR 4 review applies these rules.
+- **Links:** [`../eval/ground_truth/annotation-guidelines-v1.0.md`](../eval/ground_truth/annotation-guidelines-v1.0.md); [`mvp2/ground-truth-and-prompt-experiments-plan.md`](mvp2/ground-truth-and-prompt-experiments-plan.md) (PR 1A, D1, D2).
+
 ### 2026-10-27: The evaluation videos are local verified copies with a tracked manifest; `_demo` is the one filename alias
 - **Decision:** `eval/scripts/eval_fetch_videos.py` downloads every `anomaly/<folder>/<file>.mp4` except `anomaly/shooting/` (80 clips) to the gitignored `eval/eval_data/videos/<folder>/<original filename>`. Each clip is verified (size equal to R2, the R2 ETag reproduced from the local bytes for single-part and multipart uploads, SHA-256, MP4 `mvhd` duration) through a `.part` file and kept only when it passes. The tracked `eval/eval_reproducibility/dataset-manifest-v1.json` records every clip and the integrity findings. Filename resolution ignores a `_demo` suffix just before the extension, so `anomaly/demo/<Id>_x264_demo.mp4` resolves from the ground-truth name `<Id>_x264.mp4`. The split manifests keep their 25/55 membership; `eval_refresh_split_keys.py` rewrites only their R2 keys.
 - **Why:** 24 clips moved into `anomaly/demo/` on 2026-10-27 with that suffix and identical sizes, so the split manifests named keys that no longer exist and `eval_run.py` skipped those videos. The ground-truth correction and prompt work need a fixed, checkable video set: SHA-256 per clip plus a set hash make any later change visible. Model calls still use signed R2 URLs; local copies are for hashing, review and frame extraction.
