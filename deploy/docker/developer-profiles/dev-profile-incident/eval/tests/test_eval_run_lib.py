@@ -115,3 +115,19 @@ def test_coerce_int_or_none_numeric_string_with_decimal():
 
 def test_coerce_int_or_none_unparseable_returns_none_not_raise():
     assert coerce_int_or_none("not a number") is None
+
+
+def test_classify_outcome():
+    from eval_run_lib import classify_outcome
+
+    assert classify_outcome({"ok": True, "core_ok": True}) == "scored"
+    assert classify_outcome({"ok": True, "core_ok": False}, {"core_violations": [{"code": "INVALID_JSON"}]}) == "parse_failure"
+    assert classify_outcome({"ok": True, "core_ok": False}, {"core_violations": [{"code": "EMPTY_CONTENT"}]}) == "parse_failure"
+    assert classify_outcome({"ok": True, "core_ok": False}, {"core_violations": [{"code": "SCHEMA_VIOLATION"}]}) == "contract_invalid"
+    assert classify_outcome({"ok": False, "failure_kind": "rate_limited"}) == "rate_limited"
+    assert classify_outcome({"ok": False, "failure_kind": "timeout"}) == "timeout"
+    for kind in ("http_error", "transport_error", "invalid_response", "not_sent"):
+        assert classify_outcome({"ok": False, "failure_kind": kind}) == "http_error"
+    # records written before failure_kind existed (e.g. the first smoke test)
+    assert classify_outcome({"ok": False, "error": '{"error": {"code": "429"}}'}) == "rate_limited"
+    assert classify_outcome({"ok": False, "error": "ReadTimeout: read timed out"}) == "timeout"

@@ -5,15 +5,15 @@ Specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119--
 > **Handoff**
 > - **Owner:** the captain's teammate owns the retrieval eval, not the captain.
 > - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).
-> - **Before a live run:** decide eval storage (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
+> - **Before a live run:** decide where retrieval labels and manifests are stored (open item 1 below), and upload and analyse a few real videos, because the finals search corpus may be empty (§1.2).
 > - **Out of scope:** the multi-subagent routing config and full RT-CV / RT-Embed indexing were dropped, so Track F stays deferred (§5).
 > - **Compute:** `kwanz-ws` uses GPU 0 only ([GPU rule](../incident-profile-operations.md#5-vm-deployment-configuration-principles-generatedenvremote)); offline detector and embedding experiments run off the VM (§6.1).
 > - **Access:** each developer uses their own credentials in their own local `.env.local`, never committed or shared in chat. The variable names are in [§1.1](#11-eval-p1rp1-extraction-benchmark) (Configuration).
 >
 > **Open items for the eval owner**
-> 1. **`eval/` still targets tables finals no longer has.** `20261023000000` dropped the `gt_*` and relational report tables, but `eval/db.py` still maps them and its `init_schema()` creates any of its tables that are missing. Decide eval's storage before any live run against finals.
+> 1. **Eval storage.** P1 scoring no longer needs a database: since 2026-10-27 `eval_run.py` scores from an in-memory store loaded from the workbook (`eval/offline_store.py`) and opens no database unless `--db` is passed, and `db.get_db()` creates tables only with `init_schema=True` ([decision](../decisions.md#2026-10-27-eval-scores-offline-by-default-the-database-path-and-schema-creation-are-explicit)). Still open: where the retrieval query set, labels and corpus manifest are stored (§3.8 expects committed files). `eval/db.py` still maps the tables finals dropped, for the explicit `--db` path only.
 > 2. **Retrieval benchmark (Track R):** the specification is this document, with the §8 proposals awaiting approval. Work-order step 1, the offline metrics module `eval/retrieval_metrics.py`, landed on 2026-10-25 ([§10.1](#101-step-1-retrieval-metrics-module-landed)); the query set, labels, corpus manifest, harness and runs are not started.
-> 3. **P1 benchmark under `core-scored-v1`:** run it (malformed-ID frequency, per-model core and enrichment failure rates) once item 1 is resolved.
+> 3. **P1 benchmark under `core-scored-v1`:** run it offline (malformed-ID frequency, per-model core and enrichment failure rates) under the ground-truth plan's approval gates ([plan](ground-truth-and-prompt-experiments-plan.md)).
 > 4. **Contract ID patterns:** consider a contract version with ID patterns only if the malformed-ID evidence justifies it; it changes eval.
 
 Paths are relative to the profile directory, except paths starting with `services/`, which are relative to the repository root. Eval scripts are written in full as `eval/scripts/…`. A bare file name (such as `eval_run.py` or `incident_search.py`) is shorthand for the file of that name given in full in the same section or table, or earlier in this document.
@@ -25,7 +25,7 @@ Paths are relative to the profile directory, except paths starting with `service
 - **Models:** the three allowlisted VLMs in `contracts/inference.json`: `nvidia/cosmos-3-nano-reasoner`, `nvidia/cosmos-3-super-reasoner`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
 - **Ground truth:**
   - Five categories: road accident, burglary, explosion, assault, animal attack.
-  - Ingested from the gitignored `eval_data/ground_truth_labelling.xlsx` by `eval/scripts/eval_ingest_gt.py` into `gt_*` tables. On midterm `eval/db.py` created them with SQLAlchemy `create_all`. On finals the baseline created them and `20261023000000_report_revisions_schema.sql` dropped them, so eval's ground-truth storage on finals is open (open item 1 in the handoff).
+  - Read from the gitignored `eval_data/ground_truth_labelling.xlsx`. `eval_run.py` loads it into an in-memory store for scoring (`eval/offline_store.py`, through `eval_ingest_gt.write_gt`); no database holds it. The `gt_*` tables existed on midterm and in the finals baseline, and `20261023000000_report_revisions_schema.sql` dropped them; `eval_ingest_gt.py --db` writes them only to a database that still has them.
   - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
@@ -48,13 +48,13 @@ Paths are relative to the profile directory, except paths starting with `service
   | Entities, instruments, assets | 1-to-1 Hungarian matching at cosine ≥ 0.75 over `sentence-transformers/all-MiniLM-L6-v2`, then precision / recall / F1 |
 
   - MiniLM is served locally by `eval/scripts/eval_embedding_server.py` (:8811). The model name is hard-coded in that script, `eval/scripts/eval_run.py` and `eval/scripts/eval_run_lib.py`.
+- **Run records** (since the 2026-10-02 benchmark work, on main from 2026-10-27): each P1 call's round-trip time (`timing.p1_elapsed_s`), the video's size and length, an `outcome` class that keeps request failures (`timeout`, `rate_limited`, `http_error`) out of the accuracy metrics, and a fixed rate-limit policy (20 s pacing; HTTP 429 only retried, at most twice). An empty predicted description scores 0.0 without a judge call ([decision](../decisions.md#2026-10-02-vlm-benchmark-incident-fields-only-timed-p1-round-trip-interleaved-models-no-blended-score)).
 - **What is not captured:**
-  - No latency is recorded.
   - Token `usage` is kept only for the P1 call. No cost is recorded.
-  - `chat_completion` in `eval/scripts/eval_vlm_client.py` has no retry or 429 handling, so a failed request is scored as a miss.
-  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's database rows.
+  - The judge model and prompt are not versioned or recorded with results.
+  - The fixed run ids (`P1-cosmos3nano`, …) overwrite each other's rows when `--db` is used; the offline default keeps one store per run.
 - **Box-accuracy pilot:** VLM bounding boxes were 0% well-framed, while over 95% of timestamps landed on the correct frame ([decisions](../decisions.md), 2026-10-16). The pilot report is kept outside the repository.
-- `eval/docs/vlm_benchmark_results.md` is marked superseded (P1-v1 few-shot prompt).
+- `eval/docs/vlm_benchmark_results.md` is the incident-contract-v2 run of 2026-10-02 (incident fields, 55 videos × 3 models), not comparable with later contract versions.
 
 ### 1.2 What MVP2 already ships
 
@@ -415,10 +415,10 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 
 | Step | Needs before it can start | Open decision or dependency |
 |---|---|---|
-| 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: eval storage is undecided and `eval/db.py` still maps tables finals dropped) |
+| 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: storage for labels and manifests is undecided) |
 | 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (stopped since 2026-10-24, [status](../status.md#4-known-issues) item 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
 | 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
-| 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X needs eval storage (open item 1) |
+| 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X scores offline (`eval/offline_store.py`) |
 
 The finals corpus is empty today (§1.2), so no step past 2 can produce more than a plumbing run until reviewers mark official revisions or re-analyse videos with the agent.
 

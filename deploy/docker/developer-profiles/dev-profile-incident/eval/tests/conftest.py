@@ -66,7 +66,7 @@ def db_reports(incident_db, monkeypatch):
 
     monkeypatch.setattr("config.incident_db_dsn", lambda: str(incident_db.engine.url))
     _db.reset_cache()
-    monkeypatch.setattr("db.get_db", lambda: incident_db)
+    monkeypatch.setattr("db.get_db", lambda **_: incident_db)
     return DBReports(incident_db)
 
 
