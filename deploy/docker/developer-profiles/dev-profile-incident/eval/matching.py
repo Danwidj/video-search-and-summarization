@@ -100,12 +100,16 @@ _KIND_CONFIG = {
 }
 
 
+class EmbeddingUnavailableError(RuntimeError):
+    """The embedder failed while both sides had items: the kind cannot be scored (not "no matches")."""
+
+
 def match_kind(db, kind: str, incident_id: str, model_run_id: str, *, threshold: float | None = None) -> list[dict]:
     """Match and persist one evidence kind for one incident + model run.
 
-    Returns the accepted matches as plain dicts (``{<id>, gt_<id>, similarity_score}``).
-    Fails soft to ``[]`` when either side is empty or the embedding endpoint is
-    unavailable - nothing is persisted in that case.
+    Returns the accepted matches as plain dicts (``{<id>, gt_<id>, similarity_score}``),
+    ``[]`` when either side is empty. Raises ``EmbeddingUnavailableError`` when the
+    embedder fails: an empty result there would score every item as a miss.
     """
     text_fn, id_field, list_method, gt_list_method, record_method = _KIND_CONFIG[kind]
     model_rows = getattr(db, list_method)(incident_id, model_run_id)
@@ -115,7 +119,7 @@ def match_kind(db, kind: str, incident_id: str, model_run_id: str, *, threshold:
 
     result = embed_texts([text_fn(r) for r in model_rows] + [text_fn(r) for r in gt_rows])
     if not result.ok:
-        return []
+        raise EmbeddingUnavailableError(f"{kind}: {result.error or 'embedding request failed'}")
     vectors = result.data
     model_vectors, gt_vectors = vectors[: len(model_rows)], vectors[len(model_rows) :]
     similarity = _cosine_similarity_matrix(model_vectors, gt_vectors)

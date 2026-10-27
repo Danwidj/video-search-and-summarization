@@ -81,9 +81,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import config  # noqa: F401,E402
 import contract  # noqa: E402
 import db as db_module  # noqa: E402
+import eval_gt  # noqa: E402
+import methodology  # noqa: E402
+import r2_videos  # noqa: E402
 from db_postgrest import PostgrestIncidentDB  # noqa: E402
 from db_postgrest import configured as postgrest_configured  # noqa: E402
-import eval_gt  # noqa: E402
 from eval_gt_schema import load_gt_index  # noqa: E402
 from eval_ingest_gt import EVAL_DATA_DIR, load_offline_gt  # noqa: E402
 from eval_run_lib import (  # noqa: E402
@@ -91,12 +93,19 @@ from eval_run_lib import (  # noqa: E402
     RP1_MODEL,
     EvaluatorDependencyError,
     check_embedding_server_healthy,
-    classify_outcome,
     check_judge_ok,
+    check_scoring_complete,
+    classify_outcome,
     coerce_int_or_none,
     model_run_id_for,
     safe_model_id,
     score_matches_summary,
+)
+from eval_video_resolution import (  # noqa: E402
+    ResolutionError,
+    build_basename_index,
+    resolve_filename,
+    signed_url,
 )
 from eval_vlm_client import (  # noqa: E402
     MODELS,
@@ -107,8 +116,6 @@ from eval_vlm_client import (  # noqa: E402
     generate_report_with_rp1,
     p1_request_config,
 )
-from eval_video_resolution import ResolutionError, build_basename_index, resolve_filename, signed_url  # noqa: E402
-import r2_videos  # noqa: E402
 from video_duration import r2_video_metadata  # noqa: E402
 
 RESULTS_DIR = EVAL_DATA_DIR / "results"
@@ -118,8 +125,8 @@ EMPTY_PREDICTION = {"incident": {}, "entities": [], "instruments": [], "assets":
 # based on results observed during the run. Checked, not just assumed: the
 # embedding server's own /health response must report this exact model on
 # every check, or the run aborts.
-FROZEN_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-FROZEN_EMBEDDING_BASE_URL = "http://127.0.0.1:8811/v1"
+FROZEN_EMBEDDING_MODEL = methodology.EMBEDDING_MODEL
+FROZEN_EMBEDDING_BASE_URL = methodology.EMBEDDING_BASE_URL
 
 
 def get_db(*, init_schema: bool = False):
@@ -271,6 +278,10 @@ def run_one_video(
     eval_result = eval_gt.run_evaluation(db, incident_id, model_run_id, incident_only=incident_only)
     judge_calls = eval_gt.JUDGE_HTTP_CALLS - judge_calls_before
     check_judge_ok(eval_result)
+    check_scoring_complete(eval_result)
+    if (gt_p1_shaped.get("incident") or {}).get("out_of_taxonomy"):
+        # Ground-truth status, independent of the prediction: the type is not an eligible field.
+        eval_result.fields.setdefault("type", {})["excluded"] = "out_of_taxonomy"
 
     if incident_only:
         rp1_report = {
@@ -338,6 +349,8 @@ def run_one_video(
         },
         "rp1_report": rp1_report,
         "judge_calls": judge_calls,
+        "methodology_version": methodology.METHODOLOGY_VERSION,
+        "scoring_errors": list(eval_result.scoring_errors),
         "incident_field_scores": eval_result.fields,
         "entities": score_matches_summary(eval_result, "entities"),
         "instruments": score_matches_summary(eval_result, "instruments"),
@@ -380,6 +393,9 @@ def run(
     run_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     # Fail fast, before burning any P1/RP1 calls, if either evaluator
     # dependency isn't already healthy at the frozen configuration.
+    mismatch = methodology.judge_model_mismatch()
+    if mismatch:
+        raise EvaluatorDependencyError(mismatch)
     if not incident_only:
         # matching.py embeds through INCIDENT_EMBEDDING_BASE_URL; the health check must cover that same server.
         configured_embedding_url = config.embedding_base_url().rstrip("/")
@@ -480,6 +496,7 @@ def run(
                 "model_id": model,
                 "prompt_version": contract.contract_version(),
                 "validation_policy": contract.POLICY_ID,
+                "methodology": methodology.record(),
                 "inference_config": recorded_p1_config(),
                 "split_manifest_ref": str(manifest_path),
                 "run_id": model_run_ids[model],

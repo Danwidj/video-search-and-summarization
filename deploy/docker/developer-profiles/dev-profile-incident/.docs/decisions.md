@@ -2,6 +2,31 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Evaluation methodology v1.0 pins the scorer and never turns a scoring failure into a score
+- **Decision:** `eval/methodology.py` and `eval/methodology/evaluation-methodology-v1.0.md` fix every instrument that moves a score, and every result records them:
+  - the judge: `nvidia/nemotron-3-nano-30b-a3b`, `judge-prompt-v1.txt` byte-identical to the earlier inline prompt, temperature 0, pass at ≥ 0.5;
+  - MiniLM-L6-v2 at :8811 for matching, at cosine 0.75;
+  - ±5 s for timestamps;
+  - the bootstrap seed.
+
+  How failures are treated:
+  - a configured judge other than the pin stops the run;
+  - transient judge failures are retried twice with the identical request;
+  - a judge or embedder failure that remains leaves the field `null` and stops the run, and the aggregate excludes and counts `null`s;
+  - request failures (no model output) are excluded from accuracy, while invalid model output stays a miss.
+
+  The aggregate adds per-video 95% intervals, severity within ±1, bias and confusion, threat within ±1 and holder accuracy. It refuses to pool methodology versions; earlier results are labelled legacy.
+- **Why:** before this, an embedder outage scored every item as a miss and an item-judge outage as a fail, the judge model came from an unchecked environment variable with no temperature, and results with different instruments could be pooled. These would silently move scores between prompt versions, which the experiments must compare.
+- **Rejected:** a new judge prompt (it would break comparability with every earlier score); continuing a run past scoring errors (a partial result is easy to misread); counting request failures as misses (they measure the endpoint, not the model).
+- **Clips outside the five types (Option C, approved 2026-10-27):**
+  - status comes only from the ground truth's `Out_Of_Taxonomy` and `Nearest_Type` columns, never the prediction or the review workbook's candidate flag;
+  - such a clip leaves type accuracy only, is counted and listed, and nearest-type agreement is reported as a secondary figure;
+  - every other field is scored;
+  - the clips form their own breakdown row, `Outside the five types`.
+
+  Denominators are per eligible field, and pooling weights each field by its own count. Request failures and invalid outputs are reported apart, as conditional accuracy and end-to-end accuracy plus reliability rates.
+- **Links:** [`../eval/methodology/evaluation-methodology-v1.0.md`](../eval/methodology/evaluation-methodology-v1.0.md); [`../eval/extraction_stats.py`](../eval/extraction_stats.py); [`../eval/tests/test_methodology.py`](../eval/tests/test_methodology.py).
+
 ### 2026-10-27: Annotation guidelines v1.0 are the approved definition of a correct annotation
 - **Decision:** `eval/ground_truth/annotation-guidelines-v1.0.md` is the single definition of a correct annotation. Ground-truth review and correction and VSS prompt variants all use it, and it is separate from every prompt (plan decisions D1 and D2). The severity and instrument-threat scales are the workbook's, unchanged. It adds:
   - decision rules (observed harm and demonstrated danger, no inferred outcomes, counting people) and category calibration examples;

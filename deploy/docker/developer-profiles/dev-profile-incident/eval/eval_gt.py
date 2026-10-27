@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 import httpx
 
 import config
+import methodology
 import matching
 from incident_report import (
     canonical_incident_type,
@@ -129,8 +130,10 @@ def _judged_field_score(expected, predicted, *, timeout: float | None = None) ->
     """
     judge = judge_description_similarity(expected or "", predicted or "", timeout=timeout)
     if judge.ok:
-        return {"expected": expected, "predicted": predicted, "score": judge.data, "pass": judge.data >= 0.5}
-    return {"expected": expected, "predicted": predicted, "score": None, "pass": False, "error": judge.error}
+        return {"expected": expected, "predicted": predicted, "score": judge.data,
+                "pass": judge.data >= methodology.DESCRIPTION_PASS_SCORE}
+    # Unscored, not failed: a judge outage must never read as a wrong answer.
+    return {"expected": expected, "predicted": predicted, "score": None, "pass": None, "error": judge.error}
 
 
 def resolve_holder(model_instrument: dict, gt_instrument: dict, entity_matches: list[dict]) -> dict:
@@ -215,11 +218,8 @@ class Result:
 # Adapted (as prompt text, never imported code) from Pipeline A's
 # semantic-equivalence rubric (services/agent/.../evaluators/), scoring 0.0-1.0
 # for two incident descriptions describing the same underlying event.
-_JUDGE_SYSTEM_PROMPT = """INCIDENT_JUDGE_REQUEST
-You are scoring whether two incident descriptions describe the same underlying
-event, allowing for different wording, phrasing, and level of detail. Score
-0.0 (unrelated events) to 1.0 (semantically equivalent). Respond with a JSON
-object: {"score": <float 0.0-1.0>, "reasoning": "<one sentence>"}."""
+# The judge prompt is a pinned, versioned file (methodology/judge-prompt-v1.txt); see methodology.py.
+_JUDGE_SYSTEM_PROMPT = methodology.judge_prompt()
 
 _SCORE_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _SCORE_BARE_OBJECT = re.compile(r"(\{[\s\S]*\"score\"[\s\S]*\})")
@@ -271,11 +271,12 @@ def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) 
         resp = httpx.post(
             f"{base_url}/chat/completions",
             json={
-                "model": config.incident_judge_model(),
+                "model": methodology.JUDGE_MODEL,
                 "messages": [
                     {"role": "system", "content": _JUDGE_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
+                **methodology.JUDGE_REQUEST_SETTINGS,
             },
             headers=headers,
             timeout=timeout or config.http_timeout_seconds(),
@@ -303,20 +304,39 @@ def judge_description_similarity(
     request fails, or every attempt's response cannot be parsed into a score -
     never raises, matching ``agent_client.py`` / ``embed_client.py``.
 
-    Retries only a *parse failure* (the model responded, but not in the
-    requested ``{"score": ...}`` shape - an occasional model hallucination
-    observed in practice, e.g. answering an unrelated task) up to
-    ``max_retries`` additional times with the identical request - same prompt,
-    same model, same config every attempt. A missing base URL or a network/
-    HTTP error is never retried; it is returned immediately, matching prior
-    behavior exactly (``max_retries`` only widens the parse-failure case).
+    Retries a *parse failure* (the model responded, but not in the requested
+    ``{"score": ...}`` shape) up to ``max_retries`` additional times, and a
+    *transient* failure (network error, timeout, HTTP 429 or 5xx) up to
+    ``methodology.JUDGE_TRANSIENT_RETRIES`` times with backoff - always the
+    identical request: the pinned model, prompt and settings. A missing base URL
+    or another HTTP error is returned immediately. A failure that remains is a
+    scoring error for the caller to record, never a low score.
     """
     result = _judge_once(expected, predicted, timeout=timeout)
     attempts = 1
     while not result.ok and result.error.startswith("could not extract a score") and attempts <= max_retries:
         result = _judge_once(expected, predicted, timeout=timeout)
         attempts += 1
+    # Transient failures (network, timeout, HTTP 429/5xx) are retried with the identical request
+    # (evaluation-methodology-v1.0); a call that still fails is a scoring error, never a low score.
+    for backoff in methodology.JUDGE_RETRY_BACKOFF_SECONDS[: methodology.JUDGE_TRANSIENT_RETRIES]:
+        if result.ok or not _is_transient(result):
+            break
+        _sleep(backoff)
+        result = _judge_once(expected, predicted, timeout=timeout)
     return result
+
+
+def _is_transient(result: Result) -> bool:
+    if result.status_code is not None:
+        return result.status_code == 429 or result.status_code >= 500
+    return result.error.split(":", 1)[0].endswith(("Error", "Timeout", "Exception")) and "BASE_URL" not in result.error
+
+
+def _sleep(seconds: float) -> None:
+    import time
+
+    time.sleep(seconds)
 
 
 # --------------------------------------------------------------------------- #
@@ -334,6 +354,9 @@ class EvaluationResult:
     matches: dict[str, list[dict]] = field(default_factory=dict)
     counts: dict[str, dict] = field(default_factory=dict)
     unmatched: dict[str, dict[str, list[dict]]] = field(default_factory=dict)
+    # Anything the scorer could not score (judge or embedder unavailable). Never folded into a
+    # score: the affected field is None and the run refuses to continue (eval_run.check_scoring_complete).
+    scoring_errors: list[dict] = field(default_factory=list)
 
 
 _KIND_ID_FIELD = {"entities": "entity_id", "instruments": "instrument_id", "assets": "asset_id"}
@@ -379,11 +402,13 @@ def run_evaluation(db, incident_id: str, model_run_id: str, *, incident_only: bo
     if judge.ok:
         result.description_score = judge.data
         fields["description"]["score"] = judge.data
-        fields["description"]["pass"] = judge.data >= 0.5
+        fields["description"]["pass"] = judge.data >= methodology.DESCRIPTION_PASS_SCORE
     else:
         result.description_error = judge.error
+        result.scoring_errors.append({"field": "incident.description", "error": judge.error})
         fields["description"]["score"] = None
-        fields["description"]["pass"] = False
+        fields["description"]["pass"] = None
+        fields["description"]["error"] = judge.error
 
     if incident_only:
         return result
@@ -391,11 +416,24 @@ def run_evaluation(db, incident_id: str, model_run_id: str, *, incident_only: bo
 
 
 def _evaluate_evidence(db, incident_id: str, model_run_id: str, result: EvaluationResult) -> EvaluationResult:
-    """Entity/instrument/asset matching, P/R/F1 and attribute scores (unchanged), added to ``result``."""
-    matches = matching.match_incident(db, incident_id, model_run_id)
+    """Entity/instrument/asset matching, P/R/F1 and attribute scores, added to ``result``.
+
+    When the embedder is unavailable the kind is **unscored** (``counts[kind] = None`` and a
+    scoring error), never zero matches: zero matches would score every item as a miss.
+    """
+    matches: dict[str, list[dict]] = {}
+    for kind in _KIND_ID_FIELD:
+        try:
+            matches[kind] = matching.match_kind(db, kind, incident_id, model_run_id)
+        except matching.EmbeddingUnavailableError as exc:
+            matches[kind] = []
+            result.counts[kind] = None
+            result.scoring_errors.append({"field": f"{kind}.matching", "error": str(exc)})
     result.matches = matches
 
     for kind, id_field in _KIND_ID_FIELD.items():
+        if kind in result.counts and result.counts[kind] is None:
+            continue
         model_rows = getattr(db, _KIND_LIST_METHOD[kind])(incident_id, model_run_id)
         gt_rows = getattr(db, _KIND_GT_LIST_METHOD[kind])(incident_id)
         kind_matches = matches.get(kind, [])
@@ -420,5 +458,8 @@ def _evaluate_evidence(db, incident_id: str, model_run_id: str, result: Evaluati
             gt_row = gt_by_id.get(m.get(f"gt_{id_field}"), {})
             entity_matches = matches.get("entities", []) if kind == "instruments" else None
             m["attribute_scores"] = score_matched_pair(kind, model_row, gt_row, entity_matches=entity_matches)
+            for name, score in m["attribute_scores"].items():
+                if isinstance(score, dict) and score.get("error"):
+                    result.scoring_errors.append({"field": f"{kind}.{m.get(id_field)}.{name}", "error": score["error"]})
 
     return result
