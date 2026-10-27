@@ -42,6 +42,7 @@ export function EvidenceFramePicker({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const dragOriginRef = useRef<FramePoint | null>(null);
   const [seconds, setSeconds] = useState(() => pickSeconds(initialSeconds, null, range));
   const [duration, setDuration] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ from: FramePoint; to: FramePoint } | null>(null);
@@ -72,10 +73,22 @@ export function EvidenceFramePicker({
   const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = pointOn(event);
+    dragOriginRef.current = point;
     setDrag({ from: point, to: point });
   };
   const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (drag) setDrag({ from: drag.from, to: pointOn(event) });
+    const from = dragOriginRef.current;
+    if (from) setDrag({ from, to: pointOn(event) });
+  };
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const from = dragOriginRef.current;
+    if (from) setDrag({ from, to: pointOn(event) });
+    dragOriginRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const cancelDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragOriginRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const crop = async () => {
@@ -131,8 +144,10 @@ export function EvidenceFramePicker({
           <div
             className="absolute inset-0 cursor-crosshair touch-none"
             data-testid="frame-picker-surface"
+            onPointerCancel={cancelDrag}
             onPointerDown={startDrag}
             onPointerMove={moveDrag}
+            onPointerUp={finishDrag}
           />
           {region && (
             <div

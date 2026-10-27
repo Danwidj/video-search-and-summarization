@@ -86,6 +86,14 @@ test('the picker is a dialog that crops through the evidence-crop route and hand
   );
   assert.doesNotMatch(picker, /itemId/, 'the crop needs no item ID: Save uploads it under the item key');
   assert.match(picker, /Escape/, 'Escape closes the picker unless a crop is running');
+  assert.match(
+    picker,
+    /const dragOriginRef = useRef<FramePoint \| null>\(null\)/,
+    'the active drag is not inferred from the visible rectangle',
+  );
+  assert.match(picker, /onPointerUp=\{finishDrag\}/, 'releasing the pointer finishes the drag');
+  assert.match(picker, /onPointerCancel=\{cancelDrag\}/, 'a cancelled pointer cannot leave the picker dragging');
+  assert.match(picker, /dragOriginRef\.current = null/, 'finishing or cancelling stops later pointer movement from changing the crop');
 });
 
 test('Edit mode offers Replace image on each draft card and applies the pick to the draft item', async () => {
