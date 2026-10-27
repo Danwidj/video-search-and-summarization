@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -65,7 +65,12 @@ uv run python scripts/gt_review_packet.py
 uv run --no-project --python 3.12 --script scripts/gt_frames.py eval_data/gt_review_packets/index.json
 uv run python scripts/gt_candidate_build.py --version v0.2   # reads ground_truth/review/ai-proposals-v0.2.jsonl
 uv run python scripts/gt_review_backup.py snapshot --kind Candidate --version v0.2 --reason "..."
+
+# Ground-truth freeze (PR 5): a candidate until an approval record names it
+uv run python scripts/gt_freeze.py --candidate "ground_truth/review/Ground Truth Candidate v0.2.xlsx" [--approval <record>]
 ```
+
+Frozen ground truth loads only through `eval_gt_schema.load_frozen_gt_index(<dir>)`, which verifies checksums and refuses a candidate. Never write the approval record yourself: it is the user's approval of the final annotations and exclusions ([`eval/ground_truth/freeze/README.md`](../../eval/ground_truth/freeze/README.md)).
 
 A rebuild never replaces an existing review workbook silently. It needs `--overwrite`, and it needs `--discard-review-decisions` as well if anyone has reviewed entries; either way it backs the old file up first. Prefer a new `--version`.
 
