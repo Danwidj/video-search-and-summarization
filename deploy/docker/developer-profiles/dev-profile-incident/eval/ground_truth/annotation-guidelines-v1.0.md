@@ -1,6 +1,6 @@
 # Annotation Guidelines v1.0
 
-> **Status: draft for approval (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record): A1–A7 and A9–A13 are approved (provisionally until this version's final wording is approved); A8 and A14 carry final wording that awaits approval.
+> **Status: approved (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record); all fourteen are approved.
 
 This document defines what a correct incident annotation is. It is the shared reference for:
 - human annotators and reviewers of the ground truth;
@@ -49,7 +49,7 @@ Exactly one of the five canonical types (lowercase, as in `incident-contract-v4`
 #### 2.1.1 Primary incident when a video contains more than one type (A14)
 
 1. **List the events** in the clip that each match one of the five types, after applying §2.1.2 (incidental force is part of a property crime, not a separate assault).
-2. **Centrality first.** For each event, count the whole seconds of the incident window (§2.2) during which that event is observably under way. Apply the start and end rules to the event on its own. Consequences that the type's definition includes count towards their event: an explosion's fire, a collision until the vehicles and people come to rest, a fight until the blows stop. **The event under way for more than half of the incident window is the primary incident.**
+2. **Centrality first.** For each event, count the whole seconds of the incident window (§2.2) during which that event is observably under way. Apply the start and end rules to the event on its own. Consequences that the type's definition includes count towards their event only while they are **active**: an explosion's fire while flames are visibly burning or spreading, a collision until the vehicles and people come to rest, a fight until the blows stop. **Passive aftermath does not count**: lingering smoke, stationary wreckage or debris, a fire scene after the flames are out, people standing or lying still once the harmful process has stopped. These are the same observable boundaries as the incident end rule (§2.2), applied to each event. **The event under way for more than half of the incident window is the primary incident.**
 3. **Severity breaks a tie.** If no event exceeds half, or two overlapping events both do, the event with the higher severity (§2.3, rated alone) is primary.
 4. **Initiating event last.** If the severities are also equal, the event the others follow from is primary. Every case is therefore decided the same way.
 5. **The whole incident is still annotated:** one window covering the connected sequence, one severity for the whole incident, and every entity, instrument and asset of every event. Only the type depends on this rule.
@@ -59,6 +59,7 @@ Exactly one of the five canonical types (lowercase, as in `incident-contract-v4`
 | Car hits a car (2 s); its fuel tank explodes and the fireball engulfs two bystanders, burning for 10 s (window 12 s) | collision 2/12, explosion 10/12 | 3 vs 4 | `explosion` (more than half) |
 | Multi-car pile-up over 20 s; one car flashes into flame for 3 s at the end, no one near (window 23 s) | collision 20/23, flash fire 3/23 | 3 vs 2 | `road accident` (more than half) |
 | Car hits a wall (2 s); the car then burns for 40 s with no one near (window 42 s) | collision 2/42, fire 40/42 | 3 vs 2 | `explosion` if the fire began with a sudden ignition (§2.1); otherwise `road accident`, the fire being a consequence outside the five types |
+| Two cars collide (3 s); smoke lingers over the stationary wrecks for 30 s with no flames (window 3 s) | collision 3/3; the smoke is passive aftermath | — | `road accident` (the aftermath is outside the window and counts for nothing) |
 | Pedestrian struck by a car (2 s); the driver then fights the pedestrian's companion for 25 s (window 27 s) | collision 2/27, assault 25/27 | 3 vs 3 | `assault` (more than half) |
 | Intruder forces an ATM for 30 s; a guard arrives and is struck once (window 32 s) | burglary 32/32, the strike is incidental (§2.1.2) | — | `burglary` |
 | Intruder forces a door (10 s), then beats the resident for 20 s while the house is searched (window 30 s) | burglary 30/30 and assault 20/30 overlap, both more than half | 3 vs 4 | `assault` (severity breaks the overlap) |
@@ -67,7 +68,7 @@ Exactly one of the five canonical types (lowercase, as in `incident-contract-v4`
 **Why centrality first (decided over "severity first"):**
 - **Reproducibility.** Centrality rests on time spans, which annotators already mark. Severity rests on judgments between adjacent levels. In the 2026-10-02 benchmark, models' start and end times were within ±5 s for 30–81% of videos, but their severity was exact for only 22–27%, so severity is this project's least stable field. Human agreement is measured in PR 4 (κ). Severity-first would also make the type flip whenever a severity rating moves by one level, and with two events often rated the same, it would fall back on chronology for a large share of cases.
 - **Fit.** "More than half the sequence" matches what the clip is about. A brief, severe event inside a long incident of another kind is still recorded fully in the severity, description and items.
-- **Known limit.** A long, low-harm consequence (a car burning for 40 s after a 2 s crash) can outweigh a short, severe cause. The table shows the case and how §2.1's explosion boundary settles it. Review notes (A13) record such cases.
+- **Known limit.** A long but still active, low-harm consequence (a car visibly burning for 40 s after a 2 s crash) can outweigh a short, severe cause. Passive aftermath never does, because it is not counted (step 2). The table shows the case and how §2.1's explosion boundary settles it. Review notes (A13) record such cases.
 
 #### 2.1.2 Burglary, robbery, force and clips outside the five types (A8)
 
@@ -317,7 +318,7 @@ All descriptions are objective, concise and informative. They preserve meaningfu
 
 ## 11. Decision record
 
-Decisions on the interpretations raised by this draft (2026-10-27). **Approved** items are provisional until the final wording of this version is approved. **Revised** items have new wording above and await approval. No label changes until the ground-truth correction (PR 4) applies these rules with human review; "label impact" is what that review is expected to touch.
+Decisions on the interpretations raised by this version, all approved on 2026-10-27 (A3, A7, A8, A12 and A14 after revision). No label changes until the ground-truth correction (PR 4) applies these rules with human review; "label impact" is what that review is expected to touch.
 
 | # | Question | Decision | Status | Label impact (applied in PR 4 review) |
 |---|---|---|---|---|
@@ -328,14 +329,14 @@ Decisions on the interpretations raised by this draft (2026-10-27). **Approved**
 | A5 | Naming an unidentifiable object | Most general true noun, else "unidentified object" | Approved | Up to 6 names reviewed (Assault015, Assault032, Burglary052, Burglary066, Burglary093, Explosion004) |
 | A6 | Incident description length | 1–3 sentences, no word cap | Approved | None |
 | A7 | Age and gender words | Only with visual support; never ethnicity and similar (§7) | Approved (revised wording) | No automatic change; reviewers check the 49 of 169 entity descriptions (and incident descriptions) that use such words and rewrite unsupported ones |
-| A8 | Category boundaries and clips outside the five types | Ordinary burglary/robbery/theft meanings vs the project's `burglary` = property crime at premises convention; incidental vs primary violence; explosion includes sudden ignition; out-of-taxonomy clips marked, not forced, with their scoring open for PR 1B (§2.1.2) | Final wording, awaiting approval | No change from the convention (all 18 burglary clips come from the source's Burglary class); no robbery-with-force case found. Explosion011 (smoke burst, no flame) and Explosion014 (fire at a toll plaza) are reviewed as possible out-of-taxonomy clips: 0–2 clips. Explosion002/017/019/029 (sudden ignition or bursts) stay `explosion` |
+| A8 | Category boundaries and clips outside the five types | Ordinary burglary/robbery/theft meanings vs the project's `burglary` = property crime at premises convention; incidental vs primary violence; explosion includes sudden ignition; out-of-taxonomy clips marked, not forced, with their scoring open for PR 1B (§2.1.2) | Approved | No change from the convention (all 18 burglary clips come from the source's Burglary class); no robbery-with-force case found. Explosion011 (smoke burst, no flame) and Explosion014 (fire at a toll plaza) are reviewed as possible out-of-taxonomy clips: 0–2 clips. Explosion002/017/019/029 (sudden ignition or bursts) stay `explosion` |
 | A9 | Can an animal attack be severity 1? | Yes; the type sets no minimum. Existing severity-1 labels are reviewed | Approved | Severity of Animal004, Animal011, Animal012 (dangerous animal close to a person) re-checked: 0–3 rows |
 | A10 | Tie-break between adjacent levels | Lower level unless the higher level's indicator is visible | Approved | None automatically |
 | A10b | Threat of a tool used only on property | Capacity to harm people in that context | Approved | None known |
 | A11 | Crowds that cannot be told apart | Distinguishable people listed, the rest in the description | Approved | None |
 | A12 | Responders' equipment | Hand-held test applies as to any object; threat rated separately (§4.1 rule 3, §6) | Approved (revised wording) | Explosion002 I2 extinguisher and Explosion004 I2 hose checked against the video: 0–2 rows become assets or are dropped |
 | A13 | Where severity reasons, notes and uncertainty live | Optional, unscored note fields in ground-truth v1.0 (format with PR 4/5) | Approved | None (adds fields) |
-| A14 | Primary type when a video contains several types | Centrality (event under way for more than half the window), then severity, then the initiating event (§2.1.1) | Final wording, awaiting approval | None found (no clip mentions two types); applied during review |
+| A14 | Primary type when a video contains several types | Centrality (event actively under way for more than half the window; passive aftermath not counted), then severity, then the initiating event (§2.1.1) | Approved | None found (no clip mentions two types); applied during review |
 
 **Open for PR 1B (from A8):** how `out_of_taxonomy` clips are scored or excluded; PR 5 applies it to the frozen ground truth.
 
@@ -344,5 +345,6 @@ Decisions on the interpretations raised by this draft (2026-10-27). **Approved**
 | Version | Date | Change |
 |---|---|---|
 | v1.0 (draft) | 2026-10-27 | First version: scales unchanged, decision rules and examples added, A1–A14 pending approval |
-| v1.0 (draft, revision 3) | 2026-10-27 | A3, A7, A12 approved as revised. A8: ordinary burglary/robbery/theft meanings separated from the project's `burglary` = property crime at premises convention. A14: centrality first (more than half the window), severity as tie-break, then initiating event, with a comparison against severity-first |
 | v1.0 (draft, revision 2) | 2026-10-27 | A1, A2, A4, A5, A6, A9, A10, A10b, A11, A13 approved provisionally; A3, A7, A8, A12, A14 rewritten as requested: explosives by capability and context, demographic words only with visual support, incidental versus primary violence and out-of-taxonomy handling, responders' equipment under the hand-held rule, primary incident by most serious harm with a fixed tie-break |
+| v1.0 (draft, revision 3) | 2026-10-27 | A3, A7, A12 approved as revised. A8: ordinary burglary/robbery/theft meanings separated from the project's `burglary` = property crime at premises convention. A14: centrality first (more than half the window), severity as tie-break, then initiating event, with a comparison against severity-first |
+| v1.0 | 2026-10-27 | Approved. A8 and A14 approved as revised; A14 clarified: passive aftermath (lingering smoke, stationary wreckage, an inactive fire scene) does not count towards an event's active duration |

@@ -2,10 +2,24 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
-### 2026-10-27: Annotation guidelines v1.0 keep the severity and threat scales and add decision rules; interpretations wait for approval
-- **Decision:** `eval/ground_truth/annotation-guidelines-v1.0.md` is the single definition of a correct annotation, shared by ground-truth review and correction and by VSS prompt variants, and separate from every prompt (plan decisions D1 and D2, approved 2026-10-27). The severity and instrument-threat scales are the workbook's, unchanged. The document adds decision rules (observed harm and demonstrated danger, no inferred outcomes, counting people), category calibration examples, significance rules for entities, the hand-held test for instruments, asset relevance, description templates, and uncertainty handling. Fourteen interpretations that could change existing labels (A1-A14: vehicles as instruments, unseen drivers, explosives' threat, held-then-dropped objects, unidentifiable objects, description length, apparent gender and age words, category boundaries, severity 1 animal attacks, the adjacent-level tie-break, tool threat without people, crowds, responders' tools, where notes live, two-type incidents) are recorded in its §11 decision record: A1–A7 and A9–A13 approved on 2026-10-27 (A3 explosives by capability and context, A7 age and gender words only with visual support, A12 responders' equipment under the hand-held rule, as revised); A8 (ordinary burglary/robbery/theft meanings separated from the intentional project convention `burglary` = property crime at premises; incidental versus primary violence; out-of-taxonomy clips marked, not forced, their scoring left to PR 1B) and A14 (primary incident by centrality: the event under way for more than half the window, then severity, then the initiating event) await approval of the final wording. No label changes before the PR 4 review.
-- **Why:** the ground truth, the correction pass and the prompt experiments must measure against one definition, fixed before any label changes; deciding interpretations silently would move labels without review.
-- **Rejected:** putting the definitions in the correction prompt or the production prompt (prompts change per experiment; definitions must not); new severity or threat levels (D1 keeps the scales).
+### 2026-10-27: Annotation guidelines v1.0 are the approved definition of a correct annotation
+- **Decision:** `eval/ground_truth/annotation-guidelines-v1.0.md` is the single definition of a correct annotation. Ground-truth review and correction and VSS prompt variants all use it, and it is separate from every prompt (plan decisions D1 and D2). The severity and instrument-threat scales are the workbook's, unchanged. It adds:
+  - decision rules (observed harm and demonstrated danger, no inferred outcomes, counting people) and category calibration examples;
+  - entity significance, the hand-held test for instruments, and asset relevance;
+  - description templates and uncertainty handling.
+
+  The fourteen interpretations A1-A14 are decided in its §11, all approved on 2026-10-27. The ones most likely to matter later:
+  - **vehicles** are assets, and **unseen drivers** are not entities;
+  - **explosives** are rated by plausible capability and context;
+  - **age and gender words** need visual support, and ethnicity is never inferred;
+  - **`burglary`** means property crime at premises, an intentional convention separated from the ordinary meanings of burglary, robbery and theft; incidental force keeps that type;
+  - **`explosion`** includes sudden ignition;
+  - **clips outside the five types** are marked `out_of_taxonomy`, never forced into a type;
+  - **responders' equipment** follows the hand-held test;
+  - **primary type** is decided by centrality (the event actively under way for more than half the window, passive aftermath excluded), then severity, then the initiating event.
+- **Why:** the ground truth, the correction pass and the prompt experiments must measure against one definition, fixed before any label changes. Interpretations that could move labels were decided explicitly rather than silently. Centrality comes before severity because time spans are more reproducible than adjacent-level severity judgments: in the 2026-10-02 benchmark, start and end were within ±5 s for 30-81% of videos, but severity was exact for only 22-27%.
+- **Rejected:** putting the definitions in a prompt (prompts change per experiment; definitions must not); new severity or threat levels; severity-first primary-type selection (the type would flip with one-level severity changes and fall back on chronology); forcing out-of-taxonomy clips into the nearest type; treating robbery with incidental force as assault.
+- **Open:** how `out_of_taxonomy` clips are scored or excluded is decided by PR 1B and applied in PR 5. No label changes until the PR 4 review applies these rules.
 - **Links:** [`../eval/ground_truth/annotation-guidelines-v1.0.md`](../eval/ground_truth/annotation-guidelines-v1.0.md); [`mvp2/ground-truth-and-prompt-experiments-plan.md`](mvp2/ground-truth-and-prompt-experiments-plan.md) (PR 1A, D1, D2).
 
 ### 2026-10-27: The evaluation videos are local verified copies with a tracked manifest; `_demo` is the one filename alias

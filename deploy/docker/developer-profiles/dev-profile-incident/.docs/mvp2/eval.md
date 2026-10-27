@@ -28,7 +28,7 @@ Paths are relative to the profile directory, except paths starting with `service
   - Read from the gitignored `eval_data/ground_truth_labelling.xlsx`. `eval_run.py` loads it into an in-memory store for scoring (`eval/offline_store.py`, through `eval_ingest_gt.write_gt`); no database holds it. The `gt_*` tables existed on midterm and in the finals baseline, and `20261023000000_report_revisions_schema.sql` dropped them; `eval_ingest_gt.py --db` writes them only to a database that still has them.
   - `gt_incidents.type` is stored as the canonical lowercase type (`incident_report.canonical_incident_type`: `Fighting` → `assault`, `Animal` → `animal attack`). An unknown value is warned about on stderr and stored normalised, not dropped. GT rows ingested before this change may still hold capitalised or retired names; scoring folds them on the GT side.
   - Ground truth has no per-item timestamps and no boxes.
-  - What a correct label is: [`eval/ground_truth/annotation-guidelines-v1.0.md`](../../eval/ground_truth/annotation-guidelines-v1.0.md) (draft; interpretations A1-A14 pending approval).
+  - What a correct label is: [`eval/ground_truth/annotation-guidelines-v1.0.md`](../../eval/ground_truth/annotation-guidelines-v1.0.md) (approved 2026-10-27; interpretations A1-A14 decided in its §11).
 - **Splits:**
   - 55 held-out videos, seed 42.
   - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate. Their R2 keys were refreshed on 2026-10-27 after 24 clips moved to `anomaly/demo/` (membership unchanged).
