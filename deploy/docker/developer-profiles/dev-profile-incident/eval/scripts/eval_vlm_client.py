@@ -175,7 +175,10 @@ def chat_completion(
     timing = {"elapsed_s": time.perf_counter() - started, "started_at": started_at, "finished_at": _utc_now()}
     if resp.status_code >= 400:
         failure = {
-            "failure_kind": "rate_limited" if resp.status_code == 429 else "http_error",
+            # 504/522/524: the gateway or Cloudflare gave up waiting for the upstream (Cloudflare's origin
+            # timeout is about 100 s, below this client's timeout): a timeout, not an HTTP error.
+            "failure_kind": "rate_limited" if resp.status_code == 429
+            else "timeout" if resp.status_code in (504, 522, 524) else "http_error",
             "retry_after_s": _retry_after_seconds(getattr(resp, "headers", None)) if resp.status_code == 429 else None,
         }
     else:

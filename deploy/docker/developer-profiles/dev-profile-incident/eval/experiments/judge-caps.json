@@ -1,0 +1,83 @@
+{
+  "ground_truth": {
+    "version": "ground-truth-v1.0",
+    "status": "candidate",
+    "records_sha256": "7abf73ce0b6ac5aa91024a4a4a3fc136c0b9ef80de604ba7fe976eb3a9d23c5e"
+  },
+  "attempts_per_field": 5,
+  "formula": "required = repeats x sum(judged fields per video) x attempts per field; judged fields = 1 (incident description) + entities + 2 x instruments + 2 x assets (full scoring)",
+  "configs": [
+    {
+      "experiment_id": "direct-vlm-baseline",
+      "videos": 25,
+      "repeats": 2,
+      "judged_fields": 171,
+      "attempts_per_field": 5,
+      "required": 1710,
+      "configured": 1710,
+      "per_video": {
+        "Animal001": 4,
+        "Animal002": 3,
+        "Animal005": 3,
+        "Animal011": 6,
+        "Animal012": 6,
+        "Assault007": 12,
+        "Assault011": 15,
+        "Assault015": 8,
+        "Assault030": 3,
+        "Assault032": 5,
+        "Burglary004": 8,
+        "Burglary010": 19,
+        "Burglary031": 10,
+        "Burglary061": 6,
+        "Burglary093": 6,
+        "Explosion002": 12,
+        "Explosion003": 3,
+        "Explosion011": 3,
+        "Explosion028": 3,
+        "Explosion029": 8,
+        "RoadAccidents005": 5,
+        "RoadAccidents012": 6,
+        "RoadAccidents017": 5,
+        "RoadAccidents051": 6,
+        "RoadAccidents075": 6
+      }
+    },
+    {
+      "experiment_id": "vss-baseline",
+      "videos": 25,
+      "repeats": 2,
+      "judged_fields": 171,
+      "attempts_per_field": 5,
+      "required": 1710,
+      "configured": 1710,
+      "per_video": {
+        "Animal001": 4,
+        "Animal002": 3,
+        "Animal005": 3,
+        "Animal011": 6,
+        "Animal012": 6,
+        "Assault007": 12,
+        "Assault011": 15,
+        "Assault015": 8,
+        "Assault030": 3,
+        "Assault032": 5,
+        "Burglary004": 8,
+        "Burglary010": 19,
+        "Burglary031": 10,
+        "Burglary061": 6,
+        "Burglary093": 6,
+        "Explosion002": 12,
+        "Explosion003": 3,
+        "Explosion011": 3,
+        "Explosion028": 3,
+        "Explosion029": 8,
+        "RoadAccidents005": 5,
+        "RoadAccidents012": 6,
+        "RoadAccidents017": 5,
+        "RoadAccidents051": 6,
+        "RoadAccidents075": 6
+      }
+    }
+  ]
+}

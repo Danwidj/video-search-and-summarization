@@ -4,7 +4,7 @@
   "budget": {
     "max_p1_calls": 50,
     "max_p1_tokens": 1050000,
-    "max_judge_calls": 400
+    "max_judge_calls": 1710
   },
   "description": "Stage 1: fixed direct-VLM baseline (C1 on dev). Frozen after its first complete run; later stages reuse its saved outputs.",
   "experiment_id": "direct-vlm-baseline",

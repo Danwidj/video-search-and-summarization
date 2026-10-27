@@ -234,6 +234,25 @@ def cmd_budget(args) -> int:
     return 0
 
 
+def cmd_caps(args) -> int:
+    """Derive each config's judge-request cap from the ground truth (no calls); --write updates the snapshot."""
+    split = json.loads(er.SPLIT_PATH.read_text())
+    configs = [er.load_config(path) for path in args.configs]
+    gt_index, _ = load_gt({**configs[0], "ground_truth": {**configs[0]["ground_truth"], "allow_candidate": True}})
+    rows = [er.judge_cap_required(c, split, gt_index) for c in configs]
+    snapshot = {"ground_truth": {"version": gt_index.get("version"), "status": gt_index.get("status"),
+                                 "records_sha256": gt_index["manifest"].get("records_sha256")},
+                "attempts_per_field": er.JUDGE_ATTEMPTS_PER_FIELD,
+                "formula": "required = repeats x sum(judged fields per video) x attempts per field; judged fields = "
+                           "1 (incident description) + entities + 2 x instruments + 2 x assets (full scoring)",
+                "configs": rows}
+    if args.write:
+        er.JUDGE_CAPS_PATH.write_text(json.dumps(snapshot, indent=2) + "\n")
+    print(json.dumps({**snapshot, "configs": [{k: v for k, v in r.items() if k != "per_video"} for r in rows]},
+                     indent=2))
+    return 0 if all(r["configured"] >= r["required"] for r in rows) else 1
+
+
 def cmd_measure(args) -> int:
     """Pilot measurements (tokens and judge calls per call, rate limiting, latency) for ``budget --measured``."""
     import experiment_report
@@ -264,11 +283,14 @@ def main() -> int:
     budget = sub.add_parser("budget")
     budget.add_argument("configs", nargs="+", type=Path)
     budget.add_argument("--measured", type=Path, help="Pilot measurements from 'measure' (replaces the estimates)")
+    caps = sub.add_parser("caps", help="Derive judge-request caps from the ground truth (no calls)")
+    caps.add_argument("configs", nargs="+", type=Path)
+    caps.add_argument("--write", action="store_true", help="Update experiments/judge-caps.json")
     measure = sub.add_parser("measure")
     measure.add_argument("results", nargs="+", type=Path)
     args = parser.parse_args()
     return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "compare": cmd_compare, "report": cmd_report,
-            "verify": cmd_verify, "budget": cmd_budget, "measure": cmd_measure}[args.command](args)
+            "verify": cmd_verify, "budget": cmd_budget, "measure": cmd_measure, "caps": cmd_caps}[args.command](args)
 
 
 if __name__ == "__main__":

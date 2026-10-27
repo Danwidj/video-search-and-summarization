@@ -71,6 +71,7 @@ SCORING = ("full", "incident_only")
 PURPOSES = ("experiment", "pilot")
 BUDGET_KEYS = ("max_p1_calls", "max_p1_tokens", "max_judge_calls")
 PRICING_PATH = EVAL_DIR / "experiments" / "pricing.json"
+JUDGE_CAPS_PATH = EVAL_DIR / "experiments" / "judge-caps.json"
 # D10: deterministic randomisation of the video order per repeat.
 ORDER_SEED = 20261027
 # D11: the most one P1 attempt can use, which every cap check leaves room for: the largest 2026-10-02 Cosmos 3
@@ -231,6 +232,17 @@ def post_json(url: str, payload: dict, *, timeout: float) -> VSSResponse:
     return VSSResponse(response.status_code, body, time.perf_counter() - started)
 
 
+# Gateway or upstream timeouts: 504 (agent or proxy), 522 and 524 (Cloudflare: the origin took longer than
+# about 100 s). They are timeouts, not HTTP errors: no model output, counted as a miss end to end.
+GATEWAY_TIMEOUT_STATUS = (504, 522, 524)
+
+
+def _upstream_timeout(body) -> bool:
+    """The agent reports an upstream timeout as a 500 ``P1 call returned HTTP 524: ...``."""
+    detail = body.get("detail") if isinstance(body, dict) else body
+    return bool(re.search(r"P1 call returned HTTP (504|522|524)\b", str(detail or "")))
+
+
 def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str, started_at: str, finished_at: str):
     """The agent's answer as a ``ChatResult`` (the eval.md §4 Track X rules).
 
@@ -251,7 +263,9 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
             and isinstance(body["detail"].get("raw_output"), str):
         payload = body["detail"]
     else:
-        kind = {429: "rate_limited", 504: "timeout"}.get(response.status_code, "http_error")
+        kind = {429: "rate_limited"}.get(response.status_code) or (
+            "timeout" if response.status_code in GATEWAY_TIMEOUT_STATUS or _upstream_timeout(response.body)
+            else "http_error")
         return ChatResult(ok=False, status_code=response.status_code, error=json.dumps(response.body)[:1000],
                           failure_kind=kind, raw=body, **timing)
     if payload.get("contract_version") != contract.contract_version():
@@ -390,17 +404,37 @@ def call_usage(result: dict, pricing: dict, model: str) -> dict:
             "cost_usd_provisional": round(cost, 6)}
 
 
+def judged_fields(gt_p1_shaped: dict, scoring: str) -> int:
+    """Judged fields of one video: the incident description, plus (full) 1 per entity and 2 per instrument and asset."""
+    fields = 1
+    if scoring == "full":
+        fields += len(gt_p1_shaped.get("entities") or []) + 2 * len(gt_p1_shaped.get("instruments") or []) \
+            + 2 * len(gt_p1_shaped.get("assets") or [])
+    return fields
+
+
+def judge_cap_required(config: dict, split: dict, gt_index: dict) -> dict:
+    """The judge-request cap a configuration needs so the full planned run can never hit it.
+
+    ``required = repeats x sum over its videos of (judged fields x attempts per field)``: the same
+    worst case the runner reserves before each video, summed over the plan. A video's judged fields
+    are bounded by its ground truth (a match never exceeds the ground-truth items).
+    """
+    per_video = {v: judged_fields(gt_index["by_incident_id"][v]["p1_shaped"], config["scoring"])
+                 for v in videos_for(config, split)}
+    required = config["repeats"] * sum(per_video.values()) * JUDGE_ATTEMPTS_PER_FIELD
+    return {"experiment_id": config["experiment_id"], "videos": len(per_video), "repeats": config["repeats"],
+            "judged_fields": sum(per_video.values()), "attempts_per_field": JUDGE_ATTEMPTS_PER_FIELD,
+            "required": required, "configured": config["budget"]["max_judge_calls"], "per_video": per_video}
+
+
 def worst_judge_attempts(gt_p1_shaped: dict, scoring: str) -> int:
     """The most judge requests one video can cause: judged fields x attempts per field.
 
     Judged fields: the incident description, plus (full scoring) one per ground-truth entity and two
     (name, description) per instrument and asset; a match never exceeds the ground-truth items.
     """
-    fields = 1
-    if scoring == "full":
-        fields += len(gt_p1_shaped.get("entities") or []) + 2 * len(gt_p1_shaped.get("instruments") or []) \
-            + 2 * len(gt_p1_shaped.get("assets") or [])
-    return fields * JUDGE_ATTEMPTS_PER_FIELD
+    return judged_fields(gt_p1_shaped, scoring) * JUDGE_ATTEMPTS_PER_FIELD
 
 
 def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = ORDER_SEED) -> list[tuple]:
@@ -445,6 +479,13 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
         if gt_index.get("status") != "frozen" and not (config["ground_truth"] or {}).get("allow_candidate"):
             raise ExperimentRefused(f"{config['experiment_id']}: ground truth is not frozen; only a pilot or plumbing "
                                     "run may set ground_truth.allow_candidate")
+    for config in configs:
+        caps = judge_cap_required(config, split, gt_index)
+        if caps["configured"] < caps["required"]:
+            raise ExperimentRefused(
+                f"{config['experiment_id']}: budget.max_judge_calls {caps['configured']} is below the "
+                f"{caps['required']} the full plan can need ({caps['repeats']} repeats x {caps['judged_fields']} "
+                f"judged fields x {caps['attempts_per_field']} attempts); re-derive it with 'eval_experiment.py caps'")
     pricing = pricing or load_pricing()
     started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     out_dirs = [results_root / c["experiment_id"] / started for c in configs]
