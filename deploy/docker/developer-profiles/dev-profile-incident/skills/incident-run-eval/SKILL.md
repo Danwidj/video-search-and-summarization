@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -59,11 +59,17 @@ uv run python scripts/eval_aggregate.py
 # Ground-truth review (proposed corrections, not ground truth): workbook + audit + manifest
 uv run python scripts/gt_review_build.py                 # source: ../Complete Ground Truth Labelling.xlsx (never modified)
 uv run python scripts/gt_review_backup.py snapshot --reason "..."   # before/after every review session
+
+# Ground-truth correction (PR 4): packets, frames, AI proposals, candidate workbook
+uv run python scripts/gt_review_packet.py
+uv run --no-project --python 3.12 --script scripts/gt_frames.py eval_data/gt_review_packets/index.json
+uv run python scripts/gt_candidate_build.py --version v0.2   # reads ground_truth/review/ai-proposals-v0.2.jsonl
+uv run python scripts/gt_review_backup.py snapshot --kind Candidate --version v0.2 --reason "..."
 ```
 
 A rebuild never replaces an existing review workbook silently. It needs `--overwrite`, and it needs `--discard-review-decisions` as well if anyone has reviewed entries; either way it backs the old file up first. Prefer a new `--version`.
 
-The review workbook (`ground_truth/review/Ground Truth Review v0.1.xlsx`) is gitignored on purpose; its storage and the review workflow are in [`eval/ground_truth/review/README.md`](../../eval/ground_truth/review/README.md). Never edit the source workbook, and never treat a proposed value as final before PR 5 freezes it.
+The review workbook (`ground_truth/review/Ground Truth Review v0.1.xlsx`) is gitignored on purpose; its storage and the review workflow are in [`eval/ground_truth/review/README.md`](../../eval/ground_truth/review/README.md). Never edit the source workbook, and never treat a proposed value as final before PR 5 freezes it. The candidate applies only `Auto-verified` (independently re-checked) and `Approved` entries; AI proposals follow `ground_truth/correction_prompts/gt-correction-v1.0.md`, stay `Pending` until a person approves them, and must never read results, predictions or experiment prompts.
 
 **Always smoke-test before a full run.** A full run spends hosted-inference quota across 3 models × 5 categories.
 

@@ -335,10 +335,12 @@ def test_backups_are_immutable_and_verified(sources, tmp_path):
 def test_scoring_code_never_reads_the_review_workbook():
     """Proposals are not labels: only the review tools may name the review workbook or its folder."""
     root = Path(__file__).resolve().parents[1]
-    review_tools = {"ground_truth_review.py", "review_backup.py", "gt_review_build.py", "gt_review_backup.py"}
+    review_tools = {"ground_truth_review.py", "review_backup.py", "gt_review_build.py", "gt_review_backup.py",
+                    "ground_truth_correction.py", "gt_review_packet.py", "gt_candidate_build.py", "gt_frames.py"}
     offenders = [
         str(path.relative_to(root)) for path in sorted([*root.glob("*.py"), *(root / "scripts").glob("*.py")])
         if path.name not in review_tools
-        and any(marker in path.read_text() for marker in ("Ground Truth Review", "ground_truth/review", "ground_truth_review"))
+        and any(marker in path.read_text() for marker in ("Ground Truth Review", "Ground Truth Candidate", "ground_truth/review",
+                                                      "ground_truth_review", "ground_truth_correction"))
     ]
     assert offenders == []

@@ -1,0 +1,55 @@
+{
+  "version": "v0.2",
+  "source_name": "Complete Ground Truth Labelling.xlsx",
+  "source_sha256": "7c3f1fcc186e2608887ea31fc9eda06178522c4525763f69d7e2b46032cc2a5c",
+  "prior_name": "Ground Truth Review v0.1.xlsx",
+  "prior_sha256": "779592ed243a9a700bb138150e616562e29de5b2f27f3f519656bdc402aa3836",
+  "prior_state": {
+    "entries": 184,
+    "statuses": {
+      "Pending": 184
+    },
+    "with_reviewer": 0,
+    "with_notes": 0,
+    "decisions": 0
+  },
+  "proposals_name": "ai-proposals-v0.2.jsonl",
+  "proposals_sha256": "a97beab560ae8619367e930acd523c61e06b4f2c81aa5abfc776350ecdf2194d",
+  "proposals": 98,
+  "prompt_sha256": "89a6d1b764eca5757f316bee9a2683cd9f28995731049561342b39d5a28b09e4",
+  "entries_sha256": "b61fb200c4935002ed347d0656a71bae54a374f13f549c349716ab63da84aeee",
+  "records_sha256": "8137021208fbc8b3cc378cb0b5f06d47f97210028f8d5d7cad85d998d40cce92",
+  "git_sha": "dfa99d36a",
+  "generator": "gt_candidate_build.py v1",
+  "guidelines": "annotation-guidelines-v1.0",
+  "correction_prompt": "gt-correction-v1.0",
+  "generated_at": "2026-10-27T08:15:11+00:00",
+  "output_name": "Ground Truth Candidate v0.2.xlsx",
+  "output_sha256": "ab37730e3cd8798effd9280f2433bc68a553dc22da5a5d3996fd540ee430fd80",
+  "entries": 184,
+  "statuses": {
+    "Auto-verified": 86,
+    "Pending": 98
+  },
+  "applied": 86,
+  "applied_by_rule": {
+    "R01": 24,
+    "R02": 9,
+    "R03": 1,
+    "R05": 52
+  },
+  "ai_decisions": {
+    "keep_original": 38,
+    "propose_change": 55,
+    "uncertain": 5
+  },
+  "ai_proposal_problems": 0,
+  "problems": [],
+  "corrected_records": {
+    "gt_incidents": 80,
+    "gt_entities": 169,
+    "gt_instruments": 33,
+    "gt_assets": 96
+  },
+  "replaced_backup": null
+}

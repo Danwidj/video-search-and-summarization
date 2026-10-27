@@ -18,3 +18,6 @@ eval_data/
 ground_truth/review/*.xlsx
 ground_truth/review/~$*
 ground_truth/review/backups/
+# AI video-review proposals (PR 4): they quote and rewrite annotation text, so they stay local
+# like the workbooks. Their SHA-256 and counts are in candidate-<version>-manifest.json.
+ground_truth/review/ai-proposals-*.jsonl
