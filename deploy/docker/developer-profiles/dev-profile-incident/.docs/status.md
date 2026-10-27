@@ -1,6 +1,6 @@
 # Incident Profile Status
 
-> **As of 2026-10-25 (SGT).** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
+> **As of 2026-10-27 (SGT).** A short snapshot of what works, what is pending and what is known to be wrong. Rewrite it as reality changes; do not append history.
 
 ## 1. What is live
 
@@ -10,7 +10,7 @@
 | Console code layout | `src/app`, `src/modules/<feature>/{domain,application,infrastructure}`, `src/sections`, `src/lib`. `npm test` enforces the import boundaries; `npm run lint` is Biome plus `tsc --noEmit` | [`mvp2/console-hexagonal-architecture.md`](mvp2/console-hexagonal-architecture.md) |
 | Analysis modes | Gateway (`vlm-gateway`, zero GPU) and agent (native `vss-agent` on `kwanz-ws`) share one contract, validation policy and attempt recording | [`analysis-schema.md`](analysis-schema.md) |
 | Storage | Append-only `report_revisions` rows plus Cloudflare R2 videos and evidence images; uploads verified by `HeadObject` before analysis | [`data.md`](data.md) |
-| Evaluation | Everything about the eval (state, handoff, open items) is in [`mvp2/eval.md`](mvp2/eval.md). Retrieval benchmark work-order step 1 landed 2026-10-25: the offline metrics module `eval/retrieval_metrics.py` (B/S/F lists, every §3.5 metric, paired seed-cluster bootstrap); steps 2-5 wait on the §8 proposals, eval storage and a non-empty corpus ([§10.2](mvp2/eval.md#102-what-steps-2-to-5-still-need)) | `eval/` |
+| Evaluation | Everything about the eval (state, handoff, open items) is in [`mvp2/eval.md`](mvp2/eval.md); the ground-truth and prompt-experiment workstream is planned in [`mvp2/ground-truth-and-prompt-experiments-plan.md`](mvp2/ground-truth-and-prompt-experiments-plan.md) (PR 0 done; PRs 1A-7 await approval). P1 scoring is offline by default (`eval/offline_store.py`): no database is opened, and only `--db --init-schema` creates tables ([decision](decisions.md#2026-10-27-eval-scores-offline-by-default-the-database-path-and-schema-creation-are-explicit)). The 2026-10-02 benchmark tooling (rate-limit pacing, timing, outcome classes, export) is on main. Retrieval benchmark work-order step 1 landed 2026-10-25: the offline metrics module `eval/retrieval_metrics.py` (B/S/F lists, every §3.5 metric, paired seed-cluster bootstrap); steps 2-5 wait on the §8 proposals, eval storage and a non-empty corpus ([§10.2](mvp2/eval.md#102-what-steps-2-to-5-still-need)) | `eval/` |
 | Launcher | `./start.sh --mode mock\|vm` with SSH preflight, self-healing VM deploy, stop-on-last-exit coordination via a VM flock, and an always-on search route | [`incident-profile-operations.md`](incident-profile-operations.md) |
 | Mocks | `base_profile_mock` (:7777, started by `--mode mock`) and `search_profile_mock` (:7778, standalone) answer incident search and revision search from one finals snapshot (regenerated 2026-10-25: the six finals AI revisions); :7777 also answers chat from it ([decision](decisions.md#2026-10-24-the-mocks-answer-search-and-chat-from-one-finals-snapshot)) | `mock-backend/` |
 
@@ -57,6 +57,13 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 7. **Closed (2026-10-25): the 18 Oct backfill failures do not affect finals.** `/srv/rise-up/vss/backfill-rerun.log` (read-only) is a run of the official-report timestamp backfill (`scripts/backfill_official_timestamps.py`, #129) against midterm (`rfevukimyftzbxlehwel`) and its old relational tables, two days before finals existed: 13 videos, 57 items skipped, 3 done, 9 failed (4 `OverflowError: int too large to convert to float`, 5 Brev HTTP 500 for `v5c609184047f88c720e`). None of the five failing videos exists in finals. The script was deleted in #171, so the `OverflowError` cannot be reproduced or fixed against current code. What finals lacks (no crops, no revision embeddings) is item 5, not this run.
 8. **Resolved (2026-10-25): `start.sh` did not stop its children on SIGTERM.** Reproduced in `--mode mock` under a pseudo-terminal: Ctrl-C (SIGINT to the process group) stopped everything, but SIGTERM to `start.sh` alone left `next-server`, the mock and the gateway listening. Fixed ([decision](decisions.md#2026-10-25-startsh-waits-on-the-console-and-stops-each-local-process-tree)); after the fix SIGINT, SIGTERM and SIGHUP all leave no listener on 3200, 7777 or 8600 within 2 s, and `eval/tests/test_start_script.py` covers it hermetically.
 9. **Resolved (found 2026-10-25): eval's hermetic suite failed on main.** Since #212 the mock's search router reads `settings.public_base_url` from a `pydantic-settings` module, which eval's environment does not install, so three eval tests that import the router failed at collection. A `mock_search_router` fixture in `eval/tests/conftest.py` now imports it with the mock's default settings when `pydantic-settings` is missing; no dependency was added.
+
+10. **Open (found 2026-10-27): R2 clips moved into `anomaly/demo/`.** On 2026-10-27, 24 dataset clips were moved (sizes unchanged) from their category folders to `anomaly/demo/<Id>_x264_demo.mp4`, the 5 non-dataset files under `anomaly/` were deleted and `anomaly/animal_attacks/Animal002_x264.mp4` was added. `demo/` is a presentation-demo location only. Three things still name the old keys:
+   - finals `videos.filepath` of Assault018, Assault030, Assault032, Assault036 and Assault050 (playback and re-analysis of those reports fail);
+   - `eval/eval_reproducibility/split_*.json` (`eval_run.py` skips the 24 moved clips as unresolvable);
+   - the `Complete Ground Truth Labelling.xlsx` child sheets, which keep the plain filenames while its incident rows say `_demo`.
+
+   The split and workbook are planned for PR 2 and PR 3 of the [ground-truth plan](mvp2/ground-truth-and-prompt-experiments-plan.md); the finals rows are a Supabase write and need approval.
 
 ## 5. Follow-ups
 

@@ -13,7 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Import the real (not demo) GT workbook into gt_incidents/gt_entities/gt_instruments/gt_assets.
+"""Validate the real (not demo) GT workbook, or import it into gt_incidents/gt_entities/gt_instruments/gt_assets.
+
+Scoring no longer needs this import: ``eval_run.py`` loads the workbook straight
+into an in-memory ``OfflineEvalStore`` through the same ``write_gt`` used here,
+because the finals Supabase project has no ``gt_*`` tables. Use ``--dry-run`` to
+check the workbook, and ``--db`` only for a database that still has those tables.
 
 Source: ``eval_data/ground_truth_labelling.xlsx`` (gitignored, real data - see
 ``../contracts/`` and ``scripts/eval_video_resolution.py`` for the rest of the
@@ -47,7 +52,8 @@ the fresh ones - safe to re-run.
 
 Usage (from this directory, with the venv active)::
 
-    .venv/bin/python3 scripts/eval_ingest_gt.py
+    .venv/bin/python3 scripts/eval_ingest_gt.py --dry-run   # validate only, no database
+    .venv/bin/python3 scripts/eval_ingest_gt.py --db        # write to INCIDENT_DB_DSN / PostgREST (explicit)
 """
 
 from __future__ import annotations
@@ -69,7 +75,7 @@ import r2_videos  # noqa: E402
 from incident_report import INCIDENT_TYPES, canonical_incident_type  # noqa: E402
 
 
-def _get_db():
+def _get_db(*, init_schema: bool = False):
     """Direct Postgres (``db.py``) when reachable, else the PostgREST adapter.
 
     This sandbox's network blocks direct Postgres (port 5432/6543) but allows
@@ -79,7 +85,7 @@ def _get_db():
     (see ``db_postgrest.py``'s module docstring), so nothing downstream needs
     to know which one is in use.
     """
-    db = db_module.get_db()
+    db = db_module.get_db(init_schema=init_schema)
     if db is not None:
         return db
     if postgrest_configured():
@@ -139,45 +145,37 @@ def load_gt_incidents(workbook) -> list[dict]:
     return [r for r in rows if (r.get("Type") or "").strip()]
 
 
-def ingest(*, dry_run: bool = False) -> dict:
-    """Import the workbook into the live DB. Returns a small summary dict."""
-    workbook = openpyxl.load_workbook(WORKBOOK_PATH, data_only=True)
+def _rows_by_incident(rows: list[dict]) -> dict[str, list[dict]]:
+    by_incident: dict[str, list[dict]] = {}
+    for row in rows:
+        by_incident.setdefault(row["Incident_ID (P_key, F_key)"], []).append(row)
+    return by_incident
 
+
+def write_gt(store, workbook, *, basename_index: dict | None = None, dry_run: bool = False) -> dict:
+    """Write the workbook's ground truth into ``store`` (any object with the ``IncidentDB`` GT methods).
+
+    One code path for both backends, so offline scoring reads exactly the rows the
+    database path would. ``basename_index`` resolves each filename to its R2 key for
+    the ``videos`` row; without it the filename itself is stored (offline scoring
+    never reads ``videos``). Returns a small summary dict.
+    """
     incidents = load_gt_incidents(workbook)
-    entities = _sheet_rows(workbook, "gt_entities")
-    instruments = _sheet_rows(workbook, "gt_instruments")
-    assets = _sheet_rows(workbook, "gt_assets")
-
-    entities_by_incident: dict[str, list[dict]] = {}
-    for row in entities:
-        entities_by_incident.setdefault(row["Incident_ID (P_key, F_key)"], []).append(row)
-    instruments_by_incident: dict[str, list[dict]] = {}
-    for row in instruments:
-        instruments_by_incident.setdefault(row["Incident_ID (P_key, F_key)"], []).append(row)
-    assets_by_incident: dict[str, list[dict]] = {}
-    for row in assets:
-        assets_by_incident.setdefault(row["Incident_ID (P_key, F_key)"], []).append(row)
-
-    basename_index = build_basename_index(r2_videos.list_video_keys())
-
-    db = _get_db()
-    if db is None and not dry_run:
-        raise RuntimeError(
-            "Neither direct Postgres (INCIDENT_DB_DSN) nor PostgREST "
-            "(INCIDENT_SUPABASE_URL/INCIDENT_SUPABASE_SERVICE_ROLE_KEY) is reachable - "
-            "cannot ingest (pass dry_run=True to only validate)"
-        )
+    entities_by_incident = _rows_by_incident(_sheet_rows(workbook, "gt_entities"))
+    instruments_by_incident = _rows_by_incident(_sheet_rows(workbook, "gt_instruments"))
+    assets_by_incident = _rows_by_incident(_sheet_rows(workbook, "gt_assets"))
 
     summary = {"incidents": 0, "entities": 0, "instruments": 0, "assets": 0, "unresolved_videos": []}
 
     for row in incidents:
         filename = row["Filename"].strip()
         incident_id = row["Incident_ID (P_key)"].strip()
-        try:
-            r2_key = resolve_filename(filename, basename_index)
-        except ResolutionError as exc:
-            summary["unresolved_videos"].append((filename, str(exc)))
-            r2_key = None
+        r2_key = None
+        if basename_index is not None:
+            try:
+                r2_key = resolve_filename(filename, basename_index)
+            except ResolutionError as exc:
+                summary["unresolved_videos"].append((filename, str(exc)))
 
         gt_fields = {
             "type": gt_incident_type(row.get("Type"), incident_id),
@@ -197,11 +195,11 @@ def ingest(*, dry_run: bool = False) -> dict:
             summary["assets"] += len(assets_by_incident.get(incident_id, []))
             continue
 
-        db.upsert_video(incident_id, filepath=r2_key or filename)
-        db.insert_gt_incident(incident_id, fields=gt_fields)
+        store.upsert_video(incident_id, filepath=r2_key or filename)
+        store.insert_gt_incident(incident_id, fields=gt_fields)
 
         for e in entities_by_incident.get(incident_id, []):
-            db.add_gt_entity(
+            store.add_gt_entity(
                 incident_id,
                 entity_id=e["Entity_ID (P_key)"],
                 type=e.get("Type"),
@@ -211,7 +209,7 @@ def ingest(*, dry_run: bool = False) -> dict:
             summary["entities"] += 1
 
         for i in instruments_by_incident.get(incident_id, []):
-            db.add_gt_instrument(
+            store.add_gt_instrument(
                 incident_id,
                 instrument_id=i["Instrument_ID (P_key)"],
                 entity_id=i.get("Entity_ID") or None,
@@ -223,7 +221,7 @@ def ingest(*, dry_run: bool = False) -> dict:
             summary["instruments"] += 1
 
         for a in assets_by_incident.get(incident_id, []):
-            db.add_gt_asset(
+            store.add_gt_asset(
                 incident_id,
                 asset_id=a["Asset_ID (P_key)"],
                 name=a.get("Name"),
@@ -237,9 +235,56 @@ def ingest(*, dry_run: bool = False) -> dict:
     return summary
 
 
+def load_offline_gt(workbook_path: Path | None = None):
+    """An ``OfflineEvalStore`` holding the workbook's ground truth - no database, no network."""
+    from offline_store import OfflineEvalStore
+
+    store = OfflineEvalStore()
+    write_gt(store, openpyxl.load_workbook(workbook_path or WORKBOOK_PATH, data_only=True))
+    return store
+
+
+def ingest(*, dry_run: bool = False, init_schema: bool = False) -> dict:
+    """Import the workbook into a database (``--db`` only). Returns a small summary dict.
+
+    A dry run validates the workbook and the R2 filenames without opening any
+    database connection. A real ingest writes ``gt_*`` tables, which the finals
+    Supabase project no longer has; ``init_schema`` creates missing tables and is
+    meant only for a local or throwaway database.
+    """
+    workbook = openpyxl.load_workbook(WORKBOOK_PATH, data_only=True)
+    basename_index = build_basename_index(r2_videos.list_video_keys())
+    if dry_run:
+        return write_gt(None, workbook, basename_index=basename_index, dry_run=True)
+
+    db = _get_db(init_schema=init_schema)
+    if db is None:
+        raise RuntimeError(
+            "Neither direct Postgres (INCIDENT_DB_DSN) nor PostgREST "
+            "(INCIDENT_SUPABASE_URL/INCIDENT_SUPABASE_SERVICE_ROLE_KEY) is reachable - "
+            "cannot ingest (use --dry-run to only validate)"
+        )
+    return write_gt(db, workbook, basename_index=basename_index)
+
+
 if __name__ == "__main__":
-    dry_run = "--dry-run" in sys.argv
-    result = ingest(dry_run=dry_run)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Validate the GT workbook, or write it to a database with --db.")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="Validate the workbook and R2 filenames; no database.")
+    mode.add_argument(
+        "--db", action="store_true",
+        help="Write gt_* rows to INCIDENT_DB_DSN / PostgREST. Finals has no gt_* tables; scoring does not need "
+             "this (eval_run.py reads the workbook directly).",
+    )
+    parser.add_argument("--init-schema", action="store_true",
+                        help="With --db: create missing tables. Local or throwaway databases only.")
+    args = parser.parse_args()
+    if args.init_schema and not args.db:
+        parser.error("--init-schema requires --db")
+    dry_run = args.dry_run
+    result = ingest(dry_run=dry_run, init_schema=args.init_schema)
     print(f"{'[dry run] ' if dry_run else ''}ingested: {result['incidents']} incidents, "
           f"{result['entities']} entities, {result['instruments']} instruments, {result['assets']} assets")
     if result["unresolved_videos"]:

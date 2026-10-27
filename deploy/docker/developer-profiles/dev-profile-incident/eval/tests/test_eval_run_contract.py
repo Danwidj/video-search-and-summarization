@@ -38,6 +38,18 @@ class _Chat:
     raw: dict = field(default_factory=dict)
     error: str = ""
     status_code: int | None = 200
+    elapsed_s: float | None = 12.5
+    started_at: str | None = "2026-10-02T00:00:00.000+00:00"
+    finished_at: str | None = "2026-10-02T00:00:12.500+00:00"
+    failure_kind: str | None = None
+    retry_after_s: float | None = None
+
+
+def _outcome(chat):
+    from eval_vlm_client import P1Outcome
+
+    return P1Outcome(result=chat, attempts=[{"attempt": 1, "wait_before_s": 0.0, "failure_kind": chat.failure_kind,
+                                             "error": chat.error, "elapsed_s": chat.elapsed_s}])
 
 
 @dataclass
@@ -70,7 +82,7 @@ def _run(p1_result):
         patch("eval_run.check_judge_ok"),
         patch("eval_run.eval_gt.run_evaluation", return_value=_Eval(fields={"type": {"pass": True}})),
         patch("eval_run.score_matches_summary", return_value={"counts": {}, "matches": []}),
-        patch("eval_run.analyze_video_with_p1", return_value=p1_result) as p1,
+        patch("eval_run.analyze_video_with_p1_rate_limited", return_value=_outcome(p1_result)) as p1,
         patch("eval_run.generate_report_with_rp1", return_value=_Chat(ok=True, content="REPORT")) as rp1,
     ):
         result = eval_run.run_one_video(
@@ -148,7 +160,7 @@ def _run_with_duration(p1_result, video_duration_seconds):
         patch("eval_run.check_judge_ok"),
         patch("eval_run.eval_gt.run_evaluation", return_value=_Eval(fields={"type": {"pass": True}})),
         patch("eval_run.score_matches_summary", return_value={"counts": {}, "matches": []}),
-        patch("eval_run.analyze_video_with_p1", return_value=p1_result),
+        patch("eval_run.analyze_video_with_p1_rate_limited", return_value=_outcome(p1_result)),
         patch("eval_run.generate_report_with_rp1", return_value=_Chat(ok=True, content="REPORT")) as rp1,
     ):
         result = eval_run.run_one_video(
@@ -233,3 +245,106 @@ def test_write_results_keeps_an_immutable_copy(tmp_path):
     import pytest
     with pytest.raises(FileExistsError):
         eval_run.write_results(payload, run_started_at="2026-09-27T12:00:00+00:00", results_dir=tmp_path)
+
+
+# --- --incident-only benchmark: timing, video metadata, interleaved order ------------------
+
+
+def test_incident_only_skips_embedding_check_and_rp1_and_records_timing_and_video():
+    db = _FakeDB()
+    with (
+        patch("eval_run.check_embedding_server_healthy") as embedding,
+        patch("eval_run.check_judge_ok"),
+        patch("eval_run.eval_gt.run_evaluation", return_value=_Eval(fields={"type": {"pass": True}})) as evaluation,
+        patch("eval_run.score_matches_summary", return_value={"counts": {}, "matches": []}),
+        patch("eval_run.analyze_video_with_p1_rate_limited", return_value=_outcome(_Chat(ok=True, content=json.dumps(_valid_report())))),
+        patch("eval_run.generate_report_with_rp1") as rp1,
+    ):
+        result = eval_run.run_one_video(
+            db, model="m", category="Assault", filename="A.mp4", incident_id="inc", r2_object_key="anomaly/a/A.mp4",
+            video_url="https://r2.example/A.mp4?sig", gt_p1_shaped={}, model_run_id="run", split_manifest_ref="x",
+            video_duration_seconds=30.2, video_size_bytes=4_200_000, incident_only=True,
+        )
+    embedding.assert_not_called()
+    rp1.assert_not_called()
+    assert evaluation.call_args.kwargs == {"incident_only": True}
+    assert result["rp1_report"]["skipped"] is True
+    assert result["video"] == {"r2_object_key": "anomaly/a/A.mp4", "size_bytes": 4_200_000, "duration_seconds": 30.2,
+                               "duration_source": "mp4_mvhd"}
+    assert result["timing"]["p1_elapsed_s"] == 12.5 and result["timing"]["scope"] == "p1_http_round_trip"
+    assert result["timing"]["timeout_s"] == 300.0
+
+
+def test_failed_call_has_no_processing_time_but_keeps_its_attempt_time():
+    result, _, _, _ = _run(_Chat(ok=False, error="ReadTimeout: x", status_code=None, elapsed_s=300.0,
+                                 failure_kind="timeout"))
+    assert result["timing"]["p1_elapsed_s"] is None and result["timing"]["final_attempt_elapsed_s"] == 300.0
+    assert result["prediction"] == eval_run.EMPTY_PREDICTION and result["outcome"] == "timeout"
+    assert result["p1_raw"]["rate_limit"]["attempt_count"] == 1
+
+
+def test_outcomes_are_recorded():
+    assert _run(_Chat(ok=True, content=json.dumps(_valid_report())))[0]["outcome"] == "scored"
+    assert _run(_Chat(ok=True, content="not json"))[0]["outcome"] == "parse_failure"
+    bad = _valid_report()
+    bad["incident"]["type"] = "fighting"
+    assert _run(_Chat(ok=True, content=json.dumps(bad)))[0]["outcome"] == "contract_invalid"
+    limited = _Chat(ok=False, error="429", status_code=429, failure_kind="rate_limited")
+    assert _run(limited)[0]["outcome"] == "rate_limited"
+    assert _run(_Chat(ok=False, error="HTTP 500", status_code=500, failure_kind="http_error"))[0]["outcome"] == "http_error"
+
+
+def test_rotated_model_order():
+    assert eval_run.rotated(["a", "b", "c"], 0) == ["a", "b", "c"]
+    assert eval_run.rotated(["a", "b", "c"], 1) == ["b", "c", "a"]
+    assert eval_run.rotated(["a", "b", "c"], 5) == ["c", "a", "b"]
+    assert eval_run.rotated([], 3) == []
+
+
+def test_run_interleaves_models_per_video_and_lists_skipped_videos(tmp_path):
+    manifest = {
+        "category": "Assault",
+        "evaluation_videos": ["A1.mp4", "A2.mp4", "Missing.mp4"],
+        "evaluation_videos_r2_keys": {"A1.mp4": "anomaly/assault/A1.mp4", "A2.mp4": "anomaly/assault/A2.mp4",
+                                      "Missing.mp4": "anomaly/assault/Missing.mp4"},
+    }
+    (tmp_path / "split_assault.json").write_text(json.dumps(manifest))
+    gt_index = {
+        "by_category": {"Assault": []},
+        "by_incident_id": {name: {"filename": f"{name}.mp4", "p1_shaped": {}} for name in ("A1", "A2", "Missing")},
+    }
+    calls, written = [], []
+
+    def fake_run_one_video(db, *, model, filename, video_size_bytes, video_duration_seconds, incident_only, **kwargs):
+        calls.append((filename, model))
+        assert (video_size_bytes, video_duration_seconds, incident_only) == (10, 2.0, True)
+        return {"filename": filename, "timing": {"p1_elapsed_s": 1.0}, "outcome": "scored", "judge_calls": 1,
+                "p1_raw": {"ok": True, "contract_ok": True, "core_ok": True, "finish_reason": "stop",
+                           "rate_limit": {"attempt_count": 1}},
+                "incident_field_scores": {}, "rp1_report": {"ok": False}}
+
+    db = type("DB", (), {"insert_model_run": lambda self, *a, **k: None})()
+    with (
+        patch("eval_run.EVAL_DATA_DIR", tmp_path),
+        patch("eval_run.check_embedding_server_healthy") as embedding,
+        patch("eval_gt.judge_description_similarity", return_value=type("R", (), {"ok": True, "data": 1.0})()),
+        patch("eval_run.load_offline_gt", return_value=db),
+        patch("eval_run.model_run_id_for", side_effect=lambda model: f"P1-{model}"),
+        patch("eval_run.load_gt_index", return_value=gt_index),
+        patch("eval_run.r2_videos.list_video_keys", return_value=["anomaly/assault/A1.mp4", "anomaly/assault/A2.mp4"]),
+        patch("eval_run.r2_video_metadata", return_value={"size_bytes": 10, "duration_seconds": 2.0}),
+        patch("eval_run.signed_url", side_effect=lambda key: f"https://r2.example/{key}?sig"),
+        patch("eval_run.run_one_video", side_effect=fake_run_one_video),
+        patch("eval_run.write_results", side_effect=lambda payload, **k: (written.append(payload), ("o", "a"))[1]),
+    ):
+        eval_run.run(models=["m1", "m2", "m3"], categories=["Assault"], limit=None, incident_only=True)
+
+    embedding.assert_not_called()
+    assert calls == [("A1.mp4", "m1"), ("A1.mp4", "m2"), ("A1.mp4", "m3"),
+                     ("A2.mp4", "m2"), ("A2.mp4", "m3"), ("A2.mp4", "m1")]
+    assert [p["model_id"] for p in written] == ["m1", "m2", "m3"]
+    for payload in written:
+        assert [v["filename"] for v in payload["videos"]] == ["A1.mp4", "A2.mp4"]
+        assert [v["filename"] for v in payload["skipped_videos"]] == ["Missing.mp4"]
+        assert payload["benchmark"]["incident_only"] is True
+        assert payload["benchmark"]["model_order"] == "interleaved-rotating"

@@ -140,3 +140,37 @@ def score_matches_summary(eval_result, kind: str) -> dict:
         "unmatched_gt": eval_result.unmatched.get(kind, {}).get("gt", []),
         "counts": eval_result.counts.get(kind, {}),
     }
+
+
+# One outcome per (video, model) P1 attempt sequence. Only the model-output outcomes
+# say anything about model quality; the others are reported separately and never
+# counted as a wrong prediction in the benchmark's field metrics.
+INFRASTRUCTURE_OUTCOMES = ("rate_limited", "http_error")
+MODEL_OUTPUT_OUTCOMES = ("parse_failure", "contract_invalid", "scored")
+ALL_OUTCOMES = ("scored", "contract_invalid", "parse_failure", "timeout", "rate_limited", "http_error")
+_PARSE_FAILURE_CODES = {"EMPTY_CONTENT", "INVALID_JSON"}
+
+
+def classify_outcome(p1_raw: dict, validation: dict | None = None) -> str:
+    """``scored`` | ``contract_invalid`` | ``parse_failure`` (model output) | ``timeout`` |
+    ``rate_limited`` | ``http_error`` (no model output).
+
+    ``scored`` means the database-backed fields are valid (core-scored-v1); whether
+    they are accurate is what the field scores measure. Records written before
+    ``failure_kind`` existed are classified from the status code and error text.
+    """
+    if not p1_raw.get("ok"):
+        kind = p1_raw.get("failure_kind")
+        error = p1_raw.get("error") or ""
+        if kind is None:
+            if p1_raw.get("status_code") == 429 or '"code": "429"' in error or "RateLimitError" in error:
+                kind = "rate_limited"
+            elif "Timeout" in error.split(":", 1)[0]:
+                kind = "timeout"
+        if kind in ("rate_limited", "timeout"):
+            return kind
+        return "http_error"
+    if p1_raw.get("core_ok", p1_raw.get("contract_ok")):
+        return "scored"
+    codes = {v.get("code") for v in (validation or {}).get("core_violations", [])}
+    return "parse_failure" if codes & _PARSE_FAILURE_CODES else "contract_invalid"

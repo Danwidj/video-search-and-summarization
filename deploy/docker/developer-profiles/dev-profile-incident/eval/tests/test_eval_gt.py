@@ -252,6 +252,22 @@ def test_run_evaluation_description_judge_failure_fails_soft(incident_db: Incide
     assert result.fields["description"]["pass"] is False
 
 
+def test_run_evaluation_incident_only_scores_fields_and_skips_matching(incident_db: IncidentDB):
+    incident_id, model_run_id = _seed_evaluation_fixture(incident_db)
+
+    with (
+        patch.object(matching, "match_incident") as match,
+        patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=0.85)) as judge,
+    ):
+        result = run_evaluation(incident_db, incident_id, model_run_id, incident_only=True)
+
+    match.assert_not_called()
+    assert judge.call_count == 1  # the incident description only, no attribute judging
+    assert result.fields["type"]["pass"] is True and result.fields["end_timestamp"]["pass"] is True
+    assert result.description_score == pytest.approx(0.85)
+    assert result.matches == {} and result.counts == {} and result.unmatched == {}
+
+
 # --------------------------------------------------------------------------- #
 # resolve_holder - never influences match/no-match, three outcomes only
 # --------------------------------------------------------------------------- #
@@ -439,3 +455,55 @@ def test_run_evaluation_attaches_attribute_scores_to_instrument_matches(incident
     assert attr["threat_level"] == {"expected": 3, "predicted": 3, "pass": True}
     assert attr["holder"]["status"] == "correct"
     assert attr["name"]["score"] == pytest.approx(0.95)
+
+
+def test_judge_http_call_counter_counts_every_request_including_parse_retries(monkeypatch):
+    monkeypatch.setenv("INCIDENT_LLM_BASE_URL", "http://fake-judge/v1")
+    responses = iter([_FakeHttpResponse(200, _chat_body("no score here")), _FakeHttpResponse(200, _chat_body('{"score": 0.4}'))])
+    with patch.object(eval_gt.httpx, "post", side_effect=lambda *a, **k: next(responses)):
+        before = eval_gt.JUDGE_HTTP_CALLS
+        result = eval_gt.judge_description_similarity("a", "b")
+    assert result.ok and eval_gt.JUDGE_HTTP_CALLS - before == 2
+
+
+def test_judge_http_call_counter_ignores_unsent_requests(monkeypatch):
+    monkeypatch.delenv("INCIDENT_LLM_BASE_URL", raising=False)
+    before = eval_gt.JUDGE_HTTP_CALLS
+    eval_gt.judge_description_similarity("a", "b")
+    assert eval_gt.JUDGE_HTTP_CALLS == before
+
+
+@pytest.mark.parametrize("predicted", [None, "", "   "])
+def test_empty_predicted_description_scores_zero_without_a_judge_call(incident_db: IncidentDB, predicted):
+    incident_db.upsert_video("Assault012", filepath="anomaly/assault/Assault012_x264.mp4")
+    incident_db.insert_model_run("P1-x", model_name="m", prompt_version="p1")
+    incident_db.insert_incident("Assault012", "P1-x", fields={"type": None, "description": predicted})
+    incident_db.insert_gt_incident("Assault012", fields={"type": "assault", "description": "a man strikes another man"})
+
+    with patch.object(eval_gt, "judge_description_similarity") as judge:
+        result = run_evaluation(incident_db, "Assault012", "P1-x", incident_only=True)
+
+    judge.assert_not_called()
+    assert result.description_score == 0.0 and result.description_error == ""
+    assert result.fields["description"]["score"] == 0.0 and result.fields["description"]["pass"] is False
+    assert result.fields["description"]["judged"] is False
+    assert result.fields["type"]["pass"] is False  # every other field scored as before
+
+
+def test_present_predicted_description_is_still_judged(incident_db: IncidentDB):
+    incident_id, model_run_id = _seed_evaluation_fixture(incident_db)
+    with patch.object(eval_gt, "judge_description_similarity", return_value=Result(ok=True, data=0.6)) as judge:
+        result = run_evaluation(incident_db, incident_id, model_run_id, incident_only=True)
+    assert judge.call_count == 1 and result.fields["description"]["judged"] is True
+    assert result.fields["description"]["score"] == 0.6
+
+
+def test_empty_description_full_mode_still_runs_evidence_matching(incident_db: IncidentDB):
+    incident_db.upsert_video("Burglary009", filepath="normal_videos/Burglary009.mp4")
+    incident_db.insert_model_run("MR-E", model_name="m", prompt_version="p1")
+    incident_db.insert_incident("Burglary009", "MR-E", fields={"type": None, "description": None})
+    incident_db.insert_gt_incident("Burglary009", fields={"type": "burglary", "description": "x"})
+    with patch.object(matching, "match_incident", return_value={}) as match:
+        result = run_evaluation(incident_db, "Burglary009", "MR-E")
+    match.assert_called_once()
+    assert result.counts["entities"]["tp"] == 0
