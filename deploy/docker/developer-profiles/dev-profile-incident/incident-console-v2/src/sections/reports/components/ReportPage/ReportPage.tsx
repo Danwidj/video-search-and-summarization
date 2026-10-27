@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 
 import { AdvancedReportTools } from '@/sections/reports/components/AdvancedReportTools';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
@@ -24,6 +24,17 @@ import {
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import {
+  DEFAULT_REPORT_BAND_HEIGHT,
+  DEFAULT_REPORT_BAND_WIDTHS,
+  MAX_REPORT_BAND_HEIGHT,
+  MIN_REPORT_BAND_HEIGHT,
+  nudgeReportBand,
+  nudgeReportBandHeight,
+  resizeReportBand,
+  resizeReportBandHeight,
+  type ReportBandBoundary,
+} from '@/lib/reports/report-band-layout';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; report: ReportView };
 
@@ -61,6 +72,7 @@ export function ReportPage({
 
   const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [undoStack, setUndoStack] = useState<EditDraft[]>([]);
   const [editBase, setEditBase] = useState<EditBase | null>(null);
   const [compareRevisionId, setCompareRevisionId] = useState<number | null>(null);
   const [compareReport, setCompareReport] = useState<ReportView | null>(null);
@@ -69,6 +81,11 @@ export function ReportPage({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
+  const [bandWidths, setBandWidths] = useState(DEFAULT_REPORT_BAND_WIDTHS);
+  const [bandHeight, setBandHeight] = useState(DEFAULT_REPORT_BAND_HEIGHT);
+  const reportBandRef = useRef<HTMLDivElement>(null);
+  const resizingBoundaryRef = useRef<ReportBandBoundary | null>(null);
+  const resizingHeightRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -138,6 +155,7 @@ export function ReportPage({
 
   const startEdit = useCallback((base: ReportView) => {
     setDraft(draftFromView(base));
+    setUndoStack([]);
     setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
     setCompareRevisionId(base.revisionId);
     setCompareReport(base);
@@ -151,6 +169,7 @@ export function ReportPage({
   const openVersion = (id: number) => {
     setMode('view');
     setDraft(null);
+    setUndoStack([]);
     setEditBase(null);
     setSaveOpen(false);
     router.push(`/reports/${encodeURIComponent(videoId)}?revision=${id}`);
@@ -210,6 +229,68 @@ export function ReportPage({
   const problems = draft ? draftProblems(draft) : [];
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
 
+  const changeDraft = (next: EditDraft) => {
+    if (draft) setUndoStack((stack) => [...stack.slice(-49), draft]);
+    setDraft(next);
+  };
+
+  const undoDraft = () => {
+    const previous = undoStack.at(-1);
+    if (!previous) return;
+    setDraft(previous);
+    setUndoStack((stack) => stack.slice(0, -1));
+    setSaveProblems([]);
+  };
+
+  const revertDraft = () => {
+    if (!editBase) return;
+    setDraft(draftFromView(editBase.report));
+    setUndoStack([]);
+    setSaveProblems([]);
+  };
+
+  const resizeAt = (boundary: ReportBandBoundary, clientX: number) => {
+    const band = reportBandRef.current?.getBoundingClientRect();
+    if (!band || band.width <= 0) return;
+    setBandWidths((widths) => resizeReportBand(widths, boundary, (clientX - band.left) / band.width));
+  };
+
+  const startResize = (boundary: ReportBandBoundary, event: React.PointerEvent<HTMLHRElement>) => {
+    resizingBoundaryRef.current = boundary;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeAt(boundary, event.clientX);
+  };
+
+  const moveResize = (event: React.PointerEvent<HTMLHRElement>) => {
+    if (resizingBoundaryRef.current) resizeAt(resizingBoundaryRef.current, event.clientX);
+  };
+
+  const finishResize = (event: React.PointerEvent<HTMLHRElement>) => {
+    resizingBoundaryRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const resizeHeightAt = (clientY: number) => {
+    const band = reportBandRef.current?.getBoundingClientRect();
+    if (!band) return;
+    setBandHeight(resizeReportBandHeight(clientY - band.top));
+  };
+
+  const startHeightResize = (event: React.PointerEvent<HTMLHRElement>) => {
+    resizingHeightRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeHeightAt(event.clientY);
+  };
+
+  const moveHeightResize = (event: React.PointerEvent<HTMLHRElement>) => {
+    if (resizingHeightRef.current) resizeHeightAt(event.clientY);
+  };
+
+  const finishHeightResize = (event: React.PointerEvent<HTMLHRElement>) => {
+    resizingHeightRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   function switchMode(next: Mode) {
     if (next === 'view') {
       setMode('view');
@@ -260,6 +341,7 @@ export function ReportPage({
       }
       const savedId = payload.revision.revisionId;
       setDraft(null);
+      setUndoStack([]);
       setEditBase(null);
       setCompareReport(null);
       setCompareRevisionId(null);
@@ -322,8 +404,17 @@ export function ReportPage({
         </div>
 
         <div
-          className="sticky top-0 z-20 grid border-b border-ink/10 bg-white lg:h-[clamp(190px,30vh,300px)] lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)_16rem]"
+          className="sticky top-0 z-20 grid border-b border-ink/10 bg-white lg:h-[var(--report-band-height)] lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--timeline-width))_minmax(0,var(--versions-width))]"
           data-testid="report-band"
+          ref={reportBandRef}
+          style={
+            {
+              '--video-width': `${bandWidths.video}fr`,
+              '--timeline-width': `${bandWidths.timeline}fr`,
+              '--versions-width': `${bandWidths.versions}fr`,
+              '--report-band-height': `${bandHeight}px`,
+            } as CSSProperties
+          }
         >
           <video
             className="aspect-video w-full bg-black object-contain lg:h-full"
@@ -361,6 +452,29 @@ export function ReportPage({
               videoId={videoId}
             />
           </div>
+          <ReportBandResizeHandle
+            boundary="video-timeline"
+            left={bandWidths.video}
+            onFinish={finishResize}
+            onMove={moveResize}
+            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-timeline', direction))}
+            onStart={startResize}
+          />
+          <ReportBandResizeHandle
+            boundary="timeline-versions"
+            left={bandWidths.video + bandWidths.timeline}
+            onFinish={finishResize}
+            onMove={moveResize}
+            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'timeline-versions', direction))}
+            onStart={startResize}
+          />
+          <ReportBandHeightHandle
+            height={bandHeight}
+            onFinish={finishHeightResize}
+            onMove={moveHeightResize}
+            onNudge={(direction) => setBandHeight((height) => nudgeReportBandHeight(height, direction))}
+            onStart={startHeightResize}
+          />
         </div>
 
         {!officialRevision && revisions && (
@@ -383,7 +497,7 @@ export function ReportPage({
             aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
             baseRevisionNo={editBase.revisionNo}
             draft={draft}
-            onChange={setDraft}
+            onChange={changeDraft}
             onSeek={seek}
             title={reportHeading(editBase.report)}
             videoId={videoId}
@@ -423,61 +537,80 @@ export function ReportPage({
                   </>
                 )}
               </span>
-              <div className="relative shrink-0">
-                {saveOpen && (
-                  <div
-                    className="absolute bottom-full right-0 z-30 mb-2 w-[min(22rem,85vw)] rounded-2xl border border-ink/15 bg-white p-4 shadow-panel"
-                    data-testid="save-note"
-                  >
-                    <label className="block text-xs font-bold" htmlFor="savenote">
-                      Note for the new version (required)
-                      <textarea
-                        aria-label="Note for the new version"
-                        className="control mt-1 min-h-[84px]"
-                        id="savenote"
-                        onChange={(event) => setNote(event.target.value)}
-                        placeholder="What changed and why, e.g. raised severity to 4 and added the phone"
-                        value={note}
-                      />
-                    </label>
-                    {saveProblems.length > 0 && (
-                      <ul aria-live="polite" className="mt-2 list-disc pl-5 text-xs text-clay" data-testid="save-problems">
-                        {saveProblems.map((problem) => (
-                          <li key={problem}>{problem}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button
-                        className="rounded-full border border-ink/15 px-3 py-1.5 text-xs font-semibold"
-                        disabled={saving}
-                        onClick={() => {
-                          setSaveOpen(false);
-                          setSaveProblems([]);
-                        }}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="rounded-full bg-moss px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                        disabled={saving || !note.trim()}
-                        onClick={() => void save()}
-                        type="button"
-                      >
-                        {saving ? 'Saving…' : 'Save as new version'}
-                      </button>
-                    </div>
-                  </div>
-                )}
+              <div className="flex shrink-0 items-center gap-2">
                 <button
-                  className="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  disabled={changes === 0 || saving}
-                  onClick={() => setSaveOpen(true)}
+                  className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold disabled:opacity-40"
+                  disabled={undoStack.length === 0 || saving}
+                  onClick={undoDraft}
                   type="button"
                 >
-                  Save as new version
+                  Undo
                 </button>
+                <button
+                  aria-label="Revert all draft changes"
+                  className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold disabled:opacity-40"
+                  disabled={changes === 0 || saving}
+                  onClick={revertDraft}
+                  type="button"
+                >
+                  Revert
+                </button>
+                <div className="relative">
+                  {saveOpen && (
+                    <div
+                      className="absolute bottom-full right-0 z-30 mb-2 w-[min(22rem,85vw)] rounded-2xl border border-ink/15 bg-white p-4 shadow-panel"
+                      data-testid="save-note"
+                    >
+                      <label className="block text-xs font-bold" htmlFor="savenote">
+                        Note for the new version (required)
+                        <textarea
+                          aria-label="Note for the new version"
+                          className="control mt-1 min-h-[84px]"
+                          id="savenote"
+                          onChange={(event) => setNote(event.target.value)}
+                          placeholder="What changed and why, e.g. raised severity to 4 and added the phone"
+                          value={note}
+                        />
+                      </label>
+                      {saveProblems.length > 0 && (
+                        <ul aria-live="polite" className="mt-2 list-disc pl-5 text-xs text-clay" data-testid="save-problems">
+                          {saveProblems.map((problem) => (
+                            <li key={problem}>{problem}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          className="rounded-full border border-ink/15 px-3 py-1.5 text-xs font-semibold"
+                          disabled={saving}
+                          onClick={() => {
+                            setSaveOpen(false);
+                            setSaveProblems([]);
+                          }}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="rounded-full bg-moss px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                          disabled={saving || !note.trim()}
+                          onClick={() => void save()}
+                          type="button"
+                        >
+                          {saving ? 'Saving…' : 'Save as new version'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    className="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    disabled={changes === 0 || saving}
+                    onClick={() => setSaveOpen(true)}
+                    type="button"
+                  >
+                    Save as new version
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -497,5 +630,79 @@ export function ReportPage({
         />
       )}
     </div>
+  );
+}
+
+function ReportBandResizeHandle({
+  boundary,
+  left,
+  onStart,
+  onMove,
+  onFinish,
+  onNudge,
+}: {
+  boundary: ReportBandBoundary;
+  left: number;
+  onStart: (boundary: ReportBandBoundary, event: React.PointerEvent<HTMLHRElement>) => void;
+  onMove: (event: React.PointerEvent<HTMLHRElement>) => void;
+  onFinish: (event: React.PointerEvent<HTMLHRElement>) => void;
+  onNudge: (direction: -1 | 1) => void;
+}) {
+  const label = boundary === 'video-timeline' ? 'Resize video and timeline' : 'Resize timeline and version history';
+  return (
+    <hr
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemax={85}
+      aria-valuemin={15}
+      aria-valuenow={Math.round(left * 100)}
+      className="absolute inset-y-0 z-30 hidden h-auto w-4 -translate-x-1/2 cursor-col-resize touch-none border-0 after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-ink/20 hover:after:bg-moss focus:after:bg-moss lg:block"
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        onNudge(event.key === 'ArrowLeft' ? -1 : 1);
+      }}
+      onPointerCancel={onFinish}
+      onPointerDown={(event) => onStart(boundary, event)}
+      onPointerMove={onMove}
+      onPointerUp={onFinish}
+      style={{ left: `${left * 100}%` }}
+      tabIndex={0}
+    />
+  );
+}
+
+function ReportBandHeightHandle({
+  height,
+  onStart,
+  onMove,
+  onFinish,
+  onNudge,
+}: {
+  height: number;
+  onStart: (event: React.PointerEvent<HTMLHRElement>) => void;
+  onMove: (event: React.PointerEvent<HTMLHRElement>) => void;
+  onFinish: (event: React.PointerEvent<HTMLHRElement>) => void;
+  onNudge: (direction: -1 | 1) => void;
+}) {
+  return (
+    <hr
+      aria-label="Resize video, timeline and version history height"
+      aria-orientation="horizontal"
+      aria-valuemax={MAX_REPORT_BAND_HEIGHT}
+      aria-valuemin={MIN_REPORT_BAND_HEIGHT}
+      aria-valuenow={height}
+      className="absolute inset-x-0 bottom-0 z-40 hidden h-4 translate-y-1/2 cursor-row-resize touch-none border-0 after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-ink/20 hover:after:bg-moss focus:after:bg-moss lg:block"
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        onNudge(event.key === 'ArrowUp' ? -1 : 1);
+      }}
+      onPointerCancel={onFinish}
+      onPointerDown={onStart}
+      onPointerMove={onMove}
+      onPointerUp={onFinish}
+      tabIndex={0}
+    />
   );
 }
