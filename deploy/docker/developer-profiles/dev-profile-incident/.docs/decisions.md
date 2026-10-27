@@ -2,6 +2,18 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Experiment reports are built from saved results only; selection is guarded to pre-registered rules on dev
+- **Decision:** PR 7 adds the experiment tooling, with no paid runs.
+  - **Reports and checks:** `eval/experiment_report.py` and `eval_experiment.py report|verify|budget`, plus `scripts/eval_experiment_plumbing.py`.
+  - **Reports** read saved results only. A result on unfrozen ground truth puts a NOT REPORTABLE banner on the whole report. Inference latency and end-to-end latency are separate tables, and C3−C1 appears only as (C3−C4) + (C4−C1), with the §F.1 limits and the §F.5 exposure disclosure.
+  - **Results are hashed** at write time (`results.sha256`). `verify` re-checks the hash, the prompt bytes against the registry, the config hash, the ground-truth digest, the split and the call count.
+  - **`select`** refuses test-split records, records on unfrozen ground truth, and any rule that is not an existing decisions.md heading.
+  - **Configs:** an optional `videos` subset of a split half, used by the Stage 0 pilot configs (1 dev clip per category; 2 clips with crops on).
+  - **Stage 0 step 1 ran offline:** C1–C4 on the 25 dev clips with a scripted model and fake evaluators, all checks clean.
+- **Why:** tuning on test, or reporting from unfrozen ground truth, must be impossible rather than discouraged. Budgets must come from measured pilot figures, not guesses.
+- **Not decided:** D9 (the selection rule), D10, D11 and D15. The budget statement gives call counts only; tokens and cost wait for the paid pilot.
+- **Links:** [`../eval/docs/experiments/readiness.md`](../eval/docs/experiments/readiness.md); [`../eval/experiments/README.md`](../eval/experiments/README.md).
+
 ### 2026-10-27: Experimental /analyze settings are opt-in per process, verified, never persisted, and invisible to production requests
 - **Decision:** the agent's `/analyze` accepts `experiment_prompt_id` (a prompt from `contracts/experiments/registry.json`) and `skip_crops`, for the eval prompt experiments only (`services/agent/src/vss_agents/tools/incident_experiments.py`, `incident_report_gen.experiment_settings`).
   - **Opt-in:** refused with 403 unless the process runs with `INCIDENT_EXPERIMENTS_ENABLED=1`.

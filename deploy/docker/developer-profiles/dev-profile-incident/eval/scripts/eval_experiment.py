@@ -21,9 +21,12 @@ Usage (from ``eval/``)::
     uv run python scripts/eval_experiment.py run  experiments/configs/direct-vlm-baseline.json --confirm-paid
     uv run python scripts/eval_experiment.py rescore <results.json> --confirm-paid   # judge calls, no P1 calls
     uv run python scripts/eval_experiment.py compare C1=<results.json> C2=<…> C3=<…> C4=<…>
+    uv run python scripts/eval_experiment.py report --title "…" C1=<results.json> …  > report.md
+    uv run python scripts/eval_experiment.py verify <results dir>
+    uv run python scripts/eval_experiment.py budget experiments/configs/*.json [--pilot measured.json]
 
 ``run`` and ``rescore`` make paid calls (P1 and/or the LLM judge) and refuse without
-``--confirm-paid``; ``plan`` and ``compare`` make none.
+``--confirm-paid``; ``plan``, ``compare``, ``report``, ``verify`` and ``budget`` make none.
 """
 
 from __future__ import annotations
@@ -44,6 +47,13 @@ EVAL_DIR = Path(__file__).resolve().parents[1]
 DATASET_MANIFEST = EVAL_DIR / "eval_reproducibility" / "dataset-manifest-v1.json"
 
 
+def _cell(column: str, value):
+    """Frozen JSON stores datetimes as text; give ``write_gt`` the datetime the workbook would hold."""
+    if column == "Labelled_DateTime" and isinstance(value, str) and value:
+        return datetime.fromisoformat(value)
+    return value
+
+
 def frozen_store(sheets: dict):
     """An offline store holding the frozen ground truth, through the same ``write_gt`` path as the workbook."""
     import ground_truth_freeze
@@ -57,7 +67,7 @@ def frozen_store(sheets: dict):
         ws = workbook.create_sheet(sheet)
         ws.append(columns)
         for record in sheets[sheet]:
-            ws.append([record.get(c) for c in columns])
+            ws.append([_cell(column, record.get(column)) for column in columns])
     store = OfflineEvalStore()
     write_gt(store, workbook)
     return store
@@ -166,11 +176,48 @@ def cmd_rescore(args) -> int:
 
 
 def cmd_compare(args) -> int:
+    print(json.dumps(er.four_way(_named(args.configurations)), indent=2))
+    return 0
+
+
+def _named(items: list[str]) -> dict[str, dict]:
     records = {}
-    for item in args.configurations:
+    for item in items:
         name, _, path = item.partition("=")
         records[name] = json.loads(Path(path).read_text())
-    print(json.dumps(er.four_way(records), indent=2))
+    return records
+
+
+def cmd_report(args) -> int:
+    import experiment_report
+
+    print(experiment_report.render(_named(args.configurations), title=args.title))
+    return 0
+
+
+def cmd_verify(args) -> int:
+    import experiment_report
+    import ground_truth_freeze
+
+    record = json.loads((args.results_dir / "results.json").read_text())
+    gt_dir = EVAL_DIR / record["config"]["ground_truth"]["dir"]
+    manifest = json.loads((gt_dir / "MANIFEST.json").read_text()) if (gt_dir / "MANIFEST.json").exists() else None
+    if manifest is not None:
+        ground_truth_freeze.read_frozen(gt_dir, allow_candidate=True)  # checksums of the ground truth itself
+    problems = experiment_report.verify(args.results_dir, split=json.loads(er.SPLIT_PATH.read_text()),
+                                        gt_manifest=manifest)
+    for problem in problems:
+        print(f"  {problem}")
+    print("verify:", "OK" if not problems else f"{len(problems)} problem(s)")
+    return 0 if not problems else 1
+
+
+def cmd_budget(args) -> int:
+    import experiment_report
+
+    pilot = json.loads(args.pilot.read_text()) if args.pilot else None
+    configs = [er.load_config(path) for path in args.configs]
+    print(json.dumps(experiment_report.budget(configs, json.loads(er.SPLIT_PATH.read_text()), pilot=pilot), indent=2))
     return 0
 
 
@@ -187,8 +234,17 @@ def main() -> int:
     rescore.add_argument("--confirm-paid", action="store_true")
     compare = sub.add_parser("compare")
     compare.add_argument("configurations", nargs="+", help="C1=<results.json> ...")
+    report = sub.add_parser("report")
+    report.add_argument("--title", required=True)
+    report.add_argument("configurations", nargs="+", help="NAME=<results.json> ...")
+    verify = sub.add_parser("verify")
+    verify.add_argument("results_dir", type=Path)
+    budget = sub.add_parser("budget")
+    budget.add_argument("configs", nargs="+", type=Path)
+    budget.add_argument("--pilot", type=Path, help="Measured per-call tokens and cost from the Stage 0 pilot")
     args = parser.parse_args()
-    return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "compare": cmd_compare}[args.command](args)
+    return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "compare": cmd_compare, "report": cmd_report,
+            "verify": cmd_verify, "budget": cmd_budget}[args.command](args)
 
 
 if __name__ == "__main__":

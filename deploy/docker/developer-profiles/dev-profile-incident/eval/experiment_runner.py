@@ -64,7 +64,7 @@ SPLIT_PATH = EVAL_DIR / "eval_reproducibility" / "split-v2.json"
 ARMS = ("direct-vlm", "vss")
 SPLITS = ("dev", "test")
 CONFIG_KEYS = {"experiment_id", "description", "arm", "prompt_id", "model", "split", "ground_truth", "repeats",
-               "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref"}
+               "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref", "videos"}
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,20}$")
 
 
@@ -117,6 +117,10 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
         problems.append("a vss config needs pipeline.agent_base_url")
     if config["arm"] == "direct-vlm" and pipeline.get("agent_base_url"):
         problems.append("a direct-vlm config must not name an agent")
+    if config["videos"] is not None and (not isinstance(config["videos"], list) or not config["videos"]):
+        problems.append("videos must be null (the whole split half) or a non-empty list of incident ids")
+    if pipeline.get("profile", "accuracy") not in ("accuracy", "end-to-end"):
+        problems.append("pipeline.profile must be accuracy or end-to-end")
     if not (config["ground_truth"] or {}).get("dir"):
         problems.append("ground_truth.dir must name a frozen ground-truth directory")
     if config["split"] == "test":
@@ -130,7 +134,14 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
 
 
 def videos_for(config: dict, split: dict) -> list[str]:
-    return list(split[config["split"]])
+    """The split half, or the config's subset of it (a pilot); a video outside the half is refused."""
+    half = list(split[config["split"]])
+    if config.get("videos") is None:
+        return half
+    outside = sorted(set(config["videos"]) - set(half))
+    if outside:
+        raise ExperimentRefused(f"videos {outside} are not in the {config['split']} half of the split")
+    return [v for v in half if v in set(config["videos"])]
 
 
 def planned_calls(config: dict, split: dict) -> int:
@@ -332,12 +343,22 @@ def run_experiment(config: dict, *, split: dict, gt_index: dict, store, video_so
         for incident_id in videos_for(config, split):
             entry = gt_index["by_incident_id"][incident_id]
             video_url, video = video_source(incident_id)
+            seen: list = []
+            p1_call = call_factory(incident_id, run_id, video.get("duration_seconds"))
+
+            def recording_call(model: str, url: str, _call=p1_call, _seen=seen):
+                outcome = _call(model, url)
+                _seen.append(outcome)
+                return outcome
+
             result = run_one(
                 store, model=config["model"], category=entry["category"], filename=entry["filename"],
                 incident_id=incident_id, r2_object_key=video.get("r2_object_key"), video_url=video_url,
                 gt_p1_shaped=entry["p1_shaped"], model_run_id=run_id, split_manifest_ref=str(SPLIT_PATH.name),
                 video_duration_seconds=video.get("duration_seconds"), video_size_bytes=video.get("size_bytes"),
-                p1_call=call_factory(incident_id, run_id, video.get("duration_seconds")))
+                p1_call=recording_call)
+            # The agent's own report of the call (P1-only time, end-to-end time, the prompt it used).
+            result["transport"] = (seen[-1].result.raw or {}).get("agent") if seen else None
             result["repeat"] = repeat
             result["arm"] = config["arm"]
             result["prompt_id"] = config["prompt_id"]
@@ -346,8 +367,11 @@ def run_experiment(config: dict, *, split: dict, gt_index: dict, store, video_so
     record["complete"] = True
     record["finished_at"] = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     record["reliability"] = extraction_stats.reliability(record["videos"])
-    (out_dir / "results.json").write_text(json.dumps(record, indent=2, default=str) + "\n")
+    content = (json.dumps(record, indent=2, default=str) + "\n").encode()
+    (out_dir / "results.json").write_bytes(content)
     (out_dir / "prompt.txt").write_text(prompt_registry.prompt_text(config["prompt_id"], registry=registry))
+    # Written once; experiment_verify.py checks the results were not edited afterwards.
+    (out_dir / "results.sha256").write_text(hashlib.sha256(content).hexdigest() + "  results.json\n")
     return {"dry_run": False, "plan": plan, "results": str(out_dir / "results.json"), "record": record}
 
 
