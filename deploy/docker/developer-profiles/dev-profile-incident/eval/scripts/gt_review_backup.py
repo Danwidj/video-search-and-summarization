@@ -41,13 +41,15 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     snapshot = sub.add_parser("snapshot", help="Copy the workbook to a timestamped backup and log it.")
     snapshot.add_argument("--version", default="v0.1")
+    snapshot.add_argument("--kind", choices=("Review", "Candidate"), default="Review",
+                          help="Ground Truth Review <version> (PR 3) or Ground Truth Candidate <version> (PR 4)")
     snapshot.add_argument("--reason", required=True)
     sub.add_parser("list", help="Show the backup log.")
     sub.add_parser("verify", help="Check every logged backup still exists with its recorded SHA-256.")
     args = parser.parse_args()
 
     if args.command == "snapshot":
-        workbook = REVIEW_DIR / f"Ground Truth Review {args.version}.xlsx"
+        workbook = REVIEW_DIR / f"Ground Truth {args.kind} {args.version}.xlsx"
         if not workbook.exists():
             print(f"no workbook at {workbook}", file=sys.stderr)
             return 1

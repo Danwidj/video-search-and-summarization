@@ -43,6 +43,7 @@ from pathlib import Path
 STATUS_COLUMN, REVIEWER_COLUMN, NOTES_COLUMN = 16, 17, 18
 BACKUP_DIR_NAME = "backups"
 BACKUP_LOG = "backup-log.jsonl"
+MACHINE_STATUSES = ("Pending", "Auto-verified")  # set by a build, not by a person
 
 
 class OverwriteRefusedError(RuntimeError):
@@ -60,7 +61,8 @@ def sha256_file(path: Path) -> str:
 def review_state(path: Path) -> dict:
     """``{"entries", "statuses", "with_reviewer", "with_notes", "decisions"}`` of a review workbook.
 
-    ``decisions`` counts entries a person has touched: a status other than Pending, a reviewer or notes.
+    ``decisions`` counts entries a person has touched: a status other than Pending (or the
+    machine-set ``Auto-verified`` of a candidate workbook), a reviewer or notes.
     """
     import openpyxl
 
@@ -79,7 +81,7 @@ def review_state(path: Path) -> dict:
         statuses[status] += 1
         with_reviewer += bool(reviewer)
         with_notes += bool(notes)
-        decisions += status != "Pending" or bool(reviewer) or bool(notes)
+        decisions += status not in MACHINE_STATUSES or bool(reviewer) or bool(notes)
     workbook.close()
     return {"entries": entries, "statuses": dict(sorted(statuses.items())), "with_reviewer": with_reviewer,
             "with_notes": with_notes, "decisions": decisions}

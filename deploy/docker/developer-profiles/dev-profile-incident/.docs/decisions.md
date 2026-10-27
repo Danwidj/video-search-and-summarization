@@ -2,6 +2,23 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Ground-truth corrections are AI-proposed from video frames, applied only when independently verified or human-approved
+- **Decision:** PR 4 builds a versioned candidate workbook (`Ground Truth Candidate v0.2.xlsx`) from the unchanged source, the PR 3 review workbook and AI video-review proposals (`eval/scripts/gt_candidate_build.py`, `eval/ground_truth_correction.py`).
+  - **Automatically applied:** only the 86 `verified_correction` entries, each re-checked by `verify_mechanical` independently of the audit's rule code (status `Auto-verified`, which a reviewer can still reject).
+  - **Proposed, not applied:** every video-dependent finding gets an AI proposal (`propose_change`, `keep_original` or `uncertain`) with evidence tiles, a confidence and provenance, under the correction prompt `gt-correction-v1.0`. Proposals and the 2 rule-based proposals stay `Pending` until a person approves them; nothing uncertain is applied.
+  - **Human decisions carry forward** from the prior workbook unchanged, the prior workbook is never written, and a candidate holding human decisions is never overwritten.
+  - **The AI reviewer (plan decision D5)** is option (d): Claude (`claude-opus-5-5`, in Claude Code) reviews timestamped contact sheets cut from the verified local clips. The sheets are made by `scripts/gt_frames.py`, which runs in its own throwaway `uv` environment with OpenCV, as the SQL harness does; eval's dependencies are unchanged.
+  - **Independence:** the review reads only the annotation, the findings and the frames, and `guard_inputs` refuses results, experiment-prompt and run paths.
+- **Why:** this was the only option with no new key and no paid inference. It is also a different model family from the Cosmos/Nemotron VLMs under test, so the correction is independent of VSS. Contact sheets with burned-in times make every cited piece of evidence checkable against the exact image.
+- **Rejected:**
+  - a Switchyard VLM (paid, and the same family as the models under test);
+  - an external video model (new key and cost);
+  - adding OpenCV or ffmpeg to eval's lock (ask-first dependency);
+  - writing AI values into the data sheets as if approved;
+  - editing the v0.1 review workbook.
+- **Open:** human review depth (D6: share of high-impact entries reviewed, blind sample of unchanged incidents, second reviewer and kappa) is not settled. The tooling supports any depth.
+- **Links:** [`../eval/ground_truth/review/README.md`](../eval/ground_truth/review/README.md#correction-and-candidate-pr-4); [`../eval/ground_truth/review/candidate-v0.2.md`](../eval/ground_truth/review/candidate-v0.2.md); [`../eval/ground_truth/correction_prompts/gt-correction-v1.0.md`](../eval/ground_truth/correction_prompts/gt-correction-v1.0.md).
+
 ### 2026-10-27: Proposed ground-truth corrections live in a separate review workbook with a change log; the source is never edited
 - **Decision:** `eval/scripts/gt_review_build.py` builds `eval/ground_truth/review/Ground Truth Review <version>.xlsx` from the unchanged `Complete Ground Truth Labelling.xlsx`, whose SHA-256 is checked before and after. The working copy:
   - keeps every sheet, column, id, relationship and formula of the source;

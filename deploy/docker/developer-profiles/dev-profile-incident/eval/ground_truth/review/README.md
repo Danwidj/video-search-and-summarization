@@ -1,5 +1,7 @@
 # Ground-truth review (PR 3 → PR 4 → PR 5)
 
+> **Status:** PR 3 built the review workbook (`v0.1`, 184 findings). PR 4 added the AI-assisted correction and the candidate workbook (`Ground Truth Candidate v0.2.xlsx`; see [Correction and candidate (PR 4)](#correction-and-candidate-pr-4)). Nothing here is ground truth until PR 5 freezes it after the final annotations are approved.
+
 This folder holds the **proposed** corrections to the human-labelled ground truth. They follow [`annotation-guidelines-v1.0`](../annotation-guidelines-v1.0.md) and are **not final ground truth**:
 - PR 4 reviews each proposal (AI-assisted and human), setting it to Approved or Rejected;
 - PR 5 freezes the approved version as `ground-truth-v1.0`.
@@ -9,6 +11,9 @@ This folder holds the **proposed** corrections to the human-labelled ground trut
 | `Ground Truth Review v0.1.xlsx` | **no** (see Storage) | The editable working workbook: the source's sheets with the proposed values written in, plus `Review Summary` and `Change Log` |
 | [`audit-v0.1.md`](audit-v0.1.md) | yes | The audit report: findings by rule, with ids and counts only and no annotation text |
 | [`review-v0.1-manifest.json`](review-v0.1-manifest.json) | yes | Source SHA-256, output SHA-256, change-log digest, counts and inventory facts |
+| `Ground Truth Candidate v0.2.xlsx` | **no** | The PR 4 candidate: verified corrections applied, AI video-review proposals listed as Pending, v0.1 decisions carried forward. Review continues here |
+| `ai-proposals-v0.2.jsonl` | **no** | The AI reviewer's proposals (they quote annotation text) |
+| [`candidate-v0.2.md`](candidate-v0.2.md), [`candidate-v0.2-manifest.json`](candidate-v0.2-manifest.json) | yes | Candidate report (ids and counts only) and its hashes, digests and counts |
 
 ## Source
 
@@ -59,6 +64,35 @@ A refused build writes nothing: not the workbook, the manifest or the audit repo
   - `needs_video_review`: only the video can answer, so **no value is proposed**;
   - `informational`: recorded, no change.
 - **Out of taxonomy:** possible out-of-taxonomy clips carry the `OUT_OF_TAXONOMY_CANDIDATE` review flag. Their type stays one of the five categories.
+
+## Correction and candidate (PR 4)
+
+From `eval/`:
+
+```bash
+uv run python scripts/gt_review_packet.py      # per-video review packets: the annotation and its findings (eval_data/, gitignored)
+uv run --no-project --python 3.12 --script scripts/gt_frames.py eval_data/gt_review_packets/index.json  # timestamped contact sheets
+# AI review: follow ../correction_prompts/gt-correction-v1.0.md, write ai-proposals-<version>.jsonl here
+uv run python scripts/gt_candidate_build.py --version v0.2   # candidate workbook + candidate-v0.2.md + manifest
+uv run python scripts/gt_review_backup.py snapshot --kind Candidate --version v0.2 --reason "..."
+```
+
+- **Video evidence.** `gt_frames.py` runs in its own throwaway environment with OpenCV, so OpenCV is not an eval dependency. Each contact sheet tile has its video time burned in. Window sheets cover the incident window ±10 s at 1 frame/s, and the overview sheet has 12 frames across the clip. `frames.json` records every tile time and each sheet's SHA-256, so cited evidence can be checked against the exact image (about 34 MB for 38 videos, under `eval_data/gt_frames/`).
+- **Inputs are independent of the system under test.** Packets hold only the human annotation (without annotator names), the findings and the clip. `guard_inputs` refuses anything under `eval_data/results/`, `contracts/experiments/`, `eval/experiments/` or `eval_reproducibility/runs/`.
+- **AI proposals** (`gt-correction-v1.0`): one per finding, with `decision` (`propose_change`, `keep_original` or `uncertain`), the proposed value, an explanation, evidence tiles, a confidence and full provenance (model, prompt SHA-256, frame SHA-256s). `validate_proposal` rejects any proposal that cites a tile that does not exist, comes from a changed sheet, lacks evidence or repeats the original. A rejected proposal is shown with its problems and can never be applied.
+- **What the candidate applies:**
+
+  | Entry | Status in the candidate | Applied to the data sheets |
+  |---|---|---|
+  | `verified_correction` that passes the independent re-check (`verify_mechanical`, not the audit's rule code) | `Auto-verified` | yes |
+  | `verified_correction` that fails it | `Pending` | no |
+  | `rule_based_proposal`, and every AI proposal | `Pending` | **no**, until a person sets `Approved` |
+  | an entry a person set `Approved` (in this or the prior workbook) | `Approved` | yes: the proposed value, or the `Accepted value` when filled in. Approving a review entry without a proposed value confirms the original |
+  | an entry a person set `Rejected` | `Rejected` | no (a reviewer may also reject an `Auto-verified` entry) |
+
+- **Decisions are carried forward, never discarded.** The build reads the prior workbook's status, reviewer, notes and accepted value. It refuses if that workbook describes different findings, never writes to it, and checks the SHA-256 of both the prior workbook and the source before and after. A candidate that holds human decisions is never overwritten; review more and build the next version (`--prior "…Candidate v0.2.xlsx" --version v0.3`).
+- **Linked entries are decided together.** A reclassification (R10) removes an instrument and adds an asset; approving only one half is reported as a problem.
+- **The corrected records** come from `apply_to_records`: the source's documented columns plus only the applied entries. Each record keeps `_source_row` and `_change_ids` for provenance, and the same inputs always give the same `records_sha256`. PR 5 freezes from these records, not from cell formatting.
 
 ## Backups (local, versioned)
 
