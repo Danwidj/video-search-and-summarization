@@ -313,9 +313,15 @@ def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1P
     return rate_limited(lambda: analyze_video_with_p1(model, video_url, prompt_text=prompt_text), pacer=pacer)
 
 
-def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None) -> P1Outcome:
-    """Run ``call`` under ``P1_RATE_LIMIT_POLICY`` (the same policy for every arm of an experiment)."""
+def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None,
+                 max_retries: int | None = None) -> P1Outcome:
+    """Run ``call`` under ``P1_RATE_LIMIT_POLICY`` (the same policy for every arm of an experiment).
+
+    ``max_retries`` may only lower the policy's retry count (an experiment's request cap); it never raises it.
+    """
     pacer = pacer or DEFAULT_PACER
+    retries = P1_RATE_LIMIT_POLICY["max_rate_limit_retries"]
+    retries = retries if max_retries is None else max(0, min(retries, max_retries))
     policy = P1_RATE_LIMIT_POLICY
     attempts: list[dict] = []
     wait_s, wait_reason = 0.0, "pacing"
@@ -339,7 +345,7 @@ def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None
             "retry_after_s": result.retry_after_s,
             "error": (result.error or "")[:500],
         })
-        if result.failure_kind != "rate_limited" or len(attempts) > policy["max_rate_limit_retries"]:
+        if result.failure_kind != "rate_limited" or len(attempts) > retries:
             return P1Outcome(result=result, attempts=attempts)
         wait_s = policy["cooldown_s"]
         if policy["honor_retry_after"] and result.retry_after_s is not None:

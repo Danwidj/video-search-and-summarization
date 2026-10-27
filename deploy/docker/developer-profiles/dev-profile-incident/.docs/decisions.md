@@ -2,6 +2,46 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Stage 2 prompt selection rule (D9 v2) pre-registered
+- **Decision (approved by the user 2026-10-27, before any Stage 2 run):** the Stage 2 prompt is selected by D9 v2, implemented in `eval/experiment_selection.py` (`select_d9`). This heading is the pre-registration record that `select_d9` requires.
+  - **Data:** dev clips only, complete, reportable, fully scored, non-pilot VSS-arm results, compared against `vss-baseline`.
+  - **Primary metric `ΔI`:** the equal-weight mean of three paired component differences.
+    1. **Incident:** per video, the mean of the eligible ones among type, severity, start, end and description.
+    2. **Entity F1.**
+    3. **Object F1:** the mean of the eligible ones among instrument F1 and asset F1.
+  - **Secondary metric `ΔI8`:** the per-video mean of the eight scores. It is reported, and it is tie-breaker 2.
+  - **Eligibility and denominators:**
+
+    | Case | Rule |
+    |---|---|
+    | Out of taxonomy | Excludes **type only**. That clip's incident component averages the other four fields, and nothing else changes |
+    | Unscored value | Never eligible |
+    | Item F1 with ground truth and prediction both empty | Not applicable. It leaves that video out of the entity average (entity) or out of the object mean (object; the mean of 1 or 2 values, or not applicable when both are) |
+    | Ground truth empty with predictions, or present with none | F1 = 0 |
+    | Repeats | Averaged per score before pairing |
+    | A component's mean | Taken over the videos eligible on **both** sides |
+    | `ΔI` | Divides by the number of components with at least one eligible pair (normally 3) |
+    | `ΔI8` | Per video, divides by its eligible scores |
+
+  - **Eligible counts are reported** for every component and score: baseline, candidate, paired, and the number of out-of-taxonomy videos.
+  - **Uncertainty:** a 95% video-cluster bootstrap (seed 20261027).
+  - **Guardrails:**
+    - **G1:** valid-output video-runs ≥ the baseline's − 1.
+    - **G2:** no score with a point difference ≤ −0.05 **and** a CI upper bound < 0.
+    - **G3:** same videos, repeats, model, ground-truth digest and split.
+  - **Selected:** the highest `ΔI` with `ΔI ≥ +0.02`; otherwise `p1-v4-base`.
+  - **Tie-breakers**, within 0.01 of the best `ΔI`, in order:
+    1. Higher `ΔI` lower CI bound.
+    2. Higher `ΔI8`.
+    3. Higher severity difference.
+    4. More valid runs.
+    5. Shorter prompt.
+    6. Earlier registry entry.
+  - **Version cap:** at most 8 versions, all reported.
+- **Why:** fixed before any Stage 2 result exists, so the choice cannot be tuned to the data. Equal weights stop the five incident fields from dominating the item scores.
+- **Rejected:** the plain eight-score average as primary (kept as secondary); selection on test or pilot results.
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2/experiment-decision-record.md#d9-v2-prompt-selection-rule-pre-registered); [`../eval/experiment_selection.py`](../eval/experiment_selection.py).
+
 ### 2026-10-27: Experiment controls approved: D10 order and repeats, D15 disclosure, D11 hard caps (dollar limits provisional), Stage 0 as a pilot only
 - **Decision:**
   - **D10 (approved):** 2 repeats per configuration in Stages 1–3. A stage runs its configurations interleaved per video, the first rotating by position, in a video order shuffled per repeat with `random.Random(20261027 + repeat)` (`experiment_runner.run_stage`, `schedule`).
@@ -14,7 +54,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
     - The VSS arm runs on a local experiment agent started by `eval/experiments/agent/start-experiment-agent.sh` with no Supabase or R2 settings.
     - The crop pilot is removed: without an R2 store the agent makes no box calls, so it cannot measure crop cost (a decision is open).
 - **Why:** cost and order must be controlled by code, not by care. The pilot must not leak into selection or reported accuracy.
-- **Not decided here:** D9 v2 (proposed in the decision record, pre-registered only on approval); the Switchyard price; the crop-pilot option.
+- **Not decided here:** the Switchyard price. D9 v2 was pre-registered in its own entry (above), and the crop-pilot option is (a), a temporary isolated evidence store (follow-up).
 - **Links:** [`mvp2/experiment-decision-record.md`](mvp2/experiment-decision-record.md); [`../eval/experiments/README.md`](../eval/experiments/README.md).
 
 ### 2026-10-27: Pronoun policy P1 for ground-truth descriptions

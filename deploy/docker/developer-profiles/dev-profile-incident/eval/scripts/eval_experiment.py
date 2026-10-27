@@ -116,9 +116,9 @@ def call_factory_for(config: dict):
     item = prompt_registry.entry(config["prompt_id"])
     text = prompt_registry.prompt_text(config["prompt_id"])
     if config["arm"] == "direct-vlm":
-        return lambda incident_id, run_id, duration: er.direct_call(text)
-    return lambda incident_id, run_id, duration: er.vss_call(config, item, incident_id=incident_id, run_id=run_id,
-                                                             duration=duration)
+        return lambda incident_id, run_id, duration, max_retries=None: er.direct_call(text, max_retries=max_retries)
+    return lambda incident_id, run_id, duration, max_retries=None: er.vss_call(
+        config, item, incident_id=incident_id, run_id=run_id, duration=duration, max_retries=max_retries)
 
 
 def cmd_run(args) -> int:
