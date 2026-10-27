@@ -30,7 +30,8 @@ Paths are relative to the profile directory, except paths starting with `service
   - Ground truth has no per-item timestamps and no boxes.
 - **Splits:**
   - 55 held-out videos, seed 42.
-  - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate.
+  - `eval/scripts/eval_run.py` reads the gitignored `eval_data/split_*.json`. `eval_reproducibility/` holds tracked copies; copy them over or regenerate. Their R2 keys were refreshed on 2026-10-27 after 24 clips moved to `anomaly/demo/` (membership unchanged).
+- **Videos:** 80 clips (`anomaly/` without `shooting/`), downloaded and verified by `eval/scripts/eval_fetch_videos.py`; per-clip SHA-256, sizes and durations are in the tracked `eval_reproducibility/dataset-manifest-v1.json`.
 - **Runner:** `eval/scripts/eval_run.py` sends the contract P1 request (`incident-contract-v4`) straight to the upstream model with a signed R2 URL.
   - It does not go through the `vlm-gateway` service, which is a pure proxy for the same request.
 - **Configuration** (from `eval/.env.local`, a symlink to the profile's shared `.env.local`): `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` (database); `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` (signed video URLs); `VLM_GATEWAY_API_KEY` or `INCIDENT_LLM_API_KEY` and `INCIDENT_LLM_BASE_URL` (P1/RP1, the real Switchyard endpoint, not the mock); `INCIDENT_JUDGE_MODEL` (the description judge); `INCIDENT_EMBEDDING_BASE_URL` (the local MiniLM server below). The last four are not in the committed `.env`.

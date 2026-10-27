@@ -24,6 +24,21 @@ Settings come from `.env.local`, a symlink to the profile's shared `../.env.loca
 
 `retrieval_metrics.py` is the offline metrics module of the MVP2 retrieval benchmark (Track R, work-order step 1): pure functions that cut the baseline, post-filter and fill-to-K lists from a search response's candidate pool and compute the §3.5 metrics with paired seed-cluster bootstrap intervals. It has no script and calls no service; the harness that feeds it is step 3 ([`../.docs/mvp2/eval.md`](../.docs/mvp2/eval.md#10-work-order-and-definition-of-done)).
 
+## Dataset videos (local copies and manifest)
+
+```bash
+uv run python scripts/eval_fetch_videos.py --list          # inventory: dataset clips and skipped objects, no download
+uv run python scripts/eval_fetch_videos.py                 # download (resumable) and verify; writes the manifest
+uv run python scripts/eval_fetch_videos.py --verify-only   # re-hash local copies against the manifest, no R2
+uv run python scripts/eval_refresh_split_keys.py --check   # are the split manifests' R2 keys current?
+```
+
+- **Dataset:** every `anomaly/<folder>/<file>.mp4` in R2 except `anomaly/shooting/` (80 clips, about 1.15 GB). Each clip is downloaded to the gitignored `eval_data/videos/<folder>/<original filename>`, so `_demo` names are kept. R2 is only listed and read.
+- **Integrity:** the size must equal R2's, the R2 ETag must be reproduced from the local file (the MD5 for a single-part upload; for a multipart upload, the part-MD5 ETag at the part size that gives its part count), and the SHA-256 and MP4 `mvhd` duration are recorded. A file is verified as a `.part` and renamed only when it passes, and a rerun skips clips that already verify. The command exits non-zero on any finding.
+- **Manifest:** [`eval_reproducibility/dataset-manifest-v1.json`](eval_reproducibility/dataset-manifest-v1.json) (tracked; no video, no credentials) lists every clip's incident id, ground-truth filename, R2 key and folder, sizes, digests and duration. It also lists the skipped objects and the integrity findings, including that every split video is exactly one clip and every clip is in a split. `clips_sha256` hashes the whole set.
+- **`_demo` clips:** `anomaly/demo/<Id>_x264_demo.mp4` holds presentation-demo copies of dataset clips. Resolution ignores a `_demo` suffix before the extension (`dataset_manifest.canonical_basename`), so the ground-truth name `<Id>_x264.mp4` resolves to it, and a plain clip and its demo copy together are reported as ambiguous.
+- **Split manifests:** `eval_refresh_split_keys.py` rewrites only their R2 key maps through the same resolver. The seed, membership and order never change. Copy the refreshed files to `eval_data/` for `eval_run.py`.
+
 ## VLM benchmark (incident fields, processing time)
 
 ```bash
