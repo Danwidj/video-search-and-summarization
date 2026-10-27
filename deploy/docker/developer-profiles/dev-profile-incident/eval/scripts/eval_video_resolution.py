@@ -15,7 +15,10 @@
 
 """GT filename -> R2 object -> short-lived signed URL, for the P1 multi-model eval.
 
-Exact-basename resolution only. Never falls back to ``r2_videos.py``'s
+Exact-basename resolution only, up to one fixed alias: a ``_demo`` suffix just
+before the extension is ignored on both sides (``canonical_basename``), because
+presentation-demo clips live in R2 as ``anomaly/demo/<Id>_x264_demo.mp4`` while
+the ground truth and split manifests name ``<Id>_x264.mp4``. Never falls back to ``r2_videos.py``'s
 category-alias matching (``category_matches``/``map_incidents_to_video_keys``)
 - that path is documented there as demo-only and "never presented as the
 actual incident evidence," and would silently substitute the wrong video for
@@ -40,6 +43,7 @@ from pathlib import Path, PurePosixPath
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import r2_videos  # noqa: E402
+from dataset_manifest import canonical_basename  # noqa: E402
 
 EVAL_DATA_DIR = Path(__file__).resolve().parents[1] / "eval_data"
 # Signed per video immediately before its P1 call, so 1 h comfortably covers
@@ -52,24 +56,25 @@ class ResolutionError(Exception):
 
 
 def build_basename_index(keys: list[str]) -> dict[str, list[str]]:
-    """``{basename: [full_key, ...]}`` over every key in the bucket listing.
+    """``{canonical basename: [full_key, ...]}`` over every key in the bucket listing.
 
     A multi-map, not a dict that silently overwrites on a duplicate basename -
-    duplicates must be detected, not hidden.
+    duplicates must be detected, not hidden. A plain clip and its ``_demo`` copy
+    share one entry, so having both is reported as ambiguous.
     """
     index: dict[str, list[str]] = defaultdict(list)
     for key in keys:
-        index[PurePosixPath(key).name].append(key)
+        index[canonical_basename(PurePosixPath(key).name)].append(key)
     return dict(index)
 
 
 def resolve_filename(filename: str, basename_index: dict[str, list[str]]) -> str:
-    """Exact-basename resolution for one GT filename. Returns the R2 object key.
+    """Exact-basename resolution for one GT filename (``_demo`` alias aside). Returns the R2 object key.
 
     Raises ``ResolutionError`` for zero or multiple matches - the only two
     non-success outcomes; there is no silent fallback.
     """
-    matches = basename_index.get(filename, [])
+    matches = basename_index.get(canonical_basename(filename), [])
     if len(matches) == 0:
         raise ResolutionError(f"no R2 object found for GT filename {filename!r}")
     if len(matches) > 1:

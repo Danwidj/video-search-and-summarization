@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -36,6 +36,12 @@ Responses are judged under validation policy `core-scored-v1`. A core failure is
 ## Instructions
 
 ```bash
+# 0. Dataset videos: inventory, download and verify (resumable; R2 read-only), split keys current
+uv run python scripts/eval_fetch_videos.py --list
+uv run python scripts/eval_fetch_videos.py               # exits non-zero on any integrity finding
+uv run python scripts/eval_refresh_split_keys.py --check  # non-zero when split manifests name moved R2 keys
+cp eval_reproducibility/split_*.json eval_data/
+
 # 1. Local embedding server (separate terminal; prints the INCIDENT_EMBEDDING_BASE_URL to set)
 uv run python scripts/eval_embedding_server.py
 
@@ -76,6 +82,7 @@ uv run python scripts/eval_benchmark_export.py        # tables -> eval_data/resu
 ## Verify
 
 - `uv run pytest tests/` passes. The tests are hermetic: no live Postgres, agent or GPU.
+- `eval_fetch_videos.py --verify-only` prints `OK`, and `eval_reproducibility/dataset-manifest-v1.json` has `"integrity": {"ok": true, ...}` with 80 clips.
 - Result files say `"scoring_backend": "offline"` in their `benchmark` block unless `--db` was passed.
 - `eval_ingest_gt.py --dry-run` prints no `WARNING: ... has incident type` line. If it does, a workbook `Type` is not one of the five standard types. Scoring still uses the row, normalised to lowercase; fix the workbook.
 - The smoke run writes `eval_data/results/<category>__<model>.json` with non-null field scores.
