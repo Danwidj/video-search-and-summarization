@@ -154,6 +154,7 @@ class ExperimentRefusedError(RuntimeError):
     """An experimental request would write to shared storage (HTTP 409 on ``/analyze``)."""
 
 
+EXPERIMENT_EVIDENCE_STORE = "temporary in-memory store, discarded after the request (no disk, no R2)"
 # Fields only an experimental request returns; production responses never carry them.
 EXPERIMENT_OUTPUT_FIELDS = ("experiment", "p1_elapsed_ms", "usage")
 
@@ -333,11 +334,20 @@ async def run_rp1(
         return None, f"{type(exc).__name__}: {exc}"
 
 
-async def collect_evidence(*, video_url: str, incident_id: str, report: dict[str, Any]) -> list[dict[str, Any]]:
-    """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason."""
+async def collect_evidence(
+    *,
+    video_url: str,
+    incident_id: str,
+    report: dict[str, Any],
+    store: crop_evidence.EvidenceStore | None = None,
+) -> list[dict[str, Any]]:
+    """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
+
+    ``store`` overrides the service's store (R2 in production) for this call only.
+    """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
-            video_ref=video_url, video_id=incident_id, report=report
+            video_ref=video_url, video_id=incident_id, report=report, store=store
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -425,9 +435,11 @@ def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str
             "an experimental request cannot carry a reviewer prompt (the P1 request must be the prompt alone)"
         )
     if not tool_input.skip_crops and is_r2_configured():
+        # Defence in depth: experimental crops go to a temporary in-memory store, and an experiment agent
+        # must not hold shared-storage settings at all.
         raise ExperimentRefusedError(
-            "experimental cropping would upload evidence images to R2; run the experiment agent without R2 settings "
-            "or set skip_crops"
+            "experimental cropping refuses to run on an agent with R2 settings; run the experiment agent without "
+            "R2 settings (its crops go to a temporary in-memory store) or set skip_crops"
         )
     settings: dict[str, Any] = {"prompt_id": None, "prompt_sha256": incident_experiments.production_prompt_sha256()}
     if tool_input.experiment_prompt_id is not None:
@@ -485,6 +497,16 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 {**item, "bounding_box": None, "image": None, "image_gap": "evidence cropping skipped (skip_crops)"}
                 for item in crop_evidence.evidence_items(report)
             ]
+        elif experiment is not None:
+            # An experimental crop run uses its own temporary in-memory store: isolated from every other
+            # request, holding no production data, never written to disk or R2, and discarded on return.
+            evidence = await collect_evidence(
+                video_url=tool_input.video_url,
+                incident_id=tool_input.incident_id,
+                report=report,
+                store=crop_evidence.InMemoryEvidenceStore(),
+            )
+            experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
         else:
             evidence = await collect_evidence(
                 video_url=tool_input.video_url, incident_id=tool_input.incident_id, report=report

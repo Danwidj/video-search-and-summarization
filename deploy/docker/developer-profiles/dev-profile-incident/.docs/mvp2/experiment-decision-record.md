@@ -203,4 +203,6 @@ The real-dollar amount stays unknown until the price is confirmed. The token and
 - `budget --measured` recalculates Stages 1–3;
 - the gate into Stage 1 is unchanged: frozen ground truth, and the stage budget approved at the confirmed price.
 
-**Cropping, option (a) (chosen 2026-10-27):** an isolated, temporary evidence store for experimental requests only, holding no production data and making no R2 writes. It is a separate follow-up and does not block the no-crop pilot.
+**Cropping, option (a) (chosen and implemented 2026-10-27):** an experimental crops-on request uses a fresh in-memory evidence store for that request only. It holds no production data, never writes to disk or R2, and is discarded on return. Production requests keep the service's own store. An agent with R2 settings still refuses the request.
+
+A crop pilot is **not** authorised. The agent makes up to 4 box calls per predicted item, and the runner cannot count those calls before the response arrives. Its spend needs its own bound: for example, a per-request box-call cap in the agent for experimental requests, or the predicted-item count × 4 accepted as the bound. It also needs its own approval.

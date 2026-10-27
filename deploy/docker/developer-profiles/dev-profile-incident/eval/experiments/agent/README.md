@@ -23,4 +23,4 @@ NAT_BIN=<agent venv>/bin/nat experiments/agent/start-experiment-agent.sh
 - An experimental request returns `revision_id: null`, `persisted: false`, the prompt id and SHA-256, `p1_elapsed_ms` and `usage`.
 - The plumbing run's C2 scored 25/25 through it. C3 failed 25/25, as designed: the agent refuses a prompt that is not in the committed registry.
 
-**Cropping:** without R2 the agent skips cropping and makes no box calls. With R2, an experimental crops-on request is refused (409). So crop cost cannot be measured yet ([decision record](../../../.docs/mvp2/experiment-decision-record.md#stage-0-pilot-prepared-not-run)).
+**Cropping (option (a)):** an experimental crops-on request crops into a fresh in-memory store, discarded after the request, so detection and box calls run with no disk or R2 write (`experiment.evidence_store`). An agent with R2 settings still refuses it (409). The box calls are paid and the runner cannot count them in advance, so a crop pilot needs its own authorisation and bound ([decision record](../../../.docs/mvp2/experiment-decision-record.md#stage-0-pilot-authorised-blocked-on-pricing)).
