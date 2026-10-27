@@ -51,7 +51,7 @@ uv run python scripts/eval_benchmark_export.py        # 4. tables from the newes
 
 `--incident-only` scores the incident fields only (no entity/instrument/asset matching, so no embedding server, and no RP1). Each record keeps its P1 round-trip time (`timing.p1_elapsed_s`), the video's size and length, its `outcome` (`scored`, `contract_invalid`, `parse_failure`, or no model output: `timeout`, `rate_limited`, `http_error`) and its judge-call count. P1 follows the fixed rate-limit policy `eval_vlm_client.P1_RATE_LIMIT_POLICY` (20 s between attempts; HTTP 429 only is retried, after 60 s or a longer `Retry-After`, at most twice), and an empty predicted description scores 0.0 without a judge call. The rules and their reasons are in [`../.docs/decisions.md`](../.docs/decisions.md) (2026-10-02 benchmark entry).
 
-What a correct ground-truth label is: [`ground_truth/annotation-guidelines-v1.0.md`](ground_truth/annotation-guidelines-v1.0.md) (approved 2026-10-27).
+What a correct ground-truth label is: [`ground_truth/annotation-guidelines-v1.0.md`](ground_truth/annotation-guidelines-v1.0.md) (approved 2026-10-27). Proposed corrections to the human labels, for review: `uv run python scripts/gt_review_build.py` builds the working workbook, the audit and its manifest in [`ground_truth/review/`](ground_truth/review/README.md); nothing there is final ground truth.
 
 How predictions are scored is fixed by [`methodology/evaluation-methodology-v1.0.md`](methodology/evaluation-methodology-v1.0.md) (pins in `methodology.py`, recorded in every result).
 
