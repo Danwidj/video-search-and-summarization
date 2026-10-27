@@ -137,12 +137,13 @@ def render(records: dict[str, dict], *, title: str) -> str:
     stopped = {n: r.get("stopped") for n, r in records.items() if r.get("stopped") or not r.get("complete", True)}
     if stopped:
         lines += ["", f"> **Incomplete:** {stopped}"]
-    lines += ["", "## Usage and provisional cost", "", "| Name | P1 calls | P1 tokens | Tokens per call | Judge calls | Judge "
-              "tokens (est.) | Cost (provisional USD) |", "|---|---|---|---|---|---|---|"]
+    lines += ["", "## Usage and gateway cost", "", "| Name | P1 calls | P1 tokens | Tokens per call | Judge calls | Judge "
+              "tokens | Gateway cost (USD) |", "|---|---|---|---|---|---|---|"]
     for name, r in records.items():
         u = usage(r)
+        judge = u["judge_tokens"] if u["judge_tokens"] else f"{u['judge_tokens_estimate']} (est.)"
         lines.append(f"| {name} | {u['p1_calls']} | {u['p1_tokens']} | {_fmt(u['tokens_per_p1_call'], 0)} | "
-                     f"{u['judge_calls']} | {u['judge_tokens_estimate']} | {_fmt(u['cost_usd_provisional'], 4)} |")
+                     f"{u['judge_calls']} | {judge} | {_fmt(u['cost_usd_provisional'], 4)} |")
     if pilot:
         return "\n".join(lines + _pilot_sections(records))
     lines += ["", "## Incident fields", "", "Conditional accuracy (videos with a model output and a scored value) with "
@@ -203,6 +204,7 @@ def usage(record: dict) -> dict:
     tokens = sum(((v.get("usage") or {}).get("p1_total_tokens") or 0) for v in record["videos"])
     return {"p1_calls": calls, "p1_tokens": tokens, "tokens_per_p1_call": tokens / calls if calls else None,
             "judge_calls": sum(((v.get("usage") or {}).get("judge_calls") or 0) for v in record["videos"]),
+            "judge_tokens": sum(((v.get("usage") or {}).get("judge_tokens") or 0) for v in record["videos"]),
             "judge_tokens_estimate": sum(((v.get("usage") or {}).get("judge_tokens_estimate") or 0)
                                          for v in record["videos"]),
             "cost_usd_provisional": round(sum(((v.get("usage") or {}).get("cost_usd_provisional") or 0)
@@ -310,9 +312,13 @@ def budget(configs: list[dict], split: dict, *, pricing: dict | None = None, mea
         judge_tokens = judge * pricing["judge_tokens_per_call_estimate"]
         cost = p1_tokens / 1e6 * er._rate(pricing, config["model"]) + judge_tokens / 1e6 * er._rate(
             pricing, pricing["judge_model"])
+        planning = pricing.get("planning_rate_usd_per_million_tokens")
         rows.append({"experiment_id": config["experiment_id"], "purpose": config["purpose"], "arm": config["arm"],
                      "p1_calls": p1, "judge_calls_estimate": judge, "p1_tokens_estimate": p1_tokens,
                      "judge_tokens_estimate": judge_tokens, "cost_usd_provisional": round(cost, 2),
+                     # What the same volume would cost at the planning rate (never the gateway's charge).
+                     "cost_usd_at_planning_rate": round((p1_tokens + judge_tokens) / 1e6 * planning, 2)
+                     if planning is not None else None,
                      "crop_calls": 0 if config["pipeline"].get("skip_crops") else "unmeasured (≤ 4 per item)",
                      "caps": config["budget"]})
     return {"rows": rows, "totals": {k: sum(r[k] for r in rows) for k in ("p1_calls", "judge_calls_estimate",
@@ -320,7 +326,8 @@ def budget(configs: list[dict], split: dict, *, pricing: dict | None = None, mea
                                                                           "judge_tokens_estimate",
                                                                           "cost_usd_provisional")},
             "basis": "pilot measurements" if measured else "planning estimates (2026-10-02 aggregate usage)",
-            "pricing_provisional": pricing.get("provisional", True), "pricing_source": pricing.get("source")}
+            "pricing_provisional": pricing.get("provisional", True), "pricing_source": pricing.get("source"),
+            "infrastructure_cost": pricing.get("infrastructure_cost")}
 
 
 # --- selection ----------------------------------------------------------------------------------

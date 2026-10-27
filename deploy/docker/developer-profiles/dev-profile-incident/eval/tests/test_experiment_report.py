@@ -104,7 +104,7 @@ def test_budget_counts_calls_and_prices_only_measured_pilots():
     rows = {r["experiment_id"]: r for r in statement["rows"]}
     assert rows["direct-vlm-baseline"]["p1_calls"] == 50 and rows["pilot-direct-vlm"]["p1_calls"] == 5
     assert rows["pilot-vss"]["crop_calls"] == 0 and rows["pilot-vss"]["purpose"] == "pilot"
-    assert statement["pricing_provisional"] is True and statement["basis"].startswith("planning")
+    assert statement["basis"].startswith("planning") and "pricing_source" in statement
     assert rows["pilot-direct-vlm"]["p1_tokens_estimate"] == 5 * er.P1_TOKENS_PLANNING_MEAN
     measured = rep.budget(configs[:1], split, measured={"tokens_per_p1_call": 1000, "judge_calls_per_video": 2})
     assert measured["basis"] == "pilot measurements" and measured["rows"][0]["judge_calls_estimate"] == \

@@ -2,6 +2,18 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Stage 0 pilot run; the gateway's $0 configured pricing is recorded apart from the unknown infrastructure cost
+- **Decision:**
+  - **Authorisation:** the user authorised the no-crop Stage 0 pilot on the sponsor-provided Switchyard key (given to the FYP team by the NVIDIA sponsor for this project).
+  - **Pricing record:** `eval/experiments/pricing.json` records the gateway's configured price of $0 per token (`provisional: false`, with the `/model/info` and `/key/info` evidence) and, separately, that the GPU infrastructure cost of the sponsor's Brev instance is unknown. Logged costs are gateway charges to the project only. Budgets also show the old $10/M planning rate for comparison.
+  - **The run:** 10 P1 HTTP attempts (no retries, no 429s) gave 9 scored outputs and 1 gateway timeout (HTTP 524).
+- **Result:** [`../eval/docs/experiments/stage0-pilot.md`](../eval/docs/experiments/stage0-pilot.md). Pilot results are never used for selection, ground-truth changes or accuracy claims.
+- **Open, needing approval before Stage 1:**
+  - raise the Stage 1 judge-request caps to about 1,710 per config;
+  - freeze the ground truth;
+  - approve the Stage 1 budget.
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2/experiment-decision-record.md).
+
 ### 2026-10-27: Evaluation methodology v1.1 limits the judge's output to 1,500 tokens; truncated or invalid replies are failures
 - **Decision (user-requested):** `evaluation-methodology-v1.1` adds `max_tokens 1500` to the pinned judge request (`methodology.JUDGE_MAX_OUTPUT_TOKENS`). It applies to the Stage 0 pilot and every later experiment. Three kinds of reply are now **scoring failures**, which leave the field unscored and stop the run; they are never read as scores:
   - a reply cut off at the limit (`finish_reason: length`, not retried);
