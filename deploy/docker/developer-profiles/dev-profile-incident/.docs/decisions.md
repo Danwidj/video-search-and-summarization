@@ -2,6 +2,18 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Proposed ground-truth corrections live in a separate review workbook with a change log; the source is never edited
+- **Decision:** `eval/scripts/gt_review_build.py` builds `eval/ground_truth/review/Ground Truth Review <version>.xlsx` from the unchanged `Complete Ground Truth Labelling.xlsx`, whose SHA-256 is checked before and after. The working copy:
+  - keeps every sheet, column, id, relationship and formula of the source;
+  - writes proposed values in place, appends new records with the next free id, and strikes through and flags rows proposed for removal instead of deleting them;
+  - adds a `Change Log` (original and proposed values, reason, supporting video evidence, confidence, Pending/Approved/Rejected status) and a formula-driven `Review Summary`.
+
+  Each finding is classed as `verified_correction` (provable from the workbook or the dataset manifest), `rule_based_proposal` (an approved guideline rule), `needs_video_review` (no value proposed) or `informational`. Possible out-of-taxonomy clips get a review flag, never a sixth type. The audit report (ids and counts only) and a manifest with hashes and the change-log digest are committed. The workbook is deliberately gitignored.
+- **Why:** reviewers need an editable, traceable copy, and the human labels must stay intact until PR 4 reviews and PR 5 freezes. Separating what the data proves from what only the video can show stops the build from inventing visual facts. The workbook carries real annotations and annotator names, and the frozen ground truth's storage (D7) is still open.
+- **Rejected:** editing the source workbook; deleting or renumbering records; proposing values from filenames or description wording; relabelling `Animal` to `Animal Attack` (the workbook's own dropdown uses `Animal`, and eval maps it); committing the workbook before D7 and a privacy decision.
+- **Open:** a durable shared location for the reviewed workbook. The proposal is the private R2 prefix `ground-truth/review/<version>/`, which is a shared-storage write and needs approval.
+- **Links:** [`../eval/ground_truth/review/README.md`](../eval/ground_truth/review/README.md); [`../eval/ground_truth/review/audit-v0.1.md`](../eval/ground_truth/review/audit-v0.1.md); [`../eval/ground_truth_review.py`](../eval/ground_truth_review.py).
+
 ### 2026-10-27: Annotation guidelines v1.0 are the approved definition of a correct annotation
 - **Decision:** `eval/ground_truth/annotation-guidelines-v1.0.md` is the single definition of a correct annotation. Ground-truth review and correction and VSS prompt variants all use it, and it is separate from every prompt (plan decisions D1 and D2). The severity and instrument-threat scales are the workbook's, unchanged. It adds:
   - decision rules (observed harm and demonstrated danger, no inferred outcomes, counting people) and category calibration examples;
