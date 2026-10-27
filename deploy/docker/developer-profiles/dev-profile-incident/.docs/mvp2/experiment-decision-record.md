@@ -4,7 +4,7 @@
 > - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
 > - **D10 and D15:** approved as implemented.
 > - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
-> - **Stage 0:** authorised, subject to confirmed Switchyard billing or quota. **It has not run, because the pricing could not be established** (see [Stage 0](#stage-0-pilot-authorised-blocked-on-pricing)).
+> - **Stage 0:** **ran 2026-10-27** on the sponsor-provided gateway (configured $0 per token; infrastructure cost unknown). Results: [`stage0-pilot.md`](../../eval/docs/experiments/stage0-pilot.md).
 > - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
 
 ## D9 v2: prompt-selection rule (pre-registered)

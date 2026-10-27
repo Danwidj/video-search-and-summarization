@@ -153,7 +153,7 @@ def test_a_pilot_is_never_reportable_and_its_report_hides_accuracy(tmp_path):
     assert record["purpose"] == "pilot" and record["reportable"] is False  # even on frozen ground truth
     text = rep.render({"pilot": record}, title="pilot")
     assert "PILOT" in text and "## Incident fields" not in text and "## Paired comparisons" not in text
-    assert "## Usage and provisional cost" in text and "## Latency" in text
+    assert "## Usage and gateway cost" in text and "## Latency" in text
 
 
 def test_pilot_configs_are_dev_only_and_never_final():

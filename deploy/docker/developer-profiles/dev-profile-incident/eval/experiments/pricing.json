@@ -1,9 +1,20 @@
 {
-  "provisional": true,
-  "source": "PROVISIONAL: assumed ceiling of $10 per million tokens, not the Switchyard price. Replace with the confirmed rate or quota before any cost cap is treated as final.",
+  "provisional": false,
+  "source": "Sponsor-provided Switchyard gateway (LiteLLM proxy on Brev instance 13doh4lsz, key issued to the FYP team by the NVIDIA sponsor). The gateway's model configuration lists input and output cost per token as 0 for every model, and the key's recorded spend is $0.00 with no budget (checked 2026-10-27 via /model/info and /key/info).",
   "usd_per_million_tokens": {
-    "default": 10.0
+    "default": 0.0
   },
+  "gateway_configured_usd_per_token": {
+    "input": 0.0,
+    "output": 0.0
+  },
+  "infrastructure_cost": "UNKNOWN: the models are served from 127.0.0.1:4001 on the sponsor's Brev GPU instance; its GPU-hour cost is borne by the sponsor and is not visible to the project. Costs logged here are gateway charges to the project only.",
+  "rate_limits": {
+    "rpm": 60,
+    "max_parallel_requests": 4,
+    "tpm": null
+  },
+  "planning_rate_usd_per_million_tokens": 10.0,
   "judge_model": "nvidia/nemotron-3-nano-30b-a3b",
   "judge_tokens_per_call_estimate": 1500
 }
