@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
 import subprocess
 import time
@@ -64,7 +65,19 @@ SPLIT_PATH = EVAL_DIR / "eval_reproducibility" / "split-v2.json"
 ARMS = ("direct-vlm", "vss")
 SPLITS = ("dev", "test")
 CONFIG_KEYS = {"experiment_id", "description", "arm", "prompt_id", "model", "split", "ground_truth", "repeats",
-               "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref", "videos"}
+               "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref", "videos",
+               "purpose"}
+PURPOSES = ("experiment", "pilot")
+BUDGET_KEYS = ("max_p1_calls", "max_p1_tokens", "max_judge_calls")
+PRICING_PATH = EVAL_DIR / "experiments" / "pricing.json"
+# D10: deterministic randomisation of the video order per repeat.
+ORDER_SEED = 20261027
+# D11: the per-call token ceiling a cap check must leave room for (the largest 2026-10-02 Cosmos 3 Super call
+# was 20,965 tokens), the planning mean, and the rate-limit stop rule.
+P1_TOKENS_CEILING = 21000
+P1_TOKENS_PLANNING_MEAN = 9898
+RATE_LIMIT_STOP_SHARE = 0.25
+RATE_LIMIT_MIN_ATTEMPTS = 8
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,20}$")
 
 
@@ -106,8 +119,13 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
         problems.append(f"split must be one of {SPLITS}")
     if not isinstance(config["repeats"], int) or config["repeats"] < 1:
         problems.append("repeats must be a whole number >= 1")
-    if not isinstance((config["budget"] or {}).get("max_p1_calls"), int):
-        problems.append("budget.max_p1_calls must be a whole number")
+    for key in BUDGET_KEYS:
+        if not isinstance((config["budget"] or {}).get(key), int) or config["budget"][key] < 1:
+            problems.append(f"budget.{key} must be a whole number >= 1 (hard cap)")
+    if config["purpose"] not in PURPOSES:
+        problems.append(f"purpose must be one of {PURPOSES}")
+    if config["purpose"] == "pilot" and (config["split"] != "dev" or config["final"] or config["frozen_baseline"]):
+        problems.append("a pilot runs on dev only and is never final or a frozen baseline")
     pipeline = config["pipeline"] or {}
     if pipeline.get("skip_rp1") is not True:
         problems.append("pipeline.skip_rp1 must be true: RP1 is not part of an extraction experiment")
@@ -166,11 +184,15 @@ def preflight(config: dict, split: dict, *, registry: dict | None = None, result
     calls = planned_calls(config, split)
     if calls > config["budget"]["max_p1_calls"]:
         raise ExperimentRefused(f"{calls} planned P1 calls exceed budget.max_p1_calls {config['budget']['max_p1_calls']}")
+    if calls * P1_TOKENS_PLANNING_MEAN > config["budget"]["max_p1_tokens"]:
+        raise ExperimentRefused(f"{calls} planned P1 calls need about {calls * P1_TOKENS_PLANNING_MEAN} tokens, more "
+                                f"than budget.max_p1_tokens {config['budget']['max_p1_tokens']}")
     item = prompt_registry.entry(config["prompt_id"], registry)
     return {"experiment_id": config["experiment_id"], "arm": config["arm"], "model": config["model"],
             "prompt_id": item["id"], "prompt_sha256": item["sha256"], "split": config["split"],
             "videos": len(videos_for(config, split)), "repeats": config["repeats"], "planned_p1_calls": calls,
-            "budget_max_p1_calls": config["budget"]["max_p1_calls"]}
+            "budget_max_p1_calls": config["budget"]["max_p1_calls"], "budget": dict(config["budget"]),
+            "purpose": config["purpose"]}
 
 
 # --- transports -----------------------------------------------------------------------------------
@@ -311,7 +333,9 @@ def metadata(config: dict, plan: dict, gt_index: dict, *, registry: dict | None 
         "ground_truth": {"version": gt_index.get("version"), "status": gt_index.get("status"),
                          "dir": config["ground_truth"]["dir"],
                          "records_sha256": (gt_index.get("manifest") or {}).get("records_sha256")},
-        "reportable": gt_index.get("status") == "frozen",
+        # A pilot is never reportable: it validates infrastructure, reliability, latency and cost only.
+        "reportable": gt_index.get("status") == "frozen" and config["purpose"] == "experiment",
+        "purpose": config["purpose"],
         "split": {"version": (gt_index.get("split") or {}).get("version"), "half": config["split"]},
         "methodology": methodology.record(),
         "harness_git_sha": git_sha(),
@@ -319,32 +343,120 @@ def metadata(config: dict, plan: dict, gt_index: dict, *, registry: dict | None 
     }
 
 
-def run_experiment(config: dict, *, split: dict, gt_index: dict, store, video_source: Callable,
-                   call_factory: Callable, run_one: Callable, confirm_paid: bool, results_root: Path = RESULTS_ROOT,
-                   registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
-                   log: Callable = print) -> dict:
-    """Run one configuration. ``video_source(incident_id) -> (video_url, metadata)``;
-    ``call_factory(incident_id, run_id, duration) -> p1_call``; ``run_one`` is ``eval_run.run_one_video``."""
-    plan = preflight(config, split, registry=registry, results_root=results_root, decisions_path=decisions_path)
+def load_pricing(path: Path | None = None) -> dict:
+    return json.loads((path or PRICING_PATH).read_text())
+
+
+def _rate(pricing: dict, model: str) -> float:
+    rates = pricing["usd_per_million_tokens"]
+    return float(rates.get(model, rates["default"]))
+
+
+def call_usage(result: dict, pricing: dict, model: str) -> dict:
+    """Tokens and provisional cost of one video-run: measured P1 usage, judge calls at the per-call estimate."""
+    usage = (result.get("p1_raw") or {}).get("usage") or {}
+    p1_tokens = int(usage.get("total_tokens") or (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens")
+                                                                                         or 0))
+    judge_calls = int(result.get("judge_calls") or 0)
+    judge_tokens = judge_calls * int(pricing["judge_tokens_per_call_estimate"])
+    cost = p1_tokens / 1e6 * _rate(pricing, model) + judge_tokens / 1e6 * _rate(pricing, pricing["judge_model"])
+    return {"p1_prompt_tokens": usage.get("prompt_tokens"), "p1_completion_tokens": usage.get("completion_tokens"),
+            "p1_total_tokens": p1_tokens, "judge_calls": judge_calls, "judge_tokens_estimate": judge_tokens,
+            "cost_usd_provisional": round(cost, 6)}
+
+
+def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = ORDER_SEED) -> list[tuple]:
+    """``(repeat, position, incident_id, config index)`` in run order (D10).
+
+    Per repeat the videos are shuffled with ``random.Random(seed + repeat)``; at each video the
+    configurations run interleaved, the first one rotating with the position, so no arm always
+    runs first or in one block. Deterministic: the same inputs always give the same order.
+    """
+    order = []
+    for repeat in range(1, repeats + 1):
+        shuffled = sorted(videos)
+        random.Random(seed + repeat).shuffle(shuffled)
+        for position, incident_id in enumerate(shuffled):
+            for k in range(len(configs)):
+                order.append((repeat, position, incident_id, (position + k) % len(configs)))
+    return order
+
+
+def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_source: Callable,
+              call_factory_for: Callable, run_one: Callable, confirm_paid: bool, results_root: Path = RESULTS_ROOT,
+              registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
+              log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED) -> dict:
+    """Run configurations interleaved per video under hard caps; write one immutable result per configuration.
+
+    ``call_factory_for(config) -> call_factory(incident_id, run_id, duration) -> p1_call``. Every
+    configuration must cover the same videos with the same repeats. Before each call the
+    configuration's caps are checked with room for a worst-case call; a cap, or rate limiting on
+    more than a quarter of attempts, stops the whole stage. The partial results are then written
+    with ``complete: false`` and the reason. Every call is appended to the stage's ``cost-log.jsonl``.
+    """
+    plans = [preflight(c, split, registry=registry, results_root=results_root, decisions_path=decisions_path)
+             for c in configs]
+    if len({c["experiment_id"] for c in configs}) != len(configs):
+        raise ExperimentRefused("a stage cannot run the same configuration twice")
+    video_sets = {tuple(sorted(videos_for(c, split))) for c in configs}
+    if len(video_sets) != 1 or len({c["repeats"] for c in configs}) != 1 or len({c["split"] for c in configs}) != 1:
+        raise ExperimentRefused("configurations in one stage must share split half, videos and repeats")
     if not confirm_paid:
-        return {"dry_run": True, "plan": plan}
-    if gt_index.get("status") != "frozen" and not (config["ground_truth"] or {}).get("allow_candidate"):
-        raise ExperimentRefused("ground truth is not frozen; only a plumbing run may set ground_truth.allow_candidate")
+        return {"dry_run": True, "plans": plans, "plan": plans[0]}
+    for config in configs:
+        if gt_index.get("status") != "frozen" and not (config["ground_truth"] or {}).get("allow_candidate"):
+            raise ExperimentRefused(f"{config['experiment_id']}: ground truth is not frozen; only a pilot or plumbing "
+                                    "run may set ground_truth.allow_candidate")
+    pricing = pricing or load_pricing()
     started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-    out_dir = results_root / config["experiment_id"] / started
-    if out_dir.exists():
-        raise ExperimentRefused(f"{out_dir} exists; results are immutable")
-    out_dir.mkdir(parents=True)
-    record = {**metadata(config, plan, gt_index, registry=registry), "started_at": started, "complete": False,
-              "videos": []}
-    for repeat in range(1, config["repeats"] + 1):
-        run_id = run_id_for(config, repeat)
-        store.insert_model_run(run_id, model_name=config["model"], prompt_version=contract.contract_version())
-        for incident_id in videos_for(config, split):
+    out_dirs = [results_root / c["experiment_id"] / started for c in configs]
+    stage_id = hashlib.sha256(",".join(c["experiment_id"] for c in configs).encode()).hexdigest()[:8]
+    stage_dir = results_root / "stages" / f"{started}-{stage_id}"
+    for path in [*out_dirs, stage_dir]:
+        if path.exists():
+            raise ExperimentRefused(f"{path} exists; results are immutable")
+    for path in [*out_dirs, stage_dir]:
+        path.mkdir(parents=True)
+    order = schedule(configs, list(video_sets.pop()), configs[0]["repeats"], seed)
+    (stage_dir / "schedule.json").write_text(json.dumps({
+        "seed": seed, "configs": [c["experiment_id"] for c in configs], "pricing": pricing,
+        "order": [{"repeat": r, "position": p, "incident_id": v, "config": configs[k]["experiment_id"]}
+                  for r, p, v, k in order]}, indent=2) + "\n")
+    records = [{**metadata(c, plan, gt_index, registry=registry), "started_at": started, "complete": False,
+                "stopped": None, "videos": [], "schedule": {"seed": seed, "stage": started},
+                "usage": {"p1_calls": 0, "p1_tokens": 0, "judge_calls": 0, "judge_tokens_estimate": 0,
+                          "cost_usd_provisional": 0.0, "pricing_provisional": pricing.get("provisional", True)}}
+               for c, plan in zip(configs, plans, strict=True)]
+    factories = [call_factory_for(c) for c in configs]
+    run_ids: dict[tuple, str] = {}
+    stopped = None
+    attempts = rate_limited = 0
+    with (stage_dir / "cost-log.jsonl").open("a") as cost_log:
+        for repeat, position, incident_id, k in order:
+            config, record = configs[k], records[k]
+            budget, used = config["budget"], record["usage"]
+            reason = None
+            if used["p1_calls"] + 1 > budget["max_p1_calls"]:
+                reason = "max_p1_calls"
+            elif used["p1_tokens"] + P1_TOKENS_CEILING > budget["max_p1_tokens"]:
+                reason = "max_p1_tokens (no room for a worst-case call)"
+            elif used["judge_calls"] >= budget["max_judge_calls"]:
+                reason = "max_judge_calls"
+            elif attempts >= RATE_LIMIT_MIN_ATTEMPTS and rate_limited / attempts > RATE_LIMIT_STOP_SHARE:
+                reason = f"rate limited on {rate_limited}/{attempts} calls (> {RATE_LIMIT_STOP_SHARE:.0%})"
+            if reason:
+                stopped = {"config": config["experiment_id"], "reason": reason, "at": [repeat, position, incident_id]}
+                log(f"  STOP: {config['experiment_id']} {reason}")
+                break
+            key = (k, repeat)
+            if key not in run_ids:
+                run_ids[key] = run_id_for(config, repeat)
+                store.insert_model_run(run_ids[key], model_name=config["model"],
+                                       prompt_version=contract.contract_version())
             entry = gt_index["by_incident_id"][incident_id]
             video_url, video = video_source(incident_id)
             seen: list = []
-            p1_call = call_factory(incident_id, run_id, video.get("duration_seconds"))
+            p1_call = factories[k](incident_id, run_ids[key], video.get("duration_seconds"))
 
             def recording_call(model: str, url: str, _call=p1_call, _seen=seen):
                 outcome = _call(model, url)
@@ -354,25 +466,53 @@ def run_experiment(config: dict, *, split: dict, gt_index: dict, store, video_so
             result = run_one(
                 store, model=config["model"], category=entry["category"], filename=entry["filename"],
                 incident_id=incident_id, r2_object_key=video.get("r2_object_key"), video_url=video_url,
-                gt_p1_shaped=entry["p1_shaped"], model_run_id=run_id, split_manifest_ref=str(SPLIT_PATH.name),
+                gt_p1_shaped=entry["p1_shaped"], model_run_id=run_ids[key], split_manifest_ref=str(SPLIT_PATH.name),
                 video_duration_seconds=video.get("duration_seconds"), video_size_bytes=video.get("size_bytes"),
                 p1_call=recording_call)
             # The agent's own report of the call (P1-only time, end-to-end time, the prompt it used).
             result["transport"] = (seen[-1].result.raw or {}).get("agent") if seen else None
-            result["repeat"] = repeat
-            result["arm"] = config["arm"]
-            result["prompt_id"] = config["prompt_id"]
+            result.update(repeat=repeat, position=position, arm=config["arm"], prompt_id=config["prompt_id"])
+            usage = call_usage(result, pricing, config["model"])
+            result["usage"] = usage
             record["videos"].append(result)
-            log(f"  {config['experiment_id']} r{repeat} {incident_id}: {result['outcome']}")
-    record["complete"] = True
-    record["finished_at"] = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    record["reliability"] = extraction_stats.reliability(record["videos"])
-    content = (json.dumps(record, indent=2, default=str) + "\n").encode()
-    (out_dir / "results.json").write_bytes(content)
-    (out_dir / "prompt.txt").write_text(prompt_registry.prompt_text(config["prompt_id"], registry=registry))
-    # Written once; experiment_verify.py checks the results were not edited afterwards.
-    (out_dir / "results.sha256").write_text(hashlib.sha256(content).hexdigest() + "  results.json\n")
-    return {"dry_run": False, "plan": plan, "results": str(out_dir / "results.json"), "record": record}
+            used["p1_calls"] += 1
+            used["p1_tokens"] += usage["p1_total_tokens"]
+            used["judge_calls"] += usage["judge_calls"]
+            used["judge_tokens_estimate"] += usage["judge_tokens_estimate"]
+            used["cost_usd_provisional"] = round(used["cost_usd_provisional"] + usage["cost_usd_provisional"], 6)
+            outcome_attempts = (result.get("p1_raw") or {}).get("rate_limit") or {}
+            attempts += int(outcome_attempts.get("attempt_count") or 1)
+            rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])
+            cost_log.write(json.dumps({"time": datetime.now(UTC).isoformat(timespec="seconds"),
+                                       "config": config["experiment_id"], "incident_id": incident_id,
+                                       "repeat": repeat, "position": position, "outcome": result["outcome"], **usage,
+                                       "config_cumulative": dict(used)}) + "\n")
+            cost_log.flush()
+            log(f"  {config['experiment_id']} r{repeat} {incident_id}: {result['outcome']} "
+                f"tokens={usage['p1_total_tokens']} cost≈${used['cost_usd_provisional']:.4f}")
+    finished = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    outputs = []
+    for config, record, out_dir in zip(configs, records, out_dirs, strict=True):
+        record["complete"] = stopped is None
+        record["stopped"] = stopped
+        record["finished_at"] = finished
+        record["reliability"] = extraction_stats.reliability(record["videos"])
+        content = (json.dumps(record, indent=2, default=str) + "\n").encode()
+        (out_dir / "results.json").write_bytes(content)
+        (out_dir / "prompt.txt").write_text(prompt_registry.prompt_text(config["prompt_id"], registry=registry))
+        # Written once; experiment_report.verify checks the results were not edited afterwards.
+        (out_dir / "results.sha256").write_text(hashlib.sha256(content).hexdigest() + "  results.json\n")
+        outputs.append(str(out_dir / "results.json"))
+    return {"dry_run": False, "plans": plans, "plan": plans[0], "results_files": outputs, "records": records,
+            "stopped": stopped, "stage_dir": str(stage_dir)}
+
+
+def run_experiment(config: dict, *, call_factory: Callable, **kwargs) -> dict:
+    """One configuration as a stage of one (``run_stage``); ``call_factory(incident_id, run_id, duration)``."""
+    out = run_stage([config], call_factory_for=lambda _config: call_factory, **kwargs)
+    if not out["dry_run"]:
+        out["results"], out["record"] = out["results_files"][0], out["records"][0]
+    return out
 
 
 # --- comparisons ----------------------------------------------------------------------------------

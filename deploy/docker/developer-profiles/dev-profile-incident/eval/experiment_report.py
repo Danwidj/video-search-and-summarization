@@ -119,8 +119,12 @@ EXPOSURE = [
 
 def render(records: dict[str, dict], *, title: str) -> str:
     reportable = all(r.get("reportable") for r in records.values())
+    pilot = any(r.get("purpose") == "pilot" for r in records.values())
     lines = [f"# {title}", ""]
-    if not reportable:
+    if pilot:
+        lines += ["> **PILOT: infrastructure, reliability, latency and cost only.** Accuracy is deliberately not "
+                  "shown: pilot results are never used for prompt selection or reported as accuracy.", ""]
+    elif not reportable:
         lines += ["> **NOT REPORTABLE.** At least one configuration ran on candidate (unfrozen) ground truth or is a "
                   "plumbing run. These numbers test the machinery only and must not be cited.", ""]
     lines += ["## Configurations", "", "| Name | Experiment | Arm | Model | Prompt (sha256) | Split | Repeats | Ground truth "
@@ -130,6 +134,17 @@ def render(records: dict[str, dict], *, title: str) -> str:
                      f"(`{r['prompt']['sha256'][:12]}`) | {r['split']['half']} | {r['plan']['repeats']} | "
                      f"{r['ground_truth']['version']} ({r['ground_truth']['status']}) | {r['plan']['videos']} | "
                      f"`{str(r['harness_git_sha'])[:9]}` |")
+    stopped = {n: r.get("stopped") for n, r in records.items() if r.get("stopped") or not r.get("complete", True)}
+    if stopped:
+        lines += ["", f"> **Incomplete:** {stopped}"]
+    lines += ["", "## Usage and provisional cost", "", "| Name | P1 calls | P1 tokens | Tokens per call | Judge calls | Judge "
+              "tokens (est.) | Cost (provisional USD) |", "|---|---|---|---|---|---|---|"]
+    for name, r in records.items():
+        u = usage(r)
+        lines.append(f"| {name} | {u['p1_calls']} | {u['p1_tokens']} | {_fmt(u['tokens_per_p1_call'], 0)} | "
+                     f"{u['judge_calls']} | {u['judge_tokens_estimate']} | {_fmt(u['cost_usd_provisional'], 4)} |")
+    if pilot:
+        return "\n".join(lines + _pilot_sections(records))
     lines += ["", "## Incident fields", "", "Conditional accuracy (videos with a model output and a scored value) with "
               "its 95% interval, then end-to-end accuracy (a request failure counts as a miss).", "",
               "| Name | Field | n | Accuracy | 95% CI | End-to-end n | End-to-end | 95% CI |",
@@ -183,6 +198,57 @@ def render(records: dict[str, dict], *, title: str) -> str:
     return "\n".join(lines)
 
 
+def usage(record: dict) -> dict:
+    calls = len(record["videos"])
+    tokens = sum(((v.get("usage") or {}).get("p1_total_tokens") or 0) for v in record["videos"])
+    return {"p1_calls": calls, "p1_tokens": tokens, "tokens_per_p1_call": tokens / calls if calls else None,
+            "judge_calls": sum(((v.get("usage") or {}).get("judge_calls") or 0) for v in record["videos"]),
+            "judge_tokens_estimate": sum(((v.get("usage") or {}).get("judge_tokens_estimate") or 0)
+                                         for v in record["videos"]),
+            "cost_usd_provisional": round(sum(((v.get("usage") or {}).get("cost_usd_provisional") or 0)
+                                              for v in record["videos"]), 6)}
+
+
+def _pilot_sections(records: dict[str, dict]) -> list[str]:
+    lines = ["", "## Reliability", "", "| Name | Attempted | Outcomes | Model-output rate | Valid-output rate | "
+             "Rate-limit retries |", "|---|---|---|---|---|---|"]
+    for name, r in records.items():
+        rel = extraction_stats.reliability(r["videos"])
+        retries = sum(((v.get("p1_raw") or {}).get("rate_limit") or {}).get("rate_limit_retries", 0) for v in r["videos"])
+        lines.append(f"| {name} | {rel['attempted']} | {rel['outcomes']} | {_fmt(rel['model_output_rate'])} | "
+                     f"{_fmt(rel['valid_output_rate'])} | {retries} |")
+    lines += ["", "## Latency (seconds)", "", "| Name | Inference n | p50 | p95 | End-to-end n | p50 | p95 |",
+              "|---|---|---|---|---|---|---|"]
+    for name, r in records.items():
+        lat = latency(r)
+        i, e = lat["inference"], lat["end_to_end"]
+        lines.append(f"| {name} | {i['n']} | {_fmt(i['p50'], 2)} | {_fmt(i['p95'], 2)} | {e['n']} | "
+                     f"{_fmt(e['p50'], 2)} | {_fmt(e['p95'], 2)} |")
+    crops = {}
+    for name, r in records.items():
+        gaps = [e.get("image_gap") for v in r["videos"] for e in ((v.get("transport") or {}).get("evidence") or [])]
+        if gaps:
+            crops[name] = {"items": len(gaps), "with_gap": sum(1 for g in gaps if g)}
+    if crops:
+        lines += ["", f"Evidence crops (end-to-end pilot): {crops}"]
+    return lines + [""]
+
+
+def measure(records: list[dict]) -> dict:
+    """Pilot measurements for ``budget(measured=...)``: tokens and judge calls per call, rate limiting, latency."""
+    videos = [v for r in records for v in r["videos"]]
+    tokens = [(v.get("usage") or {}).get("p1_total_tokens") or 0 for v in videos if (v.get("usage") or {})
+              .get("p1_total_tokens")]
+    attempts = sum(((v.get("p1_raw") or {}).get("rate_limit") or {}).get("attempt_count", 1) for v in videos)
+    limited = sum(len(((v.get("p1_raw") or {}).get("rate_limit") or {}).get("rate_limit_rejections") or [])
+                  for v in videos)
+    return {"p1_calls": len(videos), "tokens_per_p1_call": sum(tokens) / len(tokens) if tokens else None,
+            "tokens_per_p1_call_max": max(tokens) if tokens else None,
+            "judge_calls_per_video": sum(v.get("judge_calls") or 0 for v in videos) / len(videos) if videos else None,
+            "rate_limited_share": limited / attempts if attempts else None,
+            "latency": {r["experiment_id"]: latency(r) for r in records}}
+
+
 # --- reproducibility --------------------------------------------------------------------------------
 
 def verify(results_dir: Path, *, registry: dict | None = None, split: dict | None = None,
@@ -227,23 +293,34 @@ def verify(results_dir: Path, *, registry: dict | None = None, split: dict | Non
 JUDGE_CALLS_PER_SCORED_VIDEO = 5  # plan D11 estimate (incident plus matched-item descriptions); the pilot measures it
 
 
-def budget(configs: list[dict], split: dict, *, pilot: dict | None = None) -> dict:
-    """Call volume per config; tokens and cost only from measured pilot figures."""
+def budget(configs: list[dict], split: dict, *, pricing: dict | None = None, measured: dict | None = None) -> dict:
+    """Requests, tokens and provisional cost per config: planning estimates, or the pilot's measurements.
+
+    Caps (``budget`` in each config) are hard and enforced by the runner; the cost is provisional
+    while ``pricing.provisional`` is true.
+    """
+    pricing = pricing or er.load_pricing()
+    per_call = (measured or {}).get("tokens_per_p1_call") or er.P1_TOKENS_PLANNING_MEAN
+    judge_per_video = (measured or {}).get("judge_calls_per_video") or JUDGE_CALLS_PER_SCORED_VIDEO
     rows = []
     for config in configs:
         p1 = er.planned_calls(config, split)
-        row = {"experiment_id": config["experiment_id"], "arm": config["arm"], "split": config["split"],
-               "p1_calls": p1, "judge_calls_estimate": p1 * JUDGE_CALLS_PER_SCORED_VIDEO,
-               "crop_calls": 0 if config["pipeline"].get("skip_crops") else None}
-        if pilot:
-            row["tokens_estimate"] = round(p1 * pilot["tokens_per_p1_call"])
-            row["cost_estimate"] = round(p1 * pilot["cost_per_p1_call"] + row["judge_calls_estimate"]
-                                         * pilot["cost_per_judge_call"], 2)
-        rows.append(row)
-    return {"rows": rows, "totals": {"p1_calls": sum(r["p1_calls"] for r in rows),
-                                     "judge_calls_estimate": sum(r["judge_calls_estimate"] for r in rows)},
-            "measured": bool(pilot),
-            "note": None if pilot else "tokens and cost are unknown until the Stage 0 pilot measures them"}
+        judge = round(p1 * judge_per_video)
+        p1_tokens = round(p1 * per_call)
+        judge_tokens = judge * pricing["judge_tokens_per_call_estimate"]
+        cost = p1_tokens / 1e6 * er._rate(pricing, config["model"]) + judge_tokens / 1e6 * er._rate(
+            pricing, pricing["judge_model"])
+        rows.append({"experiment_id": config["experiment_id"], "purpose": config["purpose"], "arm": config["arm"],
+                     "p1_calls": p1, "judge_calls_estimate": judge, "p1_tokens_estimate": p1_tokens,
+                     "judge_tokens_estimate": judge_tokens, "cost_usd_provisional": round(cost, 2),
+                     "crop_calls": 0 if config["pipeline"].get("skip_crops") else "unmeasured (≤ 4 per item)",
+                     "caps": config["budget"]})
+    return {"rows": rows, "totals": {k: sum(r[k] for r in rows) for k in ("p1_calls", "judge_calls_estimate",
+                                                                          "p1_tokens_estimate",
+                                                                          "judge_tokens_estimate",
+                                                                          "cost_usd_provisional")},
+            "basis": "pilot measurements" if measured else "planning estimates (2026-10-02 aggregate usage)",
+            "pricing_provisional": pricing.get("provisional", True), "pricing_source": pricing.get("source")}
 
 
 # --- selection ----------------------------------------------------------------------------------
@@ -258,13 +335,13 @@ def select(candidates: dict[str, dict], baseline: dict, *, rule_record: str, rul
     Refuses any test-split or non-reportable record, and refuses unless ``rule_record`` is an
     existing ``### `` heading in decisions.md, so the rule is fixed before results are seen.
     """
-    if not er.selection_record_exists(rule_record, decisions_path):
-        raise SelectionRefused(f"the selection rule {rule_record!r} is not pre-registered in decisions.md")
-    for name, record in {**candidates, "baseline": baseline}.items():
-        if record["split"]["half"] != "dev":
-            raise SelectionRefused(f"{name} is a {record['split']['half']} record: selection uses dev results only")
-        if not record.get("reportable"):
-            raise SelectionRefused(f"{name} is not reportable (unfrozen ground truth)")
+    import experiment_selection
+
+    try:
+        experiment_selection.guard({**candidates, "baseline": baseline}, rule_record=rule_record,
+                                   decisions_path=decisions_path)
+    except experiment_selection.SelectionRefused as exc:
+        raise SelectionRefused(str(exc)) from exc
     scores = {name: rule(record, baseline) for name, record in candidates.items()}
     eligible = {name: score for name, score in scores.items() if score is not None}
     winner = max(eligible, key=eligible.get) if eligible else None

@@ -1,0 +1,9 @@
+{
+  "provisional": true,
+  "source": "PROVISIONAL: assumed ceiling of $10 per million tokens, not the Switchyard price. Replace with the confirmed rate or quota before any cost cap is treated as final.",
+  "usd_per_million_tokens": {
+    "default": 10.0
+  },
+  "judge_model": "nvidia/nemotron-3-nano-30b-a3b",
+  "judge_tokens_per_call_estimate": 1500
+}
