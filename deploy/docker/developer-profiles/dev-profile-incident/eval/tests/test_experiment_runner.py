@@ -74,7 +74,7 @@ def _config(**overrides):
               "model": MODEL, "split": "dev", "ground_truth": {"dir": "gt", "allow_candidate": False}, "repeats": 1,
               "budget": {"max_p1_calls": 10}, "pipeline": {"profile": "accuracy", "skip_rp1": True, "skip_crops": True,
                                                             "agent_base_url": None},
-              "frozen_baseline": False, "final": False, "selection_record": None, "baseline_ref": None}
+              "frozen_baseline": False, "final": False, "selection_record": None, "baseline_ref": None, "videos": None}
     for key, value in overrides.items():
         config[key] = value
     return config
@@ -313,4 +313,6 @@ def test_committed_configs_are_valid_dev_runs():
         config = er.load_config(path)
         assert er.config_problems(config) == [], path.name
         assert config["split"] == "dev" and not config["final"]
+        if config["pipeline"]["profile"] == "end-to-end":
+            assert config["experiment_id"].startswith("pilot-")  # cropping only in the pilot (and the later profile)
         assert er.planned_calls(config, json.loads(er.SPLIT_PATH.read_text())) <= config["budget"]["max_p1_calls"]
