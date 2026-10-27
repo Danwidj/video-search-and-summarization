@@ -3,7 +3,7 @@
 > **Status (2026-10-27):**
 > - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
 > - **D10 and D15:** approved as implemented.
-> - **D11:** caps enforced, and retry-proof since this revision. The dollar limits are provisional.
+> - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
 > - **Stage 0:** authorised, subject to confirmed Switchyard billing or quota. **It has not run, because the pricing could not be established** (see [Stage 0](#stage-0-pilot-authorised-blocked-on-pricing)).
 > - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
 
@@ -173,7 +173,7 @@ Stage 0 has the largest relative margin (2.1×) because 10 calls give the least 
 
 The authorisation has two conditions:
 1. **Confirmed Switchyard billing or quota.** **Not met.** The repository documents no price, and the gateway's model listing (`GET /v1/models`, no inference) returns only model ids, with no pricing, quota or rate-limit headers. **So the pilot has not run.** It needs your confirmation: either the gateway is a free or allocated lab quota, or the price per million tokens for `cosmos-3-super-reasoner` and `nemotron-3-nano-30b-a3b`, with any quota limit.
-2. **Caps cannot be bypassed by retries.** **Met after a fix in this revision.** Before it, a 429 retry was an extra request that `max_p1_calls` did not count.
+2. **Caps cannot be bypassed by retries.** **Met** (#225, and the judge output limit in methodology v1.1). Before #225, a 429 retry was an extra request that `max_p1_calls` did not count.
 
 **How the caps now hold:**
 
@@ -182,7 +182,7 @@ The authorisation has two conditions:
 | P1 requests | **Hard: ≤ 5 per arm, 10 in total.** Every HTTP attempt counts against `max_p1_calls`. Before each video, the runner keeps one attempt per remaining video, so retries can use only what is left over. With 5 videos and a cap of 5 there is no retry: a 429 ends that video as `rate_limited` |
 | P1 tokens | **Hard: ≤ 105,000 per arm, 210,000 in total.** Before each call the runner requires that the tokens counted so far plus a worst-case attempt (35,000 = the largest observed prompt plus the 16,384 `max_tokens`) fit the cap. An attempt with no usage report that was not a 429 is counted at that ceiling |
 | Judge requests | **Hard: ≤ 25 per arm, 50 in total.** The pilot scores incident fields only: 1 judged field per video × at most 5 attempts (1 + 2 parse retries + 2 transient retries). Before each video the runner requires room for that worst case |
-| Judge tokens | **Measured, not hard-bounded.** The pinned judge request (methodology v1.0) sets no `max_tokens`, so one call's output length has no ceiling. Judge tokens are now measured from each response's usage and logged. A hard bound needs a judge `max_tokens`, which changes the pinned methodology and needs your approval |
+| Judge tokens | **Output hard-capped at 1,500 tokens per attempt** (methodology v1.1; a truncated reply is a failure, not a score). Input is the judge prompt plus two descriptions and is measured (about 300–600 tokens). Judge tokens are logged from each response's usage
 | Crop calls | 0 (crops off) |
 | RP1 | 0 (skipped) |
 
@@ -191,10 +191,8 @@ The authorisation has two conditions:
 | | Expected | Hard ceiling |
 |---|---|---|
 | P1 | 10 requests, ≈ 99 k tokens, ≈ $0.99 | 10 requests, ≤ 210 k tokens, ≤ $2.10 |
-| Judge | ≈ 10 requests, ≈ 15 k tokens, ≈ $0.15 | ≤ 50 requests. Tokens per request are not capped (at 1,500 each: 75 k, $0.75) |
-| **Total** | **≈ $1.14** | **≤ $2.85 if each judge reply stays ≤ 1,500 tokens**, within the $3.60 planning ceiling |
-
-The two judge preflight probes (one per invocation) add 2 requests.
+| Judge | ≈ 12 requests (10 + 2 preflight probes), ≈ 15 k tokens, ≈ $0.15 | ≤ 52 requests × (≤ 1,500 output + ≈ 600 input) ≈ 109 k tokens, ≈ $1.09 |
+| **Total** | **≈ $1.14** | **≈ $3.19** (output fully capped; input at the measured size), within the $3.60 planning ceiling |
 
 The real-dollar amount stays unknown until the price is confirmed. The token and request bounds hold whatever the price is.
 

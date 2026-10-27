@@ -96,7 +96,8 @@ def test_run_refuses_to_start_with_a_different_judge(monkeypatch):
 
 def test_methodology_record_names_every_pin():
     record = methodology.record()
-    assert record["methodology_version"] == "evaluation-methodology-v1.0"
+    assert record["methodology_version"] == "evaluation-methodology-v1.1"
+    assert record["judge"]["request_settings"] == {"temperature": 0.0, "max_tokens": 1500}
     assert record["judge"]["prompt_sha256"] == methodology.judge_prompt_sha256()
     assert record["embedding"] == {"model": "sentence-transformers/all-MiniLM-L6-v2", "base_url": "http://127.0.0.1:8811/v1"}
     assert (record["match_threshold"], record["timestamp_tolerance_s"]) == (0.75, 5)
