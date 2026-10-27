@@ -1,0 +1,33 @@
+{
+  "arm": "direct-vlm",
+  "baseline_ref": null,
+  "budget": {
+    "max_p1_calls": 5
+  },
+  "description": "Stage 0 paid pilot (plan \u00a7F.2): p1-v4-base direct, 1 dev video per category. Measures tokens, latency, 429s, judge calls. Never used for selection.",
+  "experiment_id": "pilot-direct-vlm",
+  "final": false,
+  "frozen_baseline": false,
+  "ground_truth": {
+    "dir": "eval_data/ground_truth/ground-truth-v1.0",
+    "allow_candidate": false
+  },
+  "model": "nvidia/cosmos-3-super-reasoner",
+  "pipeline": {
+    "profile": "accuracy",
+    "skip_rp1": true,
+    "skip_crops": true,
+    "agent_base_url": null
+  },
+  "prompt_id": "p1-v4-base",
+  "repeats": 1,
+  "selection_record": null,
+  "split": "dev",
+  "videos": [
+    "Animal001",
+    "Assault007",
+    "Burglary004",
+    "Explosion002",
+    "RoadAccidents005"
+  ]
+}

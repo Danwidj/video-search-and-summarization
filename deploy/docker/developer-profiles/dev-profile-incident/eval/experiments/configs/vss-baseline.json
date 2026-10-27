@@ -22,5 +22,6 @@
   "prompt_id": "p1-v4-base",
   "repeats": 2,
   "selection_record": null,
-  "split": "dev"
+  "split": "dev",
+  "videos": null
 }
