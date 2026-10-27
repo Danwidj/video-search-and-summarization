@@ -27,6 +27,9 @@ import pytest
 from vss_agents import incident_contract
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.tools import incident_experiments
+from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
+from vss_agents.tools.incident_report_gen import ExperimentRefusedError
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
 
 VIDEO_URL = "https://r2.example/uploads/cam/clip.mp4?X-Amz-Signature=abc"
@@ -63,7 +66,7 @@ def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
     tool.ainvoke.assert_awaited_once_with(
         {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
-    assert response.json() == OUTPUT.model_dump()
+    assert response.json() == {k: v for k, v in OUTPUT.model_dump().items() if k not in EXPERIMENT_OUTPUT_FIELDS}
 
 
 def test_re_generation_passes_model_and_reviewer_prompt_to_the_tool():
@@ -202,3 +205,101 @@ def test_a_non_finite_video_length_never_reaches_the_tool(raw_value):
     )
     assert response.status_code >= 400
     tool.ainvoke.assert_not_awaited()
+
+
+# --- experimental settings (dev-profile-incident PR 6B) -------------------------------------------
+
+PRODUCTION_KEYS = {
+    "report",
+    "report_text",
+    "report_text_error",
+    "model",
+    "contract_version",
+    "raw_output",
+    "finish_reason",
+    "revision_id",
+    "evidence",
+    "video_duration_seconds",
+    "video_duration_source",
+    "video_bounds_checked",
+    "video_bounds_unchecked_reason",
+}
+EXPERIMENT = {"prompt_id": "p1-v4-e01-x", "prompt_sha256": "a" * 64, "skip_crops": True, "persisted": False}
+
+
+def test_a_production_response_keeps_exactly_its_documented_keys(monkeypatch):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")  # even with experiments enabled
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
+    assert set(response.json()) == PRODUCTION_KEYS
+    assert "experiment_prompt_id" not in tool.ainvoke.await_args.args[0]
+    assert "skip_crops" not in tool.ainvoke.await_args.args[0]
+
+
+@pytest.mark.parametrize("extra", [{"experiment_prompt_id": "p1-v4-e01-x"}, {"skip_crops": True}])
+def test_experimental_fields_are_refused_without_the_flag(monkeypatch, extra):
+    monkeypatch.delenv(incident_experiments.EXPERIMENTS_FLAG, raising=False)
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, **extra})
+    assert response.status_code == 403
+    tool.ainvoke.assert_not_awaited()
+
+
+def test_an_experimental_response_carries_its_prompt_and_telemetry(monkeypatch):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    output = OUTPUT.model_copy(
+        update={"experiment": EXPERIMENT, "p1_elapsed_ms": 1234.5, "usage": {"total": 9}, "revision_id": None}
+    )
+    client, tool = _client(result=output)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze",
+        json={"video_url": VIDEO_URL, "experiment_prompt_id": "p1-v4-e01-x", "skip_crops": True, "skip_rp1": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["experiment"] == EXPERIMENT and body["p1_elapsed_ms"] == 1234.5 and body["usage"] == {"total": 9}
+    assert tool.ainvoke.await_args.args[0]["experiment_prompt_id"] == "p1-v4-e01-x"
+    assert tool.ainvoke.await_args.args[0]["skip_crops"] is True
+
+
+@pytest.mark.parametrize(
+    "error, status",
+    [
+        (incident_experiments.ExperimentPromptError("unknown"), 400),
+        (incident_experiments.ExperimentsDisabledError("off"), 403),
+        (ExperimentRefusedError("would upload to R2"), 409),
+    ],
+)
+def test_experiment_errors_map_to_their_status(monkeypatch, error, status):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    client, _ = _client(side_effect=error)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "skip_crops": True})
+    assert response.status_code == status
+
+
+def test_an_experiment_cannot_carry_a_reviewer_prompt(monkeypatch):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    client, tool = _client(result=OUTPUT)
+    response = client.post(
+        "/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "skip_crops": True, "reviewer_prompt": "x"}
+    )
+    assert response.status_code == 400
+    tool.ainvoke.assert_not_awaited()
+
+
+def test_a_rejected_experimental_output_names_its_prompt_in_the_422(monkeypatch):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    error = IncidentExtractionError("bad", raw_output="{bad", finish_reason="stop", model="m")
+    error.experiment = EXPERIMENT  # type: ignore[attr-defined]
+    error.telemetry = {"p1_elapsed_ms": 10.0, "usage": {}}  # type: ignore[attr-defined]
+    client, _ = _client(side_effect=error)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "skip_crops": True})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["raw_output"] == "{bad" and detail["experiment"] == EXPERIMENT and detail["p1_elapsed_ms"] == 10.0
+
+
+def test_a_production_422_keeps_its_documented_detail():
+    client, _ = _client(side_effect=IncidentExtractionError("bad", raw_output="{bad", model="m"))
+    detail = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()["detail"]
+    assert set(detail) == {"message", "raw_output", "finish_reason", "model", "contract_version"}

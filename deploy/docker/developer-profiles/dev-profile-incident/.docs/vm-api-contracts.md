@@ -134,6 +134,8 @@ Request:
 | `reviewer_prompt` | string | none | max 1000 chars (`422` above). Added to the report prompt for this run only, framed as `ADDITIONAL REVIEWER CONTEXT FOR THIS VIDEO`; copies nothing from earlier revisions |
 | `skip_rp1` | bool | false | P1 only; `report_text` stays null |
 | `video_duration_seconds` | number | none | video length in seconds as the caller read it; a finite number above 0, else `422`. Without it the agent reads the MP4 header from `video_url` (ranged GETs) |
+| `experiment_prompt_id` | string | none | **Experimental**, prompt experiments only (below): a prompt id from `contracts/experiments/registry.json` |
+| `skip_crops` | bool | false | **Experimental**, prompt experiments only (below): skip post-P1 evidence cropping |
 
 Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `timestamp_seconds`, for entities also `first_seen_seconds` and `last_seen_seconds` (falling back to `timestamp_seconds` for reports without them), `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image), and the video-bounds outcome: `video_duration_seconds` (the length `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` used, or `null`), `video_duration_source` (`request`, `mp4_header` or `null`), `video_bounds_checked` and `video_bounds_unchecked_reason` (why the rules did not apply, e.g. `video length unknown: a ranged read of the video returned HTTP 403`). Takes tens of seconds to minutes (VLM calls); use a long timeout.
 
@@ -155,43 +157,14 @@ curl -s localhost:8000/api/v1/incidents/<videos.id>/analyze -H 'content-type: ap
 
 Live check of the error shape: `{}` body returns `422` `{"detail":[{"type":"missing","loc":["body","video_url"],"msg":"Field required","input":{}}]}`.
 
-## `POST /api/v1/incidents/chat`
+### Experimental settings (prompt experiments, PR 6B)
 
-Q&A with evidence citations (chat-contract-v1). **Not backed by real data yet**: the route is wired to an in-memory keyword matcher over four canned seed hits (`Assault007`, `Burglary005`), never the database (the code carries a TODO to wire the live search). Do not build UI that depends on its answers being real.
+`experiment_prompt_id` and `skip_crops` exist for the eval prompt experiments ([`eval/experiments/README.md`](../eval/experiments/README.md)). **A request without either one is a production request: the same P1 body, persistence, cropping and response keys as before.**
 
-Request:
-
-| Field | Type | Notes |
-|---|---|---|
-| `messages[]` | `{role, content}` | required, at least one; `role` is `user`, `assistant` or `system`; `content` min 1 char; the last `user` message is the query |
-| `session_id` | string | optional, 1 to 128 chars; generated (`session_<12 hex>`) if absent |
-| `context.scope` | `"global"\|"incident"` | default `global` |
-| `context.incident_id` | string | filters to one incident when scope is `incident` |
-| `context.evidence_crop_ids` | string[] | accepted, unused |
-| `version_id` | integer >= 1 | optional; the `report_revisions.id` the question is about |
-| `draft_report` | object | optional unsaved report edited from `version_id`; requires `version_id` (otherwise `422`) |
-
-Response `200`: `{"session_id", "message": {"role": "assistant", "content", "citations": [{"incident_id","item_id","item_type","timestamp_seconds","crop_image_url"}]}}`. No match gives a "No matching incidents..." message with empty `citations`.
-
-With `version_id` the revision is read from the database. The official revision with no draft goes to the route's search client, which is still the in-memory canned client (no live search is wired), so for a finals video it finds no evidence and answers "No matching incidents...". Any other revision uses its own saved `report_revisions.evidence` (crop keys resolved to URLs), and a `draft_report` uses the draft's items with each crop taken from the same item in `version_id`'s evidence. Items match the query by keyword; with no keyword match the revision's items are returned in order. `context.incident_id`, if given, must be the revision's video.
-
-Models are strict (`extra="forbid"`): unknown fields, an invalid `role` or `scope` and an empty `session_id` are `422`. Response citations require `item_type` of `entity`, `instrument` or `asset`, non-empty ids and `timestamp_seconds` >= 0, and `citations` is always present.
-
-Errors: `422` validation (including invalid scope), `400` no `user` message or `context.incident_id` that is not the revision's video, `404` unknown `version_id`, `502` search client or revision read failure, `503` incident database not configured (only with `version_id`). Synchronous and fast (no model call).
-
-Example: `{"messages":[{"role":"user","content":"edged weapon"}]}` returns `200` with 2 citations from the canned `Assault007` data.
-
-## Other routes on `:8000` (not used by the incident frontend)
-
-Registered by the same worker; documented upstream. Video: `POST /api/v1/videos`, `POST /api/v1/videos/{sensor_id}/complete`, `DELETE /api/v1/videos/{video_id}`, `PUT /api/v1/videos-for-search/{filename}` (deprecated). RTSP: `POST /api/v1/rtsp-streams/add`, `DELETE /api/v1/rtsp-streams/delete/{name}`. Plus NAT's standard routes (`/docs`, `/openapi.json`, `/generate`, `/chat`, ...). Use `/docs` on the tunnel for the full generated schema.
-
-## Live VM check (2026-10-24, read-only)
-
-| Check | Result |
-|---|---|
-| `/openapi.json` incident paths | `analyze`, `search`, `revisions/search`, `chat`, `evidence-embeddings` present |
-| Agent log | stock base config: `top_agent` with 4 tools and 1 subagent (`report_agent`) |
-| VM checkout | `02b543ecf` (#205), behind main |
-| listening ports | `127.0.0.1:8000`, `7777`, `30888`, `6379`, `9092` |
-
-Hit contents above are documented from the Pydantic models, not observed live. Re-check after the VM is updated (`incident-operate-vm`).
+- **Opt-in:** an experimental request is refused with **403** unless the agent process runs with `INCIDENT_EXPERIMENTS_ENABLED=1` (exactly `1`). The shared VM agent does not set it.
+- **Prompt:** read from `contracts/experiments/registry.json` in the checkout, or from `INCIDENT_EXPERIMENT_REGISTRY`, and served only if the file matches its registered SHA-256 and the entry's contract version is the vendored one. Otherwise **400**. Only the prompt text of the P1 body changes.
+- **400:** combined with `reviewer_prompt`.
+- **409:** cropping is on (`skip_crops` false) while the agent has R2 settings, because cropping would upload evidence images to shared storage.
+- **Never persisted:** an experimental request writes no `report_revisions` row and no `model_runs` placeholder (`revision_id` is `null`). With `skip_crops` every evidence entry has `image: null` and `image_gap: "evidence cropping skipped (skip_crops)"`.
+- **Response additions:** `experiment` (`prompt_id` (null for the production prompt), `prompt_sha256`, `skip_crops`, `persisted: false`), `p1_elapsed_ms` (the P1 HTTP round trip) and `usage` (P1 token usage). A 422 contract violation of an experimental request carries the same three in `detail`.
+- **Where it runs:** a local agent started for the experiment with no Supabase or R2 settings (plan decision D14 (b)). Restarting or reconfiguring the shared VM agent is ask-first.
