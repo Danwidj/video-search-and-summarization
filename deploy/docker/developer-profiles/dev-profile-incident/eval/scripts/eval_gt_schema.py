@@ -40,6 +40,23 @@ def _int_or_none(value):
     return int(value) if isinstance(value, (int, float)) else None
 
 
+_TRUE = {"true", "yes", "y", "1", "x"}
+
+
+def out_of_taxonomy_fields(row: dict) -> dict:
+    """``{"out_of_taxonomy", "nearest_type"}`` from a ground-truth incident row.
+
+    Confirmed out-of-taxonomy status comes only from the ground truth's own optional columns
+    ``Out_Of_Taxonomy`` and ``Nearest_Type`` (carried by the frozen ground truth, PR 5), never
+    from a prediction and never from the review workbook's ``OUT_OF_TAXONOMY_CANDIDATE`` flag.
+    A workbook without the columns has no out-of-taxonomy clips.
+    """
+    flag = row.get("Out_Of_Taxonomy")
+    confirmed = flag is True or str(flag or "").strip().lower() in _TRUE
+    nearest = canonical_incident_type(_fix_type_label(row.get("Nearest_Type"))) if row.get("Nearest_Type") else None
+    return {"out_of_taxonomy": confirmed, "nearest_type": nearest if confirmed else None}
+
+
 def load_gt_index(workbook_path: Path = WORKBOOK_PATH) -> dict:
     """Everything the split generator and batch runner need, built once.
 
@@ -83,6 +100,7 @@ def load_gt_index(workbook_path: Path = WORKBOOK_PATH) -> dict:
                 "description": row.get("Description"),
                 "severity_level": _int_or_none(row.get("Severity_Level")),
                 "confidence_score": None,
+                **out_of_taxonomy_fields(row),
             },
             "entities": [
                 {

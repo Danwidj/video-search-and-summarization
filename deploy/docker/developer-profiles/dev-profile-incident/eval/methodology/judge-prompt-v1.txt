@@ -1,0 +1,5 @@
+INCIDENT_JUDGE_REQUEST
+You are scoring whether two incident descriptions describe the same underlying
+event, allowing for different wording, phrasing, and level of detail. Score
+0.0 (unrelated events) to 1.0 (semantically equivalent). Respond with a JSON
+object: {"score": <float 0.0-1.0>, "reasoning": "<one sentence>"}.

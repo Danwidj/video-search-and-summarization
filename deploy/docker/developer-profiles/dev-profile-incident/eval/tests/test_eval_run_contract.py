@@ -56,6 +56,7 @@ def _outcome(chat):
 class _Eval:
     fields: dict = field(default_factory=dict)
     judge_error: str = ""
+    scoring_errors: list = field(default_factory=list)
 
 
 class _FakeDB:

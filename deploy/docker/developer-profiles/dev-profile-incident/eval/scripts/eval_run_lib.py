@@ -59,6 +59,19 @@ def check_embedding_server_healthy(base_url: str, *, expected_model: str, timeou
         )
 
 
+def check_scoring_complete(eval_result) -> None:
+    """Raises :class:`EvaluatorDependencyError` if anything in this video could not be scored.
+
+    A judge or embedder failure leaves the field unscored (``None``), never a zero; a run
+    stops rather than write a result that a later aggregate could misread. The error list
+    names every field affected.
+    """
+    errors = getattr(eval_result, "scoring_errors", None) or []
+    if errors:
+        detail = "; ".join(f"{e['field']}: {e['error']}" for e in errors[:5])
+        raise EvaluatorDependencyError(f"{len(errors)} field(s) could not be scored: {detail}")
+
+
 def check_judge_ok(eval_result) -> None:
     """Raises :class:`EvaluatorDependencyError` if the LLM judge call for this
     video's incident description failed - a genuinely low similarity score is
