@@ -2,6 +2,21 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Stage 1 judge caps are derived from the ground truth and enforced before the run; gateway timeouts are timeouts
+- **Decision:**
+  - **Derived caps (user-approved):** each config's `max_judge_calls` is `repeats × Σ judged fields × 5 attempts`. Judged fields per clip are 1 + entities + 2 × instruments + 2 × assets from the ground truth.
+  - **Stage 1 values:** `direct-vlm-baseline` and `vss-baseline` are each **1,710** (2 × 171 × 5), recorded per clip in `eval/experiments/judge-caps.json` (`eval_experiment.py caps`).
+  - **Enforcement:** `run_stage` re-derives the requirement from the ground truth it runs on and **refuses to start** if a cap is below it, so a full run can never be stopped partway by the judge cap. The P1 request and token caps (50 and 1.05 M) and the judge output limit are unchanged.
+  - **Timeouts:** HTTP 504, 522 and 524 (including the agent's `P1 call returned HTTP 524`) are classified as `timeout` in both arms.
+- **Why:** with the old 400 cap, the worst-case reservation would have stopped a fully scored run after about 11 clips.
+  - **The 524:** the pilot's 524 shows the sponsor gateway's effective request timeout is about 100 s (Cloudflare), below the configured 300 s.
+  - **No exclusions:** timed-out clips stay in reliability and end-to-end accuracy (as misses), are excluded only from conditional accuracy and from pairs, and are counted. The gateway and production timeouts are unchanged.
+- **Rejected:**
+  - a fixed generous cap, which is not tied to the plan;
+  - raising client timeouts, which has no effect above Cloudflare's limit;
+  - dropping timed-out clips from metrics.
+- **Links:** [`../eval/docs/experiments/stage1-readiness.md`](../eval/docs/experiments/stage1-readiness.md).
+
 ### 2026-10-27: Stage 0 pilot run; the gateway's $0 configured pricing is recorded apart from the unknown infrastructure cost
 - **Decision:**
   - **Authorisation:** the user authorised the no-crop Stage 0 pilot on the sponsor-provided Switchyard key (given to the FYP team by the NVIDIA sponsor for this project).

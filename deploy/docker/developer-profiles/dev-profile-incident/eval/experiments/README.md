@@ -11,6 +11,7 @@ uv run python scripts/eval_experiment.py report --title "…" C1=… C2=…   # 
 uv run python scripts/eval_experiment.py verify <results dir>           # reproducibility check of one run
 uv run python scripts/eval_experiment.py budget configs/*.json [--measured measured.json]   # requests, tokens, provisional cost
 uv run python scripts/eval_experiment.py measure <results.json> …       # pilot figures for budget --measured
+uv run python scripts/eval_experiment.py caps configs/…json [--write]  # judge-request caps derived from the ground truth
 uv run python scripts/eval_experiment_plumbing.py                       # Stage 0 step 1: offline C1–C4, scripted model
 ```
 

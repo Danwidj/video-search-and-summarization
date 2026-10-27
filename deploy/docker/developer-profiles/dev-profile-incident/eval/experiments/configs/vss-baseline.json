@@ -4,7 +4,7 @@
   "budget": {
     "max_p1_calls": 50,
     "max_p1_tokens": 1050000,
-    "max_judge_calls": 400
+    "max_judge_calls": 1710
   },
   "description": "Stage 1: initial VSS baseline (C2 on dev) through a local agent with no Supabase or R2 env (D14 b).",
   "experiment_id": "vss-baseline",

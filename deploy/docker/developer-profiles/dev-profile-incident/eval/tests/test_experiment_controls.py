@@ -118,7 +118,6 @@ def test_a_stage_needs_the_same_videos_and_repeats(tmp_path):
 
 @pytest.mark.parametrize("budget, run_one, reason", [
     ({"max_p1_calls": 8, "max_p1_tokens": 100000, "max_judge_calls": 80}, _fake_run_one(tokens=20000), "max_p1_tokens"),
-    ({"max_p1_calls": 8, "max_p1_tokens": 8 * er.P1_TOKENS_CEILING, "max_judge_calls": 6}, _fake_run_one(judge=3), "max_judge_calls"),
     ({"max_p1_calls": 8, "max_p1_tokens": 8 * er.P1_TOKENS_CEILING, "max_judge_calls": 80}, _fake_run_one(rate_limited=1),
      "rate limited"),
 ])
@@ -128,6 +127,12 @@ def test_hard_caps_stop_the_stage_and_keep_partial_results(tmp_path, budget, run
     record = json.loads(Path(out["results_files"][0]).read_text())
     assert record["complete"] is False and record["stopped"]["reason"] == out["stopped"]["reason"]
     assert record["usage"]["p1_calls"] < 8  # stopped before the plan was finished
+
+
+def test_a_judge_cap_below_the_plans_worst_case_is_refused_before_any_call(tmp_path):
+    with pytest.raises(er.ExperimentRefused, match="max_judge_calls 6 is below"):
+        _stage([_config("cfg-c1", budget={"max_p1_calls": 8, "max_p1_tokens": 8 * er.P1_TOKENS_CEILING,
+                                          "max_judge_calls": 6})], tmp_path, run_one=_fake_run_one(judge=3))
 
 
 def test_a_plan_that_cannot_fit_its_token_cap_is_refused_before_any_call(tmp_path):

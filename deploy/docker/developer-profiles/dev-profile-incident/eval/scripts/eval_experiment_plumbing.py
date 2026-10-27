@@ -122,6 +122,8 @@ def plumbing_run(out_root: Path, *, gt_dir: Path = DEFAULT_GT, split: dict | Non
                                "max_judge_calls": len(split["dev"]) * 20}, "purpose": "experiment",
                     "pipeline": vss_pipeline if arm == "vss" else base_pipeline, "frozen_baseline": False,
                     "final": False, "selection_record": None, "baseline_ref": None, "videos": None, "scoring": "full"}
+            for config in configs.values():  # derived like every real config (judge_cap_required)
+                config["budget"]["max_judge_calls"] = er.judge_cap_required(config, split, index)["required"]
             stamp = now or datetime.now(UTC)
             name_of = {config["experiment_id"]: name for name, config in configs.items()}
             dev = sorted(split["dev"])
