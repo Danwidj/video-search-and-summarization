@@ -1,6 +1,6 @@
 # Annotation Guidelines v1.0
 
-> **Status: draft for approval (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. Items that interpret or change an existing definition are **not decided here**: they are listed in [§11](#11-items-awaiting-approval) and stay pending until approved.
+> **Status: draft for approval (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record): ten are approved (provisionally, pending approval of the final wording); A3, A7, A8, A12 and A14 carry revised wording that awaits approval.
 
 This document defines what a correct incident annotation is. It is the shared reference for:
 - human annotators and reviewers of the ground truth;
@@ -21,7 +21,7 @@ It is **not** a prompt, and it does not change the production P1 prompt (`contra
 8. [Uncertainty](#8-uncertainty)
 9. [Ground-truth fields and visual grounding](#9-ground-truth-fields-and-visual-grounding)
 10. [Worked examples](#10-worked-examples)
-11. [Items awaiting approval](#11-items-awaiting-approval)
+11. [Decision record](#11-decision-record)
 12. [Changelog](#12-changelog)
 
 ## 1. Principles
@@ -40,13 +40,45 @@ Exactly one of the five canonical types (lowercase, as in `incident-contract-v4`
 
 | Type | Definition | Includes | Excludes | Workbook label |
 |---|---|---|---|---|
-| `road accident` | A collision or loss of control involving at least one road vehicle | vehicle–vehicle, vehicle–pedestrian, vehicle–cyclist, single-vehicle crashes | deliberate ramming of people as an attack (see §11, A8) | `Road Accident` |
-| `burglary` | Unlawful entry into, or theft from, a building, enclosure, vehicle or machine (shop, house, ATM) | forced entry, theft of property, attempted entry | theft by force or threat against a person present (see §11, A8) | `Burglary` |
-| `explosion` | A sudden release of energy with blast, flash, fireball or projected debris | gas, vehicle, device and industrial explosions, and the fire or damage that directly follows | a fire with no visible explosion (see §11, A8) | `Explosion` |
+| `road accident` | A collision or loss of control involving at least one road vehicle | vehicle–vehicle, vehicle–pedestrian, vehicle–cyclist, single-vehicle crashes | a vehicle deliberately driven at people as an attack (`assault`, §2.1.2) | `Road Accident` |
+| `burglary` | Unlawful entry into, or theft from, a building, enclosure, vehicle or machine (shop, house, ATM), including theft there by force or threat against people present when the violence is incidental (§2.1.2) | forced entry, theft of property, attempted entry, robbery at premises with incidental force | theft from a person away from premises (§2.1.2); premises crime where the violence is primary (`assault`) | `Burglary` |
+| `explosion` | A sudden release of energy: a blast, a fireball, a flash fire or sudden ignition, or an energetic burst of sparks or debris | gas, vehicle, device and industrial explosions; fuel flash fires; backdrafts; and the fire or damage that directly follows | a fire already burning when the video starts, or one that grows gradually with no sudden release (§2.1.2) | `Explosion` |
 | `assault` | Deliberate physical aggression by one or more people against a person | punching, kicking, striking with an object, armed attack, group attacks; legacy `fighting` | verbal arguments with no physical contact | `Assault` (`Fighting` is legacy) |
 | `animal attack` | An animal biting, charging, mauling or otherwise physically attacking a person or another animal | dog bites, livestock charges, animal-on-animal attacks | an animal merely present or passing (see §11, A9) | `Animal` (legacy) |
 
-**Primary type rule (pending, A14).** When an incident has elements of two types (for example a collision that causes an explosion), the proposed rule is that the type is the **initiating event** that the rest of the incident follows from, with the consequence recorded in the description.
+#### 2.1.1 Primary incident when a video contains more than one type (A14, revised wording)
+
+1. List the events in the clip that each match one of the five types.
+2. **The primary incident is the event with the most serious observable harm or danger.** Rate each event alone with the severity rules of §2.3; the highest level wins.
+3. **Tie:** when two events reach the same level, the primary incident is the one the other follows from (the initiating event). The tie-break is fixed so that equal cases are always classified the same way.
+4. The other events are part of the same incident. They appear in the description, and their people and objects are annotated as usual. The incident window covers the connected sequence, from the start of the first event to the end of the last consequence (§2.2), whichever event is primary.
+
+| Clip | Events (rated alone) | Primary type |
+|---|---|---|
+| A car hits another; its fuel tank explodes and the fireball reaches two bystanders | collision 3, explosion 4 | `explosion` (higher) |
+| A car hits a wall; a small engine fire starts and the driver puts it out | collision 3, fire 1–2 | `road accident` (higher) |
+| Two cars collide hard; one catches fire in a flash; no one is near the fire | collision 3, flash fire 3 | `road accident` (tie → initiating event) |
+| An intruder forces an ATM, then repeatedly beats a guard who arrives | burglary 3, assault 4 | `assault` (higher; see §2.1.2) |
+| A dog chases a cyclist, who falls into the road and is hit by a car | animal attack 2, road accident 4 | `road accident` (higher) |
+
+#### 2.1.2 Force, robbery and clips outside the five types (A8, revised wording)
+
+**Incidental and primary violence.** Violence used only to carry out or escape a property crime is **incidental**: pushing past someone, grabbing an arm, a single strike to get free, or brandishing a weapon to obtain property. It does not change the type. It is annotated as part of the incident: the threatened person is an entity, the weapon is an instrument with its threat level, and severity rises by the usual rules (an armed confrontation supports level 4). Violence is **primary** when it is the main harm or content of the incident: repeated or sustained blows, an injury beyond what the theft needs, or an attack that goes on after the property is taken. The primary-incident rule (§2.1.1) then decides the type.
+
+| Situation | Type |
+|---|---|
+| Shop hold-up: the robber threatens the cashier with a knife, takes the cash and leaves | `burglary` (incidental threat; knife threat 4; severity 4 for the armed confrontation) |
+| House intruder shoves the resident aside and runs out with a bag | `burglary` (incidental force) |
+| Intruder beats a resident to the ground and keeps kicking them while others search the house | `assault` (violence is primary: assault 4 against burglary 3) |
+| Mutual fight between two people | `assault` |
+| Vehicle deliberately driven at people | `assault` |
+| Bag snatched from a person in the street, no further violence | outside the five types (no premises; violence not primary) |
+| Street robbery in which the victim is beaten | `assault` |
+
+**Clips outside the five types.** When the primary incident matches none of the five types (for example a street theft without significant violence, a fire with no sudden ignition, a medical collapse, vandalism without entry), it is **not forced into the nearest type**:
+- the clip is marked `out_of_taxonomy`, with the nearest type and a one-sentence reason recorded in the ground truth's note fields (A13);
+- everything else is annotated normally (window, severity, entities, instruments, assets, description);
+- how such clips are scored, or whether they are excluded from the reference set, is decided by the evaluation methodology (PR 1B) and the frozen ground-truth version (PR 5), not by this document.
 
 ### 2.2 Start and end timestamps
 
@@ -80,7 +112,7 @@ The text is the workbook's, word for word, except level 3: the workbook writes "
 5. **Property alone** rarely exceeds level 3. Major property damage (a destroyed vehicle or shopfront) supports level 4 only when it is major in the sense of the rubric. Massive destruction supports level 5.
 6. **Severity reasoning.** For every label, the annotator must be able to state the decisive evidence in one sentence ("Level 4: the explosion engulfs the forecourt where two people are standing"). It is recorded wherever the ground-truth format provides a field (see §11, A13).
 
-**Tie-break between adjacent levels.** When the evidence fits two adjacent levels equally, choose the **lower** level, unless an indicator named in the higher level's definition is visible. The lower choice follows from principle 1 (no inference). It is pending approval as A10 in §11.
+**Tie-break between adjacent levels.** When the evidence fits two adjacent levels equally, choose the **lower** level, unless an indicator named in the higher level's definition is visible. The lower choice follows from principle 1 (no inference). (A10, approved.)
 
 **Category examples (calibration, within the unchanged scale).**
 
@@ -109,7 +141,7 @@ An **entity** is a living being (human or animal) **directly relevant** to the p
 | Background person or animal | No | Visible but unrelated |
 
 - **Significance is behavioural, not spatial.** Proximity, visibility or watching never makes someone an entity. Becoming a target (struck by debris, chased) or acting (stepping in) does.
-- **Occupants of vehicles** are entities only when visible and relevant. A vehicle whose driver cannot be seen is an asset with no driver entity (pending as A2).
+- **Occupants of vehicles** are entities only when visible and relevant. A vehicle whose driver cannot be seen is an asset with no driver entity (A2, approved).
 - **Groups:** each individually distinguishable significant person is a separate entity. See A11 for crowds that cannot be told apart.
 - **Type:** `human`, `animal`, or `unknown` when the being cannot be identified as either (for example a figure too small or dark to tell).
 - **Identifiers:** `E1`, `E2`, … in order of first significant involvement, without gaps. Instruments refer to their holder by this id.
@@ -142,8 +174,12 @@ The text is the workbook's, word for word. "Bag" appears at level 1 in the workb
 
 1. **Potential, not outcome.** Rate the instrument's capacity to harm **in the observed context**, whether or not anyone was hurt. A brandished knife is level 4 even if no one is cut.
 2. **Context lowers or raises within the scale.** The same object differs by use: a stick carried is 1–2; a stick swung at a person is 3. A crowbar used on a door with no one present is rated by what it could do to people in that context (see A10b).
-3. **Responders' tools** (extinguisher, hose, first-aid kit) are level 1 unless used aggressively.
-4. **Explosive devices** follow the rubric: level 5 when posing immediate danger to multiple people, otherwise by the observed context (see A3).
+3. **Responders' equipment** is classified by the same hand-held test as any object (§4, §6; A12 revised wording): an extinguisher a responder holds and discharges is an instrument; a hose is an instrument only while a responder holds and directs it; a hose lying on the ground, a fixed reel or vehicle-mounted equipment is an asset if relevant; equipment carried but not used is not recorded unless carrying it matters to the incident. Its threat level is then rated separately: usually 1, higher only if it is used against a person.
+4. **Explosive and incendiary devices** are rated by their **plausible destructive capability and the observed context**, not by how many people are near (A3, revised wording):
+   - **5:** a device with plausible lethal capability is being used or readied (lit, armed, placed, thrown or detonated) while **any** person is within its plausible effect range, or it endangers a wide area;
+   - **4:** a device with plausible capacity for severe injury is held or handled but not being used or readied, or no one is within its plausible range;
+   - **3:** the object is identified as an explosive from context alone, or its capability is unclear or small; the doubt is recorded (§8);
+   - consumer pyrotechnics (sparklers, small firecrackers) are rated 1–3 by how they are used.
 5. **Tie-break:** as for severity, the lower of two adjacent levels unless the higher level's indicator is visible (A10).
 
 ## 5. Assets
@@ -181,7 +217,10 @@ Living being?
 | door forced open | asset | target |
 | bag of stolen goods carried out | instrument | held, part of the act |
 | backpack worn by a passer-by | not recorded | background |
-| fire extinguisher used by a responder | instrument | held, relevant (threat 1) |
+| fire extinguisher held and discharged by a responder | instrument | held and used; threat rated separately (usually 1) |
+| fire extinguisher standing on the floor | not recorded, or asset if relevant | not held |
+| hose held and directed by a firefighter | instrument | held and used |
+| hose lying on the ground, or a fixed hose reel | asset if relevant | not held |
 | gas cylinder that explodes | asset | not held |
 | phone held up to film, not otherwise involved | not recorded, unless filming is part of the incident | relevance |
 
@@ -199,7 +238,11 @@ All descriptions are objective, concise and informative. They preserve meaningfu
 **Wording rules.**
 - Use role words ("the driver", "the attacker", "a responder") and visible appearance, never names, occupations or relationships.
 - Use observable verbs ("strikes", "falls", "lies motionless"), not conclusions ("kills", "is unconscious").
-- Use apparent descriptors only within the rules of A7.
+- **Age and gender words only with visual support** (A7, revised wording):
+  - age terms ("child", "teenager", "adult", "elderly") need visible cues such as body size relative to others, proportions, gait, grey or white hair, or being carried;
+  - gender terms ("man", "woman", "boy", "girl") need appearance that makes it reasonably clear; a single cue, such as one garment or hair length, is not enough on its own;
+  - with moderate cues write "appears to be …"; without them write "person" plus clothing and other visible features;
+  - never infer ethnicity, skin colour, religion, nationality, disability or social status. Colours of clothing and hair, and visible features, are fine.
 - Refer to other items by role or appearance in free text. Ids appear only in structured fields.
 - No speculation words as fact ("clearly intends to", "the owner"). An uncertain attribute is written as uncertain (§8).
 - **Partially visible objects:** describe the visible part ("long dark object, partly hidden by the body"). Do not complete it from imagination.
@@ -242,31 +285,37 @@ All descriptions are objective, concise and informative. They preserve meaningfu
 | Description "the owner chases the thief" | relationship inferred | "a man in a white shirt chases the intruder" |
 | Instrument name "red item" | vague when the object is identifiable | most specific supported noun, or A5 convention |
 | Holder `E4 ` (trailing space) | malformed id | `E4` |
+| "A woman in a headscarf" where nothing else indicates gender | one garment as the only cue (A7) | "a person in a headscarf", or "appears to be a woman" if other cues support it |
+| Type `assault` for a shop hold-up where the robber only threatens the cashier | incidental violence (A8) | `burglary`; knife instrument threat 4; severity 4 |
+| Fire extinguisher left standing by a door, recorded as an instrument | not held (A12) | not recorded, or asset if relevant |
 
-## 11. Items awaiting approval
+## 11. Decision record
 
-These are interpretations or changes to existing definitions that this draft does **not** decide. Wherever the text above cites an item number (for example "(A1)" or "pending, A14"), it shows the recommended option, and that text is provisional until the item is approved. Until then the earlier practice stands, and no label is changed on the strength of a pending item.
+Decisions on the interpretations raised by this draft (2026-10-27). **Approved** items are provisional until the final wording of this version is approved. **Revised** items have new wording above and await approval. No label changes until the ground-truth correction (PR 4) applies these rules with human review; "label impact" is what that review is expected to touch.
 
-| # | Question | Evidence in the ground truth | Options | Recommendation |
+| # | Question | Decision | Status | Label impact (applied in PR 4 review) |
 |---|---|---|---|---|
-| A1 | Can a vehicle be an instrument (e.g. driven at a gate or a person)? | Burglary004 I1 "suv", threat 3 | (a) never: vehicles are assets, as the hand-held rule says; (b) allow vehicles used as weapons as instruments | **(a)**: keeps the hand-held rule, which the scale's examples assume |
-| A2 | Is an unseen driver or occupant an entity? | 9 incidents have no entities (Explosion003/011/014/016/028, RoadAccidents005/017/029/069) | (a) no: only visible beings; (b) yes, type `unknown` | **(a)**: principle 1 |
-| A3 | Explosives held during a burglary: threat by the rubric's "explosive device" example (5) or by observed context? | Burglary010 I4 "explosives", threat 3 | (a) 5 whenever an explosive device is held; (b) 5 only if it poses immediate danger to multiple people, otherwise by context | **(b)**: the rubric's wording |
-| A4 | An object held, then dropped or thrown | — | (a) instrument if held during its relevant use; (b) classify by its state at the most relevant moment | **(a)** |
-| A5 | Naming an object that cannot be identified | Assault015 "object", Assault032 "weapon", Burglary093 "red item", Burglary066/Explosion004 "tool" | (a) "unidentified object" + visible traits in the description; (b) the most general true noun ("tool", "weapon") | **(b)** when a general noun is supported (it still matches), else **(a)** |
-| A6 | Incident description length | GT median 358 characters (max 651); prompt says 1–3 sentences | (a) 1–3 sentences, no hard cap; (b) 1–3 sentences and at most ~60 words | **(a)**: correction should not shorten valid descriptions only for length |
-| A7 | Apparent gender and age words ("man", "woman", "child", "elderly") | used throughout entity descriptions | (a) allowed as apparent visual descriptors, never ethnicity, never certainty about identity; (b) avoid them, use clothing only | **(a)**: they are what matching and reviewers rely on |
-| A8 | Category boundaries: robbery with force against a person present; mutual fight; vehicle deliberately driven at people; fire without visible explosion | — | define each as: robbery → `assault` if violence to the person is the main event, else `burglary`; mutual fight → `assault`; ramming people → `assault`; fire without explosion → outside the five types (flag the clip) | as listed. Needs approval because it moves clips between categories |
-| A9 | Can an `animal attack` be severity 1 ("harmless animal presence")? | 7 of 15 animal incidents are level 1 | (a) yes, when there is no contact and no one is threatened; (b) no: an attack is at least 2 | **(a)**: the scale is unchanged, and a type does not set a minimum severity. Reviewers should check these 7 for the "attack" type itself |
-| A10 | Tie-break between adjacent levels (severity and threat) | — | (a) lower level unless the higher level's indicator is visible; (b) higher level (precautionary) | **(a)** |
-| A10b | Threat of a tool used only on property (no person exposed) | Burglary052 metal bar 3 / hand tool 2 | (a) rate its capacity to harm people in that context (heavy tool → 3); (b) rate the use (no person → 1–2) | **(a)**: the rubric rates capacity, not use |
-| A11 | Crowds that cannot be told apart | Assault027 has 7 entities | (a) list each distinguishable significant person, and describe the indistinguishable rest in the incident description; (b) one entity per person regardless | **(a)** |
-| A12 | Responders' tools as instruments | Explosion002 fire extinguisher, Explosion004 hose (threat 1) | (a) instruments, threat 1 (current practice); (b) not recorded | **(a)** |
-| A13 | Where severity reasons, notes and uncertainty live in the ground truth | the workbook has no such columns | (a) add optional `review_notes` / `uncertain` fields in ground-truth v1.0 (not scored); (b) keep them only in the correction log | **(a)**, decided with PR 4/5 (format) |
-| A14 | Type of an incident with elements of two types (e.g. a collision that causes an explosion) | — | (a) the initiating event; (b) the event that causes the most harm; (c) the event most visible in the clip | **(a)**: it does not depend on judging harm, and the consequence stays in the description |
+| A1 | Can a vehicle be an instrument? | Never; vehicles are assets (hand-held rule) | Approved | Burglary004 I1 "suv" becomes an asset (1 row) |
+| A2 | Is an unseen driver or occupant an entity? | No; only visible beings | Approved | None (the 9 incidents without entities stay so) |
+| A3 | Threat level of explosive devices | Plausible destructive capability and observed context; one person in range can support 5 (§4.1 rule 4) | Revised, awaiting approval | Burglary010 I4 "explosives" (now 3) re-rated after viewing: 0–1 row |
+| A4 | Object held, then dropped or thrown | Instrument if held during its relevant use | Approved | None known |
+| A5 | Naming an unidentifiable object | Most general true noun, else "unidentified object" | Approved | Up to 6 names reviewed (Assault015, Assault032, Burglary052, Burglary066, Burglary093, Explosion004) |
+| A6 | Incident description length | 1–3 sentences, no word cap | Approved | None |
+| A7 | Age and gender words | Only with visual support; never ethnicity and similar (§7) | Revised, awaiting approval | No automatic change; reviewers check the 49 of 169 entity descriptions (and incident descriptions) that use such words and rewrite unsupported ones |
+| A8 | Category boundaries and clips outside the five types | Incidental vs primary violence; explosion includes sudden ignition; out-of-taxonomy clips marked, not forced (§2.1.2) | Revised, awaiting approval | No robbery-with-force case found. Explosion011 (smoke burst, no flame) and Explosion014 (fire at a toll plaza) are reviewed as possible out-of-taxonomy clips: 0–2 clips. Explosion002/017/019/029 (sudden ignition or bursts) stay `explosion` |
+| A9 | Can an animal attack be severity 1? | Yes; the type sets no minimum. Existing severity-1 labels are reviewed | Approved | Severity of Animal004, Animal011, Animal012 (dangerous animal close to a person) re-checked: 0–3 rows |
+| A10 | Tie-break between adjacent levels | Lower level unless the higher level's indicator is visible | Approved | None automatically |
+| A10b | Threat of a tool used only on property | Capacity to harm people in that context | Approved | None known |
+| A11 | Crowds that cannot be told apart | Distinguishable people listed, the rest in the description | Approved | None |
+| A12 | Responders' equipment | Hand-held test applies as to any object; threat rated separately (§4.1 rule 3, §6) | Revised, awaiting approval | Explosion002 I2 extinguisher and Explosion004 I2 hose checked against the video: 0–2 rows become assets or are dropped |
+| A13 | Where severity reasons, notes and uncertainty live | Optional, unscored note fields in ground-truth v1.0 (format with PR 4/5) | Approved | None (adds fields) |
+| A14 | Primary type when a video contains several types | Most serious observable harm or danger; tie → initiating event (§2.1.1) | Revised, awaiting approval | None found (no clip mentions two types); applied during review |
+
+**Dependency opened by A8:** how `out_of_taxonomy` clips are scored or excluded is decided in the evaluation methodology (PR 1B) and the frozen ground truth (PR 5).
 
 ## 12. Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v1.0 (draft) | 2026-10-27 | First version: scales unchanged, decision rules and examples added, A1–A14 pending approval |
+| v1.0 (draft, revision 2) | 2026-10-27 | A1, A2, A4, A5, A6, A9, A10, A10b, A11, A13 approved provisionally; A3, A7, A8, A12, A14 rewritten as requested: explosives by capability and context, demographic words only with visual support, incidental versus primary violence and out-of-taxonomy handling, responders' equipment under the hand-held rule, primary incident by most serious harm with a fixed tie-break |
