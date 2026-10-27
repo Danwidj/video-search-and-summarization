@@ -53,4 +53,6 @@ uv run python scripts/eval_benchmark_export.py        # 4. tables from the newes
 
 What a correct ground-truth label is: [`ground_truth/annotation-guidelines-v1.0.md`](ground_truth/annotation-guidelines-v1.0.md) (approved 2026-10-27). Proposed corrections to the human labels, for review: `uv run python scripts/gt_review_build.py` builds the working workbook, the audit and its manifest in [`ground_truth/review/`](ground_truth/review/README.md); nothing there is final ground truth.
 
+How predictions are scored is fixed by [`methodology/evaluation-methodology-v1.0.md`](methodology/evaluation-methodology-v1.0.md) (pins in `methodology.py`, recorded in every result).
+
 How P1 is sent, validated and scored: [`../.docs/mvp2/eval.md`](../.docs/mvp2/eval.md#11-eval-p1rp1-extraction-benchmark) and [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md). Operating it: the [`incident-run-eval`](../skills/incident-run-eval/SKILL.md) skill.

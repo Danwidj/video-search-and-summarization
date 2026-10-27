@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -95,12 +95,19 @@ uv run python scripts/eval_benchmark_export.py        # tables -> eval_data/resu
 
 ## Scoring (what the numbers mean)
 
+The rules are fixed by [`evaluation-methodology-v1.0`](../../eval/methodology/evaluation-methodology-v1.0.md), and every pin is recorded in each result file.
+
 | Field | Method |
 |---|---|
-| type, severity | Exact match |
-| description | LLM-judge score (`INCIDENT_JUDGE_MODEL`) |
-| start, end, duration | Temporal tolerance |
-| entities, instruments, assets | Embedding similarity + Hungarian matching → precision / recall / F1 |
+| type, severity | Exact match (severity also within ±1, bias and confusion matrix) |
+| description | Pinned judge (`nvidia/nemotron-3-nano-30b-a3b`, `judge-prompt-v1`, temperature 0); pass ≥ 0.5 |
+| start, end, duration | ±5 s, plus mean absolute error |
+| entities, instruments, assets | MiniLM + Hungarian matching at cosine ≥ 0.75 → precision / recall / F1; threat and holder accuracy |
+
+- `INCIDENT_JUDGE_MODEL` must be unset or equal to the pin, or the run refuses to start.
+- A judge or embedder failure is a scoring error that stops the run; it never counts as a wrong answer.
+- Request failures (timeout, 429, HTTP error) are excluded from accuracy and counted.
+- `eval_aggregate.py` refuses to pool results from different methodology versions.
 
 ## After changing anything
 

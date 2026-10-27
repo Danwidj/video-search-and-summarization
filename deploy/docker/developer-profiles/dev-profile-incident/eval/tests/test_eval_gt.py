@@ -249,7 +249,13 @@ def test_run_evaluation_description_judge_failure_fails_soft(incident_db: Incide
 
     assert result.description_score is None
     assert result.description_error == "LLM unreachable"
-    assert result.fields["description"]["pass"] is False
+    # Unscored, not failed: a judge outage is a scoring error, never a wrong answer.
+    assert result.fields["description"]["pass"] is None
+    # The matched entity's description is judged too, so it is recorded as unscored as well.
+    assert result.scoring_errors == [{"field": "incident.description", "error": "LLM unreachable"},
+                                     {"field": "entities.E1.description", "error": "LLM unreachable"}]
+    entity = result.matches["entities"][0]["attribute_scores"]["description"]
+    assert entity["pass"] is None and entity["score"] is None
 
 
 def test_run_evaluation_incident_only_scores_fields_and_skips_matching(incident_db: IncidentDB):
@@ -503,7 +509,7 @@ def test_empty_description_full_mode_still_runs_evidence_matching(incident_db: I
     incident_db.insert_model_run("MR-E", model_name="m", prompt_version="p1")
     incident_db.insert_incident("Burglary009", "MR-E", fields={"type": None, "description": None})
     incident_db.insert_gt_incident("Burglary009", fields={"type": "burglary", "description": "x"})
-    with patch.object(matching, "match_incident", return_value={}) as match:
+    with patch.object(matching, "match_kind", return_value=[]) as match:
         result = run_evaluation(incident_db, "Burglary009", "MR-E")
-    match.assert_called_once()
+    assert match.call_count == 3
     assert result.counts["entities"]["tp"] == 0
