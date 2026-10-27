@@ -3,7 +3,7 @@ name: incident-analyze-video
 description: Use to upload a video clip and generate, re-run, edit, version or mark official a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (mock) or agent (vm) mode. Not for batch scoring against ground truth - use incident-run-eval.
 license: Apache-2.0
 metadata:
-  version: "0.1.3"
+  version: "0.1.4"
   profile: "dev-profile-incident"
   tags: "incident analysis vlm report review"
 ---
@@ -50,7 +50,7 @@ curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
   -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>", "skip_rp1": false}'
 ```
 
-The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent creates its own run; with one, the caller owns the `model_runs` row and the agent only inserts a placeholder if it is absent. In both cases, when the database is configured, the agent appends the AI revision and returns its `revision_id` (`null` if the best-effort write failed). `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason, revision_id, evidence}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair. Never send `experiment_prompt_id` or `skip_crops` for a real analysis: they are eval-experiment settings, refused unless the agent runs with `INCIDENT_EXPERIMENTS_ENABLED=1`, and their runs are never saved as revisions ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)).
+The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent creates its own run; with one, the caller owns the `model_runs` row and the agent only inserts a placeholder if it is absent. In both cases, when the database is configured, the agent appends the AI revision and returns its `revision_id` (`null` if the best-effort write failed). `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason, revision_id, evidence}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair. Never send `experiment_prompt_id` or `skip_crops` for a real analysis: they are eval-experiment settings, refused unless the agent runs with `INCIDENT_EXPERIMENTS_ENABLED=1`, and their runs are never saved as revisions; experimental crops go to a temporary in-memory store, never R2 ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)).
 
 | Status | Meaning |
 |---|---|

@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Experimental crops go to a temporary, isolated in-memory evidence store
+- **Decision (crop option (a), user-approved):** when an experimental `/analyze` request keeps cropping on, `incident_report_gen` crops into a fresh `InMemoryEvidenceStore` for that request only. It is discarded on return, with no disk, no R2 and no production data, and `experiment.evidence_store` records it. Production requests keep the service's store (R2 when configured), unchanged. An agent with R2 settings still refuses experimental crops (409).
+- **Why:** crop cost and end-to-end latency can be measured without any shared-storage write.
+- **Rejected:** (b) deferring the measurement to the end-to-end profile; (c) R2 writes to a scratch prefix (needs separate approval).
+- **Open:** a crop pilot needs its own authorisation and a box-call bound; the runner cannot count the agent's box calls in advance.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b).
+
 ### 2026-10-27: Stage 2 prompt selection rule (D9 v2) pre-registered
 - **Decision (approved by the user 2026-10-27, before any Stage 2 run):** the Stage 2 prompt is selected by D9 v2, implemented in `eval/experiment_selection.py` (`select_d9`). This heading is the pre-registration record that `select_d9` requires.
   - **Data:** dev clips only, complete, reportable, fully scored, non-pilot VSS-arm results, compared against `vss-baseline`.
