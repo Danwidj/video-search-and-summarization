@@ -66,15 +66,20 @@ ARMS = ("direct-vlm", "vss")
 SPLITS = ("dev", "test")
 CONFIG_KEYS = {"experiment_id", "description", "arm", "prompt_id", "model", "split", "ground_truth", "repeats",
                "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref", "videos",
-               "purpose"}
+               "purpose", "scoring"}
+SCORING = ("full", "incident_only")
 PURPOSES = ("experiment", "pilot")
 BUDGET_KEYS = ("max_p1_calls", "max_p1_tokens", "max_judge_calls")
 PRICING_PATH = EVAL_DIR / "experiments" / "pricing.json"
 # D10: deterministic randomisation of the video order per repeat.
 ORDER_SEED = 20261027
-# D11: the per-call token ceiling a cap check must leave room for (the largest 2026-10-02 Cosmos 3 Super call
-# was 20,965 tokens), the planning mean, and the rate-limit stop rule.
-P1_TOKENS_CEILING = 21000
+# D11: the most one P1 attempt can use, which every cap check leaves room for: the largest 2026-10-02 Cosmos 3
+# Super prompt (17,970 tokens, rounded up to 18,616) plus the request's max_tokens (16,384). An attempt that
+# reports no usage and was not rejected with 429 is counted at this ceiling (it may still have been billed).
+P1_TOKENS_CEILING = 35000
+# A judged field costs at most 1 attempt + 2 parse retries + the methodology's transient retries.
+JUDGE_ATTEMPTS_PER_FIELD = 3 + methodology.JUDGE_TRANSIENT_RETRIES
+P1_RATE_LIMIT_RETRIES = 2  # eval_vlm_client.P1_RATE_LIMIT_POLICY["max_rate_limit_retries"] (a test keeps them equal)
 P1_TOKENS_PLANNING_MEAN = 9898
 RATE_LIMIT_STOP_SHARE = 0.25
 RATE_LIMIT_MIN_ATTEMPTS = 8
@@ -126,6 +131,10 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
         problems.append(f"purpose must be one of {PURPOSES}")
     if config["purpose"] == "pilot" and (config["split"] != "dev" or config["final"] or config["frozen_baseline"]):
         problems.append("a pilot runs on dev only and is never final or a frozen baseline")
+    if config["scoring"] not in SCORING:
+        problems.append(f"scoring must be one of {SCORING}")
+    if config["purpose"] == "experiment" and config["scoring"] != "full":
+        problems.append("an experiment is scored in full (D9 needs the item F1 scores); incident_only is for pilots")
     pipeline = config["pipeline"] or {}
     if pipeline.get("skip_rp1") is not True:
         problems.append("pipeline.skip_rp1 must be true: RP1 is not part of an extraction experiment")
@@ -262,18 +271,19 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
                       status_code=response.status_code, raw=raw, **timing)
 
 
-def direct_call(prompt_text: str, *, pacer=None) -> Callable:
+def direct_call(prompt_text: str, *, pacer=None, max_retries: int | None = None) -> Callable:
     """The direct-VLM arm: ``eval_vlm_client`` with the registry prompt."""
     from eval_vlm_client import analyze_video_with_p1, rate_limited
 
     def call(model: str, video_url: str):
-        return rate_limited(lambda: analyze_video_with_p1(model, video_url, prompt_text=prompt_text), pacer=pacer)
+        return rate_limited(lambda: analyze_video_with_p1(model, video_url, prompt_text=prompt_text), pacer=pacer,
+                            max_retries=max_retries)
 
     return call
 
 
 def vss_call(config: dict, item: dict, *, incident_id: str, run_id: str, duration: float | None, pacer=None,
-             post: Callable = post_json, timeout: float | None = None) -> Callable:
+             post: Callable = post_json, timeout: float | None = None, max_retries: int | None = None) -> Callable:
     """The VSS arm: the agent's ``/analyze`` with P1 only, cropping off, the experiment prompt by id."""
     from eval_vlm_client import P1_TIMEOUT_SECONDS, _utc_now, rate_limited
 
@@ -294,7 +304,7 @@ def vss_call(config: dict, item: dict, *, incident_id: str, run_id: str, duratio
             return vss_chat_result(response, prompt_id=item["id"], prompt_sha256=item["sha256"], started_at=started_at,
                                    finished_at=_utc_now())
 
-        return rate_limited(once, pacer=pacer)
+        return rate_limited(once, pacer=pacer, max_retries=max_retries)
 
     return call
 
@@ -353,16 +363,44 @@ def _rate(pricing: dict, model: str) -> float:
 
 
 def call_usage(result: dict, pricing: dict, model: str) -> dict:
-    """Tokens and provisional cost of one video-run: measured P1 usage, judge calls at the per-call estimate."""
-    usage = (result.get("p1_raw") or {}).get("usage") or {}
+    """Requests, tokens and provisional cost of one video-run.
+
+    ``p1_tokens_bound`` is the pessimistic count the caps use: measured usage, plus the per-attempt
+    ceiling for every attempt that reported no usage and was not a 429 rejection. Judge tokens are
+    measured from the endpoint's usage; the estimate is kept for runs scored before it was recorded.
+    """
+    raw = result.get("p1_raw") or {}
+    usage = raw.get("usage") or {}
     p1_tokens = int(usage.get("total_tokens") or (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens")
                                                                                          or 0))
+    attempts = (raw.get("rate_limit") or {}).get("attempts") or [{"ok": raw.get("ok"),
+                                                                  "failure_kind": raw.get("failure_kind")}]
+    unmetered = sum(1 for a in attempts if a.get("failure_kind") not in (None, "rate_limited", "not_sent"))
+    if not p1_tokens and raw.get("ok"):
+        unmetered += 1  # a successful attempt without a usage block
     judge_calls = int(result.get("judge_calls") or 0)
-    judge_tokens = judge_calls * int(pricing["judge_tokens_per_call_estimate"])
-    cost = p1_tokens / 1e6 * _rate(pricing, model) + judge_tokens / 1e6 * _rate(pricing, pricing["judge_model"])
-    return {"p1_prompt_tokens": usage.get("prompt_tokens"), "p1_completion_tokens": usage.get("completion_tokens"),
-            "p1_total_tokens": p1_tokens, "judge_calls": judge_calls, "judge_tokens_estimate": judge_tokens,
+    judge_tokens = int(result.get("judge_tokens") or 0)
+    judge_estimate = judge_calls * int(pricing["judge_tokens_per_call_estimate"])
+    judge_priced = judge_tokens or judge_estimate
+    cost = p1_tokens / 1e6 * _rate(pricing, model) + judge_priced / 1e6 * _rate(pricing, pricing["judge_model"])
+    return {"p1_attempts": len(attempts), "p1_prompt_tokens": usage.get("prompt_tokens"),
+            "p1_completion_tokens": usage.get("completion_tokens"), "p1_total_tokens": p1_tokens,
+            "p1_tokens_bound": p1_tokens + unmetered * P1_TOKENS_CEILING, "judge_calls": judge_calls,
+            "judge_tokens": judge_tokens, "judge_tokens_estimate": judge_estimate,
             "cost_usd_provisional": round(cost, 6)}
+
+
+def worst_judge_attempts(gt_p1_shaped: dict, scoring: str) -> int:
+    """The most judge requests one video can cause: judged fields x attempts per field.
+
+    Judged fields: the incident description, plus (full scoring) one per ground-truth entity and two
+    (name, description) per instrument and asset; a match never exceeds the ground-truth items.
+    """
+    fields = 1
+    if scoring == "full":
+        fields += len(gt_p1_shaped.get("entities") or []) + 2 * len(gt_p1_shaped.get("instruments") or []) \
+            + 2 * len(gt_p1_shaped.get("assets") or [])
+    return fields * JUDGE_ATTEMPTS_PER_FIELD
 
 
 def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = ORDER_SEED) -> list[tuple]:
@@ -424,10 +462,12 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                   for r, p, v, k in order]}, indent=2) + "\n")
     records = [{**metadata(c, plan, gt_index, registry=registry), "started_at": started, "complete": False,
                 "stopped": None, "videos": [], "schedule": {"seed": seed, "stage": started},
-                "usage": {"p1_calls": 0, "p1_tokens": 0, "judge_calls": 0, "judge_tokens_estimate": 0,
+                "usage": {"p1_calls": 0, "p1_attempts": 0, "p1_tokens": 0, "p1_tokens_bound": 0, "judge_calls": 0,
+                          "judge_tokens": 0, "judge_tokens_estimate": 0,
                           "cost_usd_provisional": 0.0, "pricing_provisional": pricing.get("provisional", True)}}
                for c, plan in zip(configs, plans, strict=True)]
     factories = [call_factory_for(c) for c in configs]
+    planned_runs = [planned_calls(c, split) for c in configs]
     run_ids: dict[tuple, str] = {}
     stopped = None
     attempts = rate_limited = 0
@@ -436,12 +476,18 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             config, record = configs[k], records[k]
             budget, used = config["budget"], record["usage"]
             reason = None
-            if used["p1_calls"] + 1 > budget["max_p1_calls"]:
+            entry = gt_index["by_incident_id"][incident_id]
+            # Retries draw on the same request cap: only attempts left over after one per remaining run.
+            remaining_runs = planned_runs[k] - used["p1_calls"]
+            spare = budget["max_p1_calls"] - used["p1_attempts"] - remaining_runs
+            retries_allowed = max(0, min(P1_RATE_LIMIT_RETRIES, spare))
+            judge_worst = worst_judge_attempts(entry["p1_shaped"], config["scoring"])
+            if spare < 0 or used["p1_attempts"] + 1 > budget["max_p1_calls"]:
                 reason = "max_p1_calls"
-            elif used["p1_tokens"] + P1_TOKENS_CEILING > budget["max_p1_tokens"]:
-                reason = "max_p1_tokens (no room for a worst-case call)"
-            elif used["judge_calls"] >= budget["max_judge_calls"]:
-                reason = "max_judge_calls"
+            elif used["p1_tokens_bound"] + P1_TOKENS_CEILING * (1 + retries_allowed) > budget["max_p1_tokens"]:
+                reason = "max_p1_tokens (no room for this call's worst case)"
+            elif used["judge_calls"] + judge_worst > budget["max_judge_calls"]:
+                reason = f"max_judge_calls (this video could need {judge_worst} judge requests)"
             elif attempts >= RATE_LIMIT_MIN_ATTEMPTS and rate_limited / attempts > RATE_LIMIT_STOP_SHARE:
                 reason = f"rate limited on {rate_limited}/{attempts} calls (> {RATE_LIMIT_STOP_SHARE:.0%})"
             if reason:
@@ -453,10 +499,9 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 run_ids[key] = run_id_for(config, repeat)
                 store.insert_model_run(run_ids[key], model_name=config["model"],
                                        prompt_version=contract.contract_version())
-            entry = gt_index["by_incident_id"][incident_id]
             video_url, video = video_source(incident_id)
             seen: list = []
-            p1_call = factories[k](incident_id, run_ids[key], video.get("duration_seconds"))
+            p1_call = factories[k](incident_id, run_ids[key], video.get("duration_seconds"), max_retries=retries_allowed)
 
             def recording_call(model: str, url: str, _call=p1_call, _seen=seen):
                 outcome = _call(model, url)
@@ -468,7 +513,7 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 incident_id=incident_id, r2_object_key=video.get("r2_object_key"), video_url=video_url,
                 gt_p1_shaped=entry["p1_shaped"], model_run_id=run_ids[key], split_manifest_ref=str(SPLIT_PATH.name),
                 video_duration_seconds=video.get("duration_seconds"), video_size_bytes=video.get("size_bytes"),
-                p1_call=recording_call)
+                p1_call=recording_call, incident_only=config["scoring"] == "incident_only")
             # The agent's own report of the call (P1-only time, end-to-end time, the prompt it used).
             result["transport"] = (seen[-1].result.raw or {}).get("agent") if seen else None
             result.update(repeat=repeat, position=position, arm=config["arm"], prompt_id=config["prompt_id"])
@@ -476,7 +521,10 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             result["usage"] = usage
             record["videos"].append(result)
             used["p1_calls"] += 1
+            used["p1_attempts"] += usage["p1_attempts"]
             used["p1_tokens"] += usage["p1_total_tokens"]
+            used["p1_tokens_bound"] += usage["p1_tokens_bound"]
+            used["judge_tokens"] += usage["judge_tokens"]
             used["judge_calls"] += usage["judge_calls"]
             used["judge_tokens_estimate"] += usage["judge_tokens_estimate"]
             used["cost_usd_provisional"] = round(used["cost_usd_provisional"] + usage["cost_usd_provisional"], 6)
@@ -508,7 +556,10 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
 
 
 def run_experiment(config: dict, *, call_factory: Callable, **kwargs) -> dict:
-    """One configuration as a stage of one (``run_stage``); ``call_factory(incident_id, run_id, duration)``."""
+    """One configuration as a stage of one (``run_stage``).
+
+    ``call_factory(incident_id, run_id, duration, *, max_retries)``; ``max_retries`` is the share of the
+    request cap this call may spend on 429 retries."""
     out = run_stage([config], call_factory_for=lambda _config: call_factory, **kwargs)
     if not out["dry_run"]:
         out["results"], out["record"] = out["results_files"][0], out["records"][0]

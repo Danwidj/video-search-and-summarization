@@ -118,10 +118,10 @@ def plumbing_run(out_root: Path, *, gt_dir: Path = DEFAULT_GT, split: dict | Non
                     "experiment_id": f"plumbing-{name.lower()}", "description": "Stage 0 offline plumbing", "arm": arm,
                     "prompt_id": prompt, "model": MODEL, "split": "dev",
                     "ground_truth": {"dir": str(gt_dir), "allow_candidate": True}, "repeats": 1,
-                    "budget": {"max_p1_calls": len(split["dev"]), "max_p1_tokens": len(split["dev"]) * 21000,
+                    "budget": {"max_p1_calls": len(split["dev"]), "max_p1_tokens": len(split["dev"]) * er.P1_TOKENS_CEILING,
                                "max_judge_calls": len(split["dev"]) * 20}, "purpose": "experiment",
                     "pipeline": vss_pipeline if arm == "vss" else base_pipeline, "frozen_baseline": False,
-                    "final": False, "selection_record": None, "baseline_ref": None, "videos": None}
+                    "final": False, "selection_record": None, "baseline_ref": None, "videos": None, "scoring": "full"}
             stamp = now or datetime.now(UTC)
             name_of = {config["experiment_id"]: name for name, config in configs.items()}
             dev = sorted(split["dev"])
@@ -134,11 +134,11 @@ def plumbing_run(out_root: Path, *, gt_dir: Path = DEFAULT_GT, split: dict | Non
                     from eval_vlm_client import P1Pacer
 
                     no_wait = P1Pacer(sleep=lambda _seconds: None)  # a local fake has no rate limit to respect
-                    return lambda incident_id, run_id, duration: er.vss_call(
+                    return lambda incident_id, run_id, duration, max_retries=None: er.vss_call(
                         {**config, "pipeline": {**config["pipeline"], "agent_base_url": agent_url}}, item,
-                        incident_id=incident_id, run_id=run_id, duration=30.0, pacer=no_wait)
+                        incident_id=incident_id, run_id=run_id, duration=30.0, pacer=no_wait, max_retries=max_retries)
 
-                def factory(incident_id, run_id, duration):
+                def factory(incident_id, run_id, duration, max_retries=None):
                     content = scripted_answer(index["by_incident_id"][incident_id]["p1_shaped"],
                                               over_rate=name in ("C1", "C2") and dev.index(incident_id) % 3 == 0)
                     if config["arm"] == "direct-vlm":

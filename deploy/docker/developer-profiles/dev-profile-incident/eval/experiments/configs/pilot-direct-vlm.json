@@ -4,7 +4,7 @@
   "budget": {
     "max_p1_calls": 5,
     "max_p1_tokens": 105000,
-    "max_judge_calls": 50
+    "max_judge_calls": 25
   },
   "description": "Stage 0 paid pilot (plan \u00a7F.2): p1-v4-base direct, 1 dev video per category. Measures tokens, latency, 429s, judge calls. PILOT: infrastructure, reliability, latency and cost only; candidate GT allowed; never used for selection or reported as accuracy.",
   "experiment_id": "pilot-direct-vlm",
@@ -24,6 +24,7 @@
   "prompt_id": "p1-v4-base",
   "purpose": "pilot",
   "repeats": 1,
+  "scoring": "incident_only",
   "selection_record": null,
   "split": "dev",
   "videos": [
