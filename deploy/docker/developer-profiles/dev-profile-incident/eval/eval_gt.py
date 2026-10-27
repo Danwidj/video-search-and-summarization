@@ -41,7 +41,6 @@ import methodology
 import matching
 from incident_report import (
     canonical_incident_type,
-    extract_message_content,
     timestamp_to_seconds,
 )
 
@@ -226,6 +225,15 @@ _SCORE_BARE_OBJECT = re.compile(r"(\{[\s\S]*\"score\"[\s\S]*\})")
 _SCORE_FALLBACK = re.compile(r"([01](?:\.\d+)?)")
 
 
+def _valid_score(value) -> float | None:
+    """A score in [0, 1]; anything else (out of range, non-numeric, NaN) is invalid (v1.1: never clamped)."""
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    return score if 0.0 <= score <= 1.0 else None
+
+
 def _extract_score(content: str) -> float | None:
     """Fenced/bare-JSON fallback, mirroring ``incident_report.parse_incident_report``."""
     import json
@@ -237,17 +245,20 @@ def _extract_score(content: str) -> float | None:
         if not match:
             continue
         try:
-            score = json.loads(match.group(1)).get("score")
-            return max(0.0, min(1.0, float(score)))
-        except (json.JSONDecodeError, TypeError, ValueError):
+            return _valid_score(json.loads(match.group(1)).get("score"))
+        except (json.JSONDecodeError, AttributeError):
             continue
     match = _SCORE_FALLBACK.search(content)
-    if match:
-        try:
-            return max(0.0, min(1.0, float(match.group(1))))
-        except ValueError:
-            return None
-    return None
+    return _valid_score(match.group(1)) if match else None
+
+
+def _final_content(body) -> tuple[str, str | None]:
+    """``(content, finish_reason)`` of the judge's first choice: the final answer only, never its reasoning."""
+    try:
+        choice = body["choices"][0]
+    except (KeyError, IndexError, TypeError):
+        return "", None
+    return (choice.get("message") or {}).get("content") or "", choice.get("finish_reason")
 
 
 # Judge HTTP requests sent by this process (parse retries included), so a run can
@@ -294,7 +305,14 @@ def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) 
         return Result(ok=False, error="judge endpoint returned a non-JSON body")
     global JUDGE_TOKENS
     JUDGE_TOKENS += int(((body.get("usage") or {}) if isinstance(body, dict) else {}).get("total_tokens") or 0)
-    score = _extract_score(extract_message_content(body))
+    content, finish_reason = _final_content(body)
+    if finish_reason == "length":
+        # Cut off at JUDGE_MAX_OUTPUT_TOKENS: whatever it says is incomplete, so it is not a score. Not retried
+        # (the identical request at temperature 0 would be cut off again).
+        return Result(ok=False, status_code=resp.status_code,
+                      error=f"judge response truncated at max_tokens={methodology.JUDGE_MAX_OUTPUT_TOKENS} "
+                            "(finish_reason=length)")
+    score = _extract_score(content)
     if score is None:
         return Result(ok=False, error=f"could not extract a score from judge response: {body!r}")
     return Result(ok=True, data=score, status_code=resp.status_code)

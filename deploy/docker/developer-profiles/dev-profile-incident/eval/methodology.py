@@ -29,13 +29,17 @@ from pathlib import Path
 
 import config
 
-METHODOLOGY_VERSION = "evaluation-methodology-v1.0"
+METHODOLOGY_VERSION = "evaluation-methodology-v1.1"
 METHODOLOGY_DIR = Path(__file__).resolve().parent / "methodology"
 
 # Description and item-text judge (scores 0-1; a pass is >= DESCRIPTION_PASS_SCORE).
 JUDGE_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
 JUDGE_PROMPT_VERSION = "judge-prompt-v1"
-JUDGE_REQUEST_SETTINGS = {"temperature": 0.0}
+# v1.1: the judge's output is limited to 1,500 tokens (reasoning tokens included). A reply cut off at the
+# limit (finish_reason "length"), one with no final content, or a score outside 0-1 is a scoring failure,
+# never a score (eval_gt._judge_once).
+JUDGE_MAX_OUTPUT_TOKENS = 1500
+JUDGE_REQUEST_SETTINGS = {"temperature": 0.0, "max_tokens": JUDGE_MAX_OUTPUT_TOKENS}
 DESCRIPTION_PASS_SCORE = 0.5
 # Transient judge failures (network, timeout, HTTP 429/5xx) are retried with the identical request.
 JUDGE_TRANSIENT_RETRIES = 2

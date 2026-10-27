@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Evaluation methodology v1.1 limits the judge's output to 1,500 tokens; truncated or invalid replies are failures
+- **Decision (user-requested):** `evaluation-methodology-v1.1` adds `max_tokens 1500` to the pinned judge request (`methodology.JUDGE_MAX_OUTPUT_TOKENS`). It applies to the Stage 0 pilot and every later experiment. Three kinds of reply are now **scoring failures**, which leave the field unscored and stop the run; they are never read as scores:
+  - a reply cut off at the limit (`finish_reason: length`, not retried);
+  - a score outside 0–1 (previously clamped);
+  - a score present only in the reasoning (previously read from it).
+- **Why:** it puts a hard ceiling on each judge attempt's output, so the pilot's judge spend is bounded (D11), and an incomplete or malformed reply can no longer pass as a score.
+- **Rejected:** keeping v1.0's uncapped judge; clamping out-of-range scores; retrying truncated replies.
+- **Effect:** v1.0 and v1.1 results are never pooled. If the judge often needs more than 1,500 tokens, the pilot shows it as scoring failures, and a new version decides the remedy.
+- **Links:** [`../eval/methodology/evaluation-methodology-v1.1.md`](../eval/methodology/evaluation-methodology-v1.1.md); [`../eval/tests/test_judge_limits.py`](../eval/tests/test_judge_limits.py).
+
 ### 2026-10-27: Experimental crops go to a temporary, isolated in-memory evidence store
 - **Decision (crop option (a), user-approved):** when an experimental `/analyze` request keeps cropping on, `incident_report_gen` crops into a fresh `InMemoryEvidenceStore` for that request only. It is discarded on return, with no disk, no R2 and no production data, and `experiment.evidence_store` records it. Production requests keep the service's store (R2 when configured), unchanged. An agent with R2 settings still refuses experimental crops (409).
 - **Why:** crop cost and end-to-end latency can be measured without any shared-storage write.
