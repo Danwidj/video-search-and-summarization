@@ -11,3 +11,10 @@ __pycache__/
 # see prompts.py and scripts/eval_*.py. The small split manifests themselves
 # are tracked separately under eval_reproducibility/.
 eval_data/
+
+# Ground-truth review workbooks (PR 3/4): real annotations and annotator names, so
+# deliberately not committed. Their hashes and the generator are tracked; see
+# ground_truth/review/README.md (Storage) for where they live and how to rebuild them.
+ground_truth/review/*.xlsx
+ground_truth/review/~$*
+ground_truth/review/backups/

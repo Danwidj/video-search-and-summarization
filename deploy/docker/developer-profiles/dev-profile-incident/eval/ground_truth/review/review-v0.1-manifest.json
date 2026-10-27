@@ -1,0 +1,55 @@
+{
+  "version": "v0.1",
+  "source_name": "Complete Ground Truth Labelling.xlsx",
+  "source_sha256": "7c3f1fcc186e2608887ea31fc9eda06178522c4525763f69d7e2b46032cc2a5c",
+  "clips_sha256": "4672a134443812b28986469dd3464be591c2818eee5cfc01f891e63cf1d418ce",
+  "change_log_sha256": "5d19db51c66f59d87150cd3d679c4b79b1d2250ca1e66ab75f87a4eb1f709e64",
+  "git_sha": "43a6d5227",
+  "output_name": "Ground Truth Review v0.1.xlsx",
+  "generator": "gt_review_build.py v1",
+  "guidelines": "annotation-guidelines-v1.0",
+  "generated_at": "2026-10-27T05:52:38+00:00",
+  "output_sha256": "779592ed243a9a700bb138150e616562e29de5b2f27f3f519656bdc402aa3836",
+  "entries": 184,
+  "entries_by_class": {
+    "verified_correction": 86,
+    "needs_video_review": 96,
+    "rule_based_proposal": 2
+  },
+  "entries_by_rule": {
+    "R01": 24,
+    "R02": 9,
+    "R03": 1,
+    "R05": 52,
+    "R10": 2,
+    "R20": 1,
+    "R21": 6,
+    "R22": 2,
+    "R23": 7,
+    "R24": 2,
+    "R25": 77,
+    "R34": 1
+  },
+  "affected_incidents": 53,
+  "facts": {
+    "incidents": 80,
+    "rows": {
+      "gt_incidents": 89,
+      "gt_entities": 169,
+      "gt_instruments": 33,
+      "gt_assets": 96
+    },
+    "incident_rows": 89,
+    "dataset_clips": 80,
+    "incidents_without_clip": [],
+    "clips_without_incident": [],
+    "type_labels": {
+      "Animal": 21,
+      "Assault": 15,
+      "Burglary": 18,
+      "Explosion": 15,
+      "Road Accident": 20
+    },
+    "type_dropdown": "\"Assault,Burglary,Explosion,Fighting,Animal,Road Accident,Shooting\""
+  }
+}
