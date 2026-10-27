@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import httpx
@@ -40,6 +41,9 @@ from vss_agents.tools.incident_report_gen import p1_request_body
 from . import test_incident_report_gen as report_gen_tests
 from .test_incident_report_gen import MODEL_OUTPUT
 from .test_incident_report_gen import VIDEO_URL
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 EXPERIMENT_ID = "p1-v4-e01-test"
 EXPERIMENT_TEXT = "An experimental extraction prompt.\n"
@@ -237,3 +241,99 @@ class TestToolRuns:
             )
         assert excinfo.value.experiment["prompt_id"] == EXPERIMENT_ID  # type: ignore[attr-defined]
         assert excinfo.value.telemetry["p1_elapsed_ms"] is not None  # type: ignore[attr-defined]
+
+
+class _RecordingService:
+    """Stands in for the crop service and records the store each call used."""
+
+    def __init__(self) -> None:
+        self.stores: list = []
+
+    async def process_incident_report(self, *, video_ref, video_id, report, store=None, **_kwargs):
+        self.stores.append(store)
+        return []
+
+
+async def _run_with_service(handler, tool_input, service):
+    from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
+    from vss_agents.tools.incident_report_gen import incident_report_gen
+    from vss_agents.utils import crop_evidence
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    config = IncidentReportGenConfig(
+        vlm_base_url="https://switchyard.example",
+        vlm_model_name="nvidia/cosmos-3-nano-reasoner",
+        rp1_base_url="https://switchyard.example/",
+    )
+    with (
+        patch("vss_agents.tools.incident_report_gen.httpx.AsyncClient", side_effect=client_factory),
+        patch.object(crop_evidence, "get_crop_evidence_service", return_value=service),
+        patch(
+            "vss_agents.tools.incident_report_gen.persist_revision", new_callable=AsyncMock, return_value=7
+        ) as persist,
+        patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=False),
+        patch.dict("os.environ", {"OPENAI_API_KEY": "secret"}),
+    ):
+        async with incident_report_gen(config, MagicMock()) as function_info:
+            result = await function_info.single_fn(tool_input)
+    return result, persist
+
+
+class TestTemporaryEvidenceStore:
+    """Crop option (a): an experimental crops-on run uses an isolated, temporary in-memory store."""
+
+    @pytest.mark.asyncio
+    async def test_experimental_crops_use_a_fresh_in_memory_store_per_request(self, enabled: None, registry: Path):
+        from vss_agents.tools.incident_report_gen import EXPERIMENT_EVIDENCE_STORE
+        from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
+
+        service = _RecordingService()
+        for _ in range(2):
+            result, persist = await _run_with_service(
+                _handler([]),
+                _input(experiment_prompt_id=EXPERIMENT_ID, skip_rp1=True, video_duration_seconds=30.0),
+                service,
+            )
+            assert result.experiment["evidence_store"] == EXPERIMENT_EVIDENCE_STORE
+            assert result.revision_id is None
+            persist.assert_not_awaited()
+        assert all(isinstance(store, InMemoryEvidenceStore) for store in service.stores)
+        assert service.stores[0] is not service.stores[1]  # isolated: never shared between requests
+
+    @pytest.mark.asyncio
+    async def test_a_production_request_keeps_the_services_own_store(self, enabled: None, registry: Path):
+        service = _RecordingService()
+        result, _persist = await _run_with_service(
+            _handler([]), _input(skip_rp1=True, video_duration_seconds=30.0), service
+        )
+        assert service.stores == [None]  # the service's own store (R2 in production), as before
+        assert result.experiment is None and result.revision_id == 7
+
+    @pytest.mark.asyncio
+    async def test_the_temporary_store_receives_the_crops_and_r2_is_never_touched(self):
+        from vss_agents.tools.incident_report_gen import collect_evidence
+        from vss_agents.utils import crop_evidence
+
+        class Crop:
+            image_bytes = b"jpeg"
+            normalized_box = (0, 0, 500, 500)
+
+        class Service(crop_evidence.CropEvidenceService):
+            def crop_item(self, *args, **kwargs):
+                return Crop()
+
+        r2 = AsyncMock()
+        service = Service(store=r2)
+        service.is_detector_available = lambda: True  # type: ignore[method-assign]
+        store = crop_evidence.InMemoryEvidenceStore()
+        report = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
+        with patch.object(crop_evidence, "get_crop_evidence_service", return_value=service):
+            entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=report, store=store)
+        assert len(store.images) == len(entries) == 3 and all(e["image"] in store.images for e in entries)
+        r2.put_image.assert_not_awaited()

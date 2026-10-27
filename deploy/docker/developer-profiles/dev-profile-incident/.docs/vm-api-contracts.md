@@ -164,7 +164,8 @@ Live check of the error shape: `{}` body returns `422` `{"detail":[{"type":"miss
 - **Opt-in:** an experimental request is refused with **403** unless the agent process runs with `INCIDENT_EXPERIMENTS_ENABLED=1` (exactly `1`). The shared VM agent does not set it.
 - **Prompt:** read from `contracts/experiments/registry.json` in the checkout, or from `INCIDENT_EXPERIMENT_REGISTRY`, and served only if the file matches its registered SHA-256 and the entry's contract version is the vendored one. Otherwise **400**. Only the prompt text of the P1 body changes.
 - **400:** combined with `reviewer_prompt`.
-- **409:** cropping is on (`skip_crops` false) while the agent has R2 settings, because cropping would upload evidence images to shared storage.
+- **409:** cropping is on (`skip_crops` false) while the agent has R2 settings. An experiment agent must hold no shared-storage settings at all.
+- **Experimental crops** (`skip_crops` false, no R2): images go to a fresh in-memory store for that request only. They are discarded on return, never written to disk or R2, and `experiment.evidence_store` says so. Evidence `image` keys therefore point at nothing durable.
 - **Never persisted:** an experimental request writes no `report_revisions` row and no `model_runs` placeholder (`revision_id` is `null`). With `skip_crops` every evidence entry has `image: null` and `image_gap: "evidence cropping skipped (skip_crops)"`.
 - **Response additions:** `experiment` (`prompt_id` (null for the production prompt), `prompt_sha256`, `skip_crops`, `persisted: false`), `p1_elapsed_ms` (the P1 HTTP round trip) and `usage` (P1 token usage). A 422 contract violation of an experimental request carries the same three in `detail`.
 - **Where it runs:** a local agent started for the experiment with no Supabase or R2 settings (plan decision D14 (b)). Restarting or reconfiguring the shared VM agent is ask-first.
