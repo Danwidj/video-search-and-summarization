@@ -235,11 +235,16 @@ def p1_request_config() -> dict:
     return {**FIXED_INFERENCE_CONFIG, **P1_INFERENCE_CONFIG, "response_format": contract.response_format()}
 
 
-def analyze_video_with_p1(model: str, video_url: str, *, timeout: float = DEFAULT_TIMEOUT) -> ChatResult:
-    """One P1 call: the video (signed URL) first, then the contract prompt; schema enforced."""
+def analyze_video_with_p1(model: str, video_url: str, *, timeout: float = DEFAULT_TIMEOUT,
+                          prompt_text: str | None = None) -> ChatResult:
+    """One P1 call: the video (signed URL) first, then the prompt; schema enforced.
+
+    ``prompt_text`` is a registry prompt for an experiment (``prompt_registry.prompt_text``);
+    the default is the production contract prompt, byte for byte.
+    """
     content = [
         {"type": "video_url", "video_url": {"url": video_url}},
-        {"type": "text", "text": contract.extraction_prompt()},
+        {"type": "text", "text": contract.extraction_prompt() if prompt_text is None else prompt_text},
     ]
     messages = [{"role": "user", "content": content}]
     return chat_completion(model, messages, inference_config=p1_request_config(), timeout=timeout)
@@ -296,12 +301,20 @@ class P1Pacer:
 DEFAULT_PACER = P1Pacer()
 
 
-def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1Pacer | None = None) -> P1Outcome:
+def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1Pacer | None = None,
+                                       prompt_text: str | None = None) -> P1Outcome:
     """P1 under ``P1_RATE_LIMIT_POLICY``: paced, and retried after a cooldown on HTTP 429 only.
 
     The request is the same on every attempt. Each attempt keeps its own timing, so
     the final attempt's ``elapsed_s`` is one round trip and never includes waiting.
     """
+    if prompt_text is None:
+        return rate_limited(lambda: analyze_video_with_p1(model, video_url), pacer=pacer)
+    return rate_limited(lambda: analyze_video_with_p1(model, video_url, prompt_text=prompt_text), pacer=pacer)
+
+
+def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None) -> P1Outcome:
+    """Run ``call`` under ``P1_RATE_LIMIT_POLICY`` (the same policy for every arm of an experiment)."""
     pacer = pacer or DEFAULT_PACER
     policy = P1_RATE_LIMIT_POLICY
     attempts: list[dict] = []
@@ -311,7 +324,7 @@ def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1P
             wait_s = pacer.wait(policy["inter_call_delay_s"])
         else:
             pacer.sleep(wait_s)
-        result = analyze_video_with_p1(model, video_url)
+        result = call()
         pacer.mark_end()
         attempts.append({
             "attempt": len(attempts) + 1,
