@@ -4,12 +4,13 @@
 
 ```bash
 uv run python scripts/eval_experiment.py plan configs/…json            # the plan and every guard; no calls
-uv run python scripts/eval_experiment.py run  configs/…json --confirm-paid   # only after the stage budget is approved
+uv run python scripts/eval_experiment.py run  configs/…json [configs/…json …] --confirm-paid   # one stage, interleaved; only after its budget is approved
 uv run python scripts/eval_experiment.py rescore <results.json> --confirm-paid  # judge calls only, no P1
 uv run python scripts/eval_experiment.py compare C1=… C2=… C3=… C4=…    # the four paired comparisons, offline
 uv run python scripts/eval_experiment.py report --title "…" C1=… C2=…   # Markdown report from saved results
 uv run python scripts/eval_experiment.py verify <results dir>           # reproducibility check of one run
-uv run python scripts/eval_experiment.py budget configs/*.json [--pilot measured.json]   # call volume (and cost once measured)
+uv run python scripts/eval_experiment.py budget configs/*.json [--measured measured.json]   # requests, tokens, provisional cost
+uv run python scripts/eval_experiment.py measure <results.json> …       # pilot figures for budget --measured
 uv run python scripts/eval_experiment_plumbing.py                       # Stage 0 step 1: offline C1–C4, scripted model
 ```
 
@@ -35,6 +36,11 @@ Every guard runs before any call:
 | Paid calls | `run` and `rescore` send nothing without `--confirm-paid` |
 | Ground truth | Must be frozen. A candidate needs `ground_truth.allow_candidate` (plumbing only), and every result is then marked `reportable: false` |
 | Accuracy runs | `skip_rp1` and `skip_crops` must be true. Cropping belongs only to the separate end-to-end profile |
+| Hard caps (D11) | `budget.max_p1_calls`, `max_p1_tokens` and `max_judge_calls` are required. A plan that cannot fit is refused. Before each call the stage stops if the next call could break a cap, or if more than 25% of attempts are rate-limited. Partial results are kept as incomplete |
+| Order (D10) | Configurations given together run interleaved per video, the first rotating, in a seeded order per repeat (`schedule.json`) |
+| Pilot | `purpose: pilot` is dev-only, may use candidate ground truth, is never reportable, never feeds selection, and its report has no accuracy tables |
+
+Every call is logged to `eval_data/results/experiments/stages/<time>-<id>/cost-log.jsonl` with tokens, judge calls and the provisional cost (`pricing.json`, provisional until Switchyard pricing is confirmed). The VSS arm uses the [local experiment agent](agent/README.md).
 
 Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `results.json` (every §F.4 field) and `prompt.txt`. They are immutable and gitignored.
 
@@ -42,8 +48,7 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 
 | Config | Stage | What |
 |---|---|---|
-| `pilot-direct-vlm`, `pilot-vss` | 0 (paid pilot) | `p1-v4-base`, 1 dev clip per category (`videos`), repeats 1 |
-| `pilot-vss-crops` | 0 (paid pilot) | 2 dev clips with cropping on (`profile: end-to-end`): crop cost and end-to-end latency only |
+| `pilot-direct-vlm`, `pilot-vss` | 0 (paid pilot) | `purpose: pilot`, `p1-v4-base`, 1 dev clip per category (`videos`), repeats 1, candidate ground truth allowed. Run together (interleaved) |
 | `direct-vlm-baseline` | 1 | C1 on dev, frozen after its first complete run |
 | `vss-baseline` | 1 | C2 on dev, local agent per D14 (b) |
 
@@ -53,4 +58,5 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 
 - **`render`:** a report over any result on candidate ground truth carries a NOT REPORTABLE banner. Inference latency and end-to-end latency are separate tables.
 - **Paired comparisons:** the C3−C1 comparison is shown as the sum (C3−C4) + (C4−C1), with the plan's interpretation limits and held-out exposure disclosure.
-- **`select`:** applies a selection rule only to dev, reportable records, and only when the rule is an existing decisions.md heading. Plan D9 (the rule itself) is not decided by this code, and test results can never feed selection.
+- **`select`:** applies a selection rule only to dev, reportable records, and only when the rule is an existing decisions.md heading. Test results can never feed selection.
+- **D9 v2** (`experiment_selection.py`, proposed, see the [decision record](../../.docs/mvp2/experiment-decision-record.md)): the primary metric is the equal-weight mean of incident fields, entity F1 and object F1; the secondary is the eight-score average. It applies the +0.02 minimum, the bootstrap CIs, guardrails G1–G3 and the documented tie-breakers. `select_d9` refuses test, pilot, incomplete or unfrozen records and a rule that is not pre-registered.

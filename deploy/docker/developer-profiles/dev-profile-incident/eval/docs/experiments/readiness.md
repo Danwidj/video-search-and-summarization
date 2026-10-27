@@ -1,6 +1,6 @@
 # Prompt experiments: readiness and budget statement
 
-> Status 2026-10-27. **No paid experiment has run.** This page states what is ready, the call volume of each stage, and the approvals each stage needs (plan §F.2, D9–D11, D15). Tokens and cost are unknown until the Stage 0 paid pilot measures them.
+> **Superseded for decisions by [`experiment-decision-record.md`](../../../.docs/mvp2/experiment-decision-record.md)** (D9 v2 proposed; D10 and D15 approved; D11 caps enforced, with dollar limits provisional; Stage 0 prepared, with 10 calls and no crop pilot). Status 2026-10-27. **No paid experiment has run.** This page states what is ready, the call volume of each stage, and the approvals each stage needs (plan §F.2, D9–D11, D15). Tokens and cost are unknown until the Stage 0 paid pilot measures them.
 
 ## Ready
 

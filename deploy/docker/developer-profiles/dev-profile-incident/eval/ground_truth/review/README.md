@@ -14,6 +14,7 @@ This folder holds the **proposed** corrections to the human-labelled ground trut
 | `Ground Truth Candidate v0.2.xlsx` | **no** | The PR 4 candidate: verified corrections applied, AI video-review proposals listed as Pending, v0.1 decisions carried forward. Review continues here |
 | `ai-proposals-v0.2.jsonl` | **no** | The AI reviewer's proposals (they quote annotation text) |
 | [`candidate-v0.2.md`](candidate-v0.2.md), [`candidate-v0.2-manifest.json`](candidate-v0.2-manifest.json) | yes | Candidate report (ids and counts only) and its hashes, digests and counts |
+| `Ground Truth Review Package <version>.xlsx`, `review-overrides-<v>.json` | **no** | The human review package and its local overrides ([below](#human-review-package)) |
 
 ## Source
 
@@ -93,6 +94,36 @@ uv run python scripts/gt_review_backup.py snapshot --kind Candidate --version v0
 - **Decisions are carried forward, never discarded.** The build reads the prior workbook's status, reviewer, notes and accepted value. It refuses if that workbook describes different findings, never writes to it, and checks the SHA-256 of both the prior workbook and the source before and after. A candidate that holds human decisions is never overwritten; review more and build the next version (`--prior "…Candidate v0.2.xlsx" --version v0.3`).
 - **Linked entries are decided together.** A reclassification (R10) removes an instrument and adds an asset; approving only one half is reported as a problem.
 - **The corrected records** come from `apply_to_records`: the source's documented columns plus only the applied entries. Each record keeps `_source_row` and `_change_ids` for provenance, and the same inputs always give the same `records_sha256`. PR 5 freezes from these records, not from cell formatting.
+
+## Human review package
+
+`scripts/gt_review_package.py` turns a candidate's Pending entries into a review package. It is a new workbook, `Ground Truth Review Package <version>.xlsx`, where decisions are recorded, plus a local HTML companion with the cited evidence tiles. It never overwrites a file, never approves anything, and carries decisions forward from an earlier package (`--prior-package`).
+
+```bash
+uv run python scripts/gt_review_package.py --candidate "ground_truth/review/Ground Truth Candidate v0.2.xlsx" \
+    --version v0.2.1 --prior-package "ground_truth/review/Ground Truth Review Package v0.2.xlsx"
+uv run python scripts/gt_review_backup.py snapshot --kind Review --version "Package v0.2.1" --reason "before session 1"
+# after review:
+uv run python scripts/gt_candidate_build.py --prior "ground_truth/review/Ground Truth Review Package v0.2.1.xlsx" --version v0.3
+```
+
+**Contents:**
+- **Change Log:** every Pending row, grouped by incident and correction type, with before and after values, evidence, AI confidence, a recommendation, flags and a suggested accepted value. Then the Auto-verified rows, greyed. These are exactly the columns `gt_candidate_build.py --prior` reads.
+- **Read me:** the review workflow and the traceability checks.
+- **By incident:** a per-incident summary.
+
+**Flags:**
+
+| Flag | Meaning |
+|---|---|
+| `UNCERTAIN` | The AI could not decide |
+| `PRONOUN: P1 violation` | A neutral description is followed by a gendered pronoun. A correction is suggested |
+| `PRONOUN: permitted under P1` | Fine if the qualified identification is visually supported |
+| `HIGH IMPACT` | A scored severity or threat, a taxonomy status, or an item classification |
+
+**Overrides:** `review-overrides-<version>.json` (local, gitignored, because it quotes annotation text) holds the suggested pronoun fixes and case-specific recommendations.
+
+**Current package:** `Ground Truth Review Package v0.2.1.xlsx`, with the P1 flags. The earlier `v0.2` package is superseded and unchanged, and holds no decisions.
 
 ## Backups (local, versioned)
 

@@ -95,7 +95,7 @@ def scripted_answer(gt_p1: dict, *, over_rate: bool) -> str:
 
 
 def plumbing_run(out_root: Path, *, gt_dir: Path = DEFAULT_GT, split: dict | None = None,
-                 now: datetime | None = None) -> dict:
+                 now: datetime | None = None, agent_url: str | None = None) -> dict:
     index = eval_gt_schema.load_frozen_gt_index(gt_dir, allow_candidate=True)
     sheets = ground_truth_freeze.read_frozen(gt_dir, allow_candidate=True)["sheets"]
     split = split or index["split"]
@@ -118,53 +118,72 @@ def plumbing_run(out_root: Path, *, gt_dir: Path = DEFAULT_GT, split: dict | Non
                     "experiment_id": f"plumbing-{name.lower()}", "description": "Stage 0 offline plumbing", "arm": arm,
                     "prompt_id": prompt, "model": MODEL, "split": "dev",
                     "ground_truth": {"dir": str(gt_dir), "allow_candidate": True}, "repeats": 1,
-                    "budget": {"max_p1_calls": len(split["dev"])},
+                    "budget": {"max_p1_calls": len(split["dev"]), "max_p1_tokens": len(split["dev"]) * 21000,
+                               "max_judge_calls": len(split["dev"]) * 20}, "purpose": "experiment",
                     "pipeline": vss_pipeline if arm == "vss" else base_pipeline, "frozen_baseline": False,
                     "final": False, "selection_record": None, "baseline_ref": None, "videos": None}
-            records = {}
             stamp = now or datetime.now(UTC)
+            name_of = {config["experiment_id"]: name for name, config in configs.items()}
+            dev = sorted(split["dev"])
+            usage = {"prompt_tokens": 8708, "completion_tokens": 1190, "total_tokens": 9898}  # 2026-10-02 means
+
+            def factory_for(config):
+                name, item = name_of[config["experiment_id"]], pr.entry(config["prompt_id"], registry)
+                if config["arm"] == "vss" and agent_url:
+                    # The real HTTP path to a local experiment agent (whose model endpoint is a local fake).
+                    from eval_vlm_client import P1Pacer
+
+                    no_wait = P1Pacer(sleep=lambda _seconds: None)  # a local fake has no rate limit to respect
+                    return lambda incident_id, run_id, duration: er.vss_call(
+                        {**config, "pipeline": {**config["pipeline"], "agent_base_url": agent_url}}, item,
+                        incident_id=incident_id, run_id=run_id, duration=30.0, pacer=no_wait)
+
+                def factory(incident_id, run_id, duration):
+                    content = scripted_answer(index["by_incident_id"][incident_id]["p1_shaped"],
+                                              over_rate=name in ("C1", "C2") and dev.index(incident_id) % 3 == 0)
+                    if config["arm"] == "direct-vlm":
+                        return lambda *_: P1Outcome(ChatResult(ok=True, content=content, finish_reason="stop",
+                                                               elapsed_s=10.0, raw={"usage": usage}), [])
+                    echo = {"prompt_id": item["id"], "prompt_sha256": item["sha256"]}
+                    body = {"raw_output": content, "contract_version": contract.contract_version(),
+                            "finish_reason": "stop", "model": MODEL, "experiment": echo, "p1_elapsed_ms": 10000.0,
+                            "usage": usage}
+                    result = er.vss_chat_result(er.VSSResponse(200, body, 12.5), prompt_id=item["id"],
+                                                prompt_sha256=item["sha256"], started_at="s", finished_at="f")
+                    return lambda *_: P1Outcome(result, [])
+
+                return factory
+
+            def run_one(*args, **kwargs):
+                kwargs["incident_only"] = True
+                return eval_run.run_one_video(*args, **kwargs)
+
             with patch.object(matching, "embed_texts", side_effect=fake_embed), \
                     patch.object(eval_gt, "judge_description_similarity", side_effect=fake_judge):
-                for name, config in configs.items():
-                    item = pr.entry(config["prompt_id"], registry)
-                    dev = sorted(split["dev"])
-
-                    def factory(incident_id, run_id, duration, _name=name, _config=config, _item=item, _dev=dev):
-                        content = scripted_answer(index["by_incident_id"][incident_id]["p1_shaped"],
-                                                  over_rate=_name in ("C1", "C2") and _dev.index(incident_id) % 3 == 0)
-                        if _config["arm"] == "direct-vlm":
-                            return lambda *_: P1Outcome(ChatResult(ok=True, content=content, finish_reason="stop",
-                                                                   elapsed_s=10.0), [])
-                        echo = {"prompt_id": _item["id"], "prompt_sha256": _item["sha256"]}
-                        body = {"raw_output": content, "contract_version": contract.contract_version(),
-                                "finish_reason": "stop", "model": MODEL, "experiment": echo, "p1_elapsed_ms": 10000.0,
-                                "usage": {}}
-                        result = er.vss_chat_result(er.VSSResponse(200, body, 12.5), prompt_id=_item["id"],
-                                                    prompt_sha256=_item["sha256"], started_at="s", finished_at="f")
-                        return lambda *_: P1Outcome(result, [])
-
-                    def run_one(*args, **kwargs):
-                        kwargs["incident_only"] = True
-                        return eval_run.run_one_video(*args, **kwargs)
-
-                    out = er.run_experiment(
-                        config, split=split, gt_index=index, store=eval_experiment.frozen_store(sheets),
-                        video_source=lambda i: ("plumbing://no-video", {"r2_object_key": i, "duration_seconds": None}),
-                        call_factory=factory, run_one=run_one, confirm_paid=True, results_root=out_root,
-                        registry=registry, decisions_path=decisions, now=stamp, log=lambda *_: None)
-                    records[name] = json.loads(Path(out["results"]).read_text())
+                out = er.run_stage(
+                    list(configs.values()), split=split, gt_index=index, store=eval_experiment.frozen_store(sheets),
+                    video_source=lambda i: ("plumbing://no-video", {"r2_object_key": i, "duration_seconds": None}),
+                    call_factory_for=factory_for, run_one=run_one, confirm_paid=True, results_root=out_root,
+                    registry=registry, decisions_path=decisions, now=stamp, log=lambda *_: None)
+            records = {name_of[r["experiment_id"]]: r for r in out["records"]}
             checks = {name: experiment_report.verify(Path(out_root / configs[name]["experiment_id"] /
                                                           stamp.strftime("%Y%m%dT%H%M%SZ")), registry=registry,
                                                      split=split) for name in configs}
     report = experiment_report.render(records, title="Stage 0 offline plumbing run (C1–C4, dev, scripted model)")
     report_path = out_root / f"plumbing-report-{stamp.strftime('%Y%m%dT%H%M%SZ')}.md"
     report_path.write_text(report)
-    return {"records": records, "verify": checks, "report": report_path,
+    return {"records": records, "verify": checks, "report": report_path, "stage_dir": out["stage_dir"],
             "comparisons": er.four_way(records)}
 
 
 def main() -> int:
-    result = plumbing_run(er.RESULTS_ROOT)
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--agent-url", help="Send the VSS arm to this local experiment agent (its model endpoint "
+                                            "must be a local fake, e.g. experiments/agent/fake_upstream.py)")
+    args = parser.parse_args()
+    result = plumbing_run(er.RESULTS_ROOT, agent_url=args.agent_url)
     summary = {name: {"videos": len(r["videos"]), "reportable": r["reportable"],
                       "outcomes": r["reliability"]["outcomes"]} for name, r in result["records"].items()}
     severity = {name: block["fields"]["severity_level"]["mean_difference"]

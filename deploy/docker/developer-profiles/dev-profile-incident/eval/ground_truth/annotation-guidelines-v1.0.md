@@ -270,6 +270,7 @@ All descriptions are objective, concise and informative. They preserve meaningfu
   - gender terms ("man", "woman", "boy", "girl") need appearance that makes it reasonably clear; a single cue, such as one garment or hair length, is not enough on its own;
   - with moderate cues write "appears to be …"; without them write "person" plus clothing and other visible features;
   - never infer ethnicity, skin colour, religion, nationality, disability or social status. Colours of clothing and hair, and visible features, are fine.
+  - **Pronouns (P1, clarification of A7):** a gendered pronoun ("he", "her") may follow a visually supported gender identification, including a qualified one ("appears to be a man"). Where gender cannot be determined and the description is gender-neutral ("person", a role word), later pronouns referring to that person must be neutral too ("they", "them", "their").
 - Refer to other items by role or appearance in free text. Ids appear only in structured fields.
 - No speculation words as fact ("clearly intends to", "the owner"). An uncertain attribute is written as uncertain (§8).
 - **Partially visible objects:** describe the visible part ("long dark object, partly hidden by the body"). Do not complete it from imagination.
@@ -336,6 +337,7 @@ Decisions on the interpretations raised by this version, all approved on 2026-10
 | A11 | Crowds that cannot be told apart | Distinguishable people listed, the rest in the description | Approved | None |
 | A12 | Responders' equipment | Hand-held test applies as to any object; threat rated separately (§4.1 rule 3, §6) | Approved (revised wording) | Explosion002 I2 extinguisher and Explosion004 I2 hose checked against the video: 0–2 rows become assets or are dropped |
 | A13 | Where severity reasons, notes and uncertainty live | Optional, unscored note fields in ground-truth v1.0 (format with PR 4/5) | Approved | None (adds fields) |
+| P1 | Pronouns after a qualified or neutral description | Gendered pronouns only after a visually supported (possibly qualified) gender identification; neutral pronouns for a person described neutrally (§7) | Approved 2026-10-27 (clarifies A7) | 4 proposed rewrites corrected; 18 hedged rewrites keep their pronouns if the hedge is confirmed |
 | A14 | Primary type when a video contains several types | Centrality (event actively under way for more than half the window; passive aftermath not counted), then severity, then the initiating event (§2.1.1) | Approved | None found (no clip mentions two types); applied during review |
 
 **Open for PR 1B (from A8):** how `out_of_taxonomy` clips are scored or excluded; PR 5 applies it to the frozen ground truth.
@@ -348,3 +350,4 @@ Decisions on the interpretations raised by this version, all approved on 2026-10
 | v1.0 (draft, revision 2) | 2026-10-27 | A1, A2, A4, A5, A6, A9, A10, A10b, A11, A13 approved provisionally; A3, A7, A8, A12, A14 rewritten as requested: explosives by capability and context, demographic words only with visual support, incidental versus primary violence and out-of-taxonomy handling, responders' equipment under the hand-held rule, primary incident by most serious harm with a fixed tie-break |
 | v1.0 (draft, revision 3) | 2026-10-27 | A3, A7, A12 approved as revised. A8: ordinary burglary/robbery/theft meanings separated from the project's `burglary` = property crime at premises convention. A14: centrality first (more than half the window), severity as tie-break, then initiating event, with a comparison against severity-first |
 | v1.0 | 2026-10-27 | Approved. A8 and A14 approved as revised; A14 clarified: passive aftermath (lingering smoke, stationary wreckage, an inactive fire scene) does not count towards an event's active duration |
+| v1.0 (clarification P1) | 2026-10-27 | Pronoun policy P1 added to §7 and the decision record. It clarifies A7 and changes no scale, field or definition, so the version stays v1.0 |

@@ -2,7 +2,9 @@
   "arm": "vss",
   "baseline_ref": "direct-vlm-baseline",
   "budget": {
-    "max_p1_calls": 50
+    "max_p1_calls": 50,
+    "max_p1_tokens": 1050000,
+    "max_judge_calls": 400
   },
   "description": "Stage 1: initial VSS baseline (C2 on dev) through a local agent with no Supabase or R2 env (D14 b).",
   "experiment_id": "vss-baseline",
@@ -17,9 +19,10 @@
     "profile": "accuracy",
     "skip_rp1": true,
     "skip_crops": true,
-    "agent_base_url": "http://127.0.0.1:8000"
+    "agent_base_url": "http://127.0.0.1:8765"
   },
   "prompt_id": "p1-v4-base",
+  "purpose": "experiment",
   "repeats": 2,
   "selection_record": null,
   "split": "dev",

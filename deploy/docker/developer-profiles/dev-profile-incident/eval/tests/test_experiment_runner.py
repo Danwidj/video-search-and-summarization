@@ -72,7 +72,8 @@ def decisions(tmp_path):
 def _config(**overrides):
     config = {"experiment_id": "plumb-c1", "description": "", "arm": "direct-vlm", "prompt_id": pr.BASE_ID,
               "model": MODEL, "split": "dev", "ground_truth": {"dir": "gt", "allow_candidate": False}, "repeats": 1,
-              "budget": {"max_p1_calls": 10}, "pipeline": {"profile": "accuracy", "skip_rp1": True, "skip_crops": True,
+              "budget": {"max_p1_calls": 10, "max_p1_tokens": 210000, "max_judge_calls": 100}, "purpose": "experiment",
+              "pipeline": {"profile": "accuracy", "skip_rp1": True, "skip_crops": True,
                                                             "agent_base_url": None},
               "frozen_baseline": False, "final": False, "selection_record": None, "baseline_ref": None, "videos": None}
     for key, value in overrides.items():

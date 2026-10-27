@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Minimal local vss-agent for the prompt experiments (plan D14 (b)): only POST /api/v1/incidents/{id}/analyze
+# with the incident_report_gen tool. No VST, no RTVI, no tracing. Start it with no Supabase and no R2 settings
+# (see README.md), so nothing is persisted and no evidence image is uploaded.
+general:
+  use_uvloop: true
+  front_end:
+    _type: vss_fastapi
+    runner_class: vss_agents.api.custom_fastapi_worker.CustomFastApiFrontEndWorker
+    object_store: local_object_store
+    # Required by the front end to register its video routes; the experiment never calls them, so the
+    # URLs point at a closed local port on purpose.
+    streaming_ingest:
+      vst_internal_url: http://127.0.0.1:9
+      vst_external_url: http://127.0.0.1:9
+
+object_stores:
+  local_object_store:
+    _type: in_memory
+
+functions:
+  incident_report_gen:
+    _type: incident_report_gen
+    vlm_base_url: ${VLM_BASE_URL}
+    vlm_model_name: ${VLM_NAME}
+    rp1_base_url: ${LLM_BASE_URL}
+
+workflow:
+  _type: incident_report_gen
+  vlm_base_url: ${VLM_BASE_URL}
+  vlm_model_name: ${VLM_NAME}
+  rp1_base_url: ${LLM_BASE_URL}

@@ -2,6 +2,30 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Experiment controls approved: D10 order and repeats, D15 disclosure, D11 hard caps (dollar limits provisional), Stage 0 as a pilot only
+- **Decision:**
+  - **D10 (approved):** 2 repeats per configuration in Stages 1–3. A stage runs its configurations interleaved per video, the first rotating by position, in a video order shuffled per repeat with `random.Random(20261027 + repeat)` (`experiment_runner.run_stage`, `schedule`).
+  - **D15 (approved):** the 55-clip test split is kept, and every prior exposure is disclosed (decision record). The 52-clip subset excludes only the clips named in recorded pilots and is never called unseen.
+  - **D11:** every config carries hard caps on P1 requests, measured P1 tokens and judge requests.
+    - The runner refuses a plan that cannot fit. Before each call it stops if the next could break a cap (leaving room for a 21,000-token call), and it stops when more than 25% of attempts are rate-limited.
+    - A stopped stage keeps its partial results as incomplete. Every call is logged to `cost-log.jsonl`.
+    - Costs use `eval/experiments/pricing.json`, which is **provisional** ($10 per M tokens assumed) until Switchyard pricing or quota is confirmed.
+  - **Stage 0:** pilot configs (`purpose: pilot`) are dev-only and may use the candidate ground truth. They are never reportable and never feed selection (`experiment_selection.select_d9` refuses them), and their report shows no accuracy.
+    - The VSS arm runs on a local experiment agent started by `eval/experiments/agent/start-experiment-agent.sh` with no Supabase or R2 settings.
+    - The crop pilot is removed: without an R2 store the agent makes no box calls, so it cannot measure crop cost (a decision is open).
+- **Why:** cost and order must be controlled by code, not by care. The pilot must not leak into selection or reported accuracy.
+- **Not decided here:** D9 v2 (proposed in the decision record, pre-registered only on approval); the Switchyard price; the crop-pilot option.
+- **Links:** [`mvp2/experiment-decision-record.md`](mvp2/experiment-decision-record.md); [`../eval/experiments/README.md`](../eval/experiments/README.md).
+
+### 2026-10-27: Pronoun policy P1 for ground-truth descriptions
+- **Decision:** a gendered pronoun may follow a visually supported, qualified gender identification ("appears to be a man"). Where gender cannot be determined and the description is gender-neutral, later pronouns must be neutral too. It is added to the annotation guidelines §7 as a clarification of A7 (v1.0 unchanged).
+- **Effect on the review:**
+  - **Definite violations:** 4 of the 98 Pending proposals (CL-0043, CL-0046, CL-0054, CL-0056) carry a suggested neutral-pronoun correction.
+  - **Permitted:** 18 hedged rewrites keep their pronouns, provided the reviewer confirms the hedge is visually supported.
+  - **Still Pending:** all 98 entries.
+- **Tooling:** `eval/scripts/gt_review_package.py` builds a new review package (never overwriting) with the P1 flags. Suggested fixes come from a local, gitignored overrides file because they quote annotation text.
+- **Links:** [`../eval/ground_truth/annotation-guidelines-v1.0.md`](../eval/ground_truth/annotation-guidelines-v1.0.md); [`../eval/ground_truth/review/README.md`](../eval/ground_truth/review/README.md).
+
 ### 2026-10-27: Experiment reports are built from saved results only; selection is guarded to pre-registered rules on dev
 - **Decision:** PR 7 adds the experiment tooling, with no paid runs.
   - **Reports and checks:** `eval/experiment_report.py` and `eval_experiment.py report|verify|budget`, plus `scripts/eval_experiment_plumbing.py`.
