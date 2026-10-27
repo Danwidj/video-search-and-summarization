@@ -189,13 +189,15 @@ def test_offline_and_database_scoring_agree_on_failures(incident_db):
 
 
 def _video(incident_id, *, type_pass=True, severity=(3, 3), description_pass=True, outcome="scored", counts=None,
-           instruments=None):
+           instruments=None, out_of_taxonomy=False, nearest=None, predicted_type="assault"):
     return {
         "filename": f"{incident_id}.mp4", "incident_id": incident_id, "outcome": outcome,
+        "ground_truth": {"incident": {"type": nearest or "assault", "out_of_taxonomy": out_of_taxonomy,
+                                      "nearest_type": nearest}},
         "p1_raw": {"ok": outcome not in xs.NO_MODEL_OUTPUT, "contract_ok": True, "core_ok": True},
         "rp1_report": {"ok": True},
         "incident_field_scores": {
-            "type": {"pass": type_pass},
+            "type": {"pass": type_pass, "predicted": predicted_type},
             "severity_level": {"expected": severity[0], "predicted": severity[1], "pass": severity[0] == severity[1]},
             "start_timestamp": {"expected": 1, "predicted": 2, "pass": True},
             "end_timestamp": {"expected": 9, "predicted": 9, "pass": True},
@@ -278,3 +280,100 @@ def test_aggregate_is_reproducible(tmp_path):
     assert first == second
     assert first["methodology_version"] == "evaluation-methodology-v1.0"
     assert first["overall"]["field_intervals"]["type"]["ci95"] is not None
+
+
+# --- Option C: confirmed out-of-taxonomy clips (ground truth) leave type accuracy only ----
+
+
+@pytest.mark.parametrize(("flag", "nearest", "expected"), [
+    ("TRUE", "Animal", {"out_of_taxonomy": True, "nearest_type": "animal attack"}),
+    (True, "Explosion", {"out_of_taxonomy": True, "nearest_type": "explosion"}),
+    ("yes", None, {"out_of_taxonomy": True, "nearest_type": None}),
+    (None, "Explosion", {"out_of_taxonomy": False, "nearest_type": None}),
+    ("", None, {"out_of_taxonomy": False, "nearest_type": None}),
+])
+def test_out_of_taxonomy_status_comes_from_the_ground_truth_columns(flag, nearest, expected):
+    import eval_gt_schema
+
+    assert eval_gt_schema.out_of_taxonomy_fields({"Out_Of_Taxonomy": flag, "Nearest_Type": nearest}) == expected
+    # The review workbook's candidate flag is not ground truth.
+    assert eval_gt_schema.out_of_taxonomy_fields({"review_flags": "OUT_OF_TAXONOMY_CANDIDATE"})["out_of_taxonomy"] is False
+
+
+def _mixed_videos():
+    return [
+        _video("A1", type_pass=True),
+        _video("A2", type_pass=False),
+        _video("X1", type_pass=False, out_of_taxonomy=True, nearest="explosion", predicted_type="explosion",
+               severity=(3, 3)),
+        _video("X2", type_pass=False, out_of_taxonomy=True, nearest="explosion", predicted_type="burglary",
+               severity=(2, 4)),
+    ]
+
+
+def test_out_of_taxonomy_clips_leave_type_accuracy_only():
+    intervals = xs.field_intervals(_mixed_videos())
+    assert (intervals["type"]["n"], intervals["type"]["out_of_taxonomy"], intervals["type"]["accuracy"]) == (2, 2, 0.5)
+    assert intervals["severity_level"]["n"] == 4 and intervals["severity_level"]["out_of_taxonomy"] == 0
+    assert intervals["description"]["n"] == 4
+    agg = eval_aggregate.aggregate_one({"videos": _mixed_videos()})
+    assert agg["incident_field_accuracy"]["type"] == 50.0
+    assert agg["incident_field_n"]["type"] == 2 and agg["incident_field_n"]["severity_level"] == 4
+    summary = agg["out_of_taxonomy"]
+    assert summary["count"] == 2 and summary["incident_ids"] == ["X1", "X2"]
+    assert summary["nearest_type_agreement"] == {"agree": 1, "n": 2}
+
+
+def test_out_of_taxonomy_status_does_not_depend_on_the_prediction():
+    videos = _mixed_videos()
+    flipped = _mixed_videos()
+    for video in flipped:
+        if video["incident_id"].startswith("X"):
+            # A different prediction, now "correct": the clip must still be excluded from type accuracy.
+            video["incident_field_scores"]["type"].update({"predicted": "road accident", "pass": True})
+    assert xs.field_intervals(videos)["type"] == xs.field_intervals(flipped)["type"]
+    assert [xs.is_out_of_taxonomy(v) for v in videos] == [xs.is_out_of_taxonomy(v) for v in flipped]
+
+
+def test_out_of_taxonomy_clips_get_their_own_breakdown_row(tmp_path):
+    path = _results_file(tmp_path / "explosion__m.json", "evaluation-methodology-v1.0", _mixed_videos())
+    summary = eval_aggregate.summarize([path])
+    rows = summary["by_category_and_model"]
+    assert rows["Assault"]["m"]["num_videos"] == 2
+    assert rows[eval_aggregate.OUT_OF_TAXONOMY_CATEGORY]["m"]["num_videos"] == 2
+    assert rows[eval_aggregate.OUT_OF_TAXONOMY_CATEGORY]["m"]["incident_field_accuracy"]["type"] is None
+    overall = summary["overall"]
+    assert overall["num_videos"] == 4
+    assert overall["incident_field_n"]["type"] == 2 and overall["incident_field_n"]["severity_level"] == 4
+    assert overall["incident_field_accuracy"]["type"] == 50.0
+    assert overall["out_of_taxonomy"]["incident_ids"] == ["X1", "X2"]
+
+
+def test_pooled_accuracy_weights_each_field_by_its_eligible_videos():
+    # Cell A: 1 eligible type (pass), 3 videos. Cell B: 3 eligible types (all fail), 3 videos.
+    a = eval_aggregate.aggregate_one({"videos": [_video("A1"), _video("X1", out_of_taxonomy=True),
+                                                 _video("X2", out_of_taxonomy=True)]})
+    b = eval_aggregate.aggregate_one({"videos": [_video("B1", type_pass=False), _video("B2", type_pass=False),
+                                                 _video("B3", type_pass=False)]})
+    pooled = eval_aggregate.pool_aggregates([a, b])
+    assert pooled["incident_field_accuracy"]["type"] == 25.0  # 1 of 4 eligible; per-video weights would give 50.0
+    assert pooled["incident_field_n"]["type"] == 4 and pooled["incident_field_n"]["severity_level"] == 6
+
+
+def test_request_failures_and_invalid_outputs_are_reported_apart():
+    videos = [_video("A1"), _video("A2", type_pass=False, outcome="contract_invalid"),
+              _video("A3", outcome="timeout"), _video("A4", outcome="rate_limited")]
+    report = xs.reliability(videos)
+    assert report["attempted"] == 4 and report["no_model_output"] == 2 and report["invalid_model_output"] == 1
+    assert (report["model_output_rate"], report["valid_output_rate"]) == (0.5, 0.25)
+    intervals = xs.field_intervals(videos)["type"]
+    assert intervals["accuracy"] == 0.5  # conditional: over the 2 model outputs (the invalid one is a miss)
+    assert intervals["end_to_end"]["n"] == 4 and intervals["end_to_end"]["accuracy"] == 0.25
+
+
+def test_paired_comparison_leaves_out_of_taxonomy_types_out():
+    a = _mixed_videos()
+    b = _mixed_videos()
+    b[1]["incident_field_scores"]["type"]["pass"] = True
+    diff = xs.paired_difference(a, b, "type")
+    assert diff["n_pairs"] == 2 and diff["mean_difference"] == 0.5

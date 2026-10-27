@@ -35,20 +35,40 @@ INCIDENT_FIELDS = ("type", "severity_level", "start_timestamp", "end_timestamp",
 NO_MODEL_OUTPUT = ("timeout", "rate_limited", "http_error")
 
 
+INVALID_MODEL_OUTPUT = ("contract_invalid", "parse_failure")
+
+
 def has_model_output(video: dict) -> bool:
     return video.get("outcome") not in NO_MODEL_OUTPUT
+
+
+def is_out_of_taxonomy(video: dict) -> bool:
+    """Confirmed out-of-taxonomy status, from the video's ground truth only (never the prediction)."""
+    return bool(((video.get("ground_truth") or {}).get("incident") or {}).get("out_of_taxonomy"))
+
+
+def field_status(video: dict, field: str) -> tuple[str, float | None]:
+    """Why a field does or does not count for one video, and its value when it does.
+
+    ``("out_of_taxonomy", None)`` for the type of a confirmed out-of-taxonomy clip (not an
+    eligible field); ``("no_model_output", None)`` after a request failure; ``("unscored", None)``
+    when the scorer could not score it; otherwise ``("scored", 1.0 | 0.0)``.
+    """
+    if field == "type" and is_out_of_taxonomy(video):
+        return "out_of_taxonomy", None
+    if not has_model_output(video):
+        return "no_model_output", None
+    entry = (video.get("incident_field_scores") or {}).get(field) or {}
+    passed = entry.get("pass")
+    if passed is None:
+        return "unscored", None
+    return "scored", 1.0 if passed else 0.0
 SEVERITY_LEVELS = (1, 2, 3, 4, 5)
 
 
 def field_value(video: dict, field: str) -> float | None:
-    """1.0 pass, 0.0 fail, ``None`` unscored or no model output, for one incident field of one video."""
-    if not has_model_output(video):
-        return None
-    entry = (video.get("incident_field_scores") or {}).get(field) or {}
-    passed = entry.get("pass")
-    if passed is None:
-        return None
-    return 1.0 if passed else 0.0
+    """1.0 pass, 0.0 fail, or ``None`` when the field does not count for this video (see ``field_status``)."""
+    return field_status(video, field)[1]
 
 
 def _interval(values: list[float]) -> list[float] | None:
@@ -58,20 +78,75 @@ def _interval(values: list[float]) -> list[float] | None:
 
 
 def field_intervals(videos: Iterable[dict]) -> dict[str, dict]:
-    """Per incident field: scored videos, excluded videos (by reason), accuracy and its 95% interval."""
+    """Per incident field: eligible videos by status, conditional and end-to-end accuracy with 95% intervals.
+
+    - **Conditional accuracy** (``accuracy``): over videos with a model output and a scored value.
+      An invalid model output is scored as a miss and stays in.
+    - **End-to-end accuracy** (``end_to_end``): over every attempted video for which the field is
+      eligible, with a request failure (no model output) counted as a miss.
+    - The type of a confirmed out-of-taxonomy clip is not eligible: it is left out of both and
+      counted (``out_of_taxonomy``). Unscored values are left out of both and counted.
+    """
     videos = list(videos)
-    with_output = [video for video in videos if has_model_output(video)]
     out = {}
     for field in INCIDENT_FIELDS:
-        values = [v for v in (field_value(video, field) for video in with_output) if v is not None]
+        statuses = [field_status(video, field) for video in videos]
+        counts = {s: sum(1 for status, _ in statuses if status == s)
+                  for s in ("scored", "no_model_output", "unscored", "out_of_taxonomy")}
+        conditional = [v for status, v in statuses if status == "scored"]
+        end_to_end = conditional + [0.0] * counts["no_model_output"]
         out[field] = {
-            "n": len(values),
-            "no_model_output": len(videos) - len(with_output),
-            "unscored": sum(1 for video in with_output if field_value(video, field) is None),
-            "accuracy": round(sum(values) / len(values), 4) if values else None,
-            "ci95": _interval(values),
+            "n": counts["scored"],
+            "no_model_output": counts["no_model_output"],
+            "unscored": counts["unscored"],
+            "out_of_taxonomy": counts["out_of_taxonomy"],
+            "accuracy": round(sum(conditional) / len(conditional), 4) if conditional else None,
+            "ci95": _interval(conditional),
+            "end_to_end": {
+                "n": len(end_to_end),
+                "accuracy": round(sum(end_to_end) / len(end_to_end), 4) if end_to_end else None,
+                "ci95": _interval(end_to_end),
+            },
         }
     return out
+
+
+def reliability(videos: Iterable[dict]) -> dict:
+    """Outcome counts and rates, so end-to-end reliability is reported apart from conditional accuracy."""
+    videos = list(videos)
+    outcomes: dict[str, int] = {}
+    for video in videos:
+        outcome = video.get("outcome") or "unknown"
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
+    attempted = len(videos)
+    no_output = sum(outcomes.get(o, 0) for o in NO_MODEL_OUTPUT)
+    invalid = sum(outcomes.get(o, 0) for o in INVALID_MODEL_OUTPUT)
+    rate = (lambda k: round(k / attempted, 4) if attempted else None)  # noqa: E731
+    return {
+        "attempted": attempted,
+        "outcomes": dict(sorted(outcomes.items())),
+        "no_model_output": no_output,
+        "invalid_model_output": invalid,
+        "model_output_rate": rate(attempted - no_output),
+        "valid_output_rate": rate(attempted - no_output - invalid),
+    }
+
+
+def out_of_taxonomy_summary(videos: Iterable[dict]) -> dict:
+    """The confirmed out-of-taxonomy clips (from the ground truth) and, secondarily, nearest-type agreement."""
+    clips = [video for video in videos if is_out_of_taxonomy(video)]
+    agree = n = 0
+    for video in clips:
+        nearest = ((video.get("ground_truth") or {}).get("incident") or {}).get("nearest_type")
+        predicted = (((video.get("incident_field_scores") or {}).get("type") or {}).get("predicted"))
+        if nearest and has_model_output(video) and predicted:
+            n += 1
+            agree += str(predicted).strip().lower() == nearest
+    return {
+        "count": len(clips),
+        "incident_ids": sorted({video.get("incident_id") for video in clips}),
+        "nearest_type_agreement": {"agree": agree, "n": n},
+    }
 
 
 def _as_level(value) -> int | None:
@@ -92,7 +167,7 @@ def severity_analysis(videos: Iterable[dict]) -> dict:
     exact = within_one = n = 0
     errors = []
     for video in videos:
-        if not has_model_output(video):
+        if field_status(video, "severity_level")[0] != "scored":
             continue
         entry = (video.get("incident_field_scores") or {}).get("severity_level") or {}
         expected, predicted = _as_level(entry.get("expected")), _as_level(entry.get("predicted"))

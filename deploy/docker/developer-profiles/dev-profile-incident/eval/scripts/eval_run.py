@@ -279,6 +279,9 @@ def run_one_video(
     judge_calls = eval_gt.JUDGE_HTTP_CALLS - judge_calls_before
     check_judge_ok(eval_result)
     check_scoring_complete(eval_result)
+    if (gt_p1_shaped.get("incident") or {}).get("out_of_taxonomy"):
+        # Ground-truth status, independent of the prediction: the type is not an eligible field.
+        eval_result.fields.setdefault("type", {})["excluded"] = "out_of_taxonomy"
 
     if incident_only:
         rp1_report = {

@@ -18,7 +18,13 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   The aggregate adds per-video 95% intervals, severity within ±1, bias and confusion, threat within ±1 and holder accuracy. It refuses to pool methodology versions; earlier results are labelled legacy.
 - **Why:** before this, an embedder outage scored every item as a miss and an item-judge outage as a fail, the judge model came from an unchecked environment variable with no temperature, and results with different instruments could be pooled. These would silently move scores between prompt versions, which the experiments must compare.
 - **Rejected:** a new judge prompt (it would break comparability with every earlier score); continuing a run past scoring errors (a partial result is easy to misread); counting request failures as misses (they measure the endpoint, not the model).
-- **Open:** how clips outside the five types are scored (methodology §6). The recommendation is to exclude them from type accuracy only; this awaits approval and is not implemented.
+- **Clips outside the five types (Option C, approved 2026-10-27):**
+  - status comes only from the ground truth's `Out_Of_Taxonomy` and `Nearest_Type` columns, never the prediction or the review workbook's candidate flag;
+  - such a clip leaves type accuracy only, is counted and listed, and nearest-type agreement is reported as a secondary figure;
+  - every other field is scored;
+  - the clips form their own breakdown row, `Outside the five types`.
+
+  Denominators are per eligible field, and pooling weights each field by its own count. Request failures and invalid outputs are reported apart, as conditional accuracy and end-to-end accuracy plus reliability rates.
 - **Links:** [`../eval/methodology/evaluation-methodology-v1.0.md`](../eval/methodology/evaluation-methodology-v1.0.md); [`../eval/extraction_stats.py`](../eval/extraction_stats.py); [`../eval/tests/test_methodology.py`](../eval/tests/test_methodology.py).
 
 ### 2026-10-27: Annotation guidelines v1.0 are the approved definition of a correct annotation
