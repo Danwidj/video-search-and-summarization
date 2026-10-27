@@ -1,6 +1,6 @@
 # Annotation Guidelines v1.0
 
-> **Status: draft for approval (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record): ten are approved (provisionally, pending approval of the final wording); A3, A7, A8, A12 and A14 carry revised wording that awaits approval.
+> **Status: draft for approval (2026-10-27).** Version id `annotation-guidelines-v1.0`. Approved decisions D1 and D2 of the [ground-truth plan](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) apply: the severity and threat scales are unchanged, and this document adds decision rules, tie-breaks, category examples, significance and classification rules, uncertainty handling and description standards. The interpretations A1–A14 are recorded in [§11](#11-decision-record): A1–A7 and A9–A13 are approved (provisionally until this version's final wording is approved); A8 and A14 carry final wording that awaits approval.
 
 This document defines what a correct incident annotation is. It is the shared reference for:
 - human annotators and reviewers of the ground truth;
@@ -46,39 +46,65 @@ Exactly one of the five canonical types (lowercase, as in `incident-contract-v4`
 | `assault` | Deliberate physical aggression by one or more people against a person | punching, kicking, striking with an object, armed attack, group attacks; legacy `fighting` | verbal arguments with no physical contact | `Assault` (`Fighting` is legacy) |
 | `animal attack` | An animal biting, charging, mauling or otherwise physically attacking a person or another animal | dog bites, livestock charges, animal-on-animal attacks | an animal merely present or passing (see §11, A9) | `Animal` (legacy) |
 
-#### 2.1.1 Primary incident when a video contains more than one type (A14, revised wording)
+#### 2.1.1 Primary incident when a video contains more than one type (A14)
 
-1. List the events in the clip that each match one of the five types.
-2. **The primary incident is the event with the most serious observable harm or danger.** Rate each event alone with the severity rules of §2.3; the highest level wins.
-3. **Tie:** when two events reach the same level, the primary incident is the one the other follows from (the initiating event). The tie-break is fixed so that equal cases are always classified the same way.
-4. The other events are part of the same incident. They appear in the description, and their people and objects are annotated as usual. The incident window covers the connected sequence, from the start of the first event to the end of the last consequence (§2.2), whichever event is primary.
+1. **List the events** in the clip that each match one of the five types, after applying §2.1.2 (incidental force is part of a property crime, not a separate assault).
+2. **Centrality first.** For each event, count the whole seconds of the incident window (§2.2) during which that event is observably under way. Apply the start and end rules to the event on its own. Consequences that the type's definition includes count towards their event: an explosion's fire, a collision until the vehicles and people come to rest, a fight until the blows stop. **The event under way for more than half of the incident window is the primary incident.**
+3. **Severity breaks a tie.** If no event exceeds half, or two overlapping events both do, the event with the higher severity (§2.3, rated alone) is primary.
+4. **Initiating event last.** If the severities are also equal, the event the others follow from is primary. Every case is therefore decided the same way.
+5. **The whole incident is still annotated:** one window covering the connected sequence, one severity for the whole incident, and every entity, instrument and asset of every event. Only the type depends on this rule.
 
-| Clip | Events (rated alone) | Primary type |
+| Clip (incident window) | Event shares of the window | Severity alone | Primary type |
+|---|---|---|---|
+| Car hits a car (2 s); its fuel tank explodes and the fireball engulfs two bystanders, burning for 10 s (window 12 s) | collision 2/12, explosion 10/12 | 3 vs 4 | `explosion` (more than half) |
+| Multi-car pile-up over 20 s; one car flashes into flame for 3 s at the end, no one near (window 23 s) | collision 20/23, flash fire 3/23 | 3 vs 2 | `road accident` (more than half) |
+| Car hits a wall (2 s); the car then burns for 40 s with no one near (window 42 s) | collision 2/42, fire 40/42 | 3 vs 2 | `explosion` if the fire began with a sudden ignition (§2.1); otherwise `road accident`, the fire being a consequence outside the five types |
+| Pedestrian struck by a car (2 s); the driver then fights the pedestrian's companion for 25 s (window 27 s) | collision 2/27, assault 25/27 | 3 vs 3 | `assault` (more than half) |
+| Intruder forces an ATM for 30 s; a guard arrives and is struck once (window 32 s) | burglary 32/32, the strike is incidental (§2.1.2) | — | `burglary` |
+| Intruder forces a door (10 s), then beats the resident for 20 s while the house is searched (window 30 s) | burglary 30/30 and assault 20/30 overlap, both more than half | 3 vs 4 | `assault` (severity breaks the overlap) |
+| Fight (15 s) during which a thrown petrol bomb flares around the victim for 15 s (window 15 s) | assault 15/15 and explosion 15/15 overlap | 4 vs 4 | `assault` (equal severity → initiating event) |
+
+**Why centrality first (decided over "severity first"):**
+- **Reproducibility.** Centrality rests on time spans, which annotators already mark. Severity rests on judgments between adjacent levels. In the 2026-10-02 benchmark, models' start and end times were within ±5 s for 30–81% of videos, but their severity was exact for only 22–27%, so severity is this project's least stable field. Human agreement is measured in PR 4 (κ). Severity-first would also make the type flip whenever a severity rating moves by one level, and with two events often rated the same, it would fall back on chronology for a large share of cases.
+- **Fit.** "More than half the sequence" matches what the clip is about. A brief, severe event inside a long incident of another kind is still recorded fully in the severity, description and items.
+- **Known limit.** A long, low-harm consequence (a car burning for 40 s after a 2 s crash) can outweigh a short, severe cause. The table shows the case and how §2.1's explosion boundary settles it. Review notes (A13) record such cases.
+
+#### 2.1.2 Burglary, robbery, force and clips outside the five types (A8)
+
+**Ordinary meanings.** These are the everyday distinctions, which the five-type taxonomy does not draw:
+- **burglary:** entering a building, structure or vehicle unlawfully to steal (or commit another crime), usually without confronting anyone;
+- **robbery:** taking property from a person, or in their presence, by force or the threat of force;
+- **theft (stealing):** taking property without unlawful entry and without force, for example shoplifting or an unforced bag snatch.
+
+**Project convention for the `burglary` label (intentional; adopted with this version).** `incident-contract-v4` has five types and no robbery or theft type. In this project the `burglary` label therefore means **property crime at premises**:
+1. burglary in the ordinary sense;
+2. theft from premises, machines or vehicles (an ATM, a vending machine, a shop counter, a parked car);
+3. robbery at premises, when the force or threat is incidental (see below).
+
+It does **not** include robbery or theft from a person away from premises. Reasons:
+- the five types are fixed by the contract;
+- these cases share the observable pattern that P1 must recognise: premises, entry or access, and property taken;
+- splitting them would need a contract and taxonomy change, which is out of scope.
+
+The source dataset names the classes separately: UCF-Crime has Burglary, Robbery, Stealing and Shoplifting. Every burglary clip in this dataset (18) comes from its Burglary class, by filename, so the convention changes no current label. It governs borderline and newly uploaded clips. Reports describe the category as "burglary (property crime at premises)" wherever a reader could take it in the legal sense.
+
+**Incidental and primary violence.** Force or threat used only to carry out or escape a property crime is **incidental**: pushing past someone, grabbing an arm, a single strike to get free, or brandishing a weapon to obtain property. It does not make the incident an assault. It is annotated as part of the incident: the threatened person is an entity, the weapon is an instrument with its threat level, and severity rises by the usual rules (an armed confrontation supports level 4). Violence that goes beyond this (repeated or sustained blows, an injury beyond what the theft needs, or an attack that continues after the property is taken) is a separate assault event, and the primary-incident rule (§2.1.1) decides the type.
+
+| Situation | Ordinary term | Type in this project |
 |---|---|---|
-| A car hits another; its fuel tank explodes and the fireball reaches two bystanders | collision 3, explosion 4 | `explosion` (higher) |
-| A car hits a wall; a small engine fire starts and the driver puts it out | collision 3, fire 1–2 | `road accident` (higher) |
-| Two cars collide hard; one catches fire in a flash; no one is near the fire | collision 3, flash fire 3 | `road accident` (tie → initiating event) |
-| An intruder forces an ATM, then repeatedly beats a guard who arrives | burglary 3, assault 4 | `assault` (higher; see §2.1.2) |
-| A dog chases a cyclist, who falls into the road and is hit by a car | animal attack 2, road accident 4 | `road accident` (higher) |
-
-#### 2.1.2 Force, robbery and clips outside the five types (A8, revised wording)
-
-**Incidental and primary violence.** Violence used only to carry out or escape a property crime is **incidental**: pushing past someone, grabbing an arm, a single strike to get free, or brandishing a weapon to obtain property. It does not change the type. It is annotated as part of the incident: the threatened person is an entity, the weapon is an instrument with its threat level, and severity rises by the usual rules (an armed confrontation supports level 4). Violence is **primary** when it is the main harm or content of the incident: repeated or sustained blows, an injury beyond what the theft needs, or an attack that goes on after the property is taken. The primary-incident rule (§2.1.1) then decides the type.
-
-| Situation | Type |
-|---|---|
-| Shop hold-up: the robber threatens the cashier with a knife, takes the cash and leaves | `burglary` (incidental threat; knife threat 4; severity 4 for the armed confrontation) |
-| House intruder shoves the resident aside and runs out with a bag | `burglary` (incidental force) |
-| Intruder beats a resident to the ground and keeps kicking them while others search the house | `assault` (violence is primary: assault 4 against burglary 3) |
-| Mutual fight between two people | `assault` |
-| Vehicle deliberately driven at people | `assault` |
-| Bag snatched from a person in the street, no further violence | outside the five types (no premises; violence not primary) |
-| Street robbery in which the victim is beaten | `assault` |
+| Night-time break-in through a shop door, no one present | burglary | `burglary` |
+| ATM or vending machine forced open | burglary / theft | `burglary` |
+| Shop hold-up: knife pointed at the cashier, cash taken, robber leaves | robbery | `burglary` (incidental threat; knife threat 4; severity 4) |
+| House intruder shoves the resident aside and runs out with a bag | robbery | `burglary` (incidental force) |
+| Intruder beats a resident for most of the clip while the house is searched | robbery with assault | §2.1.1 decides (the overlap example there gives `assault`) |
+| Bag snatched from a person in the street, no further violence | theft / robbery | outside the five types |
+| Street robbery in which the victim is beaten for most of the clip | robbery with assault | `assault` |
+| Mutual fight; vehicle deliberately driven at people | — | `assault` |
 
 **Clips outside the five types.** When the primary incident matches none of the five types (for example a street theft without significant violence, a fire with no sudden ignition, a medical collapse, vandalism without entry), it is **not forced into the nearest type**:
 - the clip is marked `out_of_taxonomy`, with the nearest type and a one-sentence reason recorded in the ground truth's note fields (A13);
 - everything else is annotated normally (window, severity, entities, instruments, assets, description);
-- how such clips are scored, or whether they are excluded from the reference set, is decided by the evaluation methodology (PR 1B) and the frozen ground-truth version (PR 5), not by this document.
+- **open decision for PR 1B:** how such clips are scored, or whether they are excluded from the reference set (with PR 5 for the frozen version). This document does not decide it.
 
 ### 2.2 Start and end timestamps
 
@@ -297,25 +323,26 @@ Decisions on the interpretations raised by this draft (2026-10-27). **Approved**
 |---|---|---|---|---|
 | A1 | Can a vehicle be an instrument? | Never; vehicles are assets (hand-held rule) | Approved | Burglary004 I1 "suv" becomes an asset (1 row) |
 | A2 | Is an unseen driver or occupant an entity? | No; only visible beings | Approved | None (the 9 incidents without entities stay so) |
-| A3 | Threat level of explosive devices | Plausible destructive capability and observed context; one person in range can support 5 (§4.1 rule 4) | Revised, awaiting approval | Burglary010 I4 "explosives" (now 3) re-rated after viewing: 0–1 row |
+| A3 | Threat level of explosive devices | Plausible destructive capability and observed context; one person in range can support 5 (§4.1 rule 4) | Approved (revised wording) | Burglary010 I4 "explosives" (now 3) re-rated after viewing: 0–1 row |
 | A4 | Object held, then dropped or thrown | Instrument if held during its relevant use | Approved | None known |
 | A5 | Naming an unidentifiable object | Most general true noun, else "unidentified object" | Approved | Up to 6 names reviewed (Assault015, Assault032, Burglary052, Burglary066, Burglary093, Explosion004) |
 | A6 | Incident description length | 1–3 sentences, no word cap | Approved | None |
-| A7 | Age and gender words | Only with visual support; never ethnicity and similar (§7) | Revised, awaiting approval | No automatic change; reviewers check the 49 of 169 entity descriptions (and incident descriptions) that use such words and rewrite unsupported ones |
-| A8 | Category boundaries and clips outside the five types | Incidental vs primary violence; explosion includes sudden ignition; out-of-taxonomy clips marked, not forced (§2.1.2) | Revised, awaiting approval | No robbery-with-force case found. Explosion011 (smoke burst, no flame) and Explosion014 (fire at a toll plaza) are reviewed as possible out-of-taxonomy clips: 0–2 clips. Explosion002/017/019/029 (sudden ignition or bursts) stay `explosion` |
+| A7 | Age and gender words | Only with visual support; never ethnicity and similar (§7) | Approved (revised wording) | No automatic change; reviewers check the 49 of 169 entity descriptions (and incident descriptions) that use such words and rewrite unsupported ones |
+| A8 | Category boundaries and clips outside the five types | Ordinary burglary/robbery/theft meanings vs the project's `burglary` = property crime at premises convention; incidental vs primary violence; explosion includes sudden ignition; out-of-taxonomy clips marked, not forced, with their scoring open for PR 1B (§2.1.2) | Final wording, awaiting approval | No change from the convention (all 18 burglary clips come from the source's Burglary class); no robbery-with-force case found. Explosion011 (smoke burst, no flame) and Explosion014 (fire at a toll plaza) are reviewed as possible out-of-taxonomy clips: 0–2 clips. Explosion002/017/019/029 (sudden ignition or bursts) stay `explosion` |
 | A9 | Can an animal attack be severity 1? | Yes; the type sets no minimum. Existing severity-1 labels are reviewed | Approved | Severity of Animal004, Animal011, Animal012 (dangerous animal close to a person) re-checked: 0–3 rows |
 | A10 | Tie-break between adjacent levels | Lower level unless the higher level's indicator is visible | Approved | None automatically |
 | A10b | Threat of a tool used only on property | Capacity to harm people in that context | Approved | None known |
 | A11 | Crowds that cannot be told apart | Distinguishable people listed, the rest in the description | Approved | None |
-| A12 | Responders' equipment | Hand-held test applies as to any object; threat rated separately (§4.1 rule 3, §6) | Revised, awaiting approval | Explosion002 I2 extinguisher and Explosion004 I2 hose checked against the video: 0–2 rows become assets or are dropped |
+| A12 | Responders' equipment | Hand-held test applies as to any object; threat rated separately (§4.1 rule 3, §6) | Approved (revised wording) | Explosion002 I2 extinguisher and Explosion004 I2 hose checked against the video: 0–2 rows become assets or are dropped |
 | A13 | Where severity reasons, notes and uncertainty live | Optional, unscored note fields in ground-truth v1.0 (format with PR 4/5) | Approved | None (adds fields) |
-| A14 | Primary type when a video contains several types | Most serious observable harm or danger; tie → initiating event (§2.1.1) | Revised, awaiting approval | None found (no clip mentions two types); applied during review |
+| A14 | Primary type when a video contains several types | Centrality (event under way for more than half the window), then severity, then the initiating event (§2.1.1) | Final wording, awaiting approval | None found (no clip mentions two types); applied during review |
 
-**Dependency opened by A8:** how `out_of_taxonomy` clips are scored or excluded is decided in the evaluation methodology (PR 1B) and the frozen ground truth (PR 5).
+**Open for PR 1B (from A8):** how `out_of_taxonomy` clips are scored or excluded; PR 5 applies it to the frozen ground truth.
 
 ## 12. Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | v1.0 (draft) | 2026-10-27 | First version: scales unchanged, decision rules and examples added, A1–A14 pending approval |
+| v1.0 (draft, revision 3) | 2026-10-27 | A3, A7, A12 approved as revised. A8: ordinary burglary/robbery/theft meanings separated from the project's `burglary` = property crime at premises convention. A14: centrality first (more than half the window), severity as tie-break, then initiating event, with a comparison against severity-first |
 | v1.0 (draft, revision 2) | 2026-10-27 | A1, A2, A4, A5, A6, A9, A10, A10b, A11, A13 approved provisionally; A3, A7, A8, A12, A14 rewritten as requested: explosives by capability and context, demographic words only with visual support, incidental versus primary violence and out-of-taxonomy handling, responders' equipment under the hand-held rule, primary incident by most serious harm with a fixed tie-break |
