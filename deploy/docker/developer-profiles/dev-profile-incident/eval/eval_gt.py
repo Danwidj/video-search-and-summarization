@@ -250,6 +250,11 @@ def _extract_score(content: str) -> float | None:
     return None
 
 
+# Judge HTTP requests sent by this process (parse retries included), so a run can
+# report exactly how many judge calls it made. Read-only for callers.
+JUDGE_HTTP_CALLS = 0
+
+
 def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) -> Result:
     """One judge call, no retry. Same request every time - the prompt, model,
     and config are identical on every attempt; only a parse failure ever
@@ -260,6 +265,8 @@ def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) 
     prompt = f"EXPECTED: {expected or ''}\nPREDICTED: {predicted or ''}"
     api_key = config.incident_llm_api_key()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    global JUDGE_HTTP_CALLS
+    JUDGE_HTTP_CALLS += 1
     try:
         resp = httpx.post(
             f"{base_url}/chat/completions",
@@ -346,14 +353,29 @@ def _unmatched_rows(rows: list[dict], id_field: str, matched_ids: set[str]) -> l
     return [r for r in rows if r.get(id_field) not in matched_ids]
 
 
-def run_evaluation(db, incident_id: str, model_run_id: str) -> EvaluationResult:
-    """Load GT + model rows, score incident fields, match evidence, tally P/R/F1."""
+def run_evaluation(db, incident_id: str, model_run_id: str, *, incident_only: bool = False) -> EvaluationResult:
+    """Load GT + model rows, score incident fields, match evidence, tally P/R/F1.
+
+    ``incident_only`` stops after the incident fields (including the description
+    judge): no entity/instrument/asset matching or attribute scoring, so no
+    embedding server is needed and ``matches``/``counts``/``unmatched`` stay empty.
+    """
     gt_incident = db.get_gt_incident(incident_id)
     model_incident = db.get_incident(incident_id, model_run_id)
 
     fields = compare_incident_fields(gt_incident, model_incident)
-    judge = judge_description_similarity(gt_incident.get("description"), model_incident.get("description"))
     result = EvaluationResult(incident_id=incident_id, model_run_id=model_run_id, fields=fields)
+    predicted_description = model_incident.get("description")
+    if not (predicted_description or "").strip():
+        # No predicted description (no model output, or an invalid output scored as
+        # an empty prediction): 0.0 without a judge call. The judge is not reliable
+        # on empty text (it scored one 0.95), so it is never asked.
+        result.description_score = 0.0
+        fields["description"].update(score=0.0, judged=False)
+        fields["description"]["pass"] = False
+        return result if incident_only else _evaluate_evidence(db, incident_id, model_run_id, result)
+    judge = judge_description_similarity(gt_incident.get("description"), predicted_description)
+    fields["description"]["judged"] = True
     if judge.ok:
         result.description_score = judge.data
         fields["description"]["score"] = judge.data
@@ -363,6 +385,13 @@ def run_evaluation(db, incident_id: str, model_run_id: str) -> EvaluationResult:
         fields["description"]["score"] = None
         fields["description"]["pass"] = False
 
+    if incident_only:
+        return result
+    return _evaluate_evidence(db, incident_id, model_run_id, result)
+
+
+def _evaluate_evidence(db, incident_id: str, model_run_id: str, result: EvaluationResult) -> EvaluationResult:
+    """Entity/instrument/asset matching, P/R/F1 and attribute scores (unchanged), added to ``result``."""
     matches = matching.match_incident(db, incident_id, model_run_id)
     result.matches = matches
 

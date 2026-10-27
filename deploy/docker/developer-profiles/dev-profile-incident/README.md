@@ -24,6 +24,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Decision log](.docs/decisions.md)
 - [MVP2 natural-language search overview](.docs/mvp2/README.md)
 - [MVP2 evaluation plan (retrieval, critic, detector, embeddings)](.docs/mvp2/eval.md)
+- [Ground-truth refinement and prompt-experiment plan (direct VLM vs VSS)](.docs/mvp2/ground-truth-and-prompt-experiments-plan.md)
 - [incident-console-v2 hexagonal layout](.docs/mvp2/console-hexagonal-architecture.md)
 
 **Components**

@@ -18,7 +18,10 @@
 Sync SQLAlchemy Core (matches Streamlit's per-rerun execution model). Every
 catalog / edit / verify / dashboard / eval read and write goes through here.
 Schema is created with ``CREATE TABLE IF NOT EXISTS`` semantics
-(``MetaData.create_all(checkfirst=True)``) once on startup - no Alembic.
+(``MetaData.create_all(checkfirst=True)``) only when a caller asks for it
+(``get_db(init_schema=True)`` or ``IncidentDB.init_schema()``) - no Alembic. The
+finals Supabase project dropped these tables; eval scores offline by default
+(``offline_store.py``), so nothing here runs unless ``--db`` is passed.
 
 The connection string comes from ``INCIDENT_DB_DSN``. When it is unset,
 ``get_db()`` returns ``None`` and the app renders a "database not configured"
@@ -1206,23 +1209,32 @@ def is_configured() -> bool:
     return bool(config.incident_db_dsn())
 
 
-def get_db() -> IncidentDB | None:
+def get_db(*, init_schema: bool = False) -> IncidentDB | None:
     """Return the shared :class:`IncidentDB`, or ``None`` when no DSN is set.
 
-    The schema is created on first successful construction. A construction
-    failure (bad DSN, unreachable host) is swallowed and ``None`` returned so
-    the app degrades to a "database not configured / unreachable" state.
+    Creates no tables unless ``init_schema`` is passed: the finals Supabase project
+    dropped the tables this module maps, and ``init_schema()`` would recreate them
+    there. Without it the database is only probed (``healthcheck``). A construction
+    or probe failure (bad DSN, unreachable host) is swallowed and ``None`` returned
+    so callers can fall back or stop.
     """
     global _db, _db_dsn
     dsn = config.incident_db_dsn()
     if not dsn:
         return None
     if _db is not None and _db_dsn == dsn:
+        if init_schema:
+            _db.init_schema()
         return _db
     db = None
     try:
         db = IncidentDB.from_dsn(dsn)
-        db.init_schema()
+        if init_schema:
+            db.init_schema()
+        else:
+            ok, detail = db.healthcheck()
+            if not ok:
+                raise ConnectionError(detail)
     except Exception:  # noqa: BLE001 - callers show a friendly state
         if db is not None:
             db.dispose()  # every failed rerun would otherwise leave another pool behind

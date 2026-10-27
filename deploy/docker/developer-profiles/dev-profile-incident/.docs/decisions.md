@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: eval scores offline by default; the database path and schema creation are explicit
+- **Decision:** `eval_run.py` writes predictions to, and scores them from, an in-memory `OfflineEvalStore` (`eval/offline_store.py`), with ground truth loaded straight from the workbook by the same `write_gt` the ingest script uses. The scorer itself (`eval_gt`, `matching`) is unchanged. The database path needs `--db`. `db.get_db()` no longer creates tables: only `get_db(init_schema=True)` (`--db --init-schema`) does, and without it the database is only probed. `eval_ingest_gt.py` needs `--dry-run` (no database) or `--db`. The uncommitted 2026-10-02 benchmark work (rate-limit pacing, timing, outcome classes, `--incident-only`, export and dataset-statistics scripts) is recovered onto main with it.
+- **Why:** finals dropped the `gt_*`, relational report and `*_matches` tables, and `get_db()` ran `init_schema()`, so any eval run with the shared `.env.local` would have recreated them on the live database. Offline scoring removes the database from experiments entirely. The store copies the database's observable behaviour (all table columns, SQL type coercion, id ordering, the replace-and-cascade on re-insert), and `tests/test_offline_store.py` requires identical scores to the SQLite `IncidentDB` path and fails if the default path touches any database entry point, even with finals credentials set.
+- **Rejected:** new eval tables on finals (a schema change to support offline evaluation, which the workstream plan rules out); rewriting the scorer to take plain dicts (it would change the measuring instrument; the store keeps the scorer byte-identical); SQLite on disk as the default (a database file per run with no benefit over memory).
+- **Links:** [`../eval/offline_store.py`](../eval/offline_store.py); [`../eval/tests/test_offline_store.py`](../eval/tests/test_offline_store.py); [`mvp2/ground-truth-and-prompt-experiments-plan.md`](mvp2/ground-truth-and-prompt-experiments-plan.md) (PR 0).
+
 ### 2026-10-25: The library card shows MVP1's thumbnail again
 - **Decision:** The `/library` incident card shows MVP1's report-card image (`ReportThumbnail`): the video's upload-time screenshot only, MVP1's skeleton when it is missing or its one request fails, and MVP1's severity chip and AI/Human badge on top. The card never falls back to an evidence crop, and `/api/reports` signs only the screenshot. The five finals videos with no screenshot are a separate data gap, not backfilled.
 - **Why:** The captain wants the thumbnails identical to MVP1's (known issue 4). The wrapper is a `<figure>` rather than MVP1's `<div>` so its `aria-label` is valid (Tailwind's base styles zero figure margins, so it renders the same), and the plain `<img>` is kept with a Biome suppression because `next/image` would proxy and re-encode the presigned R2 URL through the console server. #185 had added an evidence-crop fallback, a smaller chip and no badge, which also contradicted the 2026-09-27 decision ("a missing thumbnail shows a skeleton"). A failed screenshot is not retried or replaced, so a missing one costs one browser error, not two requests.
@@ -365,6 +371,41 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Why:** Upstream `restart: always` restarts stopped containers on every VM reboot; runtime `docker update` is lost on recreate.
 - **Rejected:** ad-hoc `docker update`; editing upstream compose files.
 - **Links:** [`compose.override.yml`](../compose.override.yml); [`incident-profile-operations.md`](incident-profile-operations.md).
+
+### 2026-10-02: VLM benchmark: incident fields only, timed P1 round trip, interleaved models, no blended score
+- **Decision:**
+  - The midterm VLM benchmark runs the existing `eval/` pipeline with `eval_run.py --incident-only` on the 55 held-out videos. It scores only the incident fields with their existing metrics (`eval_gt.compare_incident_fields` plus the description judge). It does no entity/instrument/asset matching and no RP1.
+  - **Primary fields:** type, severity_level, start_timestamp, end_timestamp and description. `duration` (end − start) is a derived diagnostic only.
+  - There is no overall, pass-rate or weighted score. Each field is reported separately, and the per-video, per-model rows are kept.
+  - **Processing time:** one P1 HTTP round trip, `perf_counter` immediately before `requests.post` to immediately after it returns with the full body (`eval_vlm_client.chat_completion`). It excludes R2 signing, the MP4 header read, validation, DB writes, scoring and RP1. The summary reports mean, median and p90 over completed calls. Failed calls are counted separately.
+  - **Order:** video by video, all three models per video, with the model order rotated per video; calls are sequential.
+  - **Timeout:** P1 uses the console's 300 s `timeout_seconds` from `contracts/inference.json` for every model, replacing the generic 240 s.
+  - **Rate-limit policy (fixed before any full-run result):**
+    - At least 20 s between the end of one P1 attempt and the start of the next.
+    - HTTP 429 only is retried with the same request after a 60 s cooldown, or `Retry-After` when longer, at most 2 retries.
+    - Nothing else is retried.
+    - Waiting is never processing time.
+    - The basis is the smoke test's 429s: cosmos-3-super at its 240 requests/min limit, and nemotron-3-nano-omni at its 30,000 tokens/min limit. One P1 call is about 6k prompt tokens plus up to 16k completion tokens.
+    - With the three models interleaved, the 20 s gap keeps each model to about one call a minute. The 60 s cooldown is one rate-limit window.
+  - **Outcomes:** `scored`, `contract_invalid` and `parse_failure` are model outputs and enter the field metrics. `rate_limited`, `timeout` and `http_error` produce no output, are reported separately and are never a wrong prediction. A timeout is no output, not a miss.
+  - **Empty predicted description:** scored 0.0 without a judge call (`eval_gt.run_evaluation`). The judge has no fixed temperature and scored the same empty input 0.0 in one smoke test and 0.95 in the next. The judge model and its settings are unchanged.
+  - **Video set statistics:** size from R2 `HeadObject` and length from the MP4 `mvhd` header (no download, no ffprobe), from `eval_dataset_stats.py` before any model call.
+  - Every attempted `(video, model)` pair stays in the output, including timeouts, HTTP failures and contract-invalid responses. No schema change: everything is in the run's result JSON.
+- **Why:**
+  - Entities, instruments and assets are out of scope for the slides, and their matching needs the embedding server and many extra judge calls.
+  - A blended score would contradict `eval_aggregate`'s rule of keeping metrics separate.
+  - Timing only the request keeps the measurement identical across models and free of scoring time.
+  - Interleaving keeps load changes on the shared hosted endpoint from landing on one model.
+  - 240 s cut slow calls off earlier than the console would.
+  - The smoke test lost 2 of 3 calls to shared-quota 429s, which would otherwise have counted as wrong predictions.
+- **Caveat recorded with the results:** the request is identical, but `cosmos-3-super-reasoner` samples about 24 frames instead of the requested 64.
+- **Rejected:**
+  - A separate benchmark harness (would duplicate the contract request and scoring).
+  - Timing in the gateway (it runs only in gateway mode, and eval may call Switchyard directly).
+  - A per-model sequential order (biased by drift).
+  - Downloading videos to measure them (the header and `HeadObject` suffice).
+- **Recorded:** 2026-10-27, from the uncommitted benchmark work recovered by the offline-scoring change (the run and its code predate this entry).
+- **Links:** [`../eval/README.md`](../eval/README.md#vlm-benchmark-incident-fields-processing-time); [`../eval/scripts/eval_benchmark_export.py`](../eval/scripts/eval_benchmark_export.py); [`../eval/scripts/eval_dataset_stats.py`](../eval/scripts/eval_dataset_stats.py).
 
 ### 2026-09-28: Dashboard and time filters use the viewer's timezone
 - **Decision:** `get_incident_dashboard` and `list_incident_report_summaries` take `p_timezone` (default `'UTC'`) and convert `reports.generated_datetime` (naive UTC) for weekday and hour grouping and filtering. The console sends the viewer's IANA zone (offsets rejected) detected after mount; labels show local hours with the zone name. Migration `20260928000000` must be applied before or with the console deploy.

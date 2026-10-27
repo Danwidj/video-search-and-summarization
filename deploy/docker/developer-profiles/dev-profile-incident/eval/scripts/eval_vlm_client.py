@@ -30,7 +30,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import requests
@@ -64,6 +68,25 @@ FIXED_INFERENCE_CONFIG = {"temperature": 0.0, "max_tokens": 4096}
 # response_format (the contract schema, strict) is added per call.
 P1_INFERENCE_CONFIG = {"max_tokens": 16384, "media_io_kwargs": {"video": {"num_frames": 64}}}
 
+# Fixed rate-limit policy for P1, identical for every model and decided before any
+# benchmark result (.docs/decisions.md 2026-10-02). Never tuned per model or run.
+# Switchyard's shared limits seen in the smoke test: cosmos-3-super-reasoner 240
+# requests/min, nemotron-3-nano-omni 30,000 tokens/min (one P1 call is about 6k
+# prompt tokens plus up to 16,384 completion tokens).
+# - inter_call_delay_s: at least this long between the end of one P1 attempt and
+#   the start of the next, any model. With three models interleaved, each model is
+#   called at most about once a minute, so one model stays under 30,000 tokens/min.
+# - HTTP 429 only: retry the same request after cooldown_s (one rate-limit window),
+#   or Retry-After when the server asks for longer, at most max_rate_limit_retries
+#   times. Every other failure is final.
+# Waiting is never part of the processing time (each attempt is timed on its own).
+P1_RATE_LIMIT_POLICY = {
+    "inter_call_delay_s": 20.0,
+    "cooldown_s": 60.0,
+    "max_rate_limit_retries": 2,
+    "honor_retry_after": True,
+}
+
 MODELS = [
     "nvidia/cosmos-3-nano-reasoner",
     "nvidia/cosmos-3-super-reasoner",
@@ -73,6 +96,11 @@ MODELS = [
 # The default client timeout is read from contracts/inference.json so eval and
 # the shared inference specification cannot diverge.
 DEFAULT_TIMEOUT: float = float(contract.load_inference()["models"][0]["timeout_seconds"])
+
+# Client timeout for one P1 call, the same for every model: the console's per-model
+# ``timeout_seconds`` from contracts/inference.json, so the benchmark cuts no model
+# off earlier than the console would. Recorded in every result as ``p1_timeout_s``.
+P1_TIMEOUT_SECONDS: float = DEFAULT_TIMEOUT
 
 
 def _get_env(key: str) -> str:
@@ -101,6 +129,22 @@ class ChatResult:
     raw: dict = field(default_factory=dict)
     error: str = ""
     status_code: int | None = None
+    # P1 processing time: one HTTP round trip, timed from immediately before the
+    # request is sent to immediately after the full response body has arrived.
+    # Parsing, validation and everything after it are outside. ``None`` when no
+    # request was sent (missing API key).
+    elapsed_s: float | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    # Why the call failed: rate_limited (HTTP 429), timeout, http_error (other
+    # status >= 400), transport_error (no response), invalid_response (a 2xx that
+    # is not a completion) or not_sent. ``None`` on success.
+    failure_kind: str | None = None
+    retry_after_s: float | None = None  # the server's Retry-After on a 429, in seconds
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def chat_completion(
@@ -113,32 +157,49 @@ def chat_completion(
     """One ``/v1/chat/completions`` call. Fails soft (``ok=False``), never raises."""
     base_url, api_key = gateway_credentials()
     if not api_key:
-        return ChatResult(ok=False, error="VLM_GATEWAY_API_KEY is not configured")
+        return ChatResult(ok=False, error="VLM_GATEWAY_API_KEY is not configured", failure_kind="not_sent")
     config = {**FIXED_INFERENCE_CONFIG, **(inference_config or {})}
+    payload = {"model": model, "messages": messages, **config}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    # Timed region: the request only. requests (non-streaming) has read the whole
+    # body when post() returns, so the stop point includes the model's last token.
+    started_at = _utc_now()
+    started = time.perf_counter()
     try:
-        resp = requests.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": messages, **config},
-            timeout=timeout,
-        )
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     except requests.RequestException as exc:
-        return ChatResult(ok=False, error=f"{type(exc).__name__}: {exc}")
+        timing = {"elapsed_s": time.perf_counter() - started, "started_at": started_at, "finished_at": _utc_now()}
+        kind = "timeout" if isinstance(exc, requests.Timeout) else "transport_error"
+        return ChatResult(ok=False, error=f"{type(exc).__name__}: {exc}", failure_kind=kind, **timing)
+    timing = {"elapsed_s": time.perf_counter() - started, "started_at": started_at, "finished_at": _utc_now()}
+    if resp.status_code >= 400:
+        failure = {
+            "failure_kind": "rate_limited" if resp.status_code == 429 else "http_error",
+            "retry_after_s": _retry_after_seconds(getattr(resp, "headers", None)) if resp.status_code == 429 else None,
+        }
+    else:
+        failure = {"failure_kind": "invalid_response"}
 
     try:
         body = resp.json()
     except ValueError:
-        return ChatResult(ok=False, status_code=resp.status_code, error=f"non-JSON response: {resp.text[:500]}")
+        return ChatResult(
+            ok=False, status_code=resp.status_code, error=f"non-JSON response: {resp.text[:500]}", **timing, **failure
+        )
 
     if resp.status_code >= 400:
         raw = body if isinstance(body, dict) else {}
-        return ChatResult(ok=False, status_code=resp.status_code, error=json.dumps(body)[:1000], raw=raw)
+        return ChatResult(
+            ok=False, status_code=resp.status_code, error=json.dumps(body)[:1000], raw=raw, **timing, **failure
+        )
 
     # A 2xx whose body is not a completion (e.g. JSON ``null``, seen from the
     # gateway for an unfetchable video URL) is a failed call, not an empty answer.
     if not isinstance(body, dict) or not body.get("choices"):
         return ChatResult(
-            ok=False, status_code=resp.status_code, error=f"no completion in response body: {json.dumps(body)[:500]}"
+            ok=False, status_code=resp.status_code, error=f"no completion in response body: {json.dumps(body)[:500]}",
+            **timing, **failure,
         )
 
     choice = body["choices"][0]
@@ -150,7 +211,23 @@ def chat_completion(
         finish_reason=choice.get("finish_reason"),
         raw=body,
         status_code=resp.status_code,
+        **timing,
     )
+
+
+def _retry_after_seconds(headers) -> float | None:
+    """``Retry-After`` as seconds (delta-seconds or an HTTP date), or ``None``."""
+    value = (headers or {}).get("Retry-After") if hasattr(headers, "get") else None
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError):
+        return None
 
 
 def p1_request_config() -> dict:
@@ -166,6 +243,95 @@ def analyze_video_with_p1(model: str, video_url: str, *, timeout: float = DEFAUL
     ]
     messages = [{"role": "user", "content": content}]
     return chat_completion(model, messages, inference_config=p1_request_config(), timeout=timeout)
+
+
+@dataclass
+class P1Outcome:
+    """The final P1 attempt plus every attempt's record (rate-limit retries included)."""
+
+    result: ChatResult
+    attempts: list[dict]
+
+    @property
+    def rate_limit_retries(self) -> int:
+        return len(self.attempts) - 1
+
+    def summary(self) -> dict:
+        return {
+            "policy": dict(P1_RATE_LIMIT_POLICY),
+            "attempt_count": len(self.attempts),
+            "rate_limit_retries": self.rate_limit_retries,
+            "rate_limit_rejections": [a["error"] for a in self.attempts if a["failure_kind"] == "rate_limited"],
+            "final_attempt_ok": self.result.ok,
+            "final_failure_kind": self.result.failure_kind,
+            "total_wait_s": sum(a["wait_before_s"] for a in self.attempts),
+            "attempts": self.attempts,
+        }
+
+
+class P1Pacer:
+    """Enforces ``inter_call_delay_s`` between the end of one P1 attempt and the start of the next."""
+
+    def __init__(self, *, sleep: Callable[[float], None] = time.sleep, monotonic: Callable[[], float] = time.monotonic):
+        self._sleep, self._monotonic = sleep, monotonic
+        self._last_end: float | None = None
+
+    def wait(self, minimum_s: float) -> float:
+        """Sleep until ``minimum_s`` has passed since the previous attempt ended; returns the time slept."""
+        if self._last_end is None:
+            return 0.0
+        remaining = minimum_s - (self._monotonic() - self._last_end)
+        if remaining <= 0:
+            return 0.0
+        self._sleep(remaining)
+        return remaining
+
+    def sleep(self, seconds: float) -> None:
+        self._sleep(seconds)
+
+    def mark_end(self) -> None:
+        self._last_end = self._monotonic()
+
+
+DEFAULT_PACER = P1Pacer()
+
+
+def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1Pacer | None = None) -> P1Outcome:
+    """P1 under ``P1_RATE_LIMIT_POLICY``: paced, and retried after a cooldown on HTTP 429 only.
+
+    The request is the same on every attempt. Each attempt keeps its own timing, so
+    the final attempt's ``elapsed_s`` is one round trip and never includes waiting.
+    """
+    pacer = pacer or DEFAULT_PACER
+    policy = P1_RATE_LIMIT_POLICY
+    attempts: list[dict] = []
+    wait_s, wait_reason = 0.0, "pacing"
+    while True:
+        if wait_reason == "pacing":
+            wait_s = pacer.wait(policy["inter_call_delay_s"])
+        else:
+            pacer.sleep(wait_s)
+        result = analyze_video_with_p1(model, video_url)
+        pacer.mark_end()
+        attempts.append({
+            "attempt": len(attempts) + 1,
+            "wait_before_s": round(wait_s, 3),
+            "wait_reason": wait_reason if wait_s > 0 else None,
+            "started_at": result.started_at,
+            "finished_at": result.finished_at,
+            "elapsed_s": result.elapsed_s,
+            "status_code": result.status_code,
+            "ok": result.ok,
+            "failure_kind": result.failure_kind,
+            "retry_after_s": result.retry_after_s,
+            "error": (result.error or "")[:500],
+        })
+        if result.failure_kind != "rate_limited" or len(attempts) > policy["max_rate_limit_retries"]:
+            return P1Outcome(result=result, attempts=attempts)
+        wait_s = policy["cooldown_s"]
+        if policy["honor_retry_after"] and result.retry_after_s is not None:
+            wait_s = max(wait_s, result.retry_after_s)
+        wait_reason = "rate_limit_cooldown"
 
 
 def generate_report_with_rp1(

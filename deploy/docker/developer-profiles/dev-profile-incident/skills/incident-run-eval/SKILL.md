@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.1.2"
+  version: "0.2.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -20,7 +20,7 @@ Canonical facts:
 ## Prerequisites
 
 1. `cd deploy/docker/developer-profiles/dev-profile-incident/eval && uv sync`
-2. `eval/.env.local` is a symlink to `../.env.local`. Its Supabase values (`INCIDENT_DB_DSN`, `INCIDENT_SUPABASE_*`) must name the **finals** project; midterm is a frozen read-only record and refuses writes. Finals dropped the `gt_*` and relational report tables (`20261023000000`), and `init_schema()` creates any of eval's tables that are missing, so do not run a live eval against finals until eval's storage is decided ([eval open item 1](../../.docs/mvp2/eval.md)). Beyond the standard Supabase and R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
+2. `eval/.env.local` is a symlink to `../.env.local`. **Scoring needs no database:** by default `eval_run.py` loads the workbook into an in-memory store (`eval/offline_store.py`) and never connects to Supabase, even though the file holds finals credentials. Finals dropped the `gt_*` and relational report tables (`20261023000000`). Never pass `--db` against finals; `--db --init-schema` creates tables and is for a local or throwaway database only. Beyond the R2 variables, it needs `VLM_GATEWAY_API_KEY` (or `INCIDENT_LLM_API_KEY`), `INCIDENT_LLM_BASE_URL` (the real Switchyard gateway, not the mock), `INCIDENT_JUDGE_MODEL` and `INCIDENT_EMBEDDING_BASE_URL`. These are **not** in the committed `.env`, so check they exist before any live run.
 3. The ground-truth workbook and all working data stay under `eval/eval_data/`, which `eval/.gitignore` excludes. Never commit it.
 
 ## What a run sends
@@ -28,7 +28,8 @@ Canonical facts:
 P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v4`):
 - a signed R2 URL, then the contract prompt, with the schema enforced via `response_format`;
 - no few-shot examples;
-- a fixed `max_tokens 16384` and `num_frames 64`.
+- a fixed `max_tokens 16384` and `num_frames 64` (the same request for every model, but `cosmos-3-super-reasoner` samples about 24 frames whatever is requested; never call the visual input identical);
+- a 300 s timeout per call, the console's `contracts/inference.json` value.
 
 Responses are judged under validation policy `core-scored-v1`. A core failure is scored as a miss and listed under `core_failures`, and its RP1 is skipped. When core fields are valid (`core_ok`), RP1 runs on the unchanged prediction with timeline context. **Never loosen the parser to raise a score.** A model with many contract or core failures is a finding, not a bug to paper over. Details: [`eval/README.md`](../../eval/README.md).
 
@@ -38,8 +39,8 @@ Responses are judged under validation policy `core-scored-v1`. A core failure is
 # 1. Local embedding server (separate terminal; prints the INCIDENT_EMBEDDING_BASE_URL to set)
 uv run python scripts/eval_embedding_server.py
 
-# 2. One-off: ingest real ground truth, then generate the seeded split
-uv run python scripts/eval_ingest_gt.py
+# 2. One-off: validate the ground-truth workbook (no database), then generate the seeded split
+uv run python scripts/eval_ingest_gt.py --dry-run
 uv run python scripts/eval_generate_split.py
 
 # 3. Smoke test first (1 model, 1 category, 1 video), then the full run
@@ -52,11 +53,33 @@ uv run python scripts/eval_aggregate.py
 
 **Always smoke-test before a full run.** A full run spends hosted-inference quota across 3 models × 5 categories.
 
+### VLM benchmark (incident fields + processing time)
+
+```bash
+cp eval_reproducibility/split_*.json eval_data/       # if the manifests are missing
+uv run python scripts/eval_dataset_stats.py           # first: all 55 videos resolve? mean length and size (no model calls)
+uv run python scripts/eval_run.py --incident-only --categories Assault --limit 1   # smoke: 3 P1 calls + 3 judge calls
+uv run python scripts/eval_run.py --incident-only     # full: 165 (video, model) pairs, ~4 h; judge: 1 probe + 1 per scored row
+uv run python scripts/eval_benchmark_export.py        # tables -> eval_data/results/benchmark/<run start>/
+```
+
+- `--incident-only` needs no embedding server and skips RP1.
+- Processing time is the successful P1 HTTP round trip (`timing.p1_elapsed_s`), never waiting.
+- Fixed rate-limit policy (`P1_RATE_LIMIT_POLICY`): 20 s between P1 attempts; HTTP 429 only is retried after 60 s (or a longer `Retry-After`), at most twice. Never tune it per model or per run.
+- Field metrics cover model outputs only. `rate_limited`, `timeout` and `http_error` rows are reported separately; timeouts are never model misses.
+- An empty predicted description scores 0.0 with no judge call.
+- Models run interleaved per video, in rotating order.
+- Every attempted `(video, model)` pair stays a row, failures included.
+- There is no blended score. `duration` is a derived diagnostic.
+- Details: [`eval/README.md`](../../eval/README.md#vlm-benchmark-incident-fields-processing-time).
+
 ## Verify
 
 - `uv run pytest tests/` passes. The tests are hermetic: no live Postgres, agent or GPU.
-- `eval_ingest_gt.py` prints no `WARNING: ... has incident type` line. If it does, a workbook `Type` is not one of the five standard types. The row is still stored, normalised to lowercase; fix the workbook and re-ingest.
+- Result files say `"scoring_backend": "offline"` in their `benchmark` block unless `--db` was passed.
+- `eval_ingest_gt.py --dry-run` prints no `WARNING: ... has incident type` line. If it does, a workbook `Type` is not one of the five standard types. Scoring still uses the row, normalised to lowercase; fix the workbook.
 - The smoke run writes `eval_data/results/<category>__<model>.json` with non-null field scores.
+- A benchmark smoke run also has `timing.p1_elapsed_s > 0` and a `video` block (size, length) on every video.
 
 ## Scoring (what the numbers mean)
 

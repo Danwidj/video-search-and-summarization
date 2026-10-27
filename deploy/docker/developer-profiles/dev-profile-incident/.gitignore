@@ -12,3 +12,9 @@
 # The pre-archive path stays ignored so an old local copy is never committed.
 archived/incident-console/eval_data/
 incident-console/eval_data/
+
+# The complete human-labelled ground-truth workbook (real annotations of real
+# surveillance clips) kept at the profile root as the source for the ground-truth
+# audit and correction work. Never committed; eval reads its own gitignored copy
+# under eval/eval_data/.
+/Complete Ground Truth Labelling.xlsx

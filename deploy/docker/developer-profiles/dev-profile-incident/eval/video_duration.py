@@ -117,14 +117,20 @@ def mp4_duration_seconds(read_range: ReadRange, file_size: int) -> float | None:
         return None
 
 
-def r2_video_duration_seconds(object_key: str) -> float | None:
-    """Length of an R2 video object, read with ranged GETs; ``None`` if unknown."""
+def r2_video_metadata(object_key: str) -> dict:
+    """``{"size_bytes", "duration_seconds"}`` of an R2 video object, never downloading it.
+
+    The size is ``HeadObject``'s ``ContentLength``; the length is read from the MP4
+    header with ranged GETs. Either is ``None`` when it cannot be read - never a guess.
+    """
     import r2_videos  # lazy: needs R2 credentials
 
+    metadata: dict = {"size_bytes": None, "duration_seconds": None}
     try:
         client = r2_videos.client()
         bucket = os.environ["R2_BUCKET"]
         size = client.head_object(Bucket=bucket, Key=object_key)["ContentLength"]
+        metadata["size_bytes"] = size
 
         def read_range(offset: int, length: int) -> bytes:
             end = min(offset + length, size) - 1
@@ -132,6 +138,12 @@ def r2_video_duration_seconds(object_key: str) -> float | None:
                 return b""
             return client.get_object(Bucket=bucket, Key=object_key, Range=f"bytes={offset}-{end}")["Body"].read()
 
-        return mp4_duration_seconds(read_range, size)
-    except Exception:  # noqa: BLE001 - any failure means "length unknown", never a guess
-        return None
+        metadata["duration_seconds"] = mp4_duration_seconds(read_range, size)
+    except Exception:  # noqa: BLE001 - any failure means "unknown", never a guess
+        pass
+    return metadata
+
+
+def r2_video_duration_seconds(object_key: str) -> float | None:
+    """Length of an R2 video object, read with ranged GETs; ``None`` if unknown."""
+    return r2_video_metadata(object_key)["duration_seconds"]

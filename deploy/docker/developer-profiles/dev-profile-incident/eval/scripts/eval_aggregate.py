@@ -233,8 +233,9 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
 
 
 def main() -> None:
-    files = sorted(RESULTS_DIR.glob("*.json"))
-    files = [f for f in files if f.name != "summary.json"]
+    # Only eval_run.py's per-(category, model) files, named "<category>__<model>.json";
+    # other JSON beside them (summary.json, dataset_stats.json) is not a results file.
+    files = sorted(RESULTS_DIR.glob("*__*.json"))
     by_category_and_model: dict[str, dict[str, dict]] = {}
     by_model_raw: dict[str, list[dict]] = {}
     models_seen = {}
