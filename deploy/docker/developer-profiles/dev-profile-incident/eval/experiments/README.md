@@ -13,7 +13,7 @@ uv run python scripts/eval_experiment.py compare C1=… C2=… C3=… C4=…    
 
 - **Same request:** both arms send the same P1 request, with the same prompt text, `inference.json` settings and signed URL.
 - **Same policy and scoring:** both run under the same rate-limit policy. Both are re-validated by `contract.evaluate_policy` and scored by the same scorer against the same frozen ground truth.
-- **The VSS arm** calls the agent's `/analyze` with `skip_rp1: true`, `skip_crops: true` and, for a non-baseline prompt, `experiment_prompt_id`.
+- **The VSS arm** calls the agent's `/analyze` (experimental settings documented in [`vm-api-contracts.md`](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b); the agent must run with `INCIDENT_EXPERIMENTS_ENABLED=1` and without Supabase or R2 settings) with `skip_rp1: true`, `skip_crops: true` and, for a non-baseline prompt, `experiment_prompt_id`.
   - A 200 response, or a 422 with a `raw_output`, is a model output. Anything else is a request failure (eval.md §4).
   - A non-baseline prompt counts only when the agent echoes the prompt id and SHA-256 it used. Otherwise the attempt fails, so a VSS run can never silently use the production prompt.
 

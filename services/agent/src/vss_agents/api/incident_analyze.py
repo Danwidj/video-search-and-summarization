@@ -32,6 +32,13 @@ detail carries ``message``, ``raw_output``, ``finish_reason``, ``model`` and ``c
 so the caller can record the attempt), 400 for a ``model`` outside the contract allowlist,
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
 500 for anything else.
+
+Experimental settings (dev-profile-incident prompt experiments): ``experiment_prompt_id`` and
+``skip_crops`` are refused with 403 unless the agent runs with ``INCIDENT_EXPERIMENTS_ENABLED=1``;
+an unknown or edited registry prompt is 400, combining one with ``reviewer_prompt`` is 400, and
+cropping that would upload to R2 is 409. An experimental request never writes a report revision,
+and its response adds ``experiment`` (prompt id and SHA-256 used), ``p1_elapsed_ms`` and ``usage``.
+A request without them gets exactly the production response.
 """
 
 from __future__ import annotations
@@ -50,7 +57,10 @@ from pydantic import Field
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.incident_contract import allowed_models
 from vss_agents.incident_contract import contract_version
+from vss_agents.tools import incident_experiments
+from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
+from vss_agents.tools.incident_report_gen import ExperimentRefusedError
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -92,6 +102,18 @@ class AnalyzeIncidentRequest(BaseModel):
             "When absent the agent reads the header from video_url itself."
         ),
     )
+    experiment_prompt_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        description="Experimental (INCIDENT_EXPERIMENTS_ENABLED=1 only): a prompt id from the experiment registry.",
+    )
+    skip_crops: bool = Field(
+        default=False, description="Experimental (INCIDENT_EXPERIMENTS_ENABLED=1 only): skip evidence cropping."
+    )
+
+    def is_experimental(self) -> bool:
+        return self.experiment_prompt_id is not None or self.skip_crops
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
@@ -108,6 +130,13 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         tags=["Incident Analyze"],
     )
     async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest) -> dict[str, Any]:
+        if body.is_experimental() and not incident_experiments.experiments_enabled():
+            raise HTTPException(
+                status_code=403,
+                detail=f"experimental settings are disabled on this agent ({incident_experiments.EXPERIMENTS_FLAG}=1)",
+            )
+        if body.is_experimental() and body.reviewer_prompt:
+            raise HTTPException(status_code=400, detail="an experimental request cannot carry a reviewer_prompt")
         if body.model and body.model not in allowed_models():
             raise HTTPException(
                 status_code=400, detail=f"Model {body.model!r} is not in the incident contract allowlist"
@@ -136,28 +165,47 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["reviewer_prompt"] = body.reviewer_prompt
         if body.video_duration_seconds is not None:
             tool_input["video_duration_seconds"] = body.video_duration_seconds
+        if body.experiment_prompt_id is not None:
+            tool_input["experiment_prompt_id"] = body.experiment_prompt_id
+        if body.skip_crops:
+            tool_input["skip_crops"] = True
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
         except IncidentExtractionError as exc:
             logger.error("/analyze contract violation for incident_id=%s: %s", incident_id, exc)
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": f"Incident contract violation: {exc}",
-                    "raw_output": exc.raw_output,
-                    "finish_reason": exc.finish_reason,
-                    "model": exc.model,
-                    "contract_version": contract_version(),
-                },
-            ) from exc
+            detail: dict[str, Any] = {
+                "message": f"Incident contract violation: {exc}",
+                "raw_output": exc.raw_output,
+                "finish_reason": exc.finish_reason,
+                "model": exc.model,
+                "contract_version": contract_version(),
+            }
+            if getattr(exc, "experiment", None) is not None:
+                telemetry = getattr(exc, "telemetry", None) or {}
+                detail.update(
+                    experiment=exc.experiment,  # type: ignore[attr-defined]
+                    p1_elapsed_ms=telemetry.get("p1_elapsed_ms"),
+                    usage=telemetry.get("usage"),
+                )
+            raise HTTPException(status_code=422, detail=detail) from exc
+        except incident_experiments.ExperimentsDisabledError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except incident_experiments.ExperimentPromptError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ExperimentRefusedError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
             logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc
         except Exception as exc:
             logger.error("/analyze failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
             raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
-        return result.model_dump() if hasattr(result, "model_dump") else dict(result)
+        response = result.model_dump() if hasattr(result, "model_dump") else dict(result)
+        if not body.is_experimental():
+            for key in EXPERIMENT_OUTPUT_FIELDS:  # production responses keep exactly their documented shape
+                response.pop(key, None)
+        return response
 
     return router
 
