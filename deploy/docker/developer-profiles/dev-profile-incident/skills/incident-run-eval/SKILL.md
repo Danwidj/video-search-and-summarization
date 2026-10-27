@@ -3,7 +3,7 @@ name: incident-run-eval
 description: Use to run the standalone P1/RP1 evaluation pipeline in eval/ - start the local embedding server, ingest ground truth, generate the seeded split, batch-score VLM incident extraction against ground truth, aggregate across models and categories, or run its hermetic tests. Not for producing a single report (use incident-analyze-video) and not NVIDIA's `nat eval`.
 license: Apache-2.0
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
   profile: "dev-profile-incident"
   tags: "incident evaluation benchmark ground-truth vlm"
 ---
@@ -69,6 +69,8 @@ uv run python scripts/gt_review_backup.py snapshot --kind Candidate --version v0
 # Ground-truth freeze (PR 5): a candidate until an approval record names it
 uv run python scripts/gt_freeze.py --candidate "ground_truth/review/Ground Truth Candidate v0.2.xlsx" [--approval <record>]
 ```
+
+Prompt experiments (PR 6A): `uv run python scripts/eval_experiment.py plan|run|rescore|compare` ([`eval/experiments/README.md`](../../eval/experiments/README.md)). `plan` and `compare` are free. `run` and `rescore` make paid calls and refuse without `--confirm-paid`; never pass it before the user approves that stage's budget. Never run a `test` config except the final, pre-registered one. Experiment prompts are added only through `prompt_registry.add`, never by editing a registered file.
 
 Frozen ground truth loads only through `eval_gt_schema.load_frozen_gt_index(<dir>)`, which verifies checksums and refuses a candidate. Never write the approval record yourself: it is the user's approval of the final annotations and exclusions ([`eval/ground_truth/freeze/README.md`](../../eval/ground_truth/freeze/README.md)).
 

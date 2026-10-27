@@ -2,6 +2,18 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Experiment prompts live in an append-only registry; one runner drives both arms under the same guards
+- **Decision:**
+  - **Registry:** `contracts/experiments/` (`registry.json` plus immutable `p1/<id>.txt`). `p1-v4-base` is byte-identical to the production prompt. `eval/prompt_registry.py` checks the hashes, ids and parents, and append-only against `origin/main`. `sync.py` vendors none of it, so the production contract is unchanged.
+  - **Runner:** `eval/experiment_runner.py` with `scripts/eval_experiment.py` runs one configuration per config file. The configuration is an arm, a prompt, a model, a split half, the frozen ground truth, repeats and a budget. Both arms send the same P1 request under the same rate-limit policy, and are re-validated and scored by the same code (`eval_run.run_one_video` with a `p1_call` per arm).
+  - **Guards** run before any call: test split only for a final config with a decisions.md selection record; frozen baselines are never rerun; budget; `--confirm-paid` for any paid call; frozen ground truth only (candidate = plumbing, `reportable: false`); `skip_rp1` and `skip_crops` for accuracy runs. A VSS experiment prompt counts only if the agent echoes its id and SHA-256.
+  - **Comparisons:** `four_way` computes the four paired comparisons C2−C1, C3−C2, C4−C1 and C3−C4, plus C3−C1, from saved outputs. Repeats are averaged per video, then the methodology's seeded bootstrap applies.
+- **Implements** plan D13 (a): the same model, the same `p1-v4-base` prompt and the v4 schema in both arms, with C4 mandatory. It also implements D14 (b): a local agent, the registry read from the checkout behind a flag, and crops off for accuracy.
+- **Not decided here:** D9 (selection rule), D10 (repeats), D11 (budgets) and D15 (held-out exposure). The committed configs' `repeats: 2` and budgets are placeholders until approved.
+- **Why:** prompt identity must be provable for every result, tuning must be impossible to do on test, and the two arms must differ only in the pipeline.
+- **Rejected:** editing `incident_extraction_prompt.txt` per experiment (it would change production); storing prompts in eval only (the agent needs the same bytes); a separate scorer per arm.
+- **Links:** [`../contracts/experiments/README.md`](../contracts/experiments/README.md); [`../eval/experiments/README.md`](../eval/experiments/README.md).
+
 ### 2026-10-27: Ground truth is frozen only against an explicit approval record; Pending always blocks
 - **Decision:** `eval/scripts/gt_freeze.py` (with `eval/ground_truth_freeze.py`) prepares `ground-truth-v1.0` from the unchanged source plus the latest reviewed candidate workbook.
   - **Checks:** schema validation, `split-v2` consistency, and blocking issues. Any `Pending` entry blocks; it is never read as Approved.

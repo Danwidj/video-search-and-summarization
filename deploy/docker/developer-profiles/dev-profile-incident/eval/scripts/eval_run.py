@@ -232,7 +232,7 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
 def run_one_video(
     db, *, model: str, category: str, filename: str, incident_id: str, r2_object_key: str, video_url: str,
     gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str, video_duration_seconds: float | None = None,
-    video_size_bytes: int | None = None, incident_only: bool = False,
+    video_size_bytes: int | None = None, incident_only: bool = False, p1_call=None,
 ) -> dict:
     """Steps 2-7 for one (model, video) pair. Returns the Step 7 per-video result dict.
 
@@ -254,7 +254,9 @@ def run_one_video(
     if not incident_only:
         check_embedding_server_healthy(FROZEN_EMBEDDING_BASE_URL, expected_model=FROZEN_EMBEDDING_MODEL)
 
-    p1_outcome = analyze_video_with_p1_rate_limited(model, video_url)
+    # ``p1_call(model, video_url) -> P1Outcome`` is an experiment arm (experiment_runner.py); the default is
+    # the production P1 request.
+    p1_outcome = (p1_call or analyze_video_with_p1_rate_limited)(model, video_url)
     p1_result = p1_outcome.result
     contract_error = ""
     if not p1_result.ok:
@@ -386,13 +388,9 @@ def scoring_store(*, use_db: bool = False, init_schema: bool = False):
     return load_offline_gt()
 
 
-def run(
-    *, models: list[str], categories: list[str] | None, limit: int | None, incident_only: bool = False,
-    use_db: bool = False, init_schema: bool = False,
-) -> None:
-    run_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    # Fail fast, before burning any P1/RP1 calls, if either evaluator
-    # dependency isn't already healthy at the frozen configuration.
+def evaluator_preflight(*, incident_only: bool = False) -> None:
+    """Fail fast, before burning any P1/RP1 calls, if either evaluator dependency isn't
+    already healthy at the frozen configuration (also used by the experiment runner)."""
     mismatch = methodology.judge_model_mismatch()
     if mismatch:
         raise EvaluatorDependencyError(mismatch)
@@ -412,6 +410,15 @@ def run(
         raise EvaluatorDependencyError(f"LLM judge preflight failed: {judge_probe.error}")
     embedding_note = "not needed (--incident-only)" if incident_only else f"({FROZEN_EMBEDDING_MODEL}) healthy"
     print(f"Preflight OK: embedding server {embedding_note}, LLM judge responding (probe score={judge_probe.data}).")
+
+
+
+def run(
+    *, models: list[str], categories: list[str] | None, limit: int | None, incident_only: bool = False,
+    use_db: bool = False, init_schema: bool = False,
+) -> None:
+    run_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    evaluator_preflight(incident_only=incident_only)
 
     db = scoring_store(use_db=use_db, init_schema=init_schema)
     gt_index = load_gt_index()

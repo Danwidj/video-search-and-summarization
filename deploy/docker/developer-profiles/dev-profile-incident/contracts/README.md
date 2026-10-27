@@ -18,3 +18,7 @@ The single source of truth for incident extraction: one prompt, one output schem
 2. Bump `VERSION` and update every consumer in the same PR; a taxonomy change also needs a migration.
 
 How the contract is validated, repaired and stored: [`../.docs/analysis-schema.md`](../.docs/analysis-schema.md).
+
+## Experiment prompts (not part of the contract)
+
+[`experiments/`](experiments/README.md) holds the append-only prompt registry for the prompt experiments (PR 6A). Nothing there changes `incident-contract-v4`: `sync.py` does not vendor it, and the production P1 prompt stays `incident_extraction_prompt.txt`. Adopting an experiment prompt in production is a separate decision with a contract version bump.

@@ -1,0 +1,26 @@
+{
+  "arm": "vss",
+  "baseline_ref": "direct-vlm-baseline",
+  "budget": {
+    "max_p1_calls": 50
+  },
+  "description": "Stage 1: initial VSS baseline (C2 on dev) through a local agent with no Supabase or R2 env (D14 b).",
+  "experiment_id": "vss-baseline",
+  "final": false,
+  "frozen_baseline": false,
+  "ground_truth": {
+    "dir": "eval_data/ground_truth/ground-truth-v1.0",
+    "allow_candidate": false
+  },
+  "model": "nvidia/cosmos-3-super-reasoner",
+  "pipeline": {
+    "profile": "accuracy",
+    "skip_rp1": true,
+    "skip_crops": true,
+    "agent_base_url": "http://127.0.0.1:8000"
+  },
+  "prompt_id": "p1-v4-base",
+  "repeats": 2,
+  "selection_record": null,
+  "split": "dev"
+}

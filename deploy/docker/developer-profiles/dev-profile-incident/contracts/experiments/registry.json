@@ -1,0 +1,17 @@
+{
+  "registry_version": 1,
+  "note": "Append-only. Never edit or remove an entry or its prompt file; a change is a new entry with a parent.",
+  "prompts": [
+    {
+      "id": "p1-v4-base",
+      "parent": null,
+      "file": "p1/p1-v4-base.txt",
+      "sha256": "409ed9b3187a56be082bb2542abb243cc13762fdcae7739206d11455064cc4a8",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Baseline: byte-identical to the production P1 prompt (contracts/incident_extraction_prompt.txt) at incident-contract-v4.",
+      "created": "2026-10-27",
+      "status": "baseline"
+    }
+  ]
+}

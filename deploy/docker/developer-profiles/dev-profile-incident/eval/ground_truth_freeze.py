@@ -49,6 +49,10 @@ SPLIT_VERSION = "split-v2"
 FILES = ("ground_truth.json", "split-v2.json")
 ID_PATTERNS = {"gt_entities": r"E\d+", "gt_instruments": r"I\d+", "gt_assets": r"A\d+"}
 ENTITY_TYPES = {"human", "animal"}
+# The frozen records' columns per sheet: the workbook's documented columns, plus the
+# optional out-of-taxonomy columns (methodology v1.0, Option C) on incidents.
+COLUMNS = {sheet: spec["columns"] + (list(gtc.NOTE_FIELDS) if sheet == "gt_incidents" else [])
+           for sheet, spec in gtr.SHEETS.items()}
 TIME_TOLERANCE_SECONDS = 1.0  # integer-second labels against a fractional clip length
 
 
