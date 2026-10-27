@@ -276,9 +276,10 @@ def run_one_video(
 
     persist_prediction(db, incident_id, model_run_id, prediction)
 
-    judge_calls_before = eval_gt.JUDGE_HTTP_CALLS
+    judge_calls_before, judge_tokens_before = eval_gt.JUDGE_HTTP_CALLS, eval_gt.JUDGE_TOKENS
     eval_result = eval_gt.run_evaluation(db, incident_id, model_run_id, incident_only=incident_only)
     judge_calls = eval_gt.JUDGE_HTTP_CALLS - judge_calls_before
+    judge_tokens = eval_gt.JUDGE_TOKENS - judge_tokens_before
     check_judge_ok(eval_result)
     check_scoring_complete(eval_result)
     if (gt_p1_shaped.get("incident") or {}).get("out_of_taxonomy"):
@@ -351,6 +352,7 @@ def run_one_video(
         },
         "rp1_report": rp1_report,
         "judge_calls": judge_calls,
+        "judge_tokens": judge_tokens,
         "methodology_version": methodology.METHODOLOGY_VERSION,
         "scoring_errors": list(eval_result.scoring_errors),
         "incident_field_scores": eval_result.fields,

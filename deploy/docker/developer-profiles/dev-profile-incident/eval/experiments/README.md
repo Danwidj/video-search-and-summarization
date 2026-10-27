@@ -36,7 +36,8 @@ Every guard runs before any call:
 | Paid calls | `run` and `rescore` send nothing without `--confirm-paid` |
 | Ground truth | Must be frozen. A candidate needs `ground_truth.allow_candidate` (plumbing only), and every result is then marked `reportable: false` |
 | Accuracy runs | `skip_rp1` and `skip_crops` must be true. Cropping belongs only to the separate end-to-end profile |
-| Hard caps (D11) | `budget.max_p1_calls`, `max_p1_tokens` and `max_judge_calls` are required. A plan that cannot fit is refused. Before each call the stage stops if the next call could break a cap, or if more than 25% of attempts are rate-limited. Partial results are kept as incomplete |
+| Hard caps (D11) | `budget.max_p1_calls`, `max_p1_tokens` and `max_judge_calls` are required. A plan that cannot fit is refused.<br>**Requests:** every HTTP attempt counts, and 429 retries use only the attempts left after one per remaining video.<br>**Tokens:** each call must leave room for a 35,000-token worst case, and unmetered non-429 attempts count at that ceiling.<br>**Judge:** each video must leave room for its worst case of judged fields × 5 attempts.<br>The stage also stops if more than 25% of attempts are rate-limited. Partial results are kept as incomplete. Judge tokens are measured; their per-call length is not capped by the pinned judge settings |
+| Scoring | `scoring: full` for experiments (D9 needs item F1). `incident_only` is allowed for pilots only |
 | Order (D10) | Configurations given together run interleaved per video, the first rotating, in a seeded order per repeat (`schedule.json`) |
 | Pilot | `purpose: pilot` is dev-only, may use candidate ground truth, is never reportable, never feeds selection, and its report has no accuracy tables |
 

@@ -75,7 +75,7 @@ def _config(**overrides):
               "budget": {"max_p1_calls": 10, "max_p1_tokens": 210000, "max_judge_calls": 100}, "purpose": "experiment",
               "pipeline": {"profile": "accuracy", "skip_rp1": True, "skip_crops": True,
                                                             "agent_base_url": None},
-              "frozen_baseline": False, "final": False, "selection_record": None, "baseline_ref": None, "videos": None}
+              "frozen_baseline": False, "final": False, "selection_record": None, "baseline_ref": None, "videos": None, "scoring": "full"}
     for key, value in overrides.items():
         config[key] = value
     return config
@@ -251,7 +251,7 @@ def test_mock_plumbing_run_of_c1_to_c4_gives_the_four_paired_comparisons(registr
     windows = {"Assault001": ("assault", 2, 9), "Burglary002": ("burglary", 0, 20)}
 
     def factory_for(name):
-        def factory(incident_id, run_id, duration):
+        def factory(incident_id, run_id, duration, max_retries=None):
             kind, start, end = windows[incident_id]
             if name in ("C1", "C2") and incident_id == "Burglary002":
                 kind = "assault"  # the baseline prompt gets the type wrong on one video

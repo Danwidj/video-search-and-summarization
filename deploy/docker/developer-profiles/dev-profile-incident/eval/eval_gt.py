@@ -253,6 +253,9 @@ def _extract_score(content: str) -> float | None:
 # Judge HTTP requests sent by this process (parse retries included), so a run can
 # report exactly how many judge calls it made. Read-only for callers.
 JUDGE_HTTP_CALLS = 0
+# Judge tokens reported by the endpoint (usage.total_tokens), summed over every attempt that returned a body;
+# measurement only, for cost accounting. Attempts with no usage (errors) are counted in JUDGE_HTTP_CALLS.
+JUDGE_TOKENS = 0
 
 
 def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) -> Result:
@@ -289,6 +292,8 @@ def _judge_once(expected: str, predicted: str, *, timeout: float | None = None) 
         body = resp.json()
     except ValueError:
         return Result(ok=False, error="judge endpoint returned a non-JSON body")
+    global JUDGE_TOKENS
+    JUDGE_TOKENS += int(((body.get("usage") or {}) if isinstance(body, dict) else {}).get("total_tokens") or 0)
     score = _extract_score(extract_message_content(body))
     if score is None:
         return Result(ok=False, error=f"could not extract a score from judge response: {body!r}")

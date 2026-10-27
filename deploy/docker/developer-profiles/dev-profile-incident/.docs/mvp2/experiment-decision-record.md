@@ -1,8 +1,13 @@
 # Experiment decision record: D9, D10, D11, D15 and Stage 0
 
-> **Status (2026-10-27):** **D10** and **D15** are approved. **D11** caps are enforced, but the dollar limits are **provisional** until Switchyard pricing or quota is confirmed. **D9 v2** below is **proposed and not yet pre-registered**: it becomes binding only when its decisions.md heading is written on your approval. **Stage 0** is prepared, not run. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
+> **Status (2026-10-27):**
+> - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
+> - **D10 and D15:** approved as implemented.
+> - **D11:** caps enforced, and retry-proof since this revision. The dollar limits are provisional.
+> - **Stage 0:** authorised, subject to confirmed Switchyard billing or quota. **It has not run, because the pricing could not be established** (see [Stage 0](#stage-0-pilot-authorised-blocked-on-pricing)).
+> - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
 
-## D9 v2: prompt-selection rule (proposed)
+## D9 v2: prompt-selection rule (pre-registered)
 
 Code: [`eval/experiment_selection.py`](../../eval/experiment_selection.py) (`evaluate`, `select_d9`); tests: `eval/tests/test_experiment_controls.py`.
 
@@ -32,7 +37,7 @@ The original eight-score average: per video, the mean of the eligible ones among
 
 | Case | Treatment |
 |---|---|
-| **Out-of-taxonomy clip** (ground truth `Out_Of_Taxonomy`, methodology Option C) | **Type** is not eligible. The incident component is the mean of the other four fields. Every other score counts as usual |
+| **Out-of-taxonomy clip** (ground truth `Out_Of_Taxonomy`, methodology Option C) | **Field-specific:** only **type** is ineligible. Severity, start, end and description stay eligible, so that clip's incident component is the mean of those four (denominator 4, or fewer if any is unscored). The entity and object components and the other seven of the eight scores are unaffected. In `ΔI8` the clip's denominator is 7 or fewer |
 | **Unscored value** (scoring failure) | Not eligible. It is never a zero |
 | **Ground truth and prediction both empty** for an item kind | That item's F1 is **not eligible**: nothing to find and nothing claimed |
 | **Ground truth empty, prediction non-empty** | F1 = 0 (every prediction is a false positive) |
@@ -43,6 +48,9 @@ The original eight-score average: per video, the mean of the eligible ones among
 | **Repeats** | Each score is averaged over the repeats that have a value, **before** pairing |
 | **Pairs** | A video counts for a component only when **both** runs have a value for it |
 | **A component with no eligible pair** | Left out of `ΔI` (the mean of the remaining components) and recorded in `components_used` |
+| **Denominators, end to end** | Per video: incident = number of its eligible incident fields; object = number of eligible F1s among instrument and asset (1 or 2). Per component: the number of videos eligible on both sides. `ΔI` = the number of components with ≥ 1 eligible pair. `ΔI8` per video = its eligible scores |
+
+**Eligible counts are always reported** (`compare()["eligible"]`, and `eligible_counts` on every candidate row of `evaluate`): per component and per score, the baseline's eligible videos, the candidate's, the pairs actually used, and the number of out-of-taxonomy videos. A component computed on few pairs is visible, never hidden.
 
 ### Uncertainty
 
@@ -80,7 +88,7 @@ They apply among candidates whose `ΔI` is within **0.01** of the best, in this 
 
 At most 8 Stage 2 versions: E1–E7 and one combined candidate made only from versions with `ΔI > 0`. Every version is kept and reported, regressions included.
 
-**On approval:** add a decisions.md entry headed `2026-MM-DD: Stage 2 prompt selection rule (D9 v2) pre-registered`. That heading is the `rule_record` `select_d9` requires, and it must be written **before the first Stage 2 run**.
+**Pre-registered:** the decisions.md entry `2026-10-27: Stage 2 prompt selection rule (D9 v2) pre-registered` is the `rule_record` that `select_d9` requires. It was written before any Stage 2 run.
 
 ## D10: repeats, order and interleaving (approved)
 
@@ -106,7 +114,10 @@ Every config must carry three hard caps:
 | `budget.max_judge_calls` | Judge requests |
 
 - **Before any call:** a plan that cannot fit is refused (planned calls × 9,898 > token cap).
-- **Before each call:** the stage stops if the next call could break a cap. The token check leaves room for a worst-case call of 21,000 tokens (the largest seen).
+- **Before each call:** the stage stops if the next call could break a cap.
+  - **Requests:** every HTTP attempt, 429 retries included, counts against `max_p1_calls`, and retries use only the attempts left over after one per remaining video.
+  - **Tokens:** the check leaves room for a worst-case attempt of 35,000 tokens (largest prompt plus `max_tokens`). Attempts that report no usage, other than 429 rejections, are counted at that ceiling.
+  - **Judge:** the check leaves room for the video's worst-case judge requests (judged fields × 5 attempts).
 - **Rate limiting:** the stage also stops if more than 25% of attempts (after 8) were rate-limited.
 - **A stopped stage** writes its partial results with `complete: false` and the reason. Selection refuses incomplete records.
 
@@ -154,40 +165,42 @@ Stage 0 has the largest relative margin (2.1×) because 10 calls give the least 
 - **Quarantine:** Stage 2 prompts and few-shot examples come from dev clips only. Prompt authors do not open per-video test results. The runner refuses the test split until a selection record exists.
 - **52-clip subset:** results are also reported on the 52 test clips not named in a recorded pilot. This subset **is not unseen**: all 52 were in the 2026-10-02 benchmark, any of them may have been in the unrecorded pilots, and 38 clips across both halves were viewed during ground-truth correction. It is described only as "excluding the clips named in recorded prompt-design pilots".
 
-## Stage 0 pilot (prepared, not run)
+## Stage 0 pilot (authorised; blocked on pricing)
 
-**Purpose:** infrastructure, reliability, latency and cost validation only.
+**Authorised (2026-10-27):** a no-crop pilot on the five dev clips, with 10 P1 calls in total. It is for operational validation only, on candidate ground truth:
+- its results are never used to select prompts, change annotations or claim accuracy;
+- `purpose: pilot` records are never reportable, `select_d9` refuses them, and pilot reports show no accuracy tables.
 
-**What enforces that:** configs carry `purpose: "pilot"` and are dev-only. They may use the **candidate** ground truth (`allow_candidate: true`). Pilot records are always `reportable: false`, `select_d9` refuses them, and a pilot report shows reliability, latency, usage and cost but **no accuracy tables**.
+The authorisation has two conditions:
+1. **Confirmed Switchyard billing or quota.** **Not met.** The repository documents no price, and the gateway's model listing (`GET /v1/models`, no inference) returns only model ids, with no pricing, quota or rate-limit headers. **So the pilot has not run.** It needs your confirmation: either the gateway is a free or allocated lab quota, or the price per million tokens for `cosmos-3-super-reasoner` and `nemotron-3-nano-30b-a3b`, with any quota limit.
+2. **Caps cannot be bypassed by retries.** **Met after a fix in this revision.** Before it, a 429 retry was an extra request that `max_p1_calls` did not count.
 
-**Configs:**
+**How the caps now hold:**
 
-| Config | Arm | Clips (1 per dev category) | Repeats | Caps (calls / P1 tokens / judge calls) |
-|---|---|---|---|---|
-| `pilot-direct-vlm` | direct | Animal001, Assault007, Burglary004, Explosion002, RoadAccidents005 | 1 | 5 / 105,000 / 50 |
-| `pilot-vss` | VSS (local experiment agent, crops off) | same | 1 | 5 / 105,000 / 50 |
+| Resource | Bound |
+|---|---|
+| P1 requests | **Hard: ≤ 5 per arm, 10 in total.** Every HTTP attempt counts against `max_p1_calls`. Before each video, the runner keeps one attempt per remaining video, so retries can use only what is left over. With 5 videos and a cap of 5 there is no retry: a 429 ends that video as `rate_limited` |
+| P1 tokens | **Hard: ≤ 105,000 per arm, 210,000 in total.** Before each call the runner requires that the tokens counted so far plus a worst-case attempt (35,000 = the largest observed prompt plus the 16,384 `max_tokens`) fit the cap. An attempt with no usage report that was not a 429 is counted at that ceiling |
+| Judge requests | **Hard: ≤ 25 per arm, 50 in total.** The pilot scores incident fields only: 1 judged field per video × at most 5 attempts (1 + 2 parse retries + 2 transient retries). Before each video the runner requires room for that worst case |
+| Judge tokens | **Measured, not hard-bounded.** The pinned judge request (methodology v1.0) sets no `max_tokens`, so one call's output length has no ceiling. Judge tokens are now measured from each response's usage and logged. A hard bound needs a judge `max_tokens`, which changes the pinned methodology and needs your approval |
+| Crop calls | 0 (crops off) |
+| RP1 | 0 (skipped) |
 
-The two configs run **interleaved** as one stage.
+**Spending at the provisional $10 per M tokens:**
 
-**Estimated spending (provisional $10 per M tokens):**
+| | Expected | Hard ceiling |
+|---|---|---|
+| P1 | 10 requests, ≈ 99 k tokens, ≈ $0.99 | 10 requests, ≤ 210 k tokens, ≤ $2.10 |
+| Judge | ≈ 10 requests, ≈ 15 k tokens, ≈ $0.15 | ≤ 50 requests. Tokens per request are not capped (at 1,500 each: 75 k, $0.75) |
+| **Total** | **≈ $1.14** | **≤ $2.85 if each judge reply stays ≤ 1,500 tokens**, within the $3.60 planning ceiling |
 
-| | Requests | Tokens | Cost |
-|---|---|---|---|
-| Expected | 10 P1 + ≈ 50 judge (+ 2 judge preflight probes) | ≈ 99 k P1 + ≈ 75 k judge ≈ **0.17 M** | **≈ $1.74** |
-| Hard ceiling (the caps) | 10 P1, ≤ 100 judge | ≤ 210 k P1 + ≤ 150 k judge = **0.36 M** | **≤ $3.60** |
+The two judge preflight probes (one per invocation) add 2 requests.
 
-**Crop pilot removed (needs your decision).** Without an R2 evidence store the agent skips cropping entirely, so no box calls are made and crop cost cannot be measured. With R2 configured, an experimental request is refused (409), because evidence images would be uploaded to shared storage. Options:
-- **(a)** an experiment-only discard evidence store in the agent, so detection runs but images are dropped (agent code change, experimental path only);
-- **(b)** measure crop cost later, in the end-to-end profile, under a separately approved arrangement;
-- **(c)** approve R2 writes to a scratch prefix for the pilot.
+The real-dollar amount stays unknown until the price is confirmed. The token and request bounds hold whatever the price is.
 
-**Recommended: (a).**
+**After the pilot:**
+- `measure` reports requests, failures, retries, tokens by model, latency and the provisional charge;
+- `budget --measured` recalculates Stages 1–3;
+- the gate into Stage 1 is unchanged: frozen ground truth, and the stage budget approved at the confirmed price.
 
-**Gate into Stage 1:**
-- 10/10 attempted, ≥ 8 model outputs;
-- `verify` clean and zero harness defects (contract version, VSS echo);
-- rate-limited ≤ 25% of attempts;
-- measured tokens per P1 call ≤ 19,800 (2 × the estimate), otherwise re-estimate and re-approve;
-- projected Stage 1 cost within its cap at the confirmed price;
-- **`ground-truth-v1.0` frozen with your approval record**;
-- the D9 v2 heading written before Stage 2.
+**Cropping, option (a) (chosen 2026-10-27):** an isolated, temporary evidence store for experimental requests only, holding no production data and making no R2 writes. It is a separate follow-up and does not block the no-crop pilot.

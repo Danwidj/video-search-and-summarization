@@ -145,8 +145,15 @@ def compare(baseline_record: dict, candidate_record: dict, *, resamples: int | N
         ordered = sorted(values)
         return [round(ordered[int(0.025 * (len(ordered) - 1))], 4), round(ordered[int(0.975 * (len(ordered) - 1))], 4)]
 
-    pairs = {name: len(_paired(base, cand, name, ids)) for name in (*COMPONENTS, "eight", *EIGHT_SCORES)}
-    return {"videos": len(ids), "pairs": pairs,
+    names = (*COMPONENTS, "eight", *EIGHT_SCORES)
+    pairs = {name: len(_paired(base, cand, name, ids)) for name in names}
+    # Eligible counts per side (videos with a value) and paired (both sides): the denominators of each mean.
+    eligible = {"baseline": {name: sum(base[i][name] is not None for i in base) for name in names},
+                "candidate": {name: sum(cand[i][name] is not None for i in cand) for name in names},
+                "paired": pairs,
+                "out_of_taxonomy_videos": sum(1 for i in ids if base[i]["type"] is None and base[i]["incident"]
+                                              is not None)}
+    return {"videos": len(ids), "pairs": pairs, "eligible": eligible,
             "components_used": [c for c in COMPONENTS if point[c] is not None],
             "point": {k: None if v is None else round(v, 4) for k, v in point.items()},
             "ci95": {name: interval(values) for name, values in draws.items()}}
@@ -196,6 +203,7 @@ def evaluate(baseline_record: dict, candidates: dict[str, dict], *, registry: di
                      "prompt_bytes": len(prompt_registry.prompt_text(record["prompt"]["id"], registry=registry)
                                          .encode()),
                      "registry_order": _order(record["prompt"]["id"], registry), "guardrail_problems": problems,
+                     "eligible_counts": comparison["eligible"],
                      "eligible": not problems and meets, "comparison": comparison})
     eligible = [r for r in rows if r["eligible"]]
     eligible.sort(key=lambda r: -r["primary"])
