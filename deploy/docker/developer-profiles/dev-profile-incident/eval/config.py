@@ -96,22 +96,18 @@ def embedding_base_url() -> str:
 def incident_llm_api_key() -> str:
     """Optional bearer token for ``INCIDENT_LLM_BASE_URL``.
 
-    Empty for the local, unauthenticated ``mock_llm_server.py`` (unchanged,
-    existing behavior); a real remote endpoint needs a real key here, sent as
-    ``Authorization: Bearer <key>`` only when non-empty.
+    Sent as ``Authorization: Bearer <key>`` only when non-empty.
     """
     return _clean(os.getenv("INCIDENT_LLM_API_KEY"))
 
 
-def incident_judge_model() -> str:
-    """Model name sent to ``INCIDENT_LLM_BASE_URL`` for LLM-as-a-judge scoring.
+def configured_judge_model() -> str:
+    """``INCIDENT_JUDGE_MODEL`` as set, or "" - only to check it against the methodology's pinned judge.
 
-    Defaults to ``"incident-judge"`` (what ``mock_llm_server.py`` accepts, and
-    ``eval_gt.judge_description_similarity``'s previous hardcoded value) so an
-    unset env var is a no-op for existing local-dev setups; a real upstream
-    endpoint needs its own real model name here instead.
+    The judge model itself is pinned in ``methodology.JUDGE_MODEL``; ``eval_run.py`` refuses to
+    start when this is set to anything else (``methodology.judge_model_mismatch``).
     """
-    return _clean(os.getenv("INCIDENT_JUDGE_MODEL")) or "incident-judge"
+    return _clean(os.getenv("INCIDENT_JUDGE_MODEL"))
 
 
 # Minimum cosine similarity for an accepted entity/instrument/asset match against

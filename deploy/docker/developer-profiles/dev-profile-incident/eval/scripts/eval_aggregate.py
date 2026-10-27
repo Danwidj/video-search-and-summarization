@@ -35,7 +35,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import extraction_stats  # noqa: E402
 from eval_ingest_gt import EVAL_DATA_DIR  # noqa: E402
 
 RESULTS_DIR = EVAL_DATA_DIR / "results"
@@ -65,6 +67,11 @@ def aggregate_one(category_model: dict) -> dict:
         "assets": {"name": [], "description": []},
     }
     holder_status_counts = {"correct": 0, "incorrect": 0, "unresolved": 0}
+    # Unscored values (pass is None: the judge or embedder could not score them) are counted,
+    # never folded into a field as a fail (evaluation-methodology-v1.0).
+    unscored = {field: 0 for field in ("type", "severity_level", "start_timestamp", "end_timestamp", "duration",
+                                       "description")}
+    unscored_kinds = {"entities": 0, "instruments": 0, "assets": 0}
 
     p1_failures = []
     rp1_failures = []
@@ -99,7 +106,10 @@ def aggregate_one(category_model: dict) -> dict:
         for field in field_pass:
             entry = fs.get(field, {})
             if "pass" in entry:
-                field_pass[field].append(bool(entry["pass"]))
+                if entry["pass"] is None:
+                    unscored[field] += 1
+                else:
+                    field_pass[field].append(bool(entry["pass"]))
             if field in field_abs_error and entry.get("expected") is not None and entry.get("predicted") is not None:
                 try:
                     field_abs_error[field].append(abs(float(entry["expected"]) - float(entry["predicted"])))
@@ -107,9 +117,14 @@ def aggregate_one(category_model: dict) -> dict:
                     pass
         if fs.get("description", {}).get("score") is not None:
             description_scores.append(fs["description"]["score"])
+        elif fs.get("description", {}).get("pass", False) is None:
+            unscored["description"] += 1
 
         for kind in ("entities", "instruments", "assets"):
             counts = v[kind]["counts"]
+            if counts is None:
+                unscored_kinds[kind] += 1
+                continue
             for k in ("tp", "fp", "fn"):
                 pooled_counts[kind][k] += counts.get(k, 0)
             for m in v[kind]["matches"]:
@@ -118,7 +133,7 @@ def aggregate_one(category_model: dict) -> dict:
                     if attr_name == "holder":
                         holder_status_counts[attr_val["status"]] = holder_status_counts.get(attr_val["status"], 0) + 1
                         continue
-                    if attr_name in attribute_pass.get(kind, {}) and "pass" in attr_val:
+                    if attr_name in attribute_pass.get(kind, {}) and attr_val.get("pass") is not None:
                         attribute_pass[kind][attr_name].append(bool(attr_val["pass"]))
 
     def _prf1(c: dict) -> dict:
@@ -135,6 +150,9 @@ def aggregate_one(category_model: dict) -> dict:
         "core_failures": core_failures,
         "enrichment_violation_videos": enrichment_violation_videos,
         "rp1_failures": rp1_failures,
+        "unscored": {"fields": unscored, "kinds": unscored_kinds},
+        "severity": extraction_stats.severity_analysis(videos),
+        "instrument_attributes": extraction_stats.instrument_attributes(videos),
         "incident_field_accuracy": {
             "type": _pct(sum(field_pass["type"]), len(field_pass["type"])),
             "severity_level": _pct(sum(field_pass["severity_level"]), len(field_pass["severity_level"])),
@@ -232,20 +250,37 @@ def pool_aggregates(aggregates: list[dict]) -> dict:
     }
 
 
-def main() -> None:
-    # Only eval_run.py's per-(category, model) files, named "<category>__<model>.json";
-    # other JSON beside them (summary.json, dataset_stats.json) is not a results file.
-    files = sorted(RESULTS_DIR.glob("*__*.json"))
+LEGACY_METHODOLOGY = "legacy (before evaluation-methodology-v1.0)"
+
+
+class MixedMethodologyError(ValueError):
+    """Result files scored under different methodology versions cannot be pooled."""
+
+
+def methodology_version(data: dict) -> str:
+    return (data.get("methodology") or {}).get("methodology_version") or LEGACY_METHODOLOGY
+
+
+def summarize(files: list[Path]) -> dict:
+    """The summary of a set of result files; refuses to pool different methodology versions."""
     by_category_and_model: dict[str, dict[str, dict]] = {}
     by_model_raw: dict[str, list[dict]] = {}
+    videos_by_model: dict[str, list[dict]] = {}
     models_seen = {}
+    versions: dict[str, set[str]] = {}
+    pins: dict[str, dict] = {}
 
     for f in files:
         data = json.loads(f.read_text())
+        version = methodology_version(data)
+        versions.setdefault(version, set()).add(f.name)
+        if data.get("methodology"):
+            pins[version] = data["methodology"]
         category, model = data["category"], data["model_id"]
         agg = aggregate_one(data)
         by_category_and_model.setdefault(category, {})[model] = agg
         by_model_raw.setdefault(model, []).append(agg)
+        videos_by_model.setdefault(model, []).extend(data["videos"])
         seen = models_seen.setdefault(model, {"model_id": model, "validation_policies": []})
         seen.update({"prompt_version": data["prompt_version"], "inference_config": data["inference_config"]})
         # Results written before core-scored-v1 were scored by full contract validity.
@@ -253,16 +288,37 @@ def main() -> None:
         if policy not in seen["validation_policies"]:
             seen["validation_policies"].append(policy)
 
-    by_model = {model: pool_aggregates(aggs) for model, aggs in by_model_raw.items()}
-    overall = pool_aggregates([agg for aggs in by_model_raw.values() for agg in aggs])
+    if len(versions) > 1:
+        detail = "; ".join(f"{v}: {len(names)} file(s)" for v, names in sorted(versions.items()))
+        raise MixedMethodologyError(f"results come from different methodology versions ({detail}); "
+                                    "aggregate each version separately")
 
-    summary = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+    def with_statistics(block: dict, videos: list[dict]) -> dict:
+        block["field_intervals"] = extraction_stats.field_intervals(videos)
+        block["severity"] = extraction_stats.severity_analysis(videos)
+        block["instrument_attributes"] = extraction_stats.instrument_attributes(videos)
+        return block
+
+    by_model = {model: with_statistics(pool_aggregates(aggs), videos_by_model[model])
+                for model, aggs in by_model_raw.items()}
+    overall = with_statistics(pool_aggregates([agg for aggs in by_model_raw.values() for agg in aggs]),
+                              [v for videos in videos_by_model.values() for v in videos])
+    version = next(iter(versions), LEGACY_METHODOLOGY)
+    return {
+        "methodology_version": version,
+        "methodology": pins.get(version),
         "models": list(models_seen.values()),
         "by_category_and_model": by_category_and_model,
         "by_model": by_model,
         "overall": overall,
     }
+
+
+def main() -> None:
+    # Only eval_run.py's per-(category, model) files, named "<category>__<model>.json";
+    # other JSON beside them (summary.json, dataset_stats.json) is not a results file.
+    summary = summarize(sorted(RESULTS_DIR.glob("*__*.json")))
+    summary = {"generated_at": datetime.now(timezone.utc).isoformat(), **summary}
     out_path = RESULTS_DIR / "summary.json"
     out_path.write_text(json.dumps(summary, indent=2))
     print(f"wrote {out_path}")

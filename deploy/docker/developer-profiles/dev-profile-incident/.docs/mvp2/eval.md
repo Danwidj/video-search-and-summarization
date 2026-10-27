@@ -46,10 +46,11 @@ Paths are relative to the profile directory, except paths starting with `service
   |---|---|
   | Type and severity | Exact match |
   | Start / end / duration | Within ±5 s (`EVAL_TIMESTAMP_TOLERANCE_SECONDS`, a constant in `eval/config.py`), plus mean absolute error in `eval/scripts/eval_aggregate.py` |
-  | Description and item text | LLM judge (`INCIDENT_JUDGE_MODEL`); passes at ≥ 0.5, hard-coded |
+  | Description and item text | Pinned LLM judge (`nvidia/nemotron-3-nano-30b-a3b`, `judge-prompt-v1`, temperature 0); passes at ≥ 0.5 |
   | Entities, instruments, assets | 1-to-1 Hungarian matching at cosine ≥ 0.75 over `sentence-transformers/all-MiniLM-L6-v2`, then precision / recall / F1 |
 
-  - MiniLM is served locally by `eval/scripts/eval_embedding_server.py` (:8811). The model name is hard-coded in that script, `eval/scripts/eval_run.py` and `eval/scripts/eval_run_lib.py`.
+  - MiniLM is served locally by `eval/scripts/eval_embedding_server.py` (:8811).
+  - Since 2026-10-27 every pin is fixed by [`evaluation-methodology-v1.0`](../../eval/methodology/evaluation-methodology-v1.0.md) (`eval/methodology.py`) and recorded in each result. A judge or embedder failure leaves the field unscored and stops the run, never a zero. The aggregate adds per-video 95% intervals, severity within ±1, bias and confusion, and holder accuracy, and refuses to pool methodology versions. Clips outside the five types: a proposal awaits approval (§6 there).
 - **Run records** (since the 2026-10-02 benchmark work, on main from 2026-10-27): each P1 call's round-trip time (`timing.p1_elapsed_s`), the video's size and length, an `outcome` class that keeps request failures (`timeout`, `rate_limited`, `http_error`) out of the accuracy metrics, and a fixed rate-limit policy (20 s pacing; HTTP 429 only retried, at most twice). An empty predicted description scores 0.0 without a judge call ([decision](../decisions.md#2026-10-02-vlm-benchmark-incident-fields-only-timed-p1-round-trip-interleaved-models-no-blended-score)).
 - **What is not captured:**
   - Token `usage` is kept only for the P1 call. No cost is recorded.
