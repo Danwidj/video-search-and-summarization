@@ -2,6 +2,19 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Ground truth is frozen only against an explicit approval record; Pending always blocks
+- **Decision:** `eval/scripts/gt_freeze.py` (with `eval/ground_truth_freeze.py`) prepares `ground-truth-v1.0` from the unchanged source plus the latest reviewed candidate workbook.
+  - **Checks:** schema validation, `split-v2` consistency, and blocking issues. Any `Pending` entry blocks; it is never read as Approved.
+  - **Recorded:** a `MANIFEST.json` with the SHA-256 of every output and input.
+  - **Frozen only** when nothing blocks and an approval record names exactly that candidate: its workbook SHA-256, records digest and exclusions, plus who approved it and when. Otherwise the output is a `candidate`.
+  - **Loading:** `eval_gt_schema.load_frozen_gt_index` verifies the checksums and refuses a candidate unless `allow_candidate` is set (plumbing only).
+  - **Immutable:** a frozen directory is never overwritten; corrections are a new version.
+  - **`split-v2`:** the existing seeded partition renamed (25 dev = former few-shot clips, 55 test = evaluation clips; plan D8 (a), user rule 2026-10-27). It is tracked in `eval_reproducibility/split-v2.json`.
+- **Why:** the freeze must not make unapproved labels authoritative, and the approval must be bound to the exact content approved, so that a later edit to the workbook invalidates it.
+- **Rejected:** treating Pending as accepted after a deadline; freezing on human statuses alone with no approval record; a free-form approval not tied to digests.
+- **Open:** where frozen ground truth is stored (D7: committed JSON vs R2) and whether its annotation text may be committed. Until then the output is local under `eval_data/ground_truth/` (gitignored). The approval of the final annotations and exclusions is the user's.
+- **Links:** [`../eval/ground_truth/freeze/README.md`](../eval/ground_truth/freeze/README.md); [`../eval/ground_truth/freeze/ground-truth-v1.0-readiness.md`](../eval/ground_truth/freeze/ground-truth-v1.0-readiness.md).
+
 ### 2026-10-27: Ground-truth corrections are AI-proposed from video frames, applied only when independently verified or human-approved
 - **Decision:** PR 4 builds a versioned candidate workbook (`Ground Truth Candidate v0.2.xlsx`) from the unchanged source, the PR 3 review workbook and AI video-review proposals (`eval/scripts/gt_candidate_build.py`, `eval/ground_truth_correction.py`).
   - **Automatically applied:** only the 86 `verified_correction` entries, each re-checked by `verify_mechanical` independently of the audit's rule code (status `Auto-verified`, which a reviewer can still reject).

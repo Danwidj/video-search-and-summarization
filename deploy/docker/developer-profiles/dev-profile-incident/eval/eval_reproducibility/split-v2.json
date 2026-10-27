@@ -1,0 +1,203 @@
+{
+  "by_category": {
+    "Animal Attack": {
+      "dev": [
+        "Animal001",
+        "Animal002",
+        "Animal005",
+        "Animal011",
+        "Animal012"
+      ],
+      "test": [
+        "Animal003",
+        "Animal004",
+        "Animal006",
+        "Animal007",
+        "Animal008",
+        "Animal009",
+        "Animal010",
+        "Animal013",
+        "Animal014",
+        "Animal015"
+      ]
+    },
+    "Assault": {
+      "dev": [
+        "Assault007",
+        "Assault011",
+        "Assault015",
+        "Assault030",
+        "Assault032"
+      ],
+      "test": [
+        "Assault012",
+        "Assault013",
+        "Assault018",
+        "Assault019",
+        "Assault020",
+        "Assault026",
+        "Assault027",
+        "Assault034",
+        "Assault036",
+        "Assault050"
+      ]
+    },
+    "Burglary": {
+      "dev": [
+        "Burglary004",
+        "Burglary010",
+        "Burglary031",
+        "Burglary061",
+        "Burglary093"
+      ],
+      "test": [
+        "Burglary005",
+        "Burglary009",
+        "Burglary013",
+        "Burglary020",
+        "Burglary021",
+        "Burglary026",
+        "Burglary036",
+        "Burglary041",
+        "Burglary042",
+        "Burglary052",
+        "Burglary053",
+        "Burglary066",
+        "Burglary071"
+      ]
+    },
+    "Explosion": {
+      "dev": [
+        "Explosion002",
+        "Explosion003",
+        "Explosion011",
+        "Explosion028",
+        "Explosion029"
+      ],
+      "test": [
+        "Explosion004",
+        "Explosion009",
+        "Explosion014",
+        "Explosion016",
+        "Explosion017",
+        "Explosion019",
+        "Explosion027",
+        "Explosion041",
+        "Explosion047",
+        "Explosion051"
+      ]
+    },
+    "Road Accident": {
+      "dev": [
+        "RoadAccidents005",
+        "RoadAccidents012",
+        "RoadAccidents017",
+        "RoadAccidents051",
+        "RoadAccidents075"
+      ],
+      "test": [
+        "RoadAccidents008",
+        "RoadAccidents010",
+        "RoadAccidents024",
+        "RoadAccidents029",
+        "RoadAccidents030",
+        "RoadAccidents037",
+        "RoadAccidents039",
+        "RoadAccidents047",
+        "RoadAccidents052",
+        "RoadAccidents054",
+        "RoadAccidents060",
+        "RoadAccidents069"
+      ]
+    }
+  },
+  "dev": [
+    "Animal001",
+    "Animal002",
+    "Animal005",
+    "Animal011",
+    "Animal012",
+    "Assault007",
+    "Assault011",
+    "Assault015",
+    "Assault030",
+    "Assault032",
+    "Burglary004",
+    "Burglary010",
+    "Burglary031",
+    "Burglary061",
+    "Burglary093",
+    "Explosion002",
+    "Explosion003",
+    "Explosion011",
+    "Explosion028",
+    "Explosion029",
+    "RoadAccidents005",
+    "RoadAccidents012",
+    "RoadAccidents017",
+    "RoadAccidents051",
+    "RoadAccidents075"
+  ],
+  "rule": "dev = the former few-shot clips, test = the evaluation clips of each seeded split_<category>.json",
+  "seed": [
+    42
+  ],
+  "test": [
+    "Animal003",
+    "Animal004",
+    "Animal006",
+    "Animal007",
+    "Animal008",
+    "Animal009",
+    "Animal010",
+    "Animal013",
+    "Animal014",
+    "Animal015",
+    "Assault012",
+    "Assault013",
+    "Assault018",
+    "Assault019",
+    "Assault020",
+    "Assault026",
+    "Assault027",
+    "Assault034",
+    "Assault036",
+    "Assault050",
+    "Burglary005",
+    "Burglary009",
+    "Burglary013",
+    "Burglary020",
+    "Burglary021",
+    "Burglary026",
+    "Burglary036",
+    "Burglary041",
+    "Burglary042",
+    "Burglary052",
+    "Burglary053",
+    "Burglary066",
+    "Burglary071",
+    "Explosion004",
+    "Explosion009",
+    "Explosion014",
+    "Explosion016",
+    "Explosion017",
+    "Explosion019",
+    "Explosion027",
+    "Explosion041",
+    "Explosion047",
+    "Explosion051",
+    "RoadAccidents008",
+    "RoadAccidents010",
+    "RoadAccidents024",
+    "RoadAccidents029",
+    "RoadAccidents030",
+    "RoadAccidents037",
+    "RoadAccidents039",
+    "RoadAccidents047",
+    "RoadAccidents052",
+    "RoadAccidents054",
+    "RoadAccidents060",
+    "RoadAccidents069"
+  ],
+  "version": "split-v2"
+}

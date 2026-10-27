@@ -68,11 +68,30 @@ def load_gt_index(workbook_path: Path = WORKBOOK_PATH) -> dict:
         }
     """
     workbook = openpyxl.load_workbook(workbook_path, data_only=True)
-    incidents = load_gt_incidents(workbook)
-    entities = _sheet_rows(workbook, "gt_entities")
-    instruments = _sheet_rows(workbook, "gt_instruments")
-    assets = _sheet_rows(workbook, "gt_assets")
+    return gt_index_from_rows(load_gt_incidents(workbook), _sheet_rows(workbook, "gt_entities"),
+                              _sheet_rows(workbook, "gt_instruments"), _sheet_rows(workbook, "gt_assets"))
 
+
+def load_frozen_gt_index(directory: Path, *, allow_candidate: bool = False) -> dict:
+    """``load_gt_index``'s shape from a frozen ground-truth directory (PR 5), checksums verified.
+
+    Refuses a directory that is not ``frozen`` (a candidate awaiting approval) unless
+    ``allow_candidate`` is set, which is for plumbing tests only, never for reported results.
+    The result also carries ``version``, ``status``, ``split`` and ``manifest``.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import ground_truth_freeze
+
+    data = ground_truth_freeze.read_frozen(Path(directory), allow_candidate=allow_candidate)
+    sheets = data["sheets"]
+    index = gt_index_from_rows(sheets["gt_incidents"], sheets["gt_entities"], sheets["gt_instruments"],
+                               sheets["gt_assets"])
+    return {**index, "version": data["version"], "status": data["status"], "split": data["split"],
+            "manifest": data["manifest"]}
+
+
+def gt_index_from_rows(incidents: list[dict], entities: list[dict], instruments: list[dict], assets: list[dict]) -> dict:
+    """The index from workbook-shaped rows (the workbook itself, or a frozen ground truth)."""
     entities_by_incident: dict[str, list[dict]] = {}
     for row in entities:
         entities_by_incident.setdefault(row["Incident_ID (P_key, F_key)"], []).append(row)
