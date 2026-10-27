@@ -2,6 +2,21 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-27: Experimental /analyze settings are opt-in per process, verified, never persisted, and invisible to production requests
+- **Decision:** the agent's `/analyze` accepts `experiment_prompt_id` (a prompt from `contracts/experiments/registry.json`) and `skip_crops`, for the eval prompt experiments only (`services/agent/src/vss_agents/tools/incident_experiments.py`, `incident_report_gen.experiment_settings`).
+  - **Opt-in:** refused with 403 unless the process runs with `INCIDENT_EXPERIMENTS_ENABLED=1`.
+  - **Verified prompt:** served only when its SHA-256 and contract version match the registry. An unknown or edited prompt, or a reviewer prompt alongside it, is 400.
+  - **No shared writes:** cropping with R2 configured is 409. An experimental request writes no revision.
+  - **Telemetry:** the response echoes the prompt id and SHA-256 used and adds `p1_elapsed_ms` and `usage`, on a 422 as well.
+  - **Production unchanged:** a request without these fields keeps its P1 body, persistence, cropping and response keys, with experiments enabled or not. The tests prove it, and the baseline registry prompt gives the production P1 body byte for byte.
+- **Why:** the VSS arm needs the registry prompt and P1-only timing (plan §F.1, D14), but production must not change, and an experiment must not write to Supabase or R2 without approval.
+- **Rejected:**
+  - reusing `reviewer_prompt` (it appends a hint, so it cannot replace the prompt);
+  - ignoring the fields silently when disabled (a caller could believe an experiment ran);
+  - vendoring experiment prompts through `sync.py`;
+  - persisting experimental revisions.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b); [`../eval/experiments/README.md`](../eval/experiments/README.md).
+
 ### 2026-10-27: Experiment prompts live in an append-only registry; one runner drives both arms under the same guards
 - **Decision:**
   - **Registry:** `contracts/experiments/` (`registry.json` plus immutable `p1/<id>.txt`). `p1-v4-base` is byte-identical to the production prompt. `eval/prompt_registry.py` checks the hashes, ids and parents, and append-only against `origin/main`. `sync.py` vendors none of it, so the production contract is unchanged.

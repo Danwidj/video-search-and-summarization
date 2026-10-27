@@ -3,7 +3,7 @@ name: incident-operate-vm
 description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (VIOS, HAProxy, Redis, Kafka) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
   profile: "dev-profile-incident"
   tags: "incident vm operations native docker troubleshooting"
 ---
@@ -21,6 +21,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 | Start the `vss-agent` Docker container | The native agent already owns `:8000` ("no double agent") | `./.scripts/native-services.sh restart vss-agent` |
 | `uv sync` in `services/agent` on the VM | `nvdataset` resolves only from NVIDIA's internal artifactory | The reinstall procedure below |
 | `_type: nim` for remote models, or a `*_BASE_URL` ending in `/v1` | `nim_langchain` leaks `verify_ssl` into the request body (HTTP 400), and clients append `/v1` themselves | `_type: openai`, bare host URL |
+| Set `INCIDENT_EXPERIMENTS_ENABLED=1` on the shared VM agent | It enables the eval-experiment `/analyze` settings (`experiment_prompt_id`, `skip_crops`) for every caller | Run prompt experiments on a separate local agent with no Supabase or R2 settings ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)) |
 
 **Ask first:** stopping services teammates may be using, editing `generated.env.remote`, or pruning images.
 

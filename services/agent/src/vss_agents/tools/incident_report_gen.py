@@ -51,6 +51,7 @@ from collections.abc import AsyncGenerator
 import logging
 import os
 import re
+import time
 from typing import Any
 from typing import Literal
 
@@ -65,10 +66,12 @@ from pydantic import Field
 
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.tools import incident_experiments
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
 from vss_agents.utils import video_duration
 from vss_agents.utils.embeddings import RemoteTextEmbedder
+from vss_agents.utils.r2 import is_r2_configured
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +140,22 @@ class IncidentReportGenInput(BaseModel):
         strict=True,
         description="The video length the caller read; when absent the agent reads the MP4 header itself.",
     )
+    experiment_prompt_id: str | None = Field(
+        default=None,
+        description="Experimental: a registry P1 prompt id (needs INCIDENT_EXPERIMENTS_ENABLED=1; never persisted).",
+    )
+    skip_crops: bool = Field(
+        default=False,
+        description="Experimental: skip post-P1 evidence cropping (needs INCIDENT_EXPERIMENTS_ENABLED=1).",
+    )
+
+
+class ExperimentRefusedError(RuntimeError):
+    """An experimental request would write to shared storage (HTTP 409 on ``/analyze``)."""
+
+
+# Fields only an experimental request returns; production responses never carry them.
+EXPERIMENT_OUTPUT_FIELDS = ("experiment", "p1_elapsed_ms", "usage")
 
 
 class IncidentReportGenOutput(BaseModel):
@@ -167,6 +186,11 @@ class IncidentReportGenOutput(BaseModel):
     video_bounds_unchecked_reason: str | None = Field(
         default=None, description="Why the video-bounds rules were not applied; null when they were."
     )
+    experiment: dict[str, Any] | None = Field(
+        default=None, description="Experimental requests only: the prompt id and SHA-256 used, skip_crops, persisted."
+    )
+    p1_elapsed_ms: float | None = Field(default=None, description="Experimental requests only: the P1 round trip.")
+    usage: dict[str, Any] | None = Field(default=None, description="Experimental requests only: P1 token usage.")
 
 
 class VideoLength(BaseModel):
@@ -196,10 +220,13 @@ def _chat_completions_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/v1/chat/completions"
 
 
-def p1_request_body(model: str, video_url: str, reviewer_prompt: str | None = None) -> dict[str, Any]:
+def p1_request_body(
+    model: str, video_url: str, reviewer_prompt: str | None = None, prompt_text: str | None = None
+) -> dict[str, Any]:
+    """The P1 request. ``prompt_text`` (a verified registry prompt) replaces only the prompt text."""
     content: list[dict[str, Any]] = [
         {"type": "video_url", "video_url": {"url": video_url}},
-        {"type": "text", "text": incident_contract.extraction_prompt()},
+        {"type": "text", "text": incident_contract.extraction_prompt() if prompt_text is None else prompt_text},
     ]
     if reviewer_prompt:
         content.append({"type": "text", "text": f"{REVIEWER_PROMPT_PREAMBLE}\n<<<\n{reviewer_prompt}\n>>>"})
@@ -256,18 +283,28 @@ async def run_p1(
     model: str | None = None,
     reviewer_prompt: str | None = None,
     video_duration_seconds: float | None = None,
+    prompt_text: str | None = None,
+    telemetry: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, str | None]:
     """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``.
 
     With ``video_duration_seconds`` the video-bounds rules apply; without it they cannot.
+    ``telemetry``, when given, receives ``p1_elapsed_ms`` (the HTTP round trip) and ``usage``.
     """
     model_name = model or config.vlm_model_name
+    started = time.perf_counter()
     response = await client.post(
-        _chat_completions_url(config.vlm_base_url), json=p1_request_body(model_name, video_url, reviewer_prompt)
+        _chat_completions_url(config.vlm_base_url),
+        json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text),
     )
+    if telemetry is not None:
+        telemetry["p1_elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
     if response.status_code >= 400:
         raise RuntimeError(f"P1 call returned HTTP {response.status_code}: {response.text[:500]}")
-    content, finish_reason = _message_content(response.json())
+    body = response.json()
+    if telemetry is not None and isinstance(body, dict):
+        telemetry["usage"] = body.get("usage") or {}
+    content, finish_reason = _message_content(body)
     try:
         if not content and finish_reason == "length":
             raise IncidentExtractionError(
@@ -373,6 +410,32 @@ async def persist_revision(
         return None
 
 
+def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str | None) -> dict[str, Any] | None:
+    """``None`` for a production request; for an experimental one, what it uses, after every gate.
+
+    Raises ``ExperimentsDisabledError`` unless the agent runs with ``INCIDENT_EXPERIMENTS_ENABLED=1``,
+    ``ExperimentPromptError`` for an unknown or edited prompt, ``ValueError`` when combined with a
+    reviewer prompt, and ``ExperimentRefusedError`` when cropping would upload images to R2.
+    """
+    if tool_input.experiment_prompt_id is None and not tool_input.skip_crops:
+        return None
+    incident_experiments.require_enabled()
+    if reviewer_prompt:
+        raise ValueError(
+            "an experimental request cannot carry a reviewer prompt (the P1 request must be the prompt alone)"
+        )
+    if not tool_input.skip_crops and is_r2_configured():
+        raise ExperimentRefusedError(
+            "experimental cropping would upload evidence images to R2; run the experiment agent without R2 settings "
+            "or set skip_crops"
+        )
+    settings: dict[str, Any] = {"prompt_id": None, "prompt_sha256": incident_experiments.production_prompt_sha256()}
+    if tool_input.experiment_prompt_id is not None:
+        text, digest = incident_experiments.resolve_prompt(tool_input.experiment_prompt_id)
+        settings = {"prompt_id": tool_input.experiment_prompt_id, "prompt_sha256": digest, "_prompt_text": text}
+    return {**settings, "skip_crops": tool_input.skip_crops, "persisted": False}
+
+
 @register_function(config_type=IncidentReportGenConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
 async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:  # noqa: ARG001
     """Contract P1 -> RP1 over one uploaded video, then evidence crops and a new AI revision."""
@@ -382,6 +445,9 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         if tool_input.model is not None and tool_input.model not in incident_contract.allowed_models():
             raise ValueError(f"Model {tool_input.model!r} is not in the incident contract allowlist")
         reviewer_prompt = normalize_reviewer_prompt(tool_input.reviewer_prompt)
+        experiment = experiment_settings(tool_input, reviewer_prompt)
+        prompt_text = experiment.pop("_prompt_text", None) if experiment else None
+        telemetry: dict[str, Any] | None = {} if experiment else None
         video_length = await resolve_video_length(tool_input.video_url, tool_input.video_duration_seconds)
         if video_length.seconds is None:
             logger.warning(
@@ -400,24 +466,42 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                     model=model_name,
                     reviewer_prompt=reviewer_prompt,
                     video_duration_seconds=video_length.seconds,
+                    prompt_text=prompt_text,
+                    telemetry=telemetry,
                 )
+            except IncidentExtractionError as exc:
+                if experiment is not None:  # the caller must still see which prompt produced the rejected output
+                    exc.experiment = experiment  # type: ignore[attr-defined]
+                    exc.telemetry = telemetry  # type: ignore[attr-defined]
+                raise
             except httpx.TimeoutException as exc:
                 raise TimeoutError(f"P1 call timed out after {config.request_timeout_seconds}s") from exc
             report_text, report_text_error = (
                 (None, None) if tool_input.skip_rp1 else await run_rp1(client, config, report)
             )
 
-        evidence = await collect_evidence(
-            video_url=tool_input.video_url, incident_id=tool_input.incident_id, report=report
-        )
-        revision_id = await persist_revision(
-            incident_id=tool_input.incident_id,
-            model_run_id=tool_input.model_run_id or config.model_run_id,
-            model_name=model_name,
-            report=report,
-            evidence=evidence,
-            caller_owns_run=tool_input.model_run_id is not None,
-            note=f"Reviewer prompt: {reviewer_prompt}" if reviewer_prompt else None,
+        if tool_input.skip_crops:
+            evidence = [
+                {**item, "bounding_box": None, "image": None, "image_gap": "evidence cropping skipped (skip_crops)"}
+                for item in crop_evidence.evidence_items(report)
+            ]
+        else:
+            evidence = await collect_evidence(
+                video_url=tool_input.video_url, incident_id=tool_input.incident_id, report=report
+            )
+        # An experimental request never writes a report revision: its output is an experiment result.
+        revision_id = (
+            None
+            if experiment is not None
+            else await persist_revision(
+                incident_id=tool_input.incident_id,
+                model_run_id=tool_input.model_run_id or config.model_run_id,
+                model_name=model_name,
+                report=report,
+                evidence=evidence,
+                caller_owns_run=tool_input.model_run_id is not None,
+                note=f"Reviewer prompt: {reviewer_prompt}" if reviewer_prompt else None,
+            )
         )
 
         return IncidentReportGenOutput(
@@ -434,6 +518,9 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             video_duration_source=video_length.source,
             video_bounds_checked=video_length.seconds is not None,
             video_bounds_unchecked_reason=video_length.unchecked_reason,
+            experiment=experiment,
+            p1_elapsed_ms=(telemetry or {}).get("p1_elapsed_ms"),
+            usage=(telemetry or {}).get("usage") if telemetry is not None else None,
         )
 
     yield FunctionInfo.create(

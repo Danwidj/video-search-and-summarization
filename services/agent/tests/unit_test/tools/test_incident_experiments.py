@@ -1,0 +1,239 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Gated experiment settings of ``incident_report_gen`` (dev-profile-incident PR 6B).
+
+The point of these tests: an experimental setting can never change a production request.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import patch
+
+import httpx
+import pytest
+
+from vss_agents import incident_contract
+from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.tools import incident_experiments
+from vss_agents.tools.incident_report_gen import ExperimentRefusedError
+from vss_agents.tools.incident_report_gen import IncidentReportGenInput
+from vss_agents.tools.incident_report_gen import experiment_settings
+from vss_agents.tools.incident_report_gen import p1_request_body
+
+from . import test_incident_report_gen as report_gen_tests
+from .test_incident_report_gen import MODEL_OUTPUT
+from .test_incident_report_gen import VIDEO_URL
+
+EXPERIMENT_ID = "p1-v4-e01-test"
+EXPERIMENT_TEXT = "An experimental extraction prompt.\n"
+
+
+@pytest.fixture
+def registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    (tmp_path / "p1").mkdir()
+    base = incident_contract.extraction_prompt()
+    (tmp_path / "p1" / "p1-v4-base.txt").write_text(base)
+    (tmp_path / "p1" / f"{EXPERIMENT_ID}.txt").write_text(EXPERIMENT_TEXT)
+    entries = [
+        {
+            "id": "p1-v4-base",
+            "file": "p1/p1-v4-base.txt",
+            "sha256": hashlib.sha256(base.encode()).hexdigest(),
+            "contract_version": incident_contract.contract_version(),
+        },
+        {
+            "id": EXPERIMENT_ID,
+            "file": f"p1/{EXPERIMENT_ID}.txt",
+            "sha256": hashlib.sha256(EXPERIMENT_TEXT.encode()).hexdigest(),
+            "contract_version": incident_contract.contract_version(),
+        },
+        {
+            "id": "p1-v4-e02-old",
+            "file": f"p1/{EXPERIMENT_ID}.txt",
+            "sha256": hashlib.sha256(EXPERIMENT_TEXT.encode()).hexdigest(),
+            "contract_version": "incident-contract-v3",
+        },
+    ]
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps({"prompts": entries}))
+    monkeypatch.setenv(incident_experiments.REGISTRY_ENV, str(path))
+    return path
+
+
+@pytest.fixture
+def enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+
+
+def _input(**overrides: object) -> IncidentReportGenInput:
+    return IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", **overrides)
+
+
+class TestGate:
+    def test_a_production_request_has_no_experiment_settings_even_when_enabled(self, enabled: None):
+        assert experiment_settings(_input(), None) is None
+
+    @pytest.mark.parametrize("overrides", [{"experiment_prompt_id": EXPERIMENT_ID}, {"skip_crops": True}])
+    def test_every_experimental_setting_is_refused_without_the_flag(
+        self, monkeypatch: pytest.MonkeyPatch, registry: Path, overrides: dict
+    ):
+        monkeypatch.delenv(incident_experiments.EXPERIMENTS_FLAG, raising=False)
+        with pytest.raises(incident_experiments.ExperimentsDisabledError):
+            experiment_settings(_input(**overrides), None)
+
+    @pytest.mark.parametrize("value", ["0", "true", "yes", ""])
+    def test_only_the_exact_flag_value_enables_experiments(self, monkeypatch: pytest.MonkeyPatch, value: str):
+        monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, value)
+        assert incident_experiments.experiments_enabled() is False
+
+    def test_a_registry_prompt_is_served_with_its_hash(self, enabled: None, registry: Path):
+        settings = experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, skip_crops=True), None)
+        assert settings is not None
+        assert settings["_prompt_text"] == EXPERIMENT_TEXT
+        assert settings["prompt_sha256"] == hashlib.sha256(EXPERIMENT_TEXT.encode()).hexdigest()
+        assert settings["persisted"] is False and settings["skip_crops"] is True
+
+    @pytest.mark.parametrize(
+        "prompt_id, match",
+        [("p1-v4-e99-missing", "not in the experiment"), ("p1-v4-e02-old", "incident-contract-v3"), ("x", "not a")],
+    )
+    def test_unknown_foreign_or_malformed_prompts_are_refused(
+        self, enabled: None, registry: Path, prompt_id: str, match: str
+    ):
+        with pytest.raises(incident_experiments.ExperimentPromptError, match=match):
+            experiment_settings(_input(experiment_prompt_id=prompt_id, skip_crops=True), None)
+
+    def test_an_edited_prompt_file_is_refused(self, enabled: None, registry: Path):
+        (registry.parent / "p1" / f"{EXPERIMENT_ID}.txt").write_text("edited")
+        with pytest.raises(incident_experiments.ExperimentPromptError, match="SHA-256"):
+            experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, skip_crops=True), None)
+
+    def test_a_reviewer_prompt_cannot_ride_along(self, enabled: None, registry: Path):
+        with pytest.raises(ValueError, match="reviewer prompt"):
+            experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, skip_crops=True), "look at the door")
+
+    def test_cropping_that_would_upload_to_r2_is_refused(self, enabled: None, registry: Path):
+        with patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=True):
+            with pytest.raises(ExperimentRefusedError, match="R2"):
+                experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID), None)
+            assert experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, skip_crops=True), None)
+
+    def test_the_committed_registry_baseline_is_the_vendored_production_prompt(self, enabled: None, monkeypatch):
+        monkeypatch.delenv(incident_experiments.REGISTRY_ENV, raising=False)
+        if not incident_experiments.DEFAULT_REGISTRY.exists():
+            pytest.skip("not a full checkout")
+        text, digest = incident_experiments.resolve_prompt("p1-v4-base")
+        assert text == incident_contract.extraction_prompt()
+        assert digest == incident_experiments.production_prompt_sha256()
+
+
+class TestRequestParity:
+    def test_the_baseline_prompt_gives_the_production_p1_body_byte_for_byte(self, enabled: None, registry: Path):
+        text, _ = incident_experiments.resolve_prompt("p1-v4-base")
+        production = p1_request_body("vlm", VIDEO_URL)
+        assert json.dumps(p1_request_body("vlm", VIDEO_URL, None, text)) == json.dumps(production)
+
+    def test_an_experiment_prompt_changes_only_the_prompt_text(self, enabled: None, registry: Path):
+        production = p1_request_body("vlm", VIDEO_URL)
+        experiment = p1_request_body("vlm", VIDEO_URL, None, EXPERIMENT_TEXT)
+        assert experiment["messages"][0]["content"][1]["text"] == EXPERIMENT_TEXT
+        experiment["messages"][0]["content"][1]["text"] = production["messages"][0]["content"][1]["text"]
+        assert experiment == production
+
+
+def _handler(requests: list[dict], content: str | None = None, usage: dict | None = None):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content or json.dumps(MODEL_OUTPUT)}, "finish_reason": "stop"}],
+                "usage": usage or {"prompt_tokens": 100, "completion_tokens": 50},
+            },
+        )
+
+    return handler
+
+
+class TestToolRuns:
+    _run = report_gen_tests.TestEndToEnd._run  # not imported by name, so pytest does not collect it twice
+
+    @pytest.mark.asyncio
+    async def test_an_experimental_run_reports_its_prompt_and_timing_and_writes_nothing(
+        self, enabled: None, registry: Path
+    ):
+        requests: list[dict] = []
+        with patch("vss_agents.tools.incident_report_gen.collect_evidence", new_callable=AsyncMock) as crops:
+            result, persist = await self._run(
+                _handler(requests),
+                tool_input=_input(
+                    experiment_prompt_id=EXPERIMENT_ID, skip_crops=True, skip_rp1=True, video_duration_seconds=30.0
+                ),
+            )
+        assert requests[0]["messages"][0]["content"][1]["text"] == EXPERIMENT_TEXT
+        assert result.experiment == {
+            "prompt_id": EXPERIMENT_ID,
+            "prompt_sha256": hashlib.sha256(EXPERIMENT_TEXT.encode()).hexdigest(),
+            "skip_crops": True,
+            "persisted": False,
+        }
+        assert result.p1_elapsed_ms is not None and result.usage == {"prompt_tokens": 100, "completion_tokens": 50}
+        assert result.revision_id is None
+        persist.assert_not_awaited()
+        crops.assert_not_awaited()
+        assert all(entry["image"] is None and "skip_crops" in entry["image_gap"] for entry in result.evidence)
+
+    @pytest.mark.asyncio
+    async def test_extraction_is_identical_with_and_without_crops(self, enabled: None, registry: Path):
+        outputs = []
+        for skip in (True, False):
+            with patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=False):
+                result, _ = await self._run(
+                    _handler([]),
+                    tool_input=_input(
+                        experiment_prompt_id=EXPERIMENT_ID, skip_crops=skip, skip_rp1=True, video_duration_seconds=30.0
+                    ),
+                )
+            outputs.append(result)
+        assert outputs[0].report == outputs[1].report and outputs[0].raw_output == outputs[1].raw_output
+
+    @pytest.mark.asyncio
+    async def test_a_production_request_is_unchanged_with_experiments_enabled(self, enabled: None, registry: Path):
+        requests: list[dict] = []
+        result, persist = await self._run(
+            _handler(requests), tool_input=_input(skip_rp1=True, video_duration_seconds=30.0)
+        )
+        assert requests[0] == p1_request_body("nvidia/cosmos-3-nano-reasoner", VIDEO_URL) | {"stream": False}
+        assert result.experiment is None and result.p1_elapsed_ms is None and result.usage is None
+        assert result.revision_id == 7
+        persist.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_experimental_output_still_names_its_prompt(self, enabled: None, registry: Path):
+        with pytest.raises(IncidentExtractionError) as excinfo:
+            await self._run(
+                _handler([], content="{not json"),
+                tool_input=_input(
+                    experiment_prompt_id=EXPERIMENT_ID, skip_crops=True, skip_rp1=True, video_duration_seconds=30.0
+                ),
+            )
+        assert excinfo.value.experiment["prompt_id"] == EXPERIMENT_ID  # type: ignore[attr-defined]
+        assert excinfo.value.telemetry["p1_elapsed_ms"] is not None  # type: ignore[attr-defined]
