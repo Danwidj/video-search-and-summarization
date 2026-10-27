@@ -1,6 +1,6 @@
 # Ground Truth Refinement and Prompt Experiments: Plan
 
-> **Status (2026-10-27): approved plan. PR 0 is done (offline scoring by default, the stashed benchmark work recovered, the Complete workbook gitignored). PR 2 is done (80 clips fetched and verified, `dataset-manifest-v1`, `_demo` resolution, split keys refreshed). PRs 1A, 1B and 3-7 follow their approval gates.** The brief is [`ground-truth-planning-instructions.md`](ground-truth-planning-instructions.md). Decisions marked D-n need approval before the PR that depends on them, and each approval is recorded in [`../decisions.md`](../decisions.md).
+> **Status (2026-10-27): approved plan. PR 0 is done (offline scoring by default, the stashed benchmark work recovered, the Complete workbook gitignored). PR 2 is done (80 clips fetched and verified, `dataset-manifest-v1`, `_demo` resolution, split keys refreshed). PR 1A is in review: [`annotation-guidelines-v1.0`](../../eval/ground_truth/annotation-guidelines-v1.0.md) (scales unchanged, decision rules added; A1-A14 pending approval). PRs 1B and 3-7 follow their approval gates.** The brief is [`ground-truth-planning-instructions.md`](ground-truth-planning-instructions.md). Decisions marked D-n need approval before the PR that depends on them, and each approval is recorded in [`../decisions.md`](../decisions.md).
 
 Two research questions, both treated as hypotheses:
 - **RQ1:** does iterative prompt engineering improve VSS structured incident extraction?
