@@ -58,7 +58,10 @@ uv run python scripts/eval_aggregate.py
 
 # Ground-truth review (proposed corrections, not ground truth): workbook + audit + manifest
 uv run python scripts/gt_review_build.py                 # source: ../Complete Ground Truth Labelling.xlsx (never modified)
+uv run python scripts/gt_review_backup.py snapshot --reason "..."   # before/after every review session
 ```
+
+A rebuild never replaces an existing review workbook silently. It needs `--overwrite`, and it needs `--discard-review-decisions` as well if anyone has reviewed entries; either way it backs the old file up first. Prefer a new `--version`.
 
 The review workbook (`ground_truth/review/Ground Truth Review v0.1.xlsx`) is gitignored on purpose; its storage and the review workflow are in [`eval/ground_truth/review/README.md`](../../eval/ground_truth/review/README.md). Never edit the source workbook, and never treat a proposed value as final before PR 5 freezes it.
 

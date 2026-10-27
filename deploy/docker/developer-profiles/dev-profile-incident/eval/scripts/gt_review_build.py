@@ -23,6 +23,11 @@ go to the ``Change Log`` sheet), appends new records instead of renumbering, and
 removals with a review flag instead of deleting rows. It also adds the ``Change Log`` and
 ``Review Summary`` sheets.
 
+An existing workbook of the same version is never replaced silently: the build refuses unless
+``--overwrite`` is passed, and refuses even then when the workbook holds review decisions
+(a status other than Pending, a reviewer or notes) unless ``--discard-review-decisions`` is
+passed too. A permitted overwrite first takes a timestamped backup (``review_backup.py``).
+
 Usage (from ``eval/``)::
 
     uv run python scripts/gt_review_build.py            # defaults: the profile-root workbook, v0.1
@@ -50,6 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ground_truth_review as gtr  # noqa: E402
 import openpyxl  # noqa: E402
+import review_backup  # noqa: E402
 from openpyxl.comments import Comment  # noqa: E402
 from openpyxl.formula.translate import Translator  # noqa: E402
 from openpyxl.styles import Alignment, Font, PatternFill  # noqa: E402
@@ -360,7 +366,16 @@ def audit_report(changes: list[gtr.Change], facts: dict, meta: dict) -> str:
     return "\n".join(lines)
 
 
-def build(source: Path, manifest_path: Path, out_dir: Path, version: str) -> dict:
+def build(source: Path, manifest_path: Path, out_dir: Path, version: str, *, overwrite: bool = False,
+          discard_review_decisions: bool = False) -> dict:
+    """Build one version. An existing workbook of that version is never replaced silently.
+
+    The guard runs before any work (``review_backup.guard_overwrite``). A refused build
+    writes nothing; a permitted overwrite backs the old workbook up first.
+    """
+    output = out_dir / f"Ground Truth Review {version}.xlsx"
+    previous_state = review_backup.guard_overwrite(output, overwrite=overwrite,
+                                                   discard_review_decisions=discard_review_decisions)
     source_hash = sha256_file(source)
     manifest = json.loads(manifest_path.read_text())
     values = openpyxl.load_workbook(source, data_only=True)
@@ -373,7 +388,6 @@ def build(source: Path, manifest_path: Path, out_dir: Path, version: str) -> dic
     except OSError:
         git_sha = "unknown"
     out_dir.mkdir(parents=True, exist_ok=True)
-    output = out_dir / f"Ground Truth Review {version}.xlsx"
     meta = {
         "version": version,
         "source_name": source.name,
@@ -386,6 +400,9 @@ def build(source: Path, manifest_path: Path, out_dir: Path, version: str) -> dic
     add_change_log(working, changes)
     add_review_summary(working, changes, meta)
     working.active = 0
+    backup_record = None
+    if previous_state is not None:
+        backup_record = review_backup.backup(output, reason=f"before rebuild of {version}")
     working.save(output)
     if sha256_file(source) != source_hash:
         raise RuntimeError("the source workbook changed during the build")
@@ -399,6 +416,7 @@ def build(source: Path, manifest_path: Path, out_dir: Path, version: str) -> dic
         "entries_by_class": dict(Counter(c.change_type for c in changes)),
         "entries_by_rule": dict(sorted(Counter(c.rule for c in changes).items())),
         "affected_incidents": len({c.incident_id for c in changes}),
+        "replaced_backup": backup_record["backup"] if backup_record else None,
         "facts": facts,
     }
     (out_dir / f"review-{version}-manifest.json").write_text(json.dumps(review_manifest, indent=2, default=str) + "\n")
@@ -412,8 +430,19 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--version", default="v0.1")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Replace an existing workbook of this version (it is backed up first).")
+    parser.add_argument("--discard-review-decisions", action="store_true",
+                        help="With --overwrite: allow replacing a workbook that holds review decisions (backed up first).")
     args = parser.parse_args()
-    result = build(args.source, args.manifest, args.out_dir, args.version)
+    if args.discard_review_decisions and not args.overwrite:
+        parser.error("--discard-review-decisions requires --overwrite")
+    try:
+        result = build(args.source, args.manifest, args.out_dir, args.version, overwrite=args.overwrite,
+                       discard_review_decisions=args.discard_review_decisions)
+    except review_backup.OverwriteRefusedError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
     print(json.dumps({k: result[k] for k in ("output_name", "source_sha256", "output_sha256", "change_log_sha256",
                                              "entries", "entries_by_class", "affected_incidents")}, indent=2))
     return 0

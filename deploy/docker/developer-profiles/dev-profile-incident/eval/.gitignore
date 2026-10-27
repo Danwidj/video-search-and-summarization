@@ -17,3 +17,4 @@ eval_data/
 # ground_truth/review/README.md (Storage) for where they live and how to rebuild them.
 ground_truth/review/*.xlsx
 ground_truth/review/~$*
+ground_truth/review/backups/

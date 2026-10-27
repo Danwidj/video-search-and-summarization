@@ -27,6 +27,17 @@ uv run python scripts/gt_review_build.py --version v0.2  # a new version; never 
 
 The same source, dataset manifest and generator always give the same change-log digest (recorded in the manifest). The `.xlsx` bytes differ between builds because the file embeds its save time, so compare digests, not file hashes.
 
+**A rebuild never silently replaces a workbook** (`review_backup.guard_overwrite`):
+
+| Existing workbook of the same version | Result |
+|---|---|
+| none | built |
+| present, no review decisions | **refused** unless `--overwrite`; with it, a backup is taken first |
+| present, with review decisions (any status other than Pending, or a reviewer or notes) | **refused**, even with `--overwrite`; only `--overwrite --discard-review-decisions` replaces it, after a backup |
+| open in Excel (`~$` lock file present) | **refused** |
+
+A refused build writes nothing: not the workbook, the manifest or the audit report. New proposals go into a new version (`--version v0.2`). Carrying v0.1's decisions forward into a new version is a PR 4 tool, not a rebuild.
+
 ## The working workbook
 
 - **`Review Summary`** (first sheet): progress, entries by class and by rule, and the affected videos. All counts are formulas over the `Change Log`, so they update as reviewers work.
@@ -48,6 +59,24 @@ The same source, dataset manifest and generator always give the same change-log 
   - `needs_video_review`: only the video can answer, so **no value is proposed**;
   - `informational`: recorded, no change.
 - **Out of taxonomy:** possible out-of-taxonomy clips carry the `OUT_OF_TAXONOMY_CANDIDATE` review flag. Their type stays one of the five categories.
+
+## Backups (local, versioned)
+
+The review decisions exist only in the working workbook, so every reviewed state is kept as an immutable local copy:
+
+```bash
+uv run python scripts/gt_review_backup.py snapshot --reason "before review session 1"
+uv run python scripts/gt_review_backup.py snapshot --reason "after review session 1"
+uv run python scripts/gt_review_backup.py list      # time, file, SHA-256, decisions, reason
+uv run python scripts/gt_review_backup.py verify    # every logged backup still matches its SHA-256
+```
+
+- **Where:** `eval/ground_truth/review/backups/Ground Truth Review v0.1 <UTC time> <sha8>.xlsx`, gitignored like the workbook. A backup is never overwritten: a second one in the same second gets ` (2)`.
+- **Log:** `backups/backup-log.jsonl` has one line per backup: time, file, SHA-256, size, reason, and the review state (status counts, entries with a reviewer or notes). It holds no annotation text.
+- **When:** before and after every review session, and automatically before any permitted rebuild overwrite.
+- **Restore:** copy a backup over the working file after taking a snapshot of the current one. Check it with `verify`, and its decisions with `list`.
+- **Retention:** keep every backup (about 220 KB each).
+- **Durability today: one machine only.** The working file and its backups share the WSL disk. A second local copy (for example under `/mnt/c/Users/<you>/Documents/gt-review-backups/`, outside the WSL disk image) protects against losing the WSL distribution but not the machine. Durable shared storage is the R2 proposal below, which needs approval first.
 
 ## Storage
 

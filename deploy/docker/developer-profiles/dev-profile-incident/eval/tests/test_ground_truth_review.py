@@ -242,3 +242,103 @@ def test_demo_filename_without_a_manifest_clip_is_not_rewritten(sources):
     changes, facts = gtr.audit(openpyxl.load_workbook(workbook, data_only=True), data)
     assert not [c for c in changes if c.rule == "R01"]
     assert "Assault018" in facts["incidents_without_clip"]
+
+
+# --- rebuild safeguards and backups --------------------------------------------------------
+
+import review_backup  # noqa: E402
+
+
+def _decide(path: Path, row: int = 2, status: str = "Approved", reviewer: str | None = "reviewer 1") -> None:
+    wb = openpyxl.load_workbook(path)
+    log = wb["Change Log"]
+    log.cell(row, 16).value, log.cell(row, 17).value = status, reviewer
+    wb.save(path)
+
+
+def _hashes(directory: Path) -> dict:
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(directory.glob("*")) if p.is_file()}
+
+
+def test_rebuild_refuses_to_replace_an_existing_workbook_without_overwrite(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    before = _hashes(out)
+    with pytest.raises(review_backup.OverwriteRefusedError, match="already exists"):
+        gt_review_build.build(workbook, manifest, out, "v0.1")
+    assert _hashes(out) == before  # nothing written: workbook, manifest and audit unchanged
+
+
+def test_rebuild_refuses_to_discard_review_decisions_even_with_overwrite(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    target = out / "Ground Truth Review v0.1.xlsx"
+    _decide(target)
+    before = _hashes(out)
+    with pytest.raises(review_backup.OverwriteRefusedError, match="1 review decision"):
+        gt_review_build.build(workbook, manifest, out, "v0.1", overwrite=True)
+    assert _hashes(out) == before
+    assert review_backup.review_state(target)["statuses"] == {"Approved": 1, "Pending": review_backup.review_state(target)["entries"] - 1}
+
+
+def test_a_permitted_overwrite_backs_the_old_workbook_up_first(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    target = out / "Ground Truth Review v0.1.xlsx"
+    _decide(target, status="Rejected", reviewer=None)
+    reviewed_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+    result = gt_review_build.build(workbook, manifest, out, "v0.1", overwrite=True, discard_review_decisions=True)
+    backups = list((out / "backups").glob("*.xlsx"))
+    assert len(backups) == 1 and backups[0].name == result["replaced_backup"]
+    assert hashlib.sha256(backups[0].read_bytes()).hexdigest() == reviewed_sha
+    record = json.loads((out / "backups" / "backup-log.jsonl").read_text().splitlines()[0])
+    assert record["sha256"] == reviewed_sha and record["review_state"]["decisions"] == 1
+    assert review_backup.review_state(target)["decisions"] == 0  # the rebuilt workbook starts Pending
+    assert review_backup.verify_backups(out) == []
+
+
+def test_an_open_workbook_is_never_replaced(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    review_backup.lock_file(out / "Ground Truth Review v0.1.xlsx").write_text("")
+    with pytest.raises(review_backup.OverwriteRefusedError, match="open in Excel"):
+        gt_review_build.build(workbook, manifest, out, "v0.1", overwrite=True)
+
+
+def test_a_new_version_is_always_allowed(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    _decide(out / "Ground Truth Review v0.1.xlsx")
+    gt_review_build.build(workbook, manifest, out, "v0.2")
+    assert review_backup.review_state(out / "Ground Truth Review v0.1.xlsx")["decisions"] == 1
+
+
+def test_backups_are_immutable_and_verified(sources, tmp_path):
+    workbook, manifest = sources
+    out = tmp_path / "out"
+    gt_review_build.build(workbook, manifest, out, "v0.1")
+    target = out / "Ground Truth Review v0.1.xlsx"
+    moment = dt.datetime(2026, 10, 27, 12, 0, tzinfo=dt.UTC)
+    first = review_backup.backup(target, reason="session 1", now=moment)
+    second = review_backup.backup(target, reason="session 1 again", now=moment)
+    assert first["backup"] != second["backup"] and second["backup"].endswith("(2).xlsx")
+    assert review_backup.verify_backups(out) == []
+    (out / "backups" / first["backup"]).write_bytes(b"changed")
+    assert review_backup.verify_backups(out) == [f"{first['backup']}: content changed"]
+
+
+def test_scoring_code_never_reads_the_review_workbook():
+    """Proposals are not labels: only the review tools may name the review workbook or its folder."""
+    root = Path(__file__).resolve().parents[1]
+    review_tools = {"ground_truth_review.py", "review_backup.py", "gt_review_build.py", "gt_review_backup.py"}
+    offenders = [
+        str(path.relative_to(root)) for path in sorted([*root.glob("*.py"), *(root / "scripts").glob("*.py")])
+        if path.name not in review_tools
+        and any(marker in path.read_text() for marker in ("Ground Truth Review", "ground_truth/review", "ground_truth_review"))
+    ]
+    assert offenders == []

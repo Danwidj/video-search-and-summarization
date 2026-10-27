@@ -11,7 +11,13 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   Each finding is classed as `verified_correction` (provable from the workbook or the dataset manifest), `rule_based_proposal` (an approved guideline rule), `needs_video_review` (no value proposed) or `informational`. Possible out-of-taxonomy clips get a review flag, never a sixth type. The audit report (ids and counts only) and a manifest with hashes and the change-log digest are committed. The workbook is deliberately gitignored.
 - **Why:** reviewers need an editable, traceable copy, and the human labels must stay intact until PR 4 reviews and PR 5 freezes. Separating what the data proves from what only the video can show stops the build from inventing visual facts. The workbook carries real annotations and annotator names, and the frozen ground truth's storage (D7) is still open.
 - **Rejected:** editing the source workbook; deleting or renumbering records; proposing values from filenames or description wording; relabelling `Animal` to `Animal Attack` (the workbook's own dropdown uses `Animal`, and eval maps it); committing the workbook before D7 and a privacy decision.
-- **Open:** a durable shared location for the reviewed workbook. The proposal is the private R2 prefix `ground-truth/review/<version>/`, which is a shared-storage write and needs approval.
+- **Safeguards (added 2026-10-27):**
+  - a rebuild refuses to replace an existing workbook unless `--overwrite` is passed, and refuses a workbook holding review decisions unless `--discard-review-decisions` is also passed;
+  - it refuses while Excel has the file open;
+  - it backs the old file up first.
+
+  Reviewed states are kept as immutable local backups with a hash log (`scripts/gt_review_backup.py`).
+- **Open:** a durable shared location for the reviewed workbook. The proposal is the private R2 prefix `ground-truth/review/<version>/`, which is a shared-storage write and needs approval. Until then, backups are local only.
 - **Links:** [`../eval/ground_truth/review/README.md`](../eval/ground_truth/review/README.md); [`../eval/ground_truth/review/audit-v0.1.md`](../eval/ground_truth/review/audit-v0.1.md); [`../eval/ground_truth_review.py`](../eval/ground_truth_review.py).
 
 ### 2026-10-27: Evaluation methodology v1.0 pins the scorer and never turns a scoring failure into a score
