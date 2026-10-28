@@ -1,0 +1,13 @@
+--- p1-v4-base.txt
++++ p1-v4-e05-descriptions.txt
+@@ -79,6 +79,10 @@
+ - Do not speculate about identities, motives, relationships, causes,
+   injuries, or outcomes that cannot be visually established.
+ - Keep the description concise, normally 1–3 sentences.
++- Write it in this order: the event; who was involved, by role and
++  visible appearance; the key action or actions; the observable outcome.
++- Use observable verbs ("strikes", "falls", "lies motionless"), not
++  conclusions ("kills", "is unconscious").
+ - Do not include irrelevant background activity.
+ 
+ SEVERITY_LEVEL

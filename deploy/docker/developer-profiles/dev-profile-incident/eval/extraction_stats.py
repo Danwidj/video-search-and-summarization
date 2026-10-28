@@ -32,7 +32,7 @@ from retrieval_metrics import bootstrap_interval
 INCIDENT_FIELDS = ("type", "severity_level", "start_timestamp", "end_timestamp", "duration", "description")
 # No model output (request failures): excluded from accuracy and from paired comparisons, and counted.
 # A model output that is invalid (contract_invalid, parse_failure) stays in, scored as a miss.
-NO_MODEL_OUTPUT = ("timeout", "rate_limited", "http_error")
+NO_MODEL_OUTPUT = ("timeout", "rate_limited", "host_suspended", "http_error")
 
 
 INVALID_MODEL_OUTPUT = ("contract_invalid", "parse_failure")

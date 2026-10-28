@@ -106,6 +106,30 @@
   - They under-report instruments (9 predicted against 18–25).
 - **Consequence for Stage 2:** two of D9 v2's three `ΔI` components (entity F1 and object F1) sit at the floor. See the [Stage 2 plan](stage2-plan.md), decision S2-A.
 
+## v1.2 provisional re-matching
+
+The v1.1 results above are unchanged. This section re-matches the same saved outputs offline under the **proposed** [methodology v1.2](../../methodology/evaluation-methodology-v1.2.md) (`eval_experiment.py rematch`: no model or judge call).
+- **The threshold:** the calibration rule picked τ = 0.30 ([calibration](../../methodology/calibration/matching-v1.2-calibration.md)). 0.40 is shown as a sensitivity check.
+- **Files:** `rematched-v1.2-t0.30-*.json` and `rematched-v1.2-t0.40-*.json`, next to each `results.json`. Each records its source SHA-256 and `match_threshold_provisional: true`.
+- **What is re-scored:** only the match counts. Newly matched pairs are marked `attributes_rescored: false`, because their judged attributes (descriptions, names) need a judge re-score that has not been run.
+- **Re-matching at 0.75 reproduces the v1.1 counts exactly in both arms.**
+
+| τ | Kind | C1 TP / FP / FN | C1 P / R / F1 | C2 TP / FP / FN | C2 P / R / F1 |
+|---|---|---|---|---|---|
+| 0.30 | entities | 60 / 43 / 12 | 0.583 / 0.833 / 0.686 | 38 / 48 / 17 | 0.442 / 0.691 / 0.539 |
+| 0.30 | instruments | 5 / 4 / 20 | 0.556 / 0.200 / 0.294 | 6 / 3 / 12 | 0.667 / 0.333 / 0.444 |
+| 0.30 | assets | 32 / 74 / 9 | 0.302 / 0.780 / 0.435 | 31 / 76 / 10 | 0.290 / 0.756 / 0.419 |
+| 0.40 | entities | 41 / 62 / 31 | 0.398 / 0.569 / 0.469 | 30 / 56 / 25 | 0.349 / 0.545 / 0.426 |
+| 0.40 | instruments | 5 / 4 / 20 | 0.556 / 0.200 / 0.294 | 4 / 5 / 14 | 0.444 / 0.222 / 0.296 |
+| 0.40 | assets | 27 / 79 / 14 | 0.255 / 0.659 / 0.367 | 29 / 78 / 12 | 0.271 / 0.707 / 0.392 |
+
+- **The item scores now carry signal.** The error pattern from the v1.1 counts holds:
+  - assets: high recall, low precision (over-listing);
+  - instruments: low recall;
+  - entities: moderate precision.
+- **D9 components, C2 − C1 at τ = 0.30 (descriptive only; parity, not selection):** `ΔI` −0.024 (incident +0.032, entity F1 −0.110, object F1 +0.005). At 0.40: −0.030.
+  - The entity difference reflects the two arms' different outputs at the same request, as with the description field above.
+
 ## Latency and tokens
 
 | | Inference (P1 only) n / p50 / p95 (s) | End-to-end `/analyze` n / p50 / p95 (s) | P1 tokens (metered) | Tokens per metered call, mean / max | Judge calls / tokens |
@@ -141,7 +165,7 @@
   - 25 dev clips, and 34% of video-runs lost to gateway failures, so 19 clips are paired.
   - The intervals are wide.
   - Instruments are thin (25 ground-truth instruments over the dev video-runs).
-- **Item metrics:** at the floor because of the matching threshold, as described above.
+- **Item metrics:** at the floor at the v1.1 threshold. The proposed v1.2 threshold fixes this (above), but it is provisional.
 - **Classification:** the VSS 429 misclassification in the stored records is corrected in this report from the stored error text. The stored records themselves are unchanged.
 - **Host suspend:** one in-flight call during the suspend, plus the post-resume gateway failures.
 - **Exposure:** the dev clips were few-shot examples in the retired P1-v1 prompt (D15).

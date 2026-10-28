@@ -1,0 +1,25 @@
+--- p1-v4-base.txt
++++ p1-v4-e02-entities.txt
+@@ -193,6 +193,22 @@
+ If there is insufficient visual evidence that a living being is directly
+ relevant to the incident, do not include it.
+ 
++Decide each candidate by its role in the incident, not by how visible it
++is:
++- participant (causes or takes part: attacker, intruder, a driver seen
++  controlling the vehicle) → include;
++- victim or target (attacked, struck, threatened, chased or otherwise
++  materially affected) → include;
++- responder (takes an observable action related to the incident:
++  separates fighters, assists a victim, confronts a participant, fights a
++  fire) → include;
++- bystander (watches, walks past or stays nearby without affecting or
++  being affected by the incident) → exclude;
++- background person or animal → exclude.
++Record each individually distinguishable participant, victim or responder
++as a separate entity. A vehicle occupant is an entity only when visible
++and relevant.
++
+ For every qualifying entity, return:
+ 
+ ENTITY_ID

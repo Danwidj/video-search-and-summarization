@@ -1,0 +1,19 @@
+--- p1-v4-base.txt
++++ p1-v4-e03-instruments.txt
+@@ -276,6 +276,16 @@
+ If there is insufficient visual evidence that an object is being held
+ in the hand, do not classify it as an instrument.
+ 
++Apply the definition to every participant, victim and responder: check
++what each holds in the hand during the incident. An object that is held
++and used as part of the incident (to strike, threaten, force an entry,
++carry stolen goods, or respond, for example a stick, bottle, crowbar, bag
++of stolen goods or fire extinguisher) is an instrument even when it is not
++a weapon. Objects that are worn (helmet, mask), attached to the body,
++never seen in a hand, or vehicles are never instruments.
++Rate THREAT_LEVEL by the object's capacity to harm in the observed
++context, whether or not anyone was hurt.
++
+ For every qualifying instrument, return:
+ 
+ INSTRUMENT_ID

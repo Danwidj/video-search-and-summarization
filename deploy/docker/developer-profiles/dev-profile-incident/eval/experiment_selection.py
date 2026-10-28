@@ -177,6 +177,10 @@ def guardrails(baseline_record: dict, candidate_record: dict, comparison: dict) 
     for label, get in (("videos", lambda r: sorted({v["incident_id"] for v in r["videos"]})),
                        ("repeats", lambda r: r["plan"]["repeats"]), ("model", lambda r: r["model"]),
                        ("ground truth", lambda r: r["ground_truth"]["records_sha256"]),
+                       # v1.2: both sides scored by one methodology (item-matching threshold) and one protocol.
+                       ("methodology", lambda r: ((r.get("methodology") or {}).get("methodology_version"),
+                                                  (r.get("methodology") or {}).get("match_threshold"))),
+                       ("protocol", lambda r: r.get("protocol", "original")),
                        ("split", lambda r: r["split"]["half"])):
         if get(baseline_record) != get(candidate_record):
             problems.append(f"G3: different {label}")

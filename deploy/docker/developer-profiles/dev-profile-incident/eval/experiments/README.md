@@ -56,6 +56,14 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 
 `videos` (optional) narrows a config to a subset of its split half and refuses clips outside it. `repeats` and budgets follow plan D10/D11 and are **placeholders until those decisions and each stage's budget are approved**. C3/C4 configs are written only after the Stage 2 selection is recorded in decisions.md.
 
+## Retries, recovery and host availability (proposed 2026-10-28; not yet approved for use)
+
+- **`pipeline.retry_policy`:** `retry-v1` (the default; Stages 0–1: 429 only) or `retry-v2` (also timeout, transport error and `host_suspended`; 60 s then 180 s). The same policy applies to every arm ([details](../docs/experiments/infrastructure-and-recovery.md)).
+- **Host suspend:** every attempt compares wall-clock and monotonic time. A failed attempt that spans a suspend is `host_suspended`.
+- **Keep-awake:** run paid stages under `experiments/keep-awake.sh -- <command>` (WSL), with the lid open and on AC power.
+- **Recovery:** `scripts/eval_experiment.py recover <results.json>...` is a dry run by default. With `--confirm-paid`, it re-attempts only infrastructure-failed video-runs as a separate `<experiment>-recovery` result linked to the original, and writes `merged-original+recovery-v1.json`. Originals are never changed. D9 G3 refuses mixed protocols or methodology versions.
+- **Offline re-matching:** `scripts/eval_experiment.py rematch <results.json> --methodology evaluation-methodology-v1.2 [--threshold t]` writes a new `rematched-*.json`. It makes no model or judge call.
+
 ## Reports and selection
 
 - **`render`:** a report over any result on candidate ground truth carries a NOT REPORTABLE banner. Inference latency and end-to-end latency are separate tables.

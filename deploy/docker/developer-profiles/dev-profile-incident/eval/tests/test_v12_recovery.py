@@ -1,0 +1,257 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Methodology v1.2 preparation: matching calibration, offline re-matching, the retry policies, host-suspend
+detection and the recovery-v1 protocol. Hermetic: fake clocks, fake embedder, fake calls."""
+
+from __future__ import annotations
+
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+import eval_vlm_client as client  # noqa: E402
+import experiment_recovery as rec  # noqa: E402
+import experiment_runner as er  # noqa: E402
+import experiment_selection as es  # noqa: E402
+import item_rescore  # noqa: E402
+import matching_calibration as mc  # noqa: E402
+import methodology  # noqa: E402
+import pytest  # noqa: E402
+
+
+class Pacer:
+    def __init__(self):
+        self.slept = []
+
+    def wait(self, _minimum):
+        return 0.0
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+
+    def mark_end(self):
+        pass
+
+
+def _calls(*results):
+    queue = list(results)
+    return lambda: queue.pop(0)
+
+
+FAIL = {k: client.ChatResult(ok=False, failure_kind=k, error=k) for k in ("timeout", "rate_limited", "http_error")}
+OK = client.ChatResult(ok=True, content="{}")
+
+
+# --- retry policies --------------------------------------------------------------------------------
+
+def test_retry_v1_retries_only_rate_limits():
+    out = client.rate_limited(_calls(FAIL["timeout"], OK), pacer=Pacer(), policy="retry-v1")
+    assert out.result.failure_kind == "timeout" and len(out.attempts) == 1
+
+
+def test_retry_v2_retries_timeouts_with_the_fixed_backoff():
+    pacer = Pacer()
+    out = client.rate_limited(_calls(FAIL["timeout"], FAIL["timeout"], OK), pacer=pacer, policy="retry-v2")
+    assert out.result.ok and len(out.attempts) == 3 and pacer.slept == [60.0, 180.0]
+    assert out.summary()["policy"]["id"] == "retry-v2"
+
+
+def test_retry_v2_never_retries_an_http_error_and_respects_the_cap():
+    assert len(client.rate_limited(_calls(FAIL["http_error"], OK), pacer=Pacer(), policy="retry-v2").attempts) == 1
+    out = client.rate_limited(_calls(FAIL["timeout"], OK), pacer=Pacer(), policy="retry-v2", max_retries=0)
+    assert len(out.attempts) == 1 and not out.result.ok
+
+
+def test_the_policies_share_the_runners_retry_count():
+    assert {p["max_rate_limit_retries"] for p in client.P1_RETRY_POLICIES.values()} == {er.P1_RATE_LIMIT_RETRIES}
+    assert set(client.P1_RETRY_POLICIES) == set(er.RETRY_POLICIES)
+
+
+def test_an_unknown_retry_policy_is_a_config_problem():
+    config = er.load_config(er.CONFIG_DIR / "vss-baseline.json")
+    config["pipeline"] = {**config["pipeline"], "retry_policy": "retry-v9"}
+    assert any("retry_policy" in p for p in er.config_problems(config))
+
+
+# --- host suspend ----------------------------------------------------------------------------------
+
+def _clocks(suspended_s):
+    wall, mono = iter([0.0, 100.0 + suspended_s] * 3), iter([0.0, 100.0] * 3)
+    return {"wall": lambda: next(wall), "monotonic": lambda: next(mono)}
+
+
+def test_a_failed_attempt_across_a_host_suspend_is_host_suspended_and_retried_under_v2():
+    out = client.rate_limited(_calls(FAIL["timeout"], OK), pacer=Pacer(), policy="retry-v2", **_clocks(3600))
+    assert out.attempts[0]["failure_kind"] == "host_suspended" and out.attempts[0]["host_suspended_s"] == 3600
+    assert out.result.ok
+
+
+def test_a_valid_output_across_a_suspend_is_kept_and_flagged():
+    out = client.rate_limited(_calls(OK), pacer=Pacer(), policy="retry-v2", **_clocks(600))
+    assert out.result.ok and out.attempts[0]["host_suspended_s"] == 600
+
+
+def test_a_short_gap_is_not_a_suspend():
+    out = client.rate_limited(_calls(FAIL["timeout"]), pacer=Pacer(), policy="retry-v1", **_clocks(5))
+    assert out.result.failure_kind == "timeout" and out.attempts[0]["host_suspended_s"] is None
+
+
+# --- recovery classification and merge -----------------------------------------------------------------
+
+def _video(incident_id, repeat, outcome, error=""):
+    return {"incident_id": incident_id, "repeat": repeat, "position": 0, "run_id": f"r{repeat}", "outcome": outcome,
+            "p1_raw": {"ok": outcome == "scored", "failure_kind": outcome if outcome != "scored" else None,
+                       "error": error}}
+
+
+@pytest.mark.parametrize("video, expected", [
+    (_video("A", 1, "scored"), None),
+    (_video("A", 1, "contract_invalid"), None),
+    (_video("A", 1, "timeout"), "timeout"),
+    (_video("A", 1, "rate_limited"), "rate_limited"),
+    (_video("A", 1, "host_suspended"), "host_suspended"),
+    (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 429: {...}"}'), "rate_limited"),
+    (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 524: <html>"}'), "timeout"),
+    (_video("A", 1, "http_error", '{"detail": "boom"}'), None),
+])
+def test_only_infrastructure_failures_are_recoverable(video, expected):
+    assert rec.failure_class(video) == expected
+
+
+def _record(videos, **extra):
+    return {"experiment_id": "x", "videos": videos, "complete": True, "reliability": {"attempted": len(videos)},
+            **extra}
+
+
+def test_the_plan_lists_failed_runs_and_leaves_genuine_errors():
+    record = _record([_video("A", 1, "scored"), _video("A", 2, "timeout"), _video("B", 1, "http_error", "boom")])
+    plan = rec.plan(record, results_path="p", results_sha256="h")
+    assert [(r["incident_id"], r["repeat"]) for r in plan["runs"]] == [("A", 2)]
+    assert [r["incident_id"] for r in plan["not_recoverable"]] == ["B"]
+
+
+def test_merge_replaces_only_recovered_runs_and_keeps_the_original_reliability():
+    original = _record([_video("A", 1, "scored"), _video("A", 2, "timeout")])
+    recovery = _record([{**_video("A", 2, "scored"), "recovers": {"run_id": "r2"}}], protocol=rec.PROTOCOL,
+                       recovers={"experiment_id": "x"})
+    merged = rec.merge(original, recovery, recovery_path="rp", recovery_sha256="rh")
+    assert merged["protocol"] == rec.MERGED_PROTOCOL and merged["reliability_original"] == {"attempted": 2}
+    assert [v["outcome"] for v in merged["videos"]] == ["scored", "scored"]
+    assert merged["videos"][1]["recovered_from"]["outcome"] == "timeout" and "recovered_from" not in merged["videos"][0]
+    assert merged["reliability"]["no_model_output"] == 0 and original["videos"][1]["outcome"] == "timeout"
+
+
+def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
+    gt = {"status": "frozen", "version": "v", "manifest": {"records_sha256": "g"}, "split": {"version": "split-v2"},
+          "by_incident_id": {v: {"category": "Assault", "filename": f"{v}.mp4",
+                                 "p1_shaped": {"entities": [], "instruments": [], "assets": []}} for v in ("A", "B")}}
+    split = {"version": "split-v2", "dev": ["A", "B"], "test": []}
+    original = er.load_config(er.CONFIG_DIR / "vss-baseline.json")
+    plan = {"runs": [{"repeat": 2, "incident_id": "B", "position": 1, "run_id": "o", "outcome": "timeout",
+                      "class": "timeout"}], "of": {"experiment_id": "vss-baseline"}}
+    config = rec.recovery_config(original, plan, gt)
+    assert config["pipeline"]["retry_policy"] == "retry-v2" and config["budget"]["max_p1_calls"] == 3
+    seen = []
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
+        seen.append(incident_id)
+        p1_call("m", "u")
+        return {"incident_id": incident_id, "outcome": "scored", "run_id": model_run_id, "judge_calls": 0,
+                "judge_tokens": 0, "p1_raw": {"ok": True, "usage": {"total_tokens": 10},
+                                              "rate_limit": {"attempt_count": 1, "attempts": [{}]}}}
+
+    outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
+    out = er.run_stage([config], split=split, gt_index=gt,
+                       store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
+                       video_source=lambda i: ("u", {}), call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)),
+                       run_one=run_one, confirm_paid=True, results_root=tmp_path,
+                       now=datetime(2026, 11, 2, tzinfo=UTC), log=lambda *_: None,
+                       pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
+                                "judge_tokens_per_call_estimate": 1},
+                       only={config["experiment_id"]: {(2, "B")}},
+                       recovery={config["experiment_id"]: rec.links(plan)})
+    record = out["records"][0]
+    assert seen == ["B"] and record["protocol"] == rec.PROTOCOL and record["videos"][0]["recovers"]["run_id"] == "o"
+
+
+# --- calibration and re-matching -------------------------------------------------------------------------
+
+class Embed:
+    """A fake embedder: each text's vector is looked up by its first word."""
+
+    VECTORS = {"human": [1.0, 0.0], "car": [0.0, 1.0], "truck": [0.6, 0.8]}
+
+    def __call__(self, texts):
+        return SimpleNamespace(ok=True, data=[self.VECTORS[t.split()[0]] for t in texts], error=None)
+
+
+SHEET = {"blocks": [{"block_id": "B01", "incident_id": "X", "kind": "assets",
+                     "predicted": [{"asset_id": "A1", "name": "car", "description": "red"},
+                                   {"asset_id": "A2", "name": "truck", "description": "big"}],
+                     "ground_truth": [{"asset_id": "A1", "name": "car", "description": "red car"}]}]}
+LABELS = [{"block_id": "B01", "predicted_id": "A1", "gt_id": "A1", "label": "same"},
+          {"block_id": "B01", "predicted_id": "A2", "gt_id": "A1", "label": "different"}]
+
+
+def test_labels_must_cover_every_pair_once():
+    assert mc.validate_labels(SHEET, LABELS) == []
+    assert any("unlabelled" in p for p in mc.validate_labels(SHEET, LABELS[:1]))
+
+
+def test_scoring_a_threshold_uses_the_hungarian_matcher():
+    sims = mc.similarity_blocks(SHEET, embed=Embed())
+    scored = mc.score_threshold(SHEET, LABELS, sims, 0.5)
+    assert scored["by_kind"]["all"]["tp"] == 1 and scored["by_kind"]["all"]["fp"] == 0  # one-to-one: A2 unmatched
+
+
+def test_the_selection_rule_breaks_near_ties_to_the_higher_threshold():
+    table = [{"threshold": t, "by_kind": {"all": {"f1": f}}} for t, f in ((0.3, 0.80), (0.4, 0.795), (0.5, 0.6))]
+    assert mc.select_threshold(table) == 0.4
+
+
+def test_calibration_refuses_test_records():
+    with pytest.raises(ValueError, match="dev results only"):
+        mc.eligible_blocks([{"experiment_id": "t", "split": {"half": "test"}, "videos": []}])
+
+
+def test_rematch_writes_a_new_versioned_record_and_keeps_the_original():
+    video = {"outcome": "scored", "prediction": {"entities": [], "instruments": [], "assets": SHEET["blocks"][0]["predicted"]},
+             "ground_truth": {"entities": [], "instruments": [], "assets": SHEET["blocks"][0]["ground_truth"]},
+             "assets": {"matches": []}}
+    record = {"videos": [video], "methodology": {"methodology_version": "evaluation-methodology-v1.1"}}
+    out = item_rescore.rematch(record, threshold=0.5, methodology_version="evaluation-methodology-v1.2", source="s",
+                               source_sha256="h", provisional=True, embed=Embed())
+    assert out["videos"][0]["assets"]["counts"]["tp"] == 1 and video["assets"] == {"matches": []}
+    assert out["methodology"]["match_threshold"] == 0.5 and out["rematched_from"]["methodology_version"].endswith("v1.1")
+
+
+def test_v12_is_not_in_force():
+    assert methodology.METHODOLOGY_VERSION == "evaluation-methodology-v1.1"
+    assert methodology.MATCH_THRESHOLD_PROVISIONAL["evaluation-methodology-v1.2"] is True
+
+
+def test_d9_g3_refuses_mixed_methodologies_and_protocols(monkeypatch):
+    base = {"videos": [], "plan": {"repeats": 2}, "model": "m", "ground_truth": {"records_sha256": "g"},
+            "split": {"half": "dev"}, "methodology": {"methodology_version": "v1.2", "match_threshold": 0.3}}
+    comparison = {"point": dict.fromkeys(es.EIGHT_SCORES), "ci95": dict.fromkeys(es.EIGHT_SCORES)}
+    other = {**base, "methodology": {"methodology_version": "v1.1", "match_threshold": 0.75},
+             "protocol": "original+recovery-v1"}
+    monkeypatch.setattr(es, "valid_runs", lambda r: 0)  # G1 is not under test here
+    problems = es.guardrails(base, other, comparison)
+    assert "G3: different methodology" in problems and "G3: different protocol" in problems

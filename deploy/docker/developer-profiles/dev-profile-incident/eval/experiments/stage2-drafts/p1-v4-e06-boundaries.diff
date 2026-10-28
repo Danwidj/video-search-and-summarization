@@ -1,0 +1,23 @@
+--- p1-v4-base.txt
++++ p1-v4-e06-boundaries.txt
+@@ -40,6 +40,7 @@
+   the incident.
+ - Base the start timestamp only on observable visual evidence. Do not infer
+   that the incident began before it becomes observable in the video.
++- If the incident is already under way in the first frame, use 0.
+ 
+ END_TIMESTAMP
+ - Integer number of seconds from the beginning of the video at which
+@@ -64,6 +65,12 @@
+ - If the incident is still visibly ongoing when the video ends, use the
+   final observable second of the video as End_Timestamp.
+ - Do not infer when an incident ends beyond the available video.
++- To find the end, locate the last observable second of the harmful
++  action or its active consequence (the last blow, the moment the vehicles
++  come to rest, the fire stops burning, the animal leaves the person), then
++  apply the rules above.
++- Round each timestamp to the nearest whole second at which the change is
++  visible.
+ 
+ TITLE
+ - A short, neutral headline for the incident, normally 4-10 words.

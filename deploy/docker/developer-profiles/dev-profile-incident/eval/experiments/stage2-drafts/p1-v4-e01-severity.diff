@@ -1,0 +1,31 @@
+--- p1-v4-base.txt
++++ p1-v4-e01-severity.txt
+@@ -138,6 +138,28 @@
+ Do not infer injuries, fatalities, or damage that are not visually
+ supported by the video.
+ 
++How to apply the rubric:
++1. Assess two things, both from the video: the harm actually shown
++   (injury, damage, disruption) and the danger to people actually shown
++   (for example a weapon held towards a person, people inside a blast
++   area, a vehicle striking a pedestrian). The level is the one that the
++   more serious of the two supports.
++2. Danger counts only when the video shows both the means of harm and
++   people exposed to it. A dangerous-looking scene with no one exposed is
++   not danger to people.
++3. Each level needs its own indicators to be visible. Levels 4 and 5 need
++   severe, major or fatal harm, or two or more people visibly harmed or
++   exposed to the danger. A dramatic-looking scene alone does not meet
++   them, and a clearly visible indicator of a level must not be
++   downgraded.
++4. Property damage alone rarely exceeds level 3; destruction that is major
++   or massive in the sense of the rubric is needed for level 4 or 5.
++5. Only when the evidence fits two adjacent levels equally well, choose
++   the lower level unless an indicator named in the higher level's
++   definition is visible.
++6. SEVERITY_REASON must name the decisive visible evidence for the chosen
++   level.
++
+ SEVERITY_REASON
+ - One or two sentences explaining which observable evidence places the
+   incident at the chosen SEVERITY_LEVEL under the rubric above.

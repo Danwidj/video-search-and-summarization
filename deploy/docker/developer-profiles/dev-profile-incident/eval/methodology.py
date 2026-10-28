@@ -49,6 +49,11 @@ JUDGE_RETRY_BACKOFF_SECONDS = (2.0, 8.0)
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_BASE_URL = "http://127.0.0.1:8811/v1"
 MATCH_THRESHOLD = config.MIN_MATCH_SIMILARITY  # 0.75 cosine, one-to-one Hungarian assignment
+# Item-matching threshold per methodology version. v1.2 is PROPOSED (not in force; METHODOLOGY_VERSION stays v1.1):
+# its value is the calibration rule's provisional result (methodology/calibration/matching-v1.2-calibration.md),
+# pending the owner's approval and the human audit of the AI-labelled calibration pairs.
+MATCH_THRESHOLDS = {"evaluation-methodology-v1.1": MATCH_THRESHOLD, "evaluation-methodology-v1.2": 0.30}
+MATCH_THRESHOLD_PROVISIONAL = {"evaluation-methodology-v1.1": False, "evaluation-methodology-v1.2": True}
 
 # Incident fields.
 TIMESTAMP_TOLERANCE_SECONDS = config.EVAL_TIMESTAMP_TOLERANCE_SECONDS  # +-5 s
