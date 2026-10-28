@@ -48,10 +48,13 @@ Written by the person approving the final annotations and exclusions, after read
   "candidate_workbook_sha256": "<the candidate workbook's SHA-256, from the readiness report>",
   "records_sha256": "<the records digest, from the readiness report>",
   "exclusions": [],
+  "unresolved_keep_original": [],
   "approved_by": "<name or role>",
   "approved_at": "<ISO date>"
 }
 ```
+
+`unresolved_keep_original` lists AI-unresolved entries whose original value the owner keeps (otherwise they block). For an AI-Adjudicated Candidate, pass `--adjudication <file>` to `gt_freeze.py`.
 
 `exclusions` lists incident ids to leave out of the ground truth and both split halves. Any exclusion changes the 25/55 split, so it needs this explicit approval. If any value differs from the candidate, the output stays a `candidate`.
 

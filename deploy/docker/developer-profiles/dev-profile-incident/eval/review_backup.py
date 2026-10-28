@@ -43,7 +43,9 @@ from pathlib import Path
 STATUS_COLUMN, REVIEWER_COLUMN, NOTES_COLUMN = 16, 17, 18
 BACKUP_DIR_NAME = "backups"
 BACKUP_LOG = "backup-log.jsonl"
-MACHINE_STATUSES = ("Pending", "Auto-verified", "Informational")  # set by a build, not by a person
+# Set by a build, not by a person (AI-* = AI-assisted adjudication, never a human decision).
+MACHINE_STATUSES = ("Pending", "Auto-verified", "Informational", "AI-Accepted", "AI-Rejected", "AI-Modified",
+                    "AI-Unresolved")
 
 
 class OverwriteRefusedError(RuntimeError):
