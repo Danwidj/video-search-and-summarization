@@ -12,10 +12,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
 
-// Documented boundary exception: this domain module reads the JSON Schema through the
-// infrastructure loader (node:fs). Injecting the schema as a port is the stricter option
-// and is not taken yet, so the loader stays a direct import here.
-import { schema } from '@/modules/contract/infrastructure/loader';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
+import { getContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import { crossFieldViolations, type ContractViolation } from '@/modules/contract/domain/validate';
 import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
@@ -63,11 +61,14 @@ export class StructuredEditError extends Error {
   }
 }
 
-let compiled: ValidateFunction | null = null;
+const compiledValidators = new Map<string, ValidateFunction>();
 
-function editValidator(): ValidateFunction {
+function editValidator(catalog?: ContractCatalog): ValidateFunction {
+  const cat = catalog ?? getContractCatalog();
+  const cacheKey = cat.contractVersion();
+  let compiled = compiledValidators.get(cacheKey);
   if (compiled) return compiled;
-  const contract = schema() as {
+  const contract = cat.schema() as {
     properties: {
       incident: { properties: Record<string, unknown> };
       entities: { items: { properties: Record<string, unknown> } };
@@ -108,6 +109,7 @@ function editValidator(): ValidateFunction {
     },
   };
   compiled = new Ajv2020({ allErrors: true, strict: false }).compile(editSchema);
+  compiledValidators.set(cacheKey, compiled);
   return compiled;
 }
 
@@ -140,12 +142,12 @@ function entitySpanViolations(edit: StructuredEdit): ContractViolation[] {
   });
 }
 
-export function validateStructuredEdit(edit: unknown): StructuredEdit {
+export function validateStructuredEdit(edit: unknown, catalog?: ContractCatalog): StructuredEdit {
   const blocked = notEditableKeys(edit);
   if (blocked.length) {
     throw new StructuredEditError(400, `Only structured fields can be edited; not editable: ${blocked.join(', ')}`, [], blocked);
   }
-  const validate = editValidator();
+  const validate = editValidator(catalog);
   if (!validate(edit)) {
     const violations: ContractViolation[] = (validate.errors ?? []).map((error) => {
       const path = error.instancePath ? error.instancePath.slice(1) : '<root>';

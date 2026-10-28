@@ -8,7 +8,8 @@
 // never edits the canonical prompt and cannot change the enforced schema.
 // Without an instruction the request body equals eval's P1 body key for key.
 
-import { extractionPrompt, inferenceSettings, responseFormat } from '@/modules/contract/infrastructure/loader';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
+import { getContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import type { GatewayCompletionRequest } from '@/modules/analysis/domain/ModelGateway';
 
 export const MAX_ADDITIONAL_INSTRUCTION_LENGTH = 1000;
@@ -35,15 +36,22 @@ export function normalizeAdditionalInstruction(value: unknown): string | null {
 }
 
 /** The P1 settings recorded with every run (eval's FIXED_INFERENCE_CONFIG merged with P1_INFERENCE_CONFIG). */
-export function p1InferenceConfig(): Record<string, unknown> {
-  const { p1 } = inferenceSettings();
+export function p1InferenceConfig(catalog?: ContractCatalog): Record<string, unknown> {
+  const cat = catalog ?? getContractCatalog();
+  const { p1 } = cat.inferenceSettings();
   return { temperature: p1.temperature, max_tokens: p1.max_tokens, media_io_kwargs: p1.media_io_kwargs };
 }
 
-export function buildP1Request(model: string, videoUrl: string, additionalInstruction: string | null = null): GatewayCompletionRequest {
+export function buildP1Request(
+  model: string,
+  videoUrl: string,
+  additionalInstruction: string | null = null,
+  catalog?: ContractCatalog,
+): GatewayCompletionRequest {
+  const cat = catalog ?? getContractCatalog();
   const content: Array<Record<string, unknown>> = [
     { type: 'video_url', video_url: { url: videoUrl } },
-    { type: 'text', text: extractionPrompt() },
+    { type: 'text', text: cat.extractionPrompt() },
   ];
   if (additionalInstruction) {
     content.push({ type: 'text', text: `${ADDITIONAL_INSTRUCTION_PREAMBLE}\n<<<\n${additionalInstruction}\n>>>` });
@@ -51,7 +59,7 @@ export function buildP1Request(model: string, videoUrl: string, additionalInstru
   return {
     model,
     messages: [{ role: 'user', content }],
-    ...p1InferenceConfig(),
-    response_format: responseFormat(),
+    ...p1InferenceConfig(cat),
+    response_format: cat.responseFormat(),
   };
 }

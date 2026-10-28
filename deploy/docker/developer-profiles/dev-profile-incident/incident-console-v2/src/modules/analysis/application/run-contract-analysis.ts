@@ -19,8 +19,6 @@
 // The model, agent, video store and persistence are ports; the composition root
 // (lib/container.ts) chooses the adapters.
 
-import { randomUUID } from 'node:crypto';
-
 import { buildP1Request, normalizeAdditionalInstruction, p1InferenceConfig } from '@/modules/analysis/application/build-request';
 import {
   type AgentStoredRevision,
@@ -32,7 +30,7 @@ import {
 import { AgentRequestError, type AgentHttpResponse, type IncidentAgent } from '@/modules/analysis/domain/IncidentAgent';
 import { GatewayError, type GatewayCompletionResponse, type ModelGateway } from '@/modules/analysis/domain/ModelGateway';
 import type { VideoObjectStore } from '@/modules/analysis/domain/VideoObjectStore';
-import { contractVersion, findAllowedModel, promptSha256, schemaSha256 } from '@/modules/contract/infrastructure/loader';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { attemptIdNormalization, REPAIR_RULE_SET } from '@/modules/contract/domain/repair';
 import type { IncidentContractReport } from '@/modules/contract/domain/types';
 import {
@@ -70,6 +68,10 @@ export interface AnalysisPorts {
   gateway: ModelGateway | null;
   /** Agent mode's model call. */
   agent: IncidentAgent | null;
+  /** Contract catalog port providing prompts, schemas, version, and model configurations. */
+  catalog: ContractCatalog;
+  /** Port for generating random UUIDs. */
+  randomUUID: () => string;
 }
 
 export type AnalysisMode = 'gateway' | 'agent';
@@ -91,8 +93,8 @@ export interface ContractAnalysisResult {
   revisionId: number;
 }
 
-export function resolveAllowedModel(model: unknown) {
-  const allowed = typeof model === 'string' ? findAllowedModel(model.trim()) : undefined;
+export function resolveAllowedModel(model: unknown, catalog: ContractCatalog) {
+  const allowed = typeof model === 'string' ? catalog.findAllowedModel(model.trim()) : undefined;
   if (!allowed)
     throw new AnalysisRequestError(400, `Unsupported model: ${typeof model === 'string' && model.trim() ? model.trim() : '(none)'}`);
   return allowed;
@@ -235,7 +237,7 @@ export async function runContractAnalysis(
   ports: AnalysisPorts,
   mode: AnalysisMode,
 ): Promise<ContractAnalysisResult> {
-  let model = resolveAllowedModel(input.model);
+  let model = resolveAllowedModel(input.model, ports.catalog);
   let additionalInstruction: string | null;
   try {
     additionalInstruction = normalizeAdditionalInstruction(input.additionalInstruction);
@@ -262,19 +264,19 @@ export async function runContractAnalysis(
     const videoDurationSeconds = await ports.videos.durationSeconds(input.r2Key, contentLength);
 
     const attemptedAt = new Date().toISOString();
-    const modelRunId = compactId('m', `${input.videoId}:${attemptedAt}:${randomUUID()}`);
+    const modelRunId = compactId('m', `${input.videoId}:${attemptedAt}:${ports.randomUUID()}`);
     const base: Omit<AnalysisAttemptRecord, 'status' | 'stage' | 'failure' | 'response' | 'validation' | 'repair'> = {
-      contractVersion: contractVersion(),
+      contractVersion: ports.catalog.contractVersion(),
       videoId: input.videoId,
       r2Key: input.r2Key,
       modelRunId,
       attemptedAt,
       request: {
         model: model.id,
-        inferenceConfig: p1InferenceConfig(),
+        inferenceConfig: p1InferenceConfig(ports.catalog),
         additionalInstruction,
-        promptSha256: promptSha256(),
-        schemaSha256: schemaSha256(),
+        promptSha256: ports.catalog.promptSha256(),
+        schemaSha256: ports.catalog.schemaSha256(),
         videoDurationSeconds,
       },
     };
@@ -368,8 +370,8 @@ export async function runContractAnalysis(
       if (Array.isArray(agentP1.evidence)) fromAgent.evidence = evidenceEntries(agentP1.evidence);
       if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
 
-      if (agentP1.contract_version !== contractVersion()) {
-        const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${contractVersion()})`;
+      if (agentP1.contract_version !== ports.catalog.contractVersion()) {
+        const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${ports.catalog.contractVersion()})`;
         const attempt: AnalysisAttemptRecord = {
           ...base,
           status: 'request_failed',
@@ -394,7 +396,7 @@ export async function runContractAnalysis(
       let completion: GatewayCompletionResponse;
       try {
         completion = await ports.gateway.complete(
-          buildP1Request(model.id, playbackUrl, additionalInstruction),
+          buildP1Request(model.id, playbackUrl, additionalInstruction, ports.catalog),
           AbortSignal.timeout(model.timeout_seconds * 1000),
         );
       } catch (error) {
@@ -459,7 +461,11 @@ export async function runContractAnalysis(
     }
 
     operation = 'validating the VLM response against the incident contract';
-    const outcome = evaluateContent(content, { videoDurationSeconds });
+    const outcome = evaluateContent(content, {
+      videoDurationSeconds,
+      contractVersion: ports.catalog.contractVersion(),
+      catalog: ports.catalog,
+    });
     if (outcome.kind === 'contract_failed') {
       // The failure is decided by core violations; enrichment ones stay in validation.firstPass.
       const codes = [
