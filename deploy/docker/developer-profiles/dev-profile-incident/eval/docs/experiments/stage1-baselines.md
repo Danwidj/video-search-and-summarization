@@ -106,7 +106,38 @@
   - They under-report instruments (9 predicted against 18–25).
 - **Consequence for Stage 2:** two of D9 v2's three `ΔI` components (entity F1 and object F1) sit at the floor. See the [Stage 2 plan](stage2-plan.md), decision S2-A.
 
-## v1.2 provisional re-matching
+## v1.2 final re-matching (τ = 0.40)
+
+[Methodology v1.2](../../methodology/evaluation-methodology-v1.2.md) is final: τ = 0.40 from calibration v2, AI-assisted and not human-validated. The v1.1 results above are unchanged (`results.json`, `verify` OK).
+- **Files:** `rematched-v1.2-t0.40-20261028T141652Z.json` (C1) and `…T141656Z.json` (C2), next to each `results.json`. They make no model or judge call, and incident fields are carried over.
+- **Newly matched pairs:**
+  - their deterministic attributes are scored: entity type, instrument threat level and holder;
+  - their judged attributes (names, descriptions) are marked `judged_attributes_pending`: 98 fields for C1, 95 for C2;
+  - D9 and item P/R/F1 need only the match counts.
+- **Superseded:** earlier `rematched-v1.2-*` files from the provisional calibration are kept but are not the final scores.
+
+| Kind | C1 TP / FP / FN | C1 P / R / F1 | C2 TP / FP / FN | C2 P / R / F1 |
+|---|---|---|---|---|
+| entities | 41 / 62 / 31 | 0.398 / 0.569 / 0.469 | 30 / 56 / 25 | 0.349 / 0.545 / 0.426 |
+| instruments | 5 / 4 / 20 | 0.556 / 0.200 / 0.294 | 4 / 5 / 14 | 0.444 / 0.222 / 0.296 |
+| assets | 27 / 79 / 14 | 0.255 / 0.659 / 0.367 | 29 / 78 / 12 | 0.271 / 0.707 / 0.392 |
+
+- **Matched-pair attributes (deterministic, v1.2):**
+  - entity type correct 40/41 (C1) and 29/30 (C2);
+  - instrument threat level exact 1/5 (C1) and 0/4 (C2);
+  - holder correct 0 (C1: 1 incorrect, 4 unresolved) and 1 (C2: 1 incorrect, 2 unresolved).
+- **D9 v2 components, C2 − C1** (parity, descriptive; 19 paired clips, 95% CI):
+  - `ΔI` −0.030 [−0.117, 0.036];
+  - incident +0.032 [−0.065, 0.113];
+  - entity F1 −0.119 [−0.258, −0.007];
+  - object F1 −0.004 [−0.073, 0.051].
+  - The arms send identical requests, so the entity difference is run-to-run output variation, like the description difference. It is not a pipeline effect.
+- **Error pattern:**
+  - assets are over-listed (precision 0.26–0.27, recall 0.66–0.71);
+  - instruments are under-reported (recall 0.20–0.22);
+  - entities have precision 0.35–0.40, recall 0.55–0.57.
+
+## v1.2 provisional re-matching (superseded; calibration v1)
 
 The v1.1 results above are unchanged. This section re-matches the same saved outputs offline under the **proposed** [methodology v1.2](../../methodology/evaluation-methodology-v1.2.md) (`eval_experiment.py rematch`: no model or judge call).
 - **The threshold:** the calibration rule picked τ = 0.30 ([calibration](../../methodology/calibration/matching-v1.2-calibration.md)). 0.40 is shown as a sensitivity check.
@@ -165,7 +196,7 @@ The v1.1 results above are unchanged. This section re-matches the same saved out
   - 25 dev clips, and 34% of video-runs lost to gateway failures, so 19 clips are paired.
   - The intervals are wide.
   - Instruments are thin (25 ground-truth instruments over the dev video-runs).
-- **Item metrics:** at the floor at the v1.1 threshold. The proposed v1.2 threshold fixes this (above), but it is provisional.
+- **Item metrics:** at the floor at the v1.1 threshold. Under v1.2 (τ = 0.40, AI-calibrated, not human-validated) they are informative (above).
 - **Classification:** the VSS 429 misclassification in the stored records is corrected in this report from the stored error text. The stored records themselves are unchanged.
 - **Host suspend:** one in-flight call during the suspend, plus the post-resume gateway failures.
 - **Exposure:** the dev clips were few-shot examples in the retired P1-v1 prompt (D15).

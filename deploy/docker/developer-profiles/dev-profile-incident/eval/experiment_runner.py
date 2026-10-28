@@ -477,11 +477,21 @@ def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = O
     return order
 
 
+def write_checkpoint(stage_dir: Path, *, order, done: int, records, run_ids, attempts: int, rate_limited: int) -> None:
+    """The stage's progress after each video-run, replaced atomically (a crash never leaves half a file)."""
+    tmp = stage_dir / "checkpoint.json.tmp"
+    tmp.write_text(json.dumps({"order": [list(o) for o in order], "done": done, "records": records,
+                               "run_ids": [[k, r, v] for (k, r), v in run_ids.items()], "attempts": attempts,
+                               "rate_limited": rate_limited}, default=str))
+    tmp.replace(stage_dir / "checkpoint.json")
+
+
 def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_source: Callable,
               call_factory_for: Callable, run_one: Callable, confirm_paid: bool, results_root: Path = RESULTS_ROOT,
               registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
               log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED,
-              only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None) -> dict:
+              only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None,
+              resume: Path | None = None) -> dict:
     """Run configurations interleaved per video under hard caps; write one immutable result per configuration.
 
     ``call_factory_for(config) -> call_factory(incident_id, run_id, duration) -> p1_call``. Every
@@ -493,6 +503,11 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     ``only`` (recovery, ``experiment_recovery``) limits each configuration to the listed ``(repeat,
     incident_id)`` video-runs, still in the interleaved D10 order; ``recovery`` names, per configuration,
     the original result it recovers and the original video-run each recovered one replaces.
+
+    After every video-run the stage writes ``checkpoint.json`` (the records so far, the run ids and the
+    rate-limit counters). ``resume`` (that stage directory) continues an interrupted stage with the same
+    configurations: the finished video-runs are kept, the rest run in the same D10 order, and the result
+    is written once at the end, as for an uninterrupted stage (``resumed`` lists when it was resumed).
     """
     if only is not None and set(only) != {c["experiment_id"] for c in configs}:
         raise ExperimentRefused("a recovery lists the video-runs of every configuration in the stage")
@@ -520,15 +535,25 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 f"{caps['required']} the full plan can need ({caps['repeats']} repeats x {caps['judged_fields']} "
                 f"judged fields x {caps['attempts_per_field']} attempts); re-derive it with 'eval_experiment.py caps'")
     pricing = pricing or load_pricing()
-    started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-    out_dirs = [results_root / c["experiment_id"] / started for c in configs]
     stage_id = hashlib.sha256(",".join(c["experiment_id"] for c in configs).encode()).hexdigest()[:8]
+    checkpoint = None
+    if resume is not None:
+        started, _, resumed_id = resume.name.partition("-")
+        if resumed_id != stage_id or not (resume / "checkpoint.json").exists():
+            raise ExperimentRefused(f"{resume} is not an interrupted stage of these configurations")
+        checkpoint = json.loads((resume / "checkpoint.json").read_text())
+    else:
+        started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
+    out_dirs = [results_root / c["experiment_id"] / started for c in configs]
     stage_dir = results_root / "stages" / f"{started}-{stage_id}"
-    for path in [*out_dirs, stage_dir]:
-        if path.exists():
-            raise ExperimentRefused(f"{path} exists; results are immutable")
-    for path in [*out_dirs, stage_dir]:
-        path.mkdir(parents=True)
+    if checkpoint is None:
+        for path in [*out_dirs, stage_dir]:
+            if path.exists():
+                raise ExperimentRefused(f"{path} exists; results are immutable")
+        for path in [*out_dirs, stage_dir]:
+            path.mkdir(parents=True)
+    elif any((d / "results.json").exists() for d in out_dirs):
+        raise ExperimentRefused("this stage already wrote its results; it cannot be resumed")
     order = schedule(configs, list(video_sets.pop()), configs[0]["repeats"], seed)
     if only is not None:
         order = [o for o in order if (o[0], o[2]) in only[configs[o[3]]["experiment_id"]]]
@@ -549,9 +574,22 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     planned_runs = [planned_calls(c, split) if only is None else len(only[c["experiment_id"]]) for c in configs]
     run_ids: dict[tuple, str] = {}
     stopped = None
-    attempts = rate_limited = 0
+    attempts = rate_limited = done = 0
+    if checkpoint is not None:
+        if checkpoint["order"] != [list(o) for o in order]:
+            raise ExperimentRefused("the checkpoint's order differs from this stage's order")
+        records, done = checkpoint["records"], checkpoint["done"]
+        attempts, rate_limited = checkpoint["attempts"], checkpoint["rate_limited"]
+        run_ids = {(k, r): v for k, r, v in checkpoint["run_ids"]}
+        for record in records:
+            record.setdefault("resumed", []).append({"at": datetime.now(UTC).isoformat(timespec="seconds"),
+                                                     "after_video_runs": done})
+        for (k, _repeat), run_id in run_ids.items():  # a fresh store needs the model runs it already has
+            store.insert_model_run(run_id, model_name=configs[k]["model"], prompt_version=contract.contract_version())
     with (stage_dir / "cost-log.jsonl").open("a") as cost_log:
-        for repeat, position, incident_id, k in order:
+        for index, (repeat, position, incident_id, k) in enumerate(order):
+            if index < done:
+                continue
             config, record = configs[k], records[k]
             budget, used = config["budget"], record["usage"]
             reason = None
@@ -617,6 +655,8 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                                        "repeat": repeat, "position": position, "outcome": result["outcome"], **usage,
                                        "config_cumulative": dict(used)}) + "\n")
             cost_log.flush()
+            write_checkpoint(stage_dir, order=order, done=index + 1, records=records, run_ids=run_ids,
+                             attempts=attempts, rate_limited=rate_limited)
             log(f"  {config['experiment_id']} r{repeat} {incident_id}: {result['outcome']} "
                 f"tokens={usage['p1_total_tokens']} cost≈${used['cost_usd_provisional']:.4f}")
     finished = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

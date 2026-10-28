@@ -1,6 +1,19 @@
-# Evaluation Methodology v1.2 (proposed)
+# Evaluation Methodology v1.2
 
-> **Status: PROPOSED, not in force.** Version id `evaluation-methodology-v1.2`. The owner approved its preparation on 2026-10-28 (Stage 1 review, option S2-A (b)). It takes effect only after the owner approves the calibrated rule below. Until then `methodology.METHODOLOGY_VERSION` stays `evaluation-methodology-v1.1`, and every v1.1 result is kept unchanged. Results of different versions are never pooled.
+> **Status: the proposed authoritative scoring methodology for Stage 2 onward** (owner instruction, 2026-10-28). It is implemented: `methodology.METHODOLOGY_VERSION = "evaluation-methodology-v1.2"`, **τ = 0.40**.
+> - **Calibration:** AI-labelled and AI-audited; **not human-validated**. Every result records `match_calibration.human_validated: false`.
+> - **v1.1 is kept:** its rules and every v1.1 result are unchanged. Results of different versions are never pooled (`eval_aggregate.py`), and D9 G3 refuses to compare them.
+> - **Stage 1 under v1.2:** the Stage 1 baselines are re-matched offline into new, versioned files ([Stage 1](../docs/experiments/stage1-baselines.md#v12-final-re-matching-τ--040)).
+
+**Preserved from v1.1:**
+- `ground-truth-v1.0`;
+- the incident scoring rules;
+- the pinned judge (`nvidia/nemotron-3-nano-30b-a3b`, `judge-prompt-v1`, temperature 0, at most 1,500 output tokens, with truncated or invalid replies counted as failures);
+- the embedder and embedded texts;
+- one-to-one Hungarian matching;
+- the handling of invalid outputs and missing predictions (§3 of v1.0);
+- aggregation and intervals;
+- D9 v2 weights and selection criteria. Its G3 gains only the check that both sides use the same methodology version and protocol.
 
 ## The one change: the item-matching threshold
 
@@ -83,14 +96,17 @@ The v1 sheet and labels are kept unchanged. v2 adds the following:
 
 ## Limitations
 
-- **Small:** 70 pairs from 25 clips. The interval on F1 is reported, and τ is a point estimate.
+- **Small:** 132 pairs (32 `same`) from 25 clips. The interval on F1 is wide ([0.65, 0.94]), and the data separate 0.30–0.40 from 0.75 clearly, but 0.40 from 0.30 only weakly.
+- **Large blocks:** 4 of the 16 large dev blocks were labelled, and none of them is an instrument block. F1 on large blocks (0.71) is lower than on small ones (0.86).
 - **Distribution:** the pairs come from the baseline prompt's outputs. A Stage 2 prompt that writes very differently could match differently at the same τ. All Stage 2 versions are scored with the same τ, so there is no differential bias between versions.
-- **Labels:** AI-labelled pairs are provisional until the human audit. The ground truth is itself AI-assisted and approved at the dataset level ([freeze README](../ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation)).
+- **Labels:** AI-labelled and AI-audited (30 of 36 audited pairs agree, and every pair with two decisive labels agrees). No person has reviewed them; 8 pairs are listed for human review. The ground truth is itself AI-assisted and approved at the dataset level ([freeze README](../ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation)).
 - **Dev reuse:** calibration and Stage 2 selection both use the dev split. The calibration set fixes τ once, before any Stage 2 output exists. Selection then compares versions under that fixed τ.
 
-## Calibration result
+## Calibration result (final)
 
-**Provisional (2026-10-28), from AI labels:**
-- **The rule selects τ = 0.30.** Pooled F1 0.857, 95% interval [0.69, 0.98]; precision 0.857, recall 0.857. The v1.1 value 0.75 gives F1 0.091 on the same pairs.
-- **Caveats:** 0.30 is the lowest value on the grid, and the sample excludes blocks of more than 9 pairs (half of the dev pairs).
-- **Still needed:** the human audit and the owner decisions listed in [`calibration/matching-v1.2-calibration.md`](calibration/matching-v1.2-calibration.md). `methodology.MATCH_THRESHOLDS` holds the provisional value, and `MATCH_THRESHOLD_PROVISIONAL` marks it.
+- **The rule selects τ = 0.40** on calibration v2 (26 blocks, 132 pairs).
+  - Pooled F1 0.814, 95% interval [0.65, 0.94]; precision 0.889, recall 0.750.
+  - The v1.1 value 0.75 gives F1 0.118 on the same pairs.
+- **Stability:** 0.40 is selected in 56% of bootstrap resamples, so the conservative fallback does not trigger. 0.40 is also the highest τ in the central range.
+- **Evidence and the 8 open human-review pairs:** [`calibration/matching-v1.2-calibration-v2.md`](calibration/matching-v1.2-calibration-v2.md).
+- **Calibration v1** (provisional τ = 0.30, 70 pairs) is superseded and kept: [`calibration/matching-v1.2-calibration.md`](calibration/matching-v1.2-calibration.md).

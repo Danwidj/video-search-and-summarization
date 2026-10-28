@@ -233,3 +233,66 @@ def sha256_file(path: Path) -> str:
 
 def load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+# --- calibration v2: audit resolution, selection stability, conservative fallback ------------------
+
+def resolve(labels: list[dict], audits: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The v2 labels and the human-review list, by the rule fixed in methodology v1.2 (calibration v2, step 3)."""
+    audit = {(a["block_id"], a["predicted_id"], a["gt_id"]): a for a in audits}
+    out, review = [], []
+    for lab in labels:
+        key = (lab["block_id"], lab["predicted_id"], lab["gt_id"])
+        a = audit.get(key)
+        row = {**lab, "label_original": lab["label"]}
+        if a is not None and a["label"] != lab["label"]:
+            if lab["label"] == "ambiguous" and a["label"] != "ambiguous" and a.get("uncertainty") in ("low", "medium"):
+                row.update(label=a["label"], resolution="audit resolved an ambiguous label")
+            else:
+                row.update(label="ambiguous", resolution="labeller and auditor disagree: human review")
+                review.append({"pair": list(key), "labeller": lab["label"], "auditor": a["label"],
+                               "auditor_uncertainty": a.get("uncertainty"), "auditor_reason": a.get("reason")})
+        elif a is not None:
+            row["resolution"] = "audit agrees"
+        if a is not None:
+            row["audit"] = {k: a.get(k) for k in ("label", "uncertainty", "reason", "evidence")}
+        out.append(row)
+    return out, review
+
+
+def counts_by_block(sheet: dict, labels: list[dict], sims: dict, grid) -> dict[float, dict[str, tuple]]:
+    return {t: score_threshold(sheet, labels, sims, t)["by_kind"]["all"]["blocks"] for t in grid}
+
+
+def _f1(blocks: list[tuple]) -> float:
+    tp, fp, fn = (sum(b[i] for b in blocks) for i in range(3))
+    return 2 * tp / (2 * tp + fp + fn) if tp + fp + fn else 0.0
+
+
+def select_from_counts(per_t: dict[float, dict[str, tuple]], block_ids: list[str]) -> float:
+    """The selection rule on a (resampled) list of block ids: highest pooled F1, ties to the higher τ."""
+    f1 = {t: _f1([per_t[t][b] for b in block_ids]) for t in per_t}
+    best = max(f1.values())
+    return max(t for t, v in f1.items() if best - v <= TIE_MARGIN)
+
+
+def selection_stability(per_t: dict[float, dict[str, tuple]], *, resamples: int = 2000, seed: int = SEED) -> dict:
+    block_ids = sorted(next(iter(per_t.values())))
+    rng = random.Random(seed)
+    chosen = sorted(select_from_counts(per_t, [block_ids[rng.randrange(len(block_ids))] for _ in block_ids])
+                    for _ in range(resamples))
+    freq = {t: chosen.count(t) / resamples for t in sorted(per_t)}
+    low, high = chosen[int(0.05 * (resamples - 1))], chosen[int(0.95 * (resamples - 1))]
+    return {"frequency": freq, "central90": [low, high]}
+
+
+def conservative_choice(per_t: dict[float, dict[str, tuple]], selected: float, stability: dict) -> dict:
+    """The fallback fixed in methodology v1.2: only when the selection is unstable."""
+    low, high = stability["central90"]
+    unstable = stability["frequency"][selected] < 0.5 and high - low > 0.10 + 1e-9
+    block_ids = sorted(next(iter(per_t.values())))
+    f1 = {t: _f1([per_t[t][b] for b in block_ids]) for t in per_t}
+    if not unstable:
+        return {"triggered": False, "threshold": selected}
+    candidates = [t for t in per_t if low - 1e-9 <= t <= high + 1e-9 and f1[t] >= f1[selected] - 0.05]
+    return {"triggered": True, "threshold": max(candidates), "f1": f1[max(candidates)], "f1_selected": f1[selected]}
