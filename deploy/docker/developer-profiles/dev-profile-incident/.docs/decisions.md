@@ -28,6 +28,20 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Known limits:** the original name of a pre-migration upload is not in the database, so the script uses the VST sensor name, else the upload time. Two analyses of one video that start together can pick the same `run-N`; the conditional put makes one fail instead of overwriting.
 - **Links:** [`data.md` §2](data.md#2-cloudflare-r2-storage-architecture), [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py), [`20261028090000_r2_rename.sql`](../supabase/migrations/20261028090000_r2_rename.sql).
 
+### 2026-10-28: Methodology v1.3: severity MAE as a reporting-only extension
+- **Decision (owner, 2026-10-28; proposed after Stage 2a was authorised and launched):**
+  - **MAE** (mean \|predicted − expected\| over valid severity predictions, in levels) is the **primary severity-specific reporting metric**.
+  - **Supporting metrics:** mean signed error, exact and within-±1 accuracy (over valid predictions), the confusion matrix, coverage and failure categories.
+  - **Comparisons:** paired against the corresponding baseline, with a 95% video-cluster bootstrap.
+- **Not changed:**
+  - D9 v2 (its severity component stays exact accuracy), its weights, the selection criteria and the guardrails;
+  - τ = 0.40, ground-truth-v1.0, the prompts, the Stage 2a configs and running code;
+  - every existing score.
+  - `METHODOLOGY_VERSION` stays v1.2. v1.3 metrics are computed offline into separately versioned reports, with no model or judge call.
+- **Why:** severity is ordinal. Exact accuracy cannot tell a one-level miss from a four-level one, and the signed error shows the over-rating that Stage 1 found. The limit, that adjacent levels are not guaranteed equal distances, is documented.
+- **Rejected:** replacing exact severity in D9 during Stage 2 (that would change a pre-registered objective after the data).
+- **Links:** [`../eval/methodology/evaluation-methodology-v1.3.md`](../eval/methodology/evaluation-methodology-v1.3.md), [`../eval/docs/experiments/severity-v1.3.md`](../eval/docs/experiments/severity-v1.3.md).
+
 ### 2026-10-28: Stage 2a authorised; run controls pause instead of spending the budget
 - **Decision (owner, 2026-10-28):**
   - **Authorised:** Stage 2a only: 8 configs × 25 dev clips × 2 repeats = 400 video-runs, at most 1,200 P1 attempts including retries, under the existing token and judge caps.
