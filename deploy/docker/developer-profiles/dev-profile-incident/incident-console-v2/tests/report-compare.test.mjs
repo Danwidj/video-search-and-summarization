@@ -11,8 +11,12 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { deleteDraftItem, draftChangeCount, draftToStructured, pairReport, revertBlocked, revertDraftItem, rowDiffers } = await import(
   '../src/lib/reports/compare.ts'
 );
-const { draftFromView } = await import('../src/modules/reports/domain/edit-draft.ts');
-const { buildReportView } = await import('./support/report-view.mjs');
+const { draftFromView, editFromDraft, nextCanonicalEntityId, newEntityDraft } = await import('../src/modules/reports/domain/edit-draft.ts');
+const { buildTimelineLanes } = await import('../src/lib/reports/timeline-lanes.ts');
+const { buildReportView, aiRevisionRow } = await import('./support/report-view.mjs');
+const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
+const { revisionRecordFromRows } = await import('../src/modules/reports/infrastructure/supabase/mappers/report.ts');
+const { toReportView } = await import('../src/modules/reports/application/report-view.ts');
 
 const fixture = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const view = buildReportView({ ...structuredClone(fixture), playbackUrl: 'https://signed.example/v.mp4' });
@@ -122,7 +126,144 @@ test('the draft renders as structured evidence with its holder names resolved', 
   draft.instruments.find((item) => item.sourceId === 'I1').holderKey = draft.entities[1].key;
   const structured = draftToStructured(draft);
   assert.equal(structured.entities.length, 2);
-  assert.equal(structured.instruments.find((item) => item.instrumentId === draft.instruments[0].key).entityId, draft.entities[1].key);
+  assert.equal(structured.entities[0].entityId, 'E1');
+  assert.equal(structured.entities[1].entityId, 'E2');
+  assert.equal(structured.instruments.find((item) => item.instrumentId === draft.instruments[0].key).entityId, 'E2');
   assert.equal(structured.incident.severityLevel, 3);
   assert.equal(structured.incident.startSeconds, view.structured.incident.startSeconds);
+});
+
+test('draftFromView keeps canonical entity ids as a first-class field', () => {
+  const draft = base();
+  assert.equal(draft.entities[0].canonicalId, 'E1');
+  assert.equal(draft.entities[1].canonicalId, 'E2');
+  assert.equal(draft.entities[0].key, 'entity-0');
+  assert.equal(draft.entities[1].key, 'entity-1');
+});
+
+test('pairCollection preserves canonical entity order instead of re-sorting by timestamp', () => {
+  const draft = base();
+  // Reverse entity timestamps so E2 has earlier timestamp than E1
+  draft.entities[0].timestampSeconds = 12; // E1 at 12s
+  draft.entities[1].timestampSeconds = 2; // E2 at 2s
+  const pairing = pairReport(view.structured, draft);
+  const entityRows = pairing.rows.filter((r) => r.kind === 'entity');
+  assert.equal(entityRows.length, 2);
+  assert.equal(entityRows[0].b?.canonicalId, 'E1');
+  assert.equal(entityRows[1].b?.canonicalId, 'E2');
+});
+
+test('pairCollection keeps canonical entity order when an entity is deleted', () => {
+  const draft = base();
+  // Delete the first entity (E1)
+  const withoutE1 = deleteDraftItem(draft, 'entity', draft.entities[0].key);
+  const pairing = pairReport(view.structured, withoutE1);
+  const entityRows = pairing.rows.filter((r) => r.kind === 'entity');
+  assert.equal(entityRows.length, 2);
+  assert.equal(entityRows[0].a?.entityId, 'E1');
+  assert.equal(entityRows[0].b, null, 'E1 is marked deleted in B');
+  assert.equal(entityRows[1].b?.canonicalId, 'E2');
+});
+
+test('nextCanonicalEntityId produces next non-colliding ID even with gaps', () => {
+  assert.equal(nextCanonicalEntityId([]), 'E1');
+  assert.equal(nextCanonicalEntityId([{ canonicalId: 'E1' }, { canonicalId: 'E2' }]), 'E3');
+  assert.equal(nextCanonicalEntityId([{ canonicalId: 'E1' }, { canonicalId: 'E5' }]), 'E6');
+  assert.equal(nextCanonicalEntityId([{ sourceId: 'E3' }]), 'E4');
+});
+
+test('newEntityDraft creates a draft entity with a non-colliding canonical ID', () => {
+  const draft = base();
+  const added = newEntityDraft(draft, { description: 'New bystander' });
+  assert.equal(added.canonicalId, 'E3');
+  assert.equal(added.description, 'New bystander');
+  assert.equal(added.sourceId, null);
+  assert.ok(added.key.startsWith('entity-'));
+});
+
+test('timeline lane titles read E1 · label in both View and Edit modes', () => {
+  const draft = base();
+  draft.entities[0].label = 'attacker';
+  draft.entities[1].label = 'victim';
+  const viewStructured = {
+    ...view.structured,
+    entities: [
+      { ...view.structured.entities[0], label: 'attacker' },
+      { ...view.structured.entities[1], label: 'victim' },
+    ],
+  };
+  const viewLanes = buildTimelineLanes(viewStructured);
+  const editLanes = buildTimelineLanes(draftToStructured(draft));
+  assert.equal(viewLanes[0].title, 'E1 · attacker');
+  assert.equal(viewLanes[1].title, 'E2 · victim');
+  assert.equal(editLanes[0].title, viewLanes[0].title);
+  assert.equal(editLanes[1].title, viewLanes[1].title);
+  assert.deepEqual(
+    viewLanes.map((l) => l.title),
+    editLanes.map((l) => l.title),
+  );
+});
+
+test('View to Edit to View round trip keeps entity IDs, lane titles and order identical', () => {
+  // 1. Start from View
+  const initialView = view;
+  const initialEntities = initialView.structured.entities;
+  assert.deepEqual(
+    initialEntities.map((e) => e.entityId),
+    ['E1', 'E2'],
+  );
+
+  // 2. Open in Edit mode (draft)
+  const draft = draftFromView(initialView);
+  assert.deepEqual(
+    draft.entities.map((e) => e.canonicalId),
+    ['E1', 'E2'],
+  );
+
+  // In Edit mode, draftToStructured produces matching canonical entity IDs
+  const editStructured = draftToStructured(draft);
+  assert.deepEqual(
+    editStructured.entities.map((e) => e.entityId),
+    ['E1', 'E2'],
+  );
+
+  // 3. Save as new human revision
+  const edit = editFromDraft(draft);
+  assert.deepEqual(
+    edit.entities.map((e) => e.entity_id),
+    ['E1', 'E2'],
+  );
+
+  const parentRevision = aiRevisionRow(structuredClone(fixture));
+  const { payload, evidence } = humanRevisionContent(parentRevision, edit);
+
+  const humanRevision = {
+    ...parentRevision,
+    id: 2,
+    revision_no: 2,
+    kind: 'human',
+    parent_id: parentRevision.id,
+    payload,
+    evidence,
+  };
+  const roundTripReport = revisionRecordFromRows({
+    video: fixture.video,
+    revision: humanRevision,
+    modelRun: fixture.modelRun,
+  });
+  const roundTripView = toReportView(roundTripReport, 'https://signed.example/v.mp4');
+
+  // 4. Returned View structured matches initial View in IDs, labels, and order
+  assert.deepEqual(
+    roundTripView.structured.entities.map((e) => e.entityId),
+    ['E1', 'E2'],
+  );
+  assert.deepEqual(
+    roundTripView.structured.entities.map((e) => e.label || e.type),
+    initialEntities.map((e) => e.label || e.type),
+  );
+  assert.deepEqual(
+    buildTimelineLanes(roundTripView.structured).map((l) => l.title),
+    buildTimelineLanes(initialView.structured).map((l) => l.title),
+  );
 });
