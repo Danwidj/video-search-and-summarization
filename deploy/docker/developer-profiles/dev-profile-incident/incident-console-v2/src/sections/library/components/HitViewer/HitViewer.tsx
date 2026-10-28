@@ -17,11 +17,14 @@ export function HitViewer({
   hits,
   versions,
   onClose,
+  showMatch = true,
 }: {
   hit: EvidenceSearchHit;
   hits: EvidenceSearchHit[];
   versions: Record<string, SearchedVersion>;
   onClose: () => void;
+  /** False for a listing with no query, which has no similarity to show. */
+  showMatch?: boolean;
 }) {
   const [selectedKey, setSelectedKey] = useState(hitKey(hit));
   useEffect(() => setSelectedKey(hitKey(hit)), [hit]);
@@ -118,19 +121,14 @@ export function HitViewer({
           </div>
           <div className="space-y-2 text-sm">
             <p className="text-xs">
-              <b>{KIND_LABEL[item.itemType]}</b> · <span className="font-mono">{item.itemId}</span> · {matchPercent(selected)}% match ·{' '}
+              <b>{KIND_LABEL[item.itemType]}</b> · <span className="font-mono">{item.itemId}</span> ·{' '}
+              {showMatch ? `${matchPercent(selected)}% match · ` : ''}
               {formatClock(item.timestampSeconds)}
               {item.threatLevel != null ? ` · Threat ${item.threatLevel}` : ''}
             </p>
             <h3 className="text-lg font-semibold">{item.name || item.label}</h3>
             <p className="leading-6 text-ink/70">{item.description}</p>
             <RelationshipLine relationship={relationship} />
-            {selected.critic.verdict !== 'unverified' && (
-              <p className="text-xs text-ink/55">
-                Critic: {selected.critic.verdict}
-                {selected.critic.rationale ? ` - ${selected.critic.rationale}` : ''}
-              </p>
-            )}
             <Link
               className="mt-2 inline-block rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white"
               href={reportHref(selected, version)}

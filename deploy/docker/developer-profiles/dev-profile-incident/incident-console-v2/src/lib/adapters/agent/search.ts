@@ -19,6 +19,7 @@ export function toAgentSearchBody(request: EvidenceSearchRequest): Record<string
         ...(filters.minSeverity != null ? { min_severity: filters.minSeverity } : {}),
         ...(filters.maxSeverity != null ? { max_severity: filters.maxSeverity } : {}),
         ...(filters.itemTypes?.length ? { item_types: filters.itemTypes } : {}),
+        ...(filters.videoId ? { video_id: filters.videoId } : {}),
       }
     : {};
   return {
