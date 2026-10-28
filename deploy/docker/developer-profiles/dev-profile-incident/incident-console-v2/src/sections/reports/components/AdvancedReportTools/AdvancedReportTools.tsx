@@ -3,53 +3,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { ReportView } from '@/modules/reports/domain/report-view';
-import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisCard } from '@/sections/analysis/components/ReanalysisCard';
 import { RunHistoryList } from '@/sections/analysis/components/RunHistory';
 import { useRunHistory } from '@/sections/analysis/hooks/use-run-history';
 
 export function AdvancedReportTools({ report }: { report: ReportView }) {
   return (
-    <>
-      <section className="print-hidden mt-6 ">
-        <AnalysisHistoryCard report={report} />
-      </section>
-      <RunComparisonLauncher report={report} />
-    </>
-  );
-}
-
-function RunComparisonLauncher({ report }: { report: ReportView }) {
-  const [other, setOther] = useState<RevisionSummary | null>(null);
-  useEffect(() => {
-    void fetch(`/api/reports/${encodeURIComponent(report.videoId)}/revisions`)
-      .then((r) => r.json())
-      .then((p: { revisions?: RevisionSummary[] }) => {
-        setOther((p.revisions || []).find((item) => item.kind === 'ai' && item.revisionId !== report.revisionId) || null);
-      })
-      .catch(() => setOther(null));
-  }, [report]);
-  if (!other) return null;
-  return (
-    <div className="print-hidden mt-6">
-      <Alert className="border-signal/25 bg-signal/5 p-5">
-        <AlertTitle className="text-sm font-bold">Another AI version is available for this video.</AlertTitle>
-        <AlertDescription className="mt-1">
-          <Link
-            className="font-bold text-moss hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-            href={`/reports/${encodeURIComponent(report.videoId)}/compare?left=${report.revisionId}&right=${other.revisionId}`}
-          >
-            Compare versions side by side →
-          </Link>
-        </AlertDescription>
-      </Alert>
-    </div>
+    <section className="print-hidden mt-6">
+      <AnalysisHistoryCard report={report} />
+    </section>
   );
 }
 
