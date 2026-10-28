@@ -30,7 +30,7 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
   const { video } = history;
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12">
-      <Card className="overflow-hidden rounded-4xl border border-border bg-card shadow-panel">
+      <Card className="gap-0 overflow-hidden rounded-4xl py-0 border border-border bg-card shadow-panel">
         <CardHeader className="border-b border-border bg-muted/30 p-6 sm:p-8">
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">Video · analysis history</p>
           <CardTitle className="mt-3 break-all text-2xl font-semibold tracking-tight text-card-foreground sm:text-3xl">

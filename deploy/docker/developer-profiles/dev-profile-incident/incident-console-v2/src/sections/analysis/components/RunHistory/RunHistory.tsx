@@ -62,7 +62,8 @@ export function RunHistoryList({
   return (
     <div data-testid="run-history">
       <p className="text-xs text-muted-foreground">
-        {counts.attempts} {counts.attempts === 1 ? 'analysis' : 'analyses'} · {counts.withReport} with a report
+        {counts.attempts} analysis {counts.attempts === 1 ? 'run' : 'runs'} · {counts.withReport} produced a report (edits add further
+        versions, not runs)
         {counts.valid_after_structural_repair ? ` · ${counts.valid_after_structural_repair} IDs repaired` : ''}
         {counts.contract_failed ? ` · ${counts.contract_failed} contract failed` : ''}
         {counts.request_failed ? ` · ${counts.request_failed} request failed` : ''}
