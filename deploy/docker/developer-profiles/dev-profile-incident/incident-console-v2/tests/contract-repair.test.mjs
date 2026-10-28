@@ -8,6 +8,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+await import('../src/modules/contract/infrastructure/loader.ts');
+
 const { attemptIdNormalization, REPAIR_RULE_SET } = await import('../src/modules/contract/domain/repair.ts');
 const { ContractError, validateReport } = await import('../src/modules/contract/domain/validate.ts');
 const { evaluateContent } = await import('../src/modules/analysis/application/run-contract-analysis.ts');

@@ -8,6 +8,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+await import('../src/modules/contract/infrastructure/loader.ts');
+
 const { ADDITIONAL_INSTRUCTION_PREAMBLE, MAX_ADDITIONAL_INSTRUCTION_LENGTH, buildP1Request, normalizeAdditionalInstruction } = await import(
   '../src/modules/analysis/application/build-request.ts'
 );

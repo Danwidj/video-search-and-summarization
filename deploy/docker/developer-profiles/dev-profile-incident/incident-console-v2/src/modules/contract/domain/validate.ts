@@ -11,10 +11,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv';
 
-// Documented boundary exception: this domain module reads the JSON Schema through the
-// infrastructure loader (node:fs). Injecting the schema as a port is the stricter option
-// and is not taken yet, so the loader stays a direct import here.
-import { schema } from '@/modules/contract/infrastructure/loader';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
+import { getContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import type { DerivedContractReport, IncidentContractReport } from '@/modules/contract/domain/types';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 
@@ -78,6 +76,7 @@ export function violationScope(code: string): ViolationScope {
 export interface ValidationContext {
   videoDurationSeconds?: number | null;
   contractVersion?: string;
+  catalog?: ContractCatalog;
 }
 
 function formatSeconds(value: number): string {
@@ -133,8 +132,9 @@ export class ContractError extends Error {
 const V3_FIELDS = ['first_seen_seconds', 'last_seen_seconds'];
 const V2_FIELDS = ['timestamp_seconds', 'label', ...V3_FIELDS];
 
-function olderSchema(omitted: string[]): Record<string, unknown> {
-  const base = JSON.parse(JSON.stringify(schema())) as Record<string, any>;
+function olderSchema(omitted: string[], catalog?: ContractCatalog): Record<string, unknown> {
+  const cat = catalog ?? getContractCatalog();
+  const base = JSON.parse(JSON.stringify(cat.schema())) as Record<string, any>;
   for (const collection of ['entities', 'instruments', 'assets']) {
     const itemSchema = base.properties?.[collection]?.items;
     if (itemSchema) {
@@ -151,16 +151,22 @@ function olderSchema(omitted: string[]): Record<string, unknown> {
 
 const compiledValidators = new Map<string, ValidateFunction>();
 
-export function validator(version = 'incident-contract-v4'): ValidateFunction {
-  let v = compiledValidators.get(version);
+export function validator(version = 'incident-contract-v4', catalog?: ContractCatalog): ValidateFunction {
+  const cat = catalog ?? getContractCatalog();
+  const cacheKey = `${cat.contractVersion()}:${version}`;
+  let v = compiledValidators.get(cacheKey);
   if (!v) {
     // strict:false only relaxes Ajv's authoring lint (e.g. minimum on a
     // ["number","null"] union); validation semantics are standard draft 2020-12.
     const ajv = new Ajv2020({ allErrors: true, strict: false });
     const targetSchema =
-      version === 'incident-contract-v2' ? olderSchema(V2_FIELDS) : version === 'incident-contract-v3' ? olderSchema(V3_FIELDS) : schema();
+      version === 'incident-contract-v2'
+        ? olderSchema(V2_FIELDS, cat)
+        : version === 'incident-contract-v3'
+          ? olderSchema(V3_FIELDS, cat)
+          : cat.schema();
     v = ajv.compile(targetSchema);
-    compiledValidators.set(version, v);
+    compiledValidators.set(cacheKey, v);
   }
   return v;
 }
@@ -237,8 +243,9 @@ export function crossFieldViolations(report: IncidentContractReport): ContractVi
  * validateReport on purpose: the rest of a human revision's payload is inherited from its parent,
  * which may predate v4.
  */
-export function missingItemFields(payload: Record<string, unknown>): ContractViolation[] {
-  const contract = schema() as { properties: Record<string, { items: { required: string[] } }> };
+export function missingItemFields(payload: Record<string, unknown>, catalog?: ContractCatalog): ContractViolation[] {
+  const cat = catalog ?? getContractCatalog();
+  const contract = cat.schema() as { properties: Record<string, { items: { required: string[] } }> };
   return ['entities', 'instruments', 'assets'].flatMap((collection) => {
     const items = Array.isArray(payload[collection]) ? (payload[collection] as Array<Record<string, unknown>>) : [];
     return items.flatMap((item, index) =>
@@ -261,8 +268,8 @@ export function crossFieldErrors(report: IncidentContractReport): string[] {
 }
 
 /** Validate an already-decoded report; throws ContractError listing every violation. */
-export function validateReport(report: unknown, version = 'incident-contract-v4'): IncidentContractReport {
-  const validate = validator(version);
+export function validateReport(report: unknown, version = 'incident-contract-v4', catalog?: ContractCatalog): IncidentContractReport {
+  const validate = validator(version, catalog);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])].sort((a, b) => a.instancePath.localeCompare(b.instancePath)).map(schemaViolation);
     throw new ContractError(`schema violation: ${violations.map((v) => v.message).join('; ')}`, violations);
@@ -290,7 +297,7 @@ export interface CoreValidation {
  * enrichment violations when only those fail.
  */
 export function validateCore(report: unknown, context?: ValidationContext): CoreValidation {
-  const validate = validator(context?.contractVersion);
+  const validate = validator(context?.contractVersion, context?.catalog);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])].sort((a, b) => a.instancePath.localeCompare(b.instancePath)).map(schemaViolation);
     throw new ContractError(`schema violation: ${violations.map((v) => v.message).join('; ')}`, violations);
@@ -330,6 +337,6 @@ export function decodeContent(content: string | null | undefined): unknown {
 }
 
 /** Strictly decode and validate a model's message content, then add derived fields. */
-export function parseReport(content: string | null | undefined): DerivedContractReport {
-  return withDerivedFields(validateReport(decodeContent(content)));
+export function parseReport(content: string | null | undefined, catalog?: ContractCatalog): DerivedContractReport {
+  return withDerivedFields(validateReport(decodeContent(content), 'incident-contract-v4', catalog));
 }

@@ -10,6 +10,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { InferenceModel, InferenceSettings } from '@/modules/contract/domain/types';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
+import { setContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 
 // Keys describing the schema document itself; stripped from what is sent to the
 // model because some OpenAI-compatible servers reject them inside response_format
@@ -83,3 +85,36 @@ export function promptSha256(): string {
 export function schemaSha256(): string {
   return sha256(schemaText());
 }
+
+export class FileContractCatalog implements ContractCatalog {
+  contractVersion(): string {
+    return contractVersion();
+  }
+  schema(): Record<string, unknown> {
+    return schema();
+  }
+  extractionPrompt(): string {
+    return extractionPrompt();
+  }
+  inferenceSettings(): InferenceSettings {
+    return inferenceSettings();
+  }
+  allowedModels(): InferenceModel[] {
+    return allowedModels();
+  }
+  findAllowedModel(modelId: string): InferenceModel | undefined {
+    return findAllowedModel(modelId);
+  }
+  responseFormat(): Record<string, unknown> {
+    return responseFormat();
+  }
+  promptSha256(): string {
+    return promptSha256();
+  }
+  schemaSha256(): string {
+    return schemaSha256();
+  }
+}
+
+export const defaultContractCatalog: ContractCatalog = new FileContractCatalog();
+setContractCatalog(defaultContractCatalog);

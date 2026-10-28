@@ -7,6 +7,7 @@
 
 import { revisionRecordFromRows } from '../../src/modules/reports/infrastructure/supabase/mappers/report.ts';
 import { toReportView } from '../../src/modules/reports/application/report-view.ts';
+import '../../src/modules/contract/infrastructure/loader.ts';
 
 const withoutKeys = (row, ...keys) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
 const dropIdentity = (row) => withoutKeys(row, 'incident_id', 'model_run_id', 'image');
