@@ -80,13 +80,13 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
         <Badge className="border-moss/20 font-mono text-xs uppercase tracking-wider text-moss" variant="outline">
           {index === 0 ? 'Version A' : 'Version B'}
         </Badge>
-        <p className="font-mono text-xs text-ink/45">
+        <p className="font-mono text-xs text-ink-caption">
           v{report.revision.revisionNo} {report.revision.kind === 'human' ? `human (${report.revision.createdBy ?? 'unknown'})` : 'AI'} ·{' '}
           {formatTimestamp(report.revision.createdAt, '')}
         </p>
       </div>
       <h2 className="mt-3 text-2xl font-semibold">{reportHeading(report)}</h2>
-      <p className="mt-1 text-xs text-ink/45">
+      <p className="mt-1 text-xs text-ink-caption">
         {report.run.model} · {report.run.promptVersion || 'legacy prompt'}
       </p>
       <dl className="mt-5 grid grid-cols-2 gap-3">
@@ -106,15 +106,15 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
         />
       </dl>
       <section className="mt-5">
-        <h3 className="text-xs font-bold uppercase text-ink/40">Summary</h3>
+        <h3 className="text-xs font-bold uppercase text-ink-caption">Summary</h3>
         <p className="mt-2 text-sm leading-6 text-ink/70">{incident.description}</p>
       </section>
       <section className="mt-5">
-        <h3 className="text-xs font-bold uppercase text-ink/40">Model severity rationale</h3>
+        <h3 className="text-xs font-bold uppercase text-ink-caption">Model severity rationale</h3>
         <p className="mt-2 text-sm leading-6 text-ink/70">{model?.severityReason ?? '—'}</p>
       </section>
       <section className="mt-5">
-        <h3 className="text-xs font-bold uppercase text-ink/40">Evidence</h3>
+        <h3 className="text-xs font-bold uppercase text-ink-caption">Evidence</h3>
         <ul className="mt-2 space-y-1 text-sm text-ink/65">
           {[
             ...entities.map((x) => `${x.entityId} (${x.type}): ${x.description}`),
@@ -126,7 +126,7 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
         </ul>
       </section>
       <section className="mt-5">
-        <h3 className="text-xs font-bold uppercase text-ink/40">Model event timeline</h3>
+        <h3 className="text-xs font-bold uppercase text-ink-caption">Model event timeline</h3>
         <ol className="mt-2 space-y-2 text-sm text-ink/65">
           {(model?.timeline ?? []).map((event) => (
             <li key={`${event.startSeconds}-${event.endSeconds ?? ''}-${event.description}`}>
@@ -142,7 +142,7 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-canvas p-3">
-      <dt className="text-[10px] font-bold uppercase tracking-wider text-ink/40">{label}</dt>
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-ink-caption">{label}</dt>
       <dd className="mt-1 text-sm font-semibold">{value}</dd>
     </div>
   );
