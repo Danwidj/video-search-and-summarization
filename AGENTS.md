@@ -20,7 +20,7 @@ This fork adds a video-driven incident search and reporting system (sponsored by
 - **Background facts:** [`dev-profile-incident/.docs/`](deploy/docker/developer-profiles/dev-profile-incident/.docs/). Start with `status.md`.
 - **Never** deploy or tear down this profile with `dev-profile.sh` or NVIDIA's `vss-deploy-profile` skill. Use `start.sh` and the `incident-*` skills.
 
-**Standing docs rule:** any change under `dev-profile-incident/` updates the affected `.docs/` file(s) and `incident-*` skill(s) in the same PR, and any architectural or tooling decision adds a `.docs/decisions.md` entry. The table in the profile `AGENTS.md` says which file to update. Stale docs are a defect, not a follow-up.
+**Standing docs rule:** update [`.docs/`](deploy/docker/developer-profiles/dev-profile-incident/.docs/) and affected `incident-*` skill(s) in the same change whenever behaviour, contracts, schemas, commands, layout or status that the docs describe change, and add any architectural or tooling decision to `.docs/decisions.md`. Keep `status.md` current (move finished items to the archive). Skip docs only when the user explicitly says not to. The table in the profile `AGENTS.md` says which file to update. Stale docs are a defect, not a follow-up.
 
 ## Environment Pointers
 
