@@ -30,7 +30,10 @@ export function ReportThumbnail({
   const { image: view, severityLabel, kindLabel } = libraryCardThumbnail({ thumbnailUrl, severity, kind: kind || 'ai' }, failed);
 
   return (
-    <figure aria-label="Video screenshot preview" className="relative h-20 shrink-0 overflow-hidden bg-[#dfe3dc]">
+    <figure
+      aria-label="Video screenshot preview"
+      className="relative h-32 shrink-0 overflow-hidden lg:h-auto lg:min-h-12 lg:flex-1 bg-[#dfe3dc]"
+    >
       {view.kind === 'image' ? (
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img

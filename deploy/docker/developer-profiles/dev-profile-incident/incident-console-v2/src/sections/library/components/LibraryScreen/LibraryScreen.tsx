@@ -230,7 +230,7 @@ export function Library() {
   const first = (filters.page - 1) * PAGE_SIZE + 1;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-12">
+    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:px-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss">Incident console</p>
@@ -257,7 +257,7 @@ export function Library() {
         </Tabs>
       </div>
 
-      <section className="mt-4">
+      <section className="mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         {tab === 'evidence' ? (
           <EvidenceTab
             error={searchError}
@@ -435,7 +435,7 @@ export function Library() {
               )
             ) : (
               <>
-                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-cols-3 xl:grid-rows-2">
                   {reports.map((item) => (
                     <IncidentCard
                       busy={busy === item.videoId}
@@ -447,7 +447,7 @@ export function Library() {
                     />
                   ))}
                 </div>
-                <nav aria-label="Incident pages" className="mt-4 flex flex-col items-center justify-between gap-2 sm:flex-row">
+                <nav aria-label="Incident pages" className="mt-4 flex shrink-0 flex-col items-center justify-between gap-2 sm:flex-row">
                   <p className="text-sm font-semibold text-ink/65">
                     Showing {first}-{Math.min(filters.page * PAGE_SIZE, totalItems)} of {totalItems} incidents
                   </p>

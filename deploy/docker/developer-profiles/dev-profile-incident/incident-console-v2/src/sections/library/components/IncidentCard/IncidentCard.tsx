@@ -54,7 +54,7 @@ export function IncidentCard({
         role="link"
         tabIndex={0}
         aria-label={`Open report: ${displayTitle}`}
-        className="group relative flex cursor-pointer flex-col gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+        className="group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
         id={`report-${item.revisionId}`}
         onClick={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
@@ -135,7 +135,7 @@ export function IncidentCard({
           </div>
         </ReportThumbnail>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-3">
+        <div className="flex shrink-0 flex-col gap-1 overflow-hidden p-3">
           <div className="flex items-center justify-between gap-2">
             <p
               className="inline-flex min-w-0 items-center gap-1 rounded-md bg-moss/10 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-moss"
