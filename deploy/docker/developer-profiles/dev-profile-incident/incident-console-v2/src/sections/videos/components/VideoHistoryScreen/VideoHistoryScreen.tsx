@@ -42,7 +42,9 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
         <div className="grid gap-0 lg:grid-cols-[1fr_1fr]">
           <div className="border-b border-ink/10 p-6 lg:border-b-0 lg:border-r">
             {video.playbackUrl ? (
-              <video className="aspect-video w-full rounded-2xl bg-black object-contain" controls src={video.playbackUrl} />
+              <video className="aspect-video w-full rounded-2xl bg-black object-contain" controls src={video.playbackUrl}>
+                <track kind="captions" />
+              </video>
             ) : (
               <p className="rounded-xl border border-dashed border-ink/15 p-6 text-sm text-ink/45">
                 This video has no playable stored object.

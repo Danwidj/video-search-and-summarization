@@ -50,8 +50,8 @@ test('invalid fixtures fail for the category their name states', () => {
 
 test('parseReport is strict: no fence stripping, brace extraction or empty content', () => {
   const valid = JSON.stringify(readFixture('valid', 'full-report.json'));
-  assert.throws(() => parseReport('```json\n' + valid + '\n```'), /not a single JSON document/);
-  assert.throws(() => parseReport('Here is the report: ' + valid), /not a single JSON document/);
+  assert.throws(() => parseReport(`\`\`\`json\n${valid}\n\`\`\``), /not a single JSON document/);
+  assert.throws(() => parseReport(`Here is the report: ${valid}`), /not a single JSON document/);
   assert.throws(() => parseReport(''), /empty response content/);
   assert.throws(() => parseReport(null), /empty response content/);
 });

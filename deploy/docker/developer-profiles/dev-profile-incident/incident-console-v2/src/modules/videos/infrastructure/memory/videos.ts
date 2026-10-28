@@ -7,14 +7,14 @@
 // list filters.
 
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
-import {
-  type OfficialChange,
-  type RevisionCropsChange,
-  type RunHistoryRecords,
-  type VideoListFilter,
-  type VideoListItem,
-  type VideoRecord,
-  type VideoRepository,
+import type {
+  OfficialChange,
+  RevisionCropsChange,
+  RunHistoryRecords,
+  VideoListFilter,
+  VideoListItem,
+  VideoRecord,
+  VideoRepository,
 } from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 

@@ -187,7 +187,7 @@ export async function chunkedUpload(options: ChunkedUploadOptions): Promise<Chun
 
       if (attempt > 0) {
         // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt - 1) * 1000;
+        const delay = 2 ** (attempt - 1) * 1000;
         await sleep(delay);
       }
 

@@ -57,8 +57,12 @@ export function EvidenceFrame({
       role="img"
       style={{ aspectRatio: String(aspect) }}
     >
-      {state === 'image' && <img alt="" className="h-full w-full object-cover" onError={onError} src={src ?? undefined} />}
+      {state === 'image' && (
+        // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
+        <img alt="" className="h-full w-full object-cover" onError={onError} src={src ?? undefined} />
+      )}
       {state === 'frame-crop' && region && (
+        // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img alt="" className="absolute max-w-none" onError={onError} src={frameSrc ?? undefined} style={cropImageStyle(region)} />
       )}
       {state === 'pending' && (

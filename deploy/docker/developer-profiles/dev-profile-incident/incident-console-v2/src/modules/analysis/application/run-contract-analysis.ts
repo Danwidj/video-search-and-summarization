@@ -20,12 +20,12 @@
 // (lib/container.ts) chooses the adapters.
 
 import { buildP1Request, normalizeAdditionalInstruction, p1InferenceConfig } from '@/modules/analysis/application/build-request';
-import {
-  type AgentStoredRevision,
-  type AnalysisAttemptRecord,
-  type AnalysisRunRepository,
-  type AttemptRepair,
-  type ContractRunRecord,
+import type {
+  AgentStoredRevision,
+  AnalysisAttemptRecord,
+  AnalysisRunRepository,
+  AttemptRepair,
+  ContractRunRecord,
 } from '@/modules/analysis/domain/AnalysisRunRepository';
 import { AgentRequestError, type AgentHttpResponse, type IncidentAgent } from '@/modules/analysis/domain/IncidentAgent';
 import { GatewayError, type GatewayCompletionResponse, type ModelGateway } from '@/modules/analysis/domain/ModelGateway';

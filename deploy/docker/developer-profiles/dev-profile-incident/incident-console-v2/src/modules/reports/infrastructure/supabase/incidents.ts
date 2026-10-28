@@ -8,12 +8,12 @@ import {
 } from '@/modules/reports/infrastructure/supabase/mappers/report';
 import { reportListFromRpc, reportListRpcArgs } from '@/modules/reports/infrastructure/supabase/mappers/report-library';
 import { StoreRejection } from '@/modules/shared/domain/common';
-import {
-  type HumanRevisionInput,
-  type IncidentRepository,
-  type ReportList,
-  type ReportListQuery,
-  type RevisionRecord,
+import type {
+  HumanRevisionInput,
+  IncidentRepository,
+  ReportList,
+  ReportListQuery,
+  RevisionRecord,
 } from '@/modules/reports/domain/IncidentRepository';
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import { revisionFacets, type RevisionSummary } from '@/modules/reports/domain/revision';
@@ -38,9 +38,13 @@ const POSTGREST_MAX_ROWS = 1000;
 
 /** Every string anywhere in a stored JSON value, so a key under a field this console does not know is still seen. */
 function stringsIn(value: unknown, into: Set<string>): void {
-  if (typeof value === 'string') into.add(value);
-  else if (Array.isArray(value)) value.forEach((item) => stringsIn(item, into));
-  else if (value && typeof value === 'object') Object.values(value).forEach((item) => stringsIn(item, into));
+  if (typeof value === 'string') {
+    into.add(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) stringsIn(item, into);
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) stringsIn(item, into);
+  }
 }
 
 const officialId = (video: Row): number | null => (typeof video.official_revision_id === 'number' ? video.official_revision_id : null);

@@ -7,12 +7,12 @@
 // (modules/analysis/domain/AnalysisRunRepository.ts).
 
 import type { PostgrestClient } from '@/lib/postgrest/client';
-import {
-  type AgentStoredRevision,
-  type AnalysisAttemptRecord,
-  type AnalysisRunRepository,
-  type ContractRunRecord,
-  type UploadedVideo,
+import type {
+  AgentStoredRevision,
+  AnalysisAttemptRecord,
+  AnalysisRunRepository,
+  ContractRunRecord,
+  UploadedVideo,
 } from '@/modules/analysis/domain/AnalysisRunRepository';
 import { placeholderEvidence, revisionFacets, type EvidenceEntry } from '@/modules/reports/domain/revision';
 

@@ -98,28 +98,28 @@ a {
     margin: 12mm;
     size: A4 portrait;
   }
-  body {
-    background: white !important;
-    color: #12211b !important;
+  html body {
+    background: white;
+    color: #12211b;
   }
-  .print-hidden {
-    display: none !important;
+  body .print-hidden {
+    display: none;
   }
-  .report-sheet {
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
+  body .report-sheet {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
-  .report-sheet video {
+  body .report-sheet video {
     max-height: 75mm;
   }
-  .report-sheet details {
+  body .report-sheet details {
     break-inside: avoid;
   }
-  .report-sheet details > div {
-    display: block !important;
+  body .report-sheet details > div {
+    display: block;
   }
-  .report-sheet button {
-    color: inherit !important;
+  body .report-sheet button {
+    color: inherit;
   }
 }

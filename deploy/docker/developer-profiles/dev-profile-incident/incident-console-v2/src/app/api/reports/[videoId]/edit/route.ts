@@ -7,6 +7,7 @@ import { getDbAdapters } from '@/lib/container';
 import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { saveHumanEdit, SearchableStepError } from '@/modules/reports/application/save-human-edit';
 import { StructuredEditError, validateStructuredEdit } from '@/modules/contract/domain/structured-edit';
+import type { StructuredEdit } from '@/modules/reports/domain/edit-draft';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 
@@ -31,7 +32,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     if (!parsed.success) {
       return NextResponse.json({ error: 'The request must contain parentId, editedBy, edit and optionally note only' }, { status: 400 });
     }
-    let edit;
+    let edit: StructuredEdit;
     try {
       edit = validateStructuredEdit(parsed.data.edit);
     } catch (error) {

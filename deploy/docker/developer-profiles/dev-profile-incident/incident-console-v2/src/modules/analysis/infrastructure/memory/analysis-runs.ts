@@ -5,12 +5,12 @@
 // attempt is a run record only, and a valid run is saved whole and read back
 // against the video's storage key.
 
-import {
-  type AgentStoredRevision,
-  type AnalysisAttemptRecord,
-  type AnalysisRunRepository,
-  type ContractRunRecord,
-  type UploadedVideo,
+import type {
+  AgentStoredRevision,
+  AnalysisAttemptRecord,
+  AnalysisRunRepository,
+  ContractRunRecord,
+  UploadedVideo,
 } from '@/modules/analysis/domain/AnalysisRunRepository';
 
 export class InMemoryAnalysisRunRepository implements AnalysisRunRepository {

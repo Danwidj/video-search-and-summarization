@@ -39,7 +39,7 @@ afterEach(() => {
 
 test('gateway mode: ready when all services are healthy', async () => {
   process.env.ANALYSIS_MODE = 'gateway';
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (_url) => {
     return { ok: true, status: 200 };
   };
 
