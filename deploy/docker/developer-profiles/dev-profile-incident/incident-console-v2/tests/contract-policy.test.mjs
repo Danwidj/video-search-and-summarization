@@ -13,6 +13,8 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
+await import('../src/modules/contract/infrastructure/loader.ts');
+
 const { ContractError, decodeContent, validateCore, validateReport, violationScope, timestampWithinVideo, VALIDATION_POLICY } =
   await import('../src/modules/contract/domain/validate.ts');
 const { mp4DurationSeconds } = await import('../src/lib/video/mp4-duration.ts');

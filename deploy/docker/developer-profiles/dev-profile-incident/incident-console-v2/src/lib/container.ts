@@ -4,6 +4,8 @@
 // port. Built per call (a client is two strings), so the configuration is read
 // at request time and never cached at module load.
 
+import { randomUUID } from 'node:crypto';
+
 import { SupabaseDashboardAdapter } from '@/modules/dashboard/infrastructure/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/modules/health/infrastructure/supabase/health';
 import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
@@ -17,6 +19,13 @@ import { SupabaseAnalysisRunAdapter } from '@/modules/analysis/infrastructure/su
 import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
 import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
+import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
+import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
+
+/** Outbound contract catalog port: provides shared prompts, schemas and model allowlists. */
+export function getContractCatalog(): ContractCatalog {
+  return defaultContractCatalog;
+}
 
 /** Throws 'Supabase PostgREST is not configured' when the service-role settings are missing. */
 export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
@@ -45,5 +54,7 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     videos: new R2VideoObjectStore(config),
     gateway: config.gatewayUrl ? new GatewayClient(config.gatewayUrl) : null,
     agent: config.agentUrl ? new HttpIncidentAgent(config.agentUrl) : null,
+    catalog: defaultContractCatalog,
+    randomUUID,
   };
 }

@@ -28,31 +28,6 @@ const NODE = /^node:/;
 
 const ALLOWED = [
   {
-    from: 'modules/contract/domain/validate.ts',
-    to: 'modules/contract/infrastructure/loader',
-    why: 'plan Step 6 minimum: domain validators keep the schema loader as a documented exception',
-  },
-  {
-    from: 'modules/contract/domain/structured-edit.ts',
-    to: 'modules/contract/infrastructure/loader',
-    why: 'plan Step 6 minimum, as for validate.ts',
-  },
-  {
-    from: 'modules/analysis/application/build-request.ts',
-    to: 'modules/contract/infrastructure/loader',
-    why: 'not in the plan; the strict fix injects a ContractCatalog port (plan Step 6)',
-  },
-  {
-    from: 'modules/analysis/application/run-contract-analysis.ts',
-    to: 'modules/contract/infrastructure/loader',
-    why: 'not in the plan, as for build-request.ts',
-  },
-  {
-    from: 'modules/analysis/application/run-contract-analysis.ts',
-    to: 'node:crypto',
-    why: 'not in the plan: plan rule 3 bans node:* in application; move the hashing behind a port',
-  },
-  {
     from: 'sections/analysis/hooks/use-video-upload.ts',
     to: 'modules/videos/infrastructure/vst/chunked-upload',
     why: 'plan rule 5: the browser-safe upload helper is reached only through a section hook',
