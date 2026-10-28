@@ -22,6 +22,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import model_validator
 
 from base_profile_mock.routers.vst_storage import _upload_key
 from base_profile_mock.state import AppState
@@ -73,8 +74,29 @@ _MOCK_CATEGORIES = (
 _EMBEDDING_DIMENSIONS = 1024
 
 
+class EvidenceItemText(BaseModel):
+    """One evidence item to embed when the body carries the items instead of a stored revision."""
+
+    item_type: str
+    item_id: str
+    item_name: str | None = None
+    description: str | None = None
+
+
 class EvidenceEmbeddingsRequest(BaseModel):
-    revision_id: int = Field(..., ge=1)
+    """Body for ``POST /api/v1/incidents/evidence-embeddings``: exactly one of ``revision_id`` or ``evidence``."""
+
+    revision_id: int | None = Field(default=None, ge=1, description="report_revisions.id whose evidence is embedded.")
+    evidence: list[EvidenceItemText] | None = Field(
+        default=None,
+        description="Evidence items to embed without reading a stored revision, so a revision can be embedded before it is saved.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> EvidenceEmbeddingsRequest:
+        if (self.revision_id is None) == (self.evidence is None):
+            raise ValueError("send exactly one of revision_id or evidence")
+        return self
 
 
 class AnalyzeRequest(BaseModel):
@@ -278,18 +300,22 @@ def _mock_embedding(text: str) -> list[float]:
 @router.post("/incidents/evidence-embeddings")
 async def evidence_embeddings(body: EvidenceEmbeddingsRequest) -> list[dict[str, object]]:
     """Mock of the agent's evidence-embeddings route: placeholder vectors for a revision's evidence items."""
-    db = await _writer_module().get_db()
-    if db is None:
-        raise HTTPException(503, "incident database is not configured or unavailable")
-    revision = await db.get_revision(body.revision_id)
-    if revision is None:
-        raise HTTPException(404, f"Revision {body.revision_id} not found")
+    if body.revision_id is None:
+        evidence = [entry.model_dump() for entry in body.evidence or []]
+    else:
+        db = await _writer_module().get_db()
+        if db is None:
+            raise HTTPException(503, "incident database is not configured or unavailable")
+        revision = await db.get_revision(body.revision_id)
+        if revision is None:
+            raise HTTPException(404, f"Revision {body.revision_id} not found")
+        evidence = revision.get("evidence") or []
     return [
         {
             "item_type": entry["item_type"],
             "item_id": entry["item_id"],
             "embedding": _mock_embedding(f"{entry.get('item_name')}: {entry.get('description')}"),
         }
-        for entry in revision.get("evidence") or []
-        if entry.get("item_type") and entry.get("item_id")
+        for entry in evidence
+        if isinstance(entry, dict) and entry.get("item_type") and entry.get("item_id")
     ]
