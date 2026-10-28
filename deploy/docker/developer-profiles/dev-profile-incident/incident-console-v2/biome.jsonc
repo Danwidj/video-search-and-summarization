@@ -18,24 +18,9 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      // Rules the code already breaks when Biome was added. They report as warnings so
-      // `npm run lint` passes; fix them in their own changes, then move each back to error.
       "suspicious": {
-        "noArrayIndexKey": "warn",
-        "useIterableCallbackReturn": "warn",
-        "noControlCharactersInRegex": "warn",
-        "noAssignInExpressions": "warn",
-        "noImplicitAnyLet": "warn",
         // Tailwind 3 directives (@tailwind, @apply) are not standard CSS at-rules.
         "noUnknownAtRules": { "level": "error", "options": { "ignore": ["tailwind", "apply", "layer", "screen", "config"] } }
-      },
-      "correctness": { "useExhaustiveDependencies": "warn" },
-      "a11y": {
-        "useMediaCaption": "warn",
-        "useSemanticElements": "warn",
-        "useKeyWithClickEvents": "warn",
-        "noStaticElementInteractions": "warn",
-        "useAriaPropsSupportedByRole": "warn"
       }
     }
   }

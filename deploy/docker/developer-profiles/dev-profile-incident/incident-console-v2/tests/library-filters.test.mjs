@@ -28,7 +28,8 @@ test('every active filter is one removable chip that clears only itself', () => 
     ['search', 'type', 'official', 'severity', 'date'],
   );
   assert.deepEqual({ ...filters, ...chips[2].clear }.official, false);
-  assert.equal(activeFilters({ ...filters, ...chips.reduce((all, chip) => ({ ...all, ...chip.clear }), {}) }).length, 0);
+  const allCleared = Object.assign({}, ...chips.map((chip) => chip.clear));
+  assert.equal(activeFilters({ ...filters, ...allCleared }).length, 0);
 });
 
 test('date presets count back from local midnight', () => {

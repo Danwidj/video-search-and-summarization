@@ -165,15 +165,15 @@ export function humanRevisionContent(
           },
     );
   };
-  edit.entities.forEach((item) =>
-    follow('entity', item.entity_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
-  );
-  edit.instruments.forEach((item) =>
-    follow('instrument', item.instrument_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
-  );
-  edit.assets.forEach((item) =>
-    follow('asset', item.asset_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds }),
-  );
+  for (const item of edit.entities) {
+    follow('entity', item.entity_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds });
+  }
+  for (const item of edit.instruments) {
+    follow('instrument', item.instrument_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds });
+  }
+  for (const item of edit.assets) {
+    follow('asset', item.asset_id, item.source_id, item.image, { box: item.image_box, seconds: item.image_timestamp_seconds });
+  }
   return { payload, evidence };
 }
 

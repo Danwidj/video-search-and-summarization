@@ -86,10 +86,9 @@ export function AnalysisWorkspace() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a newly selected file intentionally starts the one-shot pipeline immediately
   useEffect(() => {
     if (file && stage === 'idle') void analyze();
-    // A newly selected file intentionally starts the one-shot pipeline immediately.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   function chooseFile(selected: File | null) {
@@ -183,7 +182,9 @@ export function AnalysisWorkspace() {
 
       {file && previewUrl ? (
         <div className="overflow-hidden rounded-[1.45rem] bg-ink text-white">
-          <video className="aspect-video w-full bg-black object-contain" controls preload="metadata" src={previewUrl} />
+          <video className="aspect-video w-full bg-black object-contain" controls preload="metadata" src={previewUrl}>
+            <track kind="captions" />
+          </video>
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="truncate font-semibold">{file.name}</p>

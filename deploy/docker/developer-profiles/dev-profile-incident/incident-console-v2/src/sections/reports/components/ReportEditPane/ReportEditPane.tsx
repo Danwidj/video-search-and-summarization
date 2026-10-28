@@ -267,7 +267,7 @@ export function ReportEditPane({
         ) : (
           <div className="mt-3 space-y-5">
             {pairing.units.map((unit) => (
-              <div data-unit={unit.kind} key={unit.kind === 'entity' ? rowKey(unit.entity!) : unit.kind}>
+              <div data-unit={unit.kind} key={unit.kind === 'entity' && unit.entity ? rowKey(unit.entity) : unit.kind}>
                 {unit.kind !== 'entity' && (
                   <div className="mb-2">
                     <b className="font-mono text-[10.5px] uppercase tracking-wider text-ink/45">
@@ -280,7 +280,6 @@ export function ReportEditPane({
                 )}
                 {unit.entity && (
                   <PairRowView
-                    a={a}
                     aRevisionNo={aRevisionNo}
                     draft={draft}
                     draftHolder={draftHolder}
@@ -301,7 +300,6 @@ export function ReportEditPane({
                   <div className="sm:pl-14" key={rowKey(row)}>
                     <div className="mb-1 hidden font-mono text-[10px] uppercase tracking-wider text-ink/35 sm:block">holds ↳</div>
                     <PairRowView
-                      a={a}
                       aRevisionNo={aRevisionNo}
                       draft={draft}
                       draftHolder={draftHolder}
@@ -359,7 +357,6 @@ type PatchInstrument = (key: string, patch: Partial<EditDraft['instruments'][num
 type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => void;
 
 function PairRowView({
-  a,
   aRevisionNo,
   draft,
   row,
@@ -375,7 +372,6 @@ function PairRowView({
   patchInstrument,
   patchAsset,
 }: {
-  a: Structured | null;
   aRevisionNo: number;
   draft: EditDraft;
   row: PairRow;

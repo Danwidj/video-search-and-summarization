@@ -23,8 +23,8 @@ export const ADDITIONAL_INSTRUCTION_PREAMBLE = [
 export function normalizeAdditionalInstruction(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') throw new RangeError('The additional instruction must be text');
-  // eslint-disable-next-line no-control-regex
   const cleaned = value
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional sanitizer matching ASCII control characters
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();
