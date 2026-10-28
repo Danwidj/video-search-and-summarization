@@ -22,7 +22,7 @@ export function RelationshipLine({ relationship }: { relationship: HitRelationsh
     parts.push(`held by ${relationship.heldBy.itemId}${relationship.heldBy.name ? ` (${relationship.heldBy.name})` : ''}`);
   if (relationship.holds.length) parts.push(`holds ${relationship.holds.map((held) => held.itemId).join(', ')}`);
   return parts.length ? (
-    <p className="truncate text-xs text-ink/55" data-testid="hit-relationship">
+    <p className="truncate text-xs text-ink-caption" data-testid="hit-relationship">
       {parts.join(' · ')}
     </p>
   ) : null;
@@ -81,9 +81,10 @@ export function HitCard({
             aspect={16 / 9}
             box={item.boundingBox}
             className="h-full w-full rounded-none"
+            drawBox
+            frameSrc={`/api/reports/${encodeURIComponent(incident.videoId)}/frame?t=${item.timestampSeconds}`}
             kind={item.itemType}
             label={item.name || item.itemId}
-            seconds={item.timestampSeconds}
             src={item.cropImageUrl}
           />
         </button>
@@ -151,7 +152,7 @@ export function HitCard({
             <span className="uppercase tracking-[0.12em] text-[11px]">{KIND_LABEL[item.itemType]}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="font-mono text-[11px] text-ink/50">{item.itemId}</span>
+            <span className="font-mono text-[11px] text-ink-caption">{item.itemId}</span>
             {item.threatLevel != null && (
               <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                 Threat {item.threatLevel}
@@ -175,8 +176,10 @@ export function HitCard({
         <div className="mt-auto flex items-center gap-2 border-t border-ink/8 pt-2 text-xs" data-no-card-nav>
           <IncidentThumbnail className="h-7 w-11 shrink-0 rounded" url={version?.thumbnailUrl} />
           <span className="min-w-0 flex-1 truncate text-ink/70">
-            <strong className="font-semibold text-ink">{incident.title || incident.incidentType}</strong>
-            <span className="text-ink/45">{version ? ` · ${version.isOfficial ? 'Official' : 'Latest'} v${version.revisionNo}` : ''}</span>
+            <strong className="font-semibold text-ink">{version?.title || incident.title || incident.incidentType}</strong>
+            <span className="text-ink-caption">
+              {version ? ` · ${version.isOfficial ? 'Official' : 'Latest'} v${version.revisionNo}` : ''}
+            </span>
           </span>
           <SeverityChip level={incident.severityLevel} />
         </div>

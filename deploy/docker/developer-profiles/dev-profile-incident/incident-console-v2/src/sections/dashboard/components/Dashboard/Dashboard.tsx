@@ -308,9 +308,9 @@ function Metric({
       <Link className="block rounded-2xl p-5 focus:outline-none" href={url}>
         <p className="text-sm text-ink/50">{label}</p>
         <p className="mt-2 text-4xl font-semibold text-ink">{value}</p>
-        {note && <p className="mt-1 text-[11px] text-ink/40">{note}</p>}
+        {note && <p className="mt-1 text-[11px] text-ink-caption">{note}</p>}
         {change !== null && (
-          <p className="mt-2 text-xs text-ink/45">
+          <p className="mt-2 text-xs text-ink-caption">
             {change > 0 ? '+' : ''}
             {change}% vs. previous
           </p>
@@ -325,7 +325,7 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
     <Card className="rounded-3xl border-ink/10 bg-white p-6 shadow-none">
       <CardHeader className="gap-1 p-0">
         <CardTitle className="text-lg font-semibold text-ink">{title}</CardTitle>
-        <CardDescription className="text-xs text-ink/45">{subtitle}</CardDescription>
+        <CardDescription className="text-xs text-ink-caption">{subtitle}</CardDescription>
       </CardHeader>
       <CardContent className="mt-5 p-0">{children}</CardContent>
     </Card>
@@ -358,7 +358,7 @@ function TypeRow({ item, max, filters, range }: { item: TypeDetail; max: number;
           <Evidence title="Assets affected" items={item.assets} linkFor={(x) => href({ ...typeFilters, asset: x.label }, range)} />
         </div>
         <div className="mt-5">
-          <p className="text-[10px] font-bold uppercase text-ink/40">Severity split</p>
+          <p className="text-[10px] font-bold uppercase text-ink-caption">Severity split</p>
           <Severity compact counts={item.severity} selected="" onSelect={() => undefined} />
         </div>
         <Link className="mt-5 inline-block text-sm font-semibold text-moss" href={href(typeFilters, range)}>
@@ -372,7 +372,7 @@ function TypeRow({ item, max, filters, range }: { item: TypeDetail; max: number;
 function Evidence({ title, items, linkFor }: { title: string; items: RankedValue[]; linkFor: (x: RankedValue) => string }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase text-ink/40">{title}</p>
+      <p className="text-[10px] font-bold uppercase text-ink-caption">{title}</p>
       <div className="mt-2 space-y-1">
         {items.map((x) => (
           <Link className="flex gap-2 text-sm text-moss hover:underline" href={linkFor(x)} key={x.label}>
@@ -459,12 +459,12 @@ function Trend({ points }: { points: DashboardAnalytics['trend'] }) {
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-ink/10" />
-          <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink/40" />
+          <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink-caption" />
           <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
           <Area dataKey="count" type="monotone" fill="url(#fillTrend)" fillOpacity={0.4} stroke="#174f3b" strokeWidth={2} />
         </AreaChart>
       </ChartContainer>
-      <div className="mt-2 flex justify-between text-[10px] text-ink/40">
+      <div className="mt-2 flex justify-between text-[10px] text-ink-caption">
         <span>{points[0]?.date}</span>
         <span>{points.at(-1)?.date}</span>
       </div>
@@ -556,7 +556,7 @@ const histogramChartConfig = {
 } satisfies ChartConfig;
 
 function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) {
-  if (!data.length) return <p className="text-sm text-ink/40">No confidence values were provided.</p>;
+  if (!data.length) return <p className="text-sm text-ink-caption">No confidence values were provided.</p>;
   const map = new Map(data.map((x) => [x.bucket, x.count]));
   const chartData = CONFIDENCE_BUCKETS.map((b) => ({
     bucket: `${b * 10}%`,
@@ -568,7 +568,7 @@ function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) {
       <ChartContainer config={histogramChartConfig} className="h-48 w-full aspect-auto">
         <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-ink/10" />
-          <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink/40" />
+          <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink-caption" />
           <ChartTooltip content={<ChartTooltipContent />} />
           <Bar dataKey="count" fill="#174f3b" radius={[4, 4, 0, 0]} />
         </BarChart>
@@ -631,19 +631,21 @@ function Coverage({ rows }: { rows: ModelCoverage[] }) {
       <Table className="text-xs">
         <TableHeader>
           <TableRow className="border-b border-ink/8 hover:bg-transparent">
-            <TableHead className="h-auto whitespace-normal py-1 pr-2 align-bottom font-semibold text-ink/45">Model</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">With report</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Valid</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">IDs repaired</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Earlier</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Contract failed</TableHead>
-            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Request failed</TableHead>
+            <TableHead className="h-auto whitespace-normal py-1 pr-2 align-bottom font-semibold text-ink-caption">Model</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">With report</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Valid</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">IDs repaired</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Earlier</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Contract failed</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Request failed</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow className="border-t border-ink/8 hover:bg-black/5" key={row.model}>
-              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>{row.model}</TableCell>
+              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>
+                {row.model}
+              </TableCell>
               <TableCell className="px-1.5">{row.withReport}</TableCell>
               <TableCell className="px-1.5">{row.validFirstPass}</TableCell>
               <TableCell className="px-1.5">{row.repaired}</TableCell>
@@ -661,5 +663,5 @@ function Coverage({ rows }: { rows: ModelCoverage[] }) {
 }
 
 function Empty() {
-  return <p className="text-sm text-ink/40">No official incidents in this selection.</p>;
+  return <p className="text-sm text-ink-caption">No official incidents in this selection.</p>;
 }
