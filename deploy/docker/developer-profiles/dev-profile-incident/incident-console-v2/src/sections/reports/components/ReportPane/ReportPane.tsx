@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -31,10 +32,16 @@ export function ReportPane({
   report,
   playerDuration,
   onSeek,
+  officialMissing = false,
+  compareHref = null,
 }: {
   report: ReportView;
   playerDuration: number | null;
   onSeek: (seconds: number) => void;
+  /** True once the versions have loaded and none of them is official. */
+  officialMissing?: boolean;
+  /** Link to compare this version with another AI version, when there is one. */
+  compareHref?: string | null;
 }) {
   const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
@@ -49,39 +56,53 @@ export function ReportPane({
   const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
 
   return (
-    <div className="px-5 pb-6 sm:px-8">
-      <UICard className="mt-5 border-border bg-muted/40" data-testid="version-summary">
-        <CardContent className="p-4">
-          <p className="flex flex-wrap items-center gap-2 text-sm" data-testid="revision-label">
-            <b>v{revision.revisionNo}</b>
-            <Badge className="px-2 py-0.5 text-[11px] font-semibold" variant="secondary">
-              {revision.kind === 'human' ? 'Human' : 'AI'}
-            </Badge>
-            {revision.kind === 'ai' && <span className="text-muted-foreground">{run.model}</span>}
-            {report.official.isOfficial && (
-              <Badge
-                className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                data-testid="official-status"
-                variant="outline"
-              >
-                ★ Official
+    <div className="px-5 pb-16 sm:px-8">
+      <UICard className="mt-5 gap-0 border-border bg-muted/40 py-0 text-sm" data-testid="version-summary">
+        <CardContent className="divide-y divide-border p-0">
+          <div className="px-4 py-3">
+            <p className="flex flex-wrap items-center gap-2" data-testid="revision-label">
+              <b>v{revision.revisionNo}</b>
+              <Badge className="px-2 py-0.5 text-[11px] font-semibold" variant="secondary">
+                {revision.kind === 'human' ? 'Human' : 'AI'}
               </Badge>
-            )}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatTimestamp(revision.createdAt, 'time unknown')}
-            {revision.note ? ` · ${revision.note}` : ''}
-          </p>
+              {revision.kind === 'ai' && <span className="text-muted-foreground">{run.model}</span>}
+              {report.official.isOfficial && (
+                <Badge
+                  className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                  data-testid="official-status"
+                  variant="outline"
+                >
+                  ★ Official
+                </Badge>
+              )}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatTimestamp(revision.createdAt, 'time unknown')}
+              {revision.note ? ` · ${revision.note}` : ''}
+            </p>
+          </div>
           {run.status === 'valid_after_structural_repair' && (
-            <Badge
-              className="mt-2 border-amber-400 bg-amber-50 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-              data-testid="contract-repair-applied"
-              variant="outline"
-            >
+            <p className="px-4 py-2 text-xs text-amber-800" data-testid="contract-repair-applied">
               Contract repair applied (IDs only)
-            </Badge>
+            </p>
           )}
-          {run.notesKind === 'legacy' && <p className="mt-2 text-xs text-muted-foreground">Earlier prompt version</p>}
+          {run.notesKind === 'legacy' && <p className="px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
+          {officialMissing && (
+            <p className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
+              No official version has been selected for this video. Star a version to make it official.
+            </p>
+          )}
+          {compareHref && (
+            <p className="px-4 py-2 text-xs">
+              <span className="text-muted-foreground">Another AI version is available for this video. </span>
+              <Link
+                className="font-semibold text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                href={compareHref}
+              >
+                Compare versions side by side →
+              </Link>
+            </p>
+          )}
         </CardContent>
       </UICard>
 
@@ -195,6 +216,7 @@ export function ReportPane({
                 {structured.assets.map((asset) => (
                   <Card
                     evidence={asset.evidence}
+                    id={asset.assetId}
                     key={asset.assetId}
                     kind="asset"
                     onSeek={onSeek}
@@ -332,8 +354,18 @@ function ModelSection({ title, source, children }: { title: string; source?: 'co
   );
 }
 
+/** The canonical id (E1, I1, A1) that Edit and Compare print for the same item. */
+function IdBadge({ id }: { id: string }) {
+  return (
+    <Badge className="shrink-0 px-1.5 py-0 font-mono text-[10px] font-bold" data-testid="evidence-id" variant="outline">
+      {id}
+    </Badge>
+  );
+}
+
 function Card({
   evidence,
+  id,
   kind,
   title,
   seconds,
@@ -341,6 +373,7 @@ function Card({
   children,
 }: {
   evidence: StructuredEntity['evidence'];
+  id: string;
   kind: 'entity' | 'instrument' | 'asset';
   title: string;
   seconds: number | null;
@@ -360,7 +393,10 @@ function Card({
         <EvidenceFrame aspect={2} className="rounded-none!" kind={kind} label={title} seconds={at} src={evidence?.imageUrl} />
       </button>
       <CardContent className="space-y-1 p-3">
-        <h4 className="text-sm font-semibold">{title}</h4>
+        <h4 className="flex items-center gap-2 text-sm font-semibold">
+          <IdBadge id={id} />
+          <span className="min-w-0">{title}</span>
+        </h4>
         {children}
         {at !== null && (
           <p className="text-muted-foreground">
@@ -378,7 +414,14 @@ function EntityCard({ entity, holds, onSeek }: { entity: StructuredEntity; holds
       ? `${formatClock(entity.firstSeenSeconds)}–${formatClock(entity.lastSeenSeconds)}`
       : null;
   return (
-    <Card evidence={entity.evidence} kind="entity" onSeek={onSeek} seconds={entity.timestampSeconds} title={entity.label || entity.type}>
+    <Card
+      evidence={entity.evidence}
+      id={entity.entityId}
+      kind="entity"
+      onSeek={onSeek}
+      seconds={entity.timestampSeconds}
+      title={entity.label || entity.type}
+    >
       <p className="text-muted-foreground">{entity.description}</p>
       {holds.length > 0 && (
         <p>
@@ -400,7 +443,14 @@ function InstrumentCard({
   onSeek: (seconds: number) => void;
 }) {
   return (
-    <Card evidence={instrument.evidence} kind="instrument" onSeek={onSeek} seconds={instrument.timestampSeconds} title={instrument.name}>
+    <Card
+      evidence={instrument.evidence}
+      id={instrument.instrumentId}
+      kind="instrument"
+      onSeek={onSeek}
+      seconds={instrument.timestampSeconds}
+      title={instrument.name}
+    >
       <p className="text-muted-foreground">{instrument.description}</p>
       <p className="text-muted-foreground">
         Threat {instrument.threatLevel ?? 'unrated'}
