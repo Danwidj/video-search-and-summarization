@@ -2,6 +2,22 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: Preparation before Stage 2: methodology v1.2 item matching, retry-v2 and recovery-v1, draft prompts (proposals awaiting approval)
+- **Approved by the owner (2026-10-28):** the *preparation* only, as listed below. No recovery, Stage 2 or Stage 3 inference until the final methodology and budgets are approved.
+  - **Item matching:** option (b), a calibrated item-matching procedure.
+  - **Failures:** a controlled recovery protocol and a fixed retry policy.
+  - **Prompts:** V1–V7 as adjusted (V1 emphasises the rubric and evidence and is not a default to the lower level; V3 enforces the existing instrument definition), with no few-shot examples.
+- **Prepared, proposals awaiting approval (not decisions):**
+  - **[evaluation-methodology-v1.2](../eval/methodology/evaluation-methodology-v1.2.md):** only the item-matching τ changes. The calibration rule, fixed before labelling, picked τ = 0.30 on 70 blind AI-labelled dev pairs (pooled F1 0.857 [0.69, 0.98]; 0.75 gives 0.091).
+    - **Caveats:** labels provisional pending a human audit; τ at the grid edge; large blocks not sampled.
+    - **D9 v2:** weights and criteria unchanged. G3 now also requires the same methodology version and protocol.
+    - **Not in force:** `METHODOLOGY_VERSION` stays v1.1, and the v1.1 Stage 1 scores are unchanged.
+  - **`retry-v2` and `recovery-v1`:** [infrastructure-and-recovery.md](../eval/docs/experiments/infrastructure-and-recovery.md). Infrastructure failures only, the original preserved and linked, reliability reported apart, the same for every arm. Plus host-suspend detection and `keep-awake.sh`.
+  - **Draft prompts V1–V7** (not registered) and the Stage 2 schedule with a concurrent baseline: [stage2-plan.md](../eval/docs/experiments/stage2-plan.md).
+- **Investigation:** the Stage 1 suspend was a lid close into Modern Standby (12:51–16:46 SGT, on battery). The 429s come from the sponsor proxy's shared model budget (500k TPM). The production gateway is unchanged.
+- **Open owner decisions:** A1–A4, B1–B2, C1–C3 in [stage2-plan.md §6](../eval/docs/experiments/stage2-plan.md#6-decisions-that-still-need-the-owner).
+- **Links:** [`../eval/methodology/calibration/matching-v1.2-calibration.md`](../eval/methodology/calibration/matching-v1.2-calibration.md).
+
 ### 2026-10-28: ground-truth-v1.0 is frozen on the owner's dataset-level approval of the AI-assisted adjudication; Stage 1 ran
 - **Decision (owner, 2026-10-28):** `ground-truth-v1.0` is frozen from `Ground Truth AI-Adjudicated Candidate v0.3` (records `391fcd27…`).
   - **Basis:** the owner approved it **at the dataset level**, on the documented adjudication process (#231), and accepted the remaining risk of annotation errors given the project timeline.

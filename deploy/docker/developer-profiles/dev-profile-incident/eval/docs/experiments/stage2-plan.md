@@ -1,80 +1,99 @@
-# Stage 2 prompt engineering: proposed plan (not executed)
+# Stage 2 prompt engineering: plan (revised, not executed)
 
-> **Status (2026-10-28): proposal for the owner's review.** Nothing here has run. No prompt file or registry entry is created until it is approved. Stage 3 stays closed until the Stage 2 selection record exists.
+> **Status (2026-10-28, revision 2):** this revision follows the owner's review of Stage 1, which approved S2-A (b), the recovery protocol work and the V1–V8 adjustments. The preparation is implemented: methodology v1.2 (proposed), `retry-v2`, `recovery-v1`, keep-awake and the draft prompts. **Nothing has run.** Recovery, Stage 2 and Stage 3 wait for the owner's approval of the final methodology and the budgets (§6).
 
-## Fixed rules (unchanged, from the plan and the decision log)
+## 1. Fixed rules
 
 | Rule | Source |
 |---|---|
-| **Data:** dev split only (25 clips × 2 repeats), frozen `ground-truth-v1.0`, evaluation-methodology-v1.1. Test clips are never run, and their earlier outputs are never read (quarantine, D15) | plan §F.2, §F.5 |
-| **Arm:** VSS only, local experiment agent, crops off, RP1 skipped, no Supabase or R2 writes. The direct-VLM baseline (C1) is not rerun | plan §F.2, D14 |
-| **Comparison:** each version is paired against `vss-baseline` (Stage 1 C2). C1 is context only | D9 v2 |
-| **Selection:** D9 v2 as pre-registered. Primary `ΔI` (incident, entity F1, object F1, equal weights), `ΔI8` secondary, `+0.02` minimum, guardrails G1–G3, the tie-breakers. Implemented by `select_d9`, which refuses test, pilot, incomplete or unfrozen records | decisions.md 2026-10-27 |
-| **Versions:** at most 8, all reported, regressions included | D9 v2 |
-| **Prompt changes:** one component per version, wording derived from `annotation-guidelines-v1.0`, never from ground-truth descriptions or judge behaviour. Registry entries are append-only, with parent `p1-v4-base` and a written hypothesis | plan §F.3 |
-| **Caps per version:** 50 P1 attempts, 1,050,000 P1 tokens, judge cap derived from the ground truth (1,710). The runner refuses a run whose cap is below the requirement | D11 |
-| **No changes to the ground truth or the methodology from Stage 2 results** | owner instruction 2026-10-28 |
+| **Data:** dev split only (25 clips × 2 repeats), frozen `ground-truth-v1.0` (unchanged). Test clips are never run, and their earlier outputs are never read (D15 quarantine) | plan §F.2, §F.5 |
+| **Arm:** VSS only, local experiment agent, crops off, RP1 skipped, no Supabase or R2 writes. C1 (direct) is not rerun | plan §F.2, D14 |
+| **Selection:** D9 v2 unchanged (components, equal weights, `+0.02`, G1–G3, tie-breakers, ≤ 8 versions), via `select_d9`. The only implementation change: G3 also requires the same methodology version (item-matching τ) and the same protocol on both sides | decisions.md 2026-10-27 |
+| **Scoring:** evaluation-methodology **v1.2** once approved, otherwise v1.1. One version for every Stage 2 record | [v1.2](../../methodology/evaluation-methodology-v1.2.md) |
+| **Prompt changes:** one component per version, wording from `annotation-guidelines-v1.0`, never from ground-truth answers or judge behaviour. **No few-shot examples** in this iteration | owner, 2026-10-28 |
+| **Retries and recovery:** `retry-v2` in every Stage 2 config, then one `recovery-v1` pass applied to all configs of a stage | [recovery protocol](infrastructure-and-recovery.md) |
 
-## Decisions needed before any Stage 2 call
+## 2. Versions (drafts in [`experiments/stage2-drafts/`](../../experiments/stage2-drafts/), not registered)
 
-### S2-A: item matching is at the floor
+Each draft is `p1-v4-base` plus one inserted block. Diffs: `<id>.diff`. Proposed registry entries: [`registry-proposal.json`](../../experiments/stage2-drafts/registry-proposal.json).
 
-- **Finding** ([Stage 1](stage1-baselines.md#entities-instruments-and-assets-pooled-prf1)):
-  - At the pre-registered 0.75 MiniLM threshold, entities, instruments and assets score F1 ≈ 0–0.06 in both arms. Even clear same-person pairs score cosine 0.6–0.7.
-  - Two of `ΔI`'s three components therefore carry almost no signal. A version would have to gain about +0.06 on the incident component alone to clear `+0.02`.
-  - Item-focused versions (V2–V4 below) would be unmeasurable.
+| # | Id (SHA-256) | What changes (guideline source) | Stage 1 dev evidence | Hypothesis / target |
+|---|---|---|---|---|
+| V1 | `p1-v4-e01-severity` (`004746ea7d19`) | How to apply the **existing** rubric from observed evidence (§2.3): observed harm and demonstrated danger; each level needs its own visible indicators; a clearly visible indicator is never downgraded; property alone; the guideline tie-break **only when two levels fit equally** (not a default to the lower level); the decisive evidence named in `SEVERITY_REASON` (+205 words) | Exact 0.15–0.25; ground-truth 3 predicted as 4 or 5 in 24 of 38 | Severity exact, within one, signed error |
+| V2 | `p1-v4-e02-entities` (`19ce9a01c9a6`) | The guidelines' role test for participants, victims and responders (include) and bystanders and background (exclude) (§3) (+116) | Entities over-listed; v1.2 provisional entity P 0.44–0.58 | Entity precision at equal recall |
+| V3 | `p1-v4-e03-instruments` (`fe6adc566ad1`) | The **existing** instrument definition applied to each entity's hands, non-weapon examples, the exclusions, threat by capacity to harm (§4, §6) (+103) | Instrument recall 0.20–0.33 (v1.2 provisional) | Instrument recall |
+| V4 | `p1-v4-e04-assets` (`58f8840431c7`) | Only **relevant** assets: a visible role is required, and prominent background objects are excluded (§5) (+72) | Asset precision 0.29–0.30 (v1.2 provisional) | Asset precision |
+| V5 | `p1-v4-e05-descriptions` (`fac6f74aaa1d`) | General description principles: event, who, key action, outcome; observable verbs (§2.4, §7). No example sentence and no ground-truth wording (+37) | Description pass 0.27–0.47, unstable between repeats | Description |
+| V6 | `p1-v4-e06-boundaries` (`4b498b0d75e4`) | Start and end identification: start 0 when already under way; locate the end at the last second of the harmful action or its active consequence; rounding (§2.2) (+71) | End 0.47–0.50, duration 0.32–0.38 | End, duration (start not lower) |
+| V7 | `p1-v4-e07-checklist` (`1f2734d82f2e`) | A new final section: seven explicit consistency checks (ids and holders, instrument versus asset, roles, timeline within bounds, rubrics, text against fields, uncertainty) (+121) | 2 `contract_invalid` (C2) | Valid-output rate, consistency |
+| V8 | `p1-v4-e08-combined` (built after Stage 2a) | The blocks of every V1–V7 version whose D9 comparison against the concurrent baseline has **`ΔI` > 0 and no G2 problem**. With fewer than two such versions, V8 is not run (it would equal one of them) | – | `ΔI` |
 
-| Option | What | Consequence |
+- **V8:** the rule is fixed here, before any Stage 2 output. V8 is built from dev results and scored on the same dev clips; this is disclosed, and Stage 3 is the held-out check.
+- **Selection:** all versions that ran go into `select_d9`. If none reaches `ΔI ≥ +0.02` with no guardrail problem, `p1-v4-base` stays selected, and that result is reported.
+
+## 3. Schedule
+
+| Step | Configs (interleaved, D10 order) | Video-runs |
 |---|---|---|
-| (a) Keep v1.1 and D9 v2 unchanged | Run as pre-registered | Honest and needs no change. Item results stay uninformative, and the item hypotheses cannot be tested |
-| **(b) Methodology v1.2 before Stage 2 (recommended)** | Fix the item-matching rule (for example a lower threshold, or matching on type plus a short identifying phrase, or judge-based pairing). The new threshold is calibrated on a small labelled set of same / not-same pairs, labelled by the owner or a teammate (about 60 pairs, about 30 min), drawn from the ground truth and the Stage 1 **baseline** outputs only. Then re-score Stage 1 offline (`rescore`: judge calls only, no P1 call) and record a D9 v2 input amendment in `decisions.md` before the first Stage 2 call | Item scores become meaningful. Calibrating on baseline output only, before any variant exists, applies one scorer to every version, so there is no differential bias. It needs owner time and a methodology bump |
-| (c) Selection on incident fields only | Amend D9 v2 so `ΔI` is the incident component; items are reported descriptively | Simple. It changes a pre-registered rule, so it needs a new pre-registration entry before any Stage 2 result |
+| 0 (optional, for the Stage 1 report) | `recover` of C1 and C2 Stage 1 | 34 |
+| 2a | `vss-baseline-s2` (`p1-v4-base`, retry-v2) + V1–V7 | 400 |
+| 2a-r | `recovery-v1` of every 2a config | about 80–130 |
+| 2b | V8 + `vss-baseline-s2b` (drift check) | 100 |
+| 2b-r | `recovery-v1` of both | about 15–30 |
+| Selection | `select_d9`. Baseline = `vss-baseline-s2` merged (`original+recovery-v1`); candidates = V1–V8 merged; the selection record goes in `decisions.md` | – |
 
-### S2-B: a third of the video-runs were lost to the gateway
+- **Why a concurrent baseline** (instead of comparing against Stage 1's `vss-baseline`):
+  - the Stage 1 baseline ran under `retry-v1` and, if recovered, under a different protocol, so G3 would refuse the comparison;
+  - the shared gateway's behaviour drifts over time;
+  - running the baseline interleaved with the versions gives every comparison the same conditions and the same protocol.
+- **V8 and drift:** V8 is compared against the 2a baseline. The 2b baseline is reported only as a drift check (2b baseline − 2a baseline), never in selection.
 
-- **Finding:** Stage 1 lost 34 of 100 video-runs to 429s and 524 timeouts. All 12 calls after the host resumed from suspend failed. Only 19 clips are paired across the arms, and G1 and G3 compare valid runs and video sets.
+## 4. Budget
 
-| Option | What |
+See [infrastructure-and-recovery.md §5](infrastructure-and-recovery.md#5-additional-inference-budget-for-approval-gateway-0-per-token-infrastructure-cost-unknown).
+
+| Item | Value |
 |---|---|
-| (a) As Stage 1 | Same retry policy. Expect about 30% loss per version and wide intervals |
-| **(b) Recommended** | Keep the host awake (no WSL or laptop suspend), run during quieter hours, and pre-declare one **top-up pass**: after a version's main pass, only its infrastructure-failed video-runs (429, timeout) are attempted once more, within the same caps. Outcomes are still recorded and failures still counted. The same top-up is applied once to `vss-baseline`'s 18 failed video-runs, so baseline and variants have the same chance. This changes §3's "fixed retry policy", so it needs the owner's approval and a methodology note |
+| Video-runs | About 615–665 in total |
+| Hard caps | About 1,600 P1 attempts |
+| Expected attempts | About 815–935 |
+| Gateway cost | $0 per token; infrastructure cost unknown |
+| Active run time | About 16–19 h, run under `keep-awake.sh` with the lid open on AC |
 
-### S2-C: E6 (few-shot) would leak labels inside the dev split
+## 5. Methodological limitations
 
-- **Problem:** a dev clip used as a worked example would also be scored on dev, and G3 forbids dropping it from the comparison.
-- **Recommendation:** drop E6. Use its slot for an end-timestamp rule, because end accuracy (0.47–0.50) and duration (0.32–0.38) are weak. Alternative: synthetic, text-only examples written from the guidelines and drawn from none of the 80 clips.
+1. **Ground truth:** AI-assisted adjudication, approved by the owner at the dataset level; not individually human-verified. Every accuracy figure is against that reference ([freeze README](../../ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation)).
+2. **Item matching (v1.2):**
+   - τ was calibrated on 70 AI-labelled dev pairs, which are provisional until a human audit;
+   - the selected τ = 0.30 is the lowest value on the grid;
+   - the sample excludes the large blocks that hold half the dev pairs, so precision may be optimistic for over-listing outputs ([calibration](../../methodology/calibration/matching-v1.2-calibration.md));
+   - calibration and selection both use dev. τ is fixed once, before any Stage 2 output, and every version is scored under it.
+3. **Small dev set:** 25 clips. Intervals are wide, and instruments are thin.
+4. **Infrastructure:**
+   - a shared, rate-limited gateway, so losses are expected even under `retry-v2`;
+   - recovery restores samples but changes the protocol; it is labelled and kept apart from original-run reliability;
+   - upstream non-determinism at temperature 0 (Stage 1: description pass agreement between repeats 5/10 in C2).
+5. **Dev reuse:**
+   - V8 and the selected prompt are chosen on dev;
+   - dev clips were few-shot examples in the retired P1-v1 prompt (D15). With exposure in prompts, absolute dev accuracy is not a generalisation figure.
+6. **Held-out exposure (Stage 3):** the 55 test clips are not unseen (plan §F.5, D15).
+   - They were in the 2026-10-02 benchmark.
+   - Three (Animal003, Assault018, Burglary005) shaped the v3 timeline wording through an earlier pilot.
+   - Other pilots' clips are unrecorded.
+   - Any bias favours the baseline prompt, so prompt gains are conservative. Absolute test accuracy may be optimistic, and is not comparable with 2026-10-02.
+   - The 52-clip unexposed-pilot subset is descriptive only and is never called unseen.
+7. **Prompt-only scope:** today's VSS adds nothing before extraction, so the VSS–direct difference at equal prompt is a pipeline or reliability effect, never an architectural one (plan §F.1).
 
-## Proposed versions (V1–V8)
+## 6. Decisions that still need the owner
 
-Every version is `p1-v4-base` with one section changed (V8 combines). Each target is taken from the Stage 1 dev error analysis.
-
-| # | Registry id | Component changed | Stage 1 evidence (dev) | Hypothesis | Target scores |
-|---|---|---|---|---|---|
-| V1 | `p1-v4-e01-severity` | Severity rubric: guideline decision rules. Observed harm before potential danger. Level 4 or 5 needs observed serious injury or damage, or a clearly present weapon threat; tie-break to the lower adjacent level | Exact 0.15–0.25; ground-truth 3 predicted as 4 or 5 in 24 of 38 outputs; mean signed error +0.18 / +0.53 | Fewer over-ratings | severity exact, within one, signed error |
-| V2 | `p1-v4-e02-entities` | Entity significance: list participants, victims and responders or interveners. Exclude bystanders and background people, even when visible | 85–102 predicted against 55–72 ground-truth entities | Higher entity precision at equal recall | entity P/F1 (needs S2-A) |
-| V3 | `p1-v4-e03-instruments` | Instrument rule: the hand-held test, "report every hand-held object used in the act", instrument vs asset, threat from potential harm | 9 predicted against 18–25 ground-truth instruments (recall ≤ 0.04) | Higher instrument recall | instrument R/F1, threat (needs S2-A) |
-| V4 | `p1-v4-e04-assets` | Asset relevance: only objects damaged, stolen, targeted or directly involved. Scenery, furniture and parked vehicles are excluded unless involved | About 105 predicted against 41 ground-truth assets | Higher asset precision | asset P/F1 (needs S2-A) |
-| V5 | `p1-v4-e05-descriptions` | Incident description template from the guidelines §B.1: what happened, who, the key action, the observable outcome, in 1–3 sentences | Description 0.27–0.47; unstable between repeats (C2 agrees on 5 of 10) | Higher and more stable description pass | description |
-| V6 | `p1-v4-e06-boundaries` (replaces few-shot, S2-C) | Start and end: the end is the last second the incident action or its immediate consequence is visible, not the clip end, unless it continues | End 0.47–0.50, duration 0.32–0.38, start 0.65–0.69 | Better end and duration | end, duration |
-| V7 | `p1-v4-e07-checklist` | A short self-check before answering (ids and holders consistent, timeline inside the incident window, severity re-checked against the rubric, uncertainty stated rather than guessed) | 2 `contract_invalid` in C2; holder and threat errors | Fewer invalid outputs, consistency | valid-output rate, severity |
-| V8 | `p1-v4-e08-combined` | V1–V7 components that, **by a rule fixed now**, have a positive `ΔI` point estimate and no G2 violation | – | The gains add up | `ΔI` |
-
-- **Selection:** all 8 go through `select_d9`. If none reaches `ΔI ≥ +0.02`, `p1-v4-base` stays selected, and that result is reported.
-- **V8 disclosure:** V8 is built from dev results and scored on the same dev clips. This is disclosed. The held-out check is Stage 3.
-
-## Order, volume and budget
-
-- **Order:** two stages of four versions each (V1–V4, then V5–V8, because V8 needs V1–V7's results). Each stage is interleaved by the D10 order, so versions share gateway conditions.
-- **Volume:** 8 × 25 × 2 = **400 P1 attempts**, plus the top-up passes if S2-B (b) is approved (about +30%, within each version's 50-attempt cap only if the main pass leaves room). Otherwise the caps rise to about 65 attempts per version, which needs approval.
-- **Judge cap:** derived per version (about 1,710). Stage 1 actually used 31–41 judge calls per config; more will be used if S2-A (b) yields more matches.
-- **Cost:** gateway $0 per token (configured). The infrastructure cost is unknown and borne by the sponsor.
-- **Time:** about 2 h of active time per 100 calls in Stage 1, so about 8–10 h in total, run as four sessions.
-- **Stop rules:** unchanged (25% rate-limit share, caps, judge failures stop the run). A persistent gateway outage stops a session, and it is reported.
-
-## Outputs (after approval and execution)
-
-- `contracts/experiments/p1/<id>.txt` and their registry entries.
-- `eval/experiments/configs/<id>.json`.
-- Results under `eval_data/results/experiments/<id>/`.
-- `eval/docs/experiments/stage2-prompt-engineering.md`: every version's hypothesis, its diff from the parent, paired results against C2 (and against C1 for context), regressions and the `select_d9` output.
-- The selection record in `decisions.md`.
+| # | Decision | Recommendation |
+|---|---|---|
+| A1 | Human audit of ≥ 20 calibration pairs (list in the calibration report), then re-derive τ by the same rule | Yes, before v1.2 is in force |
+| A2 | Calibration coverage: accept the ≤ 9-pair sample, or approve the pre-declared extension (4 random large blocks, about 150 pairs) | Approve the extension. It tests precision where over-listing happens |
+| A3 | τ: adopt the rule's output (currently 0.30), or record a deliberate deviation (for example 0.40, F1 −0.015, precision 0.94) | Decide after A1 and A2. Do not choose on Stage 1 model scores |
+| A4 | Put v1.2 in force (`METHODOLOGY_VERSION`) for Stage 2 | After A1–A3 |
+| B1 | Approve `retry-v2` and `recovery-v1` as the fixed protocol for future experiments | Yes |
+| B2 | Run the Stage 1 recovery (34 video-runs, ≤ 102 attempts) | Optional: it improves the Stage 1 parity sample only |
+| C1 | Approve drafts V1–V7 (wording), then register them (`prompt_registry.add`) | Review the diffs |
+| C2 | Approve the schedule (concurrent baseline, 2a/2b, V8 rule) and the budget (§4) | Yes |
+| C3 | Judge re-score of the Stage 1 v1.2 records (new matched pairs' judged attributes; about 100–200 judge calls at $0) | Optional; the item F1 values need no judge |

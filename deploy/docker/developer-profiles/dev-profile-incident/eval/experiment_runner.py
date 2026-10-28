@@ -83,6 +83,10 @@ JUDGE_ATTEMPTS_PER_FIELD = 3 + methodology.JUDGE_TRANSIENT_RETRIES
 P1_RATE_LIMIT_RETRIES = 2  # eval_vlm_client.P1_RATE_LIMIT_POLICY["max_rate_limit_retries"] (a test keeps them equal)
 P1_TOKENS_PLANNING_MEAN = 9898
 RATE_LIMIT_STOP_SHARE = 0.25
+# eval_vlm_client.P1_RETRY_POLICIES ids (a test keeps them equal). A config without pipeline.retry_policy ran
+# under retry-v1, as Stages 0 and 1 did.
+RETRY_POLICIES = ("retry-v1", "retry-v2")
+DEFAULT_RETRY_POLICY = "retry-v1"
 RATE_LIMIT_MIN_ATTEMPTS = 8
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,20}$")
 
@@ -141,6 +145,8 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
         problems.append("pipeline.skip_rp1 must be true: RP1 is not part of an extraction experiment")
     if pipeline.get("profile", "accuracy") == "accuracy" and pipeline.get("skip_crops") is not True:
         problems.append("pipeline.skip_crops must be true for an accuracy run (cropping is the end-to-end profile only)")
+    if pipeline.get("retry_policy", DEFAULT_RETRY_POLICY) not in RETRY_POLICIES:
+        problems.append(f"pipeline.retry_policy must be one of {RETRY_POLICIES}")
     if config["arm"] == "vss" and not pipeline.get("agent_base_url"):
         problems.append("a vss config needs pipeline.agent_base_url")
     if config["arm"] == "direct-vlm" and pipeline.get("agent_base_url"):
@@ -183,15 +189,18 @@ def completed_runs(experiment_id: str, root: Path = RESULTS_ROOT) -> list[Path]:
 
 
 def preflight(config: dict, split: dict, *, registry: dict | None = None, results_root: Path = RESULTS_ROOT,
-              decisions_path: Path = DECISIONS_PATH) -> dict:
-    """Every guard that needs no network. Returns the plan or raises ``ExperimentRefused``."""
+              decisions_path: Path = DECISIONS_PATH, planned: int | None = None) -> dict:
+    """Every guard that needs no network. Returns the plan or raises ``ExperimentRefused``.
+
+    ``planned`` overrides the planned call count (a recovery runs only listed video-runs).
+    """
     problems = config_problems(config, registry=registry, decisions_path=decisions_path)
     if problems:
         raise ExperimentRefused("; ".join(problems))
     if config["frozen_baseline"] and completed_runs(config["experiment_id"], results_root):
         raise ExperimentRefused(f"{config['experiment_id']} is a frozen baseline with a completed run; re-score its "
                                 "saved outputs (--rescore) instead of running it again")
-    calls = planned_calls(config, split)
+    calls = planned_calls(config, split) if planned is None else planned
     if calls > config["budget"]["max_p1_calls"]:
         raise ExperimentRefused(f"{calls} planned P1 calls exceed budget.max_p1_calls {config['budget']['max_p1_calls']}")
     if calls * P1_TOKENS_PLANNING_MEAN > config["budget"]["max_p1_tokens"]:
@@ -286,13 +295,18 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
                       status_code=response.status_code, raw=raw, **timing)
 
 
-def direct_call(prompt_text: str, *, pacer=None, max_retries: int | None = None) -> Callable:
+def retry_policy(config: dict) -> str:
+    return (config.get("pipeline") or {}).get("retry_policy", DEFAULT_RETRY_POLICY)
+
+
+def direct_call(prompt_text: str, *, pacer=None, max_retries: int | None = None,
+                policy: str = DEFAULT_RETRY_POLICY) -> Callable:
     """The direct-VLM arm: ``eval_vlm_client`` with the registry prompt."""
     from eval_vlm_client import analyze_video_with_p1, rate_limited
 
     def call(model: str, video_url: str):
         return rate_limited(lambda: analyze_video_with_p1(model, video_url, prompt_text=prompt_text), pacer=pacer,
-                            max_retries=max_retries)
+                            max_retries=max_retries, policy=policy)
 
     return call
 
@@ -319,7 +333,7 @@ def vss_call(config: dict, item: dict, *, incident_id: str, run_id: str, duratio
             return vss_chat_result(response, prompt_id=item["id"], prompt_sha256=item["sha256"], started_at=started_at,
                                    finished_at=_utc_now())
 
-        return rate_limited(once, pacer=pacer, max_retries=max_retries)
+        return rate_limited(once, pacer=pacer, max_retries=max_retries, policy=retry_policy(config))
 
     return call
 
@@ -429,6 +443,14 @@ def judge_cap_required(config: dict, split: dict, gt_index: dict) -> dict:
             "required": required, "configured": config["budget"]["max_judge_calls"], "per_video": per_video}
 
 
+def subset_judge_cap(config: dict, runs: set[tuple[int, str]], gt_index: dict) -> dict:
+    """``judge_cap_required`` for listed ``(repeat, incident_id)`` video-runs only (a recovery)."""
+    fields = sum(judged_fields(gt_index["by_incident_id"][v]["p1_shaped"], config["scoring"]) for _, v in runs)
+    return {"experiment_id": config["experiment_id"], "videos": len({v for _, v in runs}), "repeats": None,
+            "judged_fields": fields, "attempts_per_field": JUDGE_ATTEMPTS_PER_FIELD,
+            "required": fields * JUDGE_ATTEMPTS_PER_FIELD, "configured": config["budget"]["max_judge_calls"]}
+
+
 def worst_judge_attempts(gt_p1_shaped: dict, scoring: str) -> int:
     """The most judge requests one video can cause: judged fields x attempts per field.
 
@@ -458,7 +480,8 @@ def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = O
 def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_source: Callable,
               call_factory_for: Callable, run_one: Callable, confirm_paid: bool, results_root: Path = RESULTS_ROOT,
               registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
-              log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED) -> dict:
+              log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED,
+              only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None) -> dict:
     """Run configurations interleaved per video under hard caps; write one immutable result per configuration.
 
     ``call_factory_for(config) -> call_factory(incident_id, run_id, duration) -> p1_call``. Every
@@ -466,12 +489,20 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     configuration's caps are checked with room for a worst-case call; a cap, or rate limiting on
     more than a quarter of attempts, stops the whole stage. The partial results are then written
     with ``complete: false`` and the reason. Every call is appended to the stage's ``cost-log.jsonl``.
+
+    ``only`` (recovery, ``experiment_recovery``) limits each configuration to the listed ``(repeat,
+    incident_id)`` video-runs, still in the interleaved D10 order; ``recovery`` names, per configuration,
+    the original result it recovers and the original video-run each recovered one replaces.
     """
-    plans = [preflight(c, split, registry=registry, results_root=results_root, decisions_path=decisions_path)
-             for c in configs]
+    if only is not None and set(only) != {c["experiment_id"] for c in configs}:
+        raise ExperimentRefused("a recovery lists the video-runs of every configuration in the stage")
+    plans = [preflight(c, split, registry=registry, results_root=results_root, decisions_path=decisions_path,
+                       planned=None if only is None else len(only[c["experiment_id"]])) for c in configs]
     if len({c["experiment_id"] for c in configs}) != len(configs):
         raise ExperimentRefused("a stage cannot run the same configuration twice")
     video_sets = {tuple(sorted(videos_for(c, split))) for c in configs}
+    if only is not None:
+        video_sets = {tuple(sorted(set().union(*video_sets)))}
     if len(video_sets) != 1 or len({c["repeats"] for c in configs}) != 1 or len({c["split"] for c in configs}) != 1:
         raise ExperimentRefused("configurations in one stage must share split half, videos and repeats")
     if not confirm_paid:
@@ -481,7 +512,8 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             raise ExperimentRefused(f"{config['experiment_id']}: ground truth is not frozen; only a pilot or plumbing "
                                     "run may set ground_truth.allow_candidate")
     for config in configs:
-        caps = judge_cap_required(config, split, gt_index)
+        caps = judge_cap_required(config, split, gt_index) if only is None else \
+            subset_judge_cap(config, only[config["experiment_id"]], gt_index)
         if caps["configured"] < caps["required"]:
             raise ExperimentRefused(
                 f"{config['experiment_id']}: budget.max_judge_calls {caps['configured']} is below the "
@@ -498,6 +530,8 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     for path in [*out_dirs, stage_dir]:
         path.mkdir(parents=True)
     order = schedule(configs, list(video_sets.pop()), configs[0]["repeats"], seed)
+    if only is not None:
+        order = [o for o in order if (o[0], o[2]) in only[configs[o[3]]["experiment_id"]]]
     (stage_dir / "schedule.json").write_text(json.dumps({
         "seed": seed, "configs": [c["experiment_id"] for c in configs], "pricing": pricing,
         "order": [{"repeat": r, "position": p, "incident_id": v, "config": configs[k]["experiment_id"]}
@@ -508,8 +542,11 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                           "judge_tokens": 0, "judge_tokens_estimate": 0,
                           "cost_usd_provisional": 0.0, "pricing_provisional": pricing.get("provisional", True)}}
                for c, plan in zip(configs, plans, strict=True)]
+    for config, record in zip(configs, records, strict=True):
+        if recovery is not None:
+            record.update(protocol="recovery-v1", recovers=recovery[config["experiment_id"]]["of"])
     factories = [call_factory_for(c) for c in configs]
-    planned_runs = [planned_calls(c, split) for c in configs]
+    planned_runs = [planned_calls(c, split) if only is None else len(only[c["experiment_id"]]) for c in configs]
     run_ids: dict[tuple, str] = {}
     stopped = None
     attempts = rate_limited = 0
@@ -559,6 +596,8 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             # The agent's own report of the call (P1-only time, end-to-end time, the prompt it used).
             result["transport"] = (seen[-1].result.raw or {}).get("agent") if seen else None
             result.update(repeat=repeat, position=position, arm=config["arm"], prompt_id=config["prompt_id"])
+            if recovery is not None:
+                result["recovers"] = recovery[config["experiment_id"]]["links"][(repeat, incident_id)]
             usage = call_usage(result, pricing, config["model"])
             result["usage"] = usage
             record["videos"].append(result)

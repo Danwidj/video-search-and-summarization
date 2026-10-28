@@ -1,0 +1,24 @@
+--- p1-v4-base.txt
++++ p1-v4-e07-checklist.txt
+@@ -552,3 +552,21 @@
+ boxes are generated downstream by the detector stage on the frame extracted at
+ TIMESTAMP_SECONDS, guided by your LABEL.
+ 
++==================================================
++10. FINAL CONSISTENCY CHECK
++==================================================
++
++Before returning the JSON, check each point and correct the output:
++1. Every instrument's ENTITY_ID names an entity in ENTITIES, or is null
++   when the holder cannot be seen.
++2. No object appears both as an instrument and as an asset at the same
++   observed time.
++3. Every entity, instrument and asset has a role in the incident; remove
++   bystanders and background objects.
++4. START_TIMESTAMP <= every timeline event <= END_TIMESTAMP, all within the
++   video.
++5. SEVERITY_LEVEL and each THREAT_LEVEL follow their rubrics for the
++   visible evidence, as stated in SEVERITY_REASON.
++6. TITLE and DESCRIPTION agree with TYPE and the structured fields.
++7. Anything that could not be established is stated in UNCERTAINTIES,
++   not guessed.
