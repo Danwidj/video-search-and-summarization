@@ -69,7 +69,7 @@ export function FrameViewer({ src, seconds, boxes, selectedId, onSelect, classNa
                 type="button"
               >
                 <span
-                  className={`absolute -top-5 left-[-2px] whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold text-white ${KIND_COLOUR[item.kind]}`}
+                  className={`absolute -top-5 left-[-2px] whitespace-nowrap rounded-sm px-1.5 py-px text-[10.5px] font-semibold text-white ${KIND_COLOUR[item.kind]}`}
                 >
                   {item.label}
                 </span>

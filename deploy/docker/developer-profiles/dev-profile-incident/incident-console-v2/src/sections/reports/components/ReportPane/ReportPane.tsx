@@ -247,7 +247,7 @@ export function ReportPane({
                   {seekable ? (
                     <button
                       aria-label={`Play video from ${formatClock(event.startSeconds)}: ${event.description}`}
-                      className={`group flex w-full gap-4 rounded-xl border p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-none focus:ring-2 focus:ring-signal ${outsideWindow ? 'border-dashed border-ink/15' : 'border-ink/10'}`}
+                      className={`group flex w-full gap-4 rounded-xl border p-3 text-left transition hover:border-moss/30 hover:bg-moss/5 focus:outline-hidden focus:ring-2 focus:ring-signal ${outsideWindow ? 'border-dashed border-ink/15' : 'border-ink/10'}`}
                       onClick={() => onSeek(event.startSeconds)}
                       type="button"
                     >
@@ -336,7 +336,7 @@ function Card({
         onClick={() => at !== null && onSeek(at)}
         type="button"
       >
-        <EvidenceFrame aspect={2} className="!rounded-none" kind={kind} label={title} seconds={at} src={evidence?.imageUrl} />
+        <EvidenceFrame aspect={2} className="rounded-none!" kind={kind} label={title} seconds={at} src={evidence?.imageUrl} />
       </button>
       <div className="space-y-1 p-3">
         <h4 className="text-sm font-semibold">{title}</h4>

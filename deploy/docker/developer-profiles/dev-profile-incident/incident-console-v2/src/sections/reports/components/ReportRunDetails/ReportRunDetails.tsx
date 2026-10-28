@@ -10,7 +10,7 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
   return (
     <section className="border-t border-ink/10 px-6 py-6 sm:px-8">
       <details className="group rounded-2xl border border-ink/10 bg-canvas/60">
-        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-signal">
+        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-inset focus:ring-signal">
           <span className="flex items-center justify-between">
             <span>Run &amp; model output details</span>
             <span className="text-ink/35 group-open:rotate-180">⌄</span>
@@ -161,7 +161,7 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
 function Provenance({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="font-bold uppercase tracking-[0.1em] text-ink/40">{label}</dt>
+      <dt className="font-bold uppercase tracking-widest text-ink/40">{label}</dt>
       <dd className="mt-1 break-all font-mono text-ink/70">{value}</dd>
     </div>
   );

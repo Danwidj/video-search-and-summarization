@@ -32,14 +32,14 @@ export function ReportThumbnail({
         <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={() => setFailed(true)} src={view.src} />
       ) : (
         <div data-testid="library-thumbnail-skeleton">
-          <div className="absolute inset-0 bg-gradient-to-br from-white/35 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-br from-white/35 to-transparent" />
           <div className="absolute inset-x-8 bottom-8 space-y-3">
             <div className="h-3 w-2/3 rounded-full bg-ink/15" />
             <div className="h-3 w-full rounded-full bg-ink/10" />
             <div className="h-3 w-4/5 rounded-full bg-ink/10" />
           </div>
-          <div className="absolute left-1/2 top-1/2 h-14 w-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/55 shadow-sm">
-            <div className="absolute left-1/2 top-1/2 h-0 w-0 -translate-x-1/3 -translate-y-1/2 border-y-[10px] border-l-[16px] border-y-transparent border-l-ink/25" />
+          <div className="absolute left-1/2 top-1/2 h-14 w-20 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/55 shadow-xs">
+            <div className="absolute left-1/2 top-1/2 h-0 w-0 -translate-x-1/3 -translate-y-1/2 border-y-10 border-l-16 border-y-transparent border-l-ink/25" />
           </div>
         </div>
       )}

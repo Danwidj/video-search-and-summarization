@@ -171,7 +171,7 @@ export function AnalysisWorkspace() {
 
   return (
     <section
-      className="relative rounded-[2rem] border border-ink/10 bg-white/80 p-4 shadow-panel backdrop-blur md:p-6"
+      className="relative rounded-4xl border border-ink/10 bg-white/80 p-4 shadow-panel backdrop-blur-sm md:p-6"
       aria-labelledby="upload-title"
     >
       <input
@@ -204,7 +204,7 @@ export function AnalysisWorkspace() {
               ))}
             </select>
           </label>
-          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">
+          <p className="text-xs text-ink/45 sm:min-w-48 sm:flex-1 sm:text-right">
             Choose before selecting a video. Analysis can take several minutes.
           </p>
         </div>
