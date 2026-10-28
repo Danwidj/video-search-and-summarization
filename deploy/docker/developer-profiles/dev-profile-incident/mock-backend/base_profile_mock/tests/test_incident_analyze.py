@@ -152,6 +152,36 @@ def test_evidence_embeddings_returns_one_vector_per_item(monkeypatch):
     assert len(rows[0]["embedding"]) == 1024
 
 
+def test_evidence_embeddings_accepts_evidence_list_in_body():
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/v1/incidents/evidence-embeddings",
+        json={
+            "evidence": [
+                {"item_type": "entity", "item_id": "E1", "item_name": "human", "description": "a person"}
+            ]
+        },
+    )
+    assert response.status_code == 200
+    rows = response.json()
+    assert [(row["item_type"], row["item_id"]) for row in rows] == [("entity", "E1")]
+    assert len(rows[0]["embedding"]) == 1024
+
+
+def test_evidence_embeddings_empty_evidence_list_returns_empty():
+    client = TestClient(create_app())
+    response = client.post("/api/v1/incidents/evidence-embeddings", json={"evidence": []})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_evidence_embeddings_rejects_missing_and_dual_sources():
+    client = TestClient(create_app())
+    assert client.post("/api/v1/incidents/evidence-embeddings", json={}).status_code == 422
+    assert client.post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 0}).status_code == 422
+    assert client.post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 7, "evidence": []}).status_code == 422
+
+
 def test_analyze_rejects_missing_video(monkeypatch):
     class Missing:
         async def get_video(self, _id):
