@@ -48,7 +48,7 @@ import {
 } from '@/modules/reports/domain/edit-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
-import { AdvancedReportTools } from '@/sections/reports/components/AdvancedReportTools';
+import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
@@ -426,6 +426,7 @@ export function ReportPage({
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
+            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
             <Button
               aria-expanded={chatOpen}
               className="text-xs font-semibold"
@@ -709,11 +710,6 @@ export function ReportPage({
         </DialogContent>
       </Dialog>
 
-      {mode === 'view' && (
-        <div className="px-5 sm:px-8">
-          <AdvancedReportTools report={report} />
-        </div>
-      )}
       <Sheet onOpenChange={setChatOpen} open={chatOpen}>
         <SheetContent className="flex flex-col p-0 sm:max-w-md" side="right">
           <SheetHeader className="sr-only">
