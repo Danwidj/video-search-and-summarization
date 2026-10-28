@@ -13,18 +13,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Incident search endpoint implementing search-contract-v1 with an always-on critic."""
+"""Incident search endpoint implementing search-contract-v1.
+
+The VLM critic is dormant: it runs only when ``INCIDENT_SEARCH_CRITIC`` is truthy (or ``critic_enabled`` is
+passed), and every hit is otherwise ``unverified`` with no VLM call and no delay.
+"""
 
 from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
 import asyncio
+import contextlib
 import datetime as _dt
 import json
 import logging
 import os
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
 import uuid
@@ -37,11 +43,16 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 
 from vss_agents.utils import incident_db
 from vss_agents.utils.embeddings import EMBEDDING_DIMENSIONS
 from vss_agents.utils.embeddings import RemoteTextEmbedder
 from vss_agents.utils.r2 import resolve_r2_url
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +61,15 @@ DEFAULT_VLM_MODEL = "nvidia/cosmos-3-super-reasoner"
 DEFAULT_CRITIC_TIMEOUT_SECONDS = 30.0
 DEFAULT_CRITIC_DELAY_SECONDS = 1.0
 CRITIC_DELAY_ENV_VAR = "INCIDENT_SEARCH_CRITIC_DELAY_SECONDS"
+CRITIC_ENV_VAR = "INCIDENT_SEARCH_CRITIC"
+CRITIC_SKIPPED_RATIONALE = "Critic not run"
+
+
+def _critic_enabled(configured: bool | None = None) -> bool:
+    """Whether hits are sent to the VLM critic. Off unless ``configured`` or ``INCIDENT_SEARCH_CRITIC`` says so."""
+    if configured is not None:
+        return configured
+    return (os.getenv(CRITIC_ENV_VAR) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _get_critic_delay_seconds(configured_delay: float | None = None) -> float:
@@ -88,6 +108,7 @@ class SearchFilters(BaseModel):
     min_severity: int | None = Field(default=None, ge=1, le=5)
     max_severity: int | None = Field(default=None, ge=1, le=5)
     item_types: list[Literal["entity", "instrument", "asset"]] | None = None
+    video_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SearchRequest(BaseModel):
@@ -95,21 +116,29 @@ class SearchRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    query: str = Field(..., min_length=1, max_length=500)
+    query: str = Field(default="", max_length=500, description="Empty only with filters.video_id: lists that incident.")
     top_k: int = Field(default=10, ge=1, le=50)
     min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
     hide_rejected: bool = True
     filters: SearchFilters | None = None
 
+    @model_validator(mode="after")
+    def _query_required_unless_scoped(self) -> SearchRequest:
+        if not self.query.strip() and not (self.filters and self.filters.video_id):
+            raise ValueError("query must not be empty unless filters.video_id names the incident to list")
+        return self
+
 
 class CriticVerdict(BaseModel):
-    """Always-on VLM critic evaluation verdict matching search-contract-v1."""
+    """VLM critic evaluation verdict matching search-contract-v1 (``unverified`` when the critic is off)."""
 
     model_config = ConfigDict(extra="forbid")
 
     verdict: Literal["confirmed", "rejected", "unverified"]
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     rationale: str
+    # Set when the VLM call itself failed (not when the model answered "unverified"); never serialised.
+    failed: bool = Field(default=False, exclude=True)
 
 
 class ItemHit(BaseModel):
@@ -350,15 +379,20 @@ class SearchStore(ABC):
     @abstractmethod
     async def search_evidence_items(
         self,
-        query_embedding: list[float],
+        query_embedding: list[float] | None,
         top_k: int = 10,
         min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
         max_severity: int | None = None,
+        video_id: str | None = None,
     ) -> list[EvidenceCandidate]:
-        """Execute pgvector search over official evidence crops with metadata filters."""
+        """Execute pgvector search over the searchable revision's evidence crops with metadata filters.
+
+        ``video_id`` keeps one incident's crops. A ``None`` embedding ranks nothing: with ``video_id`` it lists that
+        incident's crops by video time, each with similarity 0.0.
+        """
         pass
 
     @abstractmethod
@@ -385,20 +419,23 @@ class InMemorySearchStore(SearchStore):
 
     async def search_evidence_items(
         self,
-        query_embedding: list[float],  # noqa: ARG002
+        query_embedding: list[float] | None,
         top_k: int = 10,
         min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
         max_severity: int | None = None,
+        video_id: str | None = None,
     ) -> list[EvidenceCandidate]:
         matched: list[EvidenceCandidate] = []
         item_types_set = set(item_types) if item_types else None
         incident_types_set = set(incident_types) if incident_types else None
 
         for cand in self.candidates:
-            if cand.similarity_score < min_similarity:
+            if video_id is not None and cand.incident_id != video_id:
+                continue
+            if query_embedding is not None and cand.similarity_score < min_similarity:
                 continue
             if item_types_set and cand.item_type not in item_types_set:
                 continue
@@ -410,7 +447,11 @@ class InMemorySearchStore(SearchStore):
                 continue
             matched.append(cand)
 
-        matched.sort(key=lambda c: c.similarity_score, reverse=True)
+        if query_embedding is None:
+            matched = [cand.model_copy(update={"similarity_score": 0.0}) for cand in matched]
+            matched.sort(key=lambda c: (c.timestamp_seconds, c.item_type, c.item_id))
+        else:
+            matched.sort(key=lambda c: c.similarity_score, reverse=True)
         return matched[:top_k]
 
     async def persist_query(self, query_id: str, query: str) -> None:
@@ -470,15 +511,18 @@ class SupabaseSearchStore(SearchStore):
 
     async def search_evidence_items(
         self,
-        query_embedding: list[float],
+        query_embedding: list[float] | None,
         top_k: int = 10,
         min_similarity: float = 0.0,
         item_types: list[str] | None = None,
         incident_types: list[str] | None = None,
         min_severity: int | None = None,
         max_severity: int | None = None,
+        video_id: str | None = None,
     ) -> list[EvidenceCandidate]:
-        if not query_embedding:
+        if query_embedding is not None and not query_embedding:
+            return []
+        if query_embedding is None and video_id is None:
             return []
 
         client = await self._get_client()
@@ -492,6 +536,9 @@ class SupabaseSearchStore(SearchStore):
             "p_min_severity": min_severity,
             "p_max_severity": max_severity,
         }
+        if video_id is not None:
+            # Sent only when scoped, so an agent ahead of the p_video_id migration still serves unscoped searches.
+            params["p_video_id"] = video_id
 
         resp = await client.rpc("search_evidence_items", params).execute()
         rows = resp.data or []
@@ -657,12 +704,12 @@ class DefaultQueryEmbedder(QueryEmbedder):
 
 
 # =============================================================================
-# Always-On Critic Port & VLM Adapter
+# Optional Critic Port & VLM Adapter
 # =============================================================================
 
 
 class CriticEvaluator(ABC):
-    """Port for the always-on vision-language critic."""
+    """Port for the optional vision-language critic (dormant unless INCIDENT_SEARCH_CRITIC is set)."""
 
     @abstractmethod
     async def evaluate_candidate(
@@ -776,6 +823,7 @@ class VlmCriticEvaluator(CriticEvaluator):
                     verdict="unverified",
                     confidence=None,
                     rationale=f"Critic endpoint returned HTTP {resp.status_code}",
+                    failed=True,
                 )
 
             body = resp.json()
@@ -808,7 +856,43 @@ class VlmCriticEvaluator(CriticEvaluator):
                 verdict="unverified",
                 confidence=None,
                 rationale=f"Critic verification failed: {exc}",
+                failed=True,
             )
+
+
+# =============================================================================
+# Shared Semantic Search
+# =============================================================================
+
+
+async def semantic_search(
+    query: str,
+    *,
+    embedder: QueryEmbedder,
+    retrieve: Callable[[list[float] | None], Awaitable[list[Any]]],
+) -> list[Any]:
+    """Embed ``query`` and rank with ``retrieve``: the one search path both incident searches use.
+
+    Evidence search (``POST /api/v1/incidents/search``, ``retrieve`` reads ``evidence_crops``) and incident search
+    (``POST /api/v1/incidents/revisions/search``, ``retrieve`` reads the revision summaries) differ only in what they
+    retrieve. An empty ``query`` is not embedded: ``retrieve`` gets ``None``, which only a scoped search accepts.
+
+    Raises ``HTTPException``: 503 when no embedding endpoint is configured, 502 when it fails.
+    """
+    if not query.strip():
+        return await retrieve(None)
+    try:
+        embedding = await embedder.embed_query(query)
+    except EmbeddingUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        exc_type = type(exc).__name__
+        msg = str(exc).strip()
+        logger.error("Query embedding failed (%s): %s", exc_type, exc, exc_info=True)
+        raise HTTPException(
+            status_code=502, detail=f"Embedding endpoint failed: {f'{exc_type}: {msg}' if msg else exc_type}"
+        ) from exc
+    return await retrieve(embedding)
 
 
 # =============================================================================
@@ -822,16 +906,18 @@ def create_incident_search_router(
     critic: CriticEvaluator | None = None,
     embedder: QueryEmbedder | None = None,
     critic_delay_seconds: float | None = None,
+    critic_enabled: bool | None = None,
 ) -> APIRouter:
     """Build the POST /api/v1/incidents/search router implementing search-contract-v1."""
     router = APIRouter()
     search_store = store if store is not None else get_default_search_store()
-    critic_evaluator = critic or VlmCriticEvaluator()
+    run_critic = _critic_enabled(critic_enabled)
+    critic_evaluator = (critic or VlmCriticEvaluator()) if run_critic else None
     query_embedder = embedder or DefaultQueryEmbedder(allow_placeholder=isinstance(search_store, InMemorySearchStore))
 
     @router.post(
         "/api/v1/incidents/search",
-        summary="Search incident evidence items using natural language with always-on critic",
+        summary="Search incident evidence items using natural language",
         tags=["Incident Search"],
         response_model=SearchResponse,
     )
@@ -839,40 +925,59 @@ def create_incident_search_router(
         t0 = time.perf_counter()
         query_id = f"q-{uuid.uuid4().hex[:12]}"
 
-        # 1. Embed query text
-        try:
-            query_embedding = await query_embedder.embed_query(req.query)
-        except Exception as exc:
-            exc_type = type(exc).__name__
-            msg = str(exc).strip()
-            err_detail = f"{exc_type}: {msg}" if msg else exc_type
-            logger.error("Query embedding failed (%s): %s", exc_type, exc, exc_info=True)
-            raise HTTPException(status_code=503, detail=f"Query embedding unavailable: {err_detail}") from exc
+        # 1. Embed the query and retrieve candidate items through the SearchStore port
+        filters = req.filters
+        item_types: list[str] | None = [str(t) for t in filters.item_types] if filters and filters.item_types else None
 
-        # 2. Retrieve candidate items through SearchStore port
-        item_types: list[str] | None = (
-            [str(t) for t in req.filters.item_types] if req.filters and req.filters.item_types else None
-        )
-        incident_types = req.filters.incident_types if req.filters and req.filters.incident_types else None
-        min_sev = req.filters.min_severity if req.filters else None
-        max_sev = req.filters.max_severity if req.filters else None
+        async def retrieve(query_embedding: list[float] | None) -> list[EvidenceCandidate]:
+            return await search_store.search_evidence_items(
+                query_embedding=query_embedding,
+                top_k=req.top_k,
+                min_similarity=req.min_similarity,
+                item_types=item_types,
+                incident_types=filters.incident_types if filters and filters.incident_types else None,
+                min_severity=filters.min_severity if filters else None,
+                max_severity=filters.max_severity if filters else None,
+                video_id=filters.video_id if filters else None,
+            )
 
-        candidates = await search_store.search_evidence_items(
-            query_embedding=query_embedding,
-            top_k=req.top_k,
-            min_similarity=req.min_similarity,
-            item_types=item_types,
-            incident_types=incident_types,
-            min_severity=min_sev,
-            max_severity=max_sev,
-        )
+        candidates = await semantic_search(req.query, embedder=query_embedder, retrieve=retrieve)
 
-        # 3. Always-on critic evaluation per candidate hit with configurable delay spacing
+        # 2. Optional critic per candidate hit, with configurable delay spacing. Once one critic call has failed
+        #    the rest are skipped and the spacing stops, so a down or rate-limited critic never slows the search.
         delay = _get_critic_delay_seconds(critic_delay_seconds)
+        critic_broken = asyncio.Event()
+        skipped = CriticVerdict(verdict="unverified", confidence=None, rationale=CRITIC_SKIPPED_RATIONALE)
 
         revision_by_result: dict[str, int] = {}
 
-        async def _evaluate_hit(rank: int, cand: EvidenceCandidate) -> SearchHit:
+        async def _judge(idx: int, item: ItemHit, incident: IncidentHit) -> CriticVerdict:
+            if critic_evaluator is None:
+                return skipped
+            if idx > 0 and delay > 0:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(critic_broken.wait(), timeout=idx * delay)
+            if critic_broken.is_set():
+                return skipped
+            try:
+                verdict = await critic_evaluator.evaluate_candidate(req.query, item, incident)
+            except Exception as exc:
+                logger.warning(
+                    "Critic evaluation failed in route for item %s: %s; degrading to unverified",
+                    item.item_id,
+                    exc,
+                )
+                verdict = CriticVerdict(
+                    verdict="unverified",
+                    confidence=None,
+                    rationale=f"Critic verification failed: {exc}",
+                    failed=True,
+                )
+            if verdict.failed:
+                critic_broken.set()
+            return verdict
+
+        async def _evaluate_hit(idx: int, cand: EvidenceCandidate) -> SearchHit:
             item = ItemHit(
                 item_type=cand.item_type,
                 item_id=cand.item_id,
@@ -895,43 +1000,26 @@ def create_incident_search_router(
                 playback_url=cand.playback_url,
                 incident_window=cand.incident_window,
             )
-            try:
-                verdict = await critic_evaluator.evaluate_candidate(req.query, item, incident)
-            except Exception as exc:
-                logger.warning(
-                    "Critic evaluation failed in route for item %s: %s; degrading to unverified",
-                    cand.item_id,
-                    exc,
-                )
-                verdict = CriticVerdict(
-                    verdict="unverified",
-                    confidence=None,
-                    rationale=f"Critic verification failed: {exc}",
-                )
+            verdict = await _judge(idx, item, incident)
             result_id = f"res-{uuid.uuid4().hex}"
             revision_by_result[result_id] = cand.revision_id
             return SearchHit(
                 result_id=result_id,
-                rank=rank,
+                rank=idx + 1,
                 similarity_score=cand.similarity_score,
                 item=item,
                 incident=incident,
                 critic=verdict,
             )
 
-        eval_tasks: list[asyncio.Task[SearchHit]] = []
-        for idx, cand in enumerate(candidates):
-            rank = idx + 1
-            if idx > 0 and delay > 0:
-                await asyncio.sleep(delay)
-            eval_tasks.append(asyncio.create_task(_evaluate_hit(rank, cand)))
+        hits: list[SearchHit] = list(await asyncio.gather(*(_evaluate_hit(i, c) for i, c in enumerate(candidates))))
 
-        hits: list[SearchHit] = await asyncio.gather(*eval_tasks) if eval_tasks else []
-
-        # 4. Persist query and query_results audit trail through SearchStore port
+        # 3. Persist query and query_results audit trail through SearchStore port; listing a scoped incident with no
+        #    query text is a page load, not a search, so it is not recorded
         try:
-            await search_store.persist_query(query_id, req.query)
-            if hits:
+            if req.query.strip():
+                await search_store.persist_query(query_id, req.query)
+            if hits and req.query.strip():
                 results_to_persist = [
                     {
                         "id": hit.result_id,
@@ -973,10 +1061,11 @@ def register_incident_search_routes(
     critic: CriticEvaluator | None = None,
     embedder: QueryEmbedder | None = None,
     critic_delay_seconds: float | None = None,
+    critic_enabled: bool | None = None,
 ) -> None:
     """Register POST /api/v1/incidents/search on the FastAPI application.
 
-    The search route is always-on with no feature flag, matching the MVP2 architecture specification.
+    The route is always registered; only its VLM critic is optional (``INCIDENT_SEARCH_CRITIC``, off by default).
     """
     try:
         app.include_router(
@@ -986,9 +1075,10 @@ def register_incident_search_routes(
                 critic=critic,
                 embedder=embedder,
                 critic_delay_seconds=critic_delay_seconds,
+                critic_enabled=critic_enabled,
             )
         )
-        logger.info("Registered POST /api/v1/incidents/search (Always-On Critic)")
+        logger.info("Registered POST /api/v1/incidents/search")
     except Exception as exc:
         logger.error("Failed to register incident search route: %s", exc, exc_info=True)
         raise

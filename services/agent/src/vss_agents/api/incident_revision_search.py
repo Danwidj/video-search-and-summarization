@@ -33,13 +33,12 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import FastAPI
 from fastapi import HTTPException
-import httpx
 from pydantic import BaseModel
 from pydantic import Field
 
 from vss_agents.api.incident_search import DefaultQueryEmbedder
-from vss_agents.api.incident_search import EmbeddingUnavailableError
 from vss_agents.api.incident_search import QueryEmbedder
+from vss_agents.api.incident_search import semantic_search
 from vss_agents.utils import incident_db
 
 logger = logging.getLogger(__name__)
@@ -85,17 +84,13 @@ def create_incident_revision_search_router(embedder: QueryEmbedder | None = None
         db = await incident_db.get_db()
         if db is None:
             raise HTTPException(status_code=503, detail="Incident database is not configured or unreachable")
-        try:
-            query_embedding = await query_embedder.embed_query(body.query)
-        except EmbeddingUnavailableError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            logger.error("Revision search query embedding failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Embedding endpoint failed: {exc}") from exc
 
-        rows: list[dict[str, Any]] = await db.search_revisions(
-            query_embedding, top_k=body.top_k, min_similarity=body.min_similarity
-        )
+        async def retrieve(query_embedding: list[float] | None) -> list[dict[str, Any]]:
+            if query_embedding is None:  # a blank query has nothing to rank
+                return []
+            return await db.search_revisions(query_embedding, top_k=body.top_k, min_similarity=body.min_similarity)
+
+        rows = await semantic_search(body.query, embedder=query_embedder, retrieve=retrieve)
         return [RevisionSearchHit.model_validate(row) for row in rows]
 
     return router

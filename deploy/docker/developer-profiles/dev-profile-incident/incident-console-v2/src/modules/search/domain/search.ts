@@ -4,8 +4,9 @@
 // Adapter: lib/adapters/agent/search.ts, over the vss-agent's POST
 // /api/v1/incidents/search (search-contract-v1, .docs/vm-api-contracts.md). The
 // agent embeds the query, ranks each video's searchable revision's evidence_crops
-// (the official one, else the newest) with search_evidence_items, runs the
-// always-on critic and records the query and its hits itself. These types are that
+// (the official one, else the newest) with search_evidence_items and records the
+// query and its hits itself. The VLM critic is dormant (off unless the agent sets
+// INCIDENT_SEARCH_CRITIC), so every hit's critic verdict is 'unverified'. These types are that
 // contract (services/agent/src/vss_agents/api/incident_search.py SearchRequest /
 // SearchResponse) in camelCase.
 
@@ -19,17 +20,19 @@ export interface EvidenceSearchFilters {
   maxSeverity?: number;
   /** All three when absent. */
   itemTypes?: EvidenceItemType[];
+  /** Searches only this video (videos.id). With it, the query may be empty: the video's evidence in video time order. */
+  videoId?: string;
 }
 
 /** An absent field takes the agent's default. */
 export interface EvidenceSearchRequest {
-  /** 1 to 500 characters. */
+  /** 1 to 500 characters; empty only with filters.videoId. */
   query: string;
   /** 1 to 50; default 10. */
   topK?: number;
-  /** 0 to 1; default 0, so no cutoff (the critic judges relevance). */
+  /** 0 to 1; default 0, so no cutoff. */
   minSimilarity?: number;
-  /** Default true: hits the critic rejected are left out. */
+  /** Only meaningful when the agent's critic is on: leaves out the hits it rejected. */
   hideRejected?: boolean;
   filters?: EvidenceSearchFilters;
 }
@@ -37,9 +40,9 @@ export interface EvidenceSearchRequest {
 export interface EvidenceSearchHit {
   /** The hit's query_results id. */
   resultId: string;
-  /** From 1, numbered before rejected hits are left out. */
+  /** From 1. */
   rank: number;
-  /** 0 to 1. */
+  /** 0 to 1; 0 for a listing with no query. */
   similarityScore: number;
   item: {
     itemType: EvidenceItemType;

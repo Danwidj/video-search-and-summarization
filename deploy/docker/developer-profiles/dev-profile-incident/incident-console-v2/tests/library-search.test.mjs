@@ -41,14 +41,14 @@ test('a request becomes the agent body with only what was set', () => {
       topK: 20,
       minSimilarity: 0,
       hideRejected: false,
-      filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3 },
+      filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3, videoId: 'v1' },
     }),
     {
       query: 'knife',
       top_k: 20,
       min_similarity: 0,
       hide_rejected: false,
-      filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'] },
+      filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'], video_id: 'v1' },
     },
   );
 });
@@ -70,9 +70,8 @@ test('the contract fixture maps to camelCase hits keyed by video and run', () =>
 
 test('hits filter by threat and incident, group by incident and relate holder to item', () => {
   const { hits } = fromAgentSearchResponse(full);
-  assert.equal(filterHits(hits, { minThreat: 1, videoId: null }).length, hits.length);
-  assert.ok(filterHits(hits, { minThreat: 5, videoId: null }).every((hit) => (hit.item.threatLevel ?? 0) >= 5));
-  assert.deepEqual(filterHits(hits, { minThreat: 1, videoId: 'nope' }), []);
+  assert.equal(filterHits(hits, { minThreat: 1 }).length, hits.length);
+  assert.ok(filterHits(hits, { minThreat: 5 }).every((hit) => (hit.item.threatLevel ?? 0) >= 5));
   const groups = groupByIncident(hits);
   assert.equal(
     groups.reduce((total, group) => total + group.hits.length, 0),
@@ -125,12 +124,30 @@ test("/api/search asks the agent for every ranked hit and adds each video's sear
   };
   const response = await post({ query: ' blade ' });
   assert.equal(response.status, 200);
-  assert.deepEqual(agentBodies, [{ query: 'blade', top_k: 20, min_similarity: 0, hide_rejected: false }]);
+  assert.deepEqual(agentBodies, [{ query: 'blade', top_k: 20, min_similarity: 0 }]);
   const body = await response.json();
   assert.equal(body.hits.length, 2);
   const version = body.versions[summaries.reports[0].videoId];
   assert.equal(version.revisionNo, summaries.reports[0].revisionNo);
   assert.equal(version.isOfficial, summaries.reports[0].isOfficial);
+});
+
+test('/api/search with a videoId asks the agent for that incident only, and allows an empty query', async () => {
+  const agentBodies = [];
+  globalThis.fetch = async (url, init) => {
+    if (String(url) === 'http://agent.test/api/v1/incidents/search') {
+      agentBodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify(full), { status: 200 });
+    }
+    return new Response(JSON.stringify({ reports: [], total: 0 }), { status: 200 });
+  };
+  assert.equal((await post({ query: '', videoId: 'Assault007_x264' })).status, 200);
+  assert.equal((await post({ query: ' knife ', videoId: 'Assault007_x264' })).status, 200);
+  assert.deepEqual(agentBodies, [
+    { query: '', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
+    { query: 'knife', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
+  ]);
+  assert.equal((await post({ query: 'x', videoId: 'v'.repeat(65) })).status, 400);
 });
 
 test('/api/search refuses empty text and a missing agent, and reports an agent failure', async () => {
@@ -153,12 +170,12 @@ test('the viewer cuts its frame through the report frame route and falls back to
   assert.match(viewer, /<EvidenceFrame/);
 });
 
-test('rejected hits are hidden unless the switch shows them', async () => {
-  const { withoutRejected } = await import('../src/lib/library/search.ts');
-  const hits = [{ critic: { verdict: 'confirmed' } }, { critic: { verdict: 'rejected' } }, { critic: { verdict: 'unverified' } }];
-  assert.deepEqual(
-    withoutRejected(hits, false).map((hit) => hit.critic.verdict),
-    ['confirmed', 'unverified'],
-  );
-  assert.equal(withoutRejected(hits, true).length, 3);
+test('the evidence UI shows no critic verdict, and the incident card search loads that incident at once', () => {
+  const dir = join(process.cwd(), 'src', 'sections', 'library', 'components');
+  for (const file of ['HitCard/HitCard.tsx', 'HitViewer/HitViewer.tsx', 'EvidenceTab/EvidenceTab.tsx']) {
+    assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /critic|verdict|rejected/i, file);
+  }
+  const screen = readFileSync(join(dir, 'LibraryScreen', 'LibraryScreen.tsx'), 'utf8');
+  assert.match(screen, /void searchEvidence\('', item\.videoId\)/);
+  assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.videoId \?\? null\)/);
 });

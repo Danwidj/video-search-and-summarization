@@ -6,15 +6,7 @@ import { useMemo, useState } from 'react';
 import { HitCard } from '@/sections/library/components/HitCard';
 import { HitViewer } from '@/sections/library/components/HitViewer';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/sections/library/components/Shared';
-import {
-  ITEM_KINDS,
-  type LibrarySearchResponse,
-  filterHits,
-  groupByIncident,
-  hitKey,
-  relationshipOf,
-  withoutRejected,
-} from '@/lib/library/search';
+import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf } from '@/lib/library/search';
 import type { EvidenceItemType, EvidenceSearchHit } from '@/modules/search/domain/search';
 
 export interface EvidenceScope {
@@ -52,19 +44,18 @@ export function EvidenceTab({
   const [incidentType, setIncidentType] = useState('');
   const [grouped, setGrouped] = useState(false);
   const [viewing, setViewing] = useState<EvidenceSearchHit | null>(null);
-  const [showRejected, setShowRejected] = useState(false);
 
   const hits = result?.hits ?? [];
   const incidentTypes = useMemo(() => [...new Set(hits.map((hit) => hit.incident.incidentType).filter(Boolean))].sort(), [hits]);
-  const visible = useMemo(
+  const shown = useMemo(
     () =>
-      filterHits(hits, { minThreat, videoId: scope?.videoId ?? null }).filter(
+      filterHits(hits, { minThreat }).filter(
         (hit) => (kind === 'all' || hit.item.itemType === kind) && (!incidentType || hit.incident.incidentType === incidentType),
       ),
-    [hits, minThreat, scope, kind, incidentType],
+    [hits, minThreat, kind, incidentType],
   );
-  const rejected = visible.length - withoutRejected(visible, false).length;
-  const shown = useMemo(() => withoutRejected(visible, showRejected), [visible, showRejected]);
+  // A listing of one incident's evidence (no query) has no similarity to show.
+  const showMatch = submitted !== '';
   const versions = result?.versions ?? {};
   const card = (hit: EvidenceSearchHit) => (
     <HitCard
@@ -72,6 +63,7 @@ export function EvidenceTab({
       key={hitKey(hit)}
       onView={() => setViewing(hit)}
       relationship={relationshipOf(hit, hits)}
+      showMatch={showMatch}
       version={versions[hit.incident.videoId]}
     />
   );
@@ -82,7 +74,7 @@ export function EvidenceTab({
         className="flex flex-col gap-3 sm:flex-row"
         onSubmit={(event) => {
           event.preventDefault();
-          if (query.trim()) onSubmit();
+          if (query.trim() || scope) onSubmit();
         }}
       >
         <label className="flex-1">
@@ -98,7 +90,7 @@ export function EvidenceTab({
         </label>
         <button
           className="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          disabled={!query.trim() || loading}
+          disabled={(!query.trim() && !scope) || loading}
           type="submit"
         >
           Search
@@ -167,29 +159,21 @@ export function EvidenceTab({
         <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
           <h2 className="text-xl font-semibold">No evidence found.</h2>
           <p className="mt-2 text-sm text-ink/50">Try fewer words or a different kind filter.</p>
-          {rejected > 0 && (
-            <button aria-pressed={showRejected} className="action mt-4" onClick={() => setShowRejected(true)} type="button">
-              Show {rejected} rejected
-            </button>
-          )}
         </div>
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-ink/50" data-testid="hit-count">
-              {shown.length} {shown.length === 1 ? 'match' : 'matches'} for &ldquo;{submitted}&rdquo;
+              {showMatch ? (
+                <>
+                  {shown.length} {shown.length === 1 ? 'match' : 'matches'} for &ldquo;{submitted}&rdquo;
+                </>
+              ) : (
+                <>
+                  {shown.length} evidence {shown.length === 1 ? 'item' : 'items'}, in video order
+                </>
+              )}
             </p>
-            {rejected > 0 && (
-              <button
-                aria-pressed={showRejected}
-                className="action"
-                data-testid="rejected-toggle"
-                onClick={() => setShowRejected((value) => !value)}
-                type="button"
-              >
-                {showRejected ? `Hide ${rejected} rejected` : `Show ${rejected} rejected`}
-              </button>
-            )}
           </div>
           {grouped ? (
             <div className="mt-4 space-y-8">
@@ -208,7 +192,7 @@ export function EvidenceTab({
           )}
         </>
       )}
-      {viewing && <HitViewer hit={viewing} hits={hits} onClose={() => setViewing(null)} versions={versions} />}
+      {viewing && <HitViewer hit={viewing} hits={hits} onClose={() => setViewing(null)} showMatch={showMatch} versions={versions} />}
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 Specification for the PR 119 eval workstream ([MVP2 overview](README.md#pr-119---eval-system-vs-one-shot-baseline-retrieval)): what exists today, what each track measures, how it is scored and what it depends on. Items marked **proposal (P-n)** are not yet agreed; see [§8](#8-proposals-awaiting-approval).
 
+> **Note:** the search critic is no longer used: search runs without it (`INCIDENT_SEARCH_CRITIC`, off by default), so every hit is `unverified` and the critic material below describes dormant code.
+
 > **Handoff**
 > - **Owner:** the captain's teammate owns the retrieval eval, not the captain.
 > - **Start:** at [§10](#10-work-order-and-definition-of-done). Agree the [§8](#8-proposals-awaiting-approval) proposals first and record each in [`decisions.md`](../decisions.md).

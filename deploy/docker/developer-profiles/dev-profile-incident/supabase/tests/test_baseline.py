@@ -378,6 +378,22 @@ with tempfile.TemporaryDirectory() as tmp:
         assert searched(5) == [("v2", ai2, "E1")], searched(5)
         assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v2'")[0] is None
 
+    @test("search_evidence_items scopes to one video, and lists it in video time order with no query")
+    def _():
+        scoped = lambda video, index, min_similarity: conn.execute(
+            """SELECT incident_id, item_id, similarity_score FROM public.search_evidence_items(
+                %s::extensions.vector, 20, %s, p_video_id => %s)""",
+            (vector_literal(index) if index is not None else None, min_similarity, video)).fetchall()
+        # the query matches v2's crop best, but a scoped search still returns only the scoped video's rows
+        assert {row[0] for row in scoped("v1", 5, -1.0)} == {"v1"}
+        assert {row[0] for row in scoped("v2", 5, -1.0)} == {"v2"}
+        assert scoped("nope", 5, -1.0) == []
+        # no embedding: every crop of the video, in video time, similarity 0, whatever p_min_similarity says
+        listed = scoped("v1", None, 0.9)
+        assert [row[1] for row in listed] == ["I1", "E1"] and {row[2] for row in listed} == {0.0}, listed
+        assert len(conn.execute(
+            "SELECT 1 FROM public.search_evidence_items(%s::extensions.vector, 20, -1.0)", (vector_literal(5),)).fetchall()) >= 3
+
     @test("set_revision_crops refuses a revision that is not the searchable one, and bad input")
     def _():
         first_v3 = one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'v3'")[0]

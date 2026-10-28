@@ -23,14 +23,10 @@ export interface LibrarySearchResponse extends EvidenceSearchResult {
 export interface EvidenceFilters {
   /** Threat 1 to 5; hits below it, or with no threat level, are left out. */
   minThreat: number;
-  /** Keeps one incident's hits (the incident card's Search evidence). */
-  videoId: string | null;
 }
 
-export function filterHits(hits: EvidenceSearchHit[], { minThreat, videoId }: EvidenceFilters): EvidenceSearchHit[] {
-  return hits.filter(
-    (hit) => (!videoId || hit.incident.videoId === videoId) && (minThreat <= 1 || (hit.item.threatLevel ?? 0) >= minThreat),
-  );
+export function filterHits(hits: EvidenceSearchHit[], { minThreat }: EvidenceFilters): EvidenceSearchHit[] {
+  return hits.filter((hit) => minThreat <= 1 || (hit.item.threatLevel ?? 0) >= minThreat);
 }
 
 export interface HitRelationship {
@@ -77,11 +73,6 @@ export function groupByIncident(hits: EvidenceSearchHit[]): IncidentGroup[] {
     }
   }
   return [...groups.values()].sort((a, b) => b.best - a.best);
-}
-
-/** Hits with the critic's rejected verdict left out, unless the switch shows them. */
-export function withoutRejected(hits: EvidenceSearchHit[], showRejected: boolean): EvidenceSearchHit[] {
-  return showRejected ? hits : hits.filter((hit) => hit.critic.verdict !== 'rejected');
 }
 
 export const matchPercent = (hit: EvidenceSearchHit): number => Math.round(hit.similarityScore * 100);

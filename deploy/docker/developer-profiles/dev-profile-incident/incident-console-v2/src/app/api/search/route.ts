@@ -14,8 +14,9 @@ import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
-/** The agent's critic runs about a second per hit, so the page asks for a bounded list. */
+/** A search across every incident returns a bounded list; one incident's evidence is listed whole (the agent's cap is 50). */
 const TOP_K = 20;
+const SCOPED_TOP_K = 50;
 
 async function searchedVersions(
   config: ReturnType<typeof getServiceConfiguration>,
@@ -74,16 +75,21 @@ async function searchedVersions(
 
 export async function POST(request: Request) {
   try {
-    const input = (await request.json().catch(() => ({}))) as { query?: unknown };
+    const input = (await request.json().catch(() => ({}))) as { query?: unknown; videoId?: unknown };
     const query = typeof input.query === 'string' ? input.query.trim() : '';
-    if (!query || query.length > 500) return NextResponse.json({ error: 'Enter 1 to 500 characters to search for' }, { status: 400 });
+    const videoId = typeof input.videoId === 'string' ? input.videoId.trim() : '';
+    if (videoId.length > 64) return NextResponse.json({ error: 'Invalid incident id' }, { status: 400 });
+    // An empty query is the incident's evidence listing: only an incident-scoped search may be empty.
+    if ((!query && !videoId) || query.length > 500) {
+      return NextResponse.json({ error: 'Enter 1 to 500 characters to search for' }, { status: 400 });
+    }
     const config = getServiceConfiguration();
     if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured; the agent runs evidence search');
     const result = await new AgentSearchRepository(config.agentUrl, AbortSignal.timeout(115_000)).search({
       query,
-      topK: TOP_K,
+      topK: videoId ? SCOPED_TOP_K : TOP_K,
       minSimilarity: 0,
-      hideRejected: false,
+      ...(videoId ? { filters: { videoId } } : {}),
     });
     const versions = await searchedVersions(config, new Set(result.hits.map((hit) => hit.incident.videoId)));
     return NextResponse.json({ ...result, versions });

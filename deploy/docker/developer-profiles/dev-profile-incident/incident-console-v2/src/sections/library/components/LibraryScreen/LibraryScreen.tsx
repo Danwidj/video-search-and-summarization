@@ -157,9 +157,10 @@ export function Library() {
     }
   }
 
-  async function searchEvidence(text: string) {
+  /** One evidence search. With a videoId it covers only that incident, and an empty text lists the incident's evidence. */
+  async function searchEvidence(text: string, videoId: string | null = null) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && !videoId) return;
     const sequence = ++searchSequence.current;
     setSearching(true);
     setSearchError('');
@@ -168,7 +169,7 @@ export function Library() {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed }),
+        body: JSON.stringify({ query: trimmed, ...(videoId ? { videoId } : {}) }),
       });
       const payload = (await response.json()) as LibrarySearchResponse & { error?: string };
       if (!response.ok || !Array.isArray(payload.hits)) throw new Error(payload.error || 'Evidence search failed');
@@ -183,12 +184,29 @@ export function Library() {
   function chooseTab(next: Tab) {
     setTab(next);
     // The incident scope is temporary: it lasts only while the person stays in the evidence tab.
-    if (next === 'incidents') setScope(null);
+    if (next === 'incidents') clearScope();
   }
 
+  /** Leaves the incident scope; its result goes with it, and a typed query is searched again across every incident. */
+  function clearScope() {
+    if (!scope) return;
+    setScope(null);
+    if (evidenceQuery.trim()) void searchEvidence(evidenceQuery);
+    else {
+      searchSequence.current += 1;
+      setResult(null);
+      setSearching(false);
+      setSearchError('');
+      setSubmitted('');
+    }
+  }
+
+  /** "See evidence" on an incident card: that incident's evidence loads at once, and a typed query then searches only it. */
   function searchEvidenceIn(item: ReportLibraryItem) {
     setScope({ videoId: item.videoId, title: item.title || item.incident_type });
+    setEvidenceQuery('');
     setTab('evidence');
+    void searchEvidence('', item.videoId);
   }
 
   const chips = activeFilters(filters);
@@ -233,8 +251,8 @@ export function Library() {
             error={searchError}
             loading={searching}
             onQuery={setEvidenceQuery}
-            onScope={setScope}
-            onSubmit={() => void searchEvidence(evidenceQuery)}
+            onScope={(next) => (next ? setScope(next) : clearScope())}
+            onSubmit={() => void searchEvidence(evidenceQuery, scope?.videoId ?? null)}
             query={evidenceQuery}
             result={result}
             scope={scope}
@@ -385,6 +403,7 @@ export function Library() {
                       <button
                         className="action"
                         onClick={() => {
+                          setScope(null);
                           setEvidenceQuery(filters.search.trim());
                           setTab('evidence');
                           void searchEvidence(filters.search);

@@ -6,30 +6,8 @@ import Link from 'next/link';
 import { EvidenceFrame, KIND_COLOUR, KIND_LABEL } from '@/sections/evidence/components/EvidenceFrame';
 import { IncidentThumbnail, SeverityChip } from '@/sections/library/components/Shared';
 import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
-import type { CriticVerdict, EvidenceSearchHit } from '@/modules/search/domain/search';
+import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
-
-const VERDICT_LABEL: Record<CriticVerdict, string> = { confirmed: 'Confirmed', rejected: 'Rejected', unverified: 'Unverified' };
-const VERDICT_STYLE: Record<CriticVerdict, string> = {
-  confirmed: 'bg-moss/10 text-moss',
-  rejected: 'bg-clay/10 text-clay',
-  unverified: 'bg-ink/5 text-ink/60',
-};
-
-/** The critic's verdict on the hit; its rationale is the tooltip. */
-export function CriticBadge({ critic }: { critic: EvidenceSearchHit['critic'] }) {
-  const confidence = critic.confidence == null ? '' : ` ${Math.round(critic.confidence * 100)}%`;
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${VERDICT_STYLE[critic.verdict]}`}
-      data-testid="hit-verdict"
-      title={critic.rationale}
-    >
-      {VERDICT_LABEL[critic.verdict]}
-      {confidence}
-    </span>
-  );
-}
 
 export function RelationshipLine({ relationship }: { relationship: HitRelationship }) {
   const parts: string[] = [];
@@ -48,11 +26,14 @@ export function HitCard({
   version,
   relationship,
   onView,
+  showMatch = true,
 }: {
   hit: EvidenceSearchHit;
   version?: SearchedVersion;
   relationship: HitRelationship;
   onView: () => void;
+  /** False for a listing with no query, which has no similarity to show. */
+  showMatch?: boolean;
 }) {
   const { item, incident } = hit;
   return (
@@ -72,12 +53,14 @@ export function HitCard({
           seconds={item.timestampSeconds}
           src={item.cropImageUrl}
         />
-        <span
-          className="absolute right-1.5 top-1.5 rounded-full bg-ink px-2 py-0.5 text-[11px] font-bold text-white"
-          data-testid="hit-match"
-        >
-          {matchPercent(hit)}% match
-        </span>
+        {showMatch && (
+          <span
+            className="absolute right-1.5 top-1.5 rounded-full bg-ink px-2 py-0.5 text-[11px] font-bold text-white"
+            data-testid="hit-match"
+          >
+            {matchPercent(hit)}% match
+          </span>
+        )}
       </button>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -85,7 +68,6 @@ export function HitCard({
             <i className={`inline-block h-2 w-2 rounded-full ${KIND_COLOUR[item.itemType]}`} />
             {KIND_LABEL[item.itemType]}
           </span>
-          <CriticBadge critic={hit.critic} />
           <span className="font-mono text-ink/50">{item.itemId}</span>
           {item.threatLevel != null && <span className="text-ink/50">Threat {item.threatLevel}</span>}
           <span className="ml-auto font-mono text-ink/50">{formatClock(item.timestampSeconds)}</span>
