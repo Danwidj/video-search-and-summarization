@@ -76,7 +76,7 @@ export function IncidentCard({
             title={evidence === 0 ? 'This version has no evidence to search' : undefined}
             type="button"
           >
-            Search evidence
+            See evidence
           </button>
           <Link className="action" href={`/videos/${encodeURIComponent(item.videoId)}`} onClick={() => onOpen(item)}>
             History
