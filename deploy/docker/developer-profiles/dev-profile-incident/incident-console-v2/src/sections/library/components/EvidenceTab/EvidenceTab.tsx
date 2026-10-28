@@ -8,14 +8,22 @@ import { HitViewer } from '@/sections/library/components/HitViewer';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/sections/library/components/Shared';
 import { ITEM_KINDS, type LibrarySearchResponse, filterHits, groupByIncident, hitKey, relationshipOf } from '@/lib/library/search';
 import type { EvidenceItemType, EvidenceSearchHit } from '@/modules/search/domain/search';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
 export interface EvidenceScope {
   videoId: string;
   title: string;
+  filename?: string;
 }
 
 type Kind = 'all' | EvidenceItemType;
 const KIND_CHIP: Record<Kind, string> = { all: 'All', entity: 'Entities', instrument: 'Instruments', asset: 'Assets' };
+const PAGE_SIZE = 12;
 
 export function EvidenceTab({
   query,
@@ -27,6 +35,7 @@ export function EvidenceTab({
   result,
   loading,
   error,
+  onShowInIncidents,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -38,11 +47,13 @@ export function EvidenceTab({
   result: LibrarySearchResponse | null;
   loading: boolean;
   error: string;
+  onShowInIncidents?: (incident: EvidenceSearchHit['incident']) => void;
 }) {
   const [kind, setKind] = useState<Kind>('all');
   const [minThreat, setMinThreat] = useState(1);
   const [incidentType, setIncidentType] = useState('');
   const [grouped, setGrouped] = useState(false);
+  const [page, setPage] = useState(1);
   const [viewing, setViewing] = useState<EvidenceSearchHit | null>(null);
 
   const hits = result?.hits ?? [];
@@ -54,6 +65,13 @@ export function EvidenceTab({
       ),
     [hits, minThreat, kind, incidentType],
   );
+
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const paginatedHits = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return shown.slice(start, start + PAGE_SIZE);
+  }, [shown, page]);
+
   // A listing of one incident's evidence (no query) has no similarity to show.
   const showMatch = submitted !== '';
   const versions = result?.versions ?? {};
@@ -61,6 +79,7 @@ export function EvidenceTab({
     <HitCard
       hit={hit}
       key={hitKey(hit)}
+      onShowInIncidents={onShowInIncidents}
       onView={() => setViewing(hit)}
       relationship={relationshipOf(hit, hits)}
       showMatch={showMatch}
@@ -74,49 +93,54 @@ export function EvidenceTab({
         className="flex flex-col gap-3 sm:flex-row"
         onSubmit={(event) => {
           event.preventDefault();
-          if (query.trim() || scope) onSubmit();
+          if (query.trim() || scope) {
+            setPage(1);
+            onSubmit();
+          }
         }}
       >
-        <label className="flex-1">
-          <span className="sr-only">Find evidence</span>
-          <input
-            className="control"
+        <div className="relative flex-1">
+          <Input
+            className="h-10 bg-white"
             maxLength={500}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Describe what you are looking for, e.g. a man holding a knife"
             type="search"
             value={query}
           />
-        </label>
-        <button
-          className="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          disabled={(!query.trim() && !scope) || loading}
-          type="submit"
-        >
+        </div>
+        <Button className="bg-ink font-semibold text-white hover:bg-ink/90" disabled={(!query.trim() && !scope) || loading} type="submit">
           Search
-        </button>
+        </Button>
       </form>
       <p className="mt-2 text-xs text-ink/50">
         Searches the official version of each incident, or the latest version when none is official.
       </p>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <fieldset aria-label="Evidence kind" className="m-0 flex gap-1.5 border-0 p-0">
-          {ITEM_KINDS.map((value) => (
-            <button
-              aria-pressed={kind === value}
-              className={`action ${kind === value ? 'bg-ink text-white' : 'bg-white'}`}
-              key={value}
-              onClick={() => setKind(value)}
-              type="button"
-            >
-              {KIND_CHIP[value]}
-            </button>
-          ))}
-        </fieldset>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Tabs
+          onValueChange={(val) => {
+            setKind(val as Kind);
+            setPage(1);
+          }}
+          value={kind}
+        >
+          <TabsList className="border border-ink/10 bg-white">
+            {ITEM_KINDS.map((value) => (
+              <TabsTrigger className="text-xs" key={value} value={value}>
+                {KIND_CHIP[value]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
         <div className="w-40">
           <Select
             label="Threat level"
-            onChange={(value) => setMinThreat(Number(value))}
+            onChange={(value) => {
+              setMinThreat(Number(value));
+              setPage(1);
+            }}
             options={[
               ['1', 'Any threat'],
               ['2', 'Threat 2+'],
@@ -127,22 +151,31 @@ export function EvidenceTab({
             value={String(minThreat)}
           />
         </div>
+
         <div className="w-44">
           <Select
             label="Incident type"
-            onChange={setIncidentType}
+            onChange={(val) => {
+              setIncidentType(val);
+              setPage(1);
+            }}
             options={[['', 'All incident types'], ...incidentTypes.map((value): [string, string] => [value, value])]}
             value={incidentType}
           />
         </div>
-        <label className="ml-auto flex items-center gap-2 text-sm">
-          <input checked={grouped} onChange={(event) => setGrouped(event.target.checked)} type="checkbox" />
-          Group by incident
-        </label>
+
+        <div className="ml-auto flex items-center gap-2">
+          <Checkbox checked={grouped} id="group-by-incident" onCheckedChange={(checked) => setGrouped(checked === true)} />
+          <Label className="cursor-pointer text-sm font-normal text-ink/80" htmlFor="group-by-incident">
+            Group by incident
+          </Label>
+        </div>
       </div>
+
       {scope && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink/55">
-          Searching only <FilterChip label={scope.title} onRemove={() => onScope(null)} />
+          Searching only{' '}
+          <FilterChip label={scope.filename ? `${scope.title} · ${scope.filename}` : scope.title} onRemove={() => onScope(null)} />
         </div>
       )}
 
@@ -152,12 +185,12 @@ export function EvidenceTab({
         <ErrorPanel message={error} onRetry={onSubmit} />
       ) : !result ? (
         <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
-          <h2 className="text-xl font-semibold">Search the evidence in every incident</h2>
+          <h2 className="text-xl font-semibold text-ink">Search the evidence in every incident</h2>
           <p className="mt-2 text-sm text-ink/50">Describe a person, object or place. Every ranked match is shown with its video time.</p>
         </div>
       ) : shown.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
-          <h2 className="text-xl font-semibold">No evidence found.</h2>
+          <h2 className="text-xl font-semibold text-ink">No evidence found.</h2>
           <p className="mt-2 text-sm text-ink/50">Try fewer words or a different kind filter.</p>
         </div>
       ) : (
@@ -175,6 +208,7 @@ export function EvidenceTab({
               )}
             </p>
           </div>
+
           {grouped ? (
             <div className="mt-4 space-y-8">
               {groupByIncident(shown).map((group) => (
@@ -183,15 +217,55 @@ export function EvidenceTab({
                     {group.incident.title || group.incident.incidentType}{' '}
                     <span className="font-mono text-xs font-normal text-ink/45">{group.videoId}</span>
                   </h2>
-                  <div className="mt-3 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div>
+                  <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div>
                 </section>
               ))}
             </div>
           ) : (
-            <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{shown.map(card)}</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{paginatedHits.map(card)}</div>
+          )}
+
+          {!grouped && shown.length > PAGE_SIZE && (
+            <nav aria-label="Evidence pages" className="mt-8 flex flex-col items-center gap-3">
+              <p className="text-xs text-ink/55">
+                Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, shown.length)} of {shown.length} items
+              </p>
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} size="sm" variant="outline">
+                      Previous
+                    </Button>
+                  </PaginationItem>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <PaginationItem key={p}>
+                      <Button
+                        className={p === page ? 'bg-ink text-white' : ''}
+                        onClick={() => setPage(p)}
+                        size="sm"
+                        variant={p === page ? 'default' : 'outline'}
+                      >
+                        {p}
+                      </Button>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <Button
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Next
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </nav>
           )}
         </>
       )}
+
       {viewing && <HitViewer hit={viewing} hits={hits} onClose={() => setViewing(null)} showMatch={showMatch} versions={versions} />}
     </div>
   );
