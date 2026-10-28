@@ -1,0 +1,147 @@
+{
+  "version": "v0.3",
+  "source_name": "Complete Ground Truth Labelling.xlsx",
+  "source_sha256": "7c3f1fcc186e2608887ea31fc9eda06178522c4525763f69d7e2b46032cc2a5c",
+  "prior_name": "Ground Truth Review Package v0.2.2.xlsx",
+  "prior_sha256": "02c2562e23a72708effe011c0b64122f3889d6c4b15b3f6b4ee8853f0f873b58",
+  "prior_state": {
+    "entries": 184,
+    "statuses": {
+      "Auto-verified": 62,
+      "Informational": 24,
+      "Pending": 98
+    },
+    "with_reviewer": 0,
+    "with_notes": 0,
+    "decisions": 0
+  },
+  "proposals_name": "ai-proposals-v0.2.jsonl",
+  "proposals_sha256": "a97beab560ae8619367e930acd523c61e06b4f2c81aa5abfc776350ecdf2194d",
+  "proposals": 98,
+  "prompt_sha256": "89a6d1b764eca5757f316bee9a2683cd9f28995731049561342b39d5a28b09e4",
+  "adjudication_name": "ai-adjudication-v0.3.jsonl",
+  "adjudication_sha256": "39a8377f83b259b9be27034769db0dfbe2020d459edbc9cf8fcb8537dde70125",
+  "adjudication_prompt_sha256": "ba9855784aae863e2d145076c3e4d811b6416eee0b9626cabd93db908e429619",
+  "entries_sha256": "5fb204d1c2c9d7a8e72781ccf5ee4025f4a1fdc05b0be8a79e5def85826c82de",
+  "records_sha256": "8e6ac07addbf2258ca0ff3868570510774f7bdf335a12ce1898cac305d1c00cb",
+  "git_sha": "3b4282d8e",
+  "generator": "gt_candidate_build.py v1",
+  "guidelines": "annotation-guidelines-v1.0",
+  "correction_prompt": "gt-correction-v1.0",
+  "generated_at": "2026-10-28T02:24:03+00:00",
+  "output_name": "Ground Truth AI-Adjudicated Candidate v0.3.xlsx",
+  "output_sha256": "fb1159773517accea2197d22c3144802eedcfbab7fe54bf1e5d44c016dca40eb",
+  "entries": 184,
+  "statuses": {
+    "AI-Accepted": 73,
+    "AI-Modified": 21,
+    "AI-Rejected": 4,
+    "Auto-verified": 62,
+    "Informational": 24
+  },
+  "applied": 120,
+  "applied_by_rule": {
+    "R02": 9,
+    "R03": 1,
+    "R05": 52,
+    "R10": 2,
+    "R20": 1,
+    "R21": 3,
+    "R23": 3,
+    "R25": 49
+  },
+  "ai_decisions": {
+    "keep_original": 38,
+    "propose_change": 55,
+    "uncertain": 5
+  },
+  "ai_proposal_problems": 0,
+  "problems": [],
+  "corrected_records": {
+    "gt_incidents": 80,
+    "gt_entities": 169,
+    "gt_instruments": 32,
+    "gt_assets": 97
+  },
+  "adjudication": {
+    "adjudicated": 98,
+    "valid": 98,
+    "invalid": 0,
+    "decisions": {
+      "ACCEPT": 73,
+      "MODIFY": 21,
+      "REJECT": 4
+    },
+    "impact": {
+      "high": 20,
+      "low": 66,
+      "medium": 12
+    },
+    "decisions_by_impact": {
+      "low": {
+        "ACCEPT": 51,
+        "MODIFY": 13,
+        "REJECT": 2
+      },
+      "medium": {
+        "ACCEPT": 7,
+        "MODIFY": 5
+      },
+      "high": {
+        "ACCEPT": 15,
+        "MODIFY": 3,
+        "REJECT": 2
+      }
+    },
+    "video_verified": 98,
+    "clips_inspected": 38,
+    "close_up_images_cited": 78,
+    "uncertain": [
+      "CL-0009",
+      "CL-0063",
+      "CL-0064",
+      "CL-0065",
+      "CL-0066",
+      "CL-0067",
+      "CL-0082",
+      "CL-0118",
+      "CL-0159",
+      "CL-0165"
+    ],
+    "unresolved": [],
+    "agrees_with_earlier_ai": 73,
+    "values_changed": 58,
+    "values_changed_by_group": {
+      "assets": 1,
+      "entities": 27,
+      "incident fields": 25,
+      "instruments": 5
+    },
+    "values_changed_by_rule": {
+      "R10": 2,
+      "R20": 1,
+      "R21": 3,
+      "R23": 3,
+      "R25": 49
+    },
+    "scoring_eligibility": {
+      "out_of_taxonomy_confirmed": [],
+      "severity_or_threat_changed": [
+        "CL-0009",
+        "CL-0029",
+        "CL-0038",
+        "CL-0118"
+      ],
+      "item_reclassified": [
+        "CL-0105",
+        "CL-0108"
+      ],
+      "item_names_changed": [
+        "CL-0052",
+        "CL-0133",
+        "CL-0159"
+      ]
+    }
+  },
+  "replaced_backup": null
+}

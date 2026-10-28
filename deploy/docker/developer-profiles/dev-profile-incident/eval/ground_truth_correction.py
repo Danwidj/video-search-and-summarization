@@ -44,7 +44,15 @@ import ground_truth_review as gtr
 from dataset_manifest import canonical_basename
 
 CORRECTION_PROMPT_VERSION = "gt-correction-v1.0"
-STATUSES = ("Pending", "Approved", "Rejected", "Auto-verified", "Informational")
+STATUSES = ("Pending", "Approved", "Rejected", "Auto-verified", "Informational", "AI-Accepted", "AI-Rejected",
+            "AI-Modified", "AI-Unresolved")
+# AI-assisted adjudication (gt-adjudication-v1.0, authorised by the owner): never a human decision.
+ADJUDICATION_STATUS = {"ACCEPT": "AI-Accepted", "REJECT": "AI-Rejected", "MODIFY": "AI-Modified",
+                       "UNRESOLVED": "AI-Unresolved"}
+ADJUDICATION_PROMPT_VERSION = "gt-adjudication-v1.0"
+ADJUDICATION_PROVENANCE = "AI-assisted, not human-reviewed"
+IMPACT = ("low", "medium", "high")
+LEVEL_FIELDS = ("Severity_Level", "Threat_Level")
 # Fields no entry may ever change, whatever its status or accepted value (user decision 2026-10-28).
 PROTECTED_FIELDS = ("Filename",)
 HUMAN_DECISIONS = ("Approved", "Rejected")
@@ -174,6 +182,107 @@ def validate_proposal(proposal: dict, change: gtr.Change, frames: dict | None) -
     return problems
 
 
+# --- AI-assisted adjudication (gt-adjudication-v1.0) --------------------------------------------
+
+def load_adjudication(path: Path) -> dict[str, dict]:
+    records: dict[str, dict] = {}
+    for line in path.read_text().splitlines():
+        if line.strip():
+            record = json.loads(line)
+            if record["change_id"] in records:
+                raise ValueError(f"{record['change_id']} is adjudicated twice")
+            records[record["change_id"]] = record
+    return records
+
+
+def _tile_times(evidence_file: Path) -> list[float] | None:
+    """Tile times of a cited image: a close-up's sidecar JSON, or the clip's ``frames.json`` for a contact sheet."""
+    sidecar = evidence_file.with_suffix(".json")
+    if sidecar.exists():
+        return json.loads(sidecar.read_text()).get("times")
+    frames = evidence_file.parent / "frames.json"
+    if frames.exists():
+        sheet = next((s for s in json.loads(frames.read_text())["sheets"] if s["file"] == evidence_file.name), None)
+        return sheet["times"] if sheet else None
+    return None
+
+
+def validate_adjudication(record: dict, change: gtr.Change, proposal: dict | None, *, base: Path,
+                          prompt_sha256: str) -> list[str]:
+    """Problems with one adjudication (empty when it may be applied)."""
+    problems = []
+    decision = record.get("decision")
+    if decision not in ADJUDICATION_STATUS:
+        return [f"decision {decision!r} not in {tuple(ADJUDICATION_STATUS)}"]
+    for key in ("incident_id", "record_id", "field", "rule"):
+        if str(record.get(key)) != str(getattr(change, key)):
+            problems.append(f"{key} {record.get(key)!r} does not match the change ({getattr(change, key)!r})")
+    ai_decision = (proposal or {}).get("decision")
+    value = record.get("final_value")
+    if decision == "REJECT" and ai_decision == "keep_original":
+        problems.append("REJECT of a keep_original proposal: use ACCEPT (keep) or MODIFY")
+    if decision == "ACCEPT" and ai_decision == "uncertain":
+        problems.append("ACCEPT of an uncertain proposal: use REJECT, MODIFY or UNRESOLVED")
+    if decision == "ACCEPT" and change.change_type == "needs_video_review":
+        expected = proposal.get("proposed_value") if ai_decision == "propose_change" else None
+        if value != expected:
+            problems.append("ACCEPT must carry the AI proposal's value unchanged (or null when it kept the original)")
+    if decision in ("REJECT", "UNRESOLVED") and value is not None:
+        problems.append(f"{decision} keeps the original: final_value must be null")
+    if decision == "MODIFY":
+        if change.rule == "R10":
+            problems.append("a reclassification (R10) is accepted or rejected as a whole, never modified")
+        elif value in (None, ""):
+            problems.append("MODIFY needs a final_value")
+        elif change.rule == "R22":
+            if not (isinstance(value, dict) and set(value) == set(NOTE_FIELDS)):
+                problems.append(f"R22 final_value must set exactly {NOTE_FIELDS}")
+        elif value == change.original_value or (gtr._num(value) is not None
+                                                  and gtr._num(value) == gtr._num(change.original_value)):
+            problems.append("MODIFY repeats the original value")
+        if change.field in LEVEL_FIELDS and value not in (1, 2, 3, 4, 5):
+            problems.append(f"{change.field} must be a whole number 1-5")
+    if change.field in PROTECTED_FIELDS and decision in ("ACCEPT", "MODIFY"):
+        problems.append(f"{change.field} is protected and is never modified")
+    if record.get("impact") not in IMPACT:
+        problems.append(f"impact {record.get('impact')!r} not in {IMPACT}")
+    if record.get("video_verified") is not True:
+        problems.append("every adjudication must be video-verified (a text-only assessment is not verification)")
+    evidence = record.get("evidence") or []
+    if not evidence:
+        problems.append("no evidence frames cited")
+    for item in evidence:
+        path = base / str(item.get("file", ""))
+        times = _tile_times(path) if path.exists() else None
+        if times is None:
+            problems.append(f"evidence file {item.get('file')!r} does not exist or has no tile times")
+        elif not any(abs(float(item.get("t", -999)) - t) <= 0.6 for t in times):
+            problems.append(f"evidence time {item.get('t')} is not a tile of {item.get('file')}")
+    if record.get("impact") == "high" and not any("gt_adjudication" in str(e.get("file")) for e in evidence):
+        problems.append("a high-impact decision needs a close-up (gt_frame_detail.py), not only a contact sheet")
+    if record.get("provenance") != ADJUDICATION_PROVENANCE:
+        problems.append(f"provenance must be {ADJUDICATION_PROVENANCE!r}")
+    if record.get("adjudication_prompt") != ADJUDICATION_PROMPT_VERSION or \
+            record.get("adjudication_prompt_sha256") != prompt_sha256:
+        problems.append("adjudication prompt version or SHA-256 does not match gt-adjudication-v1.0")
+    if not str(record.get("justification") or "").strip() or not str(record.get("blind_assessment") or "").strip():
+        problems.append("justification and blind_assessment are required")
+    return problems
+
+
+def adjudication_problems(entries: list[Entry]) -> list[str]:
+    """Cross-entry checks: linked entries decided alike."""
+    problems = []
+    by_group: dict[tuple, set] = {}
+    for entry in entries:
+        if entry.rule == "R10" and entry.adjudication:
+            by_group.setdefault((entry.incident_id, entry.rule), set()).add(entry.adjudication["decision"])
+    for (incident_id, rule), decisions in by_group.items():
+        if len(decisions) > 1:
+            problems.append(f"{incident_id} {rule}: the reclassification's entries were adjudicated differently")
+    return problems
+
+
 # --- prior decisions (carried forward, never discarded) ----------------------------------------
 
 def read_change_log(workbook) -> list[dict]:
@@ -224,6 +333,7 @@ class Entry:
     applied_value: object = None
     carried_from: str | None = None
     problems: list = field(default_factory=list)
+    adjudication: dict | None = None
 
 
 def _accepted(row: dict | None):
@@ -233,8 +343,8 @@ def _accepted(row: dict | None):
 
 def resolve(changes: list[gtr.Change], *, prior: dict[str, dict] | None, prior_name: str | None,
             verification: dict[str, tuple[bool, str]], proposals: dict[str, dict],
-            proposal_problems: dict[str, list[str]]) -> list[Entry]:
-    """One entry per change. A human decision always wins; nothing uncertain is ever applied."""
+            proposal_problems: dict[str, list[str]], adjudication: dict[str, dict] | None = None) -> list[Entry]:
+    """One entry per change. A human decision always wins, then a valid AI adjudication; nothing uncertain is applied."""
     entries = []
     for change in changes:
         row = (prior or {}).get(change.change_id)
@@ -253,8 +363,13 @@ def resolve(changes: list[gtr.Change], *, prior: dict[str, dict] | None, prior_n
             if not entry.problems and proposal["decision"] == "propose_change" \
                     and change.change_type == "needs_video_review":
                 entry.proposed_value = proposal["proposed_value"]
+        judged = (adjudication or {}).get(change.change_id)
+        if judged is not None:
+            entry.adjudication = judged
         if human in HUMAN_DECISIONS:
             entry.status = human
+        elif judged is not None and not judged.get("_problems"):
+            entry.status = ADJUDICATION_STATUS[judged["decision"]]
         elif change.change_type == "verified_correction" and ok:
             entry.status = "Auto-verified"
         elif change.change_type == "informational":
@@ -265,6 +380,16 @@ def resolve(changes: list[gtr.Change], *, prior: dict[str, dict] | None, prior_n
 
 
 def _applied(entry: Entry) -> tuple[bool, object]:
+    if entry.status == "AI-Modified" and entry.field not in PROTECTED_FIELDS:
+        return True, entry.adjudication["final_value"]
+    if entry.status == "AI-Accepted":
+        # The AI proposal as adjudicated: its value for a video-review entry (none when it kept the original),
+        # the audit's own proposal for a rule-based one (the R10 reclassification).
+        if entry.field in PROTECTED_FIELDS or entry.change_type == "informational":
+            return False, None
+        if entry.change_type == "needs_video_review":
+            return (False, None) if entry.problems or entry.proposed_value is None else (True, entry.proposed_value)
+        return True, entry.proposed_value
     if entry.status not in ("Approved", "Auto-verified") or entry.change_type == "informational":
         return False, None
     if entry.field in PROTECTED_FIELDS:

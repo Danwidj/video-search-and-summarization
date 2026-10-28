@@ -41,7 +41,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     snapshot = sub.add_parser("snapshot", help="Copy the workbook to a timestamped backup and log it.")
     snapshot.add_argument("--version", default="v0.1")
-    snapshot.add_argument("--kind", choices=("Review", "Candidate"), default="Review",
+    snapshot.add_argument("--kind", choices=("Review", "Candidate", "AI-Adjudicated Candidate"), default="Review",
                           help="Ground Truth Review <version> (PR 3) or Ground Truth Candidate <version> (PR 4)")
     snapshot.add_argument("--reason", required=True)
     sub.add_parser("list", help="Show the backup log.")

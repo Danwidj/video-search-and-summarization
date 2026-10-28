@@ -2,6 +2,21 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: The 98 Pending entries are resolved by AI-assisted adjudication into a separate, owner-approved candidate
+- **Decision (owner-authorised, `.docs/mvp2/resolve-ground-truth-proposals.md`):** the 98 Pending entries were adjudicated by AI under `gt-adjudication-v1.0`.
+  - **Method:** look first, then compare. Every entry was re-assessed on the video before the earlier AI proposal was read, and decided ACCEPT, REJECT, MODIFY or UNRESOLVED.
+  - **Evidence:** all 98 are video-verified (38 clips inspected, 78 close-up images from `scripts/gt_frame_detail.py`). Every high-impact decision cites a close-up.
+  - **Where the decisions live:** `ai-adjudication-v0.3.jsonl` (local), validated by `ground_truth_correction.validate_adjudication`, applied only to the separate **`Ground Truth AI-Adjudicated Candidate v0.3.xlsx`**.
+  - **Labels:** statuses `AI-Accepted`, `AI-Rejected`, `AI-Modified` and `AI-Unresolved`. Never "Approved", the Reviewer field is empty, and the provenance reads "AI-assisted, not human-reviewed".
+  - **Precedence:** a human decision always overrides an AI adjudication.
+  - **Freeze:** it re-validates the adjudication file (it never trusts the workbook's statuses). AI-unresolved entries block until the owner keeps their originals (`unresolved_keep_original` in the approval record). Uncertain adjudications mark their records `Uncertain` (A13). The owner's approval record is still required.
+- **Result:** ACCEPT 73, MODIFY 21, REJECT 4, UNRESOLVED 0; 58 values changed; 10 entries marked uncertain. Report: [`../eval/ground_truth/review/candidate-v0.3.md`](../eval/ground_truth/review/candidate-v0.3.md).
+- **Why:** the owner could not review 98 entries by hand. The look-first procedure, mandatory video evidence and validation keep the result visually grounded and traceable, and the separate candidate and approval record keep a human in control of what becomes ground truth.
+- **Rejected:**
+  - applying the earlier AI proposals as they stood;
+  - text-only adjudication;
+  - writing AI decisions as human approvals.
+
 ### 2026-10-28: Filename is a protected ground-truth field and is never modified
 - **Decision (user):** no correction may change `Filename`, whatever its source or review status. All suggested filename changes are discarded.
   - **R01** (a `_demo` presentation-copy name) is now `informational`, with no proposed value and status `Informational`. It records the alias only.

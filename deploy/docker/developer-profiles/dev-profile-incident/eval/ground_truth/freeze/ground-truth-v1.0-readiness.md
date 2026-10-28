@@ -4,16 +4,15 @@
 
 | Item | Value |
 |---|---|
-| Candidate workbook | `Ground Truth Candidate v0.2.1.xlsx` `84dbaeab1fd7027fd3ea1379792f3665d10baafe57fbad7fb718c6bb6222f93e` |
-| Review state | {'Auto-verified': 62, 'Informational': 24, 'Pending': 98} |
-| Records digest | `f521f50611c053b0d1bdf62885bd0ffde62a177d4de3d54f5517554ad9870c54` |
-| Records | {'gt_incidents': 80, 'gt_entities': 169, 'gt_instruments': 33, 'gt_assets': 96} |
+| Candidate workbook | `Ground Truth AI-Adjudicated Candidate v0.3.xlsx` `fb1159773517accea2197d22c3144802eedcfbab7fe54bf1e5d44c016dca40eb` |
+| Review state | {'AI-Accepted': 73, 'AI-Modified': 21, 'AI-Rejected': 4, 'Auto-verified': 62, 'Informational': 24} |
+| Records digest | `391fcd272bf224af258c543251030ab4457a153f89816d5ace8e37c57bdc24f5` |
+| Records | {'gt_incidents': 80, 'gt_entities': 169, 'gt_instruments': 32, 'gt_assets': 97} |
 | Split | split-v2: 25 dev / 55 test (excluded: none) |
-| Entries | {'Auto-verified': 62, 'Informational': 24, 'Pending': 98} |
+| Entries | {'AI-Accepted': 73, 'AI-Modified': 21, 'AI-Rejected': 4, 'Auto-verified': 62, 'Informational': 24} |
 
 ## Blocking
 
-- 98 entries still Pending (never treated as Approved): CL-0002, CL-0005, CL-0006, CL-0007, CL-0008, CL-0009, CL-0010, CL-0011, CL-0012, CL-0015 …
 - no approval record: the final annotations and exclusions have not been approved
 
 ## Validation

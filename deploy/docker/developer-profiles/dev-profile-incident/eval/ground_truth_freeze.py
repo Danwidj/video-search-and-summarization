@@ -173,8 +173,22 @@ def split_problems(split: dict, records: dict[str, list[dict]], *, expected=(25,
     return problems
 
 
-def blocking_issues(entries: list[gtc.Entry], schema: list[str], split: list[str]) -> list[str]:
+def blocking_issues(entries: list[gtc.Entry], schema: list[str], split: list[str], *,
+                    unresolved_keep_original=()) -> list[str]:
+    """Everything that stops a freeze. AI-unresolved entries block unless the approval record keeps their originals."""
     issues = []
+    unresolved = sorted(e.change_id for e in entries if e.status == "AI-Unresolved")
+    open_ = [c for c in unresolved if c not in set(unresolved_keep_original)]
+    if open_:
+        issues.append(f"{len(open_)} AI-unresolved entries need the owner's decision (or listing under "
+                      f"unresolved_keep_original in the approval record): {', '.join(open_)}")
+    stray = sorted(set(unresolved_keep_original) - set(unresolved))
+    if stray:
+        issues.append(f"approval record lists entries that are not AI-unresolved: {stray}")
+    invalid = [e.change_id for e in entries if e.adjudication and e.adjudication.get("_problems")
+               and e.status not in gtc.HUMAN_DECISIONS]
+    if invalid:
+        issues.append(f"invalid AI adjudications (not applied): {invalid}")
     pending = [e.change_id for e in entries if e.status == "Pending" and e.change_type != "informational"]
     if pending:
         issues.append(f"{len(pending)} entries still Pending (never treated as Approved): {', '.join(pending[:10])}"
@@ -204,6 +218,8 @@ def mark_uncertain(records: dict[str, list[dict]], entries: list[gtc.Entry]) -> 
     reviewer called it uncertain, carries ``Uncertain`` (unscored)."""
     flagged = {e.change_id for e in entries if e.status == "Approved" and not e.applied
                and (e.ai or {}).get("decision") == "uncertain"}
+    flagged |= {e.change_id for e in entries if e.status == "AI-Unresolved"
+                or (e.adjudication and e.adjudication.get("uncertain") and e.status.startswith("AI-"))}
     for sheet_records in records.values():
         for record in sheet_records:
             record["Uncertain"] = bool(flagged & set(record.get("_change_ids") or []))

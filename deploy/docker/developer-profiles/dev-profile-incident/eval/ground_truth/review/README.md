@@ -123,7 +123,30 @@ uv run python scripts/gt_candidate_build.py --prior "ground_truth/review/Ground 
 
 **Overrides:** `review-overrides-<version>.json` (local, gitignored, because it quotes annotation text) holds the suggested pronoun fixes and case-specific recommendations.
 
-**Current package: `Ground Truth Review Package v0.2.2.xlsx`** (built from Candidate v0.2.1), with the P1 flags. **`Filename` is a protected field** (decision 2026-10-28): the 24 `_demo` filename entries (R01) are informational, never applied, and listed with the grey rows. Packages v0.2 and v0.2.1 and Candidate v0.2 are superseded and unchanged, and hold no decisions.
+**Current state (2026-10-28):** the 98 entries are adjudicated into **`Ground Truth AI-Adjudicated Candidate v0.3.xlsx`** ([below](#ai-assisted-adjudication-2026-10-28)), awaiting the owner's approval. **Package v0.2.2:** `Ground Truth Review Package v0.2.2.xlsx` (built from Candidate v0.2.1), with the P1 flags. **`Filename` is a protected field** (decision 2026-10-28): the 24 `_demo` filename entries (R01) are informational, never applied, and listed with the grey rows. Packages v0.2 and v0.2.1 and Candidate v0.2 are superseded and unchanged, and hold no decisions.
+
+## AI-assisted adjudication (2026-10-28)
+
+The owner authorised AI-assisted adjudication of the 98 Pending entries (`.docs/mvp2/resolve-ground-truth-proposals.md`):
+- **Instructions:** [`gt-adjudication-v1.0`](../correction_prompts/gt-adjudication-v1.0.md).
+- **Close-up tool:** `scripts/gt_frame_detail.py`, for any time range at any frame rate, enlarged.
+- **Records:** `ai-adjudication-v0.3.jsonl` (local, gitignored).
+
+```bash
+uv run python scripts/gt_candidate_build.py --prior "ground_truth/review/Ground Truth Review Package v0.2.2.xlsx" \
+    --proposals ground_truth/review/ai-proposals-v0.2.jsonl --adjudication ground_truth/review/ai-adjudication-v0.3.jsonl \
+    --version v0.3     # -> Ground Truth AI-Adjudicated Candidate v0.3.xlsx + candidate-v0.3.md
+uv run python scripts/gt_freeze.py --candidate "ground_truth/review/Ground Truth AI-Adjudicated Candidate v0.3.xlsx" \
+    --proposals ground_truth/review/ai-proposals-v0.2.jsonl --adjudication ground_truth/review/ai-adjudication-v0.3.jsonl
+```
+
+- **Every adjudication is validated:**
+  - a decision consistent with the earlier proposal;
+  - a final value valid for its field;
+  - video verified, with cited tiles that exist (a close-up for high impact);
+  - provenance and prompt SHA-256 present.
+- **An invalid adjudication is never applied.** The statuses are `AI-*`, the Reviewer stays empty, and a later human decision overrides any of them.
+- **The candidate's Change Log** shows, per entry: the decision, final value, impact, video verified, uncertain, justification, evidence and provenance.
 
 ## Backups (local, versioned)
 

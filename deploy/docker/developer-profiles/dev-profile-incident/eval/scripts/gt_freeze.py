@@ -61,7 +61,7 @@ import ground_truth_review as gtr  # noqa: E402
 import methodology  # noqa: E402
 import openpyxl  # noqa: E402
 import review_backup  # noqa: E402
-from gt_candidate_build import FRAMES_DIR, PROMPT_PATH  # noqa: E402
+from gt_candidate_build import FRAMES_DIR, PROMPT_PATH, load_checked_adjudication  # noqa: E402
 from gt_review_build import DEFAULT_MANIFEST, DEFAULT_OUT_DIR, DEFAULT_SOURCE, EVAL_DIR, sha256_file  # noqa: E402
 
 GENERATOR = "gt_freeze.py v1"
@@ -70,7 +70,8 @@ DEFAULT_OUT = EVAL_DIR / "eval_data" / "ground_truth"
 REPORT_DIR = EVAL_DIR / "ground_truth" / "freeze"
 
 
-def corrected(source: Path, manifest: dict, candidate: Path, proposals_path: Path, frames_dir: Path):
+def corrected(source: Path, manifest: dict, candidate: Path, proposals_path: Path, frames_dir: Path,
+              adjudication_path: Path | None = None):
     values = openpyxl.load_workbook(source, data_only=True)
     changes, _ = gtr.audit(values, manifest)
     log = gtc.read_change_log(openpyxl.load_workbook(candidate, data_only=True))
@@ -89,8 +90,11 @@ def corrected(source: Path, manifest: dict, candidate: Path, proposals_path: Pat
                                         if change_id in by_id else ["no such change"])
     # Only a person's Approved/Rejected is read from the workbook; Auto-verified is re-derived, never trusted.
     prior = {str(row["Change ID"]): row for row in log}
+    # AI-* statuses in the workbook are never trusted either: the adjudication file is re-validated here.
+    adjudication = load_checked_adjudication(adjudication_path, changes, proposals, base=EVAL_DIR) \
+        if adjudication_path else None
     entries = gtc.resolve(changes, prior=prior, prior_name=candidate.name, verification=verification,
-                          proposals=proposals, proposal_problems=proposal_problems)
+                          proposals=proposals, proposal_problems=proposal_problems, adjudication=adjudication)
     return entries, gtc.apply_to_records(gtr.read_data_rows(values), entries)
 
 
@@ -134,14 +138,15 @@ def report(result: dict) -> str:
 
 def freeze(source: Path, manifest_path: Path, candidate: Path, proposals: Path, split_paths: list[Path],
            out_root: Path, *, approval_path: Path | None = None, frames_dir: Path = FRAMES_DIR,
-           report_dir: Path | None = REPORT_DIR) -> dict:
-    gtc.guard_inputs([source, manifest_path, candidate, proposals, *split_paths])
+           report_dir: Path | None = REPORT_DIR, adjudication_path: Path | None = None) -> dict:
+    gtc.guard_inputs([source, manifest_path, candidate, proposals, *split_paths,
+                      *([adjudication_path] if adjudication_path else [])])
     out = out_root / gtf.VERSION
     if (out / "MANIFEST.json").exists() and json.loads((out / "MANIFEST.json").read_text()).get("status") == "frozen":
         raise review_backup.OverwriteRefusedError(f"{out} is frozen; a correction is a new version, never an overwrite")
     hashes = {p: sha256_file(p) for p in (source, candidate)}
     manifest = json.loads(manifest_path.read_text())
-    entries, records = corrected(source, manifest, candidate, proposals, frames_dir)
+    entries, records = corrected(source, manifest, candidate, proposals, frames_dir, adjudication_path)
     split = gtf.split_v2([json.loads(p.read_text()) for p in split_paths])
     approval = json.loads(approval_path.read_text()) if approval_path else None
     exclusions = sorted((approval or {}).get("exclusions") or [])
@@ -152,7 +157,8 @@ def freeze(source: Path, manifest_path: Path, candidate: Path, proposals: Path, 
         p for p in gtf.schema_problems(records, manifest) if not p.startswith("clips without")]
     split_issues = gtf.split_problems(split, records, expected=(len(split["dev"]), len(split["test"])) if exclusions
                                       else (25, 55))
-    issues = gtf.blocking_issues(entries, schema, split_issues)
+    issues = gtf.blocking_issues(entries, schema, split_issues,
+                                 unresolved_keep_original=(approval or {}).get("unresolved_keep_original") or [])
     status, reasons = gtf.freeze_status(issues, approval, workbook_sha256=hashes[candidate], records_sha256=records_sha,
                                         exclusions=exclusions)
     data = {"version": gtf.VERSION, "status": status, "guidelines": gtr.GUIDELINE_VERSION,
@@ -207,13 +213,14 @@ def main() -> int:
                         help="The latest reviewed candidate workbook (its statuses are the decisions)")
     parser.add_argument("--proposals", type=Path, help="AI proposals JSONL (default: ai-proposals-<candidate version>)")
     parser.add_argument("--approval", type=Path, help="Approval record; without it the output is a candidate")
+    parser.add_argument("--adjudication", type=Path, help="AI adjudication JSONL behind an AI-Adjudicated Candidate")
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
     version = args.candidate.stem.rsplit(" ", 1)[-1]
     proposals = args.proposals or args.candidate.parent / f"ai-proposals-{version}.jsonl"
     try:
         result = freeze(args.source, args.manifest, args.candidate, proposals, DEFAULT_SPLITS, args.out_root,
-                        approval_path=args.approval)
+                        approval_path=args.approval, adjudication_path=args.adjudication)
     except review_backup.OverwriteRefusedError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
