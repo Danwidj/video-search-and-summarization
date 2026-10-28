@@ -76,6 +76,16 @@ const savedTimestamp = (item: SavedItem | null): number => item?.timestampSecond
 const draftTimestamp = (item: DraftItem | null): number => item?.timestampSeconds ?? Number.POSITIVE_INFINITY;
 const pairTimestamp = (row: PairRow) => Math.min(draftTimestamp(row.b), savedTimestamp(row.a));
 
+function canonicalEntityRank(row: PairRow): [number, string] {
+  const id =
+    (row.b && 'canonicalId' in row.b && typeof row.b.canonicalId === 'string' ? row.b.canonicalId : null) ??
+    (row.a && isSavedEntity(row.a) ? row.a.entityId : null) ??
+    row.b?.sourceId ??
+    '';
+  const match = /^E(\d+)$/i.exec(id);
+  return match ? [parseInt(match[1], 10), id] : [Number.POSITIVE_INFINITY, id];
+}
+
 function pairCollection(kind: PairKind, saved: SavedItem[], draft: DraftItem[]): PairRow[] {
   const paired: PairRow[] = draft.map((item) => ({
     kind,
@@ -85,6 +95,16 @@ function pairCollection(kind: PairKind, saved: SavedItem[], draft: DraftItem[]):
   const onlyA: PairRow[] = saved
     .filter((candidate) => !draft.some((item) => item.sourceId === savedItemId(candidate)))
     .map((item) => ({ kind, a: item, b: null }));
+
+  if (kind === 'entity') {
+    return [...paired, ...onlyA].sort((left, right) => {
+      const [leftNum, leftId] = canonicalEntityRank(left);
+      const [rightNum, rightId] = canonicalEntityRank(right);
+      if (leftNum !== rightNum) return leftNum - rightNum;
+      return leftId.localeCompare(rightId, undefined, { numeric: true });
+    });
+  }
+
   return [...paired, ...onlyA].sort((left, right) => pairTimestamp(left) - pairTimestamp(right));
 }
 
@@ -176,6 +196,7 @@ const editableThreat = (value: number | null): number | null => (value !== null 
 function entityFromSaved(item: StructuredEntity, key: string): DraftEntity {
   return {
     key,
+    canonicalId: item.entityId,
     sourceId: item.entityId,
     timestampSeconds: item.timestampSeconds,
     label: item.label,
@@ -285,10 +306,11 @@ export function draftToStructured(draft: EditDraft): Structured {
     timestampSeconds: seconds,
     uploaded: false,
   });
+  const entityIdByKey = new Map(draft.entities.map((entity) => [entity.key, entity.canonicalId]));
   return {
     incident,
     entities: draft.entities.map((entity) => ({
-      entityId: entity.key,
+      entityId: entity.canonicalId,
       type: entity.type,
       description: entity.description,
       timestampSeconds: entity.timestampSeconds,
@@ -299,7 +321,7 @@ export function draftToStructured(draft: EditDraft): Structured {
     })),
     instruments: draft.instruments.map((instrument) => ({
       instrumentId: instrument.key,
-      entityId: instrument.holderKey,
+      entityId: instrument.holderKey ? (entityIdByKey.get(instrument.holderKey) ?? instrument.holderKey) : null,
       name: instrument.name,
       description: instrument.description,
       threatLevel: instrument.threat_level,

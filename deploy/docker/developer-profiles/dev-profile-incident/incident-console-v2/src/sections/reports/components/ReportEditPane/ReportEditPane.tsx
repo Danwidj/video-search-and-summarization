@@ -97,7 +97,10 @@ export function ReportEditPane({
     else patchAsset(item.key, frame);
     setPicking(null);
   };
-  const holderOptions = draft.entities.map((entity, index) => ({ key: entity.key, label: `${index + 1}. ${entity.label || entity.type}` }));
+  const holderOptions = draft.entities.map((entity, index) => ({
+    key: entity.key,
+    label: `${entity.canonicalId || index + 1} · ${entity.label || entity.type}`,
+  }));
   const draftHolder = (instrument: EditDraft['instruments'][number]) => {
     if (!instrument.holderKey) return 'unknown';
     const holder = draft.entities.find((entity) => entity.key === instrument.holderKey);

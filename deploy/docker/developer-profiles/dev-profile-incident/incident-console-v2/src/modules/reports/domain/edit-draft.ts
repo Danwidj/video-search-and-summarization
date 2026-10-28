@@ -67,7 +67,13 @@ export interface EditDraft {
     severity_level: number | null;
   };
   entities: Array<
-    { type: string; description: string; firstSeenSeconds: number | null; lastSeenSeconds: number | null } & DraftItemDetails
+    {
+      type: string;
+      description: string;
+      firstSeenSeconds: number | null;
+      lastSeenSeconds: number | null;
+      canonicalId: string;
+    } & DraftItemDetails
   >;
   instruments: Array<{ holderKey: string | null; name: string; description: string; threat_level: number | null } & DraftItemDetails>;
   assets: Array<{ name: string; description: string } & DraftItemDetails>;
@@ -78,6 +84,35 @@ export const newKey = (prefix: string) => {
   keySequence += 1;
   return `${prefix}-${Date.now().toString(36)}-${keySequence}`;
 };
+
+/** Compute the next sequential canonical entity ID (e.g. 'E1', 'E2', 'E3') that never collides. */
+export function nextCanonicalEntityId(items: Array<{ canonicalId?: string; sourceId?: string | null }>): string {
+  let max = 0;
+  for (const item of items) {
+    for (const raw of [item.canonicalId, item.sourceId]) {
+      if (!raw) continue;
+      const match = /^E(\d+)$/i.exec(raw);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > max) max = num;
+      }
+    }
+  }
+  return `E${max + 1}`;
+}
+
+/** Create a new draft entity with a sensible canonical ID that does not collide. */
+export function newEntityDraft(draft: EditDraft, overrides?: Partial<EditDraft['entities'][number]>): EditDraft['entities'][number] {
+  return {
+    ...newItemDetails('entity', draft),
+    canonicalId: nextCanonicalEntityId(draft.entities),
+    type: 'unknown',
+    description: '',
+    firstSeenSeconds: draft.incident.start_timestamp,
+    lastSeenSeconds: draft.incident.end_timestamp ?? draft.incident.start_timestamp,
+    ...overrides,
+  };
+}
 
 /** A new item's details: visible from the incident start, no label or image yet. */
 export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetails {
@@ -132,6 +167,7 @@ export function draftFromView(view: ReportView): EditDraft {
     },
     entities: entities.map((entity, index) => ({
       ...details(`entity-${index}`, entity.entityId, entity),
+      canonicalId: entity.entityId || `E${index + 1}`,
       type: (EDITABLE_ENTITY_TYPES as readonly string[]).includes(entity.type) ? entity.type : 'unknown',
       description: entity.description,
       // A revision saved before contract v4 has no span: start from the one second it is known to be visible.
