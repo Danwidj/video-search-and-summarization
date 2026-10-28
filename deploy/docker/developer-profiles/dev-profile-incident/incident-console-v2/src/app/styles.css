@@ -132,7 +132,7 @@
 }
 
 .ambient {
-  position: fixed;
+  position: absolute;
   border-radius: 9999px;
   filter: blur(1px);
   pointer-events: none;

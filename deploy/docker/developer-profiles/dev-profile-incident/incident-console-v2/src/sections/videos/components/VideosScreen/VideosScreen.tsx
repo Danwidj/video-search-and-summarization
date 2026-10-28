@@ -20,8 +20,8 @@ interface VideoItem {
   filename: string;
   uploadedAt: string | null;
   source: string | null;
-  analysesWithReport: number;
-  officialRunId: string | null;
+  revisions: number;
+  officialRevisionId: number | null;
 }
 
 /** Videos and their analysis history; `?filter=without-report` shows uploads with no successful analysis. */
@@ -60,7 +60,7 @@ export function VideosScreen() {
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">Videos</p>
       <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground">Uploaded videos</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Each video keeps its full analysis history. Reports list only successful analyses.
+        Each video keeps its full analysis history. Report versions come only from successful analyses.
       </p>
 
       <Tabs className="mt-6" onValueChange={(value) => go({ filter: value })} value={filter}>
@@ -85,6 +85,9 @@ export function VideosScreen() {
             {state.totalItems} {state.totalItems === 1 ? 'video' : 'videos'}
           </p>
           <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+            <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground sm:hidden">
+              Swipe the table sideways to see every column.
+            </p>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -103,10 +106,10 @@ export function VideosScreen() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{formatTimestamp(video.uploadedAt)}</TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {video.analysesWithReport} {video.analysesWithReport === 1 ? 'report' : 'reports'}
+                      {video.revisions} {video.revisions === 1 ? 'report version' : 'report versions'}
                     </TableCell>
                     <TableCell>
-                      {video.officialRunId ? (
+                      {video.officialRevisionId !== null ? (
                         <Badge className="text-xs font-bold" variant="default">
                           Official report selected
                         </Badge>

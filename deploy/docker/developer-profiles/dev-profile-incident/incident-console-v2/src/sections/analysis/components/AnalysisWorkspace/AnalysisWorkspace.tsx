@@ -208,9 +208,6 @@ export function AnalysisWorkspace() {
               </SelectContent>
             </Select>
           </label>
-          <p className="text-xs text-ink/45 sm:min-w-48 sm:flex-1 sm:text-right">
-            Choose before selecting a video. Analysis can take several minutes.
-          </p>
         </Card>
       )}
 
@@ -277,7 +274,7 @@ export function AnalysisWorkspace() {
             Drop a video here
           </span>
           <span className="mx-auto mt-3 block max-w-sm text-sm leading-6 text-muted-foreground">
-            MP4, MKV, MOV, or WebM. Analysis starts automatically after selection.
+            MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
           </span>
         </button>
       )}

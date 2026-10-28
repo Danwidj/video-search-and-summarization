@@ -491,7 +491,7 @@ function Heatmap({
   return (
     <TooltipProvider delayDuration={100}>
       <div className="overflow-x-auto">
-        <div className="min-w-[650px]">
+        <div className="min-w-[520px]">
           {DAYS.map((name, d) => (
             <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
               <span className="text-[10px]">{name}</span>
@@ -631,25 +631,25 @@ function Coverage({ rows }: { rows: ModelCoverage[] }) {
       <Table className="text-xs">
         <TableHeader>
           <TableRow className="border-b border-ink/8 hover:bg-transparent">
-            <TableHead className="h-auto py-1 pr-3 font-semibold text-ink/45">Model</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">With report</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">Valid</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">IDs repaired</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">Earlier</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">Contract failed</TableHead>
-            <TableHead className="h-auto px-2 text-ink/45">Request failed</TableHead>
+            <TableHead className="h-auto whitespace-normal py-1 pr-2 align-bottom font-semibold text-ink/45">Model</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">With report</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Valid</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">IDs repaired</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Earlier</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Contract failed</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink/45">Request failed</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <TableRow className="border-t border-ink/8 hover:bg-black/5" key={row.model}>
-              <TableCell className="max-w-[220px] truncate py-2 pr-3 font-semibold text-ink">{row.model}</TableCell>
-              <TableCell className="px-2">{row.withReport}</TableCell>
-              <TableCell className="px-2">{row.validFirstPass}</TableCell>
-              <TableCell className="px-2">{row.repaired}</TableCell>
-              <TableCell className="px-2">{row.legacy}</TableCell>
-              <TableCell className="px-2">{row.contractFailed}</TableCell>
-              <TableCell className="px-2">{row.requestFailed}</TableCell>
+              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>{row.model}</TableCell>
+              <TableCell className="px-1.5">{row.withReport}</TableCell>
+              <TableCell className="px-1.5">{row.validFirstPass}</TableCell>
+              <TableCell className="px-1.5">{row.repaired}</TableCell>
+              <TableCell className="px-1.5">{row.legacy}</TableCell>
+              <TableCell className="px-1.5">{row.contractFailed}</TableCell>
+              <TableCell className="px-1.5">{row.requestFailed}</TableCell>
             </TableRow>
           ))}
         </TableBody>
