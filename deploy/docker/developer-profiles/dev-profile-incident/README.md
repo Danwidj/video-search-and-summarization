@@ -35,7 +35,7 @@ Human-facing overview for the incident search and reporting profile. Coding agen
 - [Evaluation pipeline](eval/README.md)
 - [Incident contract (prompt + schema)](contracts/README.md)
 - [Experiment prompt registry (not the production contract)](contracts/experiments/README.md)
-- [Prompt experiment runner and guards](eval/experiments/README.md); [readiness and budget statement](eval/docs/experiments/readiness.md); [experiment decision record (D9–D15, Stage 0)](.docs/mvp2/experiment-decision-record.md); [local experiment agent](eval/experiments/agent/README.md)
+- [Prompt experiment runner and guards](eval/experiments/README.md); [readiness and budget statement](eval/docs/experiments/readiness.md); [experiment decision record (D9–D15, Stage 0)](.docs/mvp2/experiment-decision-record.md); [local experiment agent](eval/experiments/agent/README.md); [Stage 1 baseline results](eval/docs/experiments/stage1-baselines.md); [Stage 2 prompt-engineering plan (proposed)](eval/docs/experiments/stage2-plan.md)
 - [Supabase schema, SQL harness and midterm-to-finals copy](supabase/README.md); [frozen midterm record](supabase/midterm/README.md)
 - [Lifecycle scripts](.scripts/README.md)
 - [VM dotfiles](.dotfiles/README.md)

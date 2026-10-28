@@ -1,5 +1,13 @@
 # Ground-truth freeze (PR 5)
 
+## ground-truth-v1.0 as frozen (limitation)
+
+- **Frozen** on 2026-10-28 from `Ground Truth AI-Adjudicated Candidate v0.3` (candidate workbook `fb115977…`, records `391fcd27…`, adjudication `39a8377f…`).
+- **Approval:** the owner approved it **at the dataset level**, on the documented AI-assisted adjudication process. The approval record says `approval_scope: dataset-level` and `individually_human_verified: false`.
+- **No annotation was individually reviewed by a person.** The labels are an AI-assisted reference, not human-verified ground truth. Every result built on them must say so.
+- **The freeze is immutable:** a correction means `ground-truth-v1.1` and a re-score of every compared configuration, never an edit made because of model outputs.
+- **Local copy:** the frozen output and its `MANIFEST.json` are in `eval_data/ground_truth/ground-truth-v1.0/` (not in git). A copy of the MANIFEST is tracked here as `ground-truth-v1.0-MANIFEST.json`.
+
 `ground-truth-v1.0` is built from the unchanged source workbook plus the review decisions in the latest reviewed candidate workbook (`../review/Ground Truth Candidate <version>.xlsx`). It is **frozen only when you approve it**. Until then the output is a `candidate`, which the loader refuses for reported results.
 
 | File | In git | What |

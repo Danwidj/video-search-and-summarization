@@ -4,7 +4,8 @@
 > - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
 > - **D10 and D15:** approved as implemented.
 > - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
-> - **Stage 1:** readiness done ([stage1-readiness.md](../../eval/docs/experiments/stage1-readiness.md)): judge caps derived (1,710 per config) and enforced; waits for the frozen ground truth.
+> - **Stage 1:** **ran 2026-10-28** on the frozen `ground-truth-v1.0` (AI-assisted, approved at the dataset level, not individually human-verified). Results: [`stage1-baselines.md`](../../eval/docs/experiments/stage1-baselines.md).
+> - **Stage 2:** proposed, not run: [`stage2-plan.md`](../../eval/docs/experiments/stage2-plan.md). It waits for the owner's decisions S2-A (item matching), S2-B (top-up of failed runs) and S2-C (E6).
 > - **Stage 0:** **ran 2026-10-27** on the sponsor-provided gateway (configured $0 per token; infrastructure cost unknown). Results: [`stage0-pilot.md`](../../eval/docs/experiments/stage0-pilot.md).
 > - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
 

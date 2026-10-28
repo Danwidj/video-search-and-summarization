@@ -137,6 +137,10 @@ def test_stage1_token_cap_fits_every_call_at_the_pilot_maximum(tmp_path):
     (524, "<html>origin timeout</html>", "timeout"), (522, None, "timeout"), (504, {"detail": "x"}, "timeout"),
     (500, {"detail": "Analysis failed: P1 call returned HTTP 524: <!DOCTYPE html>"}, "timeout"),
     (500, {"detail": "Analysis failed: boom"}, "http_error"), (429, {}, "rate_limited"),
+    # Stage 1 found the agent wrapping an upstream LiteLLM 429 in a 500: it is a rate limit, not an HTTP error.
+    (500, {"detail": "P1 call returned HTTP 429: {\"error\":{\"message\":\"litellm.RateLimitError\"}}"},
+     "rate_limited"),
+    (500, {"detail": "P1 call returned HTTP 502: bad gateway"}, "http_error"),
 ])
 def test_gateway_timeouts_are_timeouts_in_the_vss_arm(status, body, kind):
     result = er.vss_chat_result(er.VSSResponse(status, body, 100.0), prompt_id="p1-v4-base", prompt_sha256="x",

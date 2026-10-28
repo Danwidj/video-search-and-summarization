@@ -2,6 +2,22 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: ground-truth-v1.0 is frozen on the owner's dataset-level approval of the AI-assisted adjudication; Stage 1 ran
+- **Decision (owner, 2026-10-28):** `ground-truth-v1.0` is frozen from `Ground Truth AI-Adjudicated Candidate v0.3` (records `391fcd27…`).
+  - **Basis:** the owner approved it **at the dataset level**, on the documented adjudication process (#231), and accepted the remaining risk of annotation errors given the project timeline.
+  - **The approval record** (`eval/ground_truth/freeze/ground-truth-v1.0-approval.json`) says this explicitly: `approval_scope: dataset-level`, `individually_human_verified: false`. It was written by the assistant on the owner's instruction. No individual human review is claimed, and the Reviewer fields stay empty.
+- **Methodological limitation (disclosed in every result):** the reference labels are AI-assisted and not human-verified annotation by annotation. Every accuracy figure is accuracy against that reference. The ground truth is never changed because of model outputs or scores; a genuine error found later means `v1.1` and a re-score of every compared configuration.
+- **Stage 1 ran** on the frozen ground truth (100 P1 attempts, dev only, [results](../eval/docs/experiments/stage1-baselines.md)).
+  - **Reliability:** 34 of 100 video-runs were lost to gateway 429s and 524s.
+  - **Parity:** the arms are in parity on five fields. The description difference is upstream non-determinism, not a pipeline effect.
+  - **Items:** item F1 is at the floor at the 0.75 matching threshold. This is a measurement-validity finding raised for the owner as Stage 2 decision S2-A; the methodology is unchanged.
+- **Runner fix:** the agent wraps an upstream 429 in a 500, which the runner recorded as `http_error`. It is now classified as `rate_limited` (`_upstream_status`). The stored Stage 1 records are unchanged, and the report reclassifies them from the stored error text.
+- **Rejected:**
+  - waiting for full human verification (no time in the project timeline);
+  - presenting the labels as human-verified;
+  - editing stored results.
+- **Links:** [`../eval/ground_truth/freeze/README.md`](../eval/ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation); [`../eval/docs/experiments/stage1-baselines.md`](../eval/docs/experiments/stage1-baselines.md); [`../eval/docs/experiments/stage2-plan.md`](../eval/docs/experiments/stage2-plan.md).
+
 ### 2026-10-28: The 98 Pending entries are resolved by AI-assisted adjudication into a separate, owner-approved candidate
 - **Decision (owner-authorised, `.docs/mvp2/resolve-ground-truth-proposals.md`):** the 98 Pending entries were adjudicated by AI under `gt-adjudication-v1.0`.
   - **Method:** look first, then compare. Every entry was re-assessed on the video before the earlier AI proposal was read, and decided ACCEPT, REJECT, MODIFY or UNRESOLVED.
