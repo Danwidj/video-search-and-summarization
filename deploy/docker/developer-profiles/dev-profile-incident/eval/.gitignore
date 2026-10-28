@@ -23,3 +23,5 @@ ground_truth/review/backups/
 ground_truth/review/ai-proposals-*.jsonl
 # Review-package overrides (suggested pronoun fixes, case notes) quote annotation text too.
 ground_truth/review/review-overrides-*.json
+# AI-assisted adjudication records (gt-adjudication-v1.0) quote and rewrite annotation text: local only.
+ground_truth/review/ai-adjudication-*.jsonl

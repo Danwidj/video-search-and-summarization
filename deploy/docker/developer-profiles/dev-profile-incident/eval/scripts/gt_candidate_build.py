@@ -79,7 +79,11 @@ DEFAULT_PRIOR = DEFAULT_OUT_DIR / "Ground Truth Review v0.1.xlsx"
 FRAMES_DIR = EVAL_DIR / "eval_data" / "gt_frames"
 PROMPT_PATH = EVAL_DIR / "ground_truth" / "correction_prompts" / f"{gtc.CORRECTION_PROMPT_VERSION}.md"
 EXTRA_COLUMNS = ["Applied in candidate", "Applied value", "Independent verification", "AI decision", "AI confidence",
-                 "AI explanation", "AI reviewer and prompt", "AI proposal problems", "Accepted value", "Carried from"]
+                 "AI explanation", "AI reviewer and prompt", "AI proposal problems", "Accepted value", "Carried from",
+                 "Adjudication decision", "Adjudicated final value", "Impact", "Video verified", "Adjudication uncertain",
+                 "Adjudication justification", "Adjudication evidence", "Adjudication provenance",
+                 "Adjudication problems"]
+ADJUDICATION_PROMPT_PATH = EVAL_DIR / "ground_truth" / "correction_prompts" / f"{gtc.ADJUDICATION_PROMPT_VERSION}.md"
 PENDING_FILL = PatternFill("solid", fgColor="F8CBAD")
 
 
@@ -168,6 +172,16 @@ def apply_entries(workbook, entries: list[gtc.Entry]) -> None:
             ws.cell(row, ids_col).value = ", ".join(e.change_id for e in row_entries)
 
 
+def _adjudication_cells(e: gtc.Entry) -> list:
+    a = e.adjudication
+    if not a:
+        return [None] * 9
+    evidence = "; ".join(f"{x.get('file')} @{x.get('t')}s: {x.get('observation', '')}" for x in a.get("evidence") or [])
+    return [a.get("decision"), _display(a.get("final_value")) if a.get("final_value") is not None else None,
+            a.get("impact"), "yes" if a.get("video_verified") else "no", "yes" if a.get("uncertain") else "no",
+            a.get("justification"), evidence, a.get("provenance"), "; ".join(a.get("_problems") or []) or None]
+
+
 def add_change_log(workbook, entries: list[gtc.Entry]) -> None:
     ws = workbook.create_sheet("Change Log", 0)
     ws.append(LOG_COLUMNS + EXTRA_COLUMNS)
@@ -186,7 +200,7 @@ def add_change_log(workbook, entries: list[gtc.Entry]) -> None:
             ai.get("decision", ""), ai.get("confidence", ""), ai.get("explanation", ""),
             f"{reviewer.get('model', '')} / {ai.get('correction_prompt', '')}" if ai else "",
             "; ".join(e.problems), _display(e.accepted_value) if e.accepted_value is not None else None,
-            e.carried_from,
+            e.carried_from, *_adjudication_cells(e),
         ])
         ws.cell(ws.max_row, 9).fill = FILLS[rule_type]
         if e.applied:
@@ -320,12 +334,80 @@ def report(entries: list[gtc.Entry], meta: dict, problems: list[str]) -> str:
     return "\n".join(lines)
 
 
+def load_checked_adjudication(path: Path, changes: list, proposals: dict, *, base: Path) -> dict[str, dict]:
+    """The adjudication records, each with its validation problems under ``_problems`` (an invalid one is never applied)."""
+    records = gtc.load_adjudication(path)
+    by_id = {c.change_id: c for c in changes}
+    prompt_sha = sha256_file(ADJUDICATION_PROMPT_PATH)
+    for change_id, record in records.items():
+        change = by_id.get(change_id)
+        record["_problems"] = ["no such change"] if change is None else gtc.validate_adjudication(
+            record, change, proposals.get(change_id), base=base, prompt_sha256=prompt_sha)
+    return records
+
+
+FIELD_GROUP = {"gt_incidents": "incident fields", "gt_entities": "entities", "gt_instruments": "instruments",
+               "gt_assets": "assets"}
+
+
+def adjudication_summary(entries: list[gtc.Entry]) -> dict:
+    """Counts only (no annotation text): decisions, impact, verification, agreement, what changed, eligibility."""
+    judged = [e for e in entries if e.adjudication]
+    valid = [e for e in judged if not e.adjudication.get("_problems")]
+    applied = [e for e in valid if e.applied]
+    oot = [e.change_id for e in applied if e.rule == "R22" and (e.applied_value or {}).get("Out_Of_Taxonomy")]
+    return {
+        "adjudicated": len(judged), "valid": len(valid), "invalid": len(judged) - len(valid),
+        "decisions": dict(sorted(Counter(e.adjudication["decision"] for e in valid).items())),
+        "impact": dict(sorted(Counter(e.adjudication["impact"] for e in valid).items())),
+        "decisions_by_impact": {i: dict(sorted(Counter(e.adjudication["decision"] for e in valid
+                                                       if e.adjudication["impact"] == i).items())) for i in gtc.IMPACT},
+        "video_verified": sum(bool(e.adjudication.get("video_verified")) for e in valid),
+        "clips_inspected": len({e.incident_id for e in valid if e.adjudication.get("video_verified")}),
+        "close_up_images_cited": len({x["file"] for e in valid for x in e.adjudication.get("evidence") or []
+                                      if "gt_adjudication" in str(x.get("file"))}),
+        "uncertain": sorted(e.change_id for e in valid if e.adjudication.get("uncertain")),
+        "unresolved": sorted(e.change_id for e in valid if e.adjudication["decision"] == "UNRESOLVED"),
+        "agrees_with_earlier_ai": sum(bool(e.adjudication.get("agrees_with_ai")) for e in valid),
+        "values_changed": len(applied),
+        "values_changed_by_group": dict(sorted(Counter(FIELD_GROUP[e.sheet] for e in applied).items())),
+        "values_changed_by_rule": dict(sorted(Counter(e.rule for e in applied).items())),
+        "scoring_eligibility": {
+            "out_of_taxonomy_confirmed": oot,
+            "severity_or_threat_changed": sorted(e.change_id for e in applied if e.field in gtc.LEVEL_FIELDS),
+            "item_reclassified": sorted(e.change_id for e in applied if e.rule == "R10"),
+            "item_names_changed": sorted(e.change_id for e in applied if e.rule == "R21"),
+        },
+    }
+
+
+def adjudication_report(summary: dict) -> str:
+    s = summary
+    lines = ["", "## AI-assisted adjudication (gt-adjudication-v1.0)", "",
+             "> Decisions are **AI-assisted, not human-reviewed**. They are applied only to this separate AI-Adjudicated "
+             "Candidate; the Reviewer field stays empty. The owner approves the candidate before any freeze.", "",
+             f"- Adjudicated: {s['adjudicated']} (valid {s['valid']}, invalid {s['invalid']}).",
+             f"- Decisions: {s['decisions']}. By impact: {s['decisions_by_impact']}.",
+             f"- Video-verified: {s['video_verified']} entries, {s['clips_inspected']} clips inspected, "
+             f"{s['close_up_images_cited']} close-up images cited.",
+             f"- Unresolved (original kept, escalated): {', '.join(s['unresolved']) or 'none'}. "
+             f"Uncertain: {', '.join(s['uncertain']) or 'none'}.",
+             f"- Agreement with the earlier AI proposal: {s['agrees_with_earlier_ai']} of {s['valid']}.",
+             f"- Values changed: {s['values_changed']} ({s['values_changed_by_group']}; by rule "
+             f"{s['values_changed_by_rule']}).",
+             f"- Scoring eligibility: {s['scoring_eligibility']}.", ""]
+    return "\n".join(lines)
+
+
 def build(source: Path, manifest_path: Path, prior: Path, proposals_path: Path, out_dir: Path, version: str, *,
-          overwrite: bool = False, frames_dir: Path = FRAMES_DIR) -> dict:
-    output = out_dir / f"Ground Truth Candidate {version}.xlsx"
+          overwrite: bool = False, frames_dir: Path = FRAMES_DIR, adjudication_path: Path | None = None) -> dict:
+    # An AI-adjudicated candidate is a separate, clearly named workbook (never a human-reviewed one).
+    label = "AI-Adjudicated Candidate" if adjudication_path else "Candidate"
+    output = out_dir / f"Ground Truth {label} {version}.xlsx"
     if output.resolve() in (source.resolve(), prior.resolve()):
         raise review_backup.OverwriteRefusedError("the candidate must be a new file, not an input")
-    gtc.guard_inputs([source, manifest_path, prior, proposals_path, frames_dir])
+    gtc.guard_inputs([source, manifest_path, prior, proposals_path, frames_dir, *( [adjudication_path]
+                                                                                  if adjudication_path else [])])
     previous_state = review_backup.guard_overwrite(output, overwrite=overwrite, discard_review_decisions=False)
     hashes = {path: sha256_file(path) for path in (source, prior)}
     manifest = json.loads(manifest_path.read_text())
@@ -350,9 +432,13 @@ def build(source: Path, manifest_path: Path, prior: Path, proposals_path: Path, 
         frames_file = frames_dir / change.incident_id / "frames.json"
         frames = json.loads(frames_file.read_text()) if frames_file.exists() else None
         proposal_problems[change_id] = gtc.validate_proposal(proposal, change, frames)
+    adjudication = load_checked_adjudication(adjudication_path, changes, proposals, base=EVAL_DIR) \
+        if adjudication_path else None
     entries = gtc.resolve(changes, prior=prior_by_id, prior_name=prior.name, verification=verification,
-                          proposals=proposals, proposal_problems=proposal_problems)
-    problems = gtc.consistency_problems(entries)
+                          proposals=proposals, proposal_problems=proposal_problems, adjudication=adjudication)
+    problems = gtc.consistency_problems(entries) + gtc.adjudication_problems(entries)
+    problems += [f"{cid}: adjudication invalid: {'; '.join(r['_problems'])}" for cid, r in (adjudication or {}).items()
+                 if r["_problems"]]
     problems += [f"{cid}: {p}" for cid, ps in proposal_problems.items() if cid not in by_id for p in ps]
     records = gtc.apply_to_records(gtr.read_data_rows(values), entries)
 
@@ -375,6 +461,9 @@ def build(source: Path, manifest_path: Path, prior: Path, proposals_path: Path, 
         "proposals_sha256": sha256_file(proposals_path) if proposals_path.exists() else None,
         "proposals": len(proposals),
         "prompt_sha256": sha256_file(PROMPT_PATH),
+        "adjudication_name": adjudication_path.name if adjudication_path else None,
+        "adjudication_sha256": sha256_file(adjudication_path) if adjudication_path else None,
+        "adjudication_prompt_sha256": sha256_file(ADJUDICATION_PROMPT_PATH) if adjudication_path else None,
         "entries_sha256": gtc.entries_digest(entries),
         "records_sha256": gtc.records_digest(records),
         "git_sha": git_sha,
@@ -405,10 +494,14 @@ def build(source: Path, manifest_path: Path, prior: Path, proposals_path: Path, 
         "ai_proposal_problems": sum(bool(e.problems) for e in entries),
         "problems": problems,
         "corrected_records": {sheet: len(rows) for sheet, rows in records.items()},
+        "adjudication": adjudication_summary(entries) if adjudication_path else None,
         "replaced_backup": backup_record["backup"] if backup_record else None,
     }
     (out_dir / f"candidate-{version}-manifest.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
-    (out_dir / f"candidate-{version}.md").write_text(report(entries, meta, problems))
+    text = report(entries, meta, problems)
+    if adjudication_path:
+        text += adjudication_report(result["adjudication"])
+    (out_dir / f"candidate-{version}.md").write_text(text)
     return result
 
 
@@ -418,6 +511,8 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--prior", type=Path, default=DEFAULT_PRIOR, help="Review workbook whose decisions carry forward")
     parser.add_argument("--proposals", type=Path, help="AI proposals JSONL (default ai-proposals-<version>.jsonl)")
+    parser.add_argument("--adjudication", type=Path,
+                        help="AI adjudication JSONL (gt-adjudication-v1.0): builds a separate AI-Adjudicated Candidate")
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--version", default="v0.2")
     parser.add_argument("--overwrite", action="store_true",
@@ -426,7 +521,7 @@ def main() -> int:
     proposals = args.proposals or args.out_dir / f"ai-proposals-{args.version}.jsonl"
     try:
         result = build(args.source, args.manifest, args.prior, proposals, args.out_dir, args.version,
-                       overwrite=args.overwrite)
+                       overwrite=args.overwrite, adjudication_path=args.adjudication)
     except review_backup.OverwriteRefusedError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
