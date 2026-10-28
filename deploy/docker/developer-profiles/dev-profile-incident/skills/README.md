@@ -42,6 +42,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Search incident evidence, ask grounded follow-up questions, or refresh evidence crops | [`incident-search`](incident-search/SKILL.md) |
 | Change or inspect the Supabase schema, test or apply a migration, query incident data, or find a video in R2 | [`incident-manage-database`](incident-manage-database/SKILL.md) |
 | Ingest ground truth, run the P1/RP1 VLM benchmark, aggregate results | [`incident-run-eval`](incident-run-eval/SKILL.md) |
+| Build, style or migrate UI components with shadcn/ui and Tailwind | [`shadcn`](shadcn/SKILL.md) (UI work in `incident-console-v2` should read this first) |
 | Natural-language video search & chat (MVP2) | Use [`incident-search`](incident-search/SKILL.md). Background facts and contracts are in [`.docs/mvp2/README.md`](../.docs/mvp2/README.md), [`.docs/status.md`](../.docs/status.md), `search-contract-v1`, and `chat-contract-v1`. Upstream reference: [`vss-search-archive`](../../../../../skills/vss-search-archive/SKILL.md) |
 
 **Easy to confuse:**
@@ -63,18 +64,19 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | [incident-search](incident-search/SKILL.md) | Search and chat requests, critic verdicts, evidence crops, and the local/VM verification path. |
 | [incident-manage-database](incident-manage-database/SKILL.md) | Finals schema (baseline, revision schema, RPCs), the SQL harness and security check, `supabase db push` with dry-run first, PostgREST vs direct-Postgres access, and the R2 key layout. Never writes to the frozen midterm project. |
 | [incident-run-eval](incident-run-eval/SKILL.md) | Standalone `eval/` pipeline: embedding server, GT ingest, seeded split, batch run, aggregation, and hermetic tests. |
+| [shadcn](shadcn/SKILL.md) | Component library, styling, rules, and design system patterns for UI work in `incident-console-v2` (read this first for console UI changes). |
 
 ---
 
 ## Install
 
-Claude Code needs no install step. [`/.claude/skills/`](../../../../../.claude/skills/) at the repo root holds symlinks to each skill folder here, so sessions started in this repo load them automatically.
+Claude Code needs no install step. [`/.claude/skills/`](../../../../../.claude/skills/) at the repo root holds symlinks to each skill folder here, so sessions started in this repo load them automatically. Antigravity and other universal agentskills.io hosts discover the shadcn skill via [`.agents/skills/`](../../../../../.agents/skills/).
 
 For other hosts (Codex, Cursor, any agentskills.io host), use NVIDIA's install prompt with this directory: symlink each `skills/incident-*/` folder into the host's skills directory.
 
 ## Maintaining these skills
 
-- **Source of truth.** This directory is canonical. Add a skill here, then add a matching symlink under the repo-root `.claude/skills/`: `ln -s ../../deploy/docker/developer-profiles/dev-profile-incident/skills/<name> .claude/skills/<name>`.
+- **Source of truth.** This directory is canonical. Add a skill here, then add a matching symlink under the repo-root `.claude/skills/`: `ln -s ../../deploy/docker/developer-profiles/dev-profile-incident/skills/<name> .claude/skills/<name>`. Cross-harness skills like `shadcn` are additionally symlinked under `.agents/skills/`.
 - **Frontmatter.** `name` must match the folder. `description` says when to use the skill and when not to. Keep `license` and `metadata`.
 - **No duplicated facts.** Put facts in `.docs/` and link to them. A skill owns only the procedure: steps, commands, gates and verification.
 - **Same PR.** When a command, port, script or contract changes, update the affected skill in the same PR as the `.docs/` update (see [`../AGENTS.md`](../AGENTS.md)).
