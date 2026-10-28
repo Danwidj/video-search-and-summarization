@@ -28,6 +28,28 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Known limits:** the original name of a pre-migration upload is not in the database, so the script uses the VST sensor name, else the upload time. Two analyses of one video that start together can pick the same `run-N`; the conditional put makes one fail instead of overwriting.
 - **Links:** [`data.md` §2](data.md#2-cloudflare-r2-storage-architecture), [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py), [`20261028090000_r2_rename.sql`](../supabase/migrations/20261028090000_r2_rename.sql).
 
+### 2026-10-28: Methodology v1.2 adopted with τ = 0.40 (AI-calibrated, not human-validated); retry-v2 and recovery-v1 approved; V1–V7 registered
+- **Decision (owner instruction, 2026-10-28): evaluation-methodology-v1.2 is the scoring methodology from Stage 2 on.**
+  - **Code:** `methodology.METHODOLOGY_VERSION` is v1.2, with τ = 0.40.
+  - **Preserved:** v1.1 and every v1.1 result.
+  - **Unchanged:** the ground truth, D9 v2 weights and criteria, the incident rules, the judge and its 1,500-token limit, one-to-one matching, and invalid- and missing-output handling.
+- **How τ was chosen:** τ = 0.40 is the result of the selection rule fixed before labelling (commit `dac60a9b2`), on calibration v2: 26 blocks, 132 pairs, including 4 random large blocks.
+  - **Labels:** AI-labelled and AI-audited. 30 of 36 audited pairs agree, and every pair with two decisive labels agrees.
+  - **Result:** pooled F1 0.814 [0.65, 0.94], precision 0.889. Selected in 56% of bootstrap resamples, so the conservative fallback does not trigger.
+  - **Not human-validated:** every result records `match_calibration.human_validated: false`. 8 pairs await human review. A changed label means τ is re-derived by the same rule.
+- **Stage 1:** re-matched offline under v1.2 into new files. The v1.1 `results.json` files are unchanged and pass `verify`.
+- **Approved (B1):** `retry-v2` (≤ 2 retries for infrastructure failures, 60 s then 180 s, every arm) and `recovery-v1` (≤ 15 video-runs per config), with host-suspend detection, keep-awake and checkpoint/resume.
+- **C1:** V1–V7 are registered as immutable `candidate` prompts ([record](../eval/docs/experiments/stage2-prompts.md)). The V8 rule is fixed.
+- **Not yet decided:**
+  - the Stage 2 start and budget ([plan §3–§4](../eval/docs/experiments/stage2-plan.md));
+  - the Stage 1 judge re-score (C3: 193 judged fields);
+  - the Stage 1 recovery (deferred).
+- **Rejected:**
+  - choosing τ on Stage 1 model scores;
+  - silently keeping the provisional 0.30;
+  - presenting AI calibration as human-validated.
+- **Links:** [`../eval/methodology/calibration/matching-v1.2-calibration-v2.md`](../eval/methodology/calibration/matching-v1.2-calibration-v2.md); [`../eval/methodology/evaluation-methodology-v1.2.md`](../eval/methodology/evaluation-methodology-v1.2.md).
+
 ### 2026-10-28: Preparation before Stage 2: methodology v1.2 item matching, retry-v2 and recovery-v1, draft prompts (proposals awaiting approval)
 - **Approved by the owner (2026-10-28):** the *preparation* only, as listed below. No recovery, Stage 2 or Stage 3 inference until the final methodology and budgets are approved.
   - **Item matching:** option (b), a calibrated item-matching procedure.

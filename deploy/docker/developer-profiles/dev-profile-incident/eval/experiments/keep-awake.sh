@@ -18,7 +18,7 @@ set -euo pipefail
 
 if ! grep -qi microsoft /proc/version 2>/dev/null || ! command -v powershell.exe >/dev/null; then
   echo "keep-awake: not WSL with powershell.exe; running without a wake request" >&2
-  exec "$@"
+  exec "$@"  # outside WSL the runner does not require KEEP_AWAKE_ACTIVE
 fi
 
 ps_script=$(cat <<'PS'
@@ -32,4 +32,4 @@ PS
 )
 # PowerShell reads stdin until this script exits and closes fd 3, then releases the request and ends.
 exec 3> >(powershell.exe -NoProfile -NonInteractive -Command "$ps_script" >&2)
-"$@"
+KEEP_AWAKE_ACTIVE=1 "$@"

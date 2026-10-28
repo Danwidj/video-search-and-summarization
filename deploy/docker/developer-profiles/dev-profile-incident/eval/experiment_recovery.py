@@ -41,6 +41,9 @@ MERGED_PROTOCOL = "original+recovery-v1"
 RECOVERY_RETRY_POLICY = "retry-v2"
 RECOVERABLE = ("rate_limited", "timeout", "host_suspended", "transport_error")
 GATEWAY_TIMEOUTS = (504, 522, 524)
+# The most video-runs one recovery re-attempts per configuration (approved hard budget, 2026-10-28). More than this
+# after retry-v2 means a persistent outage: the recovery is refused and the stage is reported instead.
+MAX_RECOVERED_RUNS = 15
 
 
 def failure_class(video: dict) -> str | None:
@@ -85,10 +88,17 @@ def plan(record: dict, *, results_path: str, results_sha256: str) -> dict:
             "runs": runs, "not_recoverable": left}
 
 
-def recovery_config(original: dict, recovery_plan: dict, gt_index: dict) -> dict:
+class RecoveryRefused(RuntimeError):
+    pass
+
+
+def recovery_config(original: dict, recovery_plan: dict, gt_index: dict, *, max_runs: int = MAX_RECOVERED_RUNS) -> dict:
     """The recovery's own configuration: the original's, under retry-v2, capped for the listed runs only."""
     config = copy.deepcopy(original)
     runs = recovery_plan["runs"]
+    if len(runs) > max_runs:
+        raise RecoveryRefused(f"{original['experiment_id']}: {len(runs)} infrastructure-failed video-runs exceed the "
+                              f"recovery limit of {max_runs}; report the outage instead of recovering")
     attempts = len(runs) * (1 + er.P1_RATE_LIMIT_RETRIES)
     judge = er.subset_judge_cap(original, {(r["repeat"], r["incident_id"]) for r in runs}, gt_index)["required"]
     config.update(

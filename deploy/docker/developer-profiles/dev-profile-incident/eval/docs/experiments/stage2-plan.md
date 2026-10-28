@@ -1,99 +1,126 @@
-# Stage 2 prompt engineering: plan (revised, not executed)
+# Stage 2 prompt engineering: execution plan (final, not executed)
 
-> **Status (2026-10-28, revision 2):** this revision follows the owner's review of Stage 1, which approved S2-A (b), the recovery protocol work and the V1–V8 adjustments. The preparation is implemented: methodology v1.2 (proposed), `retry-v2`, `recovery-v1`, keep-awake and the draft prompts. **Nothing has run.** Recovery, Stage 2 and Stage 3 wait for the owner's approval of the final methodology and the budgets (§6).
+> **Status (2026-10-28, revision 3): ready to run, waiting only for the owner's go-ahead.** No Stage 2 inference has run.
+>
+> **Approved so far by the owner:**
+> - the structure (concurrent baseline under the same retry policy and gateway conditions);
+> - `retry-v2` and `recovery-v1` (B1);
+> - V1–V7 provisionally (C1). They are now registered.
+>
+> **Implemented:** methodology v1.2 (τ = 0.40, AI-calibrated, not human-validated) is in force in code. Revision 2's decision table is resolved below (§7).
 
-## 1. Fixed rules
-
-| Rule | Source |
-|---|---|
-| **Data:** dev split only (25 clips × 2 repeats), frozen `ground-truth-v1.0` (unchanged). Test clips are never run, and their earlier outputs are never read (D15 quarantine) | plan §F.2, §F.5 |
-| **Arm:** VSS only, local experiment agent, crops off, RP1 skipped, no Supabase or R2 writes. C1 (direct) is not rerun | plan §F.2, D14 |
-| **Selection:** D9 v2 unchanged (components, equal weights, `+0.02`, G1–G3, tie-breakers, ≤ 8 versions), via `select_d9`. The only implementation change: G3 also requires the same methodology version (item-matching τ) and the same protocol on both sides | decisions.md 2026-10-27 |
-| **Scoring:** evaluation-methodology **v1.2** once approved, otherwise v1.1. One version for every Stage 2 record | [v1.2](../../methodology/evaluation-methodology-v1.2.md) |
-| **Prompt changes:** one component per version, wording from `annotation-guidelines-v1.0`, never from ground-truth answers or judge behaviour. **No few-shot examples** in this iteration | owner, 2026-10-28 |
-| **Retries and recovery:** `retry-v2` in every Stage 2 config, then one `recovery-v1` pass applied to all configs of a stage | [recovery protocol](infrastructure-and-recovery.md) |
-
-## 2. Versions (drafts in [`experiments/stage2-drafts/`](../../experiments/stage2-drafts/), not registered)
-
-Each draft is `p1-v4-base` plus one inserted block. Diffs: `<id>.diff`. Proposed registry entries: [`registry-proposal.json`](../../experiments/stage2-drafts/registry-proposal.json).
-
-| # | Id (SHA-256) | What changes (guideline source) | Stage 1 dev evidence | Hypothesis / target |
-|---|---|---|---|---|
-| V1 | `p1-v4-e01-severity` (`004746ea7d19`) | How to apply the **existing** rubric from observed evidence (§2.3): observed harm and demonstrated danger; each level needs its own visible indicators; a clearly visible indicator is never downgraded; property alone; the guideline tie-break **only when two levels fit equally** (not a default to the lower level); the decisive evidence named in `SEVERITY_REASON` (+205 words) | Exact 0.15–0.25; ground-truth 3 predicted as 4 or 5 in 24 of 38 | Severity exact, within one, signed error |
-| V2 | `p1-v4-e02-entities` (`19ce9a01c9a6`) | The guidelines' role test for participants, victims and responders (include) and bystanders and background (exclude) (§3) (+116) | Entities over-listed; v1.2 provisional entity P 0.44–0.58 | Entity precision at equal recall |
-| V3 | `p1-v4-e03-instruments` (`fe6adc566ad1`) | The **existing** instrument definition applied to each entity's hands, non-weapon examples, the exclusions, threat by capacity to harm (§4, §6) (+103) | Instrument recall 0.20–0.33 (v1.2 provisional) | Instrument recall |
-| V4 | `p1-v4-e04-assets` (`58f8840431c7`) | Only **relevant** assets: a visible role is required, and prominent background objects are excluded (§5) (+72) | Asset precision 0.29–0.30 (v1.2 provisional) | Asset precision |
-| V5 | `p1-v4-e05-descriptions` (`fac6f74aaa1d`) | General description principles: event, who, key action, outcome; observable verbs (§2.4, §7). No example sentence and no ground-truth wording (+37) | Description pass 0.27–0.47, unstable between repeats | Description |
-| V6 | `p1-v4-e06-boundaries` (`4b498b0d75e4`) | Start and end identification: start 0 when already under way; locate the end at the last second of the harmful action or its active consequence; rounding (§2.2) (+71) | End 0.47–0.50, duration 0.32–0.38 | End, duration (start not lower) |
-| V7 | `p1-v4-e07-checklist` (`1f2734d82f2e`) | A new final section: seven explicit consistency checks (ids and holders, instrument versus asset, roles, timeline within bounds, rubrics, text against fields, uncertainty) (+121) | 2 `contract_invalid` (C2) | Valid-output rate, consistency |
-| V8 | `p1-v4-e08-combined` (built after Stage 2a) | The blocks of every V1–V7 version whose D9 comparison against the concurrent baseline has **`ΔI` > 0 and no G2 problem**. With fewer than two such versions, V8 is not run (it would equal one of them) | – | `ΔI` |
-
-- **V8:** the rule is fixed here, before any Stage 2 output. V8 is built from dev results and scored on the same dev clips; this is disclosed, and Stage 3 is the held-out check.
-- **Selection:** all versions that ran go into `select_d9`. If none reaches `ΔI ≥ +0.02` with no guardrail problem, `p1-v4-base` stays selected, and that result is reported.
-
-## 3. Schedule
-
-| Step | Configs (interleaved, D10 order) | Video-runs |
-|---|---|---|
-| 0 (optional, for the Stage 1 report) | `recover` of C1 and C2 Stage 1 | 34 |
-| 2a | `vss-baseline-s2` (`p1-v4-base`, retry-v2) + V1–V7 | 400 |
-| 2a-r | `recovery-v1` of every 2a config | about 80–130 |
-| 2b | V8 + `vss-baseline-s2b` (drift check) | 100 |
-| 2b-r | `recovery-v1` of both | about 15–30 |
-| Selection | `select_d9`. Baseline = `vss-baseline-s2` merged (`original+recovery-v1`); candidates = V1–V8 merged; the selection record goes in `decisions.md` | – |
-
-- **Why a concurrent baseline** (instead of comparing against Stage 1's `vss-baseline`):
-  - the Stage 1 baseline ran under `retry-v1` and, if recovered, under a different protocol, so G3 would refuse the comparison;
-  - the shared gateway's behaviour drifts over time;
-  - running the baseline interleaved with the versions gives every comparison the same conditions and the same protocol.
-- **V8 and drift:** V8 is compared against the 2a baseline. The 2b baseline is reported only as a drift check (2b baseline − 2a baseline), never in selection.
-
-## 4. Budget
-
-See [infrastructure-and-recovery.md §5](infrastructure-and-recovery.md#5-additional-inference-budget-for-approval-gateway-0-per-token-infrastructure-cost-unknown).
+## 1. Fixed design
 
 | Item | Value |
 |---|---|
-| Video-runs | About 615–665 in total |
-| Hard caps | About 1,600 P1 attempts |
-| Expected attempts | About 815–935 |
-| Gateway cost | $0 per token; infrastructure cost unknown |
-| Active run time | About 16–19 h, run under `keep-awake.sh` with the lid open on AC |
+| Clips and repeats | The 25 dev clips (`split-v2`), 2 repeats per configuration |
+| Model | `nvidia/cosmos-3-super-reasoner`, P1 settings from `contracts/inference.json` |
+| Ground truth | Frozen `ground-truth-v1.0` (unchanged) |
+| Scoring | evaluation-methodology-v1.2: τ = 0.40; the judge, the 1,500-token limit and the incident rules as in v1.1 |
+| Arm | VSS only, through the isolated local experiment agent (`experiments/agent/start-experiment-agent.sh`: no Supabase, database or R2 variable; `persisted: false`). Crops off, RP1 skipped |
+| Retries | `retry-v2` in every config: at most 2 retries for 429, timeout, transport error or `host_suspended`, waiting 60 s then 180 s. A model output is never retried. Every attempt, error and token count is kept in `p1_raw.rate_limit.attempts`, and the attempts count toward the caps |
+| Recovery | `recovery-v1` after each stage, applied to all of that stage's configs, at most 15 video-runs per config (more means an outage: stop and report) |
+| Selection | D9 v2 unchanged (`select_d9`), baseline `s2-vss-baseline`. Every record is `original+recovery-v1` under v1.2 (G3 enforces it) |
+| Prompts | V1–V7 registered ([record](stage2-prompts.md)). V8 by the fixed combination rule. No few-shot examples. No version is assumed to help |
 
-## 5. Methodological limitations
+## 2. Configurations (`experiments/configs/s2-*.json`)
 
-1. **Ground truth:** AI-assisted adjudication, approved by the owner at the dataset level; not individually human-verified. Every accuracy figure is against that reference ([freeze README](../../ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation)).
-2. **Item matching (v1.2):**
-   - τ was calibrated on 70 AI-labelled dev pairs, which are provisional until a human audit;
-   - the selected τ = 0.30 is the lowest value on the grid;
-   - the sample excludes the large blocks that hold half the dev pairs, so precision may be optimistic for over-listing outputs ([calibration](../../methodology/calibration/matching-v1.2-calibration.md));
-   - calibration and selection both use dev. τ is fixed once, before any Stage 2 output, and every version is scored under it.
-3. **Small dev set:** 25 clips. Intervals are wide, and instruments are thin.
-4. **Infrastructure:**
-   - a shared, rate-limited gateway, so losses are expected even under `retry-v2`;
-   - recovery restores samples but changes the protocol; it is labelled and kept apart from original-run reliability;
-   - upstream non-determinism at temperature 0 (Stage 1: description pass agreement between repeats 5/10 in C2).
-5. **Dev reuse:**
-   - V8 and the selected prompt are chosen on dev;
-   - dev clips were few-shot examples in the retired P1-v1 prompt (D15). With exposure in prompts, absolute dev accuracy is not a generalisation figure.
-6. **Held-out exposure (Stage 3):** the 55 test clips are not unseen (plan §F.5, D15).
-   - They were in the 2026-10-02 benchmark.
-   - Three (Animal003, Assault018, Burglary005) shaped the v3 timeline wording through an earlier pilot.
-   - Other pilots' clips are unrecorded.
-   - Any bias favours the baseline prompt, so prompt gains are conservative. Absolute test accuracy may be optimistic, and is not comparable with 2026-10-02.
-   - The 52-clip unexposed-pilot subset is descriptive only and is never called unseen.
-7. **Prompt-only scope:** today's VSS adds nothing before extraction, so the VSS–direct difference at equal prompt is a pipeline or reliability effect, never an architectural one (plan §F.1).
-
-## 6. Decisions that still need the owner
-
-| # | Decision | Recommendation |
+| Stage | Config | Prompt (SHA-256) |
 |---|---|---|
-| A1 | Human audit of ≥ 20 calibration pairs (list in the calibration report), then re-derive τ by the same rule | Yes, before v1.2 is in force |
-| A2 | Calibration coverage: accept the ≤ 9-pair sample, or approve the pre-declared extension (4 random large blocks, about 150 pairs) | Approve the extension. It tests precision where over-listing happens |
-| A3 | τ: adopt the rule's output (currently 0.30), or record a deliberate deviation (for example 0.40, F1 −0.015, precision 0.94) | Decide after A1 and A2. Do not choose on Stage 1 model scores |
-| A4 | Put v1.2 in force (`METHODOLOGY_VERSION`) for Stage 2 | After A1–A3 |
-| B1 | Approve `retry-v2` and `recovery-v1` as the fixed protocol for future experiments | Yes |
-| B2 | Run the Stage 1 recovery (34 video-runs, ≤ 102 attempts) | Optional: it improves the Stage 1 parity sample only |
-| C1 | Approve drafts V1–V7 (wording), then register them (`prompt_registry.add`) | Review the diffs |
-| C2 | Approve the schedule (concurrent baseline, 2a/2b, V8 rule) and the budget (§4) | Yes |
-| C3 | Judge re-score of the Stage 1 v1.2 records (new matched pairs' judged attributes; about 100–200 judge calls at $0) | Optional; the item F1 values need no judge |
+| 2a | `s2-vss-baseline` | `p1-v4-base` (`409ed9b3187a`) |
+| 2a | `s2-e01-severity` | `p1-v4-e01-severity` (`004746ea7d19`) |
+| 2a | `s2-e02-entities` | `p1-v4-e02-entities` (`19ce9a01c9a6`) |
+| 2a | `s2-e03-instruments` | `p1-v4-e03-instruments` (`fe6adc566ad1`) |
+| 2a | `s2-e04-assets` | `p1-v4-e04-assets` (`58f8840431c7`) |
+| 2a | `s2-e05-descriptions` | `p1-v4-e05-descriptions` (`416b6790b230`) |
+| 2a | `s2-e06-boundaries` | `p1-v4-e06-boundaries` (`4b498b0d75e4`) |
+| 2a | `s2-e07-checklist` | `p1-v4-e07-checklist` (`1f2734d82f2e`) |
+| 2b | `s2-e08-combined` + `s2-vss-baseline-b` (drift check) | Created after 2a by the V8 rule. Not run if fewer than two versions qualify |
+
+**Caps per config:**
+- **150 P1 attempts:** 50 video-runs × 3, so retries can never run out.
+- **5,250,000 P1-token reservation:** 150 attempts × the 35,000-token ceiling, so even three unmetered attempts on every run never stop the run.
+- **1,710 judge calls:** derived from the ground truth; `caps` checks it.
+- A hermetic test runs all 8 configs at that worst case and confirms the stage completes.
+
+## 3. Reconciled budget
+
+| Item | Video-runs | Hard cap: P1 attempts / P1-token reservation / judge calls | Expected P1 attempts | Expected judge calls |
+|---|---|---|---|---|
+| 2a | 400 | 1,200 / 42.0 M / 13,680 | ≈ 580 | ≈ 1,650 |
+| 2a recovery (≤ 15 per config) | ≤ 120 | 360 / 12.6 M / ≤ 1,425 per config (derived from the listed runs) | ≈ 25 | ≈ 70 |
+| 2b (if V8 runs) | 100 | 300 / 10.5 M / 3,420 | ≈ 146 | ≈ 410 |
+| 2b recovery | ≤ 30 | 90 / 3.15 M / derived | ≈ 6 | ≈ 15 |
+| **Total** | **500 + recovered** | **1,950 attempts / 68.25 M tokens reserved** | **≈ 760 (up to about 900 with clustered outages)** | **≈ 2,150** |
+
+**How the expectations are derived:**
+- **Attempts:** from Stage 1's per-attempt failure rate (34%). With independent failures that gives 1.46 attempts per run and about 4% of runs still failing after 3 attempts. Failures cluster in outages, so the upper figure allows for that.
+- **Judge calls:** about 4.1 per scored run (the description, plus the matched pairs at τ = 0.40 in the v1.2 Stage 1 re-match).
+- **Tokens:**
+  - P1 about 9.5k per successful call, roughly 4.8 M metered P1 tokens;
+  - judge about 500 per call, roughly 1.1 M.
+  - The reservations are ceilings, not spend.
+- **Cost:** the gateway is configured at $0 per token; the infrastructure cost is unknown and borne by the sponsor.
+
+## 4. Runtime and schedule
+
+**Pace:**
+- Stage 1 ran at about 70 s per attempt: the 20 s minimum pacing plus the call.
+- `retry-v2`'s waits block the stage. About 136 first retries × 60 s plus about 46 second retries × 180 s add about 4.6 h to 2a.
+- **2a ≈ 16 h, 2b ≈ 4 h, recoveries ≈ 0.5 h. About 20 h of active run time in total.**
+
+**Sessions:**
+- Run 2a in about four sessions of about 4 h each, then its recovery, then 2b and its recovery.
+- **Checkpoint and resume:** `run_stage` writes `checkpoint.json` after every video-run. Stop a session with Ctrl-C and continue with `eval_experiment.py run <same configs> --confirm-paid --resume <stage dir>`.
+- The D10 order and run ids are kept, finished video-runs are never repeated, and the result is written once when the stage completes. Tested hermetically.
+
+**Gateway load:**
+- One request in flight at a time, at least 20 s apart: under 1 request and about 10k tokens a minute, about 2% of the shared 500k-TPM model budget.
+- The 25% rate-limit stop rule stays in force. If it fires, end the session and resume later.
+- Watch the 429 share over a session's first 20 attempts.
+
+**Host:**
+- Every paid session runs under `experiments/keep-awake.sh --` with the **lid open and on AC power**. Windows sleeps after 1 h idle on battery and on a lid close; the wake request prevents only idle sleep.
+- On WSL the runner refuses a paid run without the wake request (`KEEP_AWAKE_ACTIVE`, override `--allow-sleep`).
+- Any suspend that still happens is recorded as `host_suspended`.
+
+## 5. Order of work for the go-ahead
+
+1. **Start the services:** the embedding server (`:8811`) and the local experiment agent on the real endpoint.
+2. **Health checks:** `/health`, and the agent's environment (7 variables, no storage settings).
+3. **Dry runs:** `eval_experiment.py caps experiments/configs/s2-*.json` (8 × 1,710 OK) and `run … ` without `--confirm-paid`.
+4. **Stage 2a:** `experiments/keep-awake.sh -- .venv/bin/python scripts/eval_experiment.py run experiments/configs/s2-*.json --confirm-paid`, then `--resume` per session.
+5. **Recovery:** `recover <the 8 results.json>` as a dry run, then `--confirm-paid`. `verify` every directory.
+6. **V8 and 2b:** compare V1–V7 against `s2-vss-baseline` (merged). Build V8 by the rule and register it. Create the `s2-e08-combined` and `s2-vss-baseline-b` configs, then run 2b and its recovery.
+7. **Selection and report:** `select_d9` over every version that ran, the selection record in `decisions.md`, and the report `stage2-prompt-engineering.md` with every version, including the ones that did not help.
+
+## 6. Methodological limitations
+
+1. **Ground truth:** AI-assisted adjudication, approved at the dataset level; not individually human-verified.
+2. **Item matching:**
+   - τ = 0.40 comes from 132 AI-labelled, AI-audited dev pairs. They are **not human-validated**, and 8 pairs await human review.
+   - F1 at τ has the interval [0.65, 0.94]. The data separate 0.30–0.40 from 0.75 firmly, but 0.40 from 0.30 only weakly.
+   - Large blocks (heavy over-listing) score lower (F1 0.71). No large instrument block was available.
+3. **Same split for calibration and selection:** calibration and selection both use the dev split. τ was fixed before any Stage 2 output, from baseline outputs only.
+4. **Small dev set:** 25 clips, so intervals are wide and instruments are thin.
+5. **Shared gateway:**
+   - non-determinism at temperature 0 (Stage 1: C2 description agreement between repeats 5/10; C2 − C1 entity F1 −0.12 at the same request);
+   - recovery changes the protocol, so it is labelled and reported apart from original-run reliability.
+6. **V8 and selection on dev:** they are chosen on dev; Stage 3 is the held-out check. The dev clips were also few-shot examples in the retired P1-v1 prompt.
+7. **Held-out exposure (Stage 3):** the 55 test clips are not unseen.
+   - They were in the 2026-10-02 benchmark.
+   - Three (Animal003, Assault018, Burglary005) shaped the v3 timeline wording through an earlier pilot, and other pilots' clips are unrecorded.
+   - Any bias favours the baseline prompt, so gains are conservative. Absolute test accuracy may be optimistic.
+   - The 52-clip subset is descriptive and never called unseen.
+8. **Today's VSS adds nothing before extraction:** VSS and direct differences at the same prompt are pipeline or reliability effects only.
+
+## 7. Decision status
+
+| # | Item | Status |
+|---|---|---|
+| A1–A4 | Calibration audit, large blocks, τ, v1.2 | **Done (AI-assisted):** τ = 0.40 by the pre-registered rule; v1.2 in code. **Open:** human review of 8 pairs (`eval_data/matching_calibration/human-review-package-v2.md`). If a person changes labels, τ is re-derived by the same rule before Stage 2 |
+| B1 | `retry-v2`, `recovery-v1` | **Approved** (2026-10-28) |
+| B2 | Stage 1 recovery (34 runs) | **Deferred** by the owner. It needs `--max-runs 18`, because Stage 1 ran without in-run retries |
+| C1 | V1–V7 | **Registered.** V5 received a completeness-and-consistency clause, as the owner's description asked ([record](stage2-prompts.md)) |
+| C2 | Schedule and budget (§3, §4) | Structure approved; **needs the owner's go-ahead** for the budget and the start |
+| C3 | Stage 1 judge re-score | Existing judge outputs cover only 5 matched pairs. **193 judged fields** (names and descriptions of newly matched pairs) would need new judge calls: about 193–210 calls, at most 965 with retries, about 100k tokens, at $0. Not needed for D9 or Stage 2. **Not run; awaits approval** (it would need a pending-fields-only re-score command) |

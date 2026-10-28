@@ -28,13 +28,17 @@ from __future__ import annotations
 
 import copy
 
+import eval_gt
 import matching
+import methodology
 from matching_calibration import KINDS, TEXT
 
+JUDGED = {"entities": ["description"], "instruments": ["name", "description"], "assets": ["name", "description"]}
 ID_FIELD = {"entities": "entity_id", "instruments": "instrument_id", "assets": "asset_id"}
 
 
-def _summary(kind: str, model_rows: list[dict], gt_rows: list[dict], threshold: float, old: dict, embed) -> dict:
+def _summary(kind: str, model_rows: list[dict], gt_rows: list[dict], threshold: float, old: dict, embed,
+             entity_matches: list[dict] | None = None) -> dict:
     id_field = ID_FIELD[kind]
     gt_id_field = f"gt_{id_field}"
     previous = {(m[id_field], m[gt_id_field]): m for m in old.get("matches", [])}
@@ -52,12 +56,17 @@ def _summary(kind: str, model_rows: list[dict], gt_rows: list[dict], threshold: 
             if key in previous:
                 matches.append({**previous[key], "similarity_score": a.similarity})
                 continue
-            entry = {id_field: key[0], gt_id_field: key[1], "similarity_score": a.similarity,
-                     "attributes_rescored": False}
-            if kind == "entities":
-                entry["attribute_scores"] = {"type": {"expected": gt.get("type"), "predicted": model.get("type"),
-                                                      "pass": gt.get("type") == model.get("type")}}
-            matches.append(entry)
+            # The deterministic attributes are scored here exactly as eval_gt scores them; the judged ones
+            # (descriptions, names) are left for a judge re-score and flagged.
+            deterministic = {"entities": {"type": eval_gt._exact_match(gt.get("type"), model.get("type"),
+                                                                        normalize_str=True)},
+                             "instruments": {"threat_level": eval_gt._exact_match(gt.get("threat_level"),
+                                                                                  model.get("threat_level")),
+                                             "holder": eval_gt.resolve_holder(model, gt, entity_matches or [])},
+                             "assets": {}}[kind]
+            matches.append({id_field: key[0], gt_id_field: key[1], "similarity_score": a.similarity,
+                            "attribute_scores": deterministic, "attributes_rescored": False,
+                            "judged_attributes_pending": JUDGED[kind]})
     matched_model = {m[id_field] for m in matches}
     matched_gt = {m[gt_id_field] for m in matches}
     unmatched_model = [r for r in model_rows if r[id_field] not in matched_model]
@@ -79,12 +88,14 @@ def rematch(record: dict, *, threshold: float, methodology_version: str, source:
         if video.get("outcome") not in ("scored", "contract_invalid", "parse_failure"):
             continue
         prediction, gt = video.get("prediction") or {}, video.get("ground_truth") or {}
-        for kind in KINDS:
+        for kind in KINDS:  # entities first: instrument holders resolve through the entity matches
             video[kind] = _summary(kind, prediction.get(kind) or [], gt.get(kind) or [], threshold,
-                                   video.get(kind) or {}, embed)
+                                   video.get(kind) or {}, embed, entity_matches=video["entities"]["matches"]
+                                   if kind != "entities" else None)
         video["methodology_version"] = methodology_version
     out["methodology"] = {**(record.get("methodology") or {}), "methodology_version": methodology_version,
-                          "match_threshold": threshold, "match_threshold_provisional": provisional}
+                          "match_threshold": threshold, "match_threshold_provisional": provisional,
+                          "match_calibration": methodology.MATCH_CALIBRATION.get(methodology_version)}
     out["rematched_from"] = {"results": source, "results_sha256": source_sha256,
                              "methodology_version": (record.get("methodology") or {}).get("methodology_version"),
                              "note": "items re-matched offline; incident fields carried over; no model or judge call"}

@@ -110,4 +110,5 @@ def test_a_truncated_description_score_is_unscored_and_stops_the_run(judge):
 
 def test_the_limit_is_recorded_in_every_result():
     assert methodology.record()["judge"]["request_settings"]["max_tokens"] == 1500
-    assert methodology.METHODOLOGY_VERSION == "evaluation-methodology-v1.1"
+    # v1.2 changes only the item-matching threshold; the judge limit of v1.1 is kept.
+    assert methodology.METHODOLOGY_VERSION == "evaluation-methodology-v1.2"
