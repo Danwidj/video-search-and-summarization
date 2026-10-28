@@ -4,29 +4,44 @@
 
 import Link from 'next/link';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { OfficialControls } from '@/sections/reports/components/OfficialControls';
 import { describeCode, OUTCOME_DESCRIPTIONS, OUTCOME_LABELS, type RunOutcome } from '@/modules/videos/domain/run-labels';
 import type { RunHistoryEntry, VideoRunHistory } from '@/modules/videos/domain/run-types';
 import { formatTimestamp } from '@/lib/time';
 
-const OUTCOME_STYLES: Record<RunOutcome, string> = {
-  valid_first_pass: 'bg-signal/15 text-moss',
-  valid_after_structural_repair: 'bg-[#fff1c7] text-[#765300]',
-  contract_failed: 'bg-[#ffe8df] text-[#9b3518]',
-  request_failed: 'bg-[#ffe8df] text-[#9b3518]',
-  legacy: 'bg-ink/5 text-ink/60',
+const OUTCOME_CONFIG: Record<RunOutcome, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
+  valid_first_pass: {
+    variant: 'outline',
+    className: 'border-primary/40 bg-primary/10 text-primary font-bold',
+  },
+  valid_after_structural_repair: {
+    variant: 'outline',
+    className: 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 font-bold',
+  },
+  contract_failed: {
+    variant: 'destructive',
+    className: 'font-bold',
+  },
+  request_failed: {
+    variant: 'destructive',
+    className: 'font-bold',
+  },
+  legacy: {
+    variant: 'secondary',
+    className: 'font-bold text-muted-foreground',
+  },
 };
 
 export function OutcomeBadge({ outcome, inferred = false }: { outcome: RunOutcome; inferred?: boolean }) {
+  const conf = OUTCOME_CONFIG[outcome];
   return (
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold ${OUTCOME_STYLES[outcome]}`}
-      data-outcome={outcome}
-      title={OUTCOME_DESCRIPTIONS[outcome]}
-    >
+    <Badge className={conf.className} data-outcome={outcome} title={OUTCOME_DESCRIPTIONS[outcome]} variant={conf.variant}>
       {OUTCOME_LABELS[outcome]}
       {inferred && outcome !== 'legacy' ? ' (not recorded)' : ''}
-    </span>
+    </Badge>
   );
 }
 
@@ -46,7 +61,7 @@ export function RunHistoryList({
   const { counts } = history;
   return (
     <div data-testid="run-history">
-      <p className="text-xs text-ink/50">
+      <p className="text-xs text-muted-foreground">
         {counts.attempts} {counts.attempts === 1 ? 'analysis' : 'analyses'} · {counts.withReport} with a report
         {counts.valid_after_structural_repair ? ` · ${counts.valid_after_structural_repair} IDs repaired` : ''}
         {counts.contract_failed ? ` · ${counts.contract_failed} contract failed` : ''}
@@ -66,7 +81,7 @@ export function RunHistoryList({
         ))}
       </ol>
       {compact && history.runs.length > runs.length && (
-        <p className="mt-2 text-xs text-ink/45">{history.runs.length - runs.length} more in the full history.</p>
+        <p className="mt-2 text-xs text-muted-foreground">{history.runs.length - runs.length} more in the full history.</p>
       )}
     </div>
   );
@@ -88,53 +103,69 @@ function RunRow({
   const failed = run.outcome === 'contract_failed' || run.outcome === 'request_failed';
   return (
     <li
-      className={`rounded-xl border p-3 text-xs ${current ? 'border-signal bg-signal/5' : 'border-ink/10 bg-white'}`}
+      className={`rounded-xl border p-4 text-xs transition-colors ${current ? 'border-primary bg-primary/5' : 'border-border bg-card text-card-foreground'}`}
       data-run={run.modelRunId}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <strong className="text-ink">{run.model}</strong>
+        <strong className="text-foreground">{run.model}</strong>
         <OutcomeBadge inferred={run.outcomeInferred} outcome={run.outcome} />
-        {run.isOfficial && <span className="rounded-full bg-moss px-2.5 py-0.5 text-[11px] font-bold text-white">Official report</span>}
-        {run.source === 'shared' && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink/55">batch run</span>}
-        {current && <span className="text-[11px] font-semibold text-moss">viewing</span>}
+        {run.isOfficial && (
+          <Badge className="text-[11px] font-bold" variant="default">
+            Official report
+          </Badge>
+        )}
+        {run.source === 'shared' && (
+          <Badge className="text-[11px]" variant="secondary">
+            batch run
+          </Badge>
+        )}
+        {current && (
+          <Badge className="border-primary/30 text-[11px] font-semibold text-primary" variant="outline">
+            viewing
+          </Badge>
+        )}
       </div>
-      <p className="mt-1 text-ink/50">
+      <p className="mt-1 text-muted-foreground">
         {formatTimestamp(run.attemptedAt)}
         {run.revision ? ` · ${run.revision.type ?? 'unclassified'} · severity ${run.revision.severityLevel ?? '—'}/5` : ''}
         {failed ? ' · no report' : ''}
       </p>
-      {run.additionalInstruction && <p className="mt-1 text-ink/55">Additional instruction: “{run.additionalInstruction}”</p>}
+      {run.additionalInstruction && <p className="mt-1 text-muted-foreground">Additional instruction: “{run.additionalInstruction}”</p>}
       {run.failure && (
-        <div className="mt-2 rounded-lg bg-[#fff6f2] p-2 text-[#8c3d25]">
-          <p className="font-semibold">{run.outcome === 'request_failed' ? describeCode(run.failure.code) : 'Contract violations'}</p>
-          {run.outcome === 'contract_failed' && (
-            <ul className="mt-1 list-disc pl-4">
-              {run.failure.violations.map((violation) => (
-                <li key={`${violation.code}:${violation.message}`}>
-                  {describeCode(violation.code)}: {violation.message}
-                </li>
-              ))}
-            </ul>
-          )}
-          {run.outcome === 'request_failed' && run.failure.message && <p className="mt-1 text-[#8c3d25]/80">{run.failure.message}</p>}
-        </div>
+        <Alert className="mt-2 text-xs" variant="destructive">
+          <AlertTitle className="font-semibold">
+            {run.outcome === 'request_failed' ? describeCode(run.failure.code) : 'Contract violations'}
+          </AlertTitle>
+          <AlertDescription>
+            {run.outcome === 'contract_failed' && (
+              <ul className="mt-1 list-disc pl-4">
+                {run.failure.violations.map((violation) => (
+                  <li key={`${violation.code}:${violation.message}`}>
+                    {describeCode(violation.code)}: {violation.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {run.outcome === 'request_failed' && run.failure.message && <p className="mt-1 text-destructive/80">{run.failure.message}</p>}
+          </AlertDescription>
+        </Alert>
       )}
       {run.enrichmentIssues && run.enrichmentIssues.length > 0 && (
-        <p className="mt-2 text-ink/55" data-testid="enrichment-issues">
+        <p className="mt-2 text-muted-foreground" data-testid="enrichment-issues">
           Unscored model output: {run.enrichmentIssues.map(describeCode).join('; ')}
         </p>
       )}
       {run.repair && (
-        <p className="mt-2 text-[#765300]">
+        <p className="mt-2 text-amber-800 dark:text-amber-200">
           Contract repair applied (IDs only) · {run.repair.ruleSet}:{' '}
           {run.repair.operations.map((operation) => String(operation.op)).join(', ')}
         </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-3">
         {run.revision && !current && (
-          <Link className="font-semibold text-moss" href={`/reports/${encodeURIComponent(videoId)}?revision=${run.revision.revisionId}`}>
-            Open report →
-          </Link>
+          <Button asChild className="h-auto p-0 font-semibold text-primary" size="sm" variant="link">
+            <Link href={`/reports/${encodeURIComponent(videoId)}?revision=${run.revision.revisionId}`}>Open report →</Link>
+          </Button>
         )}
         {run.revision && onChanged && (
           <OfficialControls

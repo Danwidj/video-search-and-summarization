@@ -6,6 +6,13 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatTimestamp } from '@/lib/time';
 
 interface VideoItem {
@@ -50,65 +57,105 @@ export function VideosScreen() {
 
   return (
     <div className="mx-auto max-w-[1500px] px-6 pb-16 pt-2 lg:px-12">
-      <p className="font-mono text-xs uppercase tracking-[0.2em] text-moss">Videos</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em]">Uploaded videos</h1>
-      <p className="mt-2 text-sm text-ink/55">Each video keeps its full analysis history. Reports list only successful analyses.</p>
-      <div className="mt-6 flex gap-2" role="tablist">
-        {(
-          [
-            ['all', 'All videos'],
-            ['awaiting-selection', 'Awaiting official report'],
-            ['without-report', 'Without a report'],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            aria-selected={filter === value}
-            className={`rounded-full px-4 py-2 text-xs font-semibold ${filter === value ? 'bg-ink text-white' : 'border border-ink/15'}`}
-            key={value}
-            onClick={() => go({ filter: value })}
-            role="tab"
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {error && <p className="mt-6 text-clay">{error}</p>}
-      {!state && !error && <div className="mt-6 h-40 animate-pulse rounded-2xl bg-white" role="status" />}
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">Videos</p>
+      <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground">Uploaded videos</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Each video keeps its full analysis history. Reports list only successful analyses.
+      </p>
+
+      <Tabs className="mt-6" onValueChange={(value) => go({ filter: value })} value={filter}>
+        <TabsList>
+          <TabsTrigger value="all">All videos</TabsTrigger>
+          <TabsTrigger value="awaiting-selection">Awaiting official report</TabsTrigger>
+          <TabsTrigger value="without-report">Without a report</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {error && (
+        <Alert className="mt-6" variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {!state && !error && <Skeleton className="mt-6 h-40 w-full rounded-2xl" role="status" />}
+
       {state && (
         <>
-          <p className="mt-6 text-sm text-ink/50">
+          <p className="mt-6 text-sm text-muted-foreground">
             {state.totalItems} {state.totalItems === 1 ? 'video' : 'videos'}
           </p>
-          <ul className="mt-3 divide-y divide-ink/10 overflow-hidden rounded-2xl border border-ink/10 bg-white">
-            {state.videos.map((video) => (
-              <li className="flex flex-col gap-1 p-4 sm:flex-row sm:items-center sm:justify-between" key={video.videoId}>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{video.filename}</p>
-                  <p className="text-xs text-ink/50">
-                    Uploaded {formatTimestamp(video.uploadedAt)} · {video.analysesWithReport}{' '}
-                    {video.analysesWithReport === 1 ? 'report' : 'reports'}
-                    {video.officialRunId ? ' · official report selected' : ''}
-                  </p>
-                </div>
-                <Link className="shrink-0 text-xs font-semibold text-moss" href={`/videos/${encodeURIComponent(video.videoId)}`}>
-                  Analysis history →
-                </Link>
-              </li>
-            ))}
-            {!state.videos.length && <li className="p-6 text-sm italic text-ink/45">No videos match.</li>}
-          </ul>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Filename</TableHead>
+                  <TableHead>Uploaded</TableHead>
+                  <TableHead>Reports</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.videos.map((video) => (
+                  <TableRow key={video.videoId}>
+                    <TableCell className="max-w-xs truncate font-semibold" title={video.filename}>
+                      {video.filename}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{formatTimestamp(video.uploadedAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {video.analysesWithReport} {video.analysesWithReport === 1 ? 'report' : 'reports'}
+                    </TableCell>
+                    <TableCell>
+                      {video.officialRunId ? (
+                        <Badge className="text-xs font-bold" variant="default">
+                          Official report selected
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/videos/${encodeURIComponent(video.videoId)}`}>Analysis history →</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!state.videos.length && (
+                  <TableRow>
+                    <TableCell className="h-24 text-center italic text-muted-foreground" colSpan={5}>
+                      No videos match.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
           {state.totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-3 text-sm">
-              <button className="action" disabled={page <= 1} onClick={() => go({ page: String(page - 1) })} type="button">
-                Previous
-              </button>
-              <span>
+            <div className="mt-6 flex flex-col items-center justify-between gap-4 sm:flex-row">
+              <p className="text-xs text-muted-foreground">
                 Page {page} of {state.totalPages}
-              </span>
-              <button className="action" disabled={page >= state.totalPages} onClick={() => go({ page: String(page + 1) })} type="button">
-                Next
-              </button>
+              </p>
+              <Pagination className="mx-0 w-auto justify-end">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      aria-disabled={page <= 1}
+                      className={page <= 1 ? 'pointer-events-none opacity-50' : ''}
+                      href={`/videos?${new URLSearchParams({ filter, page: String(Math.max(1, page - 1)) })}`}
+                      tabIndex={page <= 1 ? -1 : undefined}
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      aria-disabled={page >= state.totalPages}
+                      className={page >= state.totalPages ? 'pointer-events-none opacity-50' : ''}
+                      href={`/videos?${new URLSearchParams({ filter, page: String(Math.min(state.totalPages, page + 1)) })}`}
+                      tabIndex={page >= state.totalPages ? -1 : undefined}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
           )}
         </>
