@@ -33,19 +33,20 @@ Reachable at `/health` on `:8000`. Returns `200` `{"value":{"isAlive":true}}`. U
 
 ## `POST /api/v1/incidents/search`
 
-Natural-language search over evidence crops (entity, instrument, asset) with an always-on VLM critic. Contract: search-contract-v1.
+Natural-language search over evidence crops (entity, instrument, asset) with the VLM critic off by default (`INCIDENT_SEARCH_CRITIC`). Contract: search-contract-v1. Incident search (`/revisions/search`) shares its embed-then-retrieve step (`semantic_search` in `incident_search.py`); the two routes differ only in what they retrieve.
 
 Request (`extra` fields are rejected with 422):
 
 | Field | Type | Default | Constraint |
 |---|---|---|---|
-| `query` | string | required | 1-500 chars |
+| `query` | string | required, except with `filters.video_id` | 1-500 chars; may be empty only when `filters.video_id` is set (lists that incident's evidence, no embedding call) |
 | `top_k` | int | 10 | 1-50 |
-| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score, the critic judges relevance) |
-| `hide_rejected` | bool | true | drop hits the critic marked `rejected` from `hits[]` (`rank` keeps its pre-filter value); `false` returns them |
+| `min_similarity` | float | 0.0 | 0.0-1.0 (no cutoff by default: top_k by score) |
+| `hide_rejected` | bool | true | only matters when the critic is on: drop hits it marked `rejected` from `hits[]` (`rank` keeps its pre-filter value) |
 | `filters.incident_types` | string[] | none | |
 | `filters.min_severity`, `filters.max_severity` | int | none | 1-5 |
 | `filters.item_types` | `"entity"\|"instrument"\|"asset"`[] | all three | |
+| `filters.video_id` | string | none | 1-64 chars; searches only that video (`videos.id`), applied inside `search_evidence_items(p_video_id)` before ranking, so the top `top_k` all belong to it. With an empty `query` the hits are the video's crops in video time order, `similarity_score` 0 |
 
 Response `200`:
 
@@ -64,11 +65,12 @@ Response `200`:
 | `hits[].critic` | object | `verdict` (`confirmed`, `rejected`, `unverified`), `confidence` (0-1, null, or observed 0.0), `rationale` |
 
 Behaviour:
-- `hide_rejected` defaults to true: hits marked `rejected` by the critic are excluded from `hits[]` by default (`rank` retains its pre-filter value). Pass `hide_rejected: false` to return them.
-- A failing critic never drops a hit: it degrades to `verdict: "unverified"`, with `confidence` typically null (or 0.0 observed on some unverified responses), with the failure in `rationale`.
+- The critic is dormant: unless the agent runs with `INCIDENT_SEARCH_CRITIC` set to a truthy value (`1`, `true`, `yes`, `on`), no VLM call is made and every hit is `verdict: "unverified"` with the rationale `Critic not run`. `hide_rejected` then has nothing to hide.
+- With the critic on, `hide_rejected` (default true) excludes hits marked `rejected` from `hits[]` (`rank` retains its pre-filter value), and a failing critic never drops a hit: it degrades to `verdict: "unverified"` with the failure in `rationale`.
+- `filters.video_id` needs migration `20261028090000_search_evidence_items_video_id.sql`; the agent sends `p_video_id` only for a scoped search, so an agent ahead of the migration still serves unscoped searches.
 - `crop_image_url` and `playback_url` are resolved from R2 by the agent. Use them as given.
 - Errors: 422 on validation. `503` `{"detail":"Query embedding unavailable: ..."}` when the query cannot be embedded: an embedder error, or no embedding API key with the Supabase store (the deterministic placeholder embedding is only used with the in-memory store). A store failure is not caught, so expect `500` (plain-text `Internal Server Error`, not the `detail` shape).
-- Timing: embedding plus pgvector query, then critic calls spaced by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1.0 s between hits). Expect about 7 s for no hits (measured ~7.2 s on the VM) and roughly `top_k` seconds plus critic latency (30 s timeout each) for `top_k` hits. Use a client timeout of at least 90 s for `top_k` up to 50, and show a loading state.
+- Timing: embedding plus one pgvector query, with no critic delay while the critic is off. With the critic on, calls are spaced by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1.0 s between hits, 30 s timeout each), so latency grows by about one second per hit; use a client timeout of at least 90 s and a loading state in that case.
 - Side effect: each call writes one `queries` row and one `query_results` row per hit (audit trail, failures only logged).
 
 Example (illustrative hit shape built from the Pydantic models; the live VM returns hits as detailed in the retest reports):
@@ -92,7 +94,7 @@ curl -s localhost:8000/api/v1/incidents/search -H 'content-type: application/jso
       "item_type": "instrument", "item_id": "I1", "name": "machete", "label": "machete",
       "description": "Long curved blade held by assailant during storefront altercation.",
       "threat_level": 4, "holder_entity_id": "E1",
-      "crop_image_url": "https://<r2-host>/evidence/Assault007_x264/1f9c2a7b4e6d8035a1c2e4f6b8d0a2c4/I1.jpg",
+      "crop_image_url": "https://<r2-host>/evidence/uploads/Assault007_x264.mp4/run-1/I1.jpg",
       "timestamp_seconds": 14, "bounding_box": [320, 450, 510, 600]
     },
     "incident": {
