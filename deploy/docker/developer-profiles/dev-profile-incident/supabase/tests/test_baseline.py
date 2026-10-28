@@ -469,6 +469,57 @@ with tempfile.TemporaryDirectory() as tmp:
     @test("the revisions of other videos are never touched by a crop write")
     def _():
         assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
+    @test("apply_r2_rename points a video, its evidence and its crops at renamed keys and nothing else")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam')")
+        evidence = [
+            {"item_type": "entity", "item_id": "E1", "image": "evidence/old/E1.jpg"},
+            {"item_type": "asset", "item_id": "A1", "image": None},
+            {"item_type": "instrument", "item_id": "I1", "image": "evidence/old/I1.jpg"},
+        ]
+        rev = ai_revision("v10", 1, "m1", report(), evidence)
+        for item_type, item_id, image in (("entity", "E1", "evidence/old/E1.jpg"), ("instrument", "I1", "evidence/old/I1.jpg")):
+            conn.execute("""INSERT INTO public.evidence_crops (revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box, image)
+                            VALUES (%s, %s, %s, 'n', 'd', 1, '{1,2,3,4}', %s)""", (rev, item_type, item_id, image))
+        before = one(conn, "SELECT payload, note, created_at FROM public.report_revisions WHERE id = %s", (rev,))
+        notes = one(conn, "SELECT notes FROM public.model_runs WHERE id = 'm1'")[0]
+        key_map = json.dumps({"evidence/old/E1.jpg": "evidence/Clip.mp4/run-1/E1.jpg", "evidence/old/I1.jpg": "evidence/Clip.mp4/run-1/I1.jpg"})
+        result = one(conn, "SELECT public.apply_r2_rename('v10', 'uploads/Clip.mp4', %s)", (key_map,))[0]
+        assert result == {"videoId": "v10", "filepath": "uploads/Clip.mp4", "revisions": 1, "crops": 2}, result
+        assert one(conn, "SELECT filepath FROM public.videos WHERE id = 'v10'")[0] == "uploads/Clip.mp4"
+        row = one(conn, "SELECT evidence, payload, note, created_at FROM public.report_revisions WHERE id = %s", (rev,))
+        assert [e["image"] for e in row[0]] == ["evidence/Clip.mp4/run-1/E1.jpg", None, "evidence/Clip.mp4/run-1/I1.jpg"], row[0]
+        assert [e["item_id"] for e in row[0]] == ["E1", "A1", "I1"], "evidence order is kept"
+        assert (row[1], row[2], row[3]) == before, "only the evidence column of a revision changes"
+        images = sorted(r[0] for r in conn.execute("SELECT image FROM public.evidence_crops WHERE revision_id = %s", (rev,)).fetchall())
+        assert images == ["evidence/Clip.mp4/run-1/E1.jpg", "evidence/Clip.mp4/run-1/I1.jpg"], images
+        assert one(conn, "SELECT notes FROM public.model_runs WHERE id = 'm1'")[0] == notes, "model_runs.notes is immutable"
+        again = one(conn, "SELECT public.apply_r2_rename('v10', 'uploads/Clip.mp4', %s)", (key_map,))[0]
+        assert again["revisions"] == 0 and again["crops"] == 0, "running it again changes nothing"
+        other = one(conn, "SELECT evidence FROM public.report_revisions WHERE video_id = 'v2'")[0]
+        assert other == [], other
+
+    @test("apply_r2_rename leaves the append-only guard in force and refuses bad input")
+    def _():
+        refused(conn, "UPDATE public.report_revisions SET evidence = '[]' WHERE video_id = 'v10'", contains="append-only")
+        refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE video_id = 'v10'", contains="append-only")
+        refused(conn, "DELETE FROM public.report_revisions WHERE video_id = 'v10'", contains="append-only")
+        refused(conn, "SELECT public.apply_r2_rename('v10', NULL, '[]')", contains="object")
+        refused(conn, "SELECT public.apply_r2_rename('v10', NULL, '{\"a\": 1}')", contains="string")
+        refused(conn, "SELECT public.apply_r2_rename('nope', 'uploads/x.mp4', '{}')", contains="Video not found")
+        assert one(conn, "SELECT current_setting('app.r2_rename', true)")[0] in (None, "", "off")
+        conn.execute("DELETE FROM public.videos WHERE id = 'v10'")
+        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v10'")[0] == 0
+
+    @test("security: apply_r2_rename is for the service role only")
+    def _():
+        conn.execute("RESET ROLE")
+        sig = "public.apply_r2_rename(character varying, text, jsonb)"
+        for role in ("anon", "authenticated"):
+            assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], role
+        assert one(conn, "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (sig,))[0]
+        conn.execute("SET ROLE service_role")
+
     @test("search_report_revisions ranks embedded revisions and skips NULL vectors")
     def _():
         conn.execute("INSERT INTO public.videos (id) VALUES ('v8'), ('v9')")

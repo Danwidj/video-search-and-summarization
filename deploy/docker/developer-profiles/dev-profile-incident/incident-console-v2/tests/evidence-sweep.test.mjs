@@ -46,8 +46,12 @@ const fakeIncidents = (references, calls = []) => ({
   },
 });
 
+/** The video port: the evidence folder is named after the video's R2 key (here the same as its id). */
+const fakeVideos = (storageKey = VIDEO) => ({ getVideo: async () => (storageKey === null ? null : { storageKey }) });
+const ports = (incidents, storageKey) => ({ incidents, videos: fakeVideos(storageKey) });
+
 const sweep = (references, store, options = {}) =>
-  sweepOrphanEvidence(fakeIncidents(references, store.calls), store, VIDEO, { now: NOW, ...options });
+  sweepOrphanEvidence(ports(fakeIncidents(references, store.calls)), store, VIDEO, { now: NOW, ...options });
 const removals = (store) => store.calls.filter((call) => call.startsWith('remove '));
 
 describe('sweepOrphanEvidence', () => {
@@ -138,7 +142,7 @@ describe('sweepOrphanEvidence', () => {
         this.calls.push(`remove ${key}`);
       },
     };
-    const report = await sweepOrphanEvidence(fakeIncidents([]), store, VIDEO, { now: NOW, dryRun: false });
+    const report = await sweepOrphanEvidence(ports(fakeIncidents([])), store, VIDEO, { now: NOW, dryRun: false });
     assert.deepEqual([report.orphans, store.calls], [[], []]);
   });
 
@@ -146,6 +150,22 @@ describe('sweepOrphanEvidence', () => {
     const store = fakeStore({ 'evidence/v-1/a/E1.jpg': OLD });
     await assert.rejects(sweep(null, store, { dryRun: false }), (error) => error instanceof StoreRejection && error.reason === 'not-found');
     assert.deepEqual(removals(store), []);
+  });
+
+  test('a video with no stored key is refused before anything is listed', async () => {
+    const store = fakeStore({ 'evidence/v-1/a/E1.jpg': OLD });
+    await assert.rejects(
+      sweepOrphanEvidence(ports(fakeIncidents([]), null), store, VIDEO, { dryRun: false }),
+      (error) => error instanceof StoreRejection && error.reason === 'not-found',
+    );
+    assert.deepEqual(store.calls, []);
+  });
+
+  test('the evidence folder is named after the video key, not the video id', async () => {
+    const store = fakeStore({ 'evidence/uploads/a.mp4/run-1/E1.jpg': OLD, 'evidence/v-1/run-1/E1.jpg': OLD });
+    const report = await sweepOrphanEvidence(ports(fakeIncidents([]), 'uploads/a.mp4'), store, VIDEO, { now: NOW, dryRun: false });
+    assert.deepEqual(report.removed, ['evidence/uploads/a.mp4/run-1/E1.jpg']);
+    assert.ok(store.objects.has('evidence/v-1/run-1/E1.jpg'));
   });
 
   test('when the references cannot be read, nothing is removed', async () => {
@@ -164,7 +184,7 @@ describe('sweepOrphanEvidence', () => {
         calls.push(key);
       },
     };
-    await assert.rejects(sweepOrphanEvidence(fakeIncidents([], calls), store, VIDEO, { dryRun: false }), /cut short/);
+    await assert.rejects(sweepOrphanEvidence(ports(fakeIncidents([], calls)), store, VIDEO, { dryRun: false }), /cut short/);
     assert.deepEqual(calls, []);
   });
 

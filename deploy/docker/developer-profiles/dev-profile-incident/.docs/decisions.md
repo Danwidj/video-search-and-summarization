@@ -2,6 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: R2 object names are readable and deterministic: the original file name, `run-N` and `edit-N`, never a hash or UUID
+- **Decision:** a new upload is stored as `uploads/<original file name>` (unsafe characters become `_`, names over 150 characters are cut with the extension kept, a taken name gets `-2`, `-3`). The thumbnail is `thumbnails/<video key>.webp`. Evidence is `evidence/<video key>/run-<N>/<itemId>.jpg` (AI crops) and `evidence/<video key>/edit-<N>/<itemId>.jpg` (reviewer images). Every write is a conditional put (`If-None-Match: *`), so nothing is ever overwritten. The upload page warns before upload when the name is taken or has unsafe characters.
+- **Existing objects:** `supabase/r2/migrate_r2_names.py` copies each to its readable key, verifies the copy, and updates `videos.filepath`, `report_revisions.evidence` and `evidence_crops.image` through `apply_r2_rename`. Old objects are deleted by a person afterwards.
+- **Why:** reviewers see and recognise file names, and operators can read the bucket. The previous keys carried a sensor id and a UUID that meant nothing outside the system. `videos.id` stays the compact hash (it is the primary key and URL id).
+- **The append-only exception:** `report_revisions` rows keep the old R2 keys unless the table can be updated. `apply_r2_rename` sets a transaction-local flag and the trigger then allows an `UPDATE` that changes only the `evidence` column; any other change, and any `UPDATE` without the flag, is still refused. `model_runs.notes` is not rewritten, so it keeps the old key as history.
+- **Alternatives rejected:** leave old objects as they are (the captain asked for no hashes in any name); resolve old keys through a lookup table (every reader would need it, and the names would still be unreadable); rewrite revisions with a plain `UPDATE` after disabling the trigger (loses the guarantee that revisions are never edited); a random suffix for collisions (not deterministic, brings the ids back).
+- **Known limits:** the original name of a pre-migration upload is not in the database, so the script uses the VST sensor name, else the upload time. Two analyses of one video that start together can pick the same `run-N`; the conditional put makes one fail instead of overwriting.
+- **Links:** [`data.md` §2](data.md#2-cloudflare-r2-storage-architecture), [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py), [`20261028090000_r2_rename.sql`](../supabase/migrations/20261028090000_r2_rename.sql).
+
 ### 2026-10-28: Preparation before Stage 2: methodology v1.2 item matching, retry-v2 and recovery-v1, draft prompts (proposals awaiting approval)
 - **Approved by the owner (2026-10-28):** the *preparation* only, as listed below. No recovery, Stage 2 or Stage 3 inference until the final methodology and budgets are approved.
   - **Item matching:** option (b), a calibrated item-matching procedure.

@@ -6,8 +6,9 @@
 // revision names. An image an older revision names is not an orphan, whatever
 // has replaced it since.
 
-import { isEvidenceKeyOfVideo } from '@/modules/reports/domain/revision';
+import { evidenceFolder, isEvidenceKeyOfVideo } from '@/modules/reports/domain/revision';
 import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
+import type { VideoRepository } from '@/modules/videos/domain/VideoRepository';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { EvidenceObjectStore } from '@/modules/reports/application/types';
 
@@ -27,7 +28,7 @@ export interface SweepReport {
   videoId: string;
   dryRun: boolean;
   minAgeHours: number;
-  /** Objects found under evidence/<videoId>/. */
+  /** Objects found under evidence/<video key>/. */
   scanned: number;
   /** Objects a revision or evidence_crops row names. */
   referenced: number;
@@ -42,7 +43,7 @@ export interface SweepReport {
 }
 
 export async function sweepOrphanEvidence(
-  incidents: Pick<IncidentRepository, 'listReferencedEvidenceImages'>,
+  { incidents, videos }: { incidents: Pick<IncidentRepository, 'listReferencedEvidenceImages'>; videos: Pick<VideoRepository, 'getVideo'> },
   store: EvidenceObjectStore,
   videoId: string,
   options: SweepOptions = {},
@@ -54,7 +55,10 @@ export async function sweepOrphanEvidence(
   // The objects are listed before the references are read: a save that lands in
   // between has its image in the references, and an upload after the listing is
   // not in the list. Either way a live image is never a candidate.
-  const objects = await store.list(`evidence/${videoId}/`);
+  const video = await videos.getVideo(videoId);
+  if (!video?.storageKey) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
+  const videoKey = video.storageKey;
+  const objects = await store.list(evidenceFolder(videoKey));
   const references = await incidents.listReferencedEvidenceImages(videoId);
   if (references === null) throw new StoreRejection('not-found', `Video not found: ${videoId}`);
   const referenced = new Set(references);
@@ -71,7 +75,7 @@ export async function sweepOrphanEvidence(
     failed: [],
   };
   for (const { key, lastModified } of objects) {
-    if (!isEvidenceKeyOfVideo(key, videoId)) continue;
+    if (!isEvidenceKeyOfVideo(key, videoKey)) continue;
     if (referenced.has(key)) report.referenced += 1;
     else if (lastModified === null || lastModified.getTime() > cutoff) report.tooRecent += 1;
     else report.orphans.push(key);

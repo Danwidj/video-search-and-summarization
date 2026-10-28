@@ -41,7 +41,7 @@ from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
-from vss_agents.utils.crop_evidence import new_evidence_batch_id
+from vss_agents.utils.crop_evidence import next_run_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
@@ -84,16 +84,40 @@ class TestEvidenceKey:
     """Test the never-overwritten evidence key layout."""
 
     def test_canonical_key_format(self) -> None:
-        assert evidence_key("Explosion001", "b1", "E1") == "evidence/Explosion001/b1/E1.jpg"
+        assert evidence_key("uploads/clip.mp4", "run-1", "E1") == "evidence/uploads/clip.mp4/run-1/E1.jpg"
 
     def test_item_ids_are_unique_across_types_so_no_collection_folder(self) -> None:
         keys = {evidence_key("v", "b", item_id) for item_id in ("E1", "I1", "A1")}
         assert len(keys) == 3
 
-    def test_each_batch_id_is_new(self) -> None:
-        first, second = new_evidence_batch_id(), new_evidence_batch_id()
-        assert first != second and len(first) == 32
-        assert evidence_key("v", first, "E1") != evidence_key("v", second, "E1")
+    def test_batch_ids_count_up_from_the_highest_existing_run(self) -> None:
+        assert next_run_batch_id([]) == "run-1"
+        assert next_run_batch_id(["run-1", "run-3", "edit-9", "x"]) == "run-4"
+
+    @pytest.mark.asyncio
+    async def test_in_memory_store_names_the_next_run_per_video(self) -> None:
+        store = InMemoryEvidenceStore()
+        assert await store.next_batch_id("uploads/a.mp4") == "run-1"
+        await store.put_image("evidence/uploads/a.mp4/run-1/E1.jpg", b"x")
+        await store.put_image("evidence/uploads/a.mp4.bak/run-7/E1.jpg", b"x")
+        assert await store.next_batch_id("uploads/a.mp4") == "run-2"
+
+    @pytest.mark.asyncio
+    async def test_r2_store_refuses_to_overwrite_and_lists_batches_by_prefix(self) -> None:
+        client = MagicMock()
+        client.get_paginator.return_value.paginate.return_value = [
+            {
+                "CommonPrefixes": [
+                    {"Prefix": "evidence/uploads/a.mp4/run-1/"},
+                    {"Prefix": "evidence/uploads/a.mp4/run-2/"},
+                ]
+            }
+        ]
+        store = R2EvidenceStore(bucket="b", client=client)
+        await store.put_image("evidence/uploads/a.mp4/run-3/E1.jpg", b"x")
+        assert client.put_object.call_args.kwargs["IfNoneMatch"] == "*"
+        assert await store.next_batch_id("uploads/a.mp4") == "run-3"
+        assert client.get_paginator.return_value.paginate.call_args.kwargs["Prefix"] == "evidence/uploads/a.mp4/"
 
 
 class TestBoxPaddingAndNormalization:
@@ -275,7 +299,7 @@ class TestEvidenceStoreAdapters:
 
         assert key == "evidence/V1/batch/E1.jpg"
         client.put_object.assert_called_once_with(
-            Bucket="bucket", Key=key, Body=b"jpeg-bytes", ContentType="image/jpeg"
+            Bucket="bucket", Key=key, Body=b"jpeg-bytes", ContentType="image/jpeg", IfNoneMatch="*"
         )
         assert await store.get_image(key) == b"jpeg-bytes"
 
@@ -396,22 +420,27 @@ class TestCropEvidenceService:
         service = CropEvidenceService(detector=detector, store=store)
 
         results = await service.process_incident_report(
-            video_ref=tiny_video_path, video_id="Burglary001", report=REPORT, batch_id="batch1"
+            video_ref=tiny_video_path,
+            video_id="vabc",
+            video_key="uploads/Burglary001.mp4",
+            report=REPORT,
+            batch_id="run-1",
         )
 
         assert [r["item_id"] for r in results] == ["E1", "I1", "A1"]
         for entry in results:
-            assert entry["image"] == f"evidence/Burglary001/batch1/{entry['item_id']}.jpg"
+            assert entry["image"] == f"evidence/uploads/Burglary001.mp4/run-1/{entry['item_id']}.jpg"
             assert entry["image_gap"] is None
             assert len(entry["bounding_box"]) == 4
             assert await store.get_image(entry["image"]) is not None
 
     @pytest.mark.asyncio
-    async def test_each_run_gets_a_new_batch_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
+    async def test_each_run_gets_the_next_run_number_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
         service = CropEvidenceService(detector=FakeDetector(), store=InMemoryEvidenceStore())
         first = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
         second = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
         assert {e["image"] for e in first}.isdisjoint({e["image"] for e in second})
+        assert {e["image"] for e in second} == {f"evidence/v/run-2/{e['item_id']}.jpg" for e in second}
 
     @pytest.mark.asyncio
     async def test_no_store_records_the_gap_for_every_item(self, tiny_video_path: Path) -> None:

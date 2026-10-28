@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
     const thumbnailKey = thumbnailKeyForVideo(videoKey);
     const body = Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]);
-    await putR2Video(config, thumbnailKey, body, file.type, file.size);
+    await putR2Video(config, thumbnailKey, body, file.type, file.size, { overwrite: true });
     await verifyR2Video(config, thumbnailKey, file.size);
     return NextResponse.json({ thumbnailKey });
   } catch (error) {

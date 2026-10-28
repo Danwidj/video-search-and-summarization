@@ -105,7 +105,7 @@ test('an embedding failure stops Save: no revision is written and the reviewer i
     String(url).startsWith('https://agent.test/') ? new Response('{"detail":"down"}', { status: 502 }) : db.fetch(url, init);
   const edit = baseEdit();
   assert.ok(edit.entities.length > 0, 'the fixture has an entity to give an image');
-  edit.entities[0].image = `evidence/${repaired.videoId}/new-uuid/${edit.entities[0].entity_id}.jpg`;
+  edit.entities[0].image = `evidence/${repaired.video.filepath}/edit-1/${edit.entities[0].entity_id}.jpg`;
 
   const response = await patch(request(edit, { note: 'Added a crop' }));
 
@@ -125,7 +125,7 @@ test('an edit with an image is embedded first, and its crop is written with the 
     return new Response(JSON.stringify([{ item_type: 'entity', item_id: 'E1', embedding: Array(1024).fill(0.25) }]), { status: 200 });
   };
   const edit = baseEdit();
-  const key = `evidence/${repaired.videoId}/new-uuid/${edit.entities[0].entity_id}.jpg`;
+  const key = `evidence/${repaired.video.filepath}/edit-1/${edit.entities[0].entity_id}.jpg`;
   edit.entities[0].image = key;
 
   const response = await patch(request(edit));

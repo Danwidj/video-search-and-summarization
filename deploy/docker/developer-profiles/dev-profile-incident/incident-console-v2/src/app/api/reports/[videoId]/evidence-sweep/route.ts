@@ -24,7 +24,7 @@ const requestSchema = z
   .strict();
 
 /**
- * Orphan sweep for one video: lists evidence/<videoId>/ in R2 and, with
+ * Orphan sweep for one video: lists evidence/<video key>/ in R2 and, with
  * dryRun false, removes the objects no revision or evidence_crops row of the
  * video names and that are older than minAgeHours (default 24, at least 1).
  * A dry run, the default, only reports them. See sweepOrphanEvidence.
@@ -52,7 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     }
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
-    const report = await sweepOrphanEvidence(getDbAdapters(config).incidents, new R2EvidenceObjectStore(config), videoId, parsed.data);
+    const report = await sweepOrphanEvidence(getDbAdapters(config), new R2EvidenceObjectStore(config), videoId, parsed.data);
     return NextResponse.json(report);
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not sweep the evidence images');

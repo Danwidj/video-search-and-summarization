@@ -105,14 +105,22 @@ export function placeholderEvidence(payload: ReportPayload, reason: string): Evi
   );
 }
 
-/** The R2 key of a newly uploaded evidence image; unique, so no object is ever overwritten. */
-export function uploadedEvidenceKey(videoId: string, uuid: string, itemId: string): string {
-  return `evidence/${videoId}/${uuid}/${itemId}.jpg`;
+/** The R2 folder of every evidence image of a video: `evidence/<video key>/`, so it reads like the video. */
+export function evidenceFolder(videoKey: string): string {
+  return `evidence/${videoKey}/`;
 }
 
-/** Whether an image key may appear in a revision of this video. */
-export function isEvidenceKeyOfVideo(key: string, videoId: string): boolean {
-  return key.startsWith(`evidence/${videoId}/`) && !key.includes('..') && key.length <= 1024;
+/**
+ * The R2 key of a reviewer's replacement image: `evidence/<video key>/edit-<n>/<itemId>.jpg`.
+ * The caller picks the first `n` whose key is free, so no object is ever overwritten.
+ */
+export function uploadedEvidenceKey(videoKey: string, editNumber: number, itemId: string): string {
+  return `${evidenceFolder(videoKey)}edit-${editNumber}/${itemId}.jpg`;
+}
+
+/** Whether an image key may appear in a revision of the video stored under `videoKey`. */
+export function isEvidenceKeyOfVideo(key: string, videoKey: string): boolean {
+  return key.startsWith(evidenceFolder(videoKey)) && !key.includes('..') && key.length <= 1024;
 }
 
 /**

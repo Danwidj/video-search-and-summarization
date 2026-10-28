@@ -103,10 +103,10 @@ const call = () =>
 
 test('deleting a video removes its objects, the video row, and the run records that name only it and no revision uses', async () => {
   storedEvidence = [
-    'evidence/v-target/0b9c/E1.jpg',
-    'evidence/v-target/0b9c/I1.jpg',
-    'evidence/v-target/7f21/E1.jpg',
-    'evidence/v-target-2/aa11/E1.jpg',
+    'evidence/uploads/s/v.mp4/0b9c/E1.jpg',
+    'evidence/uploads/s/v.mp4/0b9c/I1.jpg',
+    'evidence/uploads/s/v.mp4/7f21/E1.jpg',
+    'evidence/uploads/s/v.mp4-2/aa11/E1.jpg',
   ];
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
@@ -154,13 +154,13 @@ test('deleting a video removes its objects, the video row, and the run records t
     deletes.indexOf('videos?id=eq.v-target') < deletes.indexOf('model_runs?id=eq.m-failed'),
     'the video (and its cascaded revisions) goes first',
   );
-  assert.deepEqual(listedPrefixes, ['evidence/v-target/'], 'the trailing slash keeps v-target-2 out');
+  assert.deepEqual(listedPrefixes, ['evidence/uploads/s/v.mp4/'], 'the trailing slash keeps a file named v.mp4-2 out');
   assert.deepEqual(
     deletedObjects.sort(),
     [
-      'evidence/v-target/0b9c/E1.jpg',
-      'evidence/v-target/0b9c/I1.jpg',
-      'evidence/v-target/7f21/E1.jpg',
+      'evidence/uploads/s/v.mp4/0b9c/E1.jpg',
+      'evidence/uploads/s/v.mp4/0b9c/I1.jpg',
+      'evidence/uploads/s/v.mp4/7f21/E1.jpg',
       'thumbnails/uploads/s/v.mp4.webp',
       'uploads/s/v.mp4',
     ],
@@ -169,8 +169,8 @@ test('deleting a video removes its objects, the video row, and the run records t
 });
 
 test('an evidence image that cannot be removed keeps the video row, so the delete can be repeated', async () => {
-  storedEvidence = ['evidence/v-target/0b9c/E1.jpg', 'evidence/v-target/0b9c/I1.jpg'];
-  failingKeys = new Set(['evidence/v-target/0b9c/E1.jpg']);
+  storedEvidence = ['evidence/uploads/s/v.mp4/0b9c/E1.jpg', 'evidence/uploads/s/v.mp4/0b9c/I1.jpg'];
+  failingKeys = new Set(['evidence/uploads/s/v.mp4/0b9c/E1.jpg']);
   const deletes = [];
   globalThis.fetch = async (url, init = {}) => {
     if (init.method === 'DELETE') deletes.push(String(url));
@@ -178,9 +178,9 @@ test('an evidence image that cannot be removed keeps the video row, so the delet
   };
   const response = await call();
   assert.equal(response.status, 500);
-  assert.match((await response.json()).error, /1 of 2 evidence images.*evidence\/v-target\/0b9c\/E1\.jpg: R2 refused/);
+  assert.match((await response.json()).error, /1 of 2 evidence images.*evidence\/uploads\/s\/v\.mp4\/0b9c\/E1\.jpg: R2 refused/);
   assert.deepEqual(deletes, [], 'no row is deleted');
-  assert.ok(deletedObjects.includes('evidence/v-target/0b9c/I1.jpg'), 'the other images are still removed');
+  assert.ok(deletedObjects.includes('evidence/uploads/s/v.mp4/0b9c/I1.jpg'), 'the other images are still removed');
 });
 
 test('a video without a stored object is refused and nothing is deleted', async () => {

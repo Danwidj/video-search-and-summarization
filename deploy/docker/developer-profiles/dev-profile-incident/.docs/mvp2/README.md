@@ -37,7 +37,7 @@ Keyframe @ timestamp_seconds  ────────────────�
  Cropped JPEG (evidence image)                        High-precision box
        |                                                   |
        V                                                   V
-  R2: evidence/<videoId>/<batchId>/<itemId>.jpg  Supabase evidence_crops table
+  R2: evidence/<video key>/run-<N>/<itemId>.jpg  Supabase evidence_crops table
                                                  (embedding vector(1024), timestamp_seconds, bounding_box)
        |
        | (Text Embedding Model generates vector(1024) from item description)

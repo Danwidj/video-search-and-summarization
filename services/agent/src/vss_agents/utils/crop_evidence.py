@@ -26,6 +26,7 @@ from abc import ABC
 from abc import abstractmethod
 import asyncio
 import base64
+from collections.abc import Iterable
 from collections.abc import Sequence
 from dataclasses import dataclass
 import io
@@ -39,7 +40,6 @@ import time
 from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
-import uuid
 
 try:
     import cv2
@@ -75,19 +75,28 @@ class CropResult:
     frame_size: tuple[int, int]  # (width, height)
 
 
-def evidence_key(video_id: str, batch_id: str, item_id: str) -> str:
-    """Return the R2 key for one evidence crop image: ``evidence/<videoId>/<batchId>/<itemId>.jpg``.
+def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
+    """Return the R2 key for one evidence crop image: ``evidence/<video key>/<batchId>/<itemId>.jpg``.
 
-    ``batch_id`` is a fresh UUID per analysis run (:func:`new_evidence_batch_id`), so a key is
-    never reused and an image a revision references is never overwritten. Item ids (``E1``,
-    ``I1``, ``A1``) are unique across the three collections, so no collection folder is needed.
+    ``video_key`` is the video's own R2 key (``uploads/clip.mp4``), so the path reads like the video.
+    ``batch_id`` is ``run-<n>``, one per analysis run of that video (:meth:`EvidenceStore.next_batch_id`),
+    so a key is never reused and an image a revision references is never overwritten. Item ids
+    (``E1``, ``I1``, ``A1``) are unique across the three collections, so no collection folder is needed.
     """
-    return f"evidence/{video_id}/{batch_id}/{item_id}.jpg"
+    return f"evidence/{video_key}/{batch_id}/{item_id}.jpg"
 
 
-def new_evidence_batch_id() -> str:
-    """A fresh batch id for :func:`evidence_key`."""
-    return uuid.uuid4().hex
+_BATCH_PATTERN = re.compile(r"^run-(\d+)$")
+
+
+def next_run_batch_id(existing_batch_ids: Iterable[str]) -> str:
+    """The batch id after the highest ``run-<n>`` in ``existing_batch_ids`` (``run-1`` when none)."""
+    highest = 0
+    for batch_id in existing_batch_ids:
+        match = _BATCH_PATTERN.match(batch_id)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"run-{highest + 1}"
 
 
 def apply_box_padding(
@@ -466,6 +475,11 @@ class EvidenceStore(ABC):
         """Retrieve stored image bytes by key."""
         ...
 
+    @abstractmethod
+    async def next_batch_id(self, video_key: str) -> str:
+        """The next unused ``run-<n>`` batch id under ``evidence/<video_key>/``."""
+        ...
+
 
 class InMemoryEvidenceStore(EvidenceStore):
     """In-memory adapter for hermetic unit testing and zero-cloud environments."""
@@ -480,6 +494,10 @@ class InMemoryEvidenceStore(EvidenceStore):
     async def get_image(self, key: str) -> bytes | None:
         return self.images.get(key)
 
+    async def next_batch_id(self, video_key: str) -> str:
+        prefix = f"evidence/{video_key}/"
+        return next_run_batch_id(key[len(prefix) :].split("/")[0] for key in self.images if key.startswith(prefix))
+
 
 class R2EvidenceStore(EvidenceStore):
     """Cloudflare R2 adapter for evidence crop images (the production store)."""
@@ -492,10 +510,32 @@ class R2EvidenceStore(EvidenceStore):
         return self._client if self._client is not None else get_r2_client()
 
     async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
+        # IfNoneMatch="*" makes R2 refuse (412) a key that exists, so a stored crop is never overwritten.
         await asyncio.to_thread(
-            self._get_client().put_object, Bucket=self.bucket, Key=key, Body=image_bytes, ContentType=content_type
+            self._get_client().put_object,
+            Bucket=self.bucket,
+            Key=key,
+            Body=image_bytes,
+            ContentType=content_type,
+            IfNoneMatch="*",
         )
         return key
+
+    async def next_batch_id(self, video_key: str) -> str:
+        def _list_batches() -> list[str]:
+            prefix = f"evidence/{video_key}/"
+            batches: list[str] = []
+            for page in (
+                self._get_client()
+                .get_paginator("list_objects_v2")
+                .paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/")
+            ):
+                batches.extend(
+                    str(entry["Prefix"])[len(prefix) :].rstrip("/") for entry in page.get("CommonPrefixes", [])
+                )
+            return batches
+
+        return next_run_batch_id(await asyncio.to_thread(_list_batches))
 
     async def get_image(self, key: str) -> bytes | None:
         try:
@@ -605,6 +645,7 @@ class CropEvidenceService:
         video_ref: str | Path | np.ndarray,
         video_id: str,
         report: dict[str, Any],
+        video_key: str | None = None,
         batch_id: str | None = None,
         detector: Any | None = None,
         store: EvidenceStore | None = None,
@@ -612,14 +653,16 @@ class CropEvidenceService:
         """Crop every entity, instrument and asset of a report and upload each image.
 
         Returns one evidence entry per item (see :func:`evidence_items`) for the revision's
-        ``evidence`` JSONB. ``image`` is the R2 key ``evidence/<videoId>/<batchId>/<itemId>.jpg``
+        ``evidence`` JSONB. ``image`` is the R2 key ``evidence/<video key>/run-<n>/<itemId>.jpg`` (``video_key`` is the video's
+        R2 key; callers without one, such as the prompt experiments, fall back to ``video_id``)
         and ``bounding_box`` the normalised crop box; when no image could be produced ``image`` and
         ``bounding_box`` are null and ``image_gap`` says why. Never raises for a single item.
         """
         active_detector = detector if detector is not None else self.detector
         active_store = store if store is not None else self.store
-        batch = batch_id or new_evidence_batch_id()
+        folder = video_key or video_id
         items = evidence_items(report)
+        batch = batch_id or (await active_store.next_batch_id(folder) if active_store is not None else "run-1")
 
         detector_ready = detector is not None or self.is_detector_available()
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
@@ -645,7 +688,7 @@ class CropEvidenceService:
                         f"no crop produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
                     )
                     return
-                key = evidence_key(video_id, batch, entry["item_id"])
+                key = evidence_key(folder, batch, entry["item_id"])
                 try:
                     await active_store.put_image(key, crop.image_bytes)
                 except Exception as exc:

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 
+import { inspectUploadName } from '@/lib/r2/names';
 import { isValidR2Key } from '@/lib/r2/key';
 import { thumbnailCaptureTime } from '@/lib/ui/thumbnail';
 import { chunkedUpload } from '@/modules/videos/infrastructure/vst/chunked-upload';
@@ -20,11 +21,26 @@ interface ApiError {
   error?: string;
 }
 
-function safeFilename(name: string): string {
-  const dot = name.lastIndexOf('.');
-  const stem = (dot > 0 ? name.slice(0, dot) : name).replace(/\s+/g, '-').replace(/[^A-Za-z0-9._-]/g, '');
-  const extension = dot > 0 ? name.slice(dot).replace(/[^A-Za-z0-9.]/g, '') : '';
-  return `${stem || 'incident-video'}${extension}`;
+export interface UploadNameReport {
+  /** The name the file will be stored under. */
+  name: string;
+  unsafeChars: string[];
+  truncated: boolean;
+  /** True when the file's own name is taken, so `name` carries a counter. */
+  exists: boolean;
+  existingName: string;
+}
+
+/** Asks the console what name an upload would get, before anything is sent. */
+export async function checkUploadName(filename: string): Promise<UploadNameReport> {
+  const response = await fetch('/api/uploads/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  const payload = (await response.json()) as UploadNameReport & ApiError;
+  if (!response.ok) throw new Error(payload.error || `Request failed with HTTP ${response.status}`);
+  return payload;
 }
 
 async function initUpload(filename: string): Promise<UploadInitialization> {
@@ -44,10 +60,9 @@ async function initUpload(filename: string): Promise<UploadInitialization> {
  * the real VST/NvStreamer case, since only mock-backend's own reimplementation
  * fakes that field by doing its own R2 upload.
  */
-async function uploadToR2(file: File, sensorId: string, filename: string, signal: AbortSignal): Promise<string> {
+async function uploadToR2(file: File, filename: string, signal: AbortSignal): Promise<string> {
   const form = new FormData();
   form.append('file', file, filename);
-  form.append('sensorId', sensorId);
   form.append('filename', filename);
   const response = await fetch('/api/uploads/r2', { method: 'POST', body: form, signal });
   const payload = (await response.json()) as { filePath?: string } & ApiError;
@@ -136,7 +151,7 @@ async function uploadThumbnail(thumbnail: Blob, videoKey: string, signal: AbortS
 export function useVideoUpload() {
   const upload = useCallback(async (file: File, signal: AbortSignal, onProgress: (progress: number) => void): Promise<UploadedVideo> => {
     const thumbnail = captureThumbnail(file).catch(() => null);
-    const filename = safeFilename(file.name);
+    const filename = inspectUploadName(file.name).name;
     const initialized = await initUpload(filename);
     if (!initialized.url) throw new Error('The upload service did not return an upload URL');
 
@@ -160,12 +175,12 @@ export function useVideoUpload() {
     // Mock-backend's chunk-upload response already carries a valid R2 key
     // (it does its own R2 upload); real VST/NvStreamer never returns one,
     // so fall back to uploading the file to R2 ourselves in that case.
-    const filePath = isValidR2Key(uploaded.filePath) ? uploaded.filePath : await uploadToR2(file, uploaded.sensorId, filename, signal);
+    const filePath = isValidR2Key(uploaded.filePath) ? uploaded.filePath : await uploadToR2(file, filename, signal);
 
     const thumbnailBlob = await thumbnail;
     if (thumbnailBlob) await uploadThumbnail(thumbnailBlob, filePath, signal).catch(() => undefined);
 
-    return { sensorId: uploaded.sensorId, filePath, filename };
+    return { sensorId: uploaded.sensorId, filePath, filename: filePath.split('/').pop() || filename };
   }, []);
 
   return { upload };

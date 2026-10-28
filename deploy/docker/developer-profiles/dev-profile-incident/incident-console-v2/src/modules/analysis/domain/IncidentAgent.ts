@@ -6,6 +6,8 @@
 
 export interface AgentAnalyzeRequest {
   videoId: string;
+  /** The video's R2 key; the agent names its evidence crops after it. */
+  videoKey: string;
   /** The signed R2 playback URL the agent fetches the video from. */
   videoUrl: string;
   modelRunId: string;

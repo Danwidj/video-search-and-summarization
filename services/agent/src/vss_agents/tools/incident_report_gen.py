@@ -34,8 +34,8 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
    failed RP1 never discards a valid P1 report; the error is returned instead. ``skip_rp1``
    leaves it out (``incident-console-v2`` agent mode, which, like gateway mode, uses P1 only).
 3. **Evidence** - each entity, instrument and asset is cropped from the video at its
-   ``timestamp_seconds`` and uploaded to R2 under a fresh ``evidence/<videoId>/<uuid>/<itemId>.jpg``
-   key (``crop_evidence``). An item without an image keeps a plain ``image_gap`` reason.
+   ``timestamp_seconds`` and uploaded to R2 under ``evidence/<video key>/run-<n>/<itemId>.jpg``
+   (the video's own R2 key and the next unused run number) (``crop_evidence``). An item without an image keeps a plain ``image_gap`` reason.
 4. **Revision** - the validated report is appended best-effort as a new ``kind='ai'``
    ``report_revisions`` row (``payload`` = report, ``evidence`` = step 3, facet columns,
    ``parent_id`` NULL). A re-generation is a new branch and copies nothing from earlier revisions.
@@ -119,6 +119,12 @@ class IncidentReportGenInput(BaseModel):
     incident_id: str = Field(..., min_length=1, max_length=20, description="Console videos.id.")
     video_url: str = Field(
         ..., min_length=1, description="Signed R2 URL of the uploaded video, created by the console."
+    )
+    video_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=900,
+        description="The video's R2 key; evidence crops go under evidence/<video_key>/. Falls back to incident_id.",
     )
     model_run_id: str | None = Field(
         default=None,
@@ -340,6 +346,7 @@ async def collect_evidence(
     incident_id: str,
     report: dict[str, Any],
     store: crop_evidence.EvidenceStore | None = None,
+    video_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
@@ -347,7 +354,7 @@ async def collect_evidence(
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
-            video_ref=video_url, video_id=incident_id, report=report, store=store
+            video_ref=video_url, video_id=incident_id, report=report, store=store, video_key=video_key
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -505,11 +512,15 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 incident_id=tool_input.incident_id,
                 report=report,
                 store=crop_evidence.InMemoryEvidenceStore(),
+                video_key=tool_input.video_key,
             )
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
         else:
             evidence = await collect_evidence(
-                video_url=tool_input.video_url, incident_id=tool_input.incident_id, report=report
+                video_url=tool_input.video_url,
+                incident_id=tool_input.incident_id,
+                report=report,
+                video_key=tool_input.video_key,
             )
         # An experimental request never writes a report revision: its output is an experiment result.
         revision_id = (
