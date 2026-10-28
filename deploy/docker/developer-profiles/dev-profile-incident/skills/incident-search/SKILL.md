@@ -39,7 +39,7 @@ curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
 
 ## Search evidence
 
-Send a natural-language query to the backend. The route embeds the query with the same 1024-dimensional text embedding model used for crop metadata, queries `search_evidence_items`, and runs the VLM critic for every returned candidate.
+Send a natural-language query to the backend. The route embeds the query with the same 1024-dimensional text embedding model used for crop metadata, queries `search_evidence_items`, and returns the ranked hits. The VLM critic is off by default (the agent's `INCIDENT_SEARCH_CRITIC`); every hit is then `unverified` with the rationale `Critic not run`.
 
 ```bash
 # VM mode
@@ -53,15 +53,15 @@ curl -sS -X POST http://localhost:7777/api/v1/incidents/search \
   -d '{"query":"crowbar used in burglary","top_k":3}' | jq .
 ```
 
-The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, and `max_severity`. Each hit includes:
+The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, `max_severity` and `video_id` (one incident only; `query` may then be empty and lists that incident's evidence in video time order). Each hit includes:
 
 - `item`: entity, instrument or asset metadata, `timestamp_seconds`, optional normalized `bounding_box`, and `crop_image_url`;
 - `incident`: the parent incident, model run, playback URL and incident window; and
-- `critic`: `confirmed`, `rejected`, or `unverified`, with confidence and rationale.
+- `critic`: `unverified` unless the critic is on, then `confirmed`, `rejected` or `unverified`, with confidence and rationale.
 
-Treat similarity as retrieval ranking, not proof. The critic verdict is the visual check. A crop URL is a signed/private object URL and may expire; use the parent playback URL and `timestamp_seconds` to inspect the source video when needed. `hide_rejected` is true by default.
+Treat similarity as retrieval ranking, not proof. With the critic on, its verdict is the visual check; otherwise inspect the crop and the source video. A crop URL is a signed/private object URL and may expire; use the parent playback URL and `timestamp_seconds` to inspect the source video when needed. `hide_rejected` is true by default.
 
-The route persists the query and ranked verdicts in `queries` and `query_results`. It does not reorder hits after critic evaluation. The VM critic is rate-limited by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1 second; zero disables the delay); change that only as an explicit VM operations decision.
+The route persists the query and ranked verdicts in `queries` and `query_results`. It does not reorder hits after critic evaluation. With the critic on, the VM critic is rate-limited by `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` (default 1 second; zero disables the delay); change that only as an explicit VM operations decision.
 
 ## Grounded chat
 
@@ -69,7 +69,7 @@ Use chat for a follow-up question rather than treating a free-form answer as an 
 
 The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft. A question about the official version with no draft finds no evidence, by decision ([`.docs/decisions.md`](../../.docs/decisions.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2)).
 
-The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query"}`), which calls the agent with `top_k` 20, `min_similarity` 0 and `hide_rejected` false, then adds each video's searched version to the hits. Search takes about a second per hit (the critic), so the route allows up to 115 seconds.
+The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query", "videoId"?}`), which calls the agent with `top_k` 20 (50 when `videoId` is set, passed as `filters.video_id`) and `min_similarity` 0, then adds each video's searched version to the hits. "See evidence" on a library card sends `videoId` with an empty query to list that incident's evidence.
 
 ```bash
 curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \

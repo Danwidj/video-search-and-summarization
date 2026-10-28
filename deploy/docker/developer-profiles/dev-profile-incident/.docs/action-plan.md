@@ -25,7 +25,7 @@ An intelligent, video-driven incident search and reporting system for physical s
 
 ### MVP2: natural-language incident search
 
-Delivered: evidence crops at VLM item timestamps, pgvector search over them with an always-on VLM critic, `/library` search and the report chat. Specification and architecture: [`mvp2/README.md`](mvp2/README.md); state: [`status.md`](status.md#2-mvp2-natural-language-evidence-search). The multi-subagent routing config and full RT-CV / RT-Embed indexing are dropped ([decision](decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
+Delivered: evidence crops at VLM item timestamps, pgvector search over them (one shared search for incidents and evidence, optionally scoped to one video; the VLM critic is dormant by default), `/library` search and the report chat. Specification and architecture: [`mvp2/README.md`](mvp2/README.md); state: [`status.md`](status.md#2-mvp2-natural-language-evidence-search). The multi-subagent routing config and full RT-CV / RT-Embed indexing are dropped ([decision](decisions.md#2026-10-24-drop-multi-subagent-routing-and-full-rt-cv--rt-embed-indexing-from-mvp2)).
 
 ## 3. Standing architectural decisions
 
