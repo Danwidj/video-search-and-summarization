@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { cn } from 'cn';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,10 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
-type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
+import { getStageAnnouncement, getStageProgress, type StageKey, stageLabels, stageOrder } from '@/sections/analysis/stage-progress';
+
+export type { StageKey };
+export { getStageAnnouncement, getStageProgress, stageLabels, stageOrder };
 
 interface ApiError {
   error?: string;
@@ -22,24 +26,6 @@ interface ModelOption {
   id: string;
   label: string;
 }
-
-const stageLabels: Array<{ key: StageKey; label: string }> = [
-  { key: 'uploading', label: 'Uploading video' },
-  { key: 'preparing', label: 'Preparing secure access' },
-  { key: 'analyzing', label: 'Understanding the incident' },
-  { key: 'saving', label: 'Structuring and saving report' },
-  { key: 'complete', label: 'Report ready' },
-];
-
-const stageOrder: Record<StageKey, number> = {
-  idle: -1,
-  uploading: 0,
-  preparing: 1,
-  analyzing: 2,
-  saving: 3,
-  complete: 4,
-  error: -1,
-};
 
 async function apiJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -62,21 +48,65 @@ function nameWarning(original: string, report: UploadNameReport): { name: string
   return { name: report.name, message: `${original} will be stored as ${report.name}: ${notes.join('; ')}.` };
 }
 
-export function AnalysisWorkspace() {
+export interface AnalysisWorkspaceProps {
+  initialStage?: StageKey;
+  initialUploadProgress?: number;
+  initialFileName?: string;
+  initialError?: string | null;
+}
+
+export function AnalysisWorkspace({ initialStage, initialUploadProgress, initialFileName, initialError }: AnalysisWorkspaceProps = {}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(() => {
+    if (initialFileName) {
+      return new File(['fixture'], initialFileName, { type: 'video/mp4' });
+    }
+    return null;
+  });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [stage, setStage] = useState<StageKey>('idle');
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<StageKey>(initialStage ?? 'idle');
+  const [lastActiveStage, setLastActiveStage] = useState<StageKey>(
+    initialStage && initialStage !== 'idle' && initialStage !== 'error' ? initialStage : 'idle',
+  );
+  const [uploadProgress, setUploadProgress] = useState(initialUploadProgress ?? 0);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
   const [storedName, setStoredName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
   const { upload } = useVideoUpload();
+
+  function changeStage(newStage: StageKey) {
+    setStage(newStage);
+    if (newStage !== 'idle' && newStage !== 'error') {
+      setLastActiveStage(newStage);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const fixtureStage = params.get('fixtureStage') as StageKey | null;
+    if (fixtureStage && fixtureStage in stageOrder) {
+      const mockFileName = params.get('fixtureFile') || 'Assault018_x264_demo.mp4';
+      const mockProgress = Number(params.get('fixtureProgress') || (fixtureStage === 'uploading' ? 45 : 0));
+      const mockError = params.get('fixtureError') || (fixtureStage === 'error' ? 'Analysis request timed out.' : null);
+
+      setFile(new File(['fixture-content'], mockFileName, { type: 'video/mp4' }));
+      setStage(fixtureStage);
+      if (fixtureStage !== 'idle' && fixtureStage !== 'error') {
+        setLastActiveStage(fixtureStage);
+      } else if (fixtureStage === 'error') {
+        const failedAt = (params.get('fixtureFailedAt') as StageKey) || 'analyzing';
+        setLastActiveStage(failedAt);
+      }
+      setUploadProgress(mockProgress);
+      if (mockError) setError(mockError);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -107,6 +137,7 @@ export function AnalysisWorkspace() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new file re-runs the check
   useEffect(() => {
     if (!file || stage !== 'idle') return;
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fixtureStage')) return;
     let active = true;
     void checkUploadName(file.name)
       .then((report) => (active ? nameWarning(file.name, report) : null))
@@ -134,6 +165,7 @@ export function AnalysisWorkspace() {
     setStoredName(null);
     setError(null);
     setStage('idle');
+    setLastActiveStage('idle');
     setUploadProgress(0);
   }
 
@@ -146,21 +178,21 @@ export function AnalysisWorkspace() {
     setUploadProgress(0);
 
     try {
-      setStage('uploading');
+      changeStage('uploading');
       const { sensorId, filePath, filename } = await upload(file, controller.signal, setUploadProgress);
 
-      setStage('preparing');
+      changeStage('preparing');
       await apiJson('/api/uploads/complete', { sensorId, filename });
 
-      setStage('analyzing');
+      changeStage('analyzing');
       const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
         sensorId,
         filepath: filePath,
         filename,
         ...(model ? { model } : {}),
       });
-      setStage('saving');
-      setStage('complete');
+      changeStage('saving');
+      changeStage('complete');
       router.push(`/reports/${encodeURIComponent(result.report.videoId)}?revision=${result.report.revisionId}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Analysis failed';
@@ -172,7 +204,11 @@ export function AnalysisWorkspace() {
   }
 
   const activeIndex = stageOrder[stage];
+  const effectiveActiveIndex = stage === 'error' ? stageOrder[lastActiveStage] : activeIndex;
+  const failedStageIndex = stage === 'error' ? stageOrder[lastActiveStage] : -1;
   const busy = ['uploading', 'preparing', 'analyzing', 'saving'].includes(stage);
+  const progressValue = getStageProgress(stage, uploadProgress, lastActiveStage);
+  const announcement = getStageAnnouncement(stage, uploadProgress, error);
 
   return (
     <Card
@@ -280,33 +316,73 @@ export function AnalysisWorkspace() {
       )}
 
       {file && (
-        <div className="mt-5">
+        <div className="mt-5 flex flex-col gap-4">
           {stage !== 'idle' && (
-            <ol className="mb-5 grid gap-2 sm:grid-cols-5">
-              {stageLabels.map((item, index) => {
-                const done = stage === 'complete' || index < activeIndex;
-                const active = index === activeIndex;
-                return (
-                  <li
-                    className={`rounded-xl border px-3 py-3 text-xs transition-colors ${done ? 'border-primary/30 bg-primary/10 text-primary' : active ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground'}`}
-                    key={item.key}
-                  >
-                    <span className="mb-2 block font-mono font-semibold">{done ? '✓' : String(index + 1).padStart(2, '0')}</span>
-                    {item.label}
-                  </li>
-                );
-              })}
-            </ol>
+            <div className="flex flex-col gap-2.5" data-testid="analysis-progress">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {stage === 'complete' ? 'Analysis complete' : stage === 'error' ? 'Analysis stopped' : 'Analysis in progress'}
+                </span>
+                <span className="font-mono font-semibold text-foreground">{progressValue}%</span>
+              </div>
+
+              <Progress
+                className="h-2 w-full"
+                value={progressValue}
+                aria-label="Analysis progress"
+                aria-valuenow={progressValue}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={announcement}
+              />
+
+              <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                {announcement}
+              </div>
+
+              <ol className="mt-1 grid gap-2 sm:grid-cols-5" aria-label="Analysis stages">
+                {stageLabels.map((item, index) => {
+                  const done = stage === 'complete' || (effectiveActiveIndex !== -1 && index < effectiveActiveIndex);
+                  const active = index === effectiveActiveIndex && stage !== 'error';
+                  const isFailed = stage === 'error' && index === failedStageIndex;
+                  return (
+                    <li
+                      className={cn(
+                        'flex flex-col gap-1.5 rounded-xl border p-3 text-xs transition-colors',
+                        done && 'border-primary/30 bg-primary/10 text-primary',
+                        active && 'border-primary bg-primary/5 text-primary font-medium shadow-xs',
+                        !done && !active && !isFailed && 'border-border text-muted-foreground bg-card/40',
+                        isFailed && 'border-destructive/40 bg-destructive/10 text-destructive',
+                      )}
+                      key={item.key}
+                      aria-current={active ? 'step' : undefined}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] font-semibold">
+                          {done ? '✓' : isFailed ? '✕' : String(index + 1).padStart(2, '0')}
+                        </span>
+                        {done && <span className="sr-only">(completed)</span>}
+                        {active && <span className="sr-only">(current step)</span>}
+                        {isFailed && <span className="sr-only">(failed)</span>}
+                        {active && item.key === 'uploading' && uploadProgress > 0 && (
+                          <span className="font-mono text-[11px] text-primary/80">{uploadProgress}%</span>
+                        )}
+                      </div>
+                      <span className="leading-snug">{item.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
           )}
 
-          {stage === 'uploading' && <Progress className="mb-4" value={uploadProgress} />}
           {nameNotice && stage === 'idle' && (
-            <Alert className="mb-4 border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+            <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200">
               <AlertDescription>{nameNotice}</AlertDescription>
             </Alert>
           )}
           {error && (
-            <Alert variant="destructive" className="mb-4">
+            <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
