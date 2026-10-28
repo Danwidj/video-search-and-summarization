@@ -1,6 +1,9 @@
 # Gateway failures, host availability and the recovery protocol (proposed)
 
-> **Status, 2026-10-28:** tooling implemented and tested hermetically. **No recovery or other inference has run.** `retry-v2` and `recovery-v1` are proposals: they are used only after the owner approves them and their budget. The original Stage 1 results are unchanged.
+> **Status, 2026-10-28:** **`retry-v2` and `recovery-v1` are approved by the owner** (B1) as the standard protocol for future experiments. They are applied identically to every arm.
+> - **No recovery has run:** the optional Stage 1 recovery is deferred by the owner.
+> - **Stage 2:** the final execution plan and its reconciled budget are in [stage2-plan.md](stage2-plan.md) (§3–§4).
+> - **The original Stage 1 results are unchanged.**
 
 ## 1. What failed in Stage 1 (investigation)
 
@@ -62,12 +65,14 @@
    - D9 G3 refuses a comparison between different protocols or methodology versions;
    - reports show original-run reliability next to recovered-run accuracy, never mixed.
 6. **Symmetry:** a recovery is applied to **all** arms of a stage or to none.
+7. **Hard limit:** at most 15 recovered video-runs per config (`experiment_recovery.MAX_RECOVERED_RUNS`, `--max-runs`). More than that after `retry-v2` means a persistent outage: the recovery is refused, and the outage is reported.
+   - The deferred Stage 1 recovery (16 and 18 runs, from a run with no in-run retries) would need `--max-runs 18`, set deliberately.
 
 **Commands** (from `eval/`):
 - `eval_experiment.py recover <results.json>…` is a dry run: it lists what would be recovered and the caps.
 - Adding `--confirm-paid` runs it. **Not run.**
 
-## 5. Additional inference budget (for approval; gateway $0 per token, infrastructure cost unknown)
+## 5. Additional inference budget (revision 2; superseded by [stage2-plan.md §3](stage2-plan.md#3-reconciled-budget))
 
 | Item | Video-runs | Hard cap: P1 attempts / P1-token bound / judge calls | Expected attempts |
 |---|---|---|---|
