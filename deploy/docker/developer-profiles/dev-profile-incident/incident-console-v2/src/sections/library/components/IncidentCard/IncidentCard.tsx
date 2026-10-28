@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { HistoryIcon, MoreHorizontalIcon, SearchIcon, StarIcon, Trash2Icon, VideoIcon, WrenchIcon } from 'lucide-react';
+import { HistoryIcon, MoreHorizontalIcon, SearchIcon, StarIcon, TagIcon, Trash2Icon, VideoIcon, WrenchIcon } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
@@ -54,7 +54,7 @@ export function IncidentCard({
         role="link"
         tabIndex={0}
         aria-label={`Open report: ${displayTitle}`}
-        className="group relative flex max-h-[40vh] cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+        className="group relative flex cursor-pointer flex-col gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
         id={`report-${item.revisionId}`}
         onClick={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
@@ -68,7 +68,12 @@ export function IncidentCard({
           }
         }}
       >
-        <ReportThumbnail kind={item.kind} severity={item.severity} thumbnailUrl={item.thumbnailUrl}>
+        <ReportThumbnail
+          alt={`Video screenshot for ${displayTitle}`}
+          kind={item.kind}
+          severity={item.severity}
+          thumbnailUrl={item.thumbnailUrl}
+        >
           <div className="absolute right-2 top-2 z-10" data-no-card-nav>
             <TooltipProvider>
               <DropdownMenu>
@@ -132,7 +137,14 @@ export function IncidentCard({
 
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p>
+            <p
+              className="inline-flex min-w-0 items-center gap-1 rounded-md bg-moss/10 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-moss"
+              data-testid="library-incident-type"
+            >
+              <TagIcon aria-hidden className="size-3 shrink-0" />
+              <span className="sr-only">Incident type: </span>
+              <span className="truncate">{item.incident_type}</span>
+            </p>
             <div className="flex shrink-0 items-center gap-1" data-no-card-nav>
               <TooltipProvider>
                 {item.outcome === 'valid_after_structural_repair' && (
@@ -163,7 +175,7 @@ export function IncidentCard({
                   </Tooltip>
                 ) : (
                   <span
-                    className="inline-flex items-center rounded-full border border-[#f3cc68] bg-[#fff1c7] px-2 py-0.5 text-[11px] font-bold text-[#765300]"
+                    className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
                     data-testid="library-no-official-marker"
                   >
                     No official version
