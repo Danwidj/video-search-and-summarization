@@ -64,6 +64,30 @@ def cmd_build(args) -> int:
     return 0
 
 
+def cmd_extend(args) -> int:
+    """Calibration v2: the v1 sheet unchanged plus four random large blocks (their own sheet for the labeller)."""
+    v1 = json.loads((WORK / "label-sheet.json").read_text())
+    records = [json.loads(Path(p).read_text()) for p in args.results]
+    large = mc.sample_large(mc.eligible_blocks(records, large=True), first_number=len(v1["blocks"]) + 1)
+    paths = {"sheet": WORK / "label-sheet-v2.json", "large": WORK / "label-sheet-v2-large.json"}
+    if any(p.exists() for p in paths.values()):
+        print("REFUSED: a v2 sheet exists (sheets are built once)", file=sys.stderr)
+        return 2
+    large_sheet = mc.label_sheet(large)
+    paths["large"].write_text(json.dumps(large_sheet, indent=2, ensure_ascii=False) + "\n")
+    paths["sheet"].write_text(json.dumps({**v1, "version": "v2", "blocks": v1["blocks"] + large_sheet["blocks"]},
+                                         indent=2, ensure_ascii=False) + "\n")
+    (WORK / "blocks-provenance-v2.json").write_text(json.dumps(
+        {"seed": mc.LARGE_SEED, "count": mc.LARGE_BLOCKS, "rule": "blocks of more than MAX_BLOCK_PAIRS pairs, "
+         "shuffled under the seed, at most one per clip; never by similarity or score",
+         "v1_sheet_sha256": mc.sha256_file(WORK / "label-sheet.json"), "sources": [str(p) for p in args.results],
+         "blocks": [{k: b[k] for k in ("block_id", "experiment_id", "incident_id", "category", "repeat", "kind")}
+                    for b in large]}, indent=2) + "\n")
+    print(json.dumps({k: {"path": str(p), "sha256": mc.sha256_file(p)} for k, p in paths.items()} |
+                     {"large_pairs": sum(len(b["predicted"]) * len(b["ground_truth"]) for b in large)}))
+    return 0
+
+
 def cmd_evaluate(args) -> int:
     sheet = json.loads((WORK / "label-sheet.json").read_text())
     labels = mc.load_jsonl(args.labels)
@@ -100,10 +124,12 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     build = sub.add_parser("build")
     build.add_argument("results", nargs="+", type=Path)
+    extend = sub.add_parser("extend")
+    extend.add_argument("results", nargs="+", type=Path)
     evaluate = sub.add_parser("evaluate")
     evaluate.add_argument("--labels", type=Path, required=True)
     args = parser.parse_args()
-    return {"build": cmd_build, "evaluate": cmd_evaluate}[args.command](args)
+    return {"build": cmd_build, "extend": cmd_extend, "evaluate": cmd_evaluate}[args.command](args)
 
 
 if __name__ == "__main__":

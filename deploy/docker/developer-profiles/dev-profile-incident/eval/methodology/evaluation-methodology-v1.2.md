@@ -44,6 +44,43 @@ Stage 1 found that at 0.75 almost no pair matches, even clear same-item pairs (c
    - A per-kind τ is adopted only if a kind's own best F1 beats the pooled τ's F1 for that kind by more than its bootstrap interval. That decision is recorded.
    - **Stage 1 model scores are never an input.**
 
+## Calibration v2 (owner-approved extension, rules fixed 2026-10-28 before any v2 label or result existed)
+
+The v1 sheet and labels are kept unchanged. v2 adds the following:
+
+1. **Large blocks:**
+   - **Sampling:** 4 blocks of more than 9 pairs, drawn by `matching_calibration.sample_large` (seed 20261029, uniform shuffle, at most one per clip, never by similarity or score). Result: B23–B26, 62 pairs.
+   - **Labelling:** a fresh blind AI labeller labels every pair, with evidence (frames and timestamps), a reason and an uncertainty.
+2. **Audit:**
+   - **v1 pairs (24):** an independent AI auditor re-labels, blind to the score, to the v1 label and to why each pair was chosen:
+     - the 8 ambiguous pairs;
+     - the false matches at 0.30 and 0.40;
+     - the missed matches at 0.40;
+     - after de-duplication, a random fill (seed 20261030) to reach 24.
+   - **Large-block pairs (12):** a random 12 of the large-block pairs (seed 20261031), as a double label.
+   - **Not human:** the audit is AI-assisted, not human verification.
+3. **Resolution into the v2 labels** (`labels-v2.jsonl`):
+
+   | Case | v2 label |
+   |---|---|
+   | The audit agrees | Unchanged |
+   | v1 `ambiguous`, audit decisive with low or medium uncertainty | The audit label |
+   | Decisive labels disagree (`same` against `different`), or a decisive label is met by an `ambiguous` audit | `ambiguous` (left out of the primary analysis), and listed for human review |
+   | Large-block double labels | Resolved the same way |
+
+4. **Grid:** τ from 0.10 to 0.80 in steps of 0.05.
+5. **Selection rule (unchanged from v1):** the highest pooled F1 over all 26 blocks (Hungarian assignment within each block, ambiguous pairs left out). Ties within 0.01 go to the higher τ.
+6. **Robustness, reported:**
+   - P/R/F1 and false matches for small blocks (B01–B22) and large blocks (B23–B26) separately;
+   - ambiguous pairs counted as `same` and as `different`;
+   - per kind;
+   - a 95% block-bootstrap interval of F1 at τ\*;
+   - **selection stability:** the rule re-applied to 2,000 block-bootstrap resamples (seed 20261028), giving the frequency with which each τ is selected.
+7. **Conservative fallback (fixed now):**
+   - **Trigger:** τ\* is selected in fewer than 50% of the resamples **and** the central 90% of selected values spans more than 0.10.
+   - **Recommendation:** the **highest** τ in that central range whose pooled F1 is within 0.05 of F1(τ\*). It favours precision and is documented as the conservative choice. τ\* is reported alongside it.
+8. **Never an input:** Stage 1 model scores, or any score difference between configurations.
+
 ## Limitations
 
 - **Small:** 70 pairs from 25 clips. The interval on F1 is reported, and τ is a point estimate.
