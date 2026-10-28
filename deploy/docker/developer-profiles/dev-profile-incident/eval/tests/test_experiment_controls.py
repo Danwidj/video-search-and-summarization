@@ -118,8 +118,6 @@ def test_a_stage_needs_the_same_videos_and_repeats(tmp_path):
 
 @pytest.mark.parametrize("budget, run_one, reason", [
     ({"max_p1_calls": 8, "max_p1_tokens": 100000, "max_judge_calls": 80}, _fake_run_one(tokens=20000), "max_p1_tokens"),
-    ({"max_p1_calls": 8, "max_p1_tokens": 8 * er.P1_TOKENS_CEILING, "max_judge_calls": 80}, _fake_run_one(rate_limited=1),
-     "rate limited"),
 ])
 def test_hard_caps_stop_the_stage_and_keep_partial_results(tmp_path, budget, run_one, reason):
     out = _stage([_config("cfg-c1", budget=budget)], tmp_path, run_one=run_one)
@@ -127,6 +125,14 @@ def test_hard_caps_stop_the_stage_and_keep_partial_results(tmp_path, budget, run
     record = json.loads(Path(out["results_files"][0]).read_text())
     assert record["complete"] is False and record["stopped"]["reason"] == out["stopped"]["reason"]
     assert record["usage"]["p1_calls"] < 8  # stopped before the plan was finished
+
+
+def test_heavy_rate_limiting_pauses_the_stage_and_keeps_it_resumable(tmp_path):
+    """Since 2026-10-28 the rate-limit share rule pauses (per session) instead of ending the stage."""
+    out = _stage([_config("cfg-c1", budget={"max_p1_calls": 8, "max_p1_tokens": 8 * er.P1_TOKENS_CEILING,
+                                            "max_judge_calls": 80})], tmp_path, run_one=_fake_run_one(rate_limited=1))
+    assert "rate limited" in out["paused"]["reason"] and out["results_files"] == []
+    assert (Path(out["stage_dir"]) / "checkpoint.json").exists()
 
 
 def test_a_judge_cap_below_the_plans_worst_case_is_refused_before_any_call(tmp_path):
