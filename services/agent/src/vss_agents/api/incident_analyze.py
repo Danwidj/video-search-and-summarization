@@ -72,6 +72,15 @@ class AnalyzeIncidentRequest(BaseModel):
     """Body for ``POST /api/v1/incidents/{incident_id}/analyze``."""
 
     video_url: str = Field(..., min_length=1, description="Signed R2 URL of the uploaded video.")
+    video_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=900,
+        description=(
+            "The video's R2 key (incident-console-v2 sends it); evidence crops are stored under "
+            "evidence/<video_key>/run-<n>/. Without it the crops use the incident id as folder name."
+        ),
+    )
     model_run_id: str | None = Field(
         default=None,
         min_length=1,
@@ -157,6 +166,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             "video_url": body.video_url,
             "skip_rp1": body.skip_rp1,
         }
+        if body.video_key:
+            tool_input["video_key"] = body.video_key
         if body.model_run_id:
             tool_input["model_run_id"] = body.model_run_id
         if body.model:

@@ -320,7 +320,7 @@ sequenceDiagram
     alt Chunk response lacks a valid R2 key (real VST)
         UI->>R2: PutObject + HeadObject via /api/uploads/r2
     else Mock backend returns its durable R2 key
-        VST->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
+        VST->>R2: PutObject (uploads/<name>, If-None-Match *)
     end
     UI->>UI: POST /api/analysis {sensorId, filepath, filename, model}
     UI->>R2: HeadObject (object must exist and be nonempty)
@@ -373,7 +373,7 @@ sequenceDiagram
 
     %% R2 Fallback
     UI->>UI: POST /api/uploads/r2
-    UI->>R2: PutObject (uploads/<sensorId>/<uuid><ext>)
+    UI->>R2: PutObject (uploads/<name>, If-None-Match *)
     R2-->>UI: Durable R2 object key
     UI->>R2: HeadObject (exact uploaded byte length required)
 

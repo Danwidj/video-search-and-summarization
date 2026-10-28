@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
+import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
 type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
 
@@ -47,6 +47,16 @@ async function apiJson<T>(url: string, body: unknown): Promise<T> {
   return payload;
 }
 
+/** The warning to show before an upload whose stored name differs from the file's own, or null. */
+function nameWarning(original: string, report: UploadNameReport): { name: string; message: string } | null {
+  const notes: string[] = [];
+  if (report.unsafeChars.length > 0) notes.push(`unsafe characters (${report.unsafeChars.join(' ')}) were replaced with _`);
+  if (report.truncated) notes.push('the name was too long and was shortened');
+  if (report.exists) notes.push(`a file named ${report.existingName} is already stored, so nothing will be overwritten`);
+  if (notes.length === 0) return null;
+  return { name: report.name, message: `${original} will be stored as ${report.name}: ${notes.join('; ')}.` };
+}
+
 export function AnalysisWorkspace() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +66,8 @@ export function AnalysisWorkspace() {
   const [stage, setStage] = useState<StageKey>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [nameNotice, setNameNotice] = useState<string | null>(null);
+  const [storedName, setStoredName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
@@ -86,9 +98,24 @@ export function AnalysisWorkspace() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a newly selected file intentionally starts the one-shot pipeline immediately
+  // A newly selected file starts the one-shot pipeline immediately, unless its name needs a warning first.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new file re-runs the check
   useEffect(() => {
-    if (file && stage === 'idle') void analyze();
+    if (!file || stage !== 'idle') return;
+    let active = true;
+    void checkUploadName(file.name)
+      .then((report) => (active ? nameWarning(file.name, report) : null))
+      .catch(() => null)
+      .then((warning) => {
+        if (!active) return;
+        if (warning) {
+          setNameNotice(warning.message);
+          setStoredName(warning.name);
+        } else void analyze();
+      });
+    return () => {
+      active = false;
+    };
   }, [file]);
 
   function chooseFile(selected: File | null) {
@@ -98,6 +125,8 @@ export function AnalysisWorkspace() {
       return;
     }
     setFile(selected);
+    setNameNotice(null);
+    setStoredName(null);
     setError(null);
     setStage('idle');
     setUploadProgress(0);
@@ -108,6 +137,7 @@ export function AnalysisWorkspace() {
     const controller = new AbortController();
     abortRef.current = controller;
     setError(null);
+    setNameNotice(null);
     setUploadProgress(0);
 
     try {
@@ -258,6 +288,9 @@ export function AnalysisWorkspace() {
               <div className="h-full rounded-full bg-signal transition-all" style={{ width: `${uploadProgress}%` }} />
             </div>
           )}
+          {nameNotice && stage === 'idle' && (
+            <p className="mb-4 rounded-xl border border-clay/25 bg-clay/10 px-4 py-3 text-sm text-[#8c3d25]">{nameNotice}</p>
+          )}
           {error && <p className="mb-4 rounded-xl border border-clay/25 bg-clay/10 px-4 py-3 text-sm text-[#8c3d25]">{error}</p>}
 
           <div className="flex gap-3">
@@ -267,7 +300,13 @@ export function AnalysisWorkspace() {
               onClick={analyze}
               type="button"
             >
-              {busy ? stageLabels.find((item) => item.key === stage)?.label : stage === 'error' ? 'Retry analysis' : 'Analyze video'}
+              {busy
+                ? stageLabels.find((item) => item.key === stage)?.label
+                : stage === 'error'
+                  ? 'Retry analysis'
+                  : nameNotice && storedName
+                    ? `Continue as ${storedName}`
+                    : 'Analyze video'}
             </button>
             {busy && (
               <button

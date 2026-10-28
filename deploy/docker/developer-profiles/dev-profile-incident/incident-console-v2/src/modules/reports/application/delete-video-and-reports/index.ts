@@ -3,12 +3,12 @@
 // Delete video and reports: removes a whole video, its stored objects first.
 
 import type { VideoRepository } from '@/modules/videos/domain/VideoRepository';
-import { isEvidenceKeyOfVideo } from '@/modules/reports/domain/revision';
+import { evidenceFolder, isEvidenceKeyOfVideo } from '@/modules/reports/domain/revision';
 import type { EvidenceObjectStore, RemoveStoredVideo } from '@/modules/reports/application/types';
 
 /**
  * Deletes the whole video: its stored objects first (the video, its thumbnail
- * and every evidence image under evidence/<videoId>/), then the video row
+ * and every evidence image under evidence/<video key>/), then the video row
  * (revisions, evidence crops and query results cascade) and the run records
  * that name only this video. Revisions are append-only, so there is no
  * deleting a single one.
@@ -26,8 +26,9 @@ export async function deleteVideoAndReports(
 ): Promise<void> {
   const video = await videos.getVideo(videoId);
   if (video?.storageKey == null) throw new Error('Video has no R2 object key');
-  await removeStoredVideo(video.storageKey);
-  const images = (await evidence.list(`evidence/${videoId}/`)).filter(({ key }) => isEvidenceKeyOfVideo(key, videoId));
+  const videoKey = video.storageKey;
+  await removeStoredVideo(videoKey);
+  const images = (await evidence.list(evidenceFolder(videoKey))).filter(({ key }) => isEvidenceKeyOfVideo(key, videoKey));
   const failures: string[] = [];
   for (const { key } of images) {
     try {

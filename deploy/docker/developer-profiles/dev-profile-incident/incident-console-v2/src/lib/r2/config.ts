@@ -69,12 +69,37 @@ export async function verifyR2Video(
   return { contentLength };
 }
 
+/** Whether an object is stored under `key`. */
+export async function r2ObjectExists(config: ServiceConfiguration, key: string): Promise<boolean> {
+  const r2 = createR2Configuration(config);
+  if (!r2) throw new Error('R2 is not configured');
+  if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: r2.endpoint,
+    credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
+  });
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: key }));
+    return true;
+  } catch (error) {
+    const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status === 404 || (error as { name?: string }).name === 'NotFound') return false;
+    throw error;
+  }
+}
+
+/**
+ * Stores an object. Unless `overwrite` is set, `If-None-Match: *` makes R2 refuse (412) a key that
+ * is already taken, so a stored file is never replaced, even by a concurrent upload.
+ */
 export async function putR2Video(
   config: ServiceConfiguration,
   key: string,
   body: Readable,
   contentType: string,
   contentLength: number,
+  options: { overwrite?: boolean } = {},
 ): Promise<void> {
   const r2 = createR2Configuration(config);
   if (!r2) throw new Error('R2 is not configured');
@@ -87,7 +112,14 @@ export async function putR2Video(
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
   await client.send(
-    new PutObjectCommand({ Bucket: r2.bucket, Key: key, Body: body, ContentType: contentType, ContentLength: contentLength }),
+    new PutObjectCommand({
+      Bucket: r2.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      ContentLength: contentLength,
+      ...(options.overwrite ? {} : { IfNoneMatch: '*' }),
+    }),
   );
 }
 

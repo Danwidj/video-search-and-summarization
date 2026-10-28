@@ -80,7 +80,10 @@ beforeEach(() => {
   r2.deleted = [];
   r2.pages = 1;
   globalThis.fetch = fakePostgrest({
-    videos: [{ id: 'v-1' }, { id: 'v-2' }],
+    videos: [
+      { id: 'v-1', filepath: 'v-1' },
+      { id: 'v-2', filepath: 'v-2' },
+    ],
     report_revisions: [
       { id: 1, video_id: 'v-1', evidence: [entry('evidence/v-1/run/entities/E1.jpg')] },
       { id: 2, video_id: 'v-1', evidence: [entry('evidence/v-1/u-1/E1.jpg')] },

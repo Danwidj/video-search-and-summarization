@@ -156,11 +156,7 @@ def test_evidence_embeddings_accepts_evidence_list_in_body():
     client = TestClient(create_app())
     response = client.post(
         "/api/v1/incidents/evidence-embeddings",
-        json={
-            "evidence": [
-                {"item_type": "entity", "item_id": "E1", "item_name": "human", "description": "a person"}
-            ]
-        },
+        json={"evidence": [{"item_type": "entity", "item_id": "E1", "item_name": "human", "description": "a person"}]},
     )
     assert response.status_code == 200
     rows = response.json()
@@ -179,7 +175,9 @@ def test_evidence_embeddings_rejects_missing_and_dual_sources():
     client = TestClient(create_app())
     assert client.post("/api/v1/incidents/evidence-embeddings", json={}).status_code == 422
     assert client.post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 0}).status_code == 422
-    assert client.post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 7, "evidence": []}).status_code == 422
+    assert (
+        client.post("/api/v1/incidents/evidence-embeddings", json={"revision_id": 7, "evidence": []}).status_code == 422
+    )
 
 
 def test_analyze_rejects_missing_video(monkeypatch):
@@ -254,18 +252,24 @@ def test_uploaded_bytes_are_playable_from_vst_url(monkeypatch):
     assert video.content == b"video-bytes"
 
 
-def test_mock_upload_key_is_neutral_unique_and_keeps_safe_extension(monkeypatch):
+def test_mock_upload_key_keeps_the_original_name_and_never_reuses_one():
     from base_profile_mock.routers import vst_storage
     from base_profile_mock.state import Stream
 
-    values = iter(["first-id", "second-id", "fallback-id"])
-    monkeypatch.setattr(vst_storage.uuid, "uuid4", lambda: next(values))
     stream = Stream(stream_id="sensor-1", name="clip", filename="incident.MP4", bytes_total=1, content=b"x")
-    assert vst_storage._upload_key(stream, "sensor-1") == "uploads/sensor-1/first-id.mp4"
-    assert vst_storage._upload_key(stream, "sensor-1") == "uploads/sensor-1/second-id.mp4"
+    assert vst_storage._upload_key(stream) == "uploads/incident.MP4"
+    taken = {"uploads/incident.MP4", "uploads/incident-2.MP4"}
+    assert vst_storage._upload_key(stream, taken.__contains__) == "uploads/incident-3.MP4"
 
-    unsafe = Stream(stream_id="sensor-1", name="clip", filename="clip.not-valid!", bytes_total=1, content=b"x")
-    assert vst_storage._upload_key(unsafe, "sensor-1") == "uploads/sensor-1/fallback-id.mp4"
+    unsafe = Stream(stream_id="sensor-1", name="clip", filename="../my clip #1.mp4", bytes_total=1, content=b"x")
+    assert vst_storage._upload_key(unsafe) == "uploads/my_clip__1.mp4"
+
+    long = Stream(stream_id="sensor-1", name="clip", filename="a" * 300 + ".mp4", bytes_total=1, content=b"x")
+    key = vst_storage._upload_key(long)
+    assert len(key) == len("uploads/") + 150 and key.endswith(".mp4")
+
+    empty = Stream(stream_id="sensor-1", name="clip", filename=None, bytes_total=1, content=b"x")
+    assert vst_storage._upload_key(empty) == "uploads/video.mp4"
 
 
 def test_mock_categories_use_standard_incident_types() -> None:

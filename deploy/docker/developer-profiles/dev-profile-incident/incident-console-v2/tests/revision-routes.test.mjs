@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The revision History and evidence-image upload routes. An upload gets a new
-// unique R2 key and nothing is ever overwritten or deleted.
+// readable R2 key and nothing is ever overwritten or deleted.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,12 +12,17 @@ import { afterEach, beforeEach, mock, test } from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const r2Commands = [];
+const r2Stored = new Set();
 mock.module('@aws-sdk/client-s3', {
   namedExports: {
     S3Client: class {
       send(command) {
         r2Commands.push({ name: command.constructor.name, input: command.input });
-        return Promise.resolve(command.constructor.name === 'HeadObjectCommand' ? { ContentLength: command.input.size ?? 4 } : {});
+        if (command.constructor.name === 'PutObjectCommand') r2Stored.add(command.input.Key);
+        if (command.constructor.name !== 'HeadObjectCommand') return Promise.resolve({});
+        if (!r2Stored.has(command.input.Key))
+          return Promise.reject(Object.assign(new Error('NotFound'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } }));
+        return Promise.resolve({ ContentLength: command.input.size ?? 4 });
       }
     },
     GetObjectCommand: class GetObjectCommand {
@@ -58,6 +63,7 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   r2Commands.length = 0;
+  r2Stored.clear();
   Object.assign(process.env, {
     INCIDENT_SUPABASE_URL: 'https://supabase.test',
     INCIDENT_SUPABASE_SERVICE_ROLE_KEY: 'k',
@@ -121,15 +127,16 @@ test('History lists every revision newest first with kind, author, time, note an
   assert.equal(db.store.report_revisions.length, 2);
 });
 
-test('an uploaded evidence image gets a new unique key under evidence/<videoId>/<uuid>/<itemId>.jpg and is never overwritten', async () => {
+test('an uploaded evidence image gets the next free key under evidence/<video key>/edit-<n>/<itemId>.jpg and is never overwritten', async () => {
+  database();
   const keys = [];
   for (let index = 0; index < 2; index += 1) {
     const response = await upload({ file: image(), itemId: 'E1' });
     assert.equal(response.status, 200);
     keys.push((await response.json()).image);
   }
-  for (const key of keys) assert.match(key, new RegExp(`^evidence/${V}/[0-9a-f-]{36}/E1\\.jpg$`));
-  assert.notEqual(keys[0], keys[1], 'the same item uploaded twice gets two keys');
+  const videoKey = repaired.video.filepath;
+  assert.deepEqual(keys, [`evidence/${videoKey}/edit-1/E1.jpg`, `evidence/${videoKey}/edit-2/E1.jpg`]);
   const puts = r2Commands.filter((c) => c.name === 'PutObjectCommand');
   assert.deepEqual(
     puts.map((c) => c.input.Key),
