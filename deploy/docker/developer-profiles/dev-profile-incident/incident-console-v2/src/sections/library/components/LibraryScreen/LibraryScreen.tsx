@@ -230,11 +230,11 @@ export function Library() {
   const first = (filters.page - 1) * PAGE_SIZE + 1;
 
   return (
-    <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
+    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss">Incident console</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Incident reports</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Incident reports</h1>
         </div>
         <Button asChild className="bg-ink font-semibold text-white hover:bg-ink/90">
           <Link href="/">
@@ -244,26 +244,20 @@ export function Library() {
         </Button>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-3">
         <Tabs onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
-          <TabsList className="h-auto w-full justify-start gap-1 rounded-none border-b border-ink/10 bg-transparent p-0">
-            <TabsTrigger
-              className="rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm font-semibold text-ink/50 data-[state=active]:border-ink data-[state=active]:text-ink data-[state=active]:shadow-none"
-              value="incidents"
-            >
+          <TabsList className="h-auto w-full justify-start rounded-none border-b border-ink/10 p-0" variant="line">
+            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="incidents">
               Find incidents
             </TabsTrigger>
-            <TabsTrigger
-              className="rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm font-semibold text-ink/50 data-[state=active]:border-ink data-[state=active]:text-ink data-[state=active]:shadow-none"
-              value="evidence"
-            >
+            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="evidence">
               Find evidence
             </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      <section className="mt-5">
+      <section className="mt-4">
         {tab === 'evidence' ? (
           <EvidenceTab
             error={searchError}
@@ -381,7 +375,7 @@ export function Library() {
             ) : null}
             {filters.fromTime || filters.toTime ? <p className="mt-1 text-xs text-ink/50">Times are in {timeZone}.</p> : null}
 
-            <div className="mt-5 text-sm text-ink/50">
+            <div className="sr-only">
               {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
             </div>
             {searchMode === 'text' && (
@@ -453,11 +447,11 @@ export function Library() {
                     />
                   ))}
                 </div>
-                <nav aria-label="Incident pages" className="mt-8 flex flex-col items-center gap-3">
+                <nav aria-label="Incident pages" className="mt-4 flex flex-col items-center justify-between gap-2 sm:flex-row">
                   <p className="text-sm font-semibold text-ink/65">
                     Showing {first}-{Math.min(filters.page * PAGE_SIZE, totalItems)} of {totalItems} incidents
                   </p>
-                  <Pagination>
+                  <Pagination className="mx-0 w-auto">
                     <PaginationContent>
                       <PaginationItem>
                         <Button
