@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+'use client';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatTimestamp } from '@/lib/time';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 
@@ -57,26 +59,30 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
               )}
             </dl>
             {(run.firstPassViolations ?? []).some((violation) => violation.scope === 'enrichment') && (
-              <div
+              <Alert
                 className="mt-4 rounded-xl border border-border bg-card/60 p-4 text-xs text-muted-foreground"
                 data-testid="enrichment-violations"
               >
-                <p className="font-semibold text-foreground">
+                <AlertTitle className="text-xs font-semibold text-foreground">
                   Issues in unscored model fields (recorded, not repaired, do not affect validity)
-                </p>
-                <ul className="mt-1 list-disc pl-5">
-                  {(run.firstPassViolations ?? [])
-                    .filter((violation) => violation.scope === 'enrichment')
-                    .map((violation) => (
-                      <li key={`${violation.code}:${violation.message}`}>
-                        <span className="font-mono">{violation.code}</span>: {violation.message}
-                      </li>
-                    ))}
-                </ul>
-              </div>
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-1 list-disc pl-5">
+                    {(run.firstPassViolations ?? [])
+                      .filter((violation) => violation.scope === 'enrichment')
+                      .map((violation) => (
+                        <li key={`${violation.code}:${violation.message}`}>
+                          <span className="font-mono">{violation.code}</span>: {violation.message}
+                        </li>
+                      ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
             )}
             {run.notesKind === 'invalid-contract' && (
-              <p className="mt-4 text-xs text-destructive">The stored model output could not be re-validated: {run.notesError}</p>
+              <Alert className="mt-4" variant="destructive">
+                <AlertDescription>The stored model output could not be re-validated: {run.notesError}</AlertDescription>
+              </Alert>
             )}
             {run.notesKind === 'none' && (
               <p className="mt-4 text-xs italic text-muted-foreground">The original model output was not retained for this run.</p>
@@ -135,34 +141,36 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
     return JSON.stringify(operation);
   };
   return (
-    <div
+    <Alert
       className="mt-6 rounded-xl border border-amber-300 bg-amber-50/70 p-4 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
       data-testid="repair-details"
     >
-      <h4 className="font-bold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">
+      <AlertTitle className="text-xs font-bold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">
         Contract repair applied (IDs only) · {String(repair.ruleSet ?? '')}
-      </h4>
-      <p className="mt-2">
-        The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was
-        changed, and the result passed validation again.
-      </p>
-      <p className="mt-3 font-semibold">First-pass violations</p>
-      <ul className="mt-1 list-disc pl-5">
-        {(run.firstPassViolations ?? []).map((violation) => (
-          <li key={`${violation.code}:${violation.message}`}>
-            <span className="font-mono">{violation.code}</span>: {violation.message}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 font-semibold">Repair operations</p>
-      <ul className="mt-1 list-disc pl-5">
-        {operations.map((operation) => (
-          <li className="font-mono" key={describe(operation)}>
-            {describe(operation)}
-          </li>
-        ))}
-      </ul>
-    </div>
+      </AlertTitle>
+      <AlertDescription>
+        <p className="mt-2 text-inherit">
+          The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was
+          changed, and the result passed validation again.
+        </p>
+        <p className="mt-3 font-semibold text-inherit">First-pass violations</p>
+        <ul className="mt-1 list-disc pl-5">
+          {(run.firstPassViolations ?? []).map((violation) => (
+            <li key={`${violation.code}:${violation.message}`}>
+              <span className="font-mono">{violation.code}</span>: {violation.message}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 font-semibold text-inherit">Repair operations</p>
+        <ul className="mt-1 list-disc pl-5">
+          {operations.map((operation) => (
+            <li className="font-mono" key={describe(operation)}>
+              {describe(operation)}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
   );
 }
 

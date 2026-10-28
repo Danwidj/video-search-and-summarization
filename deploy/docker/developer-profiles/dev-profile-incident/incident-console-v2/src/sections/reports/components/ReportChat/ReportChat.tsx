@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import { XIcon } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Marker, MarkerContent } from '@/components/ui/marker';
+import { Message } from '@/components/ui/message';
+import {
+  MessageScroller,
+  MessageScrollerContent,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller';
 import { chatRequestBody, type ChatTarget } from '@/lib/chat/report-chat';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -14,7 +26,7 @@ const SUGGESTIONS = ['What happened, in order?', 'Who is involved?', 'What was t
 
 let messageSequence = 0;
 
-type Message = {
+type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -38,21 +50,21 @@ export function ReportChat({
   onSeek: (seconds: number) => void;
   onClose: () => void;
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  const scroller = useRef<HTMLDivElement>(null);
+  const scrollerViewportRef = useRef<HTMLDivElement>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
+    scrollerViewportRef.current?.scrollTo({ top: scrollerViewportRef.current.scrollHeight });
   }, [messages, busy, failed]);
 
-  async function send(text: string, history: Message[]) {
+  async function send(text: string, history: ChatMessage[]) {
     messageSequence += 1;
-    const next: Message[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
+    const next: ChatMessage[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
     setMessages(next);
     setBusy(true);
     setFailed(null);
@@ -90,9 +102,9 @@ export function ReportChat({
   }
 
   return (
-    <section
+    <Card
       aria-label="Ask about this incident"
-      className="flex h-full w-full flex-col overflow-hidden bg-card text-card-foreground"
+      className="flex h-full w-full flex-col overflow-hidden border-0 bg-card text-card-foreground shadow-none"
       data-testid="report-chat"
     >
       <div className="flex items-start justify-between gap-2 border-b border-border bg-muted/40 px-3.5 py-3">
@@ -124,103 +136,117 @@ export function ReportChat({
             New chat
           </Button>
           <Button aria-label="Close chat" onClick={onClose} size="sm" type="button" variant="ghost">
-            ✕
+            <XIcon className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3.5 py-3" ref={scroller}>
-        {!messages.length && (
-          <>
-            <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug">
-              Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the moment
-              in the video.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {SUGGESTIONS.map((suggestion) => (
-                <Button
-                  className="h-auto px-2.5 py-1 text-left text-xs font-semibold"
-                  key={suggestion}
-                  onClick={() => void send(suggestion, [])}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {suggestion}
-                </Button>
-              ))}
-            </div>
-          </>
-        )}
-        {messages.map((message) =>
-          message.role === 'user' ? (
-            <p
-              className="max-w-[92%] self-end rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-snug text-primary-foreground"
-              key={message.id}
-            >
-              {message.content}
-            </p>
-          ) : (
-            <div
-              className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground"
-              key={message.id}
-            >
-              <p className="whitespace-pre-wrap">{message.content}</p>
-              {!!message.citations?.length && (
-                <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
-                  {message.citations.map((citation) => (
-                    <li key={`${citation.itemId}-${citation.timestampSeconds}`}>
-                      <button
-                        aria-label={`Jump to ${citation.itemId} at ${formatClock(citation.timestampSeconds)}`}
-                        className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-border bg-card p-1 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => onSeek(citation.timestampSeconds)}
+      <MessageScrollerProvider>
+        <MessageScroller className="flex min-h-0 flex-1 flex-col">
+          <MessageScrollerViewport className="flex-1 overflow-auto px-3.5 py-3" ref={scrollerViewportRef}>
+            <MessageScrollerContent className="flex flex-col gap-2.5">
+              {!messages.length && (
+                <>
+                  <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
+                    Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the
+                    moment in the video.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <Button
+                        className="h-auto px-2.5 py-1 text-left text-xs font-semibold"
+                        key={suggestion}
+                        onClick={() => void send(suggestion, [])}
+                        size="xs"
                         type="button"
+                        variant="outline"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
-                        {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
-                        <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
-                        <span className="min-w-0">
-                          <b className="block truncate text-xs">
-                            {citation.itemId} · {citation.itemType}
-                          </b>
-                          <span className="text-[11px] text-muted-foreground">jump to {formatClock(citation.timestampSeconds)}</span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                        {suggestion}
+                      </Button>
+                    ))}
+                  </div>
+                </>
               )}
-              <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
-                Answered from {message.answeredFrom}
-              </p>
-            </div>
-          ),
-        )}
-        {busy && (
-          <p
-            aria-label="Searching evidence"
-            className="self-start rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground"
-            role="status"
-          >
-            Searching evidence…
-          </p>
-        )}
-        {failed && (
-          <p
-            className="self-start rounded-2xl bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
-            data-testid="chat-error"
-            role="alert"
-          >
-            Chat is unavailable right now, so no answer was returned. <span className="text-[11px] opacity-70">({failed})</span>{' '}
-            <button className="font-semibold underline" onClick={retry} type="button">
-              Try again
-            </button>
-          </p>
-        )}
-      </div>
+              {messages.map((message) =>
+                message.role === 'user' ? (
+                  <Message align="end" className="self-end" key={message.id}>
+                    <Bubble>
+                      <BubbleContent className="rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-snug text-primary-foreground">
+                        {message.content}
+                      </BubbleContent>
+                    </Bubble>
+                  </Message>
+                ) : (
+                  <Message align="start" className="self-start" key={message.id}>
+                    <Bubble>
+                      <BubbleContent className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground">
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        {!!message.citations?.length && (
+                          <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
+                            {message.citations.map((citation) => (
+                              <li key={`${citation.itemId}-${citation.timestampSeconds}`}>
+                                <button
+                                  aria-label={`Jump to ${citation.itemId} at ${formatClock(citation.timestampSeconds)}`}
+                                  className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-border bg-card p-1 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  onClick={() => onSeek(citation.timestampSeconds)}
+                                  type="button"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
+                                  {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
+                                  <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
+                                  <span className="min-w-0">
+                                    <b className="block truncate text-xs">
+                                      {citation.itemId} · {citation.itemType}
+                                    </b>
+                                    <span className="text-[11px] text-muted-foreground">
+                                      jump to {formatClock(citation.timestampSeconds)}
+                                    </span>
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
+                          Answered from {message.answeredFrom}
+                        </p>
+                      </BubbleContent>
+                    </Bubble>
+                  </Message>
+                ),
+              )}
+              {busy && (
+                <Marker className="self-start rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  <MarkerContent aria-label="Searching evidence" role="status">
+                    Searching evidence…
+                  </MarkerContent>
+                </Marker>
+              )}
+              {failed && (
+                <Alert
+                  className="self-start rounded-2xl border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
+                  data-testid="chat-error"
+                  variant="destructive"
+                >
+                  <AlertDescription>
+                    Chat is unavailable right now, so no answer was returned. <span className="text-[11px] opacity-70">({failed})</span>{' '}
+                    <button
+                      className="font-semibold underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                      onClick={retry}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </AlertDescription>
+                </Alert>
+              )}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+        </MessageScroller>
+      </MessageScrollerProvider>
       <form className="flex gap-1.5 border-t border-border px-3 py-2.5" onSubmit={ask}>
         <Input
           aria-label="Question"
-          className="min-w-0 flex-1"
+          className="h-8 min-w-0 flex-1 text-xs"
           disabled={busy}
           maxLength={500}
           onChange={(event) => setQuestion(event.target.value)}
@@ -231,6 +257,6 @@ export function ReportChat({
           Send
         </Button>
       </form>
-    </section>
+    </Card>
   );
 }

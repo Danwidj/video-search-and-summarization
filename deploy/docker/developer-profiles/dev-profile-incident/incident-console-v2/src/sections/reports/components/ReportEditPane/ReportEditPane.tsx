@@ -4,8 +4,12 @@
 
 import { useState } from 'react';
 
-import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
-import { EvidenceFramePicker } from '@/sections/evidence/components/EvidenceFramePicker';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import type { FramePick } from '@/lib/evidence/frame-picker';
 import {
   deleteDraftItem,
@@ -23,9 +27,12 @@ import {
   type PairRow,
   type Structured,
 } from '@/lib/reports/compare';
+import { severityStyle } from '@/lib/ui/severity';
+import { cn } from '@/lib/utils';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
-import { severityStyle } from '@/lib/ui/severity';
+import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
+import { EvidenceFramePicker } from '@/sections/evidence/components/EvidenceFramePicker';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 const clock = (seconds: number | null) => (seconds === null ? '—' : formatClock(seconds));
@@ -126,12 +133,22 @@ export function ReportEditPane({
       >
         <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">Compare</span>
         <div className="min-w-0 rounded-xl bg-[#fdf0ea] px-3 py-2" data-side="A">
-          <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-[#9b3518]">A</span> <b>v{aRevisionNo}</b>{' '}
-          <span className="text-ink/50">read-only</span>
+          <Badge
+            className="border-[#9b3518]/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-[#9b3518]"
+            variant="outline"
+          >
+            A
+          </Badge>{' '}
+          <b>v{aRevisionNo}</b> <span className="text-ink/50">read-only</span>
         </div>
         <div className="min-w-0 rounded-xl bg-[#eef5e6] px-3 py-2" data-side="B">
-          <span className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-moss">B</span> <b>Draft</b>{' '}
-          <span className="text-ink/50">from v{baseRevisionNo} · editable</span>
+          <Badge
+            className="border-moss/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-moss"
+            variant="outline"
+          >
+            B
+          </Badge>{' '}
+          <b>Draft</b> <span className="text-ink/50">from v{baseRevisionNo} · editable</span>
         </div>
       </div>
 
@@ -151,19 +168,22 @@ export function ReportEditPane({
             label="Incident type"
             left={capitalize(a?.incident.type ?? null)}
             right={
-              <select
-                aria-label="Draft incident type"
-                className="control"
-                onChange={(event) => patchIncident({ type: event.target.value || null })}
-                value={draft.incident.type ?? ''}
+              <Select
+                onValueChange={(val) => patchIncident({ type: val === '__unclassified__' ? null : val })}
+                value={draft.incident.type ?? '__unclassified__'}
               >
-                <option value="">Choose…</option>
-                {EDITABLE_INCIDENT_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {capitalize(type)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-label="Draft incident type" className="h-9 w-full bg-white text-xs">
+                  <SelectValue placeholder="Choose…" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectItem value="__unclassified__">Choose…</SelectItem>
+                  {EDITABLE_INCIDENT_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {capitalize(type)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             }
           />
           <PairField
@@ -174,19 +194,25 @@ export function ReportEditPane({
               </span>
             }
             right={
-              <select
-                aria-label="Draft severity"
-                className={`control font-bold ${severityStyle(draft.incident.severity_level)}`}
-                onChange={(event) => patchIncident({ severity_level: event.target.value ? Number(event.target.value) : null })}
-                value={draft.incident.severity_level ?? ''}
+              <Select
+                onValueChange={(val) => patchIncident({ severity_level: val === '__none__' ? null : Number(val) })}
+                value={draft.incident.severity_level ? String(draft.incident.severity_level) : '__none__'}
               >
-                <option value="">Choose…</option>
-                {[1, 2, 3, 4, 5].map((level) => (
-                  <option key={level} value={level}>
-                    {level}/5
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  aria-label="Draft severity"
+                  className={cn('h-9 w-full bg-white text-xs font-bold', severityStyle(draft.incident.severity_level))}
+                >
+                  <SelectValue placeholder="Choose…" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectItem value="__none__">Choose…</SelectItem>
+                  {[1, 2, 3, 4, 5].map((level) => (
+                    <SelectItem key={level} value={String(level)}>
+                      {level}/5
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             }
           />
           <PairField
@@ -205,9 +231,9 @@ export function ReportEditPane({
             right={
               <span className="flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-[11px] text-ink/45">{clock(draft.incident.start_timestamp)}</span>
-                <input
+                <Input
                   aria-label="Draft incident start in seconds"
-                  className="control w-20"
+                  className="h-8 w-20 text-xs"
                   inputMode="numeric"
                   min={0}
                   onChange={(event) =>
@@ -220,9 +246,9 @@ export function ReportEditPane({
                   value={draft.incident.start_timestamp ?? ''}
                 />
                 <span>–</span>
-                <input
+                <Input
                   aria-label="Draft incident end in seconds"
-                  className="control w-20"
+                  className="h-8 w-20 text-xs"
                   inputMode="numeric"
                   min={0}
                   onChange={(event) =>
@@ -240,9 +266,9 @@ export function ReportEditPane({
             label="Summary"
             left={<span className="whitespace-pre-wrap">{a?.incident.description ?? 'No summary was recorded.'}</span>}
             right={
-              <textarea
+              <Textarea
                 aria-label="Draft summary"
-                className="control min-h-[92px]"
+                className="min-h-[92px] text-xs"
                 onChange={(event) => patchIncident({ description: event.target.value })}
                 value={draft.incident.description}
               />
@@ -253,9 +279,12 @@ export function ReportEditPane({
 
       <section className="mt-6" data-testid="evidence-compare">
         <div className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 bg-white/95 px-3 py-2">
-          <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">
-            Evidence items · {pairing.liveCount}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">Evidence items</h3>
+            <Badge className="font-mono text-[10px]" variant="outline">
+              {pairing.liveCount}
+            </Badge>
+          </div>
           <span className="text-[11px] text-ink/40">A is read-only · B is your draft</span>
         </div>
         {pairing.rows.length === 0 ? (
@@ -397,12 +426,14 @@ function PairRowView({
         {row.a ? (
           <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} />
         ) : (
-          <p
-            className="rounded-2xl border border-dashed border-moss/40 bg-moss/5 p-4 text-xs font-semibold text-moss"
+          <div
+            className="flex items-center gap-2 rounded-2xl border border-dashed border-moss/40 bg-moss/5 p-4 text-xs font-semibold text-moss"
             data-testid="new-in-b"
           >
-            New in B
-          </p>
+            <Badge className="border-moss/30 bg-moss/10 text-moss" variant="outline">
+              New in B
+            </Badge>
+          </div>
         )}
       </div>
       <div className="min-w-0" data-side="B">
@@ -427,15 +458,17 @@ function PairRowView({
             <b className="block text-sm">Deleted</b>
             <span>Removed from your draft.</span>
             <div className="mt-2">
-              <button
+              <Button
                 className="rounded-full border border-ink/20 bg-white px-3 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
                 disabled={blocked}
                 onClick={() => onRevert(row)}
+                size="xs"
                 title={blocked ? 'Revert its holder first' : 'Bring it back exactly as A has it'}
                 type="button"
+                variant="outline"
               >
                 Revert to v{aRevisionNo}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -510,44 +543,44 @@ function EditCard({
     <CardFrame imageUrl={item.imageUrl} name={draftItemName(item)} onSeek={onSeek} seconds={item.timestampSeconds}>
       {isDraftEntity(item) ? (
         <>
-          <input
+          <Input
             aria-label="Entity name"
-            className="control"
+            className="h-8 text-xs"
             onChange={(event) => patchEntity(item.key, { label: event.target.value })}
             placeholder={item.type}
             value={item.label}
           />
-          <select
-            aria-label="Entity type"
-            className="control mt-1"
-            onChange={(event) => patchEntity(item.key, { type: event.target.value })}
-            value={item.type}
-          >
-            {EDITABLE_ENTITY_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {capitalize(type)}
-              </option>
-            ))}
-          </select>
+          <Select onValueChange={(val) => patchEntity(item.key, { type: val })} value={item.type}>
+            <SelectTrigger aria-label="Entity type" className="mt-1 h-8 w-full bg-white text-xs">
+              <SelectValue placeholder="Entity type" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {EDITABLE_ENTITY_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {capitalize(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </>
       ) : isDraftInstrument(item) ? (
-        <input
+        <Input
           aria-label="Instrument name"
-          className="control"
+          className="h-8 text-xs"
           onChange={(event) => patchInstrument(item.key, { name: event.target.value })}
           value={item.name}
         />
       ) : (
-        <input
+        <Input
           aria-label="Asset name"
-          className="control"
+          className="h-8 text-xs"
           onChange={(event) => patchAsset(item.key, { name: event.target.value })}
           value={item.name}
         />
       )}
-      <textarea
+      <Textarea
         aria-label="Description"
-        className="control mt-1 min-h-[60px]"
+        className="mt-1 min-h-[60px] text-xs"
         onChange={(event) =>
           isDraftEntity(item)
             ? patchEntity(item.key, { description: event.target.value })
@@ -559,32 +592,38 @@ function EditCard({
       />
       {isDraftInstrument(item) && (
         <div className="mt-1 grid grid-cols-2 gap-1.5">
-          <select
-            aria-label="Threat level"
-            className="control"
-            onChange={(event) => patchInstrument(item.key, { threat_level: event.target.value ? Number(event.target.value) : null })}
-            value={item.threat_level ?? ''}
+          <Select
+            onValueChange={(val) => patchInstrument(item.key, { threat_level: val === '__none__' ? null : Number(val) })}
+            value={item.threat_level ? String(item.threat_level) : '__none__'}
           >
-            <option value="">Threat level…</option>
-            {[1, 2, 3, 4, 5].map((level) => (
-              <option key={level} value={level}>
-                threat {level}/5
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Held by"
-            className="control"
-            onChange={(event) => patchInstrument(item.key, { holderKey: event.target.value || null })}
-            value={item.holderKey ?? ''}
+            <SelectTrigger aria-label="Threat level" className="h-8 w-full bg-white text-xs">
+              <SelectValue placeholder="Threat level…" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value="__none__">Threat level…</SelectItem>
+              {[1, 2, 3, 4, 5].map((level) => (
+                <SelectItem key={level} value={String(level)}>
+                  threat {level}/5
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            onValueChange={(val) => patchInstrument(item.key, { holderKey: val === '__none__' ? null : val })}
+            value={item.holderKey ?? '__none__'}
           >
-            <option value="">Holder not determined</option>
-            {holderOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                held by {option.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Held by" className="h-8 w-full bg-white text-xs">
+              <SelectValue placeholder="Holder not determined" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value="__none__">Holder not determined</SelectItem>
+              {holderOptions.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  held by {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
       {isDraftInstrument(item) && (
@@ -595,17 +634,35 @@ function EditCard({
       <p className="text-ink/50">
         Most visible at <b className="font-mono">{clock(item.timestampSeconds)}</b>
       </p>
-      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-semibold">
-        <button className="rounded-full px-2 py-0.5 text-ink hover:bg-ink/5" onClick={onReplace} type="button">
+      <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] font-semibold">
+        <Button
+          className="h-6 rounded-full px-2 text-[11px] text-ink hover:bg-ink/5"
+          onClick={onReplace}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
           Replace image
-        </button>
-        <button className="rounded-full px-2 py-0.5 text-clay hover:bg-clay/10" onClick={onRemove} type="button">
+        </Button>
+        <Button
+          className="h-6 rounded-full px-2 text-[11px] text-clay hover:bg-clay/10 hover:text-clay"
+          onClick={onRemove}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
           Delete
-        </button>
+        </Button>
         {onRevert && (
-          <button className="rounded-full px-2 py-0.5 text-moss hover:bg-moss/10" onClick={onRevert} type="button">
+          <Button
+            className="h-6 rounded-full px-2 text-[11px] text-moss hover:bg-moss/10 hover:text-moss"
+            onClick={onRevert}
+            size="xs"
+            type="button"
+            variant="ghost"
+          >
             Revert to A
-          </button>
+          </Button>
         )}
       </div>
     </CardFrame>
@@ -626,10 +683,10 @@ function CardFrame({
   children: React.ReactNode;
 }) {
   return (
-    <article className="w-full max-w-88 overflow-hidden rounded-2xl border border-ink/10 bg-white text-xs">
+    <Card className="w-full max-w-88 overflow-hidden rounded-2xl border border-ink/10 bg-white p-0 text-xs shadow-xs">
       <button
         aria-label={seconds === null ? `${name} image` : `Play video from ${formatClock(seconds)}: ${name}`}
-        className="block w-full disabled:cursor-default"
+        className="block w-full disabled:cursor-default focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
         disabled={seconds === null}
         onClick={() => seconds !== null && onSeek(seconds)}
         type="button"
@@ -637,6 +694,6 @@ function CardFrame({
         <EvidenceFrame aspect={2} className="rounded-none!" label={name || 'Evidence'} seconds={seconds} src={imageUrl} />
       </button>
       <div className="space-y-1 p-3">{children}</div>
-    </article>
+    </Card>
   );
 }
