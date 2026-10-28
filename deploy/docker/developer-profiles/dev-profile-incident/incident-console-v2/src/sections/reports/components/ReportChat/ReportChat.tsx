@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { XIcon } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -39,17 +38,7 @@ type ChatMessage = {
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
  * from, and its citations jump the video to the cited moment.
  */
-export function ReportChat({
-  videoId,
-  target,
-  onSeek,
-  onClose,
-}: {
-  videoId: string;
-  target: ChatTarget;
-  onSeek: (seconds: number) => void;
-  onClose: () => void;
-}) {
+export function ReportChat({ videoId, target, onSeek }: { videoId: string; target: ChatTarget; onSeek: (seconds: number) => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [question, setQuestion] = useState('');
@@ -107,7 +96,7 @@ export function ReportChat({
       className="flex h-full w-full flex-col overflow-hidden border-0 bg-card text-card-foreground shadow-none"
       data-testid="report-chat"
     >
-      <div className="flex items-start justify-between gap-2 border-b border-border bg-muted/40 px-3.5 py-3">
+      <div className="flex items-start justify-between gap-2 border-b border-border bg-muted/40 py-3 pr-14 pl-3.5">
         <div className="min-w-0">
           <b className="text-sm">Ask about this incident</b>
           <p className="mt-1.5">
@@ -134,9 +123,6 @@ export function ReportChat({
             variant="outline"
           >
             New chat
-          </Button>
-          <Button aria-label="Close chat" onClick={onClose} size="sm" type="button" variant="ghost">
-            <XIcon className="h-4 w-4" />
           </Button>
         </div>
       </div>

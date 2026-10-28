@@ -645,7 +645,6 @@ export function ReportPage({
             <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
           </SheetHeader>
           <ReportChat
-            onClose={() => setChatOpen(false)}
             onSeek={seek}
             target={chatTarget(
               mode === 'edit' && draft && editBase
