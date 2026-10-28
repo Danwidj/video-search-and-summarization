@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Trash2Icon } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -24,6 +24,7 @@ export function DeleteIncidentDialog({
   busy: boolean;
 }) {
   const [confirmed, setConfirmed] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const versions = item.versionCount ?? 0;
   const evidence = item.evidenceCount ?? 0;
   const title = item.title || item.incident_type;
@@ -36,7 +37,13 @@ export function DeleteIncidentDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-md bg-white">
+      <DialogContent
+        className="sm:max-w-md bg-white"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          cancelRef.current?.focus();
+        }}
+      >
         <DialogHeader className="gap-3">
           <div className="flex items-start gap-3">
             <div className="grid size-9 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
@@ -74,7 +81,7 @@ export function DeleteIncidentDialog({
         </div>
 
         <DialogFooter className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={() => onOpenChange(false)} type="button">
+          <Button ref={cancelRef} variant="outline" onClick={() => onOpenChange(false)} type="button">
             Cancel
           </Button>
           <Button

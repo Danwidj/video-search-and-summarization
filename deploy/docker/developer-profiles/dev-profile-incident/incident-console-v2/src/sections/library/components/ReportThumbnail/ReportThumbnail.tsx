@@ -16,23 +16,25 @@ export function ReportThumbnail({
   severity,
   kind,
   duration,
+  alt,
   children,
 }: {
   thumbnailUrl?: string;
   severity: number;
   kind?: ReportLibraryItem['kind'];
   duration?: string;
+  alt: string;
   children?: React.ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
   const { image: view, severityLabel, kindLabel } = libraryCardThumbnail({ thumbnailUrl, severity, kind: kind || 'ai' }, failed);
 
   return (
-    <figure aria-label="Video screenshot preview" className="relative h-24 shrink-0 overflow-hidden bg-[#dfe3dc]">
+    <figure aria-label="Video screenshot preview" className="relative h-20 shrink-0 overflow-hidden bg-[#dfe3dc]">
       {view.kind === 'image' ? (
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img
-          alt=""
+          alt={alt}
           className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           loading={view.loading}
           onError={() => setFailed(true)}
