@@ -71,6 +71,7 @@
 
 **Sessions:**
 - Run 2a in about four sessions of about 4 h each, then its recovery, then 2b and its recovery.
+- **Pauses (approved by the owner, 2026-10-28):** `--session-hours 4` ends a session cleanly between video-runs. 4 consecutive video-runs with no model output, or a session rate-limit share above 25%, pause the stage instead of spending more attempts. A pause keeps the checkpoint; resume later.
 - **Checkpoint and resume:** `run_stage` writes `checkpoint.json` after every video-run. Stop a session with Ctrl-C and continue with `eval_experiment.py run <same configs> --confirm-paid --resume <stage dir>`.
 - The D10 order and run ids are kept, finished video-runs are never repeated, and the result is written once when the stage completes. Tested hermetically.
 

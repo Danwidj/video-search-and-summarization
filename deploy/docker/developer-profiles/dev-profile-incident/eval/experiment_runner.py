@@ -88,6 +88,11 @@ RATE_LIMIT_STOP_SHARE = 0.25
 RETRY_POLICIES = ("retry-v1", "retry-v2")
 DEFAULT_RETRY_POLICY = "retry-v1"
 RATE_LIMIT_MIN_ATTEMPTS = 8
+# Stage 2a run controls (owner, 2026-10-28: "pause and preserve the run rather than repeatedly exhausting the
+# request budget"). A pause keeps the checkpoint and writes no result, so the stage resumes later:
+# - this many consecutive video-runs with no model output (after their retries) mean the gateway is unavailable;
+# - the rate-limit share rule pauses instead of ending the stage, and is counted per session.
+OUTAGE_PAUSE_RUNS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,20}$")
 
 
@@ -491,7 +496,8 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
               registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
               log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED,
               only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None,
-              resume: Path | None = None) -> dict:
+              resume: Path | None = None, session_seconds: float | None = None,
+              clock: Callable[[], float] = time.monotonic) -> dict:
     """Run configurations interleaved per video under hard caps; write one immutable result per configuration.
 
     ``call_factory_for(config) -> call_factory(incident_id, run_id, duration) -> p1_call``. Every
@@ -508,6 +514,10 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     rate-limit counters). ``resume`` (that stage directory) continues an interrupted stage with the same
     configurations: the finished video-runs are kept, the rest run in the same D10 order, and the result
     is written once at the end, as for an uninterrupted stage (``resumed`` lists when it was resumed).
+
+    A **pause** returns ``{"paused": ...}`` and writes no result: the session time limit
+    (``session_seconds``, checked between video-runs), ``OUTAGE_PAUSE_RUNS`` consecutive video-runs with no model
+    output, or the rate-limit share rule within this session. A cap still **stops** the stage (``complete: false``).
     """
     if only is not None and set(only) != {c["experiment_id"] for c in configs}:
         raise ExperimentRefused("a recovery lists the video-runs of every configuration in the stage")
@@ -575,6 +585,9 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     run_ids: dict[tuple, str] = {}
     stopped = None
     attempts = rate_limited = done = 0
+    session_attempts = session_rate_limited = no_output_streak = 0
+    session_start = clock()
+    paused = None
     if checkpoint is not None:
         if checkpoint["order"] != [list(o) for o in order]:
             raise ExperimentRefused("the checkpoint's order differs from this stage's order")
@@ -605,8 +618,19 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 reason = "max_p1_tokens (no room for this call's worst case)"
             elif used["judge_calls"] + judge_worst > budget["max_judge_calls"]:
                 reason = f"max_judge_calls (this video could need {judge_worst} judge requests)"
-            elif attempts >= RATE_LIMIT_MIN_ATTEMPTS and rate_limited / attempts > RATE_LIMIT_STOP_SHARE:
-                reason = f"rate limited on {rate_limited}/{attempts} calls (> {RATE_LIMIT_STOP_SHARE:.0%})"
+            pause = None
+            if session_seconds is not None and clock() - session_start >= session_seconds:
+                pause = f"session time limit ({session_seconds / 3600:.1f} h)"
+            elif no_output_streak >= OUTAGE_PAUSE_RUNS:
+                pause = f"{no_output_streak} consecutive video-runs with no model output (gateway unavailable?)"
+            elif session_attempts >= RATE_LIMIT_MIN_ATTEMPTS and \
+                    session_rate_limited / session_attempts > RATE_LIMIT_STOP_SHARE:
+                pause = (f"rate limited on {session_rate_limited}/{session_attempts} calls this session "
+                         f"(> {RATE_LIMIT_STOP_SHARE:.0%})")
+            if pause and not reason:
+                paused = {"reason": pause, "at": [repeat, position, incident_id], "done": index}
+                log(f"  PAUSE: {pause}; resume with --resume {stage_dir}")
+                break
             if reason:
                 stopped = {"config": config["experiment_id"], "reason": reason, "at": [repeat, position, incident_id]}
                 log(f"  STOP: {config['experiment_id']} {reason}")
@@ -650,6 +674,9 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             outcome_attempts = (result.get("p1_raw") or {}).get("rate_limit") or {}
             attempts += int(outcome_attempts.get("attempt_count") or 1)
             rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])
+            session_attempts += int(outcome_attempts.get("attempt_count") or 1)
+            session_rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])
+            no_output_streak = 0 if extraction_stats.has_model_output(result) else no_output_streak + 1
             cost_log.write(json.dumps({"time": datetime.now(UTC).isoformat(timespec="seconds"),
                                        "config": config["experiment_id"], "incident_id": incident_id,
                                        "repeat": repeat, "position": position, "outcome": result["outcome"], **usage,
@@ -659,6 +686,11 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                              attempts=attempts, rate_limited=rate_limited)
             log(f"  {config['experiment_id']} r{repeat} {incident_id}: {result['outcome']} "
                 f"tokens={usage['p1_total_tokens']} cost≈${used['cost_usd_provisional']:.4f}")
+    if paused is not None:
+        write_checkpoint(stage_dir, order=order, done=paused["done"], records=records, run_ids=run_ids,
+                         attempts=attempts, rate_limited=rate_limited)
+        return {"dry_run": False, "paused": paused, "stopped": None, "stage_dir": str(stage_dir), "records": records,
+                "results_files": [], "plans": plans, "plan": plans[0]}
     finished = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     outputs = []
     for config, record, out_dir in zip(configs, records, out_dirs, strict=True):
