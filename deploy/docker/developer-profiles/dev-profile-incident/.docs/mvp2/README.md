@@ -94,7 +94,7 @@ Search & Retrieval
    - Records: `query_id`, `rank`, `similarity_score`, `critic_verdict` (confirmed/rejected/unverified), `critic_rationale`
    - Enables audit trails and critic feedback loops
 
-6. **Chat Endpoint**: Follow-up questions with evidence citations. The chat route makes no model call and no embedding: it keyword-matches a report version's saved evidence, or asks its search client, which is still in-memory canned data ([`vm-api-contracts.md`](../vm-api-contracts.md#post-apiv1incidentschat)).
+6. **Chat Endpoint**: Follow-up questions with evidence citations. The chat route makes no model call and no embedding: it keyword-matches a report version's saved evidence, or asks its search client, which is still in-memory canned data ([`vm-api-contracts.md`](../vm-api-contracts.md)).
 
 ---
 
