@@ -626,7 +626,7 @@ function CardFrame({
   children: React.ReactNode;
 }) {
   return (
-    <article className="w-full max-w-[22rem] overflow-hidden rounded-2xl border border-ink/10 bg-white text-xs">
+    <article className="w-full max-w-88 overflow-hidden rounded-2xl border border-ink/10 bg-white text-xs">
       <button
         aria-label={seconds === null ? `${name} image` : `Play video from ${formatClock(seconds)}: ${name}`}
         className="block w-full disabled:cursor-default"
@@ -634,7 +634,7 @@ function CardFrame({
         onClick={() => seconds !== null && onSeek(seconds)}
         type="button"
       >
-        <EvidenceFrame aspect={2} className="!rounded-none" label={name || 'Evidence'} seconds={seconds} src={imageUrl} />
+        <EvidenceFrame aspect={2} className="rounded-none!" label={name || 'Evidence'} seconds={seconds} src={imageUrl} />
       </button>
       <div className="space-y-1 p-3">{children}</div>
     </article>

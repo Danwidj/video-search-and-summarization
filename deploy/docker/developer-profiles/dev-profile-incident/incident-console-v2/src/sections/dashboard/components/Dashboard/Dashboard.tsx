@@ -448,7 +448,7 @@ function Heatmap({
               return (
                 <button
                   aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
-                  className={`aspect-square rounded-sm ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`}
+                  className={`aspect-square rounded-xs ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`}
                   key={`hour-${h}`}
                   onClick={() => onSelect(d, h)}
                   style={{ background: `rgba(49,91,58,${count ? 0.15 + (count / max) * 0.85 : 0.04})` }}
@@ -477,8 +477,8 @@ function Funnel({ data }: { data: DashboardAnalytics }) {
             <span>{label}</span>
             <strong>{count}</strong>
           </div>
-          <div className="mt-2 h-7 rounded bg-ink/5">
-            <div className={`h-7 rounded ${color}`} style={{ width: `${(count / max) * 100}%` }} />
+          <div className="mt-2 h-7 rounded-sm bg-ink/5">
+            <div className={`h-7 rounded-sm ${color}`} style={{ width: `${(count / max) * 100}%` }} />
           </div>
         </div>
       ))}
@@ -509,8 +509,8 @@ function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) {
       {[5, 4, 3, 2, 1].map((level) => (
         <div className="flex items-center gap-3 text-sm" key={level}>
           <span className="w-16 text-ink/55">Threat {level}</span>
-          <div className="h-3 flex-1 rounded bg-ink/5">
-            <div className="h-3 rounded bg-clay/60" style={{ width: `${((map.get(level) || 0) / max) * 100}%` }} />
+          <div className="h-3 flex-1 rounded-sm bg-ink/5">
+            <div className="h-3 rounded-sm bg-clay/60" style={{ width: `${((map.get(level) || 0) / max) * 100}%` }} />
           </div>
           <strong className="w-8 text-right">{map.get(level) || 0}</strong>
         </div>

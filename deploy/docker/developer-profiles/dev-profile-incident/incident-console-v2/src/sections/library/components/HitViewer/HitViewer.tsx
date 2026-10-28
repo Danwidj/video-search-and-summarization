@@ -66,7 +66,7 @@ export function HitViewer({
       }}
       role="dialog"
     >
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[1.5rem] bg-white p-5 shadow-panel">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl bg-white p-5 shadow-panel">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">

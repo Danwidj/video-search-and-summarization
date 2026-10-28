@@ -63,7 +63,7 @@ export function ReportTimeline({
               <div className="w-36 shrink-0 border-l border-dashed border-ink/10" data-lane={lane.id} key={lane.id}>
                 <div className="flex h-12 flex-col items-center justify-center gap-0.5 px-1 text-center text-[11px] font-semibold leading-tight">
                   {lane.kind === 'entity' && lane.imageUrl && (
-                    <EvidenceFrame aspect={1} className="h-5 w-5 !rounded-md" label={lane.title} src={lane.imageUrl} />
+                    <EvidenceFrame aspect={1} className="h-5 w-5 rounded-md!" label={lane.title} src={lane.imageUrl} />
                   )}
                   <span className="line-clamp-2">{lane.title}</span>
                 </div>

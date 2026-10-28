@@ -22,7 +22,7 @@ export function IncidentThumbnail({ url, className = 'aspect-video' }: { url?: s
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={() => setFailed(true)} src={view.src} />
       ) : (
-        <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-white/35 to-transparent">
+        <div className="absolute inset-0 grid place-items-center bg-linear-to-br from-white/35 to-transparent">
           <div className="h-10 w-14 rounded-xl bg-white/55" />
         </div>
       )}
@@ -76,12 +76,12 @@ export function CardSkeleton({ count = 6, label }: { count?: number; label: stri
     <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="status">
       <span className="sr-only">{label}</span>
       {Array.from({ length: count }, (_, i) => `skeleton-${label}-${i}`).map((key) => (
-        <div className="animate-pulse overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white" key={key}>
+        <div className="animate-pulse overflow-hidden rounded-3xl border border-ink/10 bg-white" key={key}>
           <div className="aspect-video bg-ink/10" />
           <div className="space-y-3 p-5">
-            <div className="h-5 w-2/3 rounded bg-ink/10" />
-            <div className="h-4 rounded bg-ink/10" />
-            <div className="h-4 w-4/5 rounded bg-ink/10" />
+            <div className="h-5 w-2/3 rounded-sm bg-ink/10" />
+            <div className="h-4 rounded-sm bg-ink/10" />
+            <div className="h-4 w-4/5 rounded-sm bg-ink/10" />
           </div>
         </div>
       ))}

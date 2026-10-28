@@ -66,7 +66,7 @@ export function EvidenceFrame({
         <img alt="" className="absolute max-w-none" onError={onError} src={frameSrc ?? undefined} style={cropImageStyle(region)} />
       )}
       {state === 'pending' && (
-        <div className="grid h-full place-items-center bg-gradient-to-r from-[#e7ebe3] via-[#f5f7f2] to-[#e7ebe3] text-[11px] text-ink/50 motion-safe:animate-pulse">
+        <div className="grid h-full place-items-center bg-linear-to-r from-[#e7ebe3] via-[#f5f7f2] to-[#e7ebe3] text-[11px] text-ink/50 motion-safe:animate-pulse">
           Cropping frame{seconds != null ? ` ${formatClock(seconds)}` : ''}…
         </div>
       )}

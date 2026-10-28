@@ -25,14 +25,14 @@ export function IncidentCard({
   const evidence = item.evidenceCount ?? 0;
   return (
     <article
-      className="flex flex-col overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal"
+      className="flex flex-col overflow-hidden rounded-3xl border border-ink/10 bg-white shadow-xs transition hover:-translate-y-0.5 hover:shadow-panel focus:ring-2 focus:ring-signal"
       id={`report-${item.revisionId}`}
       tabIndex={-1}
     >
       <ReportThumbnail kind={item.kind} severity={item.severity} thumbnailUrl={item.thumbnailUrl} />
       <div className="flex flex-1 flex-col p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">{item.incident_type}</p>
-        <h2 className="mt-2 line-clamp-2 min-h-[3.2rem] text-xl font-semibold tracking-[-0.025em]">{item.title}</h2>
+        <h2 className="mt-2 line-clamp-2 min-h-[3.2rem] text-xl font-semibold tracking-tight">{item.title}</h2>
         <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink/60">{item.description}</p>
         <div className="mt-3 min-h-[2.4rem]">
           {item.isOfficial ? (

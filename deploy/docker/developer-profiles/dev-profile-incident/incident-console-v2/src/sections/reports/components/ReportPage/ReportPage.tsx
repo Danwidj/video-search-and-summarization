@@ -180,7 +180,7 @@ export function ReportPage({
   if (state.status === 'loading') {
     return (
       <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12" role="status">
-        <div className="animate-pulse overflow-hidden rounded-[2rem] border border-ink/10 bg-white shadow-panel">
+        <div className="animate-pulse overflow-hidden rounded-4xl border border-ink/10 bg-white shadow-panel">
           <div className="h-12 border-b border-ink/10 bg-ink/5" />
           <div className="grid gap-px bg-ink/10 lg:grid-cols-[minmax(0,26rem)_1fr_16rem]">
             <div className="aspect-video bg-ink/10" />
@@ -188,9 +188,9 @@ export function ReportPage({
             <div className="bg-white" />
           </div>
           <div className="space-y-3 p-8">
-            <div className="h-4 rounded bg-ink/10" />
-            <div className="h-4 rounded bg-ink/10" />
-            <div className="h-4 w-3/4 rounded bg-ink/10" />
+            <div className="h-4 rounded-sm bg-ink/10" />
+            <div className="h-4 rounded-sm bg-ink/10" />
+            <div className="h-4 w-3/4 rounded-sm bg-ink/10" />
           </div>
           <span className="sr-only">Loading incident report</span>
         </div>
@@ -361,7 +361,7 @@ export function ReportPage({
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-2 sm:px-6 lg:px-12">
-      <article className="report-sheet overflow-clip rounded-[2rem] border border-ink/10 bg-white shadow-panel" data-testid="report-page">
+      <article className="report-sheet overflow-clip rounded-4xl border border-ink/10 bg-white shadow-panel" data-testid="report-page">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-ink/10 px-5 py-3 text-sm">
           <Link className="font-semibold text-moss" href="/library" id="back-to-library">
             ← Library
@@ -406,7 +406,7 @@ export function ReportPage({
         </div>
 
         <div
-          className="sticky top-0 z-20 grid border-b border-ink/10 bg-white lg:h-[var(--report-band-height)] lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--timeline-width))_minmax(0,var(--versions-width))]"
+          className="sticky top-0 z-20 grid border-b border-ink/10 bg-white lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--timeline-width))_minmax(0,var(--versions-width))]"
           data-testid="report-band"
           ref={reportBandRef}
           style={
@@ -509,7 +509,7 @@ export function ReportPage({
           />
         ) : null}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-ink/10 bg-white/95 px-5 py-3 text-sm backdrop-blur">
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-ink/10 bg-white/95 px-5 py-3 text-sm backdrop-blur-sm">
           {mode === 'view' ? (
             <>
               <span className="text-ink/60">
