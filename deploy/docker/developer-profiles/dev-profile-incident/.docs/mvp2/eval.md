@@ -83,7 +83,7 @@ This five-track structure is a proposal awaiting approval (§8, P-1). The origin
 
 | Track | Readiness | Question | Original goal |
 |---|---|---|---|
-| **R** Retrieval and critic | Implementable now (live agent) | How good is retrieval, and what does the always-on critic change? | Retrieval quality; critic utility |
+| **R** Retrieval and critic | Implementable now (live agent; the critic must be switched on with `INCIDENT_SEARCH_CRITIC`) | How good is retrieval, and what does the critic change? | Retrieval quality; critic utility |
 | **X** Extraction parity | Implementable now (sanity check) | Do the gateway path and agent `/analyze` give the same results on the same model? | System vs one-shot (narrowed) |
 | **F** Full-system extraction | Deferred | Does a compound VSS pipeline beat one-shot P1? | System vs one-shot (original intent) |
 | **D** Detector framing | Implementable offline | How well framed are production crops, and would another detector do better? | Detector selection |
@@ -421,7 +421,7 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 | Step | Needs before it can start | Open decision or dependency |
 |---|---|---|
 | 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: storage for labels and manifests is undecided) |
-| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on `kwanz-ws:8000`, [status](../status.md#4-known-issues) item 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
+| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on `kwanz-ws:8000`, [status](../status.md#7-archive) known issue 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
 | 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
 | 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X scores offline (`eval/offline_store.py`) |
 
@@ -442,7 +442,7 @@ These are current decisions that evaluation results could support or challenge. 
 |---|---|
 | `DefaultDetector` uses VLM boxes, and local detectors are rejected for the VM (2026-10-18). This conflicts with "VLM bounding boxes" being rejected in 2026-10-16. | Track D framing results for the baseline and the candidates |
 | Text-only embeddings of descriptions (2026-10-18) | Track E image and hybrid embedding results |
-| Critic always on, with no flag (2026-10-16) | §3.6 trade-offs |
+| Critic always on, with no flag (2026-10-16; superseded 2026-10-28: off by default behind `INCIDENT_SEARCH_CRITIC`) | §3.6 trade-offs |
 | Search scoped to each video's searchable revision (2026-10-23) | Corpus limits in §3.1, if they stay binding |
 | No similarity cutoff (2026-10-18) | Score distributions from Track R, for `min_similarity` tuning |
 | MiniLM as the P1 matching embedder (eval) | Track E instrument-sensitivity study |

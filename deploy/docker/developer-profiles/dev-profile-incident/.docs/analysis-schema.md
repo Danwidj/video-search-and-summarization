@@ -72,6 +72,8 @@ Every attempt that reaches the model has one outcome:
 
 Failed attempts never create a revision or evidence rows, and never appear as reports.
 
+**Timeline removal (in progress):** the report timeline is being removed ([decision](decisions.md#2026-10-28-the-report-timeline-is-being-removed)); until it lands, the contract and the page below are unchanged.
+
 **Timeline presentation:** when the model's timeline is inconsistent with its own incident window, the report page says so ("Model-generated timeline, not consistent with the detected incident window"). Events outside the window are tagged as model context and stay seekable. Seeking is blocked only for a time outside the video, judged by the recorded length and by the player's own length. The run history notes the issue, and the run-details panel lists enrichment issues, the policy and full-contract validity.
 
 ## 4. Storage
