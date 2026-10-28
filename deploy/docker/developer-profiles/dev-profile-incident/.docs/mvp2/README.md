@@ -82,12 +82,12 @@ Search & Retrieval
 3. **evidence_crops table:** one table for entities, instruments and assets, keyed by `revision_id` and holding each video's searchable revision only (its official revision, else its newest). Columns, index, writers and RLS: [`data.md`](../data.md#evidence_crops).
 
 4. **Search Route & Database RPC**:
-   - Frontend calls REST route `POST /api/v1/incidents/search` (`search-contract-v1`) with natural-language query text and optional filters.
-   - The backend service generates `query_embedding` and executes the `search_evidence_items` RPC (Supabase Postgres, restricted to `service_role`).
-   - The RPC takes `p_query_embedding`, `top_k`, `min_similarity`, and applies filters (`item_type`, `incident_type`, `severity_level`, `min_similarity`).
+   - Frontend calls REST route `POST /api/v1/incidents/search` (`search-contract-v1`) with natural-language query text and optional filters, including `filters.video_id` to search one incident.
+   - The backend service generates `query_embedding` (through `semantic_search`, the one embed-then-retrieve path that `POST /api/v1/incidents/revisions/search` shares) and executes the `search_evidence_items` RPC (Supabase Postgres, restricted to `service_role`).
+   - The RPC takes `p_query_embedding`, `top_k`, `min_similarity`, and applies filters (`item_type`, `incident_type`, `severity_level`, `min_similarity`, `p_video_id`). An empty query with a video id lists that video's crops in time order.
    - Queries pgvector HNSW over `evidence_crops.embedding <=> p_query_embedding`.
    - Returns only crops of each video's searchable revision, with the revision's facets as candidate metadata.
-   - **Critic Always On**: After retrieval, the VLM Critic evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
+   - **Critic off by default** (changed 2026-10-28): the VLM critic runs only when the agent has `INCIDENT_SEARCH_CRITIC` set truthy; otherwise every hit is `unverified` (rationale `Critic not run`) and no VLM call or delay occurs. With the critic on, it evaluates each candidate hit against the original user query using the crop image (attached when its URL is http(s)) and a prompt that includes the item description (the same text that was embedded); it does not reorder hits. Both ranking and critic verdicts are persisted into `query_results` before returning results.
    - In `incident-console-v2`, search goes through the `EvidenceSearchRepository` port, whose agent adapter (`src/lib/adapters/agent/search.ts`) calls this route ([console layout](console-hexagonal-architecture.md#2-ports-and-adapters)).
 
 5. **Query Results** (new table):
@@ -105,8 +105,8 @@ Search & Retrieval
 | **incident-contract-v4** (`contracts/incident_report.schema.json`) | Report schema: `incident{type, title, start_timestamp, end_timestamp, description, severity_level, severity_reason, confidence_score, location}`, `entities[]`, `instruments[]`, `assets[]`, `timeline[]`, `uncertainties[]`. Key fields: `timestamp_seconds` (INT, per item: entities, instruments, assets; entities also `first_seen_seconds` and `last_seen_seconds`, INT; `start_timestamp` and `end_timestamp` per incident), `entity type {human, animal, unknown}`, `instrument threat_level 1-5`, `asset name/description`. **Does NOT include bounding boxes.** | VM backend (vss-agent P1 extraction), eval PR 119, console gateway mode |
 | **evidence_crops** (new Supabase table) | Unified table: `(revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box INTEGER[4], image R2 key, embedding vector(1024))`. HNSW index on embedding. RLS service_role-only. | search route; rows written by the console from `POST /api/v1/incidents/evidence-embeddings` for each video's searchable revision |
 | **query_results** (new Supabase table) | Records: `id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict, critic_rationale, retrieved_at`. | PR 119 (eval), search route, critic audit |
-| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true), `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
-| **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`. Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
+| **search-contract-v1** (REST endpoint) | `POST /api/v1/incidents/search`. Parameters: `query` (natural-language string), `top_k`, `min_similarity` (default 0.0), `hide_rejected` (default true; meaningful only with the critic on), `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`, `filters.video_id`. Returns ranked results with incident metadata, item fields, similarity score, image URL, timestamp, and critic verdict. | PR 118 (frontend search), PR 119 (eval) |
+| **search_evidence_items** (Database RPC) | Supabase Postgres function. Parameters: `p_query_embedding vector(1024)`, `top_k`, `min_similarity`, `item_types[]`, `incident_types[]`, `min_severity`, `max_severity`, `p_video_id` (optional; NULL embedding allowed only with it). Returns matching candidate table. RLS/Permissions: `service_role` only. | VM backend search route, PR 119 (retrieval benchmarks) |
 | **chat-contract-v1** (REST endpoint) | `POST /api/v1/incidents/chat`. Parameters: `session_id` (optional), `messages[]` (`{role: "user" | "assistant" | "system", content}`), `context` (`{scope: "global" | "incident", incident_id, evidence_crop_ids}`). Returns assistant response with grounded evidence citations (`incident_id`, `item_id`, `item_type`, `timestamp_seconds`, `crop_image_url`). | PR 118 (frontend chat) |
 | **incident-contract-v4 taxonomy** | Retained from contract-v2: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. `entity type {human, animal, unknown}`. `instrument threat_level 1-5`. Item IDs: sequential `E1..`, `I1..`, `A1..`. | All workstreams |
 
@@ -123,9 +123,9 @@ The PR workstreams and the VM backend steps form a chain of dependencies. Each w
 | **Step 1** | `incident-contract-v4` schema, `vss-agent` native P1 extraction, Brev Switchyard integration | - | Delivered |
 | **Step 2** | Mock backend with search-profile superset mock (port 7778) | Step 1 | Delivered |
 | **Step 3** | Crop service: detector port, `CropEvidenceService` on keyframes, JPEG quality 85, 5% padding, R2 canonical key layout, `EvidenceStore` port | Step 2 | Delivered (`services/agent/src/vss_agents/utils/crop_evidence.py`) |
-| **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with always-on critic (configurable delay spacing via `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, default 1.0s, 0 disables), query persistence, and hexagonal `SearchStore` port (`InMemorySearchStore` and `SupabaseSearchStore` calling `search_evidence_items` RPC with Cloudflare R2 presigned crop URL resolution) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
+| **Step 4** | `POST /api/v1/incidents/search` REST route in `vss-agent` with the critic dormant by default (`INCIDENT_SEARCH_CRITIC` turns it on; delay spacing via `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS`, default 1.0s, 0 disables), query persistence, and hexagonal `SearchStore` port (`InMemorySearchStore` and `SupabaseSearchStore` calling `search_evidence_items` RPC with Cloudflare R2 presigned crop URL resolution) | Step 3 | Delivered (`services/agent/src/vss_agents/api/incident_search.py`) |
 | **Step 5** | Chat endpoint `POST /api/v1/incidents/chat` (resolving history context against search infrastructure) | Step 4 | Delivered (`services/agent/src/vss_agents/api/incident_chat.py`, `chat-contract-v1`) |
-| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up search route unconditionally in both vm and mock modes with always-on critic and persisted ranking/verdicts) |
+| **Step 6** | `start.sh` bringing search up (always on, no --search flag) | Step 5 | Delivered (`start.sh` brings up the search route unconditionally in both vm and mock modes; ranking is persisted, and critic verdicts are persisted when the critic is on) |
 
 ### PR Workstreams (in this repo, building docs + UI/code):
 
@@ -162,7 +162,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **Timestamp format:** Integer seconds (`timestamp_seconds INT`) for evidence items (entities, instruments, assets); incident temporal boundaries use `start_timestamp` and `end_timestamp`. Storage: [`data.md`](../data.md#report_revisions).
 - **Taxonomy:** `incident-contract-v2` taxonomy retained: `road accident`, `burglary`, `explosion`, `assault`, `animal attack`. Entity type: `human`, `animal`, `unknown`. Instrument `threat_level` 1-5.
 - **RLS, RPC lockdown and pgvector:** [`data.md`](../data.md#row-level-security-rls--access-control).
-- **Critic always on:** Every search candidate is evaluated by the VLM critic; both ranking and verdict are persisted. No opt-in `--search` flag; search starts automatically with `start.sh`.
+- **Critic off by default (changed 2026-10-28; it was always on):** with `INCIDENT_SEARCH_CRITIC` set, every search candidate is evaluated by the VLM critic and both ranking and verdict are persisted; otherwise hits are `unverified`. No opt-in `--search` flag; search starts automatically with `start.sh`.
 - **R2 key layout:** [`data.md`](../data.md#2-cloudflare-r2-storage-architecture).
 - **Search parameters:** the REST route in [`vm-api-contracts.md`](../vm-api-contracts.md#post-apiv1incidentssearch), the RPC in [`data.md`](../data.md#search_evidence_items).
 
@@ -171,7 +171,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - **Evidence crop:** A targeted object image (JPEG) extracted from a video frame at `timestamp_seconds`, cropped by an open-vocabulary detector's bounding box, stored in R2 with metadata in `evidence_crops`.
 - **Critic verdict:** `confirmed` (VLM confirms the crop matches the user query), `rejected` (VLM says it does not), or `unverified` (critic evaluation failure or fallback), with an objective rationale string.
 - **Query result:** A ranked search hit from `search_evidence_items`, including similarity_score, critic_verdict, and image URL.
-- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic always on). [`eval.md`](eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
+- **One-shot baseline:** A retrieval run that scores results using only the initial query embedding, without critic re-evaluation. System baseline uses the full pipeline (critic on; it is off by default in production since 2026-10-28). [`eval.md`](eval.md) §2 proposes (P-1, pending approval) treating extraction parity (gateway vs agent P1) and full-system extraction as separate tracks.
 - **Natural-language evidence search:** The user types a query (e.g. "crowbar"), the system retrieves matching evidence items across all stored incidents, each with timestamp and cropped object image.
 
 ---
@@ -213,7 +213,7 @@ The PR task docs assume the following conventions and environment setup. This se
 - The `evidence_crops` table schema (especially `embedding vector(1024)`, `timestamp_seconds`, `bounding_box`) for embedding generation and HNSW indexing
 - The `query_results` table structure (rank, similarity_score, critic_verdict, critic_rationale) for evaluating critic impact
 - The `search_evidence_items` RPC and search REST route contracts for running retrieval benchmarks
-- The difference between **one-shot baseline** (retrieval only, no critic) and **system baseline** (retrieval + critic always on)
+- The difference between **one-shot baseline** (retrieval only, no critic) and **system baseline** (retrieval + critic, which is off by default in production)
 - Taxonomy and item type filters (`item_type IN ('entity','instrument','asset')`, `incident_types`)
 - Mock backends (:7777 launched by `start.sh --mode mock`, :7778 standalone) for harness plumbing tests only; they answer from a fixed finals snapshot by query-word overlap, with placeholder critic verdicts, so their relevance means nothing
 - VM backend Steps 3 and 4 must be live: crop service producing embeddings, and search RPC with pgvector
