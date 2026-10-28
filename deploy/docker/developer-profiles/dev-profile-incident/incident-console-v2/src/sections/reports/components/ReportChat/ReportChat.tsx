@@ -3,6 +3,9 @@
 
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { chatRequestBody, type ChatTarget } from '@/lib/chat/report-chat';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
@@ -20,7 +23,7 @@ type Message = {
 };
 
 /**
- * Floating "Ask about this incident" panel. It asks about `target`: the version on
+ * Floating / drawer "Ask about this incident" panel. It asks about `target`: the version on
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
  * from, and its citations jump the video to the cited moment.
  */
@@ -41,6 +44,7 @@ export function ReportChat({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
@@ -88,63 +92,61 @@ export function ReportChat({
   return (
     <section
       aria-label="Ask about this incident"
-      className="print-hidden fixed bottom-16 right-4 z-40 flex h-[min(580px,calc(100vh-7rem))] w-[min(400px,calc(100vw-2rem))] flex-col overflow-clip rounded-[1.2rem] border border-ink/15 bg-white shadow-panel"
+      className="flex h-full w-full flex-col overflow-hidden bg-card text-card-foreground"
       data-testid="report-chat"
-      role="dialog"
     >
-      <div className="flex items-start justify-between gap-2 border-b border-ink/10 bg-[#eef2e9] px-3.5 py-3">
+      <div className="flex items-start justify-between gap-2 border-b border-border bg-muted/40 px-3.5 py-3">
         <div className="min-w-0">
           <b className="text-sm">Ask about this incident</b>
           <p className="mt-1.5">
-            <span
-              className="inline-block rounded-full border border-ink/15 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-moss"
+            <Badge
+              className="text-[11px] font-semibold"
               data-testid="chat-target"
               title="The chat follows the version you have selected"
+              variant="outline"
             >
               Asking about {target.label}
-            </span>
+            </Badge>
           </p>
         </div>
         <div className="flex gap-1.5">
-          <button
-            className="rounded-full border border-ink/15 px-2.5 py-0.5 text-xs font-semibold disabled:opacity-40"
+          <Button
             disabled={!messages.length || busy}
             onClick={() => {
               setMessages([]);
               setSessionId(undefined);
               setFailed(null);
             }}
+            size="sm"
             type="button"
+            variant="outline"
           >
             New chat
-          </button>
-          <button
-            aria-label="Close chat"
-            className="rounded-full border border-ink/15 px-2.5 py-0.5 text-xs font-semibold"
-            onClick={onClose}
-            type="button"
-          >
+          </Button>
+          <Button aria-label="Close chat" onClick={onClose} size="sm" type="button" variant="ghost">
             ✕
-          </button>
+          </Button>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3.5 py-3" ref={scroller}>
         {!messages.length && (
           <>
-            <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-canvas px-3 py-2 text-[13px] leading-snug">
+            <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug">
               Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the moment
               in the video.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {SUGGESTIONS.map((suggestion) => (
-                <button
-                  className="rounded-full border border-ink/15 px-2.5 py-1 text-left text-xs font-semibold"
+                <Button
+                  className="h-auto px-2.5 py-1 text-left text-xs font-semibold"
                   key={suggestion}
                   onClick={() => void send(suggestion, [])}
+                  size="sm"
                   type="button"
+                  variant="outline"
                 >
                   {suggestion}
-                </button>
+                </Button>
               ))}
             </div>
           </>
@@ -152,13 +154,16 @@ export function ReportChat({
         {messages.map((message) =>
           message.role === 'user' ? (
             <p
-              className="max-w-[92%] self-end rounded-2xl rounded-br-sm bg-moss px-3 py-2 text-[13px] leading-snug text-white"
+              className="max-w-[92%] self-end rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-[13px] leading-snug text-primary-foreground"
               key={message.id}
             >
               {message.content}
             </p>
           ) : (
-            <div className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-canvas px-3 py-2 text-[13px] leading-snug" key={message.id}>
+            <div
+              className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-foreground"
+              key={message.id}
+            >
               <p className="whitespace-pre-wrap">{message.content}</p>
               {!!message.citations?.length && (
                 <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
@@ -166,37 +171,45 @@ export function ReportChat({
                     <li key={`${citation.itemId}-${citation.timestampSeconds}`}>
                       <button
                         aria-label={`Jump to ${citation.itemId} at ${formatClock(citation.timestampSeconds)}`}
-                        className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-ink/15 bg-white p-1 text-left hover:border-moss"
+                        className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-border bg-card p-1 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => onSeek(citation.timestampSeconds)}
                         type="button"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
                         {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
-                        <img alt="" className="h-9 w-[52px] rounded-md bg-ink/80 object-cover" src={citation.cropImageUrl} />
+                        <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
                         <span className="min-w-0">
                           <b className="block truncate text-xs">
                             {citation.itemId} · {citation.itemType}
                           </b>
-                          <span className="text-[11px] text-ink/55">jump to {formatClock(citation.timestampSeconds)}</span>
+                          <span className="text-[11px] text-muted-foreground">jump to {formatClock(citation.timestampSeconds)}</span>
                         </span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="mt-1.5 text-[10.5px] text-ink/50" data-testid="chat-answered-from">
+              <p className="mt-1.5 text-[10.5px] text-muted-foreground" data-testid="chat-answered-from">
                 Answered from {message.answeredFrom}
               </p>
             </div>
           ),
         )}
         {busy && (
-          <p aria-label="Searching evidence" className="self-start rounded-2xl bg-canvas px-3 py-2 text-xs text-ink/50" role="status">
+          <p
+            aria-label="Searching evidence"
+            className="self-start rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground"
+            role="status"
+          >
             Searching evidence…
           </p>
         )}
         {failed && (
-          <p className="self-start rounded-2xl bg-[#fff6f2] px-3 py-2 text-[13px] text-[#8c3d25]" data-testid="chat-error" role="alert">
+          <p
+            className="self-start rounded-2xl bg-destructive/10 px-3 py-2 text-[13px] text-destructive"
+            data-testid="chat-error"
+            role="alert"
+          >
             Chat is unavailable right now, so no answer was returned. <span className="text-[11px] opacity-70">({failed})</span>{' '}
             <button className="font-semibold underline" onClick={retry} type="button">
               Try again
@@ -204,23 +217,19 @@ export function ReportChat({
           </p>
         )}
       </div>
-      <form className="flex gap-1.5 border-t border-ink/10 px-3 py-2.5" onSubmit={ask}>
-        <input
+      <form className="flex gap-1.5 border-t border-border px-3 py-2.5" onSubmit={ask}>
+        <Input
           aria-label="Question"
-          className="control min-w-0 flex-1"
+          className="min-w-0 flex-1"
           disabled={busy}
           maxLength={500}
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="Ask a question…"
           value={question}
         />
-        <button
-          className="rounded-full bg-moss px-4 text-xs font-semibold text-white disabled:opacity-50"
-          disabled={busy || !question.trim()}
-          type="submit"
-        >
+        <Button disabled={busy || !question.trim()} size="sm" type="submit">
           Send
-        </button>
+        </Button>
       </form>
     </section>
   );

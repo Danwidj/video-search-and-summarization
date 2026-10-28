@@ -60,7 +60,6 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   for (const name of [
     'reports/components/ReportPage/ReportPage.tsx',
     'reports/components/ReportPane/ReportPane.tsx',
-    'reports/components/ReportTimeline/ReportTimeline.tsx',
     'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
@@ -94,7 +93,6 @@ test('browser components import only browser-safe report modules', async () => {
   for (const name of [
     'reports/components/ReportPage/ReportPage.tsx',
     'reports/components/ReportPane/ReportPane.tsx',
-    'reports/components/ReportTimeline/ReportTimeline.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/ReportRunDetails/ReportRunDetails.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
@@ -138,9 +136,8 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(page, />\s*Revert\s*</, 'the editor can restore the opened version');
   assert.match(page, /<hr/, 'the report page has semantic resize handles in both modes');
   assert.doesNotMatch(page, /mode === 'edit'[\s\S]{0,120}<ReportBandResizeHandle/, 'View mode does not hide the width handles');
-  assert.match(page, /Resize video and timeline/);
-  assert.match(page, /Resize timeline and version history/);
-  assert.match(page, /Resize video, timeline and version history height/);
+  assert.match(page, /Resize video and version history/);
+  assert.match(page, /Resize video and version history height/);
   for (const classB of ['severity_reason', 'uncertainties', 'timeline']) {
     assert.ok(!new RegExp(`${classB}:`).test(editor), `${classB} must not be editable`);
   }
