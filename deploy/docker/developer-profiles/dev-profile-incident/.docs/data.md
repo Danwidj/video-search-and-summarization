@@ -15,6 +15,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261023000200_searchable_latest_revision.sql` — adds `videos.official_since`; makes a video with no official revision searchable through its newest revision (`set_revision_crops`, `searchable_revision_id`, `replace_video_crops`); and adds `officialSince`, `versionCount`, `evidenceCount` and `thumbnail` to the library cards.
 - `20261023120000_report_revision_embeddings.sql` — adds `report_revisions.embedding` with its HNSW index, and `search_report_revisions`.
 - `20261024090000_save_human_revision_with_crops.sql` — adds `save_human_revision_with_crops`.
+- `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
@@ -38,8 +39,8 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
   `report_revisions(video_id, id)`) names it; NULL means none. Selection never rewrites a revision.
   `evidence_crops` rows belong to the video's **searchable revision**: the official revision when
   there is one, otherwise the newest (`searchable_revision_id(video_id)`). See `evidence_crops`.
-- **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE` (the one exception is the
-  `ON DELETE CASCADE` of the video, see below).
+- **Revisions are append-only.** A trigger rejects `UPDATE` and `DELETE` (the exceptions are the
+  `ON DELETE CASCADE` of the video, see below, and `apply_r2_rename`, which may change only `evidence`).
 
 ---
 
@@ -52,7 +53,7 @@ Primary registry of ingested video assets.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(sensorId)` for uploads (20 chars); clip-name ids (`Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Raw sensor ids are never used directly as `id`. |
-| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<sensorId>/<uuid>.<ext>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
+| `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<original file name>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`; rows written before 2026-10-28 hold `uploads/<sensorId>/<uuid>.<ext>` until `migrate_r2_names.py` is applied). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Some historical rows are NULL. |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
@@ -143,7 +144,7 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
 | `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
-| `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<videoId>/<uuid>/<itemId>.jpg`) |
+| `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<video key>/run-<N>/<itemId>.jpg` or `.../edit-<N>/<itemId>.jpg`, where `<video key>` is `videos.filepath`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC insertion time |
 
@@ -399,23 +400,25 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── normal_videos/                   # baseline non-incident clips
 │   └── <clip-name>.mp4
 ├── uploads/                         # all new user uploads (real VST fallback and local mock)
-│   └── <encodeURIComponent(sensorId)>/<uuid>.<ext>   # ext lowercased, default .mp4
+│   └── <original file name>         # flat; a taken name gets -2, -3 before the extension
 ├── thumbnails/                      # browser-captured report-card screenshots for new uploads
-│   └── <video-key>.webp             # e.g. thumbnails/uploads/<sensor>/<uuid>.mp4.webp
+│   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # evidence images: agent crops and reviewer replacements
-    └── <videoId>/<uuid>/<itemId>.jpg
+    └── <video-key>/run-<N>/<itemId>.jpg    # AI crops, one run-<N> per analysis
+        <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
 > [!NOTE]
-> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<sensorId>/<uuid>.<ext>` in both local-mock and real-VST flows; the VLM's later incident classification does not move or rename the object.
+> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original file name>` in both local-mock and real-VST flows; the VLM's later incident classification does not move or rename the object.
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
-> The `evidence/` tree holds two writers' images under one key pattern, `evidence/<videoId>/<uuid>/<itemId>.jpg` (item ids `E#`, `I#` and `A#` are unique across types; a new `<uuid>` per write, so a key is never overwritten):
-> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, one `<uuid>` per run), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
-> - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save.
+> The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
+> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
+> - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
+> - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
-> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes every object under `evidence/<videoId>/` before the video row; if a listing or removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#4-known-issues)), and the sweep refuses an unknown video.
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes every object under `evidence/<video key>/` before the video row; if a listing or removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#4-known-issues)), and the sweep refuses an unknown video.
 
 ### Key Validation & Generation Rules
 
@@ -426,14 +429,20 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    - Not start with `.` or contain `..` (relative filesystem path).
    - Guard against VST/NvStreamer `filePath` outputs (which return `./streamer/media/...` or local file paths).
 2. **Upload & Evidence Key Patterns:**
-   Direct uploads from `incident-console-v2/src/app/api/uploads/r2/route.ts` format keys as:
-   `uploads/${encodeURIComponent(sensorId.trim())}/${randomUUID()}${ext}`.
+   Direct uploads from `incident-console-v2/src/app/api/uploads/r2/route.ts` format keys as `uploads/<name>`
+   (`src/lib/r2/names.ts`): the original file name is kept; a character outside letters, digits and
+   `. _ - ( ) + ,` (a space included) becomes `_`; a name over 150 characters is cut (extension kept); a name that is
+   already stored gets `-2`, `-3` before the extension, found with `HeadObject` and written with
+   `If-None-Match: *` so a race returns 409 instead of overwriting. `POST /api/uploads/check` returns the same
+   name, `unsafeChars`, `truncated` and `exists` before the upload, and the upload page warns on each.
    Thumbnail keys are deterministic: `thumbnailKeyForVideo(videoKey)` returns
    `thumbnails/${videoKey}.webp`; no database column is required.
-   Agent crop keys come from `evidence_key(video_id, batch_id, item_id)` in
-   `services/agent/src/vss_agents/utils/crop_evidence.py` (`batch_id` is a fresh `uuid4().hex` per
-   analysis run); reviewer replacements from `uploadedEvidenceKey` in
-   `incident-console-v2/src/modules/reports/domain/revision.ts` (a fresh `randomUUID()` per image).
+   Agent crop keys come from `evidence_key(video_key, batch_id, item_id)` in
+   `services/agent/src/vss_agents/utils/crop_evidence.py` (`batch_id` is `run-<N>`, allocated by
+   `next_run_batch_id`); reviewer replacements from `uploadedEvidenceKey` in
+   `incident-console-v2/src/modules/reports/domain/revision.ts` (`edit-<N>`).
+   Objects written before 2026-10-28 were renamed by `supabase/r2/migrate_r2_names.py` (copy, verify, update
+   the rows; the old objects are deleted by hand afterwards). `model_runs.notes` keeps the old key as history.
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.

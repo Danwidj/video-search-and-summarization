@@ -9,9 +9,11 @@ services/ui/packages/common/lib-src/utils/chunkedUpload.ts.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import datetime as _dt
 import os
 from pathlib import PurePosixPath
+import re
 from typing import Any
 import uuid
 
@@ -30,16 +32,50 @@ from base_profile_mock.state import get_state
 router = APIRouter(prefix="/vst/api/v1")
 
 
-def _upload_key(stream: Stream, sensor_id: str) -> str:
-    """Return a classification-neutral key for a user-uploaded video."""
-    filename = PurePosixPath(stream.filename or "video.mp4").name
-    suffix = PurePosixPath(filename).suffix.lower()
-    if not suffix or len(suffix) > 11 or not suffix[1:].isalnum():
-        suffix = ".mp4"
-    return f"uploads/{sensor_id}/{uuid.uuid4()}{suffix}"
+_MAX_NAME_LENGTH = 150
 
 
-def _r2_upload(stream: Stream, sensor_id: str) -> str:
+def _readable_name(filename: str | None) -> str:
+    """Keep the original file name: unsafe characters become '_', long names are cut (extension kept)."""
+    name = PurePosixPath((filename or "").replace("\\", "/")).name.strip()
+    name = re.sub(r"[^\w.()+,-]", "_", name)
+    name = re.sub(r"\.{2,}", ".", name)
+    name = ("_" + name[1:]) if name.startswith(".") else name
+    name = name or "video.mp4"
+    stem, suffix = PurePosixPath(name).stem, PurePosixPath(name).suffix
+    if len(suffix) > 11:
+        stem, suffix = name, ""
+    return stem[: max(1, _MAX_NAME_LENGTH - len(suffix))] + suffix
+
+
+def _upload_key(stream: Stream, exists: Callable[[str], bool] = lambda _key: False) -> str:
+    """Return the readable key for a user-uploaded video: uploads/<name>, then uploads/<name>-2.<ext>, ..."""
+    name = _readable_name(stream.filename)
+    stem, suffix = PurePosixPath(name).stem, PurePosixPath(name).suffix
+    for counter in range(1, 1000):
+        candidate = (
+            name
+            if counter == 1
+            else f"{stem[: max(1, _MAX_NAME_LENGTH - len(suffix) - len(str(counter)) - 1)]}-{counter}{suffix}"
+        )
+        if not exists(f"uploads/{candidate}"):
+            return f"uploads/{candidate}"
+    raise RuntimeError(f"Too many uploads named like {name}")
+
+
+def _key_exists(client: Any, bucket: str, key: str) -> bool:
+    from botocore.exceptions import ClientError
+
+    try:
+        client.head_object(Bucket=bucket, Key=key)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+            return False
+        raise
+    return True
+
+
+def _r2_upload(stream: Stream) -> str:
     """Upload a completed mock stream and return its durable R2 object key."""
     import boto3
     from botocore.config import Config
@@ -48,7 +84,6 @@ def _r2_upload(stream: Stream, sensor_id: str) -> str:
     missing = [name for name in required if not os.getenv(name)]
     if missing:
         raise RuntimeError(f"R2 storage is not configured; missing {', '.join(missing)}")
-    key = _upload_key(stream, sensor_id)
     client = boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
@@ -57,7 +92,9 @@ def _r2_upload(stream: Stream, sensor_id: str) -> str:
         region_name="auto",
         config=Config(signature_version="s3v4", connect_timeout=10, read_timeout=30, retries={"max_attempts": 2}),
     )
-    client.put_object(Bucket=os.environ["R2_BUCKET"], Key=key, Body=stream.content, ContentType="video/mp4")
+    bucket = os.environ["R2_BUCKET"]
+    key = _upload_key(stream, lambda candidate: _key_exists(client, bucket, candidate))
+    client.put_object(Bucket=bucket, Key=key, Body=stream.content, ContentType="video/mp4", IfNoneMatch="*")
     return key
 
 
@@ -111,7 +148,7 @@ async def _process_chunk(
             # mock VST endpoints, but return the R2 key to the console so it
             # can commit filepath before automatic analysis starts.
             try:
-                file_path = await asyncio.to_thread(_r2_upload, stream, sensor_id)
+                file_path = await asyncio.to_thread(_r2_upload, stream)
             except Exception as exc:
                 raise HTTPException(status_code=503, detail=f"R2 upload failed: {exc}") from exc
         else:

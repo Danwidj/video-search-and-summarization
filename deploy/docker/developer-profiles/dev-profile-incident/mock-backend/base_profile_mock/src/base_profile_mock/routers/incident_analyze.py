@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import model_validator
 
+from base_profile_mock.routers.vst_storage import _key_exists
 from base_profile_mock.routers.vst_storage import _upload_key
 from base_profile_mock.state import AppState
 from base_profile_mock.state import Stream
@@ -206,12 +207,15 @@ def _r2_client():
 
 def _upload_video_to_r2(*, stream: Stream, incident_id: str, category: dict[str, object]) -> str:
     del incident_id, category
-    key = _upload_key(stream, stream.stream_id)
-    _r2_client().put_object(
-        Bucket=os.environ["R2_BUCKET"],
+    client = _r2_client()
+    bucket = os.environ["R2_BUCKET"]
+    key = _upload_key(stream, lambda candidate: _key_exists(client, bucket, candidate))
+    client.put_object(
+        Bucket=bucket,
         Key=key,
         Body=stream.content,
         ContentType="video/mp4",
+        IfNoneMatch="*",
     )
     return key
 

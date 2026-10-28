@@ -104,12 +104,26 @@ Follow-ups (not in this change): pin a minimum `supabase` version in `services/a
 ### R2 objects
 
 - **One bucket for both phases:** finals and the midterm record name the same keys; nothing was copied. A delete in finals also removes the object the midterm record names.
-- **Keys:** all new user uploads go to `uploads/<encodeURIComponent(sensorId)>/<uuid><ext>` in both modes. Classified seed/evaluation clips remain under `anomaly/<category>/<file>`.
+- **Keys:** all new user uploads go to `uploads/<original file name>` in both modes (a taken name gets `-2`, `-3`; unsafe characters become `_`; max 150 characters; never overwritten). Classified seed/evaluation clips remain under `anomaly/<category>/<file>`.
 - **Valid keys** (per `isValidR2Key`): not absolute, no `.`/`..` prefix. VST `./streamer/media/...` paths are not keys.
 - **Durability check:** `verifyR2Video` uses `HeadObject`; direct uploads require an exact nonzero byte-length match, and analysis requires a nonempty object before inference.
 - **Playback** is by 1-hour presigned GET only. The bucket is private.
 - **Report-card thumbnails:** new uploads use `thumbnails/<video-key>.webp`, derived by `thumbnailKeyForVideo`; legacy videos may have no thumbnail and use the UI skeleton. Deleting a video deletes this derived object too.
-- **Evidence images** live under `evidence/<videoId>/`. A revision's `evidence` (and `evidence_crops.image`) names the keys it shows, and older revisions keep naming images a reviewer later replaced, so an image is only an orphan when no revision of that video names it. `POST /api/reports/<videoId>/evidence-sweep` (dry run by default) lists such orphans older than `minAgeHours` (default 24); `{"dryRun": false}` removes them. Deleting a video (`DELETE /api/reports/<videoId>/delete`) removes its video, thumbnail and every `evidence/<videoId>/` object before the rows, and keeps the rows if any removal fails. Images of videos deleted before 2026-10-25 are still in R2, and the sweep cannot reach them (it needs the video row).
+- **Evidence images** live under `evidence/<video key>/run-<N>/` (AI crops) and `evidence/<video key>/edit-<N>/` (reviewer images); `<video key>` is `videos.filepath`. A revision's `evidence` (and `evidence_crops.image`) names the keys it shows, and older revisions keep naming images a reviewer later replaced, so an image is only an orphan when no revision of that video names it. `POST /api/reports/<videoId>/evidence-sweep` (dry run by default) lists such orphans older than `minAgeHours` (default 24); `{"dryRun": false}` removes them. Deleting a video (`DELETE /api/reports/<videoId>/delete`) removes its video, thumbnail and every `evidence/<video key>/` object before the rows, and keeps the rows if any removal fails. Images of videos deleted before 2026-10-25 are still in R2, and the sweep cannot reach them (it needs the video row).
+
+### Renaming old R2 objects (readable-names migration)
+
+Objects written before 2026-10-28 have hashed names (`uploads/<sensorId>/<uuid>.mp4`, `evidence/<videoId>/<uuid>/...`). `supabase/r2/migrate_r2_names.py` copies each to a readable key, verifies it (size, plain ETag), then calls `apply_r2_rename` per video to point `videos.filepath`, `report_revisions.evidence[].image` and `evidence_crops.image` at the new keys. It never deletes; it prints, and writes to `--manifest`, the old keys that are safe to delete. It is dry run by default, idempotent (a copy records `renamed-from` in its metadata), and needs migration `20261028090000_r2_rename.sql` applied first (ask first; use the `db push` commands above).
+
+```bash
+ssh kwanz-ws 'curl -s localhost:30888/vst/api/v1/sensor/list' > /path/to/sensors.json   # names for old uploads
+cd deploy/docker/developer-profiles/dev-profile-incident/supabase/r2
+uv run --no-project --with boto3 python migrate_r2_names.py --env-file ../../.env.local --sensors-file /path/to/sensors.json --manifest /path/to/dry.json          # dry run
+uv run --no-project --with boto3 python migrate_r2_names.py --env-file ../../.env.local --sensors-file /path/to/sensors.json --manifest /path/to/manifest.json --apply  # live
+uv run --no-project --with boto3 --with pytest pytest -q                                                                                                                  # hermetic tests
+```
+
+An upload's name is the VST sensor name (matched on `sensorId`), else `upload-YYYYMMDD-HHMMSS.<ext>` from `videos.uploaded_datetime`. Objects of videos that no longer exist are listed as "not renamed" and are for a person to delete.
 
 ## After changing anything
 

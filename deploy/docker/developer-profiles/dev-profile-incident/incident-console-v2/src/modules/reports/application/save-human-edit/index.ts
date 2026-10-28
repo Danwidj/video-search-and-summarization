@@ -30,10 +30,10 @@ export class SearchableStepError extends Error {
 }
 
 /** An edit's item images must be ones the opened revision already used or new uploads for this video. */
-function checkImages(parent: RevisionRecord, edit: StructuredEdit) {
+function checkImages(parent: RevisionRecord, edit: StructuredEdit, videoKey: string | null) {
   const known = new Set(parent.evidence.flatMap((entry) => (entry.image ? [entry.image] : [])));
   for (const item of [...edit.entities, ...edit.instruments, ...edit.assets]) {
-    if (item.image && !known.has(item.image) && !isEvidenceKeyOfVideo(item.image, parent.revision.videoId)) {
+    if (item.image && !known.has(item.image) && !(videoKey !== null && isEvidenceKeyOfVideo(item.image, videoKey))) {
       throw new StoreRejection('invalid', `An evidence image is not one of this video's images: ${item.image}`);
     }
   }
@@ -64,7 +64,9 @@ export async function saveHumanEdit(
 ): Promise<RevisionSummary> {
   const parent = await incidents.getRevision(input.videoId, input.parentId);
   if (!parent) throw new StoreRejection('not-found', `Revision not found for this video: ${input.parentId}`);
-  checkImages(parent, input.edit);
+  const video = await videos.getVideo(input.videoId);
+  if (!video) throw new StoreRejection('not-found', `Video not found: ${input.videoId}`);
+  checkImages(parent, input.edit, video.storageKey);
   const { payload, evidence } = humanRevisionContent(parent, input.edit);
   const missing = missingItemFields(payload);
   if (missing.length)
@@ -72,8 +74,6 @@ export async function saveHumanEdit(
       'invalid',
       `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`,
     );
-  const video = await videos.getVideo(input.videoId);
-  if (!video) throw new StoreRejection('not-found', `Video not found: ${input.videoId}`);
   const crops = video.officialRevisionId === null ? await searchableCrops(payload, evidence, embed) : [];
   return incidents.saveHumanRevision({
     videoId: input.videoId,
