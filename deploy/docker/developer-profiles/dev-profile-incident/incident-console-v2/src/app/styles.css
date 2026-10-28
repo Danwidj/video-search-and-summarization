@@ -37,38 +37,39 @@
 :root {
   color-scheme: light;
   background: #f3f5ef;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --background: #f3f5ef;
+  --foreground: #12211b;
+  --card: #ffffff;
+  --card-foreground: #12211b;
+  --popover: #ffffff;
+  --popover-foreground: #12211b;
+  --primary: #174f3b;
+  --primary-foreground: #ffffff;
+  --secondary: #e9ece4;
+  --secondary-foreground: #12211b;
+  --muted: #e9ece4;
+  --muted-foreground: rgba(18, 33, 27, 0.6);
+  --accent: #e9ece4;
+  --accent-foreground: #12211b;
+  --destructive: #d9754c;
+  --destructive-foreground: #ffffff;
+  --border: rgba(18, 33, 27, 0.1);
+  --input: rgba(18, 33, 27, 0.12);
+  --ring: #76b900;
+  --chart-1: #174f3b;
+  --chart-2: #76b900;
+  --chart-3: #d9754c;
+  --chart-4: #f59e0b;
+  --chart-5: #12211b;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #f3f5ef;
+  --sidebar-foreground: #12211b;
+  --sidebar-primary: #174f3b;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9ece4;
+  --sidebar-accent-foreground: #12211b;
+  --sidebar-border: rgba(18, 33, 27, 0.1);
+  --sidebar-ring: #76b900;
 }
 
 /*
@@ -95,17 +96,18 @@
 
 .control {
   width: 100%;
-  border: 1px solid rgba(18, 33, 27, 0.12);
+  border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: white;
   padding: 0.7rem 0.8rem;
   font-size: 0.8rem;
-  color: #12211b;
+  color: var(--foreground);
   outline: none;
 }
-.control:focus {
+.control:focus,
+.control:focus-visible {
   border-color: rgba(23, 79, 59, 0.55);
-  box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.22);
+  box-shadow: 0 0 0 2px var(--ring);
 }
 /* Tailwind 3 emitted responsive utilities after .control, so sm:w-auto won; unlayered .control now beats the layered utility. */
 @media (min-width: 40rem) {
@@ -114,7 +116,7 @@
   }
 }
 .action {
-  border: 1px solid rgba(18, 33, 27, 0.14);
+  border: 1px solid var(--border);
   border-radius: 9999px;
   padding: 0.45rem 0.75rem;
   font-size: 0.75rem;
@@ -218,6 +220,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
