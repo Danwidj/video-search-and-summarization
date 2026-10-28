@@ -28,6 +28,18 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Known limits:** the original name of a pre-migration upload is not in the database, so the script uses the VST sensor name, else the upload time. Two analyses of one video that start together can pick the same `run-N`; the conditional put makes one fail instead of overwriting.
 - **Links:** [`data.md` §2](data.md#2-cloudflare-r2-storage-architecture), [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py), [`20261028090000_r2_rename.sql`](../supabase/migrations/20261028090000_r2_rename.sql).
 
+### 2026-10-28: Stage 2a authorised; run controls pause instead of spending the budget
+- **Decision (owner, 2026-10-28):**
+  - **Authorised:** Stage 2a only: 8 configs × 25 dev clips × 2 repeats = 400 video-runs, at most 1,200 P1 attempts including retries, under the existing token and judge caps.
+  - **Run controls:**
+    - pause after 4 consecutive video-runs with no model output;
+    - the 25% rate-limit rule pauses per session instead of ending the stage;
+    - `--session-hours 4` sessions;
+    - checkpoint and resume with no duplicated video-runs.
+- **Why:** the owner's instruction is that if the gateway becomes unavailable, the run pauses and is preserved rather than repeatedly exhausting the request budget. A cap still stops the stage and is reported.
+- **Not authorised:** Stage 2b, V8, Stage 3, the Stage 1 recovery, a Stage 1 judge re-score, any change to τ, the methodology or the prompts.
+- **Links:** [`../eval/docs/experiments/stage2-plan.md`](../eval/docs/experiments/stage2-plan.md).
+
 ### 2026-10-28: Methodology v1.2 adopted with τ = 0.40 (AI-calibrated, not human-validated); retry-v2 and recovery-v1 approved; V1–V7 registered
 - **Decision (owner instruction, 2026-10-28): evaluation-methodology-v1.2 is the scoring methodology from Stage 2 on.**
   - **Code:** `methodology.METHODOLOGY_VERSION` is v1.2, with τ = 0.40.

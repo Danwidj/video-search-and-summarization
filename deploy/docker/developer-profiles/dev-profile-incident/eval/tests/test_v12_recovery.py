@@ -388,3 +388,49 @@ def test_a_recovery_beyond_the_hard_limit_is_refused():
         rec.recovery_config(original, plan, _gt_many(25))
     cfg = rec.recovery_config(original, {**plan, "runs": plan["runs"][:15]}, _gt_many(25))
     assert cfg["budget"]["max_p1_calls"] == 45 and cfg["budget"]["max_p1_tokens"] == 45 * er.P1_TOKENS_CEILING
+
+
+def _outage_stage(configs, gt, tmp_path, *, no_output_from=None, clock=None, session_seconds=None, resume=None,
+                  seen=None):
+    calls = {"n": 0}
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
+        calls["n"] += 1
+        if seen is not None:
+            seen.append(incident_id)
+        p1_call("m", "u")
+        down = no_output_from is not None and calls["n"] >= no_output_from
+        return {"incident_id": incident_id, "outcome": "timeout" if down else "scored", "run_id": model_run_id,
+                "judge_calls": 0, "judge_tokens": 0,
+                "p1_raw": {"ok": not down, "usage": {} if down else {"total_tokens": 9500},
+                           "rate_limit": {"attempt_count": 3 if down else 1,
+                                          "attempts": [{"failure_kind": "timeout"}] * 3 if down else [{}]}}}
+
+    outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
+    split = {"version": "split-v2", "dev": sorted(gt["by_incident_id"]), "test": []}
+    kwargs = {"clock": clock} if clock else {}
+    return er.run_stage(configs, split=split, gt_index=gt, store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
+                        video_source=lambda i: ("u", {}),
+                        call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)), run_one=run_one,
+                        confirm_paid=True, results_root=tmp_path, now=datetime(2026, 11, 4, tzinfo=UTC),
+                        log=lambda *_: None, resume=resume, session_seconds=session_seconds,
+                        pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
+                                 "judge_tokens_per_call_estimate": 1}, **kwargs)
+
+
+def test_an_outage_pauses_after_four_failed_runs_without_spending_more(tmp_path):
+    configs = _s2_configs()[:2]
+    out = _outage_stage(configs, _gt_many(5), tmp_path, no_output_from=3)
+    assert out["paused"]["reason"].startswith(f"{er.OUTAGE_PAUSE_RUNS} consecutive") and out["results_files"] == []
+    assert sum(len(r["videos"]) for r in out["records"]) == 2 + er.OUTAGE_PAUSE_RUNS
+    seen = []
+    resumed = _outage_stage(configs, _gt_many(5), tmp_path, resume=Path(out["stage_dir"]), seen=seen)
+    assert resumed["paused"] is None if "paused" in resumed else True
+    assert resumed["stopped"] is None and len(seen) == 20 - 6
+    assert all(len(r["videos"]) == 10 for r in resumed["records"])
+
+
+def test_the_session_limit_pauses_between_video_runs(tmp_path):
+    ticks = iter(range(0, 100000, 1000))
+    out = _outage_stage(_s2_configs()[:2], _gt_many(5), tmp_path, clock=lambda: next(ticks), session_seconds=3500)
+    assert out["paused"]["reason"].startswith("session time limit") and out["paused"]["done"] == 3

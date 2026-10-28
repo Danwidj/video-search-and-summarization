@@ -158,12 +158,17 @@ def cmd_run(args) -> int:
         eval_run.evaluator_preflight(incident_only=all(c["scoring"] == "incident_only" for c in configs))
         result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
                               video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
-                              run_one=eval_run.run_one_video, confirm_paid=True, resume=args.resume)
+                              run_one=eval_run.run_one_video, confirm_paid=True, resume=args.resume,
+                              session_seconds=args.session_hours * 3600 if args.session_hours else None)
     except er.ExperimentRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({"results": result["results_files"], "stage": result["stage_dir"], "stopped": result["stopped"],
+                      "paused": result.get("paused"),
                       "usage": {r["experiment_id"]: r["usage"] for r in result["records"]}}, indent=2))
+    if result.get("paused"):
+        print(f"PAUSED: {result['paused']['reason']}. Resume with --resume {result['stage_dir']}", file=sys.stderr)
+        return 4
     return 0 if result["stopped"] is None else 3
 
 
@@ -361,6 +366,7 @@ def main() -> int:
     run.add_argument("--confirm-paid", action="store_true")
     run.add_argument("--resume", type=Path, help="Continue an interrupted stage from its stage directory")
     run.add_argument("--allow-sleep", action="store_true", help="Skip the WSL keep-awake requirement")
+    run.add_argument("--session-hours", type=float, help="Pause (resumable) once a session has run this long")
     rescore = sub.add_parser("rescore")
     rescore.add_argument("results", type=Path)
     rescore.add_argument("--confirm-paid", action="store_true")

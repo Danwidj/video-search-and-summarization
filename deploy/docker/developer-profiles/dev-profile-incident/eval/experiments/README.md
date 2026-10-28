@@ -63,6 +63,12 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 - **Keep-awake:** run paid stages under `experiments/keep-awake.sh -- <command>` (WSL), with the lid open and on AC power.
 - **Recovery:** `scripts/eval_experiment.py recover <results.json>...` is a dry run by default. With `--confirm-paid`, it re-attempts only infrastructure-failed video-runs as a separate `<experiment>-recovery` result linked to the original, and writes `merged-original+recovery-v1.json`. Originals are never changed. D9 G3 refuses mixed protocols or methodology versions.
 - **Checkpoint and resume:** every video-run updates the stage's `checkpoint.json`. `run <same configs> --confirm-paid --resume <stage dir>` continues an interrupted stage in the same order and writes its results once at the end.
+- **Pauses (approved 2026-10-28):** a stage pauses, keeping its checkpoint and writing no result, in three cases:
+  - after 4 consecutive video-runs with no model output (`OUTAGE_PAUSE_RUNS`);
+  - when the session's rate-limit share exceeds 25%;
+  - at `--session-hours` (checked between video-runs).
+
+  Exit code 4 means paused; continue with `--resume`. A cap still stops the stage (`complete: false`).
 - **Wake guard:** on WSL a paid `run` or `recover` refuses unless it runs under `keep-awake.sh` (`--allow-sleep` overrides).
 - **Recovery limit:** at most 15 recovered video-runs per config (`--max-runs`).
 - **Offline re-matching:** `scripts/eval_experiment.py rematch <results.json> --methodology evaluation-methodology-v1.2 [--threshold t]` writes a new `rematched-*.json`. It makes no model or judge call.
