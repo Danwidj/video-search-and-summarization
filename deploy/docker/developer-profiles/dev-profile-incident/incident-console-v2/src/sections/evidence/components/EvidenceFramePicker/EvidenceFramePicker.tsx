@@ -127,7 +127,7 @@ export function EvidenceFramePicker({
     >
       <DialogContent
         aria-label={`Pick a frame for ${label}`}
-        className="w-full max-w-3xl gap-4 rounded-2xl bg-white p-5 shadow-xl sm:max-w-3xl"
+        className="w-full max-w-[calc(100%-2rem)] gap-4 rounded-2xl bg-white p-5 shadow-xl sm:max-w-3xl"
         role="dialog"
       >
         <DialogHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pr-6">

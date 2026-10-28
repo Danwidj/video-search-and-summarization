@@ -131,7 +131,7 @@ export function ReportEditPane({
         className="mt-4 grid gap-2 rounded-2xl border border-ink/10 bg-white/95 px-3 py-2 text-xs sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4"
         data-testid="compare-header"
       >
-        <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">Compare</span>
+        <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Compare</span>
         <div className="min-w-0 rounded-xl bg-[#fdf0ea] px-3 py-2" data-side="A">
           <Badge
             className="border-[#9b3518]/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-[#9b3518]"
@@ -153,14 +153,14 @@ export function ReportEditPane({
       </div>
 
       <section className="mt-5" data-testid="report-fields-compare">
-        <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">Report fields</h3>
+        <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Report fields</h3>
         <dl className="m-0">
           <PairField
             label="Title"
             left={title}
             right={
               <span className="text-ink/60">
-                {title} <span className="text-[11px] text-ink/40">(model-generated)</span>
+                {title} <span className="text-[11px] text-ink-caption">(model-generated)</span>
               </span>
             }
           />
@@ -221,7 +221,7 @@ export function ReportEditPane({
             right={
               <span className="text-ink/55">
                 {a?.incident.confidenceScore != null ? `${Math.round(a.incident.confidenceScore * 100)}%` : '—'}{' '}
-                <span className="text-[11px] text-ink/40">set by the model</span>
+                <span className="text-[11px] text-ink-caption">set by the model</span>
               </span>
             }
           />
@@ -230,7 +230,7 @@ export function ReportEditPane({
             left={a?.incident.startSeconds != null ? `${clock(a.incident.startSeconds)}–${clock(a.incident.endSeconds)}` : 'Not recorded'}
             right={
               <span className="flex flex-wrap items-center gap-1.5">
-                <span className="font-mono text-[11px] text-ink/45">{clock(draft.incident.start_timestamp)}</span>
+                <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.start_timestamp)}</span>
                 <Input
                   aria-label="Draft incident start in seconds"
                   className="h-8 w-20 text-xs"
@@ -258,7 +258,7 @@ export function ReportEditPane({
                   type="number"
                   value={draft.incident.end_timestamp ?? ''}
                 />
-                <span className="font-mono text-[11px] text-ink/45">{clock(draft.incident.end_timestamp)}</span>
+                <span className="font-mono text-[11px] text-ink-caption">{clock(draft.incident.end_timestamp)}</span>
               </span>
             }
           />
@@ -280,15 +280,15 @@ export function ReportEditPane({
       <section className="mt-6" data-testid="evidence-compare">
         <div className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 bg-white/95 px-3 py-2">
           <div className="flex items-center gap-2">
-            <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">Evidence items</h3>
+            <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Evidence items</h3>
             <Badge className="font-mono text-[10px]" variant="outline">
               {pairing.liveCount}
             </Badge>
           </div>
-          <span className="text-[11px] text-ink/40">A is read-only · B is your draft</span>
+          <span className="text-[11px] text-ink-caption">A is read-only · B is your draft</span>
         </div>
         {pairing.rows.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-ink/15 p-4 text-sm text-ink/45" data-testid="edit-evidence-empty">
+          <p className="mt-3 rounded-xl border border-dashed border-ink/15 p-4 text-sm text-ink-caption" data-testid="edit-evidence-empty">
             This version has no evidence items.
           </p>
         ) : (
@@ -297,10 +297,10 @@ export function ReportEditPane({
               <div data-unit={unit.kind} key={unit.kind === 'entity' && unit.entity ? rowKey(unit.entity) : unit.kind}>
                 {unit.kind !== 'entity' && (
                   <div className="mb-2">
-                    <b className="font-mono text-[10.5px] uppercase tracking-wider text-ink/45">
+                    <b className="font-mono text-[10.5px] uppercase tracking-wider text-ink-caption">
                       {unit.kind === 'loose' ? 'Holder unknown' : 'Assets'}
                     </b>
-                    <span className="ml-2 text-[11px] text-ink/40">
+                    <span className="ml-2 text-[11px] text-ink-caption">
                       {unit.kind === 'loose' ? 'instruments no entity visibly holds' : 'no holder, no threat level'}
                     </span>
                   </div>
@@ -372,7 +372,7 @@ export function ReportEditPane({
 function PairField({ label, left, right }: { label: string; left: React.ReactNode; right: React.ReactNode }) {
   return (
     <div className="grid gap-1.5 border-b border-ink/10 py-3 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4">
-      <dt className="pt-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">{label}</dt>
+      <dt className="pt-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">{label}</dt>
       <dd className="m-0 min-w-0 text-sm leading-6 text-ink/80">{left}</dd>
       <dd className="m-0 min-w-0 text-sm leading-6 text-ink/80">{right}</dd>
     </div>
@@ -421,7 +421,7 @@ function PairRowView({
       className="grid gap-2 border-b border-ink/10 py-3 last:border-0 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4"
       data-row-kind={row.kind}
     >
-      <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-ink/40">{row.kind}</span>
+      <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-ink-caption">{row.kind}</span>
       <div className="min-w-0" data-side="A">
         {row.a ? (
           <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} />

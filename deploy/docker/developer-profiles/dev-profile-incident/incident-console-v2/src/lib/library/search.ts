@@ -11,6 +11,8 @@ export interface SearchedVersion {
   revisionId: number;
   revisionNo: number;
   isOfficial: boolean;
+  /** The library title of the video, which a hit's own incident title can lack. */
+  title?: string;
   thumbnailUrl?: string;
 }
 

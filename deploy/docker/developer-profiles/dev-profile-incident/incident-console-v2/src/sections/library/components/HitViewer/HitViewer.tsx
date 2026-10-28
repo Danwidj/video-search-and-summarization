@@ -55,14 +55,16 @@ export function HitViewer({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-label="Evidence in its frame"
-        className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl bg-white p-5 shadow-panel"
+        className="max-h-[92vh] w-full max-w-[calc(100%-2rem)] overflow-auto rounded-3xl bg-white p-5 shadow-panel sm:max-w-5xl"
       >
         <DialogHeader className="flex flex-row items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">
               {selected.incident.incidentType} · {selected.incident.videoId}
             </p>
-            <DialogTitle className="text-xl font-semibold">{selected.incident.title || selected.incident.incidentType}</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">
+              {version?.title || selected.incident.title || selected.incident.incidentType}
+            </DialogTitle>
           </div>
         </DialogHeader>
 
@@ -134,7 +136,7 @@ export function HitViewer({
               <Button asChild className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white">
                 <Link href={reportHref(selected, version)}>Open report</Link>
               </Button>
-              <span className="ml-3 text-xs text-ink/50">evidence seen at {formatClock(item.timestampSeconds)}</span>
+              <span className="ml-3 text-xs text-ink-caption">evidence seen at {formatClock(item.timestampSeconds)}</span>
             </div>
           </div>
         </div>

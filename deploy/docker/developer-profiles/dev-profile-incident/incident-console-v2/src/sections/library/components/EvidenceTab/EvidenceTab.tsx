@@ -215,7 +215,7 @@ export function EvidenceTab({
                 <section key={group.videoId}>
                   <h2 className="text-lg font-semibold">
                     {group.incident.title || group.incident.incidentType}{' '}
-                    <span className="font-mono text-xs font-normal text-ink/45">{group.videoId}</span>
+                    <span className="font-mono text-xs font-normal text-ink-caption">{group.videoId}</span>
                   </h2>
                   <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div>
                 </section>

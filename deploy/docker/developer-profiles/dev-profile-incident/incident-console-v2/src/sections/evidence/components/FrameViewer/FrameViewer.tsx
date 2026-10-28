@@ -32,15 +32,22 @@ export interface FrameViewerProps {
 export function FrameViewer({ src, seconds, boxes, selectedId, onSelect, className = '' }: FrameViewerProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = !src || failedSrc === src;
+  // Fit the stage to the frame the video really has, so a 4:3 clip is not letterboxed in a 16:9 box.
+  const [loaded, setLoaded] = useState<{ src: string; aspect: number } | null>(null);
+  const aspect = loaded && loaded.src === src ? loaded.aspect : 16 / 9;
   return (
     <figure className={`m-0 ${className}`} data-testid="frame-viewer">
-      <div className="relative aspect-video overflow-hidden rounded-xl border border-border bg-black">
+      <div className="relative overflow-hidden rounded-xl border border-border bg-black" style={{ aspectRatio: String(aspect) }}>
         {!failed && (
           // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
           <img
             alt={`Video frame at ${formatClock(seconds)}`}
             className="block h-full w-full object-contain"
             onError={() => setFailedSrc(src)}
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget;
+              if (naturalWidth && naturalHeight) setLoaded({ src, aspect: naturalWidth / naturalHeight });
+            }}
             src={src}
           />
         )}
@@ -62,7 +69,7 @@ export function FrameViewer({ src, seconds, boxes, selectedId, onSelect, classNa
               <button
                 aria-label={`${item.label} at ${formatClock(seconds)}`}
                 aria-pressed={selected}
-                className={`absolute border-2 border-dashed transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${OUTLINE[item.kind]} ${selected ? 'border-solid ring-2 ring-ring z-10' : ''}`}
+                className={`group absolute border-2 border-dashed transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${OUTLINE[item.kind]} ${selected ? 'border-solid ring-2 ring-ring z-10' : ''}`}
                 data-box-id={item.id}
                 key={item.id}
                 onClick={() => onSelect?.(item.id)}
@@ -70,7 +77,7 @@ export function FrameViewer({ src, seconds, boxes, selectedId, onSelect, classNa
                 type="button"
               >
                 <Badge
-                  className={`absolute -top-5 left-[-2px] h-auto whitespace-nowrap rounded-sm border-transparent px-1.5 py-px text-[10.5px] font-semibold text-white shadow-xs ${KIND_COLOUR[item.kind]}`}
+                  className={`absolute top-0 left-0 h-auto max-w-full truncate rounded-none rounded-br-sm border-transparent px-1.5 py-px text-xs font-semibold text-white shadow-xs ${KIND_COLOUR[item.kind]} ${selected ? '' : 'invisible group-hover:visible group-focus-visible:visible'}`}
                 >
                   {item.label}
                 </Badge>

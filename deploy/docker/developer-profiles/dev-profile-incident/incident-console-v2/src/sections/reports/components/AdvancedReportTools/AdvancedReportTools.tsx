@@ -64,7 +64,7 @@ function AnalysisHistoryCard({ report }: { report: ReportView }) {
         <ReanalysisCard onAttempted={() => void reload()} videoId={report.videoId} />
       </div>
       <div className="mt-6 border-t border-ink/10 pt-5">
-        <p className="text-xs font-bold uppercase tracking-wider text-ink/40">Analysis history for this video</p>
+        <p className="text-xs font-bold uppercase tracking-wider text-ink-caption">Analysis history for this video</p>
         {error && <p className="mt-2 text-xs text-clay">{error}</p>}
         {history ? (
           <div className="mt-2">
