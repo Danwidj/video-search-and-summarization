@@ -35,7 +35,8 @@ npm install && npm run lint && npm run typecheck && npm test
 # vlm-gateway (no tests dir yet)
 uv sync && uv run ruff check .
 
-# mock-backend/base_profile_mock (same pattern for search_profile_mock)
+# Run and verify the app with `./start.sh --mode vm` (VM agent), never `--mode mock`.
+# mock-backend/base_profile_mock: unit tests only (same pattern for search_profile_mock)
 uv sync && uv run ruff check . && uv run pytest
 
 # eval (hermetic: no live DB, agent or GPU)
