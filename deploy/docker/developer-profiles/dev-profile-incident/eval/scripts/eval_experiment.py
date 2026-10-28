@@ -116,7 +116,8 @@ def call_factory_for(config: dict):
     item = prompt_registry.entry(config["prompt_id"])
     text = prompt_registry.prompt_text(config["prompt_id"])
     if config["arm"] == "direct-vlm":
-        return lambda incident_id, run_id, duration, max_retries=None: er.direct_call(text, max_retries=max_retries)
+        return lambda incident_id, run_id, duration, max_retries=None: er.direct_call(
+            text, max_retries=max_retries, policy=er.retry_policy(config))
     return lambda incident_id, run_id, duration, max_retries=None: er.vss_call(
         config, item, incident_id=incident_id, run_id=run_id, duration=duration, max_retries=max_retries)
 
@@ -183,6 +184,72 @@ def cmd_rescore(args) -> int:
     out = args.results.parent / f"rescored-{stamp}.json"
     out.write_text(json.dumps({**saved, "videos": videos, "rescored_from": str(args.results), "rescored_at": stamp},
                               indent=2, default=str) + "\n")
+    print(out)
+    return 0
+
+
+def cmd_recover(args) -> int:
+    """recovery-v1: re-attempt only the infrastructure-failed video-runs of saved results (dry run by default)."""
+    import eval_run
+    import experiment_recovery as rec
+
+    originals = [(path, json.loads(path.read_text())) for path in args.results]
+    plans = [rec.plan(record, results_path=str(path), results_sha256=rec.sha256_file(path)) for path, record in originals]
+    gt_index, sheets = load_gt(originals[0][1]["config"])
+    configs = [rec.recovery_config(record["config"], p, gt_index) for (_, record), p in zip(originals, plans, strict=True)]
+    only = {c["experiment_id"]: {(r["repeat"], r["incident_id"]) for r in p["runs"]}
+            for c, p in zip(configs, plans, strict=True)}
+    summary = {"protocol": rec.PROTOCOL, "retry_policy": rec.RECOVERY_RETRY_POLICY,
+               "plans": [{"experiment_id": p["experiment_id"], "recover": len(p["runs"]),
+                          "by_class": {k: sum(1 for r in p["runs"] if r["class"] == k) for k in rec.RECOVERABLE},
+                          "not_recoverable": p["not_recoverable"]} for p in plans],
+               "budgets": {c["experiment_id"]: c["budget"] for c in configs}}
+    if not args.confirm_paid:
+        print(json.dumps(summary, indent=2))
+        print("Nothing sent. Re-run with --confirm-paid after the recovery budget is approved.", file=sys.stderr)
+        return 0
+    split = json.loads(er.SPLIT_PATH.read_text())
+    try:
+        eval_run.evaluator_preflight()
+        result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
+                              video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
+                              run_one=eval_run.run_one_video, confirm_paid=True, only=only,
+                              recovery={c["experiment_id"]: rec.links(p) for c, p in zip(configs, plans, strict=True)})
+    except er.ExperimentRefused as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
+    merged = []
+    for (_, original), path in zip(originals, result["results_files"], strict=True):
+        recovery_path = Path(path)
+        record = rec.merge(original, json.loads(recovery_path.read_text()), recovery_path=str(recovery_path),
+                           recovery_sha256=rec.sha256_file(recovery_path))
+        out = recovery_path.parent / "merged-original+recovery-v1.json"
+        out.write_text(json.dumps(record, indent=2, default=str) + "\n")
+        merged.append(str(out))
+    print(json.dumps({"recovery": result["results_files"], "merged": merged, "stopped": result["stopped"]}, indent=2))
+    return 0 if result["stopped"] is None else 3
+
+
+def cmd_rematch(args) -> int:
+    """Re-match a saved result's items under another methodology version's threshold: no model or judge call."""
+    import hashlib
+
+    import item_rescore
+    import methodology
+
+    if args.methodology not in methodology.MATCH_THRESHOLDS:
+        print(f"REFUSED: unknown methodology {args.methodology!r}", file=sys.stderr)
+        return 2
+    threshold = args.threshold if args.threshold is not None else methodology.MATCH_THRESHOLDS[args.methodology]
+    provisional = args.threshold is not None or methodology.MATCH_THRESHOLD_PROVISIONAL[args.methodology]
+    content = args.results.read_bytes()
+    record = item_rescore.rematch(json.loads(content), threshold=threshold, methodology_version=args.methodology,
+                                  source=str(args.results), source_sha256=hashlib.sha256(content).hexdigest(),
+                                  provisional=provisional)
+    tag = args.methodology.removeprefix("evaluation-methodology-") + f"-t{threshold:.2f}"
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    out = args.results.parent / f"rematched-{tag}-{stamp}.json"
+    out.write_text(json.dumps(record, indent=2, default=str) + "\n")
     print(out)
     return 0
 
@@ -273,6 +340,13 @@ def main() -> int:
     rescore = sub.add_parser("rescore")
     rescore.add_argument("results", type=Path)
     rescore.add_argument("--confirm-paid", action="store_true")
+    recover = sub.add_parser("recover", help="recovery-v1 of infrastructure-failed video-runs (dry run by default)")
+    recover.add_argument("results", nargs="+", type=Path)
+    recover.add_argument("--confirm-paid", action="store_true")
+    rematch = sub.add_parser("rematch", help="Re-match items offline at a methodology version's threshold")
+    rematch.add_argument("results", type=Path)
+    rematch.add_argument("--methodology", required=True)
+    rematch.add_argument("--threshold", type=float, help="Override (sensitivity only; marked provisional)")
     compare = sub.add_parser("compare")
     compare.add_argument("configurations", nargs="+", help="C1=<results.json> ...")
     report = sub.add_parser("report")
@@ -289,7 +363,7 @@ def main() -> int:
     measure = sub.add_parser("measure")
     measure.add_argument("results", nargs="+", type=Path)
     args = parser.parse_args()
-    return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "compare": cmd_compare, "report": cmd_report,
+    return {"plan": cmd_plan, "run": cmd_run, "rescore": cmd_rescore, "rematch": cmd_rematch, "recover": cmd_recover, "compare": cmd_compare, "report": cmd_report,
             "verify": cmd_verify, "budget": cmd_budget, "measure": cmd_measure, "caps": cmd_caps}[args.command](args)
 
 

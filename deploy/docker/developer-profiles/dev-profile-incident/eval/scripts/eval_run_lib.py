@@ -160,13 +160,14 @@ def score_matches_summary(eval_result, kind: str) -> dict:
 # counted as a wrong prediction in the benchmark's field metrics.
 INFRASTRUCTURE_OUTCOMES = ("rate_limited", "http_error")
 MODEL_OUTPUT_OUTCOMES = ("parse_failure", "contract_invalid", "scored")
-ALL_OUTCOMES = ("scored", "contract_invalid", "parse_failure", "timeout", "rate_limited", "http_error")
+ALL_OUTCOMES = ("scored", "contract_invalid", "parse_failure", "timeout", "rate_limited", "host_suspended",
+                "http_error")
 _PARSE_FAILURE_CODES = {"EMPTY_CONTENT", "INVALID_JSON"}
 
 
 def classify_outcome(p1_raw: dict, validation: dict | None = None) -> str:
     """``scored`` | ``contract_invalid`` | ``parse_failure`` (model output) | ``timeout`` |
-    ``rate_limited`` | ``http_error`` (no model output).
+    ``rate_limited`` | ``host_suspended`` | ``http_error`` (no model output).
 
     ``scored`` means the database-backed fields are valid (core-scored-v1); whether
     they are accurate is what the field scores measure. Records written before
@@ -180,7 +181,7 @@ def classify_outcome(p1_raw: dict, validation: dict | None = None) -> str:
                 kind = "rate_limited"
             elif "Timeout" in error.split(":", 1)[0]:
                 kind = "timeout"
-        if kind in ("rate_limited", "timeout"):
+        if kind in ("rate_limited", "timeout", "host_suspended"):
             return kind
         return "http_error"
     if p1_raw.get("core_ok", p1_raw.get("contract_ok")):

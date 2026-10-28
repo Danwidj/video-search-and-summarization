@@ -1,0 +1,16 @@
+--- p1-v4-base.txt
++++ p1-v4-e04-assets.txt
+@@ -408,6 +408,13 @@
+ Exclude irrelevant scenery, furniture, vehicles, or other background
+ objects merely because they are visible.
+ 
++Before listing an object as an asset, identify its role from the video:
++involved (for example a vehicle in the collision), affected or damaged,
++targeted (the ATM being forced, the door broken open), or interacted with
++during the incident. If no such role can be identified, do not list it.
++Parked vehicles, buildings, signs, furniture and road features that play
++no part in the incident are background, even when they are prominent.
++
+ If an object's relevance cannot be reasonably established from the
+ video, do not include it.
+ 

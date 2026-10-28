@@ -372,7 +372,7 @@ def markdown(summary: dict) -> str:
     ]
     for model, block in summary["by_model"].items():
         t = block["processing_time_s"]
-        failed = len([1 for f in block["failures"] if f["outcome"] in ("timeout", "rate_limited", "http_error")])
+        failed = len([1 for f in block["failures"] if f["outcome"] in ("timeout", "rate_limited", "host_suspended", "http_error")])
         lines.append(
             f"| `{model}` | {t['n']} | {_fmt(t['mean'], 1, ' s')} | {_fmt(t['median'], 1, ' s')} | {_fmt(t['p90'], 1, ' s')} "
             f"| {_fmt(t['min'], 1, ' s')} | {_fmt(t['max'], 1, ' s')} | {failed} | {_fmt(block['completion_tokens']['mean'], 0)} |"

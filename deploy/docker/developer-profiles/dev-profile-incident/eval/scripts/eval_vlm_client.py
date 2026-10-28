@@ -32,7 +32,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -86,6 +86,21 @@ P1_RATE_LIMIT_POLICY = {
     "max_rate_limit_retries": 2,
     "honor_retry_after": True,
 }
+# Named retry policies an experiment config picks (``pipeline.retry_policy``), applied identically to every arm.
+# - retry-v1: the policy above (HTTP 429 only, cooldown before each retry). Stage 0 and Stage 1 ran under it.
+# - retry-v2 (proposed 2026-10-28, used only after the owner approves it): also retries the infrastructure
+#   failures Stage 1 lost (timeout, transport error, host suspended), waiting backoff_s[i] before retry i
+#   (at least Retry-After on a 429). A model output, valid or not, is never retried.
+P1_RETRY_POLICIES = {
+    "retry-v1": {**P1_RATE_LIMIT_POLICY, "id": "retry-v1", "retry_on": ("rate_limited",), "backoff_s": (60.0, 60.0)},
+    "retry-v2": {**P1_RATE_LIMIT_POLICY, "id": "retry-v2",
+                 "retry_on": ("rate_limited", "timeout", "transport_error", "host_suspended"),
+                 "backoff_s": (60.0, 180.0)},
+}
+# An attempt whose wall-clock time exceeds its monotonic time by this much spanned a host suspend (a laptop
+# lid close or WSL pause stops the monotonic clock, not the wall clock). A failed such attempt is
+# ``host_suspended``, an infrastructure failure; a valid output from one is kept and flagged.
+HOST_SUSPEND_MIN_S = 30.0
 
 MODELS = [
     "nvidia/cosmos-3-nano-reasoner",
@@ -259,6 +274,7 @@ class P1Outcome:
 
     result: ChatResult
     attempts: list[dict]
+    policy: dict | None = None
 
     @property
     def rate_limit_retries(self) -> int:
@@ -266,7 +282,8 @@ class P1Outcome:
 
     def summary(self) -> dict:
         return {
-            "policy": dict(P1_RATE_LIMIT_POLICY),
+            "policy": {k: (list(v) if isinstance(v, tuple) else v)
+                       for k, v in (self.policy or P1_RATE_LIMIT_POLICY).items()},
             "attempt_count": len(self.attempts),
             "rate_limit_retries": self.rate_limit_retries,
             "rate_limit_rejections": [a["error"] for a in self.attempts if a["failure_kind"] == "rate_limited"],
@@ -317,15 +334,20 @@ def analyze_video_with_p1_rate_limited(model: str, video_url: str, *, pacer: P1P
 
 
 def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None,
-                 max_retries: int | None = None) -> P1Outcome:
-    """Run ``call`` under ``P1_RATE_LIMIT_POLICY`` (the same policy for every arm of an experiment).
+                 max_retries: int | None = None, policy: str | dict | None = None,
+                 wall: Callable[[], float] = time.time, monotonic: Callable[[], float] = time.monotonic) -> P1Outcome:
+    """Run ``call`` under one retry policy (the same policy for every arm of an experiment).
 
+    ``policy`` is a ``P1_RETRY_POLICIES`` id or dict; the default is ``P1_RATE_LIMIT_POLICY`` (retry-v1).
     ``max_retries`` may only lower the policy's retry count (an experiment's request cap); it never raises it.
     """
     pacer = pacer or DEFAULT_PACER
-    retries = P1_RATE_LIMIT_POLICY["max_rate_limit_retries"]
+    if policy is None:
+        policy = P1_RETRY_POLICIES["retry-v1"]
+    elif isinstance(policy, str):
+        policy = P1_RETRY_POLICIES[policy]
+    retries = policy["max_rate_limit_retries"]
     retries = retries if max_retries is None else max(0, min(retries, max_retries))
-    policy = P1_RATE_LIMIT_POLICY
     attempts: list[dict] = []
     wait_s, wait_reason = 0.0, "pacing"
     while True:
@@ -333,7 +355,12 @@ def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None
             wait_s = pacer.wait(policy["inter_call_delay_s"])
         else:
             pacer.sleep(wait_s)
+        wall_start, mono_start = wall(), monotonic()
         result = call()
+        suspended_s = (wall() - wall_start) - (monotonic() - mono_start)
+        if suspended_s >= HOST_SUSPEND_MIN_S and not result.ok:
+            result = replace(result, failure_kind="host_suspended",
+                             error=f"host suspended for about {suspended_s:.0f} s during the attempt; {result.error}")
         pacer.mark_end()
         attempts.append({
             "attempt": len(attempts) + 1,
@@ -346,14 +373,15 @@ def rate_limited(call: Callable[[], ChatResult], *, pacer: P1Pacer | None = None
             "ok": result.ok,
             "failure_kind": result.failure_kind,
             "retry_after_s": result.retry_after_s,
+            "host_suspended_s": round(suspended_s, 1) if suspended_s >= HOST_SUSPEND_MIN_S else None,
             "error": (result.error or "")[:500],
         })
-        if result.failure_kind != "rate_limited" or len(attempts) > retries:
-            return P1Outcome(result=result, attempts=attempts)
-        wait_s = policy["cooldown_s"]
-        if policy["honor_retry_after"] and result.retry_after_s is not None:
+        if result.failure_kind not in policy["retry_on"] or len(attempts) > retries:
+            return P1Outcome(result=result, attempts=attempts, policy=policy)
+        wait_s = policy["backoff_s"][min(len(attempts) - 1, len(policy["backoff_s"]) - 1)]
+        if result.failure_kind == "rate_limited" and policy["honor_retry_after"] and result.retry_after_s is not None:
             wait_s = max(wait_s, result.retry_after_s)
-        wait_reason = "rate_limit_cooldown"
+        wait_reason = "rate_limit_cooldown" if result.failure_kind == "rate_limited" else "failure_backoff"
 
 
 def generate_report_with_rp1(
