@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: The shadcn skill is canonical under dev-profile-incident/skills/ with multi-harness symlinks
+- **Decision:** `shadcn` skill is housed at project level under `deploy/docker/developer-profiles/dev-profile-incident/skills/shadcn`. The repo root exposes symlinks to it at `.claude/skills/shadcn` (Claude Code) and `.agents/skills/shadcn` (Gemini CLI and other agentskills.io hosts).
+- **Why:** The skill was originally placed as a real directory under `.claude/skills/shadcn`, hiding it from non-Claude harnesses (such as Antigravity/Gemini). Housing it alongside the other incident skills under `dev-profile-incident/skills/` keeps project skills canonical in one place while symlinks expose it to all harnesses.
+- **Alternatives rejected:** keeping a real directory in `.claude/skills/shadcn` (Claude-specific, duplicates or hides skill from other agents); duplicating the folder into `.agents/skills/` (drift risk).
+- **Links:** [`../skills/README.md`](../skills/README.md), [`../incident-console-v2/README.md`](../incident-console-v2/README.md).
+
 ### 2026-10-28: Incident search and evidence search share one search function; evidence search can be scoped to one video; the critic is off by default
 - **Decision:** `semantic_search` in `services/agent/src/vss_agents/api/incident_search.py` embeds the query and hands the vector to a `retrieve` callback; `POST /api/v1/incidents/search` (evidence crops) and `POST /api/v1/incidents/revisions/search` (revision summaries) both call it and differ only in what they retrieve. `filters.video_id` (agent) and `p_video_id` (`search_evidence_items`) restrict the search to one video inside the database. An empty query is allowed only with a video id: nothing is embedded and the video's crops come back in video time order. The VLM critic runs only when `INCIDENT_SEARCH_CRITIC` is truthy; otherwise every hit is `unverified` (rationale `Critic not run`), with no VLM call and no delay. The console dropped the verdict badge and the "Show N rejected" switch.
 - **Why:** "See evidence" on a library card showed nothing: the console filtered the global top 20 down to one video, so an incident outside that list gave zero hits. The critic called a rate-limited VLM (HTTP 429), which made searches take 10 to 30 seconds and added no usable signal.
