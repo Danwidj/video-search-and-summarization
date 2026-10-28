@@ -123,7 +123,7 @@ uv run python scripts/gt_candidate_build.py --prior "ground_truth/review/Ground 
 
 **Overrides:** `review-overrides-<version>.json` (local, gitignored, because it quotes annotation text) holds the suggested pronoun fixes and case-specific recommendations.
 
-**Current package:** `Ground Truth Review Package v0.2.1.xlsx`, with the P1 flags. The earlier `v0.2` package is superseded and unchanged, and holds no decisions.
+**Current package: `Ground Truth Review Package v0.2.2.xlsx`** (built from Candidate v0.2.1), with the P1 flags. **`Filename` is a protected field** (decision 2026-10-28): the 24 `_demo` filename entries (R01) are informational, never applied, and listed with the grey rows. Packages v0.2 and v0.2.1 and Candidate v0.2 are superseded and unchanged, and hold no decisions.
 
 ## Backups (local, versioned)
 

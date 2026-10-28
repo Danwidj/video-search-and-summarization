@@ -27,7 +27,7 @@
 | Judge output | ≤ 1,500 tokens per attempt | methodology v1.1 |
 
 - **Where the per-clip counts live:** [`../../experiments/judge-caps.json`](../../experiments/judge-caps.json) (clip ids and integers only), produced by `uv run python scripts/eval_experiment.py caps experiments/configs/direct-vlm-baseline.json experiments/configs/vss-baseline.json --write`.
-- **Caps are re-derived after the freeze.** The counts come from the current candidate (`7abf73ce…`), and the approved annotations may add or remove items. `run_stage` also re-derives the required cap from the frozen ground truth and **refuses to start** if a config's `max_judge_calls` is below it. So the full plan can never be stopped partway by the judge cap.
+- **Caps are re-derived after the freeze.** The counts come from the current candidate (`f521f506…`, Candidate v0.2.1 with `Filename` protected; the counts are unchanged at 171), and the approved annotations may add or remove items. `run_stage` also re-derives the required cap from the frozen ground truth and **refuses to start** if a config's `max_judge_calls` is below it. So the full plan can never be stopped partway by the judge cap.
 - **Tests** (`tests/test_stage1_readiness.py`):
   - a full run at the worst-case judge usage completes exactly at the derived cap;
   - one request less is refused before any call;
