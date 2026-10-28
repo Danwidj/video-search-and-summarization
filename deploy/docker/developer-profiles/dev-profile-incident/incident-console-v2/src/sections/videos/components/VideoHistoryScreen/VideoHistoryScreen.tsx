@@ -19,13 +19,13 @@ export function VideoHistoryScreen({ videoId }: { videoId: string }) {
   if (!history)
     return (
       <div className="mx-auto max-w-7xl px-6 py-16" role="status">
-        <div className="h-64 animate-pulse rounded-[2rem] bg-white" />
+        <div className="h-64 animate-pulse rounded-4xl bg-white" />
       </div>
     );
   const { video } = history;
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12">
-      <article className="overflow-hidden rounded-[2rem] border border-ink/10 bg-white shadow-panel">
+      <article className="overflow-hidden rounded-4xl border border-ink/10 bg-white shadow-panel">
         <header className="border-b border-ink/10 bg-[#eef2e9] p-6 sm:p-8">
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-moss">Video · analysis history</p>
           <h1 className="mt-3 break-all text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{video.filename}</h1>

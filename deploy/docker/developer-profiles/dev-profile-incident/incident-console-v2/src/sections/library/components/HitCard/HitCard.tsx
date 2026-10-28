@@ -37,7 +37,7 @@ export function HitCard({
 }) {
   const { item, incident } = hit;
   return (
-    <article className="flex flex-col overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white shadow-sm" data-testid="evidence-hit">
+    <article className="flex flex-col overflow-hidden rounded-3xl border border-ink/10 bg-white shadow-xs" data-testid="evidence-hit">
       <button
         aria-label={`View ${item.name || item.itemId} in its frame`}
         className="relative block text-left"
