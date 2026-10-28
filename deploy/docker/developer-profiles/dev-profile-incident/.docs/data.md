@@ -276,12 +276,17 @@ search_evidence_items(
   p_min_similarity DOUBLE PRECISION DEFAULT 0.2,
   p_item_types TEXT[] DEFAULT ARRAY['entity','instrument','asset'],
   p_incident_types TEXT[] DEFAULT NULL, p_min_severity INTEGER DEFAULT NULL,
-  p_max_severity INTEGER DEFAULT NULL
+  p_max_severity INTEGER DEFAULT NULL, p_video_id VARCHAR DEFAULT NULL
 )
 ```
 
 pgvector HNSW cosine search over `evidence_crops.embedding`, scoped to each video's searchable
-revision (`searchable_revision_id(video_id) = evidence_crops.revision_id`: official, else newest). Returns the incident (video) id, the
+revision (`searchable_revision_id(video_id) = evidence_crops.revision_id`: official, else newest).
+`p_video_id` (migration `20261028090000_search_evidence_items_video_id.sql`) limits the scan to one
+video before ranking, so the top `p_top_k` all belong to it. `p_query_embedding` may be NULL only
+with `p_video_id`: the video's crops are then listed in video time order with `similarity_score` 0.
+The migration drops the old 7-argument overload first, because two overloads would make PostgREST
+calls ambiguous. Returns the incident (video) id, the
 revision id, the revision's model run and facets, the crop, and `similarity_score`
 (`1.0 - distance`). `incident_start_timestamp`/`incident_end_timestamp` are the revision's seconds
 as text. Rows whose embedding is NULL are skipped.
@@ -418,7 +423,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
-> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes every object under `evidence/<video key>/` before the video row; if a listing or removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#4-known-issues)), and the sweep refuses an unknown video.
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes every object under `evidence/<video key>/` before the video row; if a listing or removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#7-archive)), and the sweep refuses an unknown video.
 
 ### Key Validation & Generation Rules
 
@@ -442,7 +447,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
    `next_run_batch_id`); reviewer replacements from `uploadedEvidenceKey` in
    `incident-console-v2/src/modules/reports/domain/revision.ts` (`edit-<N>`).
    Objects written before 2026-10-28 were renamed by `supabase/r2/migrate_r2_names.py` (copy, verify, update
-   the rows; the old objects are deleted by hand afterwards). `model_runs.notes` keeps the old key as history.
+   the rows; the live rename has been run on finals and the old copies and orphaned objects were deleted by hand afterwards). `model_runs.notes` keeps the old key as history.
 3. **Durability Verification:**
    `verifyR2Video` performs `HeadObject` after a direct upload (requiring the exact expected nonzero byte length)
    and again before analysis (requiring a nonempty object). A valid-looking key alone is not treated as a stored video.
