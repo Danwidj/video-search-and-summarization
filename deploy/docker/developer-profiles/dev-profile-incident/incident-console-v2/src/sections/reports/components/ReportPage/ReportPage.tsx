@@ -5,28 +5,30 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 
-import { AdvancedReportTools } from '@/sections/reports/components/AdvancedReportTools';
-import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
-import { ReportChat } from '@/sections/reports/components/ReportChat';
-import { ReportPane } from '@/sections/reports/components/ReportPane';
-import { ReportTimeline } from '@/sections/reports/components/ReportTimeline';
-import { ReportVersions } from '@/sections/reports/components/ReportVersions';
-import { chatTarget } from '@/lib/chat/report-chat';
-import { draftChangeCount, draftToStructured } from '@/lib/reports/compare';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  draftFromView,
-  draftProblems,
-  editFromDraft,
-  pendingImages,
-  withUploadedImages,
-  type EditDraft,
-} from '@/modules/reports/domain/edit-draft';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { chatTarget } from '@/lib/chat/report-chat';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
-import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
-import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import { draftChangeCount } from '@/lib/reports/compare';
 import {
   DEFAULT_REPORT_BAND_HEIGHT,
-  DEFAULT_REPORT_BAND_WIDTHS,
+  DEFAULT_TWO_PANE_BAND_WIDTHS,
   MAX_REPORT_BAND_HEIGHT,
   MIN_REPORT_BAND_HEIGHT,
   nudgeReportBand,
@@ -35,6 +37,21 @@ import {
   resizeReportBandHeight,
   type ReportBandBoundary,
 } from '@/lib/reports/report-band-layout';
+import {
+  draftFromView,
+  draftProblems,
+  editFromDraft,
+  pendingImages,
+  withUploadedImages,
+  type EditDraft,
+} from '@/modules/reports/domain/edit-draft';
+import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import { AdvancedReportTools } from '@/sections/reports/components/AdvancedReportTools';
+import { ReportChat } from '@/sections/reports/components/ReportChat';
+import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
+import { ReportPane } from '@/sections/reports/components/ReportPane';
+import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; report: ReportView };
 
@@ -64,7 +81,7 @@ export function ReportPage({
   const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
   const [revisionsError, setRevisionsError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('view');
-  const [currentTime, setCurrentTime] = useState(0);
+  const [_currentTime, setCurrentTime] = useState(0);
   // The player's own length, a second guard (besides the recorded length) before jumping to a time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -78,10 +95,11 @@ export function ReportPage({
   const [compareReport, setCompareReport] = useState<ReportView | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [revertConfirmOpen, setRevertConfirmOpen] = useState(false);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
-  const [bandWidths, setBandWidths] = useState(DEFAULT_REPORT_BAND_WIDTHS);
+  const [bandWidths, setBandWidths] = useState(DEFAULT_TWO_PANE_BAND_WIDTHS);
   const [bandHeight, setBandHeight] = useState(DEFAULT_REPORT_BAND_HEIGHT);
   const reportBandRef = useRef<HTMLDivElement>(null);
   const resizingBoundaryRef = useRef<ReportBandBoundary | null>(null);
@@ -180,17 +198,20 @@ export function ReportPage({
   if (state.status === 'loading') {
     return (
       <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12" role="status">
-        <div className="animate-pulse overflow-hidden rounded-4xl border border-ink/10 bg-white shadow-panel">
-          <div className="h-12 border-b border-ink/10 bg-ink/5" />
-          <div className="grid gap-px bg-ink/10 lg:grid-cols-[minmax(0,26rem)_1fr_16rem]">
-            <div className="aspect-video bg-ink/10" />
-            <div className="bg-white" />
-            <div className="bg-white" />
+        <div className="overflow-hidden rounded-4xl border border-border bg-card shadow-panel">
+          <div className="h-12 border-b border-border bg-muted/40" />
+          <div className="grid gap-px bg-border lg:grid-cols-[1fr_22rem]">
+            <Skeleton className="aspect-video w-full rounded-none" />
+            <div className="space-y-3 p-4 bg-card">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
           </div>
           <div className="space-y-3 p-8">
-            <div className="h-4 rounded-sm bg-ink/10" />
-            <div className="h-4 rounded-sm bg-ink/10" />
-            <div className="h-4 w-3/4 rounded-sm bg-ink/10" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-3/4" />
           </div>
           <span className="sr-only">Loading incident report</span>
         </div>
@@ -202,20 +223,16 @@ export function ReportPage({
     return (
       <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center px-6 text-center">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay">Report unavailable</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-destructive">Report unavailable</p>
           <h1 className="mt-3 text-3xl font-semibold">We couldn&apos;t reopen this analysis.</h1>
-          <p className="mt-4 text-sm leading-6 text-ink/60">{state.message}</p>
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">{state.message}</p>
           <div className="mt-7 flex justify-center gap-3">
-            <button
-              className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white"
-              onClick={() => setAttempt((value) => value + 1)}
-              type="button"
-            >
+            <Button onClick={() => setAttempt((value) => value + 1)} type="button">
               Try again
-            </button>
-            <Link className="rounded-full border border-ink/15 px-5 py-3 text-sm font-semibold" href="/">
-              New analysis
-            </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/">New analysis</Link>
+            </Button>
           </div>
         </div>
       </div>
@@ -226,7 +243,6 @@ export function ReportPage({
   const officialRevision = (revisions ?? []).find((revision) => revision.isOfficial);
   const heading = reportHeading(mode === 'edit' && editBase ? editBase.report : report);
   const filename = (mode === 'edit' && editBase ? editBase.report : report).run.filename;
-  const draftStructured = mode === 'edit' && draft ? draftToStructured(draft) : null;
   const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
   const problems = draft ? draftProblems(draft) : [];
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
@@ -361,89 +377,78 @@ export function ReportPage({
 
   return (
     <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-2 sm:px-6 lg:px-12">
-      <article className="report-sheet overflow-clip rounded-4xl border border-ink/10 bg-white shadow-panel" data-testid="report-page">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-ink/10 px-5 py-3 text-sm">
-          <Link className="font-semibold text-moss" href="/library" id="back-to-library">
+      <article className="report-sheet overflow-clip rounded-4xl border border-border bg-card shadow-panel" data-testid="report-page">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-5 py-3 text-sm">
+          <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
             ← Library
           </Link>
           <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>
             {heading}
-            <span className="ml-2 font-normal text-ink/45">{filename}</span>
+            <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
           </h1>
-          <button
+          <Button
             aria-expanded={chatOpen}
-            className="rounded-full border border-ink/15 px-3 py-1 text-xs font-semibold text-moss"
+            className="text-xs font-semibold"
             data-testid="chat-toggle"
             onClick={() => setChatOpen((open) => !open)}
+            size="sm"
             type="button"
+            variant="outline"
           >
             Ask about this incident
-          </button>
-          <div
-            aria-label="Report mode"
-            className="flex shrink-0 rounded-full border border-ink/15 p-0.5 text-xs font-semibold"
-            role="tablist"
-          >
-            <button
-              aria-selected={mode === 'view'}
-              className={`rounded-full px-3 py-1 ${mode === 'view' ? 'bg-ink text-white' : 'text-ink/60'}`}
-              onClick={() => switchMode('view')}
-              role="tab"
-              type="button"
-            >
-              View
-            </button>
-            <button
-              aria-selected={mode === 'edit'}
-              className={`rounded-full px-3 py-1 ${mode === 'edit' ? 'bg-ink text-white' : 'text-ink/60'}`}
-              onClick={() => switchMode('edit')}
-              role="tab"
-              type="button"
-            >
-              Edit
-            </button>
-          </div>
+          </Button>
+          <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
+            <TabsList aria-label="Report mode" className="h-8">
+              <TabsTrigger className="text-xs font-semibold" value="view">
+                View
+              </TabsTrigger>
+              <TabsTrigger className="text-xs font-semibold" value="edit">
+                Edit
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         <div
-          className="sticky top-0 z-20 grid border-b border-ink/10 bg-white lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--timeline-width))_minmax(0,var(--versions-width))]"
+          className="lg:sticky top-0 z-20 grid border-b border-border bg-card lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--versions-width))]"
           data-testid="report-band"
           ref={reportBandRef}
           style={
             {
               '--video-width': `${bandWidths.video}fr`,
-              '--timeline-width': `${bandWidths.timeline}fr`,
               '--versions-width': `${bandWidths.versions}fr`,
               '--report-band-height': `${bandHeight}px`,
             } as CSSProperties
           }
         >
-          <video
-            className="aspect-video w-full bg-black object-contain lg:h-full"
-            controls
-            onLoadedMetadata={(event) => {
-              const length = event.currentTarget.duration;
-              setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
-              if (startSeconds !== null && !startedAt.current) {
-                startedAt.current = true;
-                event.currentTarget.currentTime = startSeconds;
-              }
-            }}
-            onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-            ref={videoRef}
-            src={report.run.playbackUrl}
+          <div
+            className="video-cell relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-black [container-type:size] max-lg:aspect-video lg:h-full"
+            data-testid="video-cell"
           >
-            <track kind="captions" />
-          </video>
-          <div className="hidden min-h-0 overflow-hidden border-l border-ink/10 sm:flex sm:flex-col">
-            <ReportTimeline
-              currentTime={currentTime}
-              onSeek={seek}
-              structured={draftStructured ?? report.structured}
-              videoSeconds={playerDuration ?? report.modelOutput?.timelineCheck.videoDurationSeconds ?? null}
-            />
+            <div
+              className="relative aspect-video max-h-full max-w-full overflow-hidden"
+              style={{ width: 'min(100cqw, calc(100cqh * 16 / 9))' }}
+            >
+              <video
+                className="h-full w-full object-contain"
+                controls
+                onLoadedMetadata={(event) => {
+                  const length = event.currentTarget.duration;
+                  setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
+                  if (startSeconds !== null && !startedAt.current) {
+                    startedAt.current = true;
+                    event.currentTarget.currentTime = startSeconds;
+                  }
+                }}
+                onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                ref={videoRef}
+                src={report.run.playbackUrl}
+              >
+                <track kind="captions" />
+              </video>
+            </div>
           </div>
-          <div className="min-h-0 overflow-hidden border-l border-ink/10 max-lg:max-h-72">
+          <div className="min-h-0 overflow-hidden border-t border-border lg:border-t-0 lg:border-l max-lg:max-h-72">
             <ReportVersions
               compareRevisionId={mode === 'edit' ? compareRevisionId : null}
               currentRevisionId={report.revisionId}
@@ -457,19 +462,11 @@ export function ReportPage({
             />
           </div>
           <ReportBandResizeHandle
-            boundary="video-timeline"
+            boundary="video-versions"
             left={bandWidths.video}
             onFinish={finishResize}
             onMove={moveResize}
-            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-timeline', direction))}
-            onStart={startResize}
-          />
-          <ReportBandResizeHandle
-            boundary="timeline-versions"
-            left={bandWidths.video + bandWidths.timeline}
-            onFinish={finishResize}
-            onMove={moveResize}
-            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'timeline-versions', direction))}
+            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-versions', direction))}
             onStart={startResize}
           />
           <ReportBandHeightHandle
@@ -482,15 +479,22 @@ export function ReportPage({
         </div>
 
         {!officialRevision && revisions && (
-          <p className="border-b border-[#e8d49a] bg-[#fffaf0] px-5 py-2 text-xs text-[#765300]" data-testid="official-status">
-            No official version has been selected for this video. Star a version to make it official.
-          </p>
+          <Alert
+            className="rounded-none border-x-0 border-t-0 border-b border-amber-300 bg-amber-50/80 px-5 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+            data-testid="official-status"
+          >
+            <AlertDescription>No official version has been selected for this video. Star a version to make it official.</AlertDescription>
+          </Alert>
         )}
 
         {mode === 'edit' && compareError && (
-          <p className="border-b border-[#e8d49a] bg-[#fffaf0] px-5 py-2 text-xs text-[#765300]" data-testid="compare-error">
-            Could not load the A version: {compareError}
-          </p>
+          <Alert
+            className="rounded-none border-x-0 border-t-0 border-b border-destructive/20 bg-destructive/10 px-5 py-2 text-xs text-destructive"
+            data-testid="compare-error"
+            variant="destructive"
+          >
+            <AlertDescription>Could not load the A version: {compareError}</AlertDescription>
+          </Alert>
         )}
 
         {mode === 'view' ? (
@@ -509,24 +513,20 @@ export function ReportPage({
           />
         ) : null}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-ink/10 bg-white/95 px-5 py-3 text-sm backdrop-blur-sm">
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-5 py-3 text-sm backdrop-blur-sm">
           {mode === 'view' ? (
             <>
-              <span className="text-ink/60">
+              <span className="text-muted-foreground">
                 <b>v{report.revision.revisionNo}</b>{' '}
                 {report.official.isOfficial ? 'is the official version' : 'is not the official version'}
               </span>
-              <button
-                className="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-white"
-                onClick={() => startEdit(report)}
-                type="button"
-              >
+              <Button onClick={() => startEdit(report)} type="button">
                 Edit from v{report.revision.revisionNo}
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <span className="min-w-0 text-ink/60">
+              <span className="min-w-0 text-muted-foreground">
                 {editBase && (
                   <>
                     <b>Draft</b> from v{editBase.revisionNo} ·{' '}
@@ -542,97 +542,120 @@ export function ReportPage({
                 )}
               </span>
               <div className="flex shrink-0 items-center gap-2">
-                <button
-                  className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold disabled:opacity-40"
-                  disabled={undoStack.length === 0 || saving}
-                  onClick={undoDraft}
-                  type="button"
-                >
+                <Button disabled={undoStack.length === 0 || saving} onClick={undoDraft} size="sm" type="button" variant="outline">
                   Undo
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label="Revert all draft changes"
-                  className="rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold disabled:opacity-40"
                   disabled={changes === 0 || saving}
-                  onClick={revertDraft}
+                  onClick={() => setRevertConfirmOpen(true)}
+                  size="sm"
                   type="button"
+                  variant="outline"
                 >
                   Revert
-                </button>
-                <div className="relative">
-                  {saveOpen && (
-                    <div
-                      className="absolute bottom-full right-0 z-30 mb-2 w-[min(22rem,85vw)] rounded-2xl border border-ink/15 bg-white p-4 shadow-panel"
-                      data-testid="save-note"
-                    >
-                      <label className="block text-xs font-bold" htmlFor="savenote">
-                        Note for the new version (required)
-                        <textarea
-                          aria-label="Note for the new version"
-                          className="control mt-1 min-h-[84px]"
-                          id="savenote"
-                          onChange={(event) => setNote(event.target.value)}
-                          placeholder="What changed and why, e.g. raised severity to 4 and added the phone"
-                          value={note}
-                        />
-                      </label>
-                      {saveProblems.length > 0 && (
-                        <ul aria-live="polite" className="mt-2 list-disc pl-5 text-xs text-clay" data-testid="save-problems">
-                          {saveProblems.map((problem) => (
-                            <li key={problem}>{problem}</li>
-                          ))}
-                        </ul>
-                      )}
-                      <div className="mt-3 flex justify-end gap-2">
-                        <button
-                          className="rounded-full border border-ink/15 px-3 py-1.5 text-xs font-semibold"
-                          disabled={saving}
-                          onClick={() => {
-                            setSaveOpen(false);
-                            setSaveProblems([]);
-                          }}
-                          type="button"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="rounded-full bg-moss px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                          disabled={saving || !note.trim()}
-                          onClick={() => void save()}
-                          type="button"
-                        >
-                          {saving ? 'Saving…' : 'Save as new version'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <button
-                    className="rounded-full bg-moss px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                    disabled={changes === 0 || saving}
-                    onClick={() => setSaveOpen(true)}
-                    type="button"
-                  >
-                    Save as new version
-                  </button>
-                </div>
+                </Button>
+                <Button disabled={changes === 0 || saving} onClick={() => setSaveOpen(true)} type="button">
+                  Save as new version
+                </Button>
               </div>
             </>
           )}
         </div>
       </article>
+
+      <AlertDialog onOpenChange={setRevertConfirmOpen} open={revertConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revert all draft changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will discard all unsaved edits made to this draft and return to v{editBase?.revisionNo}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setRevertConfirmOpen(false);
+                revertDraft();
+              }}
+            >
+              Revert
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        onOpenChange={(open) => {
+          setSaveOpen(open);
+          if (!open) setSaveProblems([]);
+        }}
+        open={saveOpen}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="save-note">
+          <DialogHeader>
+            <DialogTitle>Save as new version</DialogTitle>
+            <DialogDescription>Record what changed in this version before saving.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label className="text-xs font-bold" htmlFor="savenote">
+              Note for the new version (required)
+            </Label>
+            <Textarea
+              aria-label="Note for the new version"
+              className="mt-1 min-h-[84px]"
+              id="savenote"
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="What changed and why, e.g. raised severity to 4 and added the phone"
+              value={note}
+            />
+            {saveProblems.length > 0 && (
+              <ul aria-live="polite" className="mt-2 list-disc pl-5 text-xs text-destructive" data-testid="save-problems">
+                {saveProblems.map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={saving}
+              onClick={() => {
+                setSaveOpen(false);
+                setSaveProblems([]);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button disabled={saving || !note.trim()} onClick={() => void save()} type="button">
+              {saving ? 'Saving…' : 'Save as new version'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {mode === 'view' && <AdvancedReportTools report={report} />}
-      {chatOpen && (
-        <ReportChat
-          onClose={() => setChatOpen(false)}
-          onSeek={seek}
-          target={chatTarget(
-            mode === 'edit' && draft && editBase
-              ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
-              : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
-          )}
-          videoId={videoId}
-        />
-      )}
+      <Sheet onOpenChange={setChatOpen} open={chatOpen}>
+        <SheetContent className="flex flex-col p-0 sm:max-w-md" side="right">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Ask about this incident</SheetTitle>
+            <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
+          </SheetHeader>
+          <ReportChat
+            onClose={() => setChatOpen(false)}
+            onSeek={seek}
+            target={chatTarget(
+              mode === 'edit' && draft && editBase
+                ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
+                : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
+            )}
+            videoId={videoId}
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -652,7 +675,7 @@ function ReportBandResizeHandle({
   onFinish: (event: React.PointerEvent<HTMLHRElement>) => void;
   onNudge: (direction: -1 | 1) => void;
 }) {
-  const label = boundary === 'video-timeline' ? 'Resize video and timeline' : 'Resize timeline and version history';
+  const label = 'Resize video and version history';
   return (
     <hr
       aria-label={label}
@@ -660,7 +683,7 @@ function ReportBandResizeHandle({
       aria-valuemax={85}
       aria-valuemin={15}
       aria-valuenow={Math.round(left * 100)}
-      className="absolute inset-y-0 z-30 hidden h-auto w-4 -translate-x-1/2 cursor-col-resize touch-none border-0 after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-ink/20 hover:after:bg-moss focus:after:bg-moss lg:block"
+      className="absolute inset-y-0 z-30 hidden h-auto w-4 -translate-x-1/2 cursor-col-resize touch-none border-0 after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-border hover:after:bg-primary focus:after:bg-primary lg:block"
       onKeyDown={(event) => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
@@ -691,12 +714,12 @@ function ReportBandHeightHandle({
 }) {
   return (
     <hr
-      aria-label="Resize video, timeline and version history height"
+      aria-label="Resize video and version history height"
       aria-orientation="horizontal"
       aria-valuemax={MAX_REPORT_BAND_HEIGHT}
       aria-valuemin={MIN_REPORT_BAND_HEIGHT}
       aria-valuenow={height}
-      className="absolute inset-x-0 bottom-0 z-40 hidden h-4 translate-y-1/2 cursor-row-resize touch-none border-0 after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-ink/20 hover:after:bg-moss focus:after:bg-moss lg:block"
+      className="absolute inset-x-0 bottom-0 z-40 hidden h-4 translate-y-1/2 cursor-row-resize touch-none border-0 after:absolute after:inset-x-0 after:top-1/2 after:h-px after:bg-border hover:after:bg-primary focus:after:bg-primary lg:block"
       onKeyDown={(event) => {
         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
         event.preventDefault();
