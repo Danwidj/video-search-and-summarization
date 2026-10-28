@@ -4,12 +4,9 @@
 import { useState } from 'react';
 
 import { reportThumbnailView } from '@/lib/ui/thumbnail';
+import { severityClass } from '@/lib/ui/severity';
 
-export function severityClass(level: number) {
-  if (level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
-  if (level === 3) return 'bg-[#fff1c7] text-[#765300]';
-  return 'bg-signal/15 text-moss';
-}
+export { severityClass };
 
 export function SeverityChip({ level }: { level: number }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${severityClass(level)}`}>Severity {level}</span>;
