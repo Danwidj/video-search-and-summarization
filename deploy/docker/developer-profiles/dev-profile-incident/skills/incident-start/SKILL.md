@@ -1,6 +1,6 @@
 ---
 name: incident-start
-description: Use to set up secrets and launch the incident profile from a laptop with start.sh, either fully local (mock-backend + vlm-gateway, zero GPU) or against the kwanz-ws VM over an SSH tunnel. Not for changing or repairing services on the VM itself - use incident-operate-vm.
+description: Use to set up secrets and launch the incident profile from a laptop with start.sh, against the kwanz-ws VM over an SSH tunnel (the local mock-backend + vlm-gateway mode is for mock-backend tests only). Not for changing or repairing services on the VM itself - use incident-operate-vm.
 license: Apache-2.0
 metadata:
   version: "0.1.2"
@@ -17,8 +17,8 @@ metadata:
 
 | User says | Mode | Why |
 |---|---|---|
-| "run it locally", "no GPU", "frontend work", "offline from the VM" | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
-| "run against the VM", "real agent", "full stack", "demo", no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
+| "run the mock backend", "offline from the VM" (mock-backend tests only; never for UI or backend work, and never as a fallback when the VM is unreachable - stop and report) | `--mode mock` | Mock VST/agent on `:7777` and the credential-holding gateway on `:8600`. SSH is never touched. `--mode local` still works as a deprecated alias. |
+| "run it", "run against the VM", "real agent", "full stack", "demo", "frontend work", any UI or backend work, no preference | `--mode vm` (default) | Real native `vss-agent` and VIOS on `kwanz-ws`. `start.sh` self-heals missing services: it starts stopped ones, pulls missing images, clones a missing checkout, and fails with a reason instead of hanging. |
 
 Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#2-deployment--connectivity).
 
@@ -52,8 +52,8 @@ Details of each path: [`.docs/architecture.md` §2](../../.docs/architecture.md#
 ## Instructions
 
 ```bash
-./start.sh --mode mock      # zero-GPU loop
-./start.sh --mode vm        # VM backend (default when --mode is omitted)
+./start.sh --mode vm        # VM backend (default; use for all UI and backend work)
+./start.sh --mode mock      # mock-backend tests only, never for UI or backend work
 ./start.sh --mode vm --no-console   # VM side only: backend + tunnel, no Next.js console
 ```
 
