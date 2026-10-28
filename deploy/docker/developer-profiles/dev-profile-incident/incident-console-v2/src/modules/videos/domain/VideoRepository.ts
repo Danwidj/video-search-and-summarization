@@ -6,7 +6,7 @@
 import type { Page } from '@/modules/shared/domain/common';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 
-export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection';
+export type VideoListFilter = 'all' | 'without-report' | 'awaiting-selection' | 'with-report' | 'needs-analysis' | 'failed';
 
 /** One row of the /videos list. */
 export interface VideoListItem {

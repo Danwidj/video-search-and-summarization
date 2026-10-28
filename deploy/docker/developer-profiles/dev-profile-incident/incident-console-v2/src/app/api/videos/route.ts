@@ -9,7 +9,7 @@ import type { VideoListFilter } from '@/modules/videos/domain/VideoRepository';
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 20;
-const FILTERS = new Set(['all', 'without-report', 'awaiting-selection']);
+const FILTERS = new Set(['all', 'without-report', 'awaiting-selection', 'with-report', 'needs-analysis', 'failed']);
 
 /**
  * Videos (the parent of every analysis). `filter=without-report` lists videos
