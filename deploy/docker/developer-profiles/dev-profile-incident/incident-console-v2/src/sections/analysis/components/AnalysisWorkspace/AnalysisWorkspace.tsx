@@ -4,11 +4,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Upload } from 'lucide-react';
 import { cn } from 'cn';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
@@ -213,7 +215,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   return (
     <Card
       className="relative rounded-4xl border border-border bg-white/80 p-4 shadow-panel backdrop-blur-sm md:p-6 ring-0 flex flex-col gap-0"
-      aria-labelledby="upload-title"
+      aria-label="Video analysis workspace"
     >
       <input
         accept="video/mp4,video/x-matroska,video/quicktime,video/webm,.mp4,.mkv,.mov,.webm"
@@ -273,46 +275,68 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
           </div>
         </div>
       ) : (
-        <button
-          className={`block w-full rounded-[1.45rem] border border-dashed px-6 py-16 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-10 sm:py-24 ${dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:border-primary/50'}`}
+        <Card
+          className={cn(
+            'relative flex flex-col items-center justify-center rounded-3xl border-2 border-dashed py-14 px-6 text-center transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:py-20 sm:px-10',
+            dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50',
+          )}
+          role="button"
+          tabIndex={0}
+          aria-labelledby="upload-title"
+          aria-describedby="upload-description"
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           onDragEnter={(event) => {
             event.preventDefault();
             setDragging(true);
           }}
-          onDragLeave={() => setDragging(false)}
-          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+            setDragging(false);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }}
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
             chooseFile(event.dataTransfer.files[0] || null);
           }}
-          type="button"
         >
-          <span className="upload-orbit mx-auto grid h-20 w-20 place-items-center rounded-full border border-primary/20 bg-background shadow-lg shadow-primary/10">
-            <svg
-              aria-hidden="true"
-              className="h-8 w-8 text-primary"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="1.7"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 007.5 20h9a2.5 2.5 0 002.5-2.5v-3"
-              />
-            </svg>
-          </span>
-          <span className="mt-7 block font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">New analysis</span>
-          <span className="mt-3 block text-2xl font-semibold tracking-tight text-foreground" id="upload-title">
-            Drop a video here
-          </span>
-          <span className="mx-auto mt-3 block max-w-sm text-sm leading-6 text-muted-foreground">
-            MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
-          </span>
-        </button>
+          <CardHeader className="flex flex-col items-center gap-3 p-0">
+            <div className="upload-orbit mx-auto flex size-16 items-center justify-center rounded-full border border-primary/20 bg-background text-primary shadow-lg shadow-primary/10">
+              <Upload className="size-8" aria-hidden="true" />
+            </div>
+            <Badge variant="secondary" className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+              New analysis
+            </Badge>
+            <CardTitle className="text-2xl font-semibold tracking-tight text-foreground" id="upload-title">
+              Drop a video here
+            </CardTitle>
+            <CardDescription className="max-w-sm text-sm leading-6 text-muted-foreground" id="upload-description">
+              MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="mt-6 flex flex-col items-center p-0">
+            <Button variant="outline" size="sm" className="pointer-events-none rounded-full" tabIndex={-1} type="button">
+              <Upload data-icon="inline-start" />
+              Browse video files
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {error && !file && (
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {file && (

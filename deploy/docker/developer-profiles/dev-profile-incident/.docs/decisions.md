@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: AnalysisWorkspace upload target uses a composed shadcn dropzone
+- **Decision:** The hand-written drag-and-drop `<button>` in `AnalysisWorkspace.tsx` is replaced with a dropzone composed of shadcn/ui components (`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Button`, `Badge`, and `lucide-react`'s `Upload` icon) over the native hidden file input. The dropzone Card is keyboard-accessible (`role="button"`, `tabIndex={0}`, with Enter and Space handlers dispatching to the hidden file input), displays a visual `Upload` orbit icon, a "New analysis" badge, title, description, and an outline "Browse video files" button. Drag-and-drop states (`border-primary bg-primary/10`) provide responsive feedback, and pre-upload validation behaviours are preserved: name checks, duplicate-name warning, unsafe-character replacement notice, progress, and error alert states.
+- **Why:** The previous upload target was a custom uncomposed HTML button with hardcoded inline SVG and ad-hoc styling that did not align with shadcn design system conventions.
+- **Alternatives rejected:**
+  - *Adding `react-dropzone`:* Unnecessary third-party dependency; composition from existing shadcn primitives (`Card`, `Button`, `Badge`) and standard HTML5 Drag and Drop API fully satisfies requirements with zero extra bundle weight.
+  - *Unwrapping Card/Button into raw divs:* Violates shadcn composition and accessibility rules.
+- **Links:** `src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx`.
+
 ### 2026-10-29: Report band panels swap hand-written resize handles for shadcn Resizable
 - **Decision:** The report page (`ReportPage.tsx`) replaces the hand-written `<hr>` horizontal panel resize handle (`ReportBandResizeHandle`) with shadcn's `ResizablePanelGroup`, `ResizablePanel`, and `ResizableHandle withHandle` (`src/components/ui/resizable.tsx`). Default panel proportions (70% video, 30% version history) and minimum bounds (15% min, 85% max) are preserved. On mobile viewports (< 1024px / 390px), the panels stack vertically with `hidden lg:flex` on the separator handle and responsive CSS overrides. The vertical report band height handle (`ReportBandHeightHandle`) is retained for height adjustments (190px to 600px, default 270px) to preserve sticky bar behavior and scrolling ergonomics.
 - **Why:** The hand-written panel handle relied on manual pointer capture, clientX calculations, and bespoke keyboard handlers. Swapping to shadcn `Resizable` (backed by `react-resizable-panels`) leverages standard ARIA separator semantics, built-in keyboard navigation, fine/coarse cursor ergonomics, and component consistency across the console.
