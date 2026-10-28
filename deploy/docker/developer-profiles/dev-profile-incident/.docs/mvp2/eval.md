@@ -65,7 +65,7 @@ Paths are relative to the profile directory, except paths starting with `service
 |---|---|---|
 | Search route | `POST /api/v1/incidents/search` in `vss-agent` (`search-contract-v1`), live on `kwanz-ws` | `services/agent/src/vss_agents/api/incident_search.py` |
 | Corpus | `evidence_crops`: one row per evidence item of each video's searchable revision (its official revision, else its newest), keyed `(revision_id, item_type, item_id)`, `embedding vector(1024)`, HNSW cosine. `search_evidence_items` returns only those rows. | [`data.md`](../data.md#evidence_crops); `supabase/migrations/20261023000000_report_revisions_schema.sql`, `20261023000200_searchable_latest_revision.sql` |
-| Corpus size (2026-10-25) | The finals corpus is empty: a read-only count found 0 `evidence_crops` rows (the 6 that existed belonged to the end-to-end test videos the 2026-10-24 cleanup removed) and a NULL `embedding` on all 6 AI revisions; 12 of the 18 videos have no revision. Rows return as revisions are marked official, analysed or saved | [status](../status.md#3-database-status) |
+| Corpus size (2026-10-28) | Real-data search is live: 65 `evidence_crops` rows have embeddings, and 17 revisions (one per finals video; 17 videos total) have embeddings | [status](../status.md#3-database-status) |
 | Embeddings | `nvidia/llama-nemotron-embed-vl-1b-v2`, 1024 dimensions. The **text** `"{name}: {description}"` is embedded (`passage`), and so is the query (`query`). Crops are not embedded. | `services/agent/src/vss_agents/utils/embeddings.py` |
 | Ranking | Cosine similarity order, no cutoff (`min_similarity` default 0.0). The candidate pool equals `top_k`. | [decisions](../decisions.md) 2026-10-18 |
 | Critic | Always on, with no flag. Each hit gets one VLM call (`VLM_NAME`, currently `nvidia/cosmos-3-super-reasoner`), 30 s timeout, no retry. Call starts are spaced `INCIDENT_SEARCH_CRITIC_DELAY_SECONDS` apart (default 1.0). A failure gives `unverified`. The critic **does not reorder**: `rank` is fixed before it runs. It sees the crop image (when its URL is http(s)) and a prompt that includes the embedded description. | `incident_search.py`; [decisions](../decisions.md) 2026-10-16 |
@@ -419,11 +419,11 @@ Each item is its own PR from `main`, rebased onto `main` before merge. This hand
 | Step | Needs before it can start | Open decision or dependency |
 |---|---|---|
 | 2. Query set, labels, corpus manifest | Approval of P-2 (protocol) and P-3 (manifest pinning); a non-empty corpus | Query sourcing (Q1); where labels and the manifest are stored (open item 1: storage for labels and manifests is undecided) |
-| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (stopped since 2026-10-24, [status](../status.md#4-known-issues) item 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
+| 3. Retrieval harness `eval/scripts/eval_retrieval.py` | Step 2; the live agent (running on `kwanz-ws:8000`, [status](../status.md#4-known-issues) item 5); SSH tunnel and the credentials in §3.7 | P-4 (validity flags), P-7 (repeats); mapping each search hit to a `Candidate` with key `(revision_id, item_type, item_id)`, `similarity_score` and `critic.verdict`, in `rank` order; the run directory layout (P-6 for reports) |
 | 4. Critic ablation report | Step 3 output; `summarize` gives the list metrics and differences | Critic-call cost per list and latency tables are still to write (§3.6); token figures wait on the search route (§7) |
 | 5. Tracks E, D and X | Their inputs (a corpus snapshot, framing labels, the 55-video split) | P-1 (track structure), P-5 (Track X run ids); Track E can reuse `retrieval_metrics` on in-memory rankings; Track X scores offline (`eval/offline_store.py`) |
 
-The finals corpus is empty today (§1.2), so no step past 2 can produce more than a plumbing run until reviewers mark official revisions or re-analyse videos with the agent.
+The finals corpus now holds 17 revisions and 65 evidence crops with embeddings (§1.2), with real-data search live on the agent.
 
 **Definition of done:**
 - Each track's acceptance criteria are met.

@@ -394,7 +394,7 @@ Local disks on `kwanz-ws` are treated as temporary caches only (though VST store
 anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ├── anomaly/                         # classified dataset clips (seed/eval) only
 │   ├── animal_attacks/  assault/  burglary/  explosion/
-│   ├── fighting/  road_accidents/  shooting/
+│   ├── fighting/  road_accidents/  shooting/  demo/
 │   │   └── <clip-name>.mp4
 ├── normal_videos/                   # baseline non-incident clips
 │   └── <clip-name>.mp4
