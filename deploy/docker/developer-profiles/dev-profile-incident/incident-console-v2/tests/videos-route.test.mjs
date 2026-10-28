@@ -4,6 +4,7 @@
 // route: the row -> list item mapping and pagination moved into the video adapter.
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import { afterEach, beforeEach, test } from 'node:test';
 
@@ -68,4 +69,9 @@ test('an unknown filter is rejected before Supabase', async () => {
   };
   assert.equal((await GET(new Request('http://localhost/api/videos?filter=everything'))).status, 400);
   assert.equal(called, false);
+});
+
+test('video page navigation link points back to the report library (/library)', async () => {
+  const page = await readFile(new URL('../src/app/videos/[videoId]/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /href="\/library"[^>]*>\s*← All videos\s*<\/Link>/);
 });
