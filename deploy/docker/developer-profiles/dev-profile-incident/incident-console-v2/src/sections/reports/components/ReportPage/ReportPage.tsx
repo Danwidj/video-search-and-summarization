@@ -2,6 +2,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -65,6 +66,8 @@ interface EditBase {
 // Human revisions still record who saved them; the mockup removed names from the UI, so the console sends a neutral one.
 const SAVE_AUTHOR = 'Reviewer';
 
+const DEFAULT_VIDEO_ASPECT = 16 / 9;
+
 /** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
 export function ReportPage({
   videoId,
@@ -84,6 +87,10 @@ export function ReportPage({
   const [_currentTime, setCurrentTime] = useState(0);
   // The player's own length, a second guard (besides the recorded length) before jumping to a time.
   const [playerDuration, setPlayerDuration] = useState<number | null>(null);
+  // The stage is sized to the clip's own shape so a 4:3 clip is not letterboxed inside a 16:9 box.
+  const [videoAspect, setVideoAspect] = useState(DEFAULT_VIDEO_ASPECT);
+  const [pipSupported, setPipSupported] = useState(false);
+  const [inPip, setInPip] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const startedAt = useRef(false);
 
@@ -166,6 +173,33 @@ export function ReportPage({
     return () => controller.abort();
   }, [compareRevisionId, editBase, mode, videoId]);
 
+  // The browser's own Picture-in-Picture window floats over other tabs and apps, like YouTube's miniplayer.
+  const ready = state.status === 'ready';
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!ready || !video) return;
+    setPipSupported(document.pictureInPictureEnabled === true && !video.disablePictureInPicture);
+    const enter = () => setInPip(true);
+    const leave = () => setInPip(false);
+    video.addEventListener('enterpictureinpicture', enter);
+    video.addEventListener('leavepictureinpicture', leave);
+    return () => {
+      video.removeEventListener('enterpictureinpicture', enter);
+      video.removeEventListener('leavepictureinpicture', leave);
+    };
+  }, [ready]);
+
+  const togglePip = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
+    } catch {
+      // The browser refused (clip not loaded yet, or another window already holds Picture-in-Picture): the inline player stays as it is.
+    }
+  }, []);
+
   const seek = useCallback((seconds: number) => {
     const video = videoRef.current;
     if (!video) return;
@@ -197,8 +231,8 @@ export function ReportPage({
 
   if (state.status === 'loading') {
     return (
-      <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6 lg:px-12" role="status">
-        <div className="overflow-hidden rounded-4xl border border-border bg-card shadow-panel">
+      <div className="pb-16" role="status">
+        <div className="overflow-hidden border-y border-border bg-card shadow-panel">
           <div className="h-12 border-b border-border bg-muted/40" />
           <div className="grid gap-px bg-border lg:grid-cols-[1fr_22rem]">
             <Skeleton className="aspect-video w-full rounded-none" />
@@ -245,6 +279,10 @@ export function ReportPage({
   const filename = (mode === 'edit' && editBase ? editBase.report : report).run.filename;
   const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
   const problems = draft ? draftProblems(draft) : [];
+  const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
+  const compareHref = otherAiRevision
+    ? `/reports/${encodeURIComponent(videoId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
+    : null;
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
 
   const changeDraft = (next: EditDraft) => {
@@ -376,109 +414,137 @@ export function ReportPage({
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-2 sm:px-6 lg:px-12">
-      <article className="report-sheet overflow-clip rounded-4xl border border-border bg-card shadow-panel" data-testid="report-page">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-5 py-3 text-sm">
-          <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
-            ← Library
-          </Link>
-          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>
-            {heading}
-            <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
-          </h1>
-          <Button
-            aria-expanded={chatOpen}
-            className="text-xs font-semibold"
-            data-testid="chat-toggle"
-            onClick={() => setChatOpen((open) => !open)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Ask about this incident
-          </Button>
-          <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
-            <TabsList aria-label="Report mode" className="h-8">
-              <TabsTrigger className="text-xs font-semibold" value="view">
-                View
-              </TabsTrigger>
-              <TabsTrigger className="text-xs font-semibold" value="edit">
-                Edit
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+    <div className="pb-16">
+      <article className="report-sheet overflow-clip border-y border-border bg-card shadow-panel" data-testid="report-page">
+        {/* One sticky unit from lg: the back bar, the video and the versions stay together. Below lg only the back bar sticks (`contents` lets it stick to the article), because the stacked band is too tall to pin. */}
+        <div className="contents lg:sticky lg:top-0 lg:z-20 lg:block" data-testid="report-sticky">
+          <div className="z-30 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-5 py-3 text-sm max-lg:sticky max-lg:top-0 sm:px-8">
+            <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
+              ← Library
+            </Link>
+            <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>
+              {heading}
+              <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
+            </h1>
+            <Button
+              aria-expanded={chatOpen}
+              className="text-xs font-semibold"
+              data-testid="chat-toggle"
+              onClick={() => setChatOpen((open) => !open)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Ask about this incident
+            </Button>
+            <Tabs onValueChange={(value) => switchMode(value as Mode)} value={mode}>
+              <TabsList aria-label="Report mode" className="h-8">
+                <TabsTrigger className="text-xs font-semibold" value="view">
+                  View
+                </TabsTrigger>
+                <TabsTrigger className="text-xs font-semibold" value="edit">
+                  Edit
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
 
-        <div
-          className="lg:sticky top-0 z-20 grid border-b border-border bg-card lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--versions-width))]"
-          data-testid="report-band"
-          ref={reportBandRef}
-          style={
-            {
-              '--video-width': `${bandWidths.video}fr`,
-              '--versions-width': `${bandWidths.versions}fr`,
-              '--report-band-height': `${bandHeight}px`,
-            } as CSSProperties
-          }
-        >
           <div
-            className="video-cell relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-black [container-type:size] max-lg:aspect-video lg:h-full"
-            data-testid="video-cell"
+            className="relative grid border-b border-border bg-card lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--versions-width))]"
+            data-testid="report-band"
+            ref={reportBandRef}
+            style={
+              {
+                '--video-width': `${bandWidths.video}fr`,
+                '--versions-width': `${bandWidths.versions}fr`,
+                '--report-band-height': `${bandHeight}px`,
+                '--video-aspect': String(videoAspect),
+              } as CSSProperties
+            }
           >
             <div
-              className="relative aspect-video max-h-full max-w-full overflow-hidden"
-              style={{ width: 'min(100cqw, calc(100cqh * 16 / 9))' }}
+              className="video-cell relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-muted [container-type:size] max-lg:aspect-(--video-aspect) lg:h-full"
+              data-testid="video-cell"
             >
-              <video
-                className="h-full w-full object-contain"
-                controls
-                onLoadedMetadata={(event) => {
-                  const length = event.currentTarget.duration;
-                  setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
-                  if (startSeconds !== null && !startedAt.current) {
-                    startedAt.current = true;
-                    event.currentTarget.currentTime = startSeconds;
-                  }
-                }}
-                onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-                ref={videoRef}
-                src={report.run.playbackUrl}
+              <div
+                className="relative max-h-full max-w-full overflow-hidden bg-black"
+                style={{ aspectRatio: videoAspect, width: `min(100cqw, calc(100cqh * ${videoAspect}))` }}
               >
-                <track kind="captions" />
-              </video>
+                <video
+                  className="h-full w-full object-contain"
+                  controls
+                  onLoadedMetadata={(event) => {
+                    const { duration: length, videoWidth, videoHeight } = event.currentTarget;
+                    setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
+                    if (videoWidth > 0 && videoHeight > 0) setVideoAspect(videoWidth / videoHeight);
+                    if (startSeconds !== null && !startedAt.current) {
+                      startedAt.current = true;
+                      event.currentTarget.currentTime = startSeconds;
+                    }
+                  }}
+                  onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                  ref={videoRef}
+                  src={report.run.playbackUrl}
+                >
+                  <track kind="captions" />
+                </video>
+                {inPip && (
+                  <div
+                    className="absolute inset-0 grid place-items-center bg-black/90 p-3 text-center text-xs text-white"
+                    data-testid="pip-placeholder"
+                  >
+                    Playing in picture-in-picture
+                  </div>
+                )}
+                {pipSupported && (
+                  <Button
+                    aria-label={inPip ? 'Return video to the page' : 'Open video in picture-in-picture'}
+                    aria-pressed={inPip}
+                    className="absolute top-2 right-2 z-10 bg-black/60 text-white hover:bg-black/80 hover:text-white"
+                    data-testid="pip-toggle"
+                    onClick={() => void togglePip()}
+                    size="icon-sm"
+                    title={inPip ? 'Return video to the page' : 'Picture-in-picture: keep the video floating while you work'}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <PictureInPicture2Icon aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="min-h-0 overflow-hidden border-t border-border lg:border-t-0 lg:border-l max-lg:max-h-72">
-            <ReportVersions
-              compareRevisionId={mode === 'edit' ? compareRevisionId : null}
-              currentRevisionId={report.revisionId}
-              error={revisionsError}
-              mode={mode}
-              onCompare={(id) => setCompareRevisionId(id)}
-              onOfficialChanged={() => setAttempt((value) => value + 1)}
-              onOpen={openVersion}
-              revisions={revisions}
-              videoId={videoId}
+            <div className="min-h-0 overflow-hidden border-t border-border lg:border-t-0 lg:border-l max-lg:max-h-72">
+              <ReportVersions
+                compareRevisionId={mode === 'edit' ? compareRevisionId : null}
+                currentRevisionId={report.revisionId}
+                error={revisionsError}
+                mode={mode}
+                onCompare={(id) => setCompareRevisionId(id)}
+                onOfficialChanged={() => setAttempt((value) => value + 1)}
+                onOpen={openVersion}
+                revisions={revisions}
+                videoId={videoId}
+              />
+            </div>
+            <ReportBandResizeHandle
+              boundary="video-versions"
+              left={bandWidths.video}
+              onFinish={finishResize}
+              onMove={moveResize}
+              onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-versions', direction))}
+              onStart={startResize}
+            />
+            <ReportBandHeightHandle
+              height={bandHeight}
+              onFinish={finishHeightResize}
+              onMove={moveHeightResize}
+              onNudge={(direction) => setBandHeight((height) => nudgeReportBandHeight(height, direction))}
+              onStart={startHeightResize}
             />
           </div>
-          <ReportBandResizeHandle
-            boundary="video-versions"
-            left={bandWidths.video}
-            onFinish={finishResize}
-            onMove={moveResize}
-            onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-versions', direction))}
-            onStart={startResize}
-          />
-          <ReportBandHeightHandle
-            height={bandHeight}
-            onFinish={finishHeightResize}
-            onMove={moveHeightResize}
-            onNudge={(direction) => setBandHeight((height) => nudgeReportBandHeight(height, direction))}
-            onStart={startHeightResize}
-          />
         </div>
 
-        {!officialRevision && revisions && (
+        {mode === 'edit' && !officialRevision && revisions && (
           <Alert
             className="rounded-none border-x-0 border-t-0 border-b border-amber-300 bg-amber-50/80 px-5 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
             data-testid="official-status"
@@ -498,7 +564,13 @@ export function ReportPage({
         )}
 
         {mode === 'view' ? (
-          <ReportPane onSeek={seek} playerDuration={playerDuration} report={report} />
+          <ReportPane
+            compareHref={compareHref}
+            officialMissing={!officialRevision && revisions !== null}
+            onSeek={seek}
+            playerDuration={playerDuration}
+            report={report}
+          />
         ) : draft && editBase ? (
           <ReportEditPane
             a={compareReport?.structured ?? null}
@@ -513,7 +585,7 @@ export function ReportPage({
           />
         ) : null}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card/95 px-5 py-3 text-sm backdrop-blur-sm">
+        <div className="sticky bottom-0 z-20 flex flex-col gap-2 border-t border-border bg-card/95 px-5 py-3 text-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-8">
           {mode === 'view' ? (
             <>
               <span className="text-muted-foreground">
@@ -526,7 +598,7 @@ export function ReportPage({
             </>
           ) : (
             <>
-              <span className="min-w-0 text-muted-foreground">
+              <span className="min-w-0 text-muted-foreground sm:flex-1">
                 {editBase && (
                   <>
                     <b>Draft</b> from v{editBase.revisionNo} ·{' '}
@@ -541,7 +613,7 @@ export function ReportPage({
                   </>
                 )}
               </span>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button disabled={undoStack.length === 0 || saving} onClick={undoDraft} size="sm" type="button" variant="outline">
                   Undo
                 </Button>
@@ -637,7 +709,11 @@ export function ReportPage({
         </DialogContent>
       </Dialog>
 
-      {mode === 'view' && <AdvancedReportTools report={report} />}
+      {mode === 'view' && (
+        <div className="px-5 sm:px-8">
+          <AdvancedReportTools report={report} />
+        </div>
+      )}
       <Sheet onOpenChange={setChatOpen} open={chatOpen}>
         <SheetContent className="flex flex-col p-0 sm:max-w-md" side="right">
           <SheetHeader className="sr-only">
