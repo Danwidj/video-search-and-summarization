@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: Videos screen uses a unified lifecycle status badge, direct report action, and responsive card-table layout
+- **Decision:** The Videos list (`/videos`) replaces the separate "Reports" (version count) and "Status" (official boolean or dash) columns with a single consolidated "Report & Lifecycle Status" badge column (`Official`, `Report ready`, `Ready to analyse`, with subtext version counts). The table provides direct primary action buttons (`Open report →` when revisions exist, `Analyse video →` when 0 revisions exist) and a secondary `...` dropdown menu (`Analysis history`, `View report`, `Copy video ID`). Filtering supports `All`, `With report`, `Needs analysis`, and `Failed`. The header includes a filename search input and an `Upload video` button. On viewports below `md` (< 768px), the layout switches from a table to vertical stacked cards without horizontal clipping.
+- **Why:** The previous Status column showed `—` on every video where an official version had not been explicitly chosen, misleading operators into thinking processing was missing or broken. Users had to navigate through the intermediate `/videos/<id>` history screen just to open a report. On mobile screens (390px), the table clipped horizontally with an unhelpful swipe banner.
+- **Alternatives rejected:**
+  - *Pure card grid (like `/library`):* Rejected because video asset inventory requires high scan density, fast chronological triage, and batch monitoring.
+  - *Renaming the Status column only:* Rejected because it leaves mobile clipping, disjointed version counts, and missing direct report navigation unsolved.
+- **Links:** `src/sections/videos/components/VideosScreen/VideosScreen.tsx`, `src/app/api/videos/route.ts`, `src/modules/videos/domain/VideoRepository.ts`.
+
 ### 2026-10-28: The shadcn skill is canonical under dev-profile-incident/skills/ with multi-harness symlinks
 - **Decision:** `shadcn` skill is housed at project level under `deploy/docker/developer-profiles/dev-profile-incident/skills/shadcn`. The repo root exposes symlinks to it at `.claude/skills/shadcn` (Claude Code) and `.agents/skills/shadcn` (Gemini CLI and other agentskills.io hosts).
 - **Why:** The skill was originally placed as a real directory under `.claude/skills/shadcn`, hiding it from non-Claude harnesses (such as Antigravity/Gemini). Housing it alongside the other incident skills under `dev-profile-incident/skills/` keeps project skills canonical in one place while symlinks expose it to all harnesses.
