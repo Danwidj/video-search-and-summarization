@@ -643,7 +643,9 @@ function Coverage({ rows }: { rows: ModelCoverage[] }) {
         <TableBody>
           {rows.map((row) => (
             <TableRow className="border-t border-ink/8 hover:bg-black/5" key={row.model}>
-              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>{row.model}</TableCell>
+              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>
+                {row.model}
+              </TableCell>
               <TableCell className="px-1.5">{row.withReport}</TableCell>
               <TableCell className="px-1.5">{row.validFirstPass}</TableCell>
               <TableCell className="px-1.5">{row.repaired}</TableCell>
