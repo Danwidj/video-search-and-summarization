@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import httpx
 from pydantic import ValidationError
@@ -49,6 +50,7 @@ from vss_agents.api.incident_search import _get_critic_delay_seconds
 from vss_agents.api.incident_search import create_incident_search_router
 from vss_agents.api.incident_search import get_default_search_store
 from vss_agents.api.incident_search import register_incident_search_routes
+from vss_agents.api.incident_search import semantic_search
 from vss_agents.utils.embeddings import RemoteTextEmbedder
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -551,7 +553,10 @@ class TestSearchRouteEndToEnd:
         store = InMemorySearchStore(candidates=sample_candidates)
         critic = MockCriticEvaluator(verdict="confirmed", confidence=0.91, rationale="Verified evidence match")
         router = create_incident_search_router(
-            store=store, critic=critic, embedder=DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key=""))
+            store=store,
+            critic=critic,
+            critic_enabled=True,
+            embedder=DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key="")),
         )
         app.include_router(router)
 
@@ -591,7 +596,7 @@ class TestSearchRouteEndToEnd:
         store = InMemorySearchStore(candidates=sample_candidates)
         # Critic that raises a network exception
         failing_critic = MockCriticEvaluator(should_raise=RuntimeError("Switchyard unreachable"))
-        router = create_incident_search_router(store=store, critic=failing_critic)
+        router = create_incident_search_router(store=store, critic=failing_critic, critic_enabled=True)
         app.include_router(router)
 
         client = TestClient(app)
@@ -697,6 +702,7 @@ class TestSearchRouteEndToEnd:
             create_incident_search_router(
                 store=InMemorySearchStore(candidates=sample_candidates),
                 critic=MockCriticEvaluator(verdict="rejected"),
+                critic_enabled=True,
             )
         )
         client = TestClient(app)
@@ -933,7 +939,11 @@ class TestSearchStores:
 
         app = FastAPI()
         register_incident_search_routes(
-            app, store=store, critic=critic, embedder=DefaultQueryEmbedder(remote=_stub_remote_embedder())
+            app,
+            store=store,
+            critic=critic,
+            critic_enabled=True,
+            embedder=DefaultQueryEmbedder(remote=_stub_remote_embedder()),
         )
         client = TestClient(app)
 
@@ -1008,6 +1018,7 @@ class TestCriticDelaySpacing:
         router = create_incident_search_router(
             store=store,
             critic=critic,
+            critic_enabled=True,
             critic_delay_seconds=configured_delay,
         )
         app.include_router(router)
@@ -1043,6 +1054,7 @@ class TestCriticDelaySpacing:
         router = create_incident_search_router(
             store=store,
             critic=critic,
+            critic_enabled=True,
             critic_delay_seconds=0.0,
         )
         app.include_router(router)
@@ -1085,6 +1097,7 @@ class TestCriticDelaySpacing:
         router = create_incident_search_router(
             store=store,
             critic=VariableDurationCritic(),
+            critic_enabled=True,
             critic_delay_seconds=0.01,
         )
         app.include_router(router)
@@ -1112,6 +1125,7 @@ class TestCriticDelaySpacing:
         router = create_incident_search_router(
             store=store,
             critic=critic,
+            critic_enabled=True,
             critic_delay_seconds=0.02,
         )
         app.include_router(router)
@@ -1130,8 +1144,9 @@ class TestCriticDelaySpacing:
         assert data["hits"][1]["critic"]["verdict"] == "unverified"
         assert data["hits"][1]["critic"]["confidence"] is None
         assert "Simulated critic failure" in data["hits"][1]["critic"]["rationale"]
-        # Item 2 passed
-        assert data["hits"][2]["critic"]["verdict"] == "confirmed"
+        # Item 2 is skipped once the critic has failed, so a broken critic adds no further delay
+        assert data["hits"][2]["critic"]["verdict"] == "unverified"
+        assert data["hits"][2]["critic"]["rationale"] == "Critic not run"
 
     def test_critic_delay_environment_variable(
         self, monkeypatch: pytest.MonkeyPatch, sample_candidates: list[EvidenceCandidate]
@@ -1172,7 +1187,7 @@ class TestCriticDelaySpacing:
 
         app = FastAPI()
         # No critic_delay_seconds passed: resolves from env var
-        router = create_incident_search_router(store=store, critic=critic)
+        router = create_incident_search_router(store=store, critic=critic, critic_enabled=True)
         app.include_router(router)
 
         client = TestClient(app)
@@ -1207,7 +1222,7 @@ class TestDefaultQueryEmbedder:
 
 
 class TestEmbeddingFailuresReturn503:
-    """A placeholder embedding is in-memory only; embedder failures map to HTTP 503."""
+    """A placeholder embedding is in-memory only; a missing key is HTTP 503, a failing endpoint HTTP 502."""
 
     @pytest.mark.asyncio
     async def test_placeholder_disallowed_without_api_key_raises(self) -> None:
@@ -1222,7 +1237,9 @@ class TestEmbeddingFailuresReturn503:
         store = MagicMock(spec=SupabaseSearchStore)
         store.search_evidence_items = AsyncMock(return_value=[])
         app = FastAPI()
-        app.include_router(create_incident_search_router(store=store, critic=MockCriticEvaluator()))
+        app.include_router(
+            create_incident_search_router(store=store, critic=MockCriticEvaluator(), critic_enabled=True)
+        )
 
         resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
 
@@ -1234,43 +1251,51 @@ class TestEmbeddingFailuresReturn503:
         for name in ("EVIDENCE_EMBEDDING_API_KEY", "NVIDIA_API_KEY", "NGC_CLI_API_KEY"):
             monkeypatch.delenv(name, raising=False)
         app = FastAPI()
-        app.include_router(create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator()))
+        app.include_router(
+            create_incident_search_router(
+                store=InMemorySearchStore(), critic=MockCriticEvaluator(), critic_enabled=True
+            )
+        )
 
         resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
 
         assert resp.status_code == 200
 
-    def test_embedder_error_returns_503(self) -> None:
+    def test_embedder_error_returns_502(self) -> None:
         embedder = MagicMock()
         embedder.embed_query = AsyncMock(
             side_effect=httpx.HTTPStatusError("boom", request=MagicMock(), response=MagicMock())
         )
         app = FastAPI()
         app.include_router(
-            create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator(), embedder=embedder)
+            create_incident_search_router(
+                store=InMemorySearchStore(), critic=MockCriticEvaluator(), critic_enabled=True, embedder=embedder
+            )
         )
 
         resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
 
-        assert resp.status_code == 503
-        assert resp.json()["detail"] == "Query embedding unavailable: HTTPStatusError: boom"
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Embedding endpoint failed: HTTPStatusError: boom"
 
-    def test_embedder_timeout_with_empty_message_returns_503_and_names_type(
+    def test_embedder_timeout_with_empty_message_returns_502_and_names_type(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """When an exception has an empty message (e.g. ReadTimeout("")), type is named in 503 detail and log."""
+        """When an exception has an empty message (e.g. ReadTimeout("")), type is named in 502 detail and log."""
         embedder = MagicMock()
         embedder.embed_query = AsyncMock(side_effect=httpx.ReadTimeout(""))
         app = FastAPI()
         app.include_router(
-            create_incident_search_router(store=InMemorySearchStore(), critic=MockCriticEvaluator(), embedder=embedder)
+            create_incident_search_router(
+                store=InMemorySearchStore(), critic=MockCriticEvaluator(), critic_enabled=True, embedder=embedder
+            )
         )
 
         with caplog.at_level("ERROR", logger="vss_agents.api.incident_search"):
             resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete"})
 
-        assert resp.status_code == 503
-        assert resp.json()["detail"] == "Query embedding unavailable: ReadTimeout"
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "Embedding endpoint failed: ReadTimeout"
         assert any(
             "Query embedding failed (ReadTimeout)" in record.message and record.exc_info is not None
             for record in caplog.records
@@ -1284,6 +1309,7 @@ class TestResultIds:
             create_incident_search_router(
                 store=InMemorySearchStore(candidates=sample_candidates),
                 critic=MockCriticEvaluator(),
+                critic_enabled=True,
                 embedder=DefaultQueryEmbedder(remote=RemoteTextEmbedder(api_key="")),
             )
         )
@@ -1298,3 +1324,143 @@ class TestResultIds:
         assert ids
         assert len(set(ids)) == len(ids)
         assert all(len(i) == 36 and i.startswith("res-") for i in ids)
+
+
+# =============================================================================
+# 4. Critic off by default, scoped search and the shared search function
+# =============================================================================
+
+
+class TestCriticOffByDefault:
+    def test_no_critic_call_no_delay_and_unverified_hits(
+        self, monkeypatch: pytest.MonkeyPatch, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        monkeypatch.delenv("INCIDENT_SEARCH_CRITIC", raising=False)
+        critic = TimingCriticEvaluator()
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(
+                store=InMemorySearchStore(candidates=sample_candidates), critic=critic, critic_delay_seconds=5.0
+            )
+        )
+
+        resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete", "top_k": 3})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_hits"] == 3
+        assert {h["critic"]["verdict"] for h in data["hits"]} == {"unverified"}
+        assert data["execution_time_ms"] < 2000
+        assert critic.call_records == []
+
+    def test_env_flag_turns_the_critic_on(
+        self, monkeypatch: pytest.MonkeyPatch, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        monkeypatch.setenv("INCIDENT_SEARCH_CRITIC", "true")
+        app = FastAPI()
+        app.include_router(
+            create_incident_search_router(
+                store=InMemorySearchStore(candidates=sample_candidates),
+                critic=MockCriticEvaluator(),
+                critic_delay_seconds=0,
+            )
+        )
+
+        resp = TestClient(app).post("/api/v1/incidents/search", json={"query": "machete", "top_k": 3})
+
+        assert {h["critic"]["verdict"] for h in resp.json()["hits"]} == {"confirmed"}
+
+
+class TestScopedSearch:
+    def _client(self, candidates: list[EvidenceCandidate]) -> TestClient:
+        app = FastAPI()
+        app.include_router(create_incident_search_router(store=InMemorySearchStore(candidates=candidates)))
+        return TestClient(app)
+
+    def test_video_id_limits_hits_to_that_incident(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        other = sample_candidates[0].model_copy(update={"incident_id": "Other002", "item_id": "I9"})
+        client = self._client([*sample_candidates, other])
+
+        resp = client.post(
+            "/api/v1/incidents/search",
+            json={"query": "machete", "top_k": 20, "min_similarity": 0, "filters": {"video_id": "Other002"}},
+        )
+
+        assert resp.status_code == 200
+        assert {h["incident"]["incident_id"] for h in resp.json()["hits"]} == {"Other002"}
+
+    def test_empty_query_with_video_id_lists_that_incident_by_video_time(
+        self, sample_candidates: list[EvidenceCandidate]
+    ) -> None:
+        other = sample_candidates[0].model_copy(update={"incident_id": "Other002", "item_id": "I9"})
+        client = self._client([*sample_candidates, other])
+
+        resp = client.post("/api/v1/incidents/search", json={"query": "", "filters": {"video_id": "Assault001"}})
+
+        assert resp.status_code == 200
+        hits = resp.json()["hits"]
+        assert hits
+        assert {h["incident"]["incident_id"] for h in hits} == {"Assault001"}
+        times = [h["item"]["timestamp_seconds"] for h in hits]
+        assert times == sorted(times)
+
+    def test_empty_query_without_video_id_is_rejected(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        resp = self._client(sample_candidates).post("/api/v1/incidents/search", json={"query": "  "})
+
+        assert resp.status_code == 422
+
+    def test_supabase_store_sends_p_video_id_only_when_scoped(self) -> None:
+        store = SupabaseSearchStore()
+        calls: list[dict[str, Any]] = []
+
+        def rpc(name: str, params: dict[str, Any]) -> MagicMock:
+            calls.append(params)
+            query = MagicMock()
+            query.execute = AsyncMock(return_value=MagicMock(data=[]))
+            return query
+
+        client = MagicMock()
+        client.rpc = rpc
+        store._get_client = AsyncMock(return_value=client)  # type: ignore[method-assign]
+        asyncio.run(store.search_evidence_items([0.1], 5, 0.0, None, None, None, None))
+        asyncio.run(store.search_evidence_items(None, 5, 0.0, None, None, None, None, video_id="V1"))
+
+        assert "p_video_id" not in calls[0]
+        assert calls[1]["p_video_id"] == "V1"
+        assert calls[1]["p_query_embedding"] is None
+
+
+class TestSharedSemanticSearch:
+    @pytest.mark.asyncio
+    async def test_embeds_and_passes_the_vector_to_retrieve(self) -> None:
+        embedder = MagicMock()
+        embedder.embed_query = AsyncMock(return_value=[0.5])
+        retrieve = AsyncMock(return_value=["row"])
+
+        assert await semantic_search("knife", embedder=embedder, retrieve=retrieve) == ["row"]
+        retrieve.assert_awaited_once_with([0.5])
+
+    @pytest.mark.asyncio
+    async def test_blank_query_is_not_embedded(self) -> None:
+        embedder = MagicMock()
+        embedder.embed_query = AsyncMock()
+        retrieve = AsyncMock(return_value=[])
+
+        await semantic_search("  ", embedder=embedder, retrieve=retrieve)
+
+        embedder.embed_query.assert_not_awaited()
+        retrieve.assert_awaited_once_with(None)
+
+    @pytest.mark.asyncio
+    async def test_unavailable_is_503_and_failure_is_502(self) -> None:
+        unavailable = MagicMock()
+        unavailable.embed_query = AsyncMock(side_effect=EmbeddingUnavailableError("no key"))
+        failing = MagicMock()
+        failing.embed_query = AsyncMock(side_effect=httpx.ReadTimeout(""))
+
+        with pytest.raises(HTTPException) as exc_info:
+            await semantic_search("q", embedder=unavailable, retrieve=AsyncMock())
+        assert exc_info.value.status_code == 503
+        with pytest.raises(HTTPException) as exc_info:
+            await semantic_search("q", embedder=failing, retrieve=AsyncMock())
+        assert exc_info.value.status_code == 502
