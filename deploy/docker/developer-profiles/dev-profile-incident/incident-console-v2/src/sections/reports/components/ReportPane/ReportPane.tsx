@@ -9,12 +9,7 @@ import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { reportHeading, type ReportView, type StructuredEntity, type StructuredInstrument } from '@/modules/reports/domain/report-view';
 import { formatTimestamp } from '@/lib/time';
-
-function severityStyle(level: number | null): string {
-  if (level !== null && level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
-  if (level === 3) return 'bg-[#fff1c7] text-[#765300]';
-  return 'bg-signal/15 text-moss';
-}
+import { severityStyle } from '@/lib/ui/severity';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 

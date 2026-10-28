@@ -25,12 +25,7 @@ import {
 } from '@/lib/reports/compare';
 import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '@/modules/reports/domain/edit-draft';
 import { formatClock } from '@/modules/reports/domain/normalize';
-
-function severityStyle(level: number | null): string {
-  if (level !== null && level >= 4) return 'bg-[#ffe8df] text-[#9b3518]';
-  if (level === 3) return 'bg-[#fff1c7] text-[#765300]';
-  return 'bg-signal/15 text-moss';
-}
+import { severityStyle } from '@/lib/ui/severity';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 const clock = (seconds: number | null) => (seconds === null ? '—' : formatClock(seconds));
