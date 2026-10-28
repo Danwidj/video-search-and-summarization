@@ -88,17 +88,20 @@ export function ReportTimeline({
                   )}
                   {lane.markers
                     .filter((marker) => marker.seconds !== null)
-                    .map((marker) => (
-                      <span
-                        aria-label={`${marker.label} at ${formatClock(marker.seconds!)}`}
-                        className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 border-2 border-white ${MARKER_SHAPE[marker.kind]} ${KIND_COLOUR[marker.kind]}`}
-                        data-marker={marker.id}
-                        key={`${marker.kind}-${marker.id}`}
-                        role="img"
-                        style={{ top: `${axisPercent(marker.seconds!, duration)}%` }}
-                        title={`${marker.label} · ${formatClock(marker.seconds!)}`}
-                      />
-                    ))}
+                    .map((marker) => {
+                      const seconds = marker.seconds ?? 0;
+                      return (
+                        <span
+                          aria-label={`${marker.label} at ${formatClock(seconds)}`}
+                          className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 border-2 border-white ${MARKER_SHAPE[marker.kind]} ${KIND_COLOUR[marker.kind]}`}
+                          data-marker={marker.id}
+                          key={`${marker.kind}-${marker.id}`}
+                          role="img"
+                          style={{ top: `${axisPercent(seconds, duration)}%` }}
+                          title={`${marker.label} · ${formatClock(seconds)}`}
+                        />
+                      );
+                    })}
                 </button>
               </div>
             ))}

@@ -149,7 +149,7 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     const free = Array.from({ length: n }, (_, index) => index + 1).filter((number) => !used.has(number));
     const mapping = new Map<string, string>();
     ids.forEach((id, index) => {
-      if (finalNumber[index] === null) finalNumber[index] = free.shift()!;
+      if (finalNumber[index] === null) finalNumber[index] = free.shift() ?? index + 1;
       mapping.set(id, `${prefix}${finalNumber[index]}`);
     });
     for (const [from, to] of mapping) {
@@ -164,7 +164,7 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     }
     mappings.set(collection, mapping);
 
-    const renamed = items.map((item) => ({ ...item, [key]: mapping.get(String(item[key]))! }));
+    const renamed = items.map((item) => ({ ...item, [key]: mapping.get(String(item[key])) ?? String(item[key]) }));
     const sorted = [...renamed].sort((a, b) => Number(String(a[key]).slice(1)) - Number(String(b[key]).slice(1)));
     const before = renamed.map((item) => String(item[key]));
     const after = sorted.map((item) => String(item[key]));
@@ -172,7 +172,7 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     reordered[collection] = sorted;
   }
 
-  const entityMapping = mappings.get('entities')!;
+  const entityMapping = mappings.get('entities') ?? new Map<string, string>();
   const instruments = (reordered.instruments as IncidentContractReport['instruments']).map((instrument, index) => {
     if (instrument.entity_id === null) return instrument;
     const target = entityMapping.get(instrument.entity_id);

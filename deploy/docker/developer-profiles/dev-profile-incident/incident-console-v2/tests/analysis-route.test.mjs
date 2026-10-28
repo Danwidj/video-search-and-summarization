@@ -289,7 +289,7 @@ test('agent mode: an unreadable video length is not sent, so the agent reads the
   assert.equal(notes.validation.videoBoundsChecked, false, 'the console records the rule as unchecked');
 });
 
-function agentFetch(recordedCalls, reply, r2Key) {
+function agentFetch(recordedCalls, reply, _r2Key) {
   return async (url, options = {}) => {
     recordedCalls.push({ url: String(url), options });
     if (String(url).includes('/api/v1/incidents/')) return reply();
@@ -474,7 +474,7 @@ function completion(content, extra = {}) {
   );
 }
 
-function gatewayFetch(recordedCalls, content, r2Key) {
+function gatewayFetch(recordedCalls, content, _r2Key) {
   return async (url, options = {}) => {
     const urlStr = String(url);
     recordedCalls.push({ url: urlStr, options });
@@ -650,7 +650,7 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
   process.env.ANALYSIS_MODE = 'gateway';
   // [content, the core codes that decide the failure, every first-pass code recorded]
   const cases = [
-    ['```json\n' + JSON.stringify(validContractReport()) + '\n```', ['INVALID_JSON'], ['INVALID_JSON']],
+    [`\`\`\`json\n${JSON.stringify(validContractReport())}\n\`\`\``, ['INVALID_JSON'], ['INVALID_JSON']],
     [contractFixture('invalid/cross-unknown-instrument-holder.json'), ['INSTRUMENT_HOLDER_UNKNOWN'], ['INSTRUMENT_HOLDER_UNKNOWN']],
     [contractFixture('invalid/schema-legacy-incident-type.json'), ['SCHEMA_VIOLATION'], ['SCHEMA_VIOLATION']],
     [

@@ -18,7 +18,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 /** The box as a frame region; null unless it is four finite numbers with positive width and height. */
 export function boxRegion(box: readonly number[] | null | undefined): FrameRegion | null {
-  if (!box || box.length !== 4 || !box.every(Number.isFinite)) return null;
+  if (box?.length !== 4 || !box.every(Number.isFinite)) return null;
   const [ymin, xmin, ymax, xmax] = box.map((n) => clamp(n, 0, 1000));
   if (ymax <= ymin || xmax <= xmin) return null;
   return { x: xmin / 1000, y: ymin / 1000, w: (xmax - xmin) / 1000, h: (ymax - ymin) / 1000 };

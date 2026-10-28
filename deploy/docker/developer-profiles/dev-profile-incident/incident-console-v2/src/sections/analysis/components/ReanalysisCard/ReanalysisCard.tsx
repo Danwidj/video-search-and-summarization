@@ -135,8 +135,8 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
           aria-live="polite"
           className={`mt-3 rounded-xl p-3 text-xs ${result.tone === 'error' ? 'bg-[#fff6f2] text-[#8c3d25]' : 'bg-signal/10 text-moss'}`}
         >
-          {result.lines.map((line, index) => (
-            <p key={index}>{line}</p>
+          {result.lines.map((line) => (
+            <p key={line}>{line}</p>
           ))}
         </div>
       )}

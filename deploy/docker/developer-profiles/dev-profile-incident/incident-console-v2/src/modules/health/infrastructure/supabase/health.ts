@@ -14,9 +14,9 @@ export class SupabaseHealthAdapter implements HealthRepository {
 
   async checkHealth(): Promise<DatabaseHealth> {
     const configured = isSupabaseConfigured(this.config);
-    const reachable = configured
-      ? await new PostgrestClient(this.config.supabaseUrl!, this.config.supabaseServiceRoleKey!).health()
-      : false;
+    const { supabaseUrl, supabaseServiceRoleKey } = this.config;
+    const reachable =
+      configured && supabaseUrl && supabaseServiceRoleKey ? await new PostgrestClient(supabaseUrl, supabaseServiceRoleKey).health() : false;
     return { configured, reachable };
   }
 }

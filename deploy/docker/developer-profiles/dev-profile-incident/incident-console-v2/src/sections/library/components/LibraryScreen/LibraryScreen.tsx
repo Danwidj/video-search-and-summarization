@@ -60,6 +60,7 @@ export function Library() {
 
   // The URL is the filter state: any filter in it (dashboard links, shared links,
   // refresh, back/forward) is applied alone; the remembered state only serves a bare /library.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: initialisation on mount from query URL and storage
   useEffect(() => {
     setTimeZone(getViewerTimeZone());
     let initial = EMPTY_FILTERS;
@@ -114,6 +115,7 @@ export function Library() {
     }
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load is triggered by filters and timeZone changes
   useEffect(() => {
     if (!ready || tab !== 'incidents') return;
     const controller = new AbortController();

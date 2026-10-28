@@ -55,13 +55,15 @@ export function HitViewer({
       aria-label="Evidence in its frame"
       aria-modal="true"
       className="fixed inset-0 z-50 grid place-items-center bg-ink/60 p-4"
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') onClose();
+      }}
       role="dialog"
     >
-      <div
-        className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[1.5rem] bg-white p-5 shadow-panel"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[1.5rem] bg-white p-5 shadow-panel">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">
@@ -99,7 +101,7 @@ export function HitViewer({
               />
             )}
             {inFrame.length > 1 && (
-              <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Items in this frame">
+              <fieldset aria-label="Items in this frame" className="m-0 mt-3 flex flex-wrap gap-2 border-0 p-0">
                 {inFrame.map((other) => (
                   <button
                     aria-pressed={hitKey(other) === hitKey(selected)}
@@ -111,7 +113,7 @@ export function HitViewer({
                     {other.item.itemId} {other.item.name}
                   </button>
                 ))}
-              </div>
+              </fieldset>
             )}
           </div>
           <div className="space-y-2 text-sm">

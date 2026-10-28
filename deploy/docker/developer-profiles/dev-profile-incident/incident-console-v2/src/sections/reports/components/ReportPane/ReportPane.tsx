@@ -114,7 +114,7 @@ export function ReportPane({
           {incident.startSeconds !== null ? (
             <button
               className="rounded-full border border-ink/10 px-3 py-0.5 font-mono text-xs font-bold text-moss hover:bg-moss/5"
-              onClick={() => onSeek(incident.startSeconds!)}
+              onClick={() => onSeek(incident.startSeconds ?? 0)}
               type="button"
             >
               {formatClock(incident.startSeconds)}
@@ -222,7 +222,7 @@ export function ReportPane({
         )}
         {modelOutput?.timeline.length ? (
           <ol className="space-y-2">
-            {modelOutput.timeline.map((event, index) => {
+            {modelOutput.timeline.map((event) => {
               const clock = `${formatClock(event.startSeconds)}${event.endSeconds !== null && event.endSeconds !== event.startSeconds ? `–${formatClock(event.endSeconds)}` : ''}`;
               const outsideWindow = event.insideWindow === false;
               const seekable =
@@ -248,7 +248,7 @@ export function ReportPane({
                 </>
               );
               return (
-                <li key={`${event.startSeconds}-${index}`}>
+                <li key={`${event.startSeconds}-${event.endSeconds ?? ''}-${event.description}`}>
                   {seekable ? (
                     <button
                       aria-label={`Play video from ${formatClock(event.startSeconds)}: ${event.description}`}
@@ -288,8 +288,8 @@ export function ReportPane({
       {modelOutput && modelOutput.uncertainties.length > 0 && (
         <ModelSection title="Model-reported uncertainties" source={modelOutput.source}>
           <ul className="space-y-2 text-sm leading-5 text-ink/65">
-            {modelOutput.uncertainties.map((item, index) => (
-              <li className="border-l-2 border-clay/40 pl-3" key={`${item}-${index}`}>
+            {modelOutput.uncertainties.map((item) => (
+              <li className="border-l-2 border-clay/40 pl-3" key={item}>
                 {item}
               </li>
             ))}

@@ -114,13 +114,17 @@ export class PostgrestClient {
 
   async deleteWhere(table: string, filters: Record<string, string>): Promise<void> {
     const query = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));
+    for (const [key, value] of Object.entries(filters)) {
+      query.set(key, `eq.${value}`);
+    }
     await this.request(`/${table}?${query}`, { method: 'DELETE' });
   }
 
   async updateWhere(table: string, filters: Record<string, string>, values: Record<string, unknown>) {
     const query = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));
+    for (const [key, value] of Object.entries(filters)) {
+      query.set(key, `eq.${value}`);
+    }
     return this.request(`/${table}?${query}`, { method: 'PATCH', body: JSON.stringify(values) });
   }
 
@@ -139,7 +143,9 @@ export class PostgrestClient {
 
   async selectOne(table: string, filters: Record<string, string>, select = '*'): Promise<Record<string, unknown> | null> {
     const query = new URLSearchParams({ select, limit: '1' });
-    Object.entries(filters).forEach(([key, value]) => query.set(key, `eq.${value}`));
+    for (const [key, value] of Object.entries(filters)) {
+      query.set(key, `eq.${value}`);
+    }
     const result = await this.request(`/${table}?${query}`);
     if (!Array.isArray(result) || result.length === 0) return null;
     return result[0] as Record<string, unknown>;
@@ -150,7 +156,9 @@ export class PostgrestClient {
     options: { filters?: Record<string, string>; select?: string; order?: string; limit?: number } = {},
   ): Promise<Array<Record<string, unknown>>> {
     const query = new URLSearchParams({ select: options.select || '*' });
-    Object.entries(options.filters || {}).forEach(([key, value]) => query.set(key, `eq.${value}`));
+    for (const [key, value] of Object.entries(options.filters || {})) {
+      query.set(key, `eq.${value}`);
+    }
     if (options.order) query.set('order', options.order);
     if (options.limit) query.set('limit', String(options.limit));
     const result = await this.request(`/${table}?${query}`);

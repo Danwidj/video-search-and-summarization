@@ -37,7 +37,7 @@ export function RunComparison({ videoId, left, right }: { videoId: string; left:
           report ? (
             <RunCard index={index} key={report.revisionId} report={report} />
           ) : (
-            <div className="animate-pulse rounded-3xl bg-white p-10" key={index}>
+            <div className="animate-pulse rounded-3xl bg-white p-10" key={index === 0 ? `loading-${left}` : `loading-${right}`}>
               Loading version…
             </div>
           ),
@@ -92,16 +92,16 @@ function RunCard({ report, index }: { report: ReportView; index: number }) {
             ...entities.map((x) => `${x.entityId} (${x.type}): ${x.description}`),
             ...instruments.map((x) => `${x.instrumentId} ${x.name}: ${x.description}${x.entityId ? ` · held by ${x.entityId}` : ''}`),
             ...assets.map((x) => `${x.assetId} ${x.name}: ${x.description}`),
-          ].map((value, i) => (
-            <li key={i}>• {value}</li>
+          ].map((value) => (
+            <li key={value}>• {value}</li>
           ))}
         </ul>
       </section>
       <section className="mt-5">
         <h3 className="text-xs font-bold uppercase text-ink/40">Model event timeline</h3>
         <ol className="mt-2 space-y-2 text-sm text-ink/65">
-          {(model?.timeline ?? []).map((event, i) => (
-            <li key={i}>
+          {(model?.timeline ?? []).map((event) => (
+            <li key={`${event.startSeconds}-${event.endSeconds ?? ''}-${event.description}`}>
               <strong>{formatClock(event.startSeconds)}</strong> {event.description}
             </li>
           ))}

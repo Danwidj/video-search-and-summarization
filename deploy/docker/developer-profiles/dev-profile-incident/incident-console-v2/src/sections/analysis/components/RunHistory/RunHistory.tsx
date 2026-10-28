@@ -109,8 +109,8 @@ function RunRow({
           <p className="font-semibold">{run.outcome === 'request_failed' ? describeCode(run.failure.code) : 'Contract violations'}</p>
           {run.outcome === 'contract_failed' && (
             <ul className="mt-1 list-disc pl-4">
-              {run.failure.violations.map((violation, index) => (
-                <li key={index}>
+              {run.failure.violations.map((violation) => (
+                <li key={`${violation.code}:${violation.message}`}>
                   {describeCode(violation.code)}: {violation.message}
                 </li>
               ))}

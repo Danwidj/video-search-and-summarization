@@ -87,6 +87,7 @@ export function ReportPage({
   const resizingBoundaryRef = useRef<ReportBandBoundary | null>(null);
   const resizingHeightRef = useRef(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
     const controller = new AbortController();
     setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
@@ -106,6 +107,7 @@ export function ReportPage({
     return () => controller.abort();
   }, [attempt, revisionId, videoId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/reports/${encodeURIComponent(videoId)}/revisions`, { cache: 'no-store', signal: controller.signal })
@@ -430,7 +432,9 @@ export function ReportPage({
             onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
             ref={videoRef}
             src={report.run.playbackUrl}
-          />
+          >
+            <track kind="captions" />
+          </video>
           <div className="hidden min-h-0 overflow-hidden border-l border-ink/10 sm:flex sm:flex-col">
             <ReportTimeline
               currentTime={currentTime}

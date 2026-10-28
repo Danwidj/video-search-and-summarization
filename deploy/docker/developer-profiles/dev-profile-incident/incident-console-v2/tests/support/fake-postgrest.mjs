@@ -89,7 +89,8 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
       const found = views[path](store).filter((row) => matches(row, parsed.searchParams));
       return json(found.slice(0, Number(parsed.searchParams.get('limit') || found.length)));
     }
-    const rows = (store[path] ??= []);
+    store[path] ??= [];
+    const rows = store[path];
     if (method === 'GET') {
       const found = sorted(
         rows.filter((row) => matches(row, parsed.searchParams)),

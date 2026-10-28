@@ -421,6 +421,9 @@ function Trend({ points }: { points: DashboardAnalytics['trend'] }) {
     <Empty />
   );
 }
+const HOURS_OF_DAY = Array.from({ length: 24 }, (_, h) => h);
+const CONFIDENCE_BUCKETS = Array.from({ length: 10 }, (_, b) => b);
+
 function Heatmap({
   data,
   selected,
@@ -440,13 +443,13 @@ function Heatmap({
         {DAYS.map((name, d) => (
           <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
             <span className="text-[10px]">{name}</span>
-            {Array.from({ length: 24 }, (_, h) => {
+            {HOURS_OF_DAY.map((h) => {
               const count = map.get(`${d}-${h}`) || 0;
               return (
                 <button
                   aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
                   className={`aspect-square rounded-sm ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`}
-                  key={h}
+                  key={`hour-${h}`}
                   onClick={() => onSelect(d, h)}
                   style={{ background: `rgba(49,91,58,${count ? 0.15 + (count / max) * 0.85 : 0.04})` }}
                   title={`${name} ${h}:00 ${timeZone} · ${count}`}
@@ -488,8 +491,8 @@ function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) {
   const max = Math.max(1, ...data.map((x) => x.count));
   return (
     <div className="flex h-48 items-end gap-2">
-      {Array.from({ length: 10 }, (_, b) => (
-        <div className="flex h-full flex-1 flex-col justify-end text-center" key={b}>
+      {CONFIDENCE_BUCKETS.map((b) => (
+        <div className="flex h-full flex-1 flex-col justify-end text-center" key={`bucket-${b}`}>
           <span className="text-[9px]">{map.get(b) || ''}</span>
           <div className="min-h-1 bg-moss/75" style={{ height: `${((map.get(b) || 0) / max) * 100}%` }} />
           <span className="mt-1 text-[9px]">{b * 10}</span>

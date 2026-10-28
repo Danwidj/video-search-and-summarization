@@ -10,12 +10,12 @@
 // any other filter is refused rather than ignored.
 
 import { StoreRejection } from '@/modules/shared/domain/common';
-import {
-  type HumanRevisionInput,
-  type IncidentRepository,
-  type ReportList,
-  type ReportListQuery,
-  type RevisionRecord,
+import type {
+  HumanRevisionInput,
+  IncidentRepository,
+  ReportList,
+  ReportListQuery,
+  RevisionRecord,
 } from '@/modules/reports/domain/IncidentRepository';
 import { structuredFromPayload } from '@/modules/reports/domain/payload-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';

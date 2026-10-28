@@ -134,9 +134,12 @@ const V2_FIELDS = ['timestamp_seconds', 'label', ...V3_FIELDS];
 
 function olderSchema(omitted: string[], catalog?: ContractCatalog): Record<string, unknown> {
   const cat = catalog ?? getContractCatalog();
-  const base = JSON.parse(JSON.stringify(cat.schema())) as Record<string, any>;
+  const base = JSON.parse(JSON.stringify(cat.schema())) as Record<string, unknown>;
+  const properties = base.properties as
+    | Record<string, { items?: { properties?: Record<string, unknown>; required?: string[] } }>
+    | undefined;
   for (const collection of ['entities', 'instruments', 'assets']) {
-    const itemSchema = base.properties?.[collection]?.items;
+    const itemSchema = properties?.[collection]?.items;
     if (itemSchema) {
       if (itemSchema.properties) {
         for (const key of omitted) delete itemSchema.properties[key];

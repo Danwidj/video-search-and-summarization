@@ -35,6 +35,7 @@ export function FrameViewer({ src, seconds, boxes, selectedId, onSelect, classNa
     <figure className={`m-0 ${className}`} data-testid="frame-viewer">
       <div className="relative aspect-video overflow-hidden rounded-xl bg-black">
         {!failed && (
+          // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
           <img
             alt={`Video frame at ${formatClock(seconds)}`}
             className="block h-full w-full object-contain"

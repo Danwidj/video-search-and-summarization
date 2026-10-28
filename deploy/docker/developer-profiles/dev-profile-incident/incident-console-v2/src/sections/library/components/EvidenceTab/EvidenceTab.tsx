@@ -108,7 +108,7 @@ export function EvidenceTab({
         Searches the official version of each incident, or the latest version when none is official.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="flex gap-1.5" role="group" aria-label="Evidence kind">
+        <fieldset aria-label="Evidence kind" className="m-0 flex gap-1.5 border-0 p-0">
           {ITEM_KINDS.map((value) => (
             <button
               aria-pressed={kind === value}
@@ -120,7 +120,7 @@ export function EvidenceTab({
               {KIND_CHIP[value]}
             </button>
           ))}
-        </div>
+        </fieldset>
         <div className="w-40">
           <Select
             label="Threat level"

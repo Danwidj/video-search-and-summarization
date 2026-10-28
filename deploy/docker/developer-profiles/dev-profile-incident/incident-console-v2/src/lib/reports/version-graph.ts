@@ -30,14 +30,14 @@ export function layoutVersions(revisions: RevisionSummary[]): { rows: VersionGra
 
   const extent = new Map<number, { first: number; last: number }>();
   revisions.forEach((revision, index) => {
-    const lane = laneOf.get(revision.revisionId)!;
+    const lane = laneOf.get(revision.revisionId) ?? 0;
     const known = extent.get(lane);
     extent.set(lane, { first: known ? Math.min(known.first, index) : index, last: known ? Math.max(known.last, index) : index });
   });
 
   const rows = revisions.map((revision, index) => ({
     revision,
-    lane: laneOf.get(revision.revisionId)!,
+    lane: laneOf.get(revision.revisionId) ?? 0,
     segments: [...extent]
       .filter(([, { first, last }]) => index >= first && index <= last)
       .map(([lane, { first, last }]) => ({ lane, fromAbove: index > first, toBelow: index < last })),

@@ -7,7 +7,7 @@
 // code (not just read it as text) must supply this mapping themselves.
 
 import { existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const projectRoot = new URL('../../src/', import.meta.url);
 

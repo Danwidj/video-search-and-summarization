@@ -63,8 +63,8 @@ export function RunDetailsPanel({ report }: { report: ReportView }) {
               <ul className="mt-1 list-disc pl-5">
                 {(run.firstPassViolations ?? [])
                   .filter((violation) => violation.scope === 'enrichment')
-                  .map((violation, index) => (
-                    <li key={index}>
+                  .map((violation) => (
+                    <li key={`${violation.code}:${violation.message}`}>
                       <span className="font-mono">{violation.code}</span>: {violation.message}
                     </li>
                   ))}
@@ -140,16 +140,16 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
       </p>
       <p className="mt-3 font-semibold">First-pass violations</p>
       <ul className="mt-1 list-disc pl-5">
-        {(run.firstPassViolations ?? []).map((violation, index) => (
-          <li key={index}>
+        {(run.firstPassViolations ?? []).map((violation) => (
+          <li key={`${violation.code}:${violation.message}`}>
             <span className="font-mono">{violation.code}</span>: {violation.message}
           </li>
         ))}
       </ul>
       <p className="mt-3 font-semibold">Repair operations</p>
       <ul className="mt-1 list-disc pl-5">
-        {operations.map((operation, index) => (
-          <li className="font-mono" key={index}>
+        {operations.map((operation) => (
+          <li className="font-mono" key={describe(operation)}>
             {describe(operation)}
           </li>
         ))}

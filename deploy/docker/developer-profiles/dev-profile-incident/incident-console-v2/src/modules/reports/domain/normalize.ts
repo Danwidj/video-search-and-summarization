@@ -23,8 +23,10 @@ export function parseTimestamp(value: unknown): number | null {
   if (/^\d+$/.test(text)) return Number(text);
   const match = /^(\d+):(\d{1,2})(?::(\d{1,2}))?$/.exec(text);
   if (!match) return null;
-  const [first, second, third] = [match[1], match[2], match[3]].map((part) => (part === undefined ? undefined : Number(part)));
-  return third === undefined ? first! * 60 + second! : first! * 3600 + second! * 60 + third;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  const third = match[3] === undefined ? undefined : Number(match[3]);
+  return third === undefined ? first * 60 + second : first * 3600 + second * 60 + third;
 }
 
 export function formatClock(seconds: number): string {

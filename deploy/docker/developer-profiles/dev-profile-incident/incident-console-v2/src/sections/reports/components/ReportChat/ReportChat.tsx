@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 
 import { chatRequestBody, type ChatTarget } from '@/lib/chat/report-chat';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
@@ -9,7 +9,10 @@ import { formatClock } from '@/modules/reports/domain/normalize';
 
 const SUGGESTIONS = ['What happened, in order?', 'Who is involved?', 'What was taken, or what could cause harm?'];
 
+let messageSequence = 0;
+
 type Message = {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
   citations?: ChatCitation[] /** The version label the answer came from. */;
@@ -38,12 +41,14 @@ export function ReportChat({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll to bottom whenever chat state updates
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [messages, busy, failed]);
 
   async function send(text: string, history: Message[]) {
-    const next: Message[] = [...history, { role: 'user', content: text }];
+    messageSequence += 1;
+    const next: Message[] = [...history, { id: `msg-${messageSequence}`, role: 'user', content: text }];
     setMessages(next);
     setBusy(true);
     setFailed(null);
@@ -58,7 +63,8 @@ export function ReportChat({
       const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };
       if (!response.ok || !payload.message) throw new Error(payload.error || 'No answer returned');
       setSessionId(payload.sessionId);
-      setMessages([...next, { ...payload.message, answeredFrom: target.label }]);
+      messageSequence += 1;
+      setMessages([...next, { ...payload.message, id: `msg-${messageSequence}`, answeredFrom: target.label }]);
     } catch (cause) {
       setFailed(cause instanceof Error ? cause.message : 'Chat failed');
     } finally {
@@ -143,13 +149,16 @@ export function ReportChat({
             </div>
           </>
         )}
-        {messages.map((message, index) =>
+        {messages.map((message) =>
           message.role === 'user' ? (
-            <p className="max-w-[92%] self-end rounded-2xl rounded-br-sm bg-moss px-3 py-2 text-[13px] leading-snug text-white" key={index}>
+            <p
+              className="max-w-[92%] self-end rounded-2xl rounded-br-sm bg-moss px-3 py-2 text-[13px] leading-snug text-white"
+              key={message.id}
+            >
               {message.content}
             </p>
           ) : (
-            <div className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-canvas px-3 py-2 text-[13px] leading-snug" key={index}>
+            <div className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-canvas px-3 py-2 text-[13px] leading-snug" key={message.id}>
               <p className="whitespace-pre-wrap">{message.content}</p>
               {!!message.citations?.length && (
                 <ul className="mt-2 grid gap-1.5" data-testid="chat-citations">
@@ -162,6 +171,7 @@ export function ReportChat({
                         type="button"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
+                        {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
                         <img alt="" className="h-9 w-[52px] rounded-md bg-ink/80 object-cover" src={citation.cropImageUrl} />
                         <span className="min-w-0">
                           <b className="block truncate text-xs">

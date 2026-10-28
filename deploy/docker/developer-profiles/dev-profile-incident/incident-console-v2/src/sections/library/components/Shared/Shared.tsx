@@ -20,8 +20,9 @@ export function IncidentThumbnail({ url, className = 'aspect-video' }: { url?: s
   const [failed, setFailed] = useState(false);
   const view = reportThumbnailView(url, failed);
   return (
-    <div aria-label="Video screenshot preview" className={`relative overflow-hidden bg-[#dfe3dc] ${className}`}>
+    <div aria-label="Video screenshot preview" className={`relative overflow-hidden bg-[#dfe3dc] ${className}`} role="img">
       {view.kind === 'image' ? (
+        // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
         <img alt="" className="h-full w-full object-cover" loading={view.loading} onError={() => setFailed(true)} src={view.src} />
       ) : (
         <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-white/35 to-transparent">
@@ -77,8 +78,8 @@ export function CardSkeleton({ count = 6, label }: { count?: number; label: stri
   return (
     <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3" role="status">
       <span className="sr-only">{label}</span>
-      {Array.from({ length: count }, (_, index) => (
-        <div className="animate-pulse overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white" key={index}>
+      {Array.from({ length: count }, (_, i) => `skeleton-${label}-${i}`).map((key) => (
+        <div className="animate-pulse overflow-hidden rounded-[1.5rem] border border-ink/10 bg-white" key={key}>
           <div className="aspect-video bg-ink/10" />
           <div className="space-y-3 p-5">
             <div className="h-5 w-2/3 rounded bg-ink/10" />

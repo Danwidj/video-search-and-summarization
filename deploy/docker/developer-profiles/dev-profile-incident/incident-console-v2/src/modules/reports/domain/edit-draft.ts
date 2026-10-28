@@ -74,7 +74,10 @@ export interface EditDraft {
 }
 
 let keySequence = 0;
-export const newKey = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(keySequence += 1)}`;
+export const newKey = (prefix: string) => {
+  keySequence += 1;
+  return `${prefix}-${Date.now().toString(36)}-${keySequence}`;
+};
 
 /** A new item's details: visible from the incident start, no label or image yet. */
 export function newItemDetails(prefix: string, draft: EditDraft): DraftItemDetails {
@@ -191,7 +194,7 @@ export function draftProblems(draft: EditDraft): string[] {
 
 const sent = (item: DraftItemDetails): EditItemDetails => ({
   source_id: item.sourceId,
-  timestamp_seconds: item.timestampSeconds!,
+  timestamp_seconds: item.timestampSeconds ?? 0,
   label: item.label,
   image: item.image,
   ...(item.imageTimestampSeconds !== null || item.imageBox
@@ -206,18 +209,18 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
   const entityIdByKey = new Map(draft.entities.map((entity, index) => [entity.key, `E${index + 1}`]));
   return {
     incident: {
-      type: draft.incident.type!,
-      start_timestamp: draft.incident.start_timestamp!,
-      end_timestamp: draft.incident.end_timestamp!,
+      type: draft.incident.type ?? '',
+      start_timestamp: draft.incident.start_timestamp ?? 0,
+      end_timestamp: draft.incident.end_timestamp ?? 0,
       description: draft.incident.description,
-      severity_level: draft.incident.severity_level!,
+      severity_level: draft.incident.severity_level ?? 0,
     },
     entities: draft.entities.map((entity, index) => ({
       entity_id: `E${index + 1}`,
       type: entity.type,
       description: entity.description,
-      first_seen_seconds: entity.firstSeenSeconds!,
-      last_seen_seconds: entity.lastSeenSeconds!,
+      first_seen_seconds: entity.firstSeenSeconds ?? 0,
+      last_seen_seconds: entity.lastSeenSeconds ?? 0,
       ...sent(entity),
     })),
     instruments: draft.instruments.map((instrument, index) => ({
@@ -225,7 +228,7 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       entity_id: instrument.holderKey ? (entityIdByKey.get(instrument.holderKey) ?? null) : null,
       name: instrument.name,
       description: instrument.description,
-      threat_level: instrument.threat_level!,
+      threat_level: instrument.threat_level ?? 0,
       ...sent(instrument),
     })),
     assets: draft.assets.map((asset, index) => ({

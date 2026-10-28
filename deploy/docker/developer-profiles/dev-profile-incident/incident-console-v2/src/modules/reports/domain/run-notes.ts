@@ -131,7 +131,7 @@ export function parseRunNotes(notes: unknown): RunNotes {
     const audit: AttemptAudit = {
       statusInferred: rawStatus === null,
       validation: {
-        firstPass: Array.isArray(validation?.firstPass) ? (validation!.firstPass as AttemptAudit['validation']['firstPass']) : [],
+        firstPass: (Array.isArray(validation?.firstPass) ? validation.firstPass : []) as AttemptAudit['validation']['firstPass'],
         ...(typeof validation?.policy === 'string' ? { policy: validation.policy } : {}),
         ...(flag('fullContractValid') !== undefined ? { fullContractValid: flag('fullContractValid') } : {}),
         ...(flag('coreValid') !== undefined ? { coreValid: flag('coreValid') } : {}),
