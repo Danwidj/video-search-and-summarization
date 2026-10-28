@@ -80,8 +80,9 @@ def schema_problems(records: dict[str, list[dict]], manifest: dict) -> list[str]
         if incident_id in incidents:
             problems.append(f"{where}: duplicate incident")
         incidents[incident_id] = record
+        # Filename is kept as annotated (protected); a presentation-demo name resolves to its clip.
         filename = str(record.get("Filename") or "").strip()
-        clip = clips.get(filename)
+        clip = clips.get(canonical_basename(filename))
         if clip is None:
             problems.append(f"{where}: filename {filename!r} is not a dataset-manifest-v1 clip")
         elif clip["incident_id"] != incident_id:

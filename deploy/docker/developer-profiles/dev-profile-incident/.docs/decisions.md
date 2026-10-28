@@ -2,6 +2,21 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-28: Filename is a protected ground-truth field and is never modified
+- **Decision (user):** no correction may change `Filename`, whatever its source or review status. All suggested filename changes are discarded.
+  - **R01** (a `_demo` presentation-copy name) is now `informational`, with no proposed value and status `Informational`. It records the alias only.
+  - **Protection:** `ground_truth_correction.PROTECTED_FIELDS` blocks the field even for an Approved entry with an accepted value, and `apply_to_records` refuses to write it.
+  - **Resolution:** a `_demo` name reaches its clip through `dataset_manifest.canonical_basename` wherever it is read (freeze schema check, video resolution), never by editing the label.
+- **Effect:**
+  - the 24 R01 entries are no longer applied;
+  - Candidate v0.2.1 applies 62 mechanical fixes (was 86) and leaves every `Filename` cell as annotated;
+  - the 98 AI proposals are unchanged and still Pending (none touched `Filename`);
+  - review continues in package **v0.2.2**.
+
+  The earlier candidate v0.2 and packages v0.2 and v0.2.1 are kept unchanged and superseded. The freeze readiness has 0 schema and 0 split problems, and the Stage 1 judge caps are unchanged (1,710).
+- **Why:** the filename identifies the annotated clip and is part of the record's provenance; aliasing belongs in resolution, not in the label.
+- **Links:** [`../eval/ground_truth/review/README.md`](../eval/ground_truth/review/README.md); [`../eval/ground_truth/review/candidate-v0.2.1.md`](../eval/ground_truth/review/candidate-v0.2.1.md).
+
 ### 2026-10-27: Stage 1 judge caps are derived from the ground truth and enforced before the run; gateway timeouts are timeouts
 - **Decision:**
   - **Derived caps (user-approved):** each config's `max_judge_calls` is `repeats × Σ judged fields × 5 attempts`. Judged fields per clip are 1 + entities + 2 × instruments + 2 × assets from the ground truth.

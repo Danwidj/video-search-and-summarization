@@ -294,6 +294,7 @@ All descriptions are objective, concise and informative. They preserve meaningfu
 - **Image fields are intentionally empty.** No screenshots and no bounding boxes are required, and an empty image is never an error. Some workbook rows hold Google Drive links. These are informational and are not part of the label.
 - **Representative frame** (`timestamp_seconds`) and **detector label** (`label`) are VSS output fields. For VSS, the frame should show the item clearly, preferably during its significant involvement, and need not be its first appearance. The ground truth does not label them, and they are not scored unless an evaluation-methodology version approves it.
 - **IDs** are trimmed text (`E4`, not `E4 `). Holder references must name an existing entity of the same incident.
+- **Filename** identifies the annotated clip and is **never modified** by a correction (decision 2026-10-28). A presentation-demo copy name (`<Id>_x264_demo.mp4`) is resolved to its clip when read, never rewritten.
 
 ## 10. Worked examples
 

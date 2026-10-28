@@ -43,7 +43,7 @@ from pathlib import Path
 STATUS_COLUMN, REVIEWER_COLUMN, NOTES_COLUMN = 16, 17, 18
 BACKUP_DIR_NAME = "backups"
 BACKUP_LOG = "backup-log.jsonl"
-MACHINE_STATUSES = ("Pending", "Auto-verified")  # set by a build, not by a person
+MACHINE_STATUSES = ("Pending", "Auto-verified", "Informational")  # set by a build, not by a person
 
 
 class OverwriteRefusedError(RuntimeError):

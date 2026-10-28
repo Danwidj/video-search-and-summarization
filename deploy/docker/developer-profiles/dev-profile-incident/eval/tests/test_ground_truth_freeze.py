@@ -223,3 +223,9 @@ def test_tracked_split_v2_is_the_seeded_partition():
     assert (root / "split-v2.json").read_bytes() == gtf.canonical_json(split)
     assert (len(split["dev"]), len(split["test"])) == (25, 55) and not set(split["dev"]) & set(split["test"])
     assert all(len(members["dev"]) == 5 for members in split["by_category"].values())
+
+
+def test_a_presentation_demo_filename_resolves_to_its_clip():
+    records = _records()
+    records["gt_incidents"][0]["Filename"] = "Assault001_x264_demo.mp4"
+    assert gtf.schema_problems(records, MANIFEST) == []

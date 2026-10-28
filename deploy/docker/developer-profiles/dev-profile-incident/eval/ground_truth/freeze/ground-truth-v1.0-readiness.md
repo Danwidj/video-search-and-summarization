@@ -4,12 +4,12 @@
 
 | Item | Value |
 |---|---|
-| Candidate workbook | `Ground Truth Candidate v0.2.xlsx` `ab37730e3cd8798effd9280f2433bc68a553dc22da5a5d3996fd540ee430fd80` |
-| Review state | {'Auto-verified': 86, 'Pending': 98} |
-| Records digest | `7abf73ce0b6ac5aa91024a4a4a3fc136c0b9ef80de604ba7fe976eb3a9d23c5e` |
+| Candidate workbook | `Ground Truth Candidate v0.2.1.xlsx` `84dbaeab1fd7027fd3ea1379792f3665d10baafe57fbad7fb718c6bb6222f93e` |
+| Review state | {'Auto-verified': 62, 'Informational': 24, 'Pending': 98} |
+| Records digest | `f521f50611c053b0d1bdf62885bd0ffde62a177d4de3d54f5517554ad9870c54` |
 | Records | {'gt_incidents': 80, 'gt_entities': 169, 'gt_instruments': 33, 'gt_assets': 96} |
 | Split | split-v2: 25 dev / 55 test (excluded: none) |
-| Entries | {'Auto-verified': 86, 'Pending': 98} |
+| Entries | {'Auto-verified': 62, 'Informational': 24, 'Pending': 98} |
 
 ## Blocking
 

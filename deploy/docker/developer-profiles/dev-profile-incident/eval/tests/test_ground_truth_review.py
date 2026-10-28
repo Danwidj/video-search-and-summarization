@@ -128,7 +128,7 @@ def test_every_rule_fires_with_its_class(sources):
             "R34"} <= set(rules)
     for rule, changes in rules.items():
         assert {c.change_type for c in changes} == {gtr.RULES[rule][0]}
-    assert rules["R01"][0].proposed_value == "Assault018_x264.mp4"
+    assert rules["R01"][0].proposed_value is None  # Filename is protected: the alias is recorded, never changed
     assert rules["R03"][0].proposed_value == "E1"
     assert rules["R02"][0].proposed_value == "remove (duplicate of row 2)"
 
@@ -184,7 +184,7 @@ def test_build_keeps_the_source_and_its_records(sources, tmp_path):
     assert len(out["gt_incidents"].data_validations.dataValidation) == 1
     assert out["gt_assets"].cell(4, 3).value == "A4" and out["gt_assets"].cell(4, 7).value == "NEW_RECORD"
     assert out["gt_incidents"].cell(3, 11).value == "PROPOSED_REMOVAL_DUPLICATE"
-    assert out["gt_incidents"].cell(2, 1).value == "Assault018_x264.mp4"
+    assert out["gt_incidents"].cell(2, 1).value == "Assault018_x264_demo.mp4"  # Filename is never modified
     assert out["gt_instruments"].cell(3, 4).value == "E1"
     assert out["gt_entities"].cell(2, 7).value is None or out["gt_entities"].cell(2, 7).value.startswith(("NEEDS", ""))
     assert [c.value for c in out["gt_incidents"]["C"][1:8]] == [c.value for c in src["gt_incidents"]["C"][1:8]]

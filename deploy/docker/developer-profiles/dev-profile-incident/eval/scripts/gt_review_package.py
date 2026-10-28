@@ -137,7 +137,7 @@ def suggested_value(change_id: str, after, original, overrides: dict):
 def build_rows(log: list[dict], proposals: dict, overrides: dict, prior: dict[str, dict]) -> list[dict]:
     rows = []
     for entry in log:
-        if entry["Review status"] == "Auto-verified":
+        if entry["Review status"] in ("Auto-verified", "Informational"):
             continue
         change_id = entry["Change ID"]
         proposal = proposals.get(change_id)
@@ -209,6 +209,7 @@ def verification(source_path: Path, candidate, log: list[dict], proposals: dict,
         "auto_verified_by_rule": dict(Counter(r["Rule"] for r in auto)),
         "auto_verified_traced_in_data_sheets": traced, "auto_verified_not_traced": untraced,
         "pending_applied": sum(r["Applied in candidate"] == "yes" for r in pending),
+        "filename_changes_applied": sum(r["Applied in candidate"] == "yes" for r in log if r["Field"] == "Filename"),
         "pending_with_ai_proposal": sum(r["Change ID"] in proposals for r in pending),
         "pending_cells_still_original": still_original, "pending_cells_changed": changed,
         "human_decisions_in_candidate": sum(r["Review status"] in gtc.HUMAN_DECISIONS for r in log),
@@ -237,14 +238,18 @@ def write_workbook(path: Path, rows: list[dict], auto: list[dict], checks: dict,
                 break
     grey = PatternFill("solid", fgColor="EDEDED")
     for r in auto:
-        log_ws.append([r["Change ID"], r["Incident ID"], "Mechanical (auto-verified)", r["Sheet"], r["Record ID"],
-                       r["Row"], r["Field"], r["Rule"], r["Original value"], r["Proposed value"], None, None,
-                       r["Independent verification"], "Already applied; reject only if wrong", "AUTO-VERIFIED",
+        informational = r["Review status"] == "Informational"
+        log_ws.append([r["Change ID"], r["Incident ID"], "Informational (no change)" if informational
+                       else "Mechanical (auto-verified)", r["Sheet"], r["Record ID"], r["Row"], r["Field"], r["Rule"],
+                       r["Original value"], r["Proposed value"], None, None, r["Independent verification"],
+                       "Recorded only; nothing to decide" if informational else "Already applied; reject only if wrong",
+                       "INFORMATIONAL" if informational else "AUTO-VERIFIED",
                        r["Review status"], r.get("Reviewer"), r.get("Review notes"), r.get("Accepted value"), None,
                        None, None])
         for cell in log_ws[log_ws.max_row]:
             cell.fill = grey
-    status = DataValidation(type="list", formula1='"Pending,Approved,Rejected,Auto-verified"', allow_blank=False)
+    status = DataValidation(type="list", formula1='"Pending,Approved,Rejected,Auto-verified,Informational"',
+                            allow_blank=False)
     log_ws.add_data_validation(status)
     status.add(f"P2:P{max(log_ws.max_row, 2)}")
     for i, width in enumerate([10, 14, 20, 13, 9, 6, 16, 6, 50, 50, 13, 9, 50, 26, 30, 12, 12, 26, 40, 40, 60, 24],
@@ -399,7 +404,8 @@ def build(candidate_path: Path, version: str, *, source: Path = DEFAULT_SOURCE, 
         prior = {str(r["Change ID"]): {k: r.get(k) for k in HUMAN_COLUMNS} for r in prior_log
                  if r.get("Review status") in gtc.HUMAN_DECISIONS or r.get("Reviewer") or r.get("Review notes")}
     rows = build_rows(log, proposals, overrides, prior)
-    auto = [{**r, **prior.get(str(r["Change ID"]), {})} for r in log if r["Review status"] == "Auto-verified"]
+    auto = [{**r, **prior.get(str(r["Change ID"]), {})} for r in log
+            if r["Review status"] in ("Auto-verified", "Informational")]
     checks = verification(source, candidate, log, proposals, freeze_manifest)
     out_dir.mkdir(parents=True, exist_ok=True)
     write_workbook(output, rows, auto, checks, {"version": version, "candidate_name": candidate_path.name,
@@ -422,9 +428,11 @@ def main() -> int:
     parser.add_argument("--version", required=True, help="Package version, e.g. v0.2.1 (a new file every time)")
     parser.add_argument("--prior-package", type=Path, help="An earlier package whose decisions carry forward")
     parser.add_argument("--overrides", type=Path, help="Local overrides JSON (default review-overrides-<v>.json)")
+    parser.add_argument("--proposals", type=Path, help="AI proposals JSONL (default ai-proposals-<candidate v>.jsonl)")
     args = parser.parse_args()
     try:
         result = build(args.candidate, args.version, prior_package=args.prior_package, overrides_path=args.overrides,
+                       proposals_path=args.proposals,
                        freeze_manifest=EVAL_DIR / "eval_data" / "ground_truth" / "ground-truth-v1.0" / "MANIFEST.json")
     except review_backup.OverwriteRefusedError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)

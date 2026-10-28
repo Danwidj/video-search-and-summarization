@@ -105,6 +105,8 @@ def test_only_verified_corrections_apply_automatically(setup):
         entry = entries[change.change_id]
         if change.change_type == "verified_correction":
             assert entry.status == "Auto-verified" and entry.applied
+        elif change.change_type == "informational":
+            assert entry.status == "Informational" and not entry.applied
         else:
             assert entry.status == "Pending" and not entry.applied  # rule-based and AI proposals wait for a person
     assert entries[r25.change_id].proposed_value == "A person hits another person."
@@ -178,7 +180,7 @@ def test_corrected_records_are_deterministic_and_leave_the_source_alone(setup):
     assert json.dumps(rows, default=str, sort_keys=True) == snapshot
     incidents = [r["Incident_ID (P_key)"] for r in first["gt_incidents"]]
     assert incidents.count("Assault018") == 1  # the duplicate row is dropped
-    assert all(not r["Filename"].endswith("_demo.mp4") for r in first["gt_incidents"])
+    assert any(r["Filename"].endswith("_demo.mp4") for r in first["gt_incidents"])  # kept as annotated
     assert any(r["_change_ids"] for r in first["gt_incidents"])
 
 
@@ -280,3 +282,18 @@ def test_candidate_cannot_overwrite_its_inputs(setup, tmp_path):
     with pytest.raises(review_backup.OverwriteRefusedError, match="new file"):
         gt_candidate_build.build(source, manifest, candidate, tmp_path / "p.jsonl", tmp_path / "candidate", "v0.2",
                                  overwrite=True, frames_dir=tmp_path)
+
+
+def test_filename_is_never_modified_even_when_approved_with_a_value(setup):
+    values, manifest, changes = _changes(*setup[:2])
+    r01 = _first(changes, "R01")
+    assert r01.change_type == "informational" and r01.proposed_value is None
+    prior = {r01.change_id: {"Review status": "Approved", "Accepted value": "Renamed_x264.mp4"}}
+    entry = next(e for e in _resolve(changes, values, manifest, prior=prior) if e.change_id == r01.change_id)
+    assert not entry.applied and entry.applied_value is None
+    records = gtc.apply_to_records(gtr.read_data_rows(values), _resolve(changes, values, manifest, prior=prior))
+    assert {r["Filename"] for r in records["gt_incidents"]} >= {"Assault018_x264_demo.mp4"}
+    forced = gtc.Entry("CL-9", "R03", "verified_correction", "gt_incidents", 2, "Assault018", "Assault018", "Filename",
+                       "a", "b", status="Approved", applied=True, applied_value="b")
+    with pytest.raises(ValueError, match="protected"):
+        gtc.apply_to_records(gtr.read_data_rows(values), [forced])

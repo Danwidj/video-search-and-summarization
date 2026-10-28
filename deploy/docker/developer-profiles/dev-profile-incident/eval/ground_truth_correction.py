@@ -44,7 +44,9 @@ import ground_truth_review as gtr
 from dataset_manifest import canonical_basename
 
 CORRECTION_PROMPT_VERSION = "gt-correction-v1.0"
-STATUSES = ("Pending", "Approved", "Rejected", "Auto-verified")
+STATUSES = ("Pending", "Approved", "Rejected", "Auto-verified", "Informational")
+# Fields no entry may ever change, whatever its status or accepted value (user decision 2026-10-28).
+PROTECTED_FIELDS = ("Filename",)
 HUMAN_DECISIONS = ("Approved", "Rejected")
 AI_DECISIONS = ("propose_change", "keep_original", "uncertain")
 CONFIDENCE = ("high", "medium", "low")
@@ -255,6 +257,8 @@ def resolve(changes: list[gtr.Change], *, prior: dict[str, dict] | None, prior_n
             entry.status = human
         elif change.change_type == "verified_correction" and ok:
             entry.status = "Auto-verified"
+        elif change.change_type == "informational":
+            entry.status = "Informational"  # recorded only: nothing to decide, never applied
         entry.applied, entry.applied_value = _applied(entry)
         entries.append(entry)
     return entries
@@ -262,6 +266,8 @@ def resolve(changes: list[gtr.Change], *, prior: dict[str, dict] | None, prior_n
 
 def _applied(entry: Entry) -> tuple[bool, object]:
     if entry.status not in ("Approved", "Auto-verified") or entry.change_type == "informational":
+        return False, None
+    if entry.field in PROTECTED_FIELDS:
         return False, None
     if entry.accepted_value is not None and entry.status == "Approved":
         return True, _parse_accepted(entry.accepted_value)
@@ -332,6 +338,8 @@ def apply_to_records(rows: dict[str, list[tuple[int, dict]]], entries: list[Entr
                 pass  # the stray cell is outside the documented columns, which are all a record keeps
             elif entry.rule == "R22":
                 target.update(entry.applied_value)
+            elif entry.field in PROTECTED_FIELDS:
+                raise ValueError(f"{entry.change_id}: {entry.field} is protected and is never modified")
             elif entry.field in spec["columns"]:
                 target[entry.field] = entry.applied_value
             else:

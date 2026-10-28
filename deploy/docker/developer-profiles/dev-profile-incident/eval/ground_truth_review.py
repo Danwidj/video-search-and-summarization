@@ -66,7 +66,9 @@ FIVE_TYPES = {"road accident", "burglary", "explosion", "assault", "animal attac
 LEGACY_TYPE_LABELS = {"animal": "Animal Attack", "fighting": "Assault"}
 
 RULES = {
-    "R01": ("verified_correction", "Filename names the presentation-demo copy; the ground-truth filename is the canonical one",
+    # Filename is a protected field (user decision 2026-10-28): never modified. A `_demo` name is resolved to its
+    # clip by dataset_manifest.canonical_basename wherever it is read, so R01 only records the alias.
+    "R01": ("informational", "Filename names the presentation-demo copy; it is kept as annotated and resolved to its clip",
             "§9; dataset-manifest-v1 (canonical filename)"),
     "R02": ("verified_correction", "Exact duplicate of an earlier row of the same incident (after R01)", "§9 (one row per record)"),
     "R03": ("verified_correction", "Identifier has leading or trailing whitespace", "§9 (ids are trimmed text)"),
