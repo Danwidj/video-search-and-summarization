@@ -46,8 +46,11 @@ TIE_MARGIN = 0.01
 TEXT = {"entities": matching._entity_text, "instruments": matching._named_text, "assets": matching._named_text}
 
 
-def eligible_blocks(records: list[dict]) -> list[dict]:
-    """Blocks with items on both sides, from dev records with a model output. Never reads a score."""
+def eligible_blocks(records: list[dict], *, large: bool = False) -> list[dict]:
+    """Blocks with items on both sides, from dev records with a model output. Never reads a score.
+
+    ``large``: the blocks of more than ``MAX_BLOCK_PAIRS`` pairs instead (the calibration v2 extension).
+    """
     blocks = []
     for record in records:
         if record["split"]["half"] != "dev":
@@ -60,7 +63,8 @@ def eligible_blocks(records: list[dict]) -> list[dict]:
             gt = video.get("ground_truth") or {}
             for kind in KINDS:
                 model_rows, gt_rows = prediction.get(kind) or [], gt.get(kind) or []
-                if model_rows and gt_rows and len(model_rows) * len(gt_rows) <= MAX_BLOCK_PAIRS:
+                pairs = len(model_rows) * len(gt_rows)
+                if model_rows and gt_rows and (pairs > MAX_BLOCK_PAIRS if large else pairs <= MAX_BLOCK_PAIRS):
                     blocks.append({"experiment_id": record["experiment_id"], "incident_id": video["incident_id"],
                                    "category": video["category"], "repeat": video["repeat"], "kind": kind,
                                    "predicted": [_strip(r, kind) for r in model_rows],
@@ -92,6 +96,28 @@ def sample(blocks: list[dict], *, seed: int = SEED, quota: dict | None = None) -
             chosen.append(block)
             pairs += len(block["predicted"]) * len(block["ground_truth"])
     for number, block in enumerate(chosen, 1):
+        block["block_id"] = f"B{number:02d}"
+    return chosen
+
+
+# Calibration v2 (2026-10-28): four large blocks, drawn at random under their own seed, at most one per clip.
+LARGE_SEED = 20261029
+LARGE_BLOCKS = 4
+GRID_V2 = tuple(round(0.10 + 0.05 * i, 2) for i in range(15))  # 0.10 .. 0.80
+
+
+def sample_large(blocks: list[dict], *, first_number: int, seed: int = LARGE_SEED, count: int = LARGE_BLOCKS) -> list[dict]:
+    """``count`` large blocks drawn uniformly at random (never by similarity or score), one per clip."""
+    pool = sorted(blocks, key=lambda b: (b["experiment_id"], b["incident_id"], b["repeat"], b["kind"]))
+    random.Random(seed).shuffle(pool)
+    chosen, clips = [], set()
+    for block in pool:
+        if len(chosen) == count:
+            break
+        if block["incident_id"] not in clips:
+            clips.add(block["incident_id"])
+            chosen.append(block)
+    for number, block in enumerate(chosen, first_number):
         block["block_id"] = f"B{number:02d}"
     return chosen
 
