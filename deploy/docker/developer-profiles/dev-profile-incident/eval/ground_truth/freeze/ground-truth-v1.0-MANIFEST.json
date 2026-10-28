@@ -1,0 +1,81 @@
+{
+  "version": "ground-truth-v1.0",
+  "status": "frozen",
+  "blocking": [],
+  "generator": "gt_freeze.py v1",
+  "git_sha": "7df6f3159",
+  "generated_at": "2026-10-28T03:08:50+00:00",
+  "files": {
+    "ground_truth.json": "b90654c3c16068ab22d7ba0389224770e66f507f0235d5eabf031d2f1db17f09",
+    "split-v2.json": "1625d5753fde1fab3f3318f115f3a91f43760f1f03f34c4f8820d4703e0fa319"
+  },
+  "records_sha256": "391fcd272bf224af258c543251030ab4457a153f89816d5ace8e37c57bdc24f5",
+  "records": {
+    "gt_incidents": 80,
+    "gt_entities": 169,
+    "gt_instruments": 32,
+    "gt_assets": 97
+  },
+  "split": {
+    "dev": 25,
+    "test": 55,
+    "excluded": []
+  },
+  "entries": {
+    "AI-Accepted": 73,
+    "AI-Modified": 21,
+    "AI-Rejected": 4,
+    "Auto-verified": 62,
+    "Informational": 24
+  },
+  "applied": 120,
+  "schema_problems": [],
+  "split_problems": [],
+  "inputs": {
+    "source_workbook": {
+      "name": "Complete Ground Truth Labelling.xlsx",
+      "sha256": "7c3f1fcc186e2608887ea31fc9eda06178522c4525763f69d7e2b46032cc2a5c"
+    },
+    "candidate_workbook": {
+      "name": "Ground Truth AI-Adjudicated Candidate v0.3.xlsx",
+      "sha256": "fb1159773517accea2197d22c3144802eedcfbab7fe54bf1e5d44c016dca40eb",
+      "review_state": {
+        "entries": 184,
+        "statuses": {
+          "AI-Accepted": 73,
+          "AI-Modified": 21,
+          "AI-Rejected": 4,
+          "Auto-verified": 62,
+          "Informational": 24
+        },
+        "with_reviewer": 0,
+        "with_notes": 0,
+        "decisions": 0
+      }
+    },
+    "ai_proposals": {
+      "name": "ai-proposals-v0.2.jsonl",
+      "sha256": "a97beab560ae8619367e930acd523c61e06b4f2c81aa5abfc776350ecdf2194d"
+    },
+    "dataset_manifest": {
+      "clips_sha256": "4672a134443812b28986469dd3464be591c2818eee5cfc01f891e63cf1d418ce"
+    },
+    "split_manifests": {
+      "split_animal_attack.json": "2547e7b14d25bd1a1bbcce2402ed16718b2eb5d1a00db9f020fae3311ce3e5c3",
+      "split_assault.json": "d85d5e88ad8526a219956bdb06b6bcdede3744e377a61798033fcdcc6e269027",
+      "split_burglary.json": "e516f56b28e28213d3124cf72dd31c87b644d5a2ad687db56fe18c2dabe401fe",
+      "split_explosion.json": "b2688d07316104724fb6095f81e42ff1b878d90ec616be41eb862e77a6e5ec73",
+      "split_road_accident.json": "17633e91d6bc2a79f0fc7b2467ef9823bc68d7edd50b22343a0249f1f27deb01"
+    },
+    "correction_prompt": {
+      "version": "gt-correction-v1.0",
+      "sha256": "89a6d1b764eca5757f316bee9a2683cd9f28995731049561342b39d5a28b09e4"
+    },
+    "guidelines": "annotation-guidelines-v1.0",
+    "methodology": "evaluation-methodology-v1.1",
+    "approval": {
+      "name": "ground-truth-v1.0-approval.json",
+      "sha256": "697a3cdd456544a9a3458fbd25013ffdf6a98d581f8ebf89b9e09b375c5fff49"
+    }
+  }
+}

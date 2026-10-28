@@ -1,0 +1,15 @@
+{
+  "version": "ground-truth-v1.0",
+  "candidate_workbook": "Ground Truth AI-Adjudicated Candidate v0.3.xlsx",
+  "candidate_workbook_sha256": "fb1159773517accea2197d22c3144802eedcfbab7fe54bf1e5d44c016dca40eb",
+  "records_sha256": "391fcd272bf224af258c543251030ab4457a153f89816d5ace8e37c57bdc24f5",
+  "adjudication_sha256": "39a8377f83b259b9be27034769db0dfbe2020d459edbc9cf8fcb8537dde70125",
+  "exclusions": [],
+  "unresolved_keep_original": [],
+  "approved_by": "Heng Zheng Kai (project owner)",
+  "approved_at": "2026-10-28",
+  "approval_scope": "dataset-level",
+  "basis": "Approval of the AI-assisted adjudication process documented in PR #231 (gt-adjudication-v1.0: 98 entries, all video-verified, 0 unresolved) and the approval report of 2026-10-28. The owner accepts the remaining risk of annotation errors given the project timeline.",
+  "individually_human_verified": false,
+  "note": "No annotation was individually reviewed by a person; the candidate's Reviewer fields are empty and its AI decisions carry AI-* statuses. Recorded by the assistant on the owner's explicit instruction of 2026-10-28."
+}

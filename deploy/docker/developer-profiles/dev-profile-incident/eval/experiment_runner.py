@@ -237,10 +237,11 @@ def post_json(url: str, payload: dict, *, timeout: float) -> VSSResponse:
 GATEWAY_TIMEOUT_STATUS = (504, 522, 524)
 
 
-def _upstream_timeout(body) -> bool:
-    """The agent reports an upstream timeout as a 500 ``P1 call returned HTTP 524: ...``."""
+def _upstream_status(body) -> int | None:
+    """The upstream status the agent wraps in a 500 ``P1 call returned HTTP 524: ...`` (or 429)."""
     detail = body.get("detail") if isinstance(body, dict) else body
-    return bool(re.search(r"P1 call returned HTTP (504|522|524)\b", str(detail or "")))
+    match = re.search(r"P1 call returned HTTP (\d{3})\b", str(detail or ""))
+    return int(match.group(1)) if match else None
 
 
 def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str, started_at: str, finished_at: str):
@@ -263,9 +264,9 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
             and isinstance(body["detail"].get("raw_output"), str):
         payload = body["detail"]
     else:
-        kind = {429: "rate_limited"}.get(response.status_code) or (
-            "timeout" if response.status_code in GATEWAY_TIMEOUT_STATUS or _upstream_timeout(response.body)
-            else "http_error")
+        status = _upstream_status(response.body) or response.status_code
+        kind = {429: "rate_limited"}.get(status) or ("timeout" if status in GATEWAY_TIMEOUT_STATUS
+                                                     else "http_error")
         return ChatResult(ok=False, status_code=response.status_code, error=json.dumps(response.body)[:1000],
                           failure_kind=kind, raw=body, **timing)
     if payload.get("contract_version") != contract.contract_version():
