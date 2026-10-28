@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,11 +33,8 @@ import {
   DEFAULT_TWO_PANE_BAND_WIDTHS,
   MAX_REPORT_BAND_HEIGHT,
   MIN_REPORT_BAND_HEIGHT,
-  nudgeReportBand,
   nudgeReportBandHeight,
-  resizeReportBand,
   resizeReportBandHeight,
-  type ReportBandBoundary,
 } from '@/lib/reports/report-band-layout';
 import {
   draftFromView,
@@ -106,10 +104,8 @@ export function ReportPage({
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveProblems, setSaveProblems] = useState<string[]>([]);
-  const [bandWidths, setBandWidths] = useState(DEFAULT_TWO_PANE_BAND_WIDTHS);
   const [bandHeight, setBandHeight] = useState(DEFAULT_REPORT_BAND_HEIGHT);
   const reportBandRef = useRef<HTMLDivElement>(null);
-  const resizingBoundaryRef = useRef<ReportBandBoundary | null>(null);
   const resizingHeightRef = useRef(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
@@ -305,27 +301,6 @@ export function ReportPage({
     setSaveProblems([]);
   };
 
-  const resizeAt = (boundary: ReportBandBoundary, clientX: number) => {
-    const band = reportBandRef.current?.getBoundingClientRect();
-    if (!band || band.width <= 0) return;
-    setBandWidths((widths) => resizeReportBand(widths, boundary, (clientX - band.left) / band.width));
-  };
-
-  const startResize = (boundary: ReportBandBoundary, event: React.PointerEvent<HTMLHRElement>) => {
-    resizingBoundaryRef.current = boundary;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    resizeAt(boundary, event.clientX);
-  };
-
-  const moveResize = (event: React.PointerEvent<HTMLHRElement>) => {
-    if (resizingBoundaryRef.current) resizeAt(resizingBoundaryRef.current, event.clientX);
-  };
-
-  const finishResize = (event: React.PointerEvent<HTMLHRElement>) => {
-    resizingBoundaryRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-  };
-
   const resizeHeightAt = (clientY: number) => {
     const band = reportBandRef.current?.getBoundingClientRect();
     if (!band) return;
@@ -451,90 +426,98 @@ export function ReportPage({
           </div>
 
           <div
-            className="relative grid border-b border-border bg-card lg:h-(--report-band-height) lg:grid-cols-[minmax(0,var(--video-width))_minmax(0,var(--versions-width))]"
+            className="relative border-b border-border bg-card lg:h-(--report-band-height)"
             data-testid="report-band"
             ref={reportBandRef}
             style={
               {
-                '--video-width': `${bandWidths.video}fr`,
-                '--versions-width': `${bandWidths.versions}fr`,
                 '--report-band-height': `${bandHeight}px`,
                 '--video-aspect': String(videoAspect),
               } as CSSProperties
             }
           >
-            <div
-              className="video-cell relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-muted [container-type:size] max-lg:aspect-(--video-aspect) lg:h-full"
-              data-testid="video-cell"
+            <ResizablePanelGroup
+              className="max-lg:!flex-col max-lg:!h-auto max-lg:!overflow-visible [&>[data-panel]]:max-lg:!basis-auto [&>[data-panel]]:max-lg:!w-full [&>[data-panel]]:max-lg:!max-w-full [&>[data-panel]]:max-lg:!h-auto"
+              orientation="horizontal"
             >
-              <div
-                className="relative max-h-full max-w-full overflow-hidden bg-black"
-                style={{ aspectRatio: videoAspect, width: `min(100cqw, calc(100cqh * ${videoAspect}))` }}
+              <ResizablePanel
+                className="overflow-hidden lg:h-full"
+                defaultSize={`${DEFAULT_TWO_PANE_BAND_WIDTHS.video * 100}%`}
+                maxSize="85%"
+                minSize="15%"
               >
-                <video
-                  className="h-full w-full object-contain"
-                  controls
-                  onLoadedMetadata={(event) => {
-                    const { duration: length, videoWidth, videoHeight } = event.currentTarget;
-                    setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
-                    if (videoWidth > 0 && videoHeight > 0) setVideoAspect(videoWidth / videoHeight);
-                    if (startSeconds !== null && !startedAt.current) {
-                      startedAt.current = true;
-                      event.currentTarget.currentTime = startSeconds;
-                    }
-                  }}
-                  onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-                  ref={videoRef}
-                  src={report.run.playbackUrl}
+                <div
+                  className="video-cell relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-muted [container-type:size] max-lg:aspect-(--video-aspect) lg:h-full"
+                  data-testid="video-cell"
                 >
-                  <track kind="captions" />
-                </video>
-                {inPip && (
                   <div
-                    className="absolute inset-0 grid place-items-center bg-black/90 p-3 text-center text-xs text-white"
-                    data-testid="pip-placeholder"
+                    className="relative max-h-full max-w-full overflow-hidden bg-black"
+                    style={{ aspectRatio: videoAspect, width: `min(100cqw, calc(100cqh * ${videoAspect}))` }}
                   >
-                    Playing in picture-in-picture
+                    <video
+                      className="h-full w-full object-contain"
+                      controls
+                      onLoadedMetadata={(event) => {
+                        const { duration: length, videoWidth, videoHeight } = event.currentTarget;
+                        setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
+                        if (videoWidth > 0 && videoHeight > 0) setVideoAspect(videoWidth / videoHeight);
+                        if (startSeconds !== null && !startedAt.current) {
+                          startedAt.current = true;
+                          event.currentTarget.currentTime = startSeconds;
+                        }
+                      }}
+                      onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                      ref={videoRef}
+                      src={report.run.playbackUrl}
+                    >
+                      <track kind="captions" />
+                    </video>
+                    {inPip && (
+                      <div
+                        className="absolute inset-0 grid place-items-center bg-black/90 p-3 text-center text-xs text-white"
+                        data-testid="pip-placeholder"
+                      >
+                        Playing in picture-in-picture
+                      </div>
+                    )}
+                    {pipSupported && (
+                      <Button
+                        aria-label={inPip ? 'Return video to the page' : 'Open video in picture-in-picture'}
+                        aria-pressed={inPip}
+                        className="absolute top-2 right-2 z-10 bg-black/60 text-white hover:bg-black/80 hover:text-white"
+                        data-testid="pip-toggle"
+                        onClick={() => void togglePip()}
+                        size="icon-sm"
+                        title={inPip ? 'Return video to the page' : 'Picture-in-picture: keep the video floating while you work'}
+                        type="button"
+                        variant="ghost"
+                      >
+                        <PictureInPicture2Icon aria-hidden="true" />
+                      </Button>
+                    )}
                   </div>
-                )}
-                {pipSupported && (
-                  <Button
-                    aria-label={inPip ? 'Return video to the page' : 'Open video in picture-in-picture'}
-                    aria-pressed={inPip}
-                    className="absolute top-2 right-2 z-10 bg-black/60 text-white hover:bg-black/80 hover:text-white"
-                    data-testid="pip-toggle"
-                    onClick={() => void togglePip()}
-                    size="icon-sm"
-                    title={inPip ? 'Return video to the page' : 'Picture-in-picture: keep the video floating while you work'}
-                    type="button"
-                    variant="ghost"
-                  >
-                    <PictureInPicture2Icon aria-hidden="true" />
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="min-h-0 overflow-hidden border-t border-border lg:border-t-0 lg:border-l max-lg:max-h-72">
-              <ReportVersions
-                compareRevisionId={mode === 'edit' ? compareRevisionId : null}
-                currentRevisionId={report.revisionId}
-                error={revisionsError}
-                mode={mode}
-                onCompare={(id) => setCompareRevisionId(id)}
-                onOfficialChanged={() => setAttempt((value) => value + 1)}
-                onOpen={openVersion}
-                revisions={revisions}
-                videoId={videoId}
-              />
-            </div>
-            <ReportBandResizeHandle
-              boundary="video-versions"
-              left={bandWidths.video}
-              onFinish={finishResize}
-              onMove={moveResize}
-              onNudge={(direction) => setBandWidths((widths) => nudgeReportBand(widths, 'video-versions', direction))}
-              onStart={startResize}
-            />
+                </div>
+              </ResizablePanel>
+              <ResizableHandle aria-label="Resize video and version history" className="hidden lg:flex" withHandle />
+              <ResizablePanel
+                className="min-h-0 overflow-hidden border-t border-border lg:border-t-0 max-lg:max-h-72 lg:h-full"
+                defaultSize={`${DEFAULT_TWO_PANE_BAND_WIDTHS.versions * 100}%`}
+                maxSize="85%"
+                minSize="15%"
+              >
+                <ReportVersions
+                  compareRevisionId={mode === 'edit' ? compareRevisionId : null}
+                  currentRevisionId={report.revisionId}
+                  error={revisionsError}
+                  mode={mode}
+                  onCompare={(id) => setCompareRevisionId(id)}
+                  onOfficialChanged={() => setAttempt((value) => value + 1)}
+                  onOpen={openVersion}
+                  revisions={revisions}
+                  videoId={videoId}
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
             <ReportBandHeightHandle
               height={bandHeight}
               onFinish={finishHeightResize}
@@ -728,45 +711,6 @@ export function ReportPage({
         </SheetContent>
       </Sheet>
     </div>
-  );
-}
-
-function ReportBandResizeHandle({
-  boundary,
-  left,
-  onStart,
-  onMove,
-  onFinish,
-  onNudge,
-}: {
-  boundary: ReportBandBoundary;
-  left: number;
-  onStart: (boundary: ReportBandBoundary, event: React.PointerEvent<HTMLHRElement>) => void;
-  onMove: (event: React.PointerEvent<HTMLHRElement>) => void;
-  onFinish: (event: React.PointerEvent<HTMLHRElement>) => void;
-  onNudge: (direction: -1 | 1) => void;
-}) {
-  const label = 'Resize video and version history';
-  return (
-    <hr
-      aria-label={label}
-      aria-orientation="vertical"
-      aria-valuemax={85}
-      aria-valuemin={15}
-      aria-valuenow={Math.round(left * 100)}
-      className="absolute inset-y-0 z-30 hidden h-auto w-4 -translate-x-1/2 cursor-col-resize touch-none border-0 after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-border hover:after:bg-primary focus:after:bg-primary lg:block"
-      onKeyDown={(event) => {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-        event.preventDefault();
-        onNudge(event.key === 'ArrowLeft' ? -1 : 1);
-      }}
-      onPointerCancel={onFinish}
-      onPointerDown={(event) => onStart(boundary, event)}
-      onPointerMove={onMove}
-      onPointerUp={onFinish}
-      style={{ left: `${left * 100}%` }}
-      tabIndex={0}
-    />
   );
 }
 
