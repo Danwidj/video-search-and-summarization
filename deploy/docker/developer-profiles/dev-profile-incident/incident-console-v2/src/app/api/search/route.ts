@@ -62,6 +62,7 @@ async function searchedVersions(
             revisionId: item.revisionId,
             revisionNo: item.revisionNo,
             isOfficial: item.isOfficial === true,
+            ...(item.title ? { title: item.title } : {}),
             ...(thumbnailUrl ? { thumbnailUrl } : {}),
           },
         ] as const;

@@ -26,6 +26,23 @@ npm run format      # apply the Biome formatter
 
 Tests need a Node.js with TypeScript type stripping (official Node 22+ builds); where it is missing (`ERR_NO_TYPESCRIPT`), run them with `npx -y node@22`.
 
+## shadcn/ui
+
+The console is moving to [shadcn/ui](https://ui.shadcn.com) (Radix, `radix-vega` preset) on Tailwind 4 and React 19. The primitives are installed in `src/components/ui/` but nothing uses them yet; the existing hand-written screens still use their own classes.
+
+Add a component from this directory (the CLI reads `components.json` here; from elsewhere pass `-c <path to this directory>`):
+
+```bash
+npx shadcn@latest add <component>     # e.g. popover; writes src/components/ui/<component>.tsx
+npx shadcn@latest docs <component>    # usage and examples
+```
+
+- **Theme tokens:** CSS variables in `src/app/styles.css`. Light values are in `:root`, dark values in `.dark` (toggled by a `dark` class on an ancestor, not wired up yet). `@theme inline` maps them to Tailwind colours (`bg-primary`, `text-muted-foreground`, ...). The console's own colours (`ink`, `canvas`, `signal`, `moss`, `clay`), fonts and `shadow-panel` are in the `@theme` block of the same file; there is no `tailwind.config.js`.
+- **Radius and font:** the shadcn radius override is left out, so `rounded-*` keeps Tailwind's stock scale, and the font stays Arial. Changing either restyles every existing screen.
+- **Provider and toaster:** `Tooltip` needs `TooltipProvider` and `sonner` needs `<Toaster />` mounted in `src/app/layout.tsx`. Neither is mounted yet.
+- **Agent tooling:** the shadcn skill is in `deploy/docker/developer-profiles/dev-profile-incident/skills/shadcn` (with symlinks at `.claude/skills/shadcn` and `.agents/skills/shadcn`, pinned in `skills-lock.json`) and the shadcn MCP server is in `.mcp.json` at the repo root. Restart Claude Code and run `/mcp` to see it connect.
+- **Lint:** `src/components/ui/` is formatted to the repo's Biome style; keep that when adding components (`npm run format`).
+
 ## Learn more
 
 - Pages, configuration, routes and report versions: [`../.docs/architecture.md`](../.docs/architecture.md#4-runtime-interaction-sequences)

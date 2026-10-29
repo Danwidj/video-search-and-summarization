@@ -4,10 +4,26 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
-import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { layoutVersions } from '@/lib/reports/version-graph';
 import { formatTimestamp } from '@/lib/time';
+import type { RevisionSummary } from '@/modules/reports/domain/revision';
 
 const LANE_WIDTH = 16;
 
@@ -36,15 +52,10 @@ export function ReportVersions({
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingRevision, setPendingRevision] = useState<RevisionSummary | null>(null);
   const hasOfficial = (revisions ?? []).some((revision) => revision.isOfficial);
 
-  async function toggleOfficial(revision: RevisionSummary) {
-    if (
-      !revision.isOfficial &&
-      hasOfficial &&
-      !window.confirm('Another version is currently the official report for this video. Replace it with this one?')
-    )
-      return;
+  async function executeToggle(revision: RevisionSummary) {
     setBusyId(revision.revisionId);
     setActionError(null);
     try {
@@ -57,107 +68,177 @@ export function ReportVersions({
     }
   }
 
+  function toggleOfficial(revision: RevisionSummary) {
+    if (!revision.isOfficial && hasOfficial) {
+      setPendingRevision(revision);
+      return;
+    }
+    void executeToggle(revision);
+  }
+
   const layout = revisions ? layoutVersions(revisions) : null;
   return (
-    <section aria-label="Versions" className="flex min-h-0 flex-col" data-testid="revision-history">
-      <div className="flex items-center justify-between gap-2 px-3 pt-2">
-        <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink/45">
-          Versions{revisions ? ` · ${revisions.length}` : ''}
-        </h3>
-        <Link className="text-[11px] font-semibold text-moss" href={`/videos/${encodeURIComponent(videoId)}`}>
-          Analysis history
-        </Link>
-      </div>
-      {error && <p className="px-3 py-2 text-xs text-clay">{error}</p>}
-      {actionError && (
-        <p className="mx-3 my-1 rounded-lg bg-[#fff6f2] p-2 text-xs text-[#8c3d25]" data-testid="official-error" role="alert">
-          {actionError}
-        </p>
-      )}
-      {!revisions && !error && <p className="px-3 py-2 text-xs text-ink/45">Loading versions…</p>}
-      {layout && (
-        <ol className="min-h-0 overflow-auto px-2 py-1">
-          {layout.rows.map(({ revision, lane, segments }) => {
-            const current = revision.revisionId === currentRevisionId;
-            const comparing = revision.revisionId === compareRevisionId;
-            return (
-              <li
-                className={`flex items-stretch gap-2 rounded-xl px-1 py-1.5 text-xs ${current || comparing ? 'bg-moss/10' : ''}`}
-                data-testid="revision-row"
-                key={revision.revisionId}
-              >
-                <span aria-hidden className="relative shrink-0" style={{ width: layout.laneCount * LANE_WIDTH }}>
-                  {segments.map((segment) => (
-                    <i
-                      className="absolute w-px bg-ink/25"
-                      key={segment.lane}
-                      style={{
-                        left: segment.lane * LANE_WIDTH + LANE_WIDTH / 2,
-                        top: segment.fromAbove ? 0 : '50%',
-                        bottom: segment.toBelow ? 0 : '50%',
-                      }}
-                    />
-                  ))}
-                  <i
-                    className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${revision.kind === 'human' ? 'border-moss bg-moss' : 'border-[#5f7896] bg-white'}`}
-                    style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
-                  />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-x-2">
-                    <b>v{revision.revisionNo}</b>
-                    <span className="text-ink/50">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
-                    {revision.isOfficial && (
-                      <span className="rounded-full bg-[#fff1c7] px-2 text-[10.5px] font-bold text-[#765300]">★ Official</span>
-                    )}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-ink/60">
-                    <span className="rounded-full bg-canvas px-1.5 text-[10.5px] font-semibold">
-                      {revision.kind === 'human' ? 'Human' : 'AI'}
+    <TooltipProvider>
+      <section aria-label="Versions" className="flex min-h-0 flex-col" data-testid="revision-history">
+        <div className="flex items-center justify-between gap-2 px-3 pt-2">
+          <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Versions{revisions ? ` · ${revisions.length}` : ''}
+          </h3>
+          <Link className="text-[11px] font-semibold text-primary hover:underline" href={`/videos/${encodeURIComponent(videoId)}`}>
+            Analysis history
+          </Link>
+        </div>
+        {error && <p className="px-3 py-2 text-xs text-destructive">{error}</p>}
+        {actionError && (
+          <Alert
+            className="mx-3 my-1 border-destructive/20 bg-destructive/10 p-2 text-xs text-destructive"
+            data-testid="official-error"
+            role="alert"
+            variant="destructive"
+          >
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        )}
+        {!revisions && !error && (
+          <div className="space-y-2 px-3 py-2">
+            <Skeleton className="h-10 w-full rounded-xl" />
+            <Skeleton className="h-10 w-full rounded-xl" />
+            <Skeleton className="h-10 w-full rounded-xl" />
+          </div>
+        )}
+        {layout && (
+          <ScrollArea className="min-h-0 px-2 py-1">
+            <ol>
+              {layout.rows.map(({ revision, lane, segments }) => {
+                const current = revision.revisionId === currentRevisionId;
+                const comparing = revision.revisionId === compareRevisionId;
+                const starLabel = revision.isOfficial
+                  ? `Clear v${revision.revisionNo} as the official version`
+                  : `Mark v${revision.revisionNo} official`;
+                const starTitle = revision.isOfficial ? 'Official version: click to clear' : 'Mark official';
+
+                return (
+                  <li
+                    className={`flex items-stretch gap-2 rounded-xl px-1 py-1.5 text-xs ${current || comparing ? 'bg-primary/10' : ''}`}
+                    data-testid="revision-row"
+                    key={revision.revisionId}
+                  >
+                    <span aria-hidden className="relative shrink-0" style={{ width: layout.laneCount * LANE_WIDTH }}>
+                      {segments.map((segment) => (
+                        <i
+                          className="absolute w-px bg-border"
+                          key={segment.lane}
+                          style={{
+                            left: segment.lane * LANE_WIDTH + LANE_WIDTH / 2,
+                            top: segment.fromAbove ? 0 : '50%',
+                            bottom: segment.toBelow ? 0 : '50%',
+                          }}
+                        />
+                      ))}
+                      <i
+                        className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${revision.kind === 'human' ? 'border-primary bg-primary' : 'border-muted-foreground/60 bg-card'}`}
+                        style={{ left: lane * LANE_WIDTH + LANE_WIDTH / 2 }}
+                      />
                     </span>
-                    <span className="truncate">{revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : (revision.note ?? '')}</span>
-                  </span>
-                </span>
-                <button
-                  aria-label={
-                    revision.isOfficial ? `Clear v${revision.revisionNo} as the official version` : `Mark v${revision.revisionNo} official`
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-x-2">
+                        <b>v{revision.revisionNo}</b>
+                        <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
+                        {revision.isOfficial && (
+                          <Badge
+                            className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                            variant="outline"
+                          >
+                            ★ Official
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <Badge className="px-1.5 text-[10.5px] font-semibold" variant="secondary">
+                          {revision.kind === 'human' ? 'Human' : 'AI'}
+                        </Badge>
+                        <span className="truncate">
+                          {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : (revision.note ?? '')}
+                        </span>
+                      </span>
+                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          aria-label={starLabel}
+                          aria-pressed={revision.isOfficial}
+                          className="h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                          data-testid={revision.isOfficial ? 'clear-official' : 'make-official'}
+                          disabled={busyId !== null}
+                          onClick={() => void toggleOfficial(revision)}
+                          title={starTitle}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {revision.isOfficial ? '★' : '☆'}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{starTitle}</TooltipContent>
+                    </Tooltip>
+                    {mode === 'edit' ? (
+                      <Button
+                        aria-label={`Compare v${revision.revisionNo} as A`}
+                        aria-pressed={comparing}
+                        className="h-6 self-center px-2 text-[10.5px] font-bold"
+                        onClick={() => onCompare?.(revision.revisionId)}
+                        size="sm"
+                        type="button"
+                        variant={comparing ? 'default' : 'outline'}
+                      >
+                        A
+                      </Button>
+                    ) : current ? (
+                      <Badge className="self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
+                        Viewing
+                      </Badge>
+                    ) : (
+                      <Button
+                        className="h-6 self-center px-2 text-[10.5px] font-semibold"
+                        onClick={() => onOpen(revision.revisionId)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        View
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </ScrollArea>
+        )}
+
+        <AlertDialog onOpenChange={(open) => !open && setPendingRevision(null)} open={pendingRevision !== null}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace official report?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Another version is currently the official report for this video. Replace it with this one?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingRevision) {
+                    const target = pendingRevision;
+                    setPendingRevision(null);
+                    void executeToggle(target);
                   }
-                  aria-pressed={revision.isOfficial}
-                  className="self-center text-base leading-none text-[#b58a00] disabled:opacity-40"
-                  data-testid={revision.isOfficial ? 'clear-official' : 'make-official'}
-                  disabled={busyId !== null}
-                  onClick={() => void toggleOfficial(revision)}
-                  title={revision.isOfficial ? 'Official version: click to clear' : 'Mark official'}
-                  type="button"
-                >
-                  {revision.isOfficial ? '★' : '☆'}
-                </button>
-                {mode === 'edit' ? (
-                  <button
-                    aria-label={`Compare v${revision.revisionNo} as A`}
-                    aria-pressed={comparing}
-                    className={`self-center rounded-full px-2 py-0.5 text-[10.5px] font-bold ${comparing ? 'bg-moss text-white' : 'border border-ink/15 font-semibold'}`}
-                    onClick={() => onCompare?.(revision.revisionId)}
-                    type="button"
-                  >
-                    A
-                  </button>
-                ) : current ? (
-                  <span className="self-center rounded-full bg-moss px-2 py-0.5 text-[10.5px] font-bold text-white">Viewing</span>
-                ) : (
-                  <button
-                    className="self-center rounded-full border border-ink/15 px-2 py-0.5 text-[10.5px] font-semibold"
-                    onClick={() => onOpen(revision.revisionId)}
-                    type="button"
-                  >
-                    View
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </section>
+                }}
+              >
+                Replace official
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </section>
+    </TooltipProvider>
   );
 }
