@@ -5,7 +5,7 @@
 > - **D10 and D15:** approved as implemented.
 > - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
 > - **Stage 1:** **ran 2026-10-28** on the frozen `ground-truth-v1.0` (AI-assisted, approved at the dataset level, not individually human-verified). Results: [`stage1-baselines.md`](../../eval/docs/experiments/stage1-baselines.md).
-> - **Stage 2:** ready, not run: [`stage2-plan.md`](../../eval/docs/experiments/stage2-plan.md) (revision 3); methodology v1.2 (τ = 0.40) in force; `retry-v2` / `recovery-v1` approved; V1–V7 registered. It waits for the owner's go-ahead.
+> - **Stage 2:** done 2026-10-29 ([2a](../../eval/docs/experiments/stage2a-results.md), [2b](../../eval/docs/experiments/stage2b-results.md)). D9 v2 selects V1 `p1-v4-e01-severity`; V8 qualified but was not selected. Stage 3 waits for the owner's go-ahead.
 > - **Stage 0:** **ran 2026-10-27** on the sponsor-provided gateway (configured $0 per token; infrastructure cost unknown). Results: [`stage0-pilot.md`](../../eval/docs/experiments/stage0-pilot.md).
 > - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
 
