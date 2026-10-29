@@ -31,7 +31,7 @@ The stack is running via [`incident-start`](../incident-start/SKILL.md), and `cu
 
 ### Preferred: through the UI
 
-Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?revision=<revision-id>`. To analyse an already-uploaded video again (any model, optional reviewer prompt), open `/videos/<video-id>` or the report page's analysis card. Every attempt is a new run and a new AI revision, failed attempts appear in the history only, and choosing the official revision is a separate explicit action.
+Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?revision=<revision-id>`. To analyse an already-uploaded video again (any model, optional reviewer prompt), open `/videos/<video-id>` or the report page's re-analysis button in the top bar. Every attempt is a new run and a new AI revision, failed attempts appear in the history only, and choosing the official revision is a separate explicit action.
 
 ### Scripted: console API (same path the UI uses)
 

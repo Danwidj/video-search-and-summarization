@@ -60,7 +60,6 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   for (const name of [
     'reports/components/ReportPage/ReportPage.tsx',
     'reports/components/ReportPane/ReportPane.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/OfficialControls/OfficialControls.tsx',
@@ -101,7 +100,6 @@ test('browser components import only browser-safe report modules', async () => {
     'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
     'videos/components/VideosScreen/VideosScreen.tsx',
     'reports/components/RunComparison/RunComparison.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
     'library/components/IncidentCard/IncidentCard.tsx',
@@ -143,10 +141,11 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   }
 });
 
-test('the report page offers re-analysis and history', async () => {
-  const tools = await readFile(new URL('reports/components/AdvancedReportTools/AdvancedReportTools.tsx', components), 'utf8');
-  assert.match(tools, /ReanalysisCard/);
-  assert.match(tools, /RunHistoryList/);
+test('the report page offers re-analysis', async () => {
+  const report = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
+  assert.match(report, /ReanalysisDialog/);
+  const reanalysis = await readFile(new URL('analysis/components/ReanalysisCard/ReanalysisCard.tsx', components), 'utf8');
+  assert.match(reanalysis, /ReanalysisDialog/);
   const library = await readFile(new URL('library/components/LibraryScreen/LibraryScreen.tsx', components), 'utf8');
   assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
   assert.match(await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8'), /library-repair-marker/);
@@ -164,7 +163,6 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
     'analysis/components/RunHistory/RunHistory.tsx',
     'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
     'videos/components/VideosScreen/VideosScreen.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
     'library/components/IncidentCard/IncidentCard.tsx',
     'library/components/HitCard/HitCard.tsx',
