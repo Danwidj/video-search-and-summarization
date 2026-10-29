@@ -129,9 +129,38 @@ def _video(incident_id, repeat, outcome, error=""):
     (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 429: {...}"}'), "rate_limited"),
     (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 524: <html>"}'), "timeout"),
     (_video("A", 1, "http_error", '{"detail": "boom"}'), None),
+    # Stage 2a: a brief laptop network outage, and R2 refusing a URL that expired during a host suspend.
+    (_video("A", 1, "http_error", '{"detail": "Analysis failed: [Errno -3] Temporary failure in name resolution"}'),
+     "transport_error"),
+    (_video("A", 1, "http_error", '{"detail": "Analysis failed: P1 call returned HTTP 500: {\\"error\\":{\\"message\\":'
+                                  '\\"litellm.InternalServerError: {\\\\\\"error\\\\\\":{\\\\\\"message\\\\\\":\\\\\\"'
+                                  "403, message='Forbidden', url='https://acct.r2.cloudflarestorage.com/bucket/"
+                                  "anomaly/x.mp4?X-Amz-Signature=s'\"}"), "expired_url"),
+    # A 403 from anything other than R2's video URL is not an expired URL.
+    (_video("A", 1, "http_error", "{\"detail\": \"403, message='Forbidden', url='https://example.com/x'\"}"), None),
 ])
 def test_only_infrastructure_failures_are_recoverable(video, expected):
     assert rec.failure_class(video) == expected
+
+
+def test_the_runner_classifies_an_agent_dns_failure_as_a_transport_error():
+    body = {"detail": "Analysis failed: [Errno -3] Temporary failure in name resolution"}
+    result = er.vss_chat_result(er.VSSResponse(500, body, 1.0), prompt_id="p", prompt_sha256="s", started_at="a",
+                                finished_at="b")
+    assert result.failure_kind == "transport_error"
+    assert "transport_error" in client.P1_RETRY_POLICIES["retry-v2"]["retry_on"]  # retry-v2 itself is unchanged
+    other = er.vss_chat_result(er.VSSResponse(500, {"detail": "boom"}, 1.0), prompt_id="p", prompt_sha256="s",
+                               started_at="a", finished_at="b")
+    assert other.failure_kind == "http_error"
+
+
+def test_a_signed_url_outlives_the_worst_case_retry_v2_span():
+    import eval_video_resolution
+
+    policy = client.P1_RETRY_POLICIES["retry-v2"]
+    attempts = 1 + policy["max_rate_limit_retries"]
+    worst = attempts * (client.P1_TIMEOUT_SECONDS + 60 + policy["inter_call_delay_s"]) + sum(policy["backoff_s"])
+    assert worst < eval_video_resolution.SIGNED_URL_TTL_SECONDS
 
 
 def _record(videos, **extra):
@@ -167,11 +196,15 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
                       "class": "timeout"}], "of": {"experiment_id": "vss-baseline"}}
     config = rec.recovery_config(original, plan, gt)
     assert config["pipeline"]["retry_policy"] == "retry-v2" and config["budget"]["max_p1_calls"] == 3
-    seen = []
+    seen, signed = [], []
 
-    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
-        seen.append(incident_id)
-        p1_call("m", "u")
+    def video_source(incident_id):
+        signed.append(incident_id)
+        return f"fresh-{len(signed)}", {}
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, video_url, **_):
+        seen.append((incident_id, video_url))
+        p1_call("m", video_url)
         return {"incident_id": incident_id, "outcome": "scored", "run_id": model_run_id, "judge_calls": 0,
                 "judge_tokens": 0, "p1_raw": {"ok": True, "usage": {"total_tokens": 10},
                                               "rate_limit": {"attempt_count": 1, "attempts": [{}]}}}
@@ -179,7 +212,8 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
     outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
     out = er.run_stage([config], split=split, gt_index=gt,
                        store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
-                       video_source=lambda i: ("u", {}), call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)),
+                       video_source=video_source,
+                       call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)),
                        run_one=run_one, confirm_paid=True, results_root=tmp_path,
                        now=datetime(2026, 11, 2, tzinfo=UTC), log=lambda *_: None,
                        pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
@@ -187,7 +221,9 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
                        only={config["experiment_id"]: {(2, "B")}},
                        recovery={config["experiment_id"]: rec.links(plan)})
     record = out["records"][0]
-    assert seen == ["B"] and record["protocol"] == rec.PROTOCOL and record["videos"][0]["recovers"]["run_id"] == "o"
+    assert record["protocol"] == rec.PROTOCOL and record["videos"][0]["recovers"]["run_id"] == "o"
+    # Only the listed run, with a URL signed for it at run time (never the original run's stored URL).
+    assert seen == [("B", "fresh-1")] and signed == ["B"]
 
 
 # --- calibration and re-matching -------------------------------------------------------------------------
