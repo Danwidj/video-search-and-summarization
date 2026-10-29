@@ -29,7 +29,7 @@ from pathlib import Path
 
 import config
 
-METHODOLOGY_VERSION = "evaluation-methodology-v1.1"
+METHODOLOGY_VERSION = "evaluation-methodology-v1.2"
 METHODOLOGY_DIR = Path(__file__).resolve().parent / "methodology"
 
 # Description and item-text judge (scores 0-1; a pass is >= DESCRIPTION_PASS_SCORE).
@@ -48,12 +48,16 @@ JUDGE_RETRY_BACKOFF_SECONDS = (2.0, 8.0)
 # Entity / instrument / asset matching.
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_BASE_URL = "http://127.0.0.1:8811/v1"
-MATCH_THRESHOLD = config.MIN_MATCH_SIMILARITY  # 0.75 cosine, one-to-one Hungarian assignment
-# Item-matching threshold per methodology version. v1.2 is PROPOSED (not in force; METHODOLOGY_VERSION stays v1.1):
-# its value is the calibration rule's provisional result (methodology/calibration/matching-v1.2-calibration.md),
-# pending the owner's approval and the human audit of the AI-labelled calibration pairs.
-MATCH_THRESHOLDS = {"evaluation-methodology-v1.1": MATCH_THRESHOLD, "evaluation-methodology-v1.2": 0.30}
-MATCH_THRESHOLD_PROVISIONAL = {"evaluation-methodology-v1.1": False, "evaluation-methodology-v1.2": True}
+# Item-matching threshold per methodology version (cosine, one-to-one Hungarian assignment). v1.1 is the a-priori
+# 0.75 (config.MIN_MATCH_SIMILARITY); v1.2 is the pre-registered rule's result on calibration v2
+# (methodology/calibration/matching-v1.2-calibration-v2.md): 132 AI-labelled, AI-audited dev pairs, not
+# human-validated (MATCH_CALIBRATION).
+MATCH_THRESHOLDS = {"evaluation-methodology-v1.1": config.MIN_MATCH_SIMILARITY, "evaluation-methodology-v1.2": 0.40}
+MATCH_THRESHOLD = MATCH_THRESHOLDS[METHODOLOGY_VERSION]
+MATCH_CALIBRATION = {
+    "evaluation-methodology-v1.1": None,
+    "evaluation-methodology-v1.2": {"calibration": "v2", "labels": "AI-labelled and AI-audited", "human_validated": False},
+}
 
 # Incident fields.
 TIMESTAMP_TOLERANCE_SECONDS = config.EVAL_TIMESTAMP_TOLERANCE_SECONDS  # +-5 s
@@ -86,6 +90,7 @@ def record() -> dict:
         },
         "embedding": {"model": EMBEDDING_MODEL, "base_url": EMBEDDING_BASE_URL},
         "match_threshold": MATCH_THRESHOLD,
+        "match_calibration": MATCH_CALIBRATION[METHODOLOGY_VERSION],
         "timestamp_tolerance_s": TIMESTAMP_TOLERANCE_SECONDS,
         "bootstrap": {"resamples": BOOTSTRAP_RESAMPLES, "seed": BOOTSTRAP_SEED, "confidence": BOOTSTRAP_CONFIDENCE},
     }

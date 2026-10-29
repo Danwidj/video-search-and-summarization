@@ -54,14 +54,23 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 | `direct-vlm-baseline` | 1 | C1 on dev, frozen after its first complete run |
 | `vss-baseline` | 1 | C2 on dev, local agent per D14 (b) |
 
-`videos` (optional) narrows a config to a subset of its split half and refuses clips outside it. `repeats` and budgets follow plan D10/D11 and are **placeholders until those decisions and each stage's budget are approved**. C3/C4 configs are written only after the Stage 2 selection is recorded in decisions.md.
+`videos` (optional) narrows a config to a subset of its split half and refuses clips outside it. `repeats` and budgets follow plan D10/D11 and are **placeholders until those decisions and each stage's budget are approved**. C3/C4 configs are written only after the Stage 2 selection is recorded in decisions.md. Stage 3 configs: `configs/s3-*.json` (final, test, 1 repeat, run once), pinned by `stage3/manifest.json`; check them with `scripts/eval_stage3.py preflight` and report with `scripts/eval_stage3.py report` ([plan](../docs/experiments/stage3-plan.md)).
 
-## Retries, recovery and host availability (proposed 2026-10-28; not yet approved for use)
+## Retries, recovery and host availability (approved 2026-10-28)
 
 - **`pipeline.retry_policy`:** `retry-v1` (the default; Stages 0–1: 429 only) or `retry-v2` (also timeout, transport error and `host_suspended`; 60 s then 180 s). The same policy applies to every arm ([details](../docs/experiments/infrastructure-and-recovery.md)).
 - **Host suspend:** every attempt compares wall-clock and monotonic time. A failed attempt that spans a suspend is `host_suspended`.
 - **Keep-awake:** run paid stages under `experiments/keep-awake.sh -- <command>` (WSL), with the lid open and on AC power.
 - **Recovery:** `scripts/eval_experiment.py recover <results.json>...` is a dry run by default. With `--confirm-paid`, it re-attempts only infrastructure-failed video-runs as a separate `<experiment>-recovery` result linked to the original, and writes `merged-original+recovery-v1.json`. Originals are never changed. D9 G3 refuses mixed protocols or methodology versions.
+- **Checkpoint and resume:** every video-run updates the stage's `checkpoint.json`. `run <same configs> --confirm-paid --resume <stage dir>` continues an interrupted stage in the same order and writes its results once at the end.
+- **Pauses (approved 2026-10-28):** a stage pauses, keeping its checkpoint and writing no result, in three cases:
+  - after 4 consecutive video-runs with no model output (`OUTAGE_PAUSE_RUNS`);
+  - when the session's rate-limit share exceeds 25%;
+  - at `--session-hours` (checked between video-runs).
+
+  Exit code 4 means paused; continue with `--resume`. A cap still stops the stage (`complete: false`).
+- **Wake guard:** on WSL a paid `run` or `recover` refuses unless it runs under `keep-awake.sh` (`--allow-sleep` overrides).
+- **Recovery limit:** at most 15 recovered video-runs per config (`--max-runs`).
 - **Offline re-matching:** `scripts/eval_experiment.py rematch <results.json> --methodology evaluation-methodology-v1.2 [--threshold t]` writes a new `rematched-*.json`. It makes no model or judge call.
 
 ## Reports and selection

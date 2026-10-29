@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -122,6 +123,18 @@ def call_factory_for(config: dict):
         config, item, incident_id=incident_id, run_id=run_id, duration=duration, max_retries=max_retries)
 
 
+def host_guard(args) -> str | None:
+    """A paid run on WSL must hold a wake request (experiments/keep-awake.sh), unless --allow-sleep says otherwise."""
+    if getattr(args, "allow_sleep", False) or os.environ.get("KEEP_AWAKE_ACTIVE") == "1":
+        return None
+    try:
+        wsl = "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        wsl = False
+    return ("on WSL a paid run needs a wake request: run it under experiments/keep-awake.sh -- ... (lid open, on AC), "
+            "or pass --allow-sleep") if wsl else None
+
+
 def cmd_run(args) -> int:
     """One configuration, or several run interleaved as one stage (D10), under their hard caps (D11)."""
     import eval_run
@@ -136,6 +149,8 @@ def cmd_run(args) -> int:
                               "order_seed": er.ORDER_SEED, "pricing": er.load_pricing()}, indent=2))
             print("Nothing sent. Re-run with --confirm-paid after this stage's budget is approved.", file=sys.stderr)
             return 0
+        if (problem := host_guard(args)) is not None:
+            raise er.ExperimentRefused(problem)
         if len({c["ground_truth"]["dir"] for c in configs}) != 1:
             raise er.ExperimentRefused("configurations in one stage must use the same ground truth")
         gt_index, sheets = load_gt(configs[0])
@@ -143,12 +158,17 @@ def cmd_run(args) -> int:
         eval_run.evaluator_preflight(incident_only=all(c["scoring"] == "incident_only" for c in configs))
         result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
                               video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
-                              run_one=eval_run.run_one_video, confirm_paid=True)
+                              run_one=eval_run.run_one_video, confirm_paid=True, resume=args.resume,
+                              session_seconds=args.session_hours * 3600 if args.session_hours else None)
     except er.ExperimentRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2
     print(json.dumps({"results": result["results_files"], "stage": result["stage_dir"], "stopped": result["stopped"],
+                      "paused": result.get("paused"),
                       "usage": {r["experiment_id"]: r["usage"] for r in result["records"]}}, indent=2))
+    if result.get("paused"):
+        print(f"PAUSED: {result['paused']['reason']}. Resume with --resume {result['stage_dir']}", file=sys.stderr)
+        return 4
     return 0 if result["stopped"] is None else 3
 
 
@@ -196,7 +216,12 @@ def cmd_recover(args) -> int:
     originals = [(path, json.loads(path.read_text())) for path in args.results]
     plans = [rec.plan(record, results_path=str(path), results_sha256=rec.sha256_file(path)) for path, record in originals]
     gt_index, sheets = load_gt(originals[0][1]["config"])
-    configs = [rec.recovery_config(record["config"], p, gt_index) for (_, record), p in zip(originals, plans, strict=True)]
+    try:
+        configs = [rec.recovery_config(record["config"], p, gt_index, max_runs=args.max_runs)
+                   for (_, record), p in zip(originals, plans, strict=True)]
+    except rec.RecoveryRefused as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
     only = {c["experiment_id"]: {(r["repeat"], r["incident_id"]) for r in p["runs"]}
             for c, p in zip(configs, plans, strict=True)}
     summary = {"protocol": rec.PROTOCOL, "retry_policy": rec.RECOVERY_RETRY_POLICY,
@@ -210,6 +235,8 @@ def cmd_recover(args) -> int:
         return 0
     split = json.loads(er.SPLIT_PATH.read_text())
     try:
+        if (problem := host_guard(args)) is not None:
+            raise er.ExperimentRefused(problem)
         eval_run.evaluator_preflight()
         result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
                               video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
@@ -241,7 +268,7 @@ def cmd_rematch(args) -> int:
         print(f"REFUSED: unknown methodology {args.methodology!r}", file=sys.stderr)
         return 2
     threshold = args.threshold if args.threshold is not None else methodology.MATCH_THRESHOLDS[args.methodology]
-    provisional = args.threshold is not None or methodology.MATCH_THRESHOLD_PROVISIONAL[args.methodology]
+    provisional = args.threshold is not None  # an override is a sensitivity check, never the methodology's value
     content = args.results.read_bytes()
     record = item_rescore.rematch(json.loads(content), threshold=threshold, methodology_version=args.methodology,
                                   source=str(args.results), source_sha256=hashlib.sha256(content).hexdigest(),
@@ -337,12 +364,17 @@ def main() -> int:
     run = sub.add_parser("run", help="One config, or several interleaved as one stage")
     run.add_argument("configs", nargs="+", type=Path)
     run.add_argument("--confirm-paid", action="store_true")
+    run.add_argument("--resume", type=Path, help="Continue an interrupted stage from its stage directory")
+    run.add_argument("--allow-sleep", action="store_true", help="Skip the WSL keep-awake requirement")
+    run.add_argument("--session-hours", type=float, help="Pause (resumable) once a session has run this long")
     rescore = sub.add_parser("rescore")
     rescore.add_argument("results", type=Path)
     rescore.add_argument("--confirm-paid", action="store_true")
     recover = sub.add_parser("recover", help="recovery-v1 of infrastructure-failed video-runs (dry run by default)")
     recover.add_argument("results", nargs="+", type=Path)
     recover.add_argument("--confirm-paid", action="store_true")
+    recover.add_argument("--allow-sleep", action="store_true")
+    recover.add_argument("--max-runs", type=int, default=15, help="Refuse when a config has more failed runs than this")
     rematch = sub.add_parser("rematch", help="Re-match items offline at a methodology version's threshold")
     rematch.add_argument("results", type=Path)
     rematch.add_argument("--methodology", required=True)
