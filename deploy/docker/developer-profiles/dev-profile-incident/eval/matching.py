@@ -22,7 +22,7 @@ embedding similarity over the fields that actually identify the object
 instruments/assets - not arbitrary free text). The resulting similarity matrix
 is solved as an optimal one-to-one assignment (Hungarian algorithm, via
 ``scipy.optimize.linear_sum_assignment``), and only pairings clearing
-``config.MIN_MATCH_SIMILARITY`` are persisted: a forced low-similarity pairing
+``methodology.MATCH_THRESHOLD`` (the methodology version's threshold) are persisted: a forced low-similarity pairing
 is a miss (missed detection or false positive), not a match. An absent row in
 ``entity_matches`` / ``instrument_matches`` / ``asset_matches`` means exactly
 that - "no accepted match".
@@ -38,7 +38,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-import config
+import methodology
 from embed_client import embed_texts
 
 
@@ -56,9 +56,9 @@ def solve_assignment(similarity: list[list[float]], *, threshold: float | None =
 
     Rows are model-output items, columns are ground-truth items. Uses the
     Hungarian algorithm to maximize total similarity, then discards any pairing
-    whose score falls below ``threshold`` (default ``config.MIN_MATCH_SIMILARITY``).
+    whose score falls below ``threshold`` (default ``methodology.MATCH_THRESHOLD``).
     """
-    threshold = config.MIN_MATCH_SIMILARITY if threshold is None else threshold
+    threshold = methodology.MATCH_THRESHOLD if threshold is None else threshold
     matrix = np.asarray(similarity, dtype=float)
     if matrix.size == 0:
         return []

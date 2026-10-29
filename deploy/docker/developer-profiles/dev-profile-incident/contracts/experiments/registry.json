@@ -12,6 +12,94 @@
       "hypothesis": "Baseline: byte-identical to the production P1 prompt (contracts/incident_extraction_prompt.txt) at incident-contract-v4.",
       "created": "2026-10-27",
       "status": "baseline"
+    },
+    {
+      "id": "p1-v4-e01-severity",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e01-severity.txt",
+      "sha256": "004746ea7d193fbba4af4c411c8baa2c7a1c9acfdd9d81fdaee19838024c4138",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Severity is over-rated on dev (ground-truth level 3 predicted 4 or 5 in 24 of 38 Stage 1 outputs). Stating the guidelines' severity decision rules (annotation-guidelines-v1.0 \u00a72.3: observed harm and demonstrated danger, visible indicators per level, property alone, the evidence-conditional tie-break) improves severity exact accuracy without lowering other scores.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e02-entities",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e02-entities.txt",
+      "sha256": "19ce9a01c9a6867d5d275c312ef68cef342eb2fe169296a6f2617917c6d1c31a",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Entities are over-listed on dev (85-102 predicted against 55-72 ground-truth entities in Stage 1). Applying the guidelines' role test (annotation-guidelines-v1.0 \u00a73) raises entity precision without lowering recall.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e03-instruments",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e03-instruments.txt",
+      "sha256": "fe6adc566ad135513899e77c86ae773ad1289932a2f78958c5e7b778fa3b9d90",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Instruments are under-reported on dev (9 predicted against 18-25 ground-truth instruments in Stage 1). Applying the existing instrument definition explicitly to each entity (annotation-guidelines-v1.0 \u00a74, \u00a76) raises instrument recall without adding non-instruments.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e04-assets",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e04-assets.txt",
+      "sha256": "58f8840431c77d678cb8eb11290575aa0a7d0594fcec3b1cb6445609f3a02f86",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Assets are over-listed on dev (about 105 predicted against 41 ground-truth assets in Stage 1). Requiring a visible role for each asset (annotation-guidelines-v1.0 \u00a75) raises asset precision without lowering recall.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e05-descriptions",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e05-descriptions.txt",
+      "sha256": "416b6790b230d9113f0f008d28e4a74c2d3b0073c6871868ae0b8f01174fe8b0",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "The incident description passes the judge in 27-47% of dev outputs in Stage 1 and is unstable between repeats. Stating the guidelines' general description principles (annotation-guidelines-v1.0 \u00a72.4, \u00a77: event, who, key action, observable outcome; observable verbs; completeness and consistency with the structured fields) improves description scores. It contains no example sentence and no ground-truth wording.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e06-boundaries",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e06-boundaries.txt",
+      "sha256": "4b498b0d75e400b26c8f8602652b8ecb31ca68be483af44525ca4239a802a160",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "End timestamps (47-50% within 5 s) and duration (32-38%) are the weakest timing fields on dev in Stage 1. Stating how to locate the boundaries (annotation-guidelines-v1.0 \u00a72.2) improves end and duration accuracy without lowering start accuracy.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e07-checklist",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e07-checklist.txt",
+      "sha256": "1f2734d82f2e76c83106e6927e76b800b94d447e9b5dca84d8690b38bf0ef0cb",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Two outputs were contract-invalid in Stage 1 (VSS arm) and cross-field consistency is not checked by the model. An explicit final consistency check (annotation-guidelines-v1.0 \u00a76, \u00a78; prompt \u00a78) raises the valid-output rate and consistency without lowering any score.",
+      "created": "2026-10-28",
+      "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e08-combined",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e08-combined.txt",
+      "sha256": "9c21fc60f39ca46c5c226c02f17e4e60360cbbd543092c54ebdc7dfb21de7323",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "V8 by the combination rule fixed before Stage 2: p1-v4-base with the inserted block of every V1-V7 version whose recovery-adjusted Stage 2a D9 v2 comparison has Delta I > 0 and no G1-G3 problem (all seven), applied unchanged in section order. Combining the blocks improves Delta I over p1-v4-base without a G2 regression; the blocks are not assumed to add up.",
+      "created": "2026-10-29",
+      "status": "candidate"
     }
   ]
 }

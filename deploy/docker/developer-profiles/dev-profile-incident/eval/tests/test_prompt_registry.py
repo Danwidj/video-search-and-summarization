@@ -71,13 +71,13 @@ def test_an_unregistered_prompt_file_is_a_problem(registry_dir):
 def test_add_appends_with_hash_and_parent(registry_dir):
     path = registry_dir / "registry.json"
     before = pr.load(path)
-    new = pr.add("p1-v4-e01-severity", parent=pr.BASE_ID, text="prompt text", hypothesis="Rules cut over-rating.",
+    new = pr.add("p1-v4-e99-test", parent=pr.BASE_ID, text="prompt text", hypothesis="Rules cut over-rating.",
                  path=path, created="2026-10-27")
     after = pr.load(path)
     assert pr.check_append_only(before, after) == [] and after["prompts"][-1] == new
     assert new["sha256"] == pr.sha256_bytes(b"prompt text") and new["status"] == "candidate"
     assert pr.validate(after, registry_dir) == []
-    assert pr.lineage("p1-v4-e01-severity", after) == ["p1-v4-e01-severity", pr.BASE_ID]
+    assert pr.lineage("p1-v4-e99-test", after) == ["p1-v4-e99-test", pr.BASE_ID]
 
 
 @pytest.mark.parametrize("prompt_id, parent, hypothesis, match", [

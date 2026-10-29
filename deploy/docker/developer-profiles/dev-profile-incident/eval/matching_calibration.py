@@ -46,8 +46,11 @@ TIE_MARGIN = 0.01
 TEXT = {"entities": matching._entity_text, "instruments": matching._named_text, "assets": matching._named_text}
 
 
-def eligible_blocks(records: list[dict]) -> list[dict]:
-    """Blocks with items on both sides, from dev records with a model output. Never reads a score."""
+def eligible_blocks(records: list[dict], *, large: bool = False) -> list[dict]:
+    """Blocks with items on both sides, from dev records with a model output. Never reads a score.
+
+    ``large``: the blocks of more than ``MAX_BLOCK_PAIRS`` pairs instead (the calibration v2 extension).
+    """
     blocks = []
     for record in records:
         if record["split"]["half"] != "dev":
@@ -60,7 +63,8 @@ def eligible_blocks(records: list[dict]) -> list[dict]:
             gt = video.get("ground_truth") or {}
             for kind in KINDS:
                 model_rows, gt_rows = prediction.get(kind) or [], gt.get(kind) or []
-                if model_rows and gt_rows and len(model_rows) * len(gt_rows) <= MAX_BLOCK_PAIRS:
+                pairs = len(model_rows) * len(gt_rows)
+                if model_rows and gt_rows and (pairs > MAX_BLOCK_PAIRS if large else pairs <= MAX_BLOCK_PAIRS):
                     blocks.append({"experiment_id": record["experiment_id"], "incident_id": video["incident_id"],
                                    "category": video["category"], "repeat": video["repeat"], "kind": kind,
                                    "predicted": [_strip(r, kind) for r in model_rows],
@@ -92,6 +96,28 @@ def sample(blocks: list[dict], *, seed: int = SEED, quota: dict | None = None) -
             chosen.append(block)
             pairs += len(block["predicted"]) * len(block["ground_truth"])
     for number, block in enumerate(chosen, 1):
+        block["block_id"] = f"B{number:02d}"
+    return chosen
+
+
+# Calibration v2 (2026-10-28): four large blocks, drawn at random under their own seed, at most one per clip.
+LARGE_SEED = 20261029
+LARGE_BLOCKS = 4
+GRID_V2 = tuple(round(0.10 + 0.05 * i, 2) for i in range(15))  # 0.10 .. 0.80
+
+
+def sample_large(blocks: list[dict], *, first_number: int, seed: int = LARGE_SEED, count: int = LARGE_BLOCKS) -> list[dict]:
+    """``count`` large blocks drawn uniformly at random (never by similarity or score), one per clip."""
+    pool = sorted(blocks, key=lambda b: (b["experiment_id"], b["incident_id"], b["repeat"], b["kind"]))
+    random.Random(seed).shuffle(pool)
+    chosen, clips = [], set()
+    for block in pool:
+        if len(chosen) == count:
+            break
+        if block["incident_id"] not in clips:
+            clips.add(block["incident_id"])
+            chosen.append(block)
+    for number, block in enumerate(chosen, first_number):
         block["block_id"] = f"B{number:02d}"
     return chosen
 
@@ -207,3 +233,66 @@ def sha256_file(path: Path) -> str:
 
 def load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+# --- calibration v2: audit resolution, selection stability, conservative fallback ------------------
+
+def resolve(labels: list[dict], audits: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The v2 labels and the human-review list, by the rule fixed in methodology v1.2 (calibration v2, step 3)."""
+    audit = {(a["block_id"], a["predicted_id"], a["gt_id"]): a for a in audits}
+    out, review = [], []
+    for lab in labels:
+        key = (lab["block_id"], lab["predicted_id"], lab["gt_id"])
+        a = audit.get(key)
+        row = {**lab, "label_original": lab["label"]}
+        if a is not None and a["label"] != lab["label"]:
+            if lab["label"] == "ambiguous" and a["label"] != "ambiguous" and a.get("uncertainty") in ("low", "medium"):
+                row.update(label=a["label"], resolution="audit resolved an ambiguous label")
+            else:
+                row.update(label="ambiguous", resolution="labeller and auditor disagree: human review")
+                review.append({"pair": list(key), "labeller": lab["label"], "auditor": a["label"],
+                               "auditor_uncertainty": a.get("uncertainty"), "auditor_reason": a.get("reason")})
+        elif a is not None:
+            row["resolution"] = "audit agrees"
+        if a is not None:
+            row["audit"] = {k: a.get(k) for k in ("label", "uncertainty", "reason", "evidence")}
+        out.append(row)
+    return out, review
+
+
+def counts_by_block(sheet: dict, labels: list[dict], sims: dict, grid) -> dict[float, dict[str, tuple]]:
+    return {t: score_threshold(sheet, labels, sims, t)["by_kind"]["all"]["blocks"] for t in grid}
+
+
+def _f1(blocks: list[tuple]) -> float:
+    tp, fp, fn = (sum(b[i] for b in blocks) for i in range(3))
+    return 2 * tp / (2 * tp + fp + fn) if tp + fp + fn else 0.0
+
+
+def select_from_counts(per_t: dict[float, dict[str, tuple]], block_ids: list[str]) -> float:
+    """The selection rule on a (resampled) list of block ids: highest pooled F1, ties to the higher τ."""
+    f1 = {t: _f1([per_t[t][b] for b in block_ids]) for t in per_t}
+    best = max(f1.values())
+    return max(t for t, v in f1.items() if best - v <= TIE_MARGIN)
+
+
+def selection_stability(per_t: dict[float, dict[str, tuple]], *, resamples: int = 2000, seed: int = SEED) -> dict:
+    block_ids = sorted(next(iter(per_t.values())))
+    rng = random.Random(seed)
+    chosen = sorted(select_from_counts(per_t, [block_ids[rng.randrange(len(block_ids))] for _ in block_ids])
+                    for _ in range(resamples))
+    freq = {t: chosen.count(t) / resamples for t in sorted(per_t)}
+    low, high = chosen[int(0.05 * (resamples - 1))], chosen[int(0.95 * (resamples - 1))]
+    return {"frequency": freq, "central90": [low, high]}
+
+
+def conservative_choice(per_t: dict[float, dict[str, tuple]], selected: float, stability: dict) -> dict:
+    """The fallback fixed in methodology v1.2: only when the selection is unstable."""
+    low, high = stability["central90"]
+    unstable = stability["frequency"][selected] < 0.5 and high - low > 0.10 + 1e-9
+    block_ids = sorted(next(iter(per_t.values())))
+    f1 = {t: _f1([per_t[t][b] for b in block_ids]) for t in per_t}
+    if not unstable:
+        return {"triggered": False, "threshold": selected}
+    candidates = [t for t in per_t if low - 1e-9 <= t <= high + 1e-9 and f1[t] >= f1[selected] - 0.05]
+    return {"triggered": True, "threshold": max(candidates), "f1": f1[max(candidates)], "f1_selected": f1[selected]}

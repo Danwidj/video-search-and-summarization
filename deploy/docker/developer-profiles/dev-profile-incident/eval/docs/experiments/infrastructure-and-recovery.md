@@ -1,6 +1,12 @@
-# Gateway failures, host availability and the recovery protocol (proposed)
+# Gateway failures, host availability and the recovery protocol
 
-> **Status, 2026-10-28:** tooling implemented and tested hermetically. **No recovery or other inference has run.** `retry-v2` and `recovery-v1` are proposals: they are used only after the owner approves them and their budget. The original Stage 1 results are unchanged.
+> **Status, 2026-10-29:** **`retry-v2` and `recovery-v1` are approved by the owner** (B1) as the standard protocol for future experiments. They are applied identically to every arm.
+> - **Stage 2a recovery ran (2026-10-29):** 7 of 7 infrastructure failures were recovered with 11 attempts ([results §2](stage2a-results.md#2-failures-and-recovery-recovery-v1)).
+>   - Two new classes were added first (owner-approved): a DNS or connection failure is `transport_error`, and R2's 403 on an expired signed URL is `expired_url`.
+> - **Stage 2b recovery ran (2026-10-29):** 1 of 1 infrastructure failure (an HTTP 524 timeout) recovered with 1 attempt ([results §2](stage2b-results.md#2-failures-and-recovery-recovery-v1)). The baseline's one invalid output was not retried.
+> - **Stage 1 recovery:** still deferred by the owner.
+> - **Stage 2:** the final execution plan and its reconciled budget are in [stage2-plan.md](stage2-plan.md) (§3–§4).
+> - **The original Stage 1 results are unchanged.**
 
 ## 1. What failed in Stage 1 (investigation)
 
@@ -46,7 +52,12 @@
 
 ## 4. Recovery protocol `recovery-v1`
 
-1. **What is recoverable:** only video-runs with **no model output** because of infrastructure: `rate_limited`, `timeout`, `host_suspended`, `transport_error`, or an `http_error` whose stored agent error wraps an upstream 429 or 504/522/524 (`experiment_recovery.failure_class`).
+1. **What is recoverable:** only video-runs with **no model output** because of infrastructure (`experiment_recovery.failure_class`):
+   - `rate_limited`, `timeout`, `host_suspended`, `transport_error`;
+   - an `http_error` whose stored agent error wraps an upstream 429 or 504/522/524;
+   - an `http_error` whose stored error is a DNS or connection failure (`transport_error`; since 2026-10-29 the runner also records a new one as `transport_error`, which retry-v2 retries);
+   - an `http_error` whose stored error is R2's `403 Forbidden` on the signed video URL (`expired_url`). This happened when a URL expired during a host suspend and a retry reused it.
+   - **Fresh URLs:** every recovered video-run signs a fresh URL just before its first attempt. The 1-hour lifetime is longer than the worst-case retry-v2 span, which a test pins.
    - A valid or invalid model output, a low score, or an unexplained HTTP error is **never** re-run.
 2. **The original is preserved.** Recovery writes a separate immutable result, `<experiment>-recovery/<ts>/results.json` (`protocol: recovery-v1`, `recovers` = the original's path and SHA-256).
    - Every recovered video-run carries `recovers: {position, run_id, outcome, class}`, the original attempt it replaces.
@@ -62,18 +73,20 @@
    - D9 G3 refuses a comparison between different protocols or methodology versions;
    - reports show original-run reliability next to recovered-run accuracy, never mixed.
 6. **Symmetry:** a recovery is applied to **all** arms of a stage or to none.
+7. **Hard limit:** at most 15 recovered video-runs per config (`experiment_recovery.MAX_RECOVERED_RUNS`, `--max-runs`). More than that after `retry-v2` means a persistent outage: the recovery is refused, and the outage is reported.
+   - The deferred Stage 1 recovery (16 and 18 runs, from a run with no in-run retries) would need `--max-runs 18`, set deliberately.
 
 **Commands** (from `eval/`):
 - `eval_experiment.py recover <results.json>…` is a dry run: it lists what would be recovered and the caps.
 - Adding `--confirm-paid` runs it. **Not run.**
 
-## 5. Additional inference budget (for approval; gateway $0 per token, infrastructure cost unknown)
+## 5. Additional inference budget (revision 2; superseded by [stage2-plan.md §3](stage2-plan.md#3-reconciled-budget))
 
 | Item | Video-runs | Hard cap: P1 attempts / P1-token bound / judge calls | Expected attempts |
 |---|---|---|---|
 | Stage 1 recovery (C1 16, C2 18; dry run) | 34 | 102 / 3.57 M / 1,205 | about 45–55 |
 | Stage 2a: concurrent VSS baseline + V1–V7, retry-v2 | 8 × 50 = 400 | 8 × (120 / 2.1 M / 1,710) = 960 / 16.8 M / 13,680 | about 520–560 |
-| Stage 2a recovery pass (all 8 configs) | about 80–130 | 3 × the failed runs | about 120–180 |
+| Stage 2a recovery pass (all 8 configs) | about 80–130 (actual, 2026-10-29: **7**) | 3 × the failed runs (actual: 21) | about 120–180 (actual: **11**) |
 | Stage 2b: V8 + baseline drift check | 2 × 50 = 100 | 2 × (120 / 2.1 M / 1,710) | about 130–140 |
 | **Total** | **about 615–665** | **≈ 1,600 attempts** | **about 815–935** |
 
