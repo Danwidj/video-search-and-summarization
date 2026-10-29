@@ -129,9 +129,38 @@ def _video(incident_id, repeat, outcome, error=""):
     (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 429: {...}"}'), "rate_limited"),
     (_video("A", 1, "http_error", '{"detail": "P1 call returned HTTP 524: <html>"}'), "timeout"),
     (_video("A", 1, "http_error", '{"detail": "boom"}'), None),
+    # Stage 2a: a brief laptop network outage, and R2 refusing a URL that expired during a host suspend.
+    (_video("A", 1, "http_error", '{"detail": "Analysis failed: [Errno -3] Temporary failure in name resolution"}'),
+     "transport_error"),
+    (_video("A", 1, "http_error", '{"detail": "Analysis failed: P1 call returned HTTP 500: {\\"error\\":{\\"message\\":'
+                                  '\\"litellm.InternalServerError: {\\\\\\"error\\\\\\":{\\\\\\"message\\\\\\":\\\\\\"'
+                                  "403, message='Forbidden', url='https://acct.r2.cloudflarestorage.com/bucket/"
+                                  "anomaly/x.mp4?X-Amz-Signature=s'\"}"), "expired_url"),
+    # A 403 from anything other than R2's video URL is not an expired URL.
+    (_video("A", 1, "http_error", "{\"detail\": \"403, message='Forbidden', url='https://example.com/x'\"}"), None),
 ])
 def test_only_infrastructure_failures_are_recoverable(video, expected):
     assert rec.failure_class(video) == expected
+
+
+def test_the_runner_classifies_an_agent_dns_failure_as_a_transport_error():
+    body = {"detail": "Analysis failed: [Errno -3] Temporary failure in name resolution"}
+    result = er.vss_chat_result(er.VSSResponse(500, body, 1.0), prompt_id="p", prompt_sha256="s", started_at="a",
+                                finished_at="b")
+    assert result.failure_kind == "transport_error"
+    assert "transport_error" in client.P1_RETRY_POLICIES["retry-v2"]["retry_on"]  # retry-v2 itself is unchanged
+    other = er.vss_chat_result(er.VSSResponse(500, {"detail": "boom"}, 1.0), prompt_id="p", prompt_sha256="s",
+                               started_at="a", finished_at="b")
+    assert other.failure_kind == "http_error"
+
+
+def test_a_signed_url_outlives_the_worst_case_retry_v2_span():
+    import eval_video_resolution
+
+    policy = client.P1_RETRY_POLICIES["retry-v2"]
+    attempts = 1 + policy["max_rate_limit_retries"]
+    worst = attempts * (client.P1_TIMEOUT_SECONDS + 60 + policy["inter_call_delay_s"]) + sum(policy["backoff_s"])
+    assert worst < eval_video_resolution.SIGNED_URL_TTL_SECONDS
 
 
 def _record(videos, **extra):
@@ -167,11 +196,15 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
                       "class": "timeout"}], "of": {"experiment_id": "vss-baseline"}}
     config = rec.recovery_config(original, plan, gt)
     assert config["pipeline"]["retry_policy"] == "retry-v2" and config["budget"]["max_p1_calls"] == 3
-    seen = []
+    seen, signed = [], []
 
-    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
-        seen.append(incident_id)
-        p1_call("m", "u")
+    def video_source(incident_id):
+        signed.append(incident_id)
+        return f"fresh-{len(signed)}", {}
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, video_url, **_):
+        seen.append((incident_id, video_url))
+        p1_call("m", video_url)
         return {"incident_id": incident_id, "outcome": "scored", "run_id": model_run_id, "judge_calls": 0,
                 "judge_tokens": 0, "p1_raw": {"ok": True, "usage": {"total_tokens": 10},
                                               "rate_limit": {"attempt_count": 1, "attempts": [{}]}}}
@@ -179,7 +212,8 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
     outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
     out = er.run_stage([config], split=split, gt_index=gt,
                        store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
-                       video_source=lambda i: ("u", {}), call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)),
+                       video_source=video_source,
+                       call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)),
                        run_one=run_one, confirm_paid=True, results_root=tmp_path,
                        now=datetime(2026, 11, 2, tzinfo=UTC), log=lambda *_: None,
                        pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
@@ -187,7 +221,9 @@ def test_run_stage_with_only_runs_the_listed_runs_and_links_them(tmp_path):
                        only={config["experiment_id"]: {(2, "B")}},
                        recovery={config["experiment_id"]: rec.links(plan)})
     record = out["records"][0]
-    assert seen == ["B"] and record["protocol"] == rec.PROTOCOL and record["videos"][0]["recovers"]["run_id"] == "o"
+    assert record["protocol"] == rec.PROTOCOL and record["videos"][0]["recovers"]["run_id"] == "o"
+    # Only the listed run, with a URL signed for it at run time (never the original run's stored URL).
+    assert seen == [("B", "fresh-1")] and signed == ["B"]
 
 
 # --- calibration and re-matching -------------------------------------------------------------------------
@@ -241,9 +277,10 @@ def test_rematch_writes_a_new_versioned_record_and_keeps_the_original():
     assert out["methodology"]["match_threshold"] == 0.5 and out["rematched_from"]["methodology_version"].endswith("v1.1")
 
 
-def test_v12_is_not_in_force():
-    assert methodology.METHODOLOGY_VERSION == "evaluation-methodology-v1.1"
-    assert methodology.MATCH_THRESHOLD_PROVISIONAL["evaluation-methodology-v1.2"] is True
+def test_v12_is_in_force_and_v11_is_kept():
+    assert methodology.METHODOLOGY_VERSION == "evaluation-methodology-v1.2"
+    assert methodology.MATCH_THRESHOLDS == {"evaluation-methodology-v1.1": 0.75, "evaluation-methodology-v1.2": 0.40}
+    assert methodology.MATCH_CALIBRATION["evaluation-methodology-v1.2"]["human_validated"] is False
 
 
 def test_d9_g3_refuses_mixed_methodologies_and_protocols(monkeypatch):
@@ -255,3 +292,182 @@ def test_d9_g3_refuses_mixed_methodologies_and_protocols(monkeypatch):
     monkeypatch.setattr(es, "valid_runs", lambda r: 0)  # G1 is not under test here
     problems = es.guardrails(base, other, comparison)
     assert "G3: different methodology" in problems and "G3: different protocol" in problems
+
+
+# --- calibration v2 resolution and selection stability ------------------------------------------------
+
+def _lab(label, **extra):
+    return {"block_id": "B01", "predicted_id": "A1", "gt_id": "A1", "label": label, **extra}
+
+
+@pytest.mark.parametrize("original, audit, uncertainty, expected, reviewed", [
+    ("same", "same", "low", "same", False),
+    ("ambiguous", "same", "medium", "same", False),
+    ("ambiguous", "same", "high", "ambiguous", True),
+    ("same", "different", "low", "ambiguous", True),
+    ("different", "ambiguous", "high", "ambiguous", True),
+])
+def test_audit_resolution_follows_the_preregistered_rule(original, audit, uncertainty, expected, reviewed):
+    labels, review = mc.resolve([_lab(original)], [_lab(audit, uncertainty=uncertainty)])
+    assert labels[0]["label"] == expected and labels[0]["label_original"] == original
+    assert bool(review) is reviewed
+
+
+def test_selection_stability_and_the_conservative_fallback():
+    # Two blocks that each favour a different threshold: unstable by construction.
+    per_t = {0.2: {"B1": (5, 0, 0), "B2": (1, 4, 0)}, 0.5: {"B1": (3, 0, 2), "B2": (1, 0, 0)}}
+    stability = mc.selection_stability(per_t, resamples=200, seed=1)
+    assert set(stability["frequency"]) == {0.2, 0.5} and abs(sum(stability["frequency"].values()) - 1) < 1e-9
+    chosen = mc.select_from_counts(per_t, ["B1", "B2"])
+    assert chosen == 0.5  # pooled F1 0.80 against 0.75
+    fallback = mc.conservative_choice(per_t, chosen, {"frequency": {0.2: 0.6, 0.5: 0.4}, "central90": [0.2, 0.5]})
+    assert fallback["triggered"] and fallback["threshold"] == 0.5  # highest τ in range within 0.05 of the best F1
+    stable = mc.conservative_choice(per_t, chosen, {"frequency": {chosen: 0.9}, "central90": [chosen, chosen]})
+    assert stable == {"triggered": False, "threshold": chosen}
+
+
+def test_large_blocks_are_drawn_without_scores_and_one_per_clip():
+    blocks = [{"experiment_id": "e", "incident_id": f"C{i % 3}", "repeat": 1, "kind": k, "predicted": [], "ground_truth": []}
+              for i, k in enumerate(["entities", "assets", "instruments"] * 3)]
+    chosen = mc.sample_large([dict(b) for b in blocks], first_number=23, count=3)
+    assert [b["block_id"] for b in chosen] == ["B23", "B24", "B25"] and len({b["incident_id"] for b in chosen}) == 3
+    again = mc.sample_large([dict(b) for b in blocks], first_number=23, count=3)
+    assert [(b["incident_id"], b["kind"]) for b in again] == [(b["incident_id"], b["kind"]) for b in chosen]
+
+
+# --- Stage 2: caps, resume, host guard --------------------------------------------------------------
+
+def _gt_many(n):
+    return {"status": "frozen", "version": "v", "manifest": {"records_sha256": "g"}, "split": {"version": "split-v2"},
+            "by_incident_id": {f"V{i:02d}": {"category": "Assault", "filename": f"V{i:02d}.mp4", "p1_shaped": {
+                "entities": [{}], "instruments": [], "assets": [{}]}} for i in range(n)}}
+
+
+def _stage(configs, gt, tmp_path, *, attempts=1, fail_after=None, resume=None, seen=None):
+    calls = {"n": 0}
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
+        calls["n"] += 1
+        if fail_after is not None and calls["n"] > fail_after:
+            raise KeyboardInterrupt  # the laptop dies mid-stage
+        if seen is not None:
+            seen.append(incident_id)
+        p1_call("m", "u")
+        rows = [{"failure_kind": "timeout"}] * (attempts - 1) + [{"failure_kind": None}]
+        return {"incident_id": incident_id, "outcome": "scored", "run_id": model_run_id, "judge_calls": 0,
+                "judge_tokens": 0, "p1_raw": {"ok": True, "usage": {"total_tokens": 9500},
+                                              "rate_limit": {"attempt_count": attempts, "attempts": rows}}}
+
+    outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
+    split = {"version": "split-v2", "dev": sorted(gt["by_incident_id"]), "test": []}
+    return er.run_stage(configs, split=split, gt_index=gt, store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
+                        video_source=lambda i: ("u", {}),
+                        call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)), run_one=run_one,
+                        confirm_paid=True, results_root=tmp_path, now=datetime(2026, 11, 3, tzinfo=UTC),
+                        log=lambda *_: None, resume=resume,
+                        pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
+                                 "judge_tokens_per_call_estimate": 1})
+
+
+def _s2_configs():
+    return [er.load_config(p) for p in sorted(er.CONFIG_DIR.glob("s2-*.json"))]
+
+
+def test_stage2_caps_survive_the_worst_case_of_three_unmetered_attempts_per_run(tmp_path):
+    """Every Stage 2 config (2a and 2b) completes all 50 runs even if every run needs 3 attempts and the first two
+    report no usage."""
+    configs = _s2_configs()
+    assert len(configs) == 10 and all(c["pipeline"]["retry_policy"] == "retry-v2" for c in configs)
+    out = _stage(configs, _gt_many(25), tmp_path, attempts=3)
+    assert out["stopped"] is None and all(r["usage"]["p1_calls"] == 50 for r in out["records"])
+    assert all(r["usage"]["p1_attempts"] == 150 for r in out["records"])
+
+
+def test_an_interrupted_stage_resumes_where_it_stopped(tmp_path):
+    configs = _s2_configs()[:2]
+    gt = _gt_many(3)
+    with pytest.raises(KeyboardInterrupt):
+        _stage(configs, gt, tmp_path, fail_after=5)
+    stage_dir = next((tmp_path / "stages").iterdir())
+    seen = []
+    out = _stage(configs, gt, tmp_path, resume=stage_dir, seen=seen)
+    assert out["stopped"] is None and len(seen) == 12 - 5
+    assert all(len(r["videos"]) == 6 and r["resumed"][0]["after_video_runs"] == 5 for r in out["records"])
+    with pytest.raises(er.ExperimentRefused, match="already wrote"):
+        _stage(configs, gt, tmp_path, resume=stage_dir)
+
+
+def test_paid_runs_on_wsl_need_the_wake_request(monkeypatch):
+    import eval_experiment
+
+    args = SimpleNamespace(allow_sleep=False)
+    monkeypatch.setenv("KEEP_AWAKE_ACTIVE", "1")
+    assert eval_experiment.host_guard(args) is None
+    monkeypatch.delenv("KEEP_AWAKE_ACTIVE")
+    monkeypatch.setattr(eval_experiment.Path, "read_text", lambda self: "Linux 6.6 microsoft-standard-WSL2")
+    assert "keep-awake" in eval_experiment.host_guard(args)
+    assert eval_experiment.host_guard(SimpleNamespace(allow_sleep=True)) is None
+
+
+def test_the_matcher_defaults_to_the_methodology_threshold():
+    import matching
+
+    just_below = [[0.399]]
+    assert matching.solve_assignment(just_below) == []
+    assert len(matching.solve_assignment([[0.40]])) == 1
+
+
+def test_a_recovery_beyond_the_hard_limit_is_refused():
+    plan = {"runs": [{"repeat": 1, "incident_id": f"V{i:02d}", "position": i, "run_id": "r", "outcome": "timeout",
+                      "class": "timeout"} for i in range(rec.MAX_RECOVERED_RUNS + 1)], "of": {}}
+    original = er.load_config(er.CONFIG_DIR / "s2-vss-baseline.json")
+    with pytest.raises(rec.RecoveryRefused, match="persistent outage|recovery limit"):
+        rec.recovery_config(original, plan, _gt_many(25))
+    cfg = rec.recovery_config(original, {**plan, "runs": plan["runs"][:15]}, _gt_many(25))
+    assert cfg["budget"]["max_p1_calls"] == 45 and cfg["budget"]["max_p1_tokens"] == 45 * er.P1_TOKENS_CEILING
+
+
+def _outage_stage(configs, gt, tmp_path, *, no_output_from=None, clock=None, session_seconds=None, resume=None,
+                  seen=None):
+    calls = {"n": 0}
+
+    def run_one(store, *, incident_id, model_run_id, p1_call, **_):
+        calls["n"] += 1
+        if seen is not None:
+            seen.append(incident_id)
+        p1_call("m", "u")
+        down = no_output_from is not None and calls["n"] >= no_output_from
+        return {"incident_id": incident_id, "outcome": "timeout" if down else "scored", "run_id": model_run_id,
+                "judge_calls": 0, "judge_tokens": 0,
+                "p1_raw": {"ok": not down, "usage": {} if down else {"total_tokens": 9500},
+                           "rate_limit": {"attempt_count": 3 if down else 1,
+                                          "attempts": [{"failure_kind": "timeout"}] * 3 if down else [{}]}}}
+
+    outcome = SimpleNamespace(result=SimpleNamespace(raw={}))
+    split = {"version": "split-v2", "dev": sorted(gt["by_incident_id"]), "test": []}
+    kwargs = {"clock": clock} if clock else {}
+    return er.run_stage(configs, split=split, gt_index=gt, store=SimpleNamespace(insert_model_run=lambda *a, **k: None),
+                        video_source=lambda i: ("u", {}),
+                        call_factory_for=lambda c: (lambda *a, **k: (lambda *b: outcome)), run_one=run_one,
+                        confirm_paid=True, results_root=tmp_path, now=datetime(2026, 11, 4, tzinfo=UTC),
+                        log=lambda *_: None, resume=resume, session_seconds=session_seconds,
+                        pricing={"provisional": False, "usd_per_million_tokens": {"default": 0.0}, "judge_model": "j",
+                                 "judge_tokens_per_call_estimate": 1}, **kwargs)
+
+
+def test_an_outage_pauses_after_four_failed_runs_without_spending_more(tmp_path):
+    configs = _s2_configs()[:2]
+    out = _outage_stage(configs, _gt_many(5), tmp_path, no_output_from=3)
+    assert out["paused"]["reason"].startswith(f"{er.OUTAGE_PAUSE_RUNS} consecutive") and out["results_files"] == []
+    assert sum(len(r["videos"]) for r in out["records"]) == 2 + er.OUTAGE_PAUSE_RUNS
+    seen = []
+    resumed = _outage_stage(configs, _gt_many(5), tmp_path, resume=Path(out["stage_dir"]), seen=seen)
+    assert resumed["paused"] is None if "paused" in resumed else True
+    assert resumed["stopped"] is None and len(seen) == 20 - 6
+    assert all(len(r["videos"]) == 10 for r in resumed["records"])
+
+
+def test_the_session_limit_pauses_between_video_runs(tmp_path):
+    ticks = iter(range(0, 100000, 1000))
+    out = _outage_stage(_s2_configs()[:2], _gt_many(5), tmp_path, clock=lambda: next(ticks), session_seconds=3500)
+    assert out["paused"]["reason"].startswith("session time limit") and out["paused"]["done"] == 3

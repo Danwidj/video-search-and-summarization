@@ -1,0 +1,32 @@
+{
+  "arm": "vss",
+  "baseline_ref": "direct-vlm-baseline",
+  "budget": {
+    "max_p1_calls": 150,
+    "max_p1_tokens": 5250000,
+    "max_judge_calls": 1710
+  },
+  "description": "Stage 2a: the VSS baseline (p1-v4-base) re-run interleaved with V1-V7 under retry-v2 and methodology v1.2; the D9 baseline for Stage 2.",
+  "experiment_id": "s2-vss-baseline",
+  "final": false,
+  "frozen_baseline": false,
+  "ground_truth": {
+    "dir": "eval_data/ground_truth/ground-truth-v1.0",
+    "allow_candidate": false
+  },
+  "model": "nvidia/cosmos-3-super-reasoner",
+  "pipeline": {
+    "profile": "accuracy",
+    "skip_rp1": true,
+    "skip_crops": true,
+    "agent_base_url": "http://127.0.0.1:8765",
+    "retry_policy": "retry-v2"
+  },
+  "prompt_id": "p1-v4-base",
+  "purpose": "experiment",
+  "repeats": 2,
+  "scoring": "full",
+  "selection_record": null,
+  "split": "dev",
+  "videos": null
+}

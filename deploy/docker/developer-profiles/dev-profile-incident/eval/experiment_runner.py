@@ -88,6 +88,11 @@ RATE_LIMIT_STOP_SHARE = 0.25
 RETRY_POLICIES = ("retry-v1", "retry-v2")
 DEFAULT_RETRY_POLICY = "retry-v1"
 RATE_LIMIT_MIN_ATTEMPTS = 8
+# Stage 2a run controls (owner, 2026-10-28: "pause and preserve the run rather than repeatedly exhausting the
+# request budget"). A pause keeps the checkpoint and writes no result, so the stage resumes later:
+# - this many consecutive video-runs with no model output (after their retries) mean the gateway is unavailable;
+# - the rate-limit share rule pauses instead of ending the stage, and is counted per session.
+OUTAGE_PAUSE_RUNS = 4
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,20}$")
 
 
@@ -253,6 +258,18 @@ def _upstream_status(body) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# The agent's 500 when it could not reach the gateway at all (DNS or connection failure on the host): a transport
+# failure, not an HTTP error from the model service. Seen in Stage 2a during a brief laptop network outage.
+NETWORK_FAILURE = re.compile(r"Temporary failure in name resolution|Name or service not known|"
+                             r"nodename nor servname|getaddrinfo failed|Cannot connect to host|"
+                             r"Connection (?:refused|reset)|Network is unreachable", re.IGNORECASE)
+
+
+def network_failure(body) -> bool:
+    detail = body.get("detail") if isinstance(body, dict) else body
+    return bool(NETWORK_FAILURE.search(str(detail or ""))) and _upstream_status(body) is None
+
+
 def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str, started_at: str, finished_at: str):
     """The agent's answer as a ``ChatResult`` (the eval.md §4 Track X rules).
 
@@ -275,6 +292,7 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
     else:
         status = _upstream_status(response.body) or response.status_code
         kind = {429: "rate_limited"}.get(status) or ("timeout" if status in GATEWAY_TIMEOUT_STATUS
+                                                     else "transport_error" if network_failure(response.body)
                                                      else "http_error")
         return ChatResult(ok=False, status_code=response.status_code, error=json.dumps(response.body)[:1000],
                           failure_kind=kind, raw=body, **timing)
@@ -477,11 +495,22 @@ def schedule(configs: list[dict], videos: list[str], repeats: int, seed: int = O
     return order
 
 
+def write_checkpoint(stage_dir: Path, *, order, done: int, records, run_ids, attempts: int, rate_limited: int) -> None:
+    """The stage's progress after each video-run, replaced atomically (a crash never leaves half a file)."""
+    tmp = stage_dir / "checkpoint.json.tmp"
+    tmp.write_text(json.dumps({"order": [list(o) for o in order], "done": done, "records": records,
+                               "run_ids": [[k, r, v] for (k, r), v in run_ids.items()], "attempts": attempts,
+                               "rate_limited": rate_limited}, default=str))
+    tmp.replace(stage_dir / "checkpoint.json")
+
+
 def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_source: Callable,
               call_factory_for: Callable, run_one: Callable, confirm_paid: bool, results_root: Path = RESULTS_ROOT,
               registry: dict | None = None, decisions_path: Path = DECISIONS_PATH, now: datetime | None = None,
               log: Callable = print, pricing: dict | None = None, seed: int = ORDER_SEED,
-              only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None) -> dict:
+              only: dict[str, set[tuple[int, str]]] | None = None, recovery: dict[str, dict] | None = None,
+              resume: Path | None = None, session_seconds: float | None = None,
+              clock: Callable[[], float] = time.monotonic) -> dict:
     """Run configurations interleaved per video under hard caps; write one immutable result per configuration.
 
     ``call_factory_for(config) -> call_factory(incident_id, run_id, duration) -> p1_call``. Every
@@ -493,6 +522,15 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     ``only`` (recovery, ``experiment_recovery``) limits each configuration to the listed ``(repeat,
     incident_id)`` video-runs, still in the interleaved D10 order; ``recovery`` names, per configuration,
     the original result it recovers and the original video-run each recovered one replaces.
+
+    After every video-run the stage writes ``checkpoint.json`` (the records so far, the run ids and the
+    rate-limit counters). ``resume`` (that stage directory) continues an interrupted stage with the same
+    configurations: the finished video-runs are kept, the rest run in the same D10 order, and the result
+    is written once at the end, as for an uninterrupted stage (``resumed`` lists when it was resumed).
+
+    A **pause** returns ``{"paused": ...}`` and writes no result: the session time limit
+    (``session_seconds``, checked between video-runs), ``OUTAGE_PAUSE_RUNS`` consecutive video-runs with no model
+    output, or the rate-limit share rule within this session. A cap still **stops** the stage (``complete: false``).
     """
     if only is not None and set(only) != {c["experiment_id"] for c in configs}:
         raise ExperimentRefused("a recovery lists the video-runs of every configuration in the stage")
@@ -520,15 +558,25 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 f"{caps['required']} the full plan can need ({caps['repeats']} repeats x {caps['judged_fields']} "
                 f"judged fields x {caps['attempts_per_field']} attempts); re-derive it with 'eval_experiment.py caps'")
     pricing = pricing or load_pricing()
-    started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-    out_dirs = [results_root / c["experiment_id"] / started for c in configs]
     stage_id = hashlib.sha256(",".join(c["experiment_id"] for c in configs).encode()).hexdigest()[:8]
+    checkpoint = None
+    if resume is not None:
+        started, _, resumed_id = resume.name.partition("-")
+        if resumed_id != stage_id or not (resume / "checkpoint.json").exists():
+            raise ExperimentRefused(f"{resume} is not an interrupted stage of these configurations")
+        checkpoint = json.loads((resume / "checkpoint.json").read_text())
+    else:
+        started = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
+    out_dirs = [results_root / c["experiment_id"] / started for c in configs]
     stage_dir = results_root / "stages" / f"{started}-{stage_id}"
-    for path in [*out_dirs, stage_dir]:
-        if path.exists():
-            raise ExperimentRefused(f"{path} exists; results are immutable")
-    for path in [*out_dirs, stage_dir]:
-        path.mkdir(parents=True)
+    if checkpoint is None:
+        for path in [*out_dirs, stage_dir]:
+            if path.exists():
+                raise ExperimentRefused(f"{path} exists; results are immutable")
+        for path in [*out_dirs, stage_dir]:
+            path.mkdir(parents=True)
+    elif any((d / "results.json").exists() for d in out_dirs):
+        raise ExperimentRefused("this stage already wrote its results; it cannot be resumed")
     order = schedule(configs, list(video_sets.pop()), configs[0]["repeats"], seed)
     if only is not None:
         order = [o for o in order if (o[0], o[2]) in only[configs[o[3]]["experiment_id"]]]
@@ -549,9 +597,25 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
     planned_runs = [planned_calls(c, split) if only is None else len(only[c["experiment_id"]]) for c in configs]
     run_ids: dict[tuple, str] = {}
     stopped = None
-    attempts = rate_limited = 0
+    attempts = rate_limited = done = 0
+    session_attempts = session_rate_limited = no_output_streak = 0
+    session_start = clock()
+    paused = None
+    if checkpoint is not None:
+        if checkpoint["order"] != [list(o) for o in order]:
+            raise ExperimentRefused("the checkpoint's order differs from this stage's order")
+        records, done = checkpoint["records"], checkpoint["done"]
+        attempts, rate_limited = checkpoint["attempts"], checkpoint["rate_limited"]
+        run_ids = {(k, r): v for k, r, v in checkpoint["run_ids"]}
+        for record in records:
+            record.setdefault("resumed", []).append({"at": datetime.now(UTC).isoformat(timespec="seconds"),
+                                                     "after_video_runs": done})
+        for (k, _repeat), run_id in run_ids.items():  # a fresh store needs the model runs it already has
+            store.insert_model_run(run_id, model_name=configs[k]["model"], prompt_version=contract.contract_version())
     with (stage_dir / "cost-log.jsonl").open("a") as cost_log:
-        for repeat, position, incident_id, k in order:
+        for index, (repeat, position, incident_id, k) in enumerate(order):
+            if index < done:
+                continue
             config, record = configs[k], records[k]
             budget, used = config["budget"], record["usage"]
             reason = None
@@ -567,8 +631,19 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 reason = "max_p1_tokens (no room for this call's worst case)"
             elif used["judge_calls"] + judge_worst > budget["max_judge_calls"]:
                 reason = f"max_judge_calls (this video could need {judge_worst} judge requests)"
-            elif attempts >= RATE_LIMIT_MIN_ATTEMPTS and rate_limited / attempts > RATE_LIMIT_STOP_SHARE:
-                reason = f"rate limited on {rate_limited}/{attempts} calls (> {RATE_LIMIT_STOP_SHARE:.0%})"
+            pause = None
+            if session_seconds is not None and clock() - session_start >= session_seconds:
+                pause = f"session time limit ({session_seconds / 3600:.1f} h)"
+            elif no_output_streak >= OUTAGE_PAUSE_RUNS:
+                pause = f"{no_output_streak} consecutive video-runs with no model output (gateway unavailable?)"
+            elif session_attempts >= RATE_LIMIT_MIN_ATTEMPTS and \
+                    session_rate_limited / session_attempts > RATE_LIMIT_STOP_SHARE:
+                pause = (f"rate limited on {session_rate_limited}/{session_attempts} calls this session "
+                         f"(> {RATE_LIMIT_STOP_SHARE:.0%})")
+            if pause and not reason:
+                paused = {"reason": pause, "at": [repeat, position, incident_id], "done": index}
+                log(f"  PAUSE: {pause}; resume with --resume {stage_dir}")
+                break
             if reason:
                 stopped = {"config": config["experiment_id"], "reason": reason, "at": [repeat, position, incident_id]}
                 log(f"  STOP: {config['experiment_id']} {reason}")
@@ -612,13 +687,23 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             outcome_attempts = (result.get("p1_raw") or {}).get("rate_limit") or {}
             attempts += int(outcome_attempts.get("attempt_count") or 1)
             rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])
+            session_attempts += int(outcome_attempts.get("attempt_count") or 1)
+            session_rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])
+            no_output_streak = 0 if extraction_stats.has_model_output(result) else no_output_streak + 1
             cost_log.write(json.dumps({"time": datetime.now(UTC).isoformat(timespec="seconds"),
                                        "config": config["experiment_id"], "incident_id": incident_id,
                                        "repeat": repeat, "position": position, "outcome": result["outcome"], **usage,
                                        "config_cumulative": dict(used)}) + "\n")
             cost_log.flush()
+            write_checkpoint(stage_dir, order=order, done=index + 1, records=records, run_ids=run_ids,
+                             attempts=attempts, rate_limited=rate_limited)
             log(f"  {config['experiment_id']} r{repeat} {incident_id}: {result['outcome']} "
                 f"tokens={usage['p1_total_tokens']} cost≈${used['cost_usd_provisional']:.4f}")
+    if paused is not None:
+        write_checkpoint(stage_dir, order=order, done=paused["done"], records=records, run_ids=run_ids,
+                         attempts=attempts, rate_limited=rate_limited)
+        return {"dry_run": False, "paused": paused, "stopped": None, "stage_dir": str(stage_dir), "records": records,
+                "results_files": [], "plans": plans, "plan": plans[0]}
     finished = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     outputs = []
     for config, record, out_dir in zip(configs, records, out_dirs, strict=True):

@@ -260,12 +260,22 @@ def analyze_video_with_p1(model: str, video_url: str, *, timeout: float = DEFAUL
     ``prompt_text`` is a registry prompt for an experiment (``prompt_registry.prompt_text``);
     the default is the production contract prompt, byte for byte.
     """
+    return chat_completion(model, p1_messages(video_url, prompt_text), inference_config=p1_request_config(),
+                           timeout=timeout)
+
+
+def p1_messages(video_url: str, prompt_text: str | None = None) -> list[dict]:
     content = [
         {"type": "video_url", "video_url": {"url": video_url}},
         {"type": "text", "text": contract.extraction_prompt() if prompt_text is None else prompt_text},
     ]
-    messages = [{"role": "user", "content": content}]
-    return chat_completion(model, messages, inference_config=p1_request_config(), timeout=timeout)
+    return [{"role": "user", "content": content}]
+
+
+def p1_request_payload(model: str, video_url: str, prompt_text: str | None = None) -> dict:
+    """The exact JSON body ``analyze_video_with_p1`` sends (for the Stage 3 request-parity check; no call)."""
+    return {"model": model, "messages": p1_messages(video_url, prompt_text),
+            **FIXED_INFERENCE_CONFIG, **p1_request_config()}
 
 
 @dataclass

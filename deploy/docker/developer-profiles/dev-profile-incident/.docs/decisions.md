@@ -42,6 +42,61 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - *Hiding stage labels entirely:* Rejected because operators need visual and semantic confirmation of each pipeline stage.
 - **Links:** `src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx`, `src/sections/analysis/stage-progress.ts`, `tests/analysis-progress-bar.test.mjs`.
 
+### 2026-10-29: Stage 3 design: C1-C4 on the 55 test clips, 1 repeat, run once (prepared, not approved to run)
+- **Decision (owner's design, 2026-10-29):**
+  - **Configurations:** C1 direct + `p1-v4-base`, C2 VSS + base, C3 VSS + V1, C4 direct + V1.
+  - **Runs:** the 55 `split-v2` test clips, **1 repeat** (this replaces D10's 2 for Stage 3), interleaved by the D10 order, so 220 video-runs.
+  - **Unchanged settings:** Cosmos 3 Super, `ground-truth-v1.0`, methodology v1.2 (τ = 0.40), D9 v2 differences, severity MAE under v1.3 (reporting only), retry-v2, recovery-v1.
+  - **Pinned inputs:** `eval/experiments/stage3/manifest.json` pins configs, prompts, ground truth, methodology, clips, seeds, policies and caps.
+  - **Preflight:** `eval_stage3.py preflight` refuses any drift and checks C1/C2 and C3/C4 request parity. The only difference is `stream: false`, which the agent sends.
+  - **Run once:** each config is `final` and `frozen_baseline`.
+  - **Caps:** 660 P1 attempts, 23.1 M reserved tokens and 6,720 judge calls, plus recovery at most 180 / 6.3 M / 2,740.
+- **Status:** configs, manifest, preflight and report tooling are committed. **No Stage 3 request has been sent; execution needs the owner's approval** ([plan](../eval/docs/experiments/stage3-plan.md)).
+- **Why:**
+  - All four configurations run on the same clips under the same conditions, so every comparison is paired by video. The prompt effect is measured in both arms, and the VSS-minus-direct effect at each prompt.
+  - One repeat keeps the test run single and within one or two sessions.
+  - D9 is used as a measurement on test, never a selection.
+- **Rejected:**
+  - Reusing Stage 1 or 2 runs, which are dev clips under other protocols.
+  - Two repeats, which the owner chose against.
+  - Selecting or tuning anything on test results.
+- **Links:** [stage3-plan.md](../eval/docs/experiments/stage3-plan.md); [D15 exposure](mvp2/experiment-decision-record.md#d15-held-out-exposure-approved).
+
+### 2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity
+- **Decision:** the pre-registered D9 v2 rule (`select_d9` over every version that ran, each against its own interleaved baseline, merged `original+recovery-v1` records) selects **V1 `p1-v4-e01-severity`** (SHA-256 `004746ea7d19…`) as the Stage 3 prompt.
+  - **V1:** ΔI +0.051 [+0.013, +0.089].
+  - **Next best:** V4 +0.029. **V8:** `p1-v4-e08-combined`, +0.022 [−0.025, +0.071] against `s2-vss-baseline-b`.
+  - **No tie-breaker:** the gap is more than 0.01.
+  - **Original-run view:** the same result.
+- **Status:** the rule's result, **approved by the owner on 2026-10-29** for Stage 3.
+  - **Stage 3 has not run.** It needs the owner's approval, its own configs and budget.
+  - This heading is the selection record that a final test config must name.
+- **Why:** the rule was fixed on 2026-10-27, before any Stage 2 output.
+  - V8 passed the +0.02 bar and every guardrail, so it qualified.
+  - V8 was not selected, because V1's ΔI is higher.
+  - The cross-stage check (V8 − V1 −0.016 [−0.054, +0.021], descriptive) gives no reason to prefer the more complex prompt.
+- **Rejected:**
+  - Choosing V8 because it combines every block (the rule ranks by ΔI, not by coverage).
+  - Re-pairing V1 and V8 against one baseline for selection (they were not interleaved; reported as sensitivity only).
+- **Links:** [Stage 2b results and final selection](../eval/docs/experiments/stage2b-results.md#7-final-stage-2-selection-d9-v2-pre-registered-2026-10-27); [Stage 2a results](../eval/docs/experiments/stage2a-results.md).
+
+### 2026-10-29: Stage 2a recovery classifies DNS failures and expired R2 URLs as recoverable infrastructure failures
+- **Decision (approved by the owner 2026-10-29, after all 400 Stage 2a video-runs were recorded):**
+  - recovery-v1 also recovers an `http_error` whose stored error is a DNS or connection failure (`transport_error`), or R2's `403 Forbidden` on the signed video URL (`expired_url`);
+  - the runner records a new agent DNS failure as `transport_error`.
+- **Unchanged:** timeout limits, the retry-v2 rules, prompts, model settings, ground truth, τ and the methodology. Original results stay untouched, and reliability is reported both as original-run and recovery-adjusted, kept separate.
+- **Result:** 7 of 7 recovered with 11 attempts (462 of the 1,200 authorised).
+- **Why:** three Stage 2a runs had no model output for host-side reasons that recovery-v1 rejected:
+  - a 9-hour suspend expired a signed URL that the retry then reused;
+  - a brief laptop DNS outage hit two runs.
+
+  Leaving them out would have counted infrastructure as model misses.
+- **Alternatives rejected:**
+  - Re-run every `http_error`: a genuine agent or contract error must never be retried into a result.
+  - Re-sign the URL inside retry-v2: that changes the approved retry rules mid-stage. A recovered run signs a fresh URL anyway.
+  - Change the running process mid-stage: the owner forbade it.
+- **Links:** [Stage 2a results](../eval/docs/experiments/stage2a-results.md), [infrastructure and recovery §4](../eval/docs/experiments/infrastructure-and-recovery.md), `eval/experiment_recovery.py`.
+
 ### 2026-10-28: Videos screen uses a unified lifecycle status badge, direct report action, and responsive card-table layout
 - **Decision:** The Videos list (`/videos`) replaces the separate "Reports" (version count) and "Status" (official boolean or dash) columns with a single consolidated "Report & Lifecycle Status" badge column (`Official`, `Report ready`, `Ready to analyse`, with subtext version counts). The table provides direct primary action buttons (`Open report →` when revisions exist, `Analyse video →` when 0 revisions exist) and a secondary `...` dropdown menu (`Analysis history`, `View report`, `Copy video ID`). Filtering supports `All`, `With report`, `Needs analysis`, and `Failed`. The header includes a filename search input and an `Upload video` button. On viewports below `md` (< 768px), the layout switches from a table to vertical stacked cards without horizontal clipping.
 - **Why:** The previous Status column showed `—` on every video where an official version had not been explicitly chosen, misleading operators into thinking processing was missing or broken. Users had to navigate through the intermediate `/videos/<id>` history screen just to open a report. On mobile screens (390px), the table clipped horizontally with an unhelpful swipe banner.
@@ -81,6 +136,54 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Alternatives rejected:** leave old objects as they are (the captain asked for no hashes in any name); resolve old keys through a lookup table (every reader would need it, and the names would still be unreadable); rewrite revisions with a plain `UPDATE` after disabling the trigger (loses the guarantee that revisions are never edited); a random suffix for collisions (not deterministic, brings the ids back).
 - **Known limits:** the original name of a pre-migration upload is not in the database, so the script uses the VST sensor name, else the upload time. Two analyses of one video that start together can pick the same `run-N`; the conditional put makes one fail instead of overwriting.
 - **Links:** [`data.md` §2](data.md#2-cloudflare-r2-storage-architecture), [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py), [`20261028090000_r2_rename.sql`](../supabase/migrations/20261028090000_r2_rename.sql).
+
+### 2026-10-28: Methodology v1.3: severity MAE as a reporting-only extension
+- **Decision (owner, 2026-10-28; proposed after Stage 2a was authorised and launched):**
+  - **MAE** (mean \|predicted − expected\| over valid severity predictions, in levels) is the **primary severity-specific reporting metric**.
+  - **Supporting metrics:** mean signed error, exact and within-±1 accuracy (over valid predictions), the confusion matrix, coverage and failure categories.
+  - **Comparisons:** paired against the corresponding baseline, with a 95% video-cluster bootstrap.
+- **Not changed:**
+  - D9 v2 (its severity component stays exact accuracy), its weights, the selection criteria and the guardrails;
+  - τ = 0.40, ground-truth-v1.0, the prompts, the Stage 2a configs and running code;
+  - every existing score.
+  - `METHODOLOGY_VERSION` stays v1.2. v1.3 metrics are computed offline into separately versioned reports, with no model or judge call.
+- **Why:** severity is ordinal. Exact accuracy cannot tell a one-level miss from a four-level one, and the signed error shows the over-rating that Stage 1 found. The limit, that adjacent levels are not guaranteed equal distances, is documented.
+- **Rejected:** replacing exact severity in D9 during Stage 2 (that would change a pre-registered objective after the data).
+- **Links:** [`../eval/methodology/evaluation-methodology-v1.3.md`](../eval/methodology/evaluation-methodology-v1.3.md), [`../eval/docs/experiments/severity-v1.3.md`](../eval/docs/experiments/severity-v1.3.md).
+
+### 2026-10-28: Stage 2a authorised; run controls pause instead of spending the budget
+- **Decision (owner, 2026-10-28):**
+  - **Authorised:** Stage 2a only: 8 configs × 25 dev clips × 2 repeats = 400 video-runs, at most 1,200 P1 attempts including retries, under the existing token and judge caps.
+  - **Run controls:**
+    - pause after 4 consecutive video-runs with no model output;
+    - the 25% rate-limit rule pauses per session instead of ending the stage;
+    - `--session-hours 4` sessions;
+    - checkpoint and resume with no duplicated video-runs.
+- **Why:** the owner's instruction is that if the gateway becomes unavailable, the run pauses and is preserved rather than repeatedly exhausting the request budget. A cap still stops the stage and is reported.
+- **Not authorised:** Stage 2b, V8, Stage 3, the Stage 1 recovery, a Stage 1 judge re-score, any change to τ, the methodology or the prompts.
+- **Links:** [`../eval/docs/experiments/stage2-plan.md`](../eval/docs/experiments/stage2-plan.md).
+
+### 2026-10-28: Methodology v1.2 adopted with τ = 0.40 (AI-calibrated, not human-validated); retry-v2 and recovery-v1 approved; V1–V7 registered
+- **Decision (owner instruction, 2026-10-28): evaluation-methodology-v1.2 is the scoring methodology from Stage 2 on.**
+  - **Code:** `methodology.METHODOLOGY_VERSION` is v1.2, with τ = 0.40.
+  - **Preserved:** v1.1 and every v1.1 result.
+  - **Unchanged:** the ground truth, D9 v2 weights and criteria, the incident rules, the judge and its 1,500-token limit, one-to-one matching, and invalid- and missing-output handling.
+- **How τ was chosen:** τ = 0.40 is the result of the selection rule fixed before labelling (commit `dac60a9b2`), on calibration v2: 26 blocks, 132 pairs, including 4 random large blocks.
+  - **Labels:** AI-labelled and AI-audited. 30 of 36 audited pairs agree, and every pair with two decisive labels agrees.
+  - **Result:** pooled F1 0.814 [0.65, 0.94], precision 0.889. Selected in 56% of bootstrap resamples, so the conservative fallback does not trigger.
+  - **Not human-validated:** every result records `match_calibration.human_validated: false`. 8 pairs await human review. A changed label means τ is re-derived by the same rule.
+- **Stage 1:** re-matched offline under v1.2 into new files. The v1.1 `results.json` files are unchanged and pass `verify`.
+- **Approved (B1):** `retry-v2` (≤ 2 retries for infrastructure failures, 60 s then 180 s, every arm) and `recovery-v1` (≤ 15 video-runs per config), with host-suspend detection, keep-awake and checkpoint/resume.
+- **C1:** V1–V7 are registered as immutable `candidate` prompts ([record](../eval/docs/experiments/stage2-prompts.md)). The V8 rule is fixed.
+- **Not yet decided:**
+  - the Stage 2 start and budget ([plan §3–§4](../eval/docs/experiments/stage2-plan.md));
+  - the Stage 1 judge re-score (C3: 193 judged fields);
+  - the Stage 1 recovery (deferred).
+- **Rejected:**
+  - choosing τ on Stage 1 model scores;
+  - silently keeping the provisional 0.30;
+  - presenting AI calibration as human-validated.
+- **Links:** [`../eval/methodology/calibration/matching-v1.2-calibration-v2.md`](../eval/methodology/calibration/matching-v1.2-calibration-v2.md); [`../eval/methodology/evaluation-methodology-v1.2.md`](../eval/methodology/evaluation-methodology-v1.2.md).
 
 ### 2026-10-28: Preparation before Stage 2: methodology v1.2 item matching, retry-v2 and recovery-v1, draft prompts (proposals awaiting approval)
 - **Approved by the owner (2026-10-28):** the *preparation* only, as listed below. No recovery, Stage 2 or Stage 3 inference until the final methodology and budgets are approved.
