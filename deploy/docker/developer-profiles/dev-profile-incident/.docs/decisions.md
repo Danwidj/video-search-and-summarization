@@ -2,6 +2,26 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: Stage 3 design: C1-C4 on the 55 test clips, 1 repeat, run once (prepared, not approved to run)
+- **Decision (owner's design, 2026-10-29):**
+  - **Configurations:** C1 direct + `p1-v4-base`, C2 VSS + base, C3 VSS + V1, C4 direct + V1.
+  - **Runs:** the 55 `split-v2` test clips, **1 repeat** (this replaces D10's 2 for Stage 3), interleaved by the D10 order, so 220 video-runs.
+  - **Unchanged settings:** Cosmos 3 Super, `ground-truth-v1.0`, methodology v1.2 (τ = 0.40), D9 v2 differences, severity MAE under v1.3 (reporting only), retry-v2, recovery-v1.
+  - **Pinned inputs:** `eval/experiments/stage3/manifest.json` pins configs, prompts, ground truth, methodology, clips, seeds, policies and caps.
+  - **Preflight:** `eval_stage3.py preflight` refuses any drift and checks C1/C2 and C3/C4 request parity. The only difference is `stream: false`, which the agent sends.
+  - **Run once:** each config is `final` and `frozen_baseline`.
+  - **Caps:** 660 P1 attempts, 23.1 M reserved tokens and 6,720 judge calls, plus recovery at most 180 / 6.3 M / 2,740.
+- **Status:** configs, manifest, preflight and report tooling are committed. **No Stage 3 request has been sent; execution needs the owner's approval** ([plan](../eval/docs/experiments/stage3-plan.md)).
+- **Why:**
+  - All four configurations run on the same clips under the same conditions, so every comparison is paired by video. The prompt effect is measured in both arms, and the VSS-minus-direct effect at each prompt.
+  - One repeat keeps the test run single and within one or two sessions.
+  - D9 is used as a measurement on test, never a selection.
+- **Rejected:**
+  - Reusing Stage 1 or 2 runs, which are dev clips under other protocols.
+  - Two repeats, which the owner chose against.
+  - Selecting or tuning anything on test results.
+- **Links:** [stage3-plan.md](../eval/docs/experiments/stage3-plan.md); [D15 exposure](mvp2/experiment-decision-record.md#d15-held-out-exposure-approved).
+
 ### 2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity
 - **Decision:** the pre-registered D9 v2 rule (`select_d9` over every version that ran, each against its own interleaved baseline, merged `original+recovery-v1` records) selects **V1 `p1-v4-e01-severity`** (SHA-256 `004746ea7d19…`) as the Stage 3 prompt.
   - **V1:** ΔI +0.051 [+0.013, +0.089].

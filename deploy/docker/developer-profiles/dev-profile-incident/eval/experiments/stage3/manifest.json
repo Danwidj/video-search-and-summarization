@@ -1,0 +1,229 @@
+{
+  "manifest": "stage3-manifest-v1",
+  "selection_record": "2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity",
+  "selected_prompt": "p1-v4-e01-severity",
+  "configs": {
+    "C1": {
+      "experiment_id": "s3-c1-direct-base",
+      "file": "experiments/configs/s3-c1-direct-base.json",
+      "file_sha256": "740f589f78b350d70bdacb7053a7dd2a4a1673090b09cd311601ef6a1e6abe75",
+      "arm": "direct-vlm",
+      "prompt_id": "p1-v4-base",
+      "prompt_sha256": "409ed9b3187a56be082bb2542abb243cc13762fdcae7739206d11455064cc4a8"
+    },
+    "C2": {
+      "experiment_id": "s3-c2-vss-base",
+      "file": "experiments/configs/s3-c2-vss-base.json",
+      "file_sha256": "2e4e86bf9f8b13aab431b7a272ae7aa7b8badfcc757ba4165e2d11cb4271d0e2",
+      "arm": "vss",
+      "prompt_id": "p1-v4-base",
+      "prompt_sha256": "409ed9b3187a56be082bb2542abb243cc13762fdcae7739206d11455064cc4a8"
+    },
+    "C3": {
+      "experiment_id": "s3-c3-vss-v1",
+      "file": "experiments/configs/s3-c3-vss-v1.json",
+      "file_sha256": "3cc9c428ad438325d9abd75cdf80b14e7953c6e78b533fc2e132bff3445adace",
+      "arm": "vss",
+      "prompt_id": "p1-v4-e01-severity",
+      "prompt_sha256": "004746ea7d193fbba4af4c411c8baa2c7a1c9acfdd9d81fdaee19838024c4138"
+    },
+    "C4": {
+      "experiment_id": "s3-c4-direct-v1",
+      "file": "experiments/configs/s3-c4-direct-v1.json",
+      "file_sha256": "9682dc383ecc03f05d7d69c543d4b1fa3ce1e94bcee4be20e4ab8220638c8020",
+      "arm": "direct-vlm",
+      "prompt_id": "p1-v4-e01-severity",
+      "prompt_sha256": "004746ea7d193fbba4af4c411c8baa2c7a1c9acfdd9d81fdaee19838024c4138"
+    }
+  },
+  "model": [
+    "nvidia/cosmos-3-super-reasoner"
+  ],
+  "p1_request": {
+    "settings": {
+      "temperature": 0.0,
+      "max_tokens": 16384,
+      "media_io_kwargs": {
+        "video": {
+          "num_frames": 64
+        }
+      }
+    },
+    "response_format_sha256": "521b89e3e16f28208b2143f9d62c44d85b2ce9f32b5d603f0870ac8a83441689",
+    "contract_version": "incident-contract-v4"
+  },
+  "ground_truth": {
+    "version": "ground-truth-v1.0",
+    "status": "frozen",
+    "records_sha256": "391fcd272bf224af258c543251030ab4457a153f89816d5ace8e37c57bdc24f5",
+    "manifest_sha256": "2210687c9f39abacbad5e472bc0f4d0400365a295d5bc64567eea2936e1402b4",
+    "dir": [
+      "eval_data/ground_truth/ground-truth-v1.0"
+    ]
+  },
+  "methodology": {
+    "version": "evaluation-methodology-v1.2",
+    "match_threshold": 0.4,
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "judge_model": "nvidia/nemotron-3-nano-30b-a3b",
+    "judge_prompt_version": "judge-prompt-v1",
+    "judge_settings": {
+      "temperature": 0.0,
+      "max_tokens": 1500
+    },
+    "timestamp_tolerance_seconds": 5,
+    "bootstrap": {
+      "seed": 20261027,
+      "resamples": 10000
+    },
+    "severity_reporting": "evaluation-methodology-v1.3 (reporting only)",
+    "comparison_metric": "D9 v2 (experiment_selection.compare; no selection on test)"
+  },
+  "split": {
+    "version": "split-v2",
+    "seed": [
+      42
+    ],
+    "half": "test",
+    "clips": 55,
+    "test": [
+      "Animal003",
+      "Animal004",
+      "Animal006",
+      "Animal007",
+      "Animal008",
+      "Animal009",
+      "Animal010",
+      "Animal013",
+      "Animal014",
+      "Animal015",
+      "Assault012",
+      "Assault013",
+      "Assault018",
+      "Assault019",
+      "Assault020",
+      "Assault026",
+      "Assault027",
+      "Assault034",
+      "Assault036",
+      "Assault050",
+      "Burglary005",
+      "Burglary009",
+      "Burglary013",
+      "Burglary020",
+      "Burglary021",
+      "Burglary026",
+      "Burglary036",
+      "Burglary041",
+      "Burglary042",
+      "Burglary052",
+      "Burglary053",
+      "Burglary066",
+      "Burglary071",
+      "Explosion004",
+      "Explosion009",
+      "Explosion014",
+      "Explosion016",
+      "Explosion017",
+      "Explosion019",
+      "Explosion027",
+      "Explosion041",
+      "Explosion047",
+      "Explosion051",
+      "RoadAccidents008",
+      "RoadAccidents010",
+      "RoadAccidents024",
+      "RoadAccidents029",
+      "RoadAccidents030",
+      "RoadAccidents037",
+      "RoadAccidents039",
+      "RoadAccidents047",
+      "RoadAccidents052",
+      "RoadAccidents054",
+      "RoadAccidents060",
+      "RoadAccidents069"
+    ],
+    "test_sha256": "982675e5f523f7dc859d346cf8996e47271d684efb83dfd0ef8ab72bc2948187"
+  },
+  "order": {
+    "rule": "D10: per repeat shuffled with random.Random(seed + repeat); arms interleaved per video, first arm rotating by position",
+    "seed": 20261027,
+    "repeats": 1,
+    "video_runs": 220,
+    "schedule_sha256": "0b99aa00332d35da05888713a3595db45a564dab19d3deb0d5465ca70bd8fc89"
+  },
+  "retry_policy": {
+    "inter_call_delay_s": 20.0,
+    "cooldown_s": 60.0,
+    "max_rate_limit_retries": 2,
+    "honor_retry_after": true,
+    "id": "retry-v2",
+    "retry_on": [
+      "rate_limited",
+      "timeout",
+      "transport_error",
+      "host_suspended"
+    ],
+    "backoff_s": [
+      60.0,
+      180.0
+    ]
+  },
+  "recovery": {
+    "protocol": "recovery-v1",
+    "retry_policy": "retry-v2",
+    "recoverable": [
+      "rate_limited",
+      "timeout",
+      "host_suspended",
+      "transport_error",
+      "expired_url"
+    ],
+    "max_runs_per_config": 15
+  },
+  "caps": {
+    "configs": {
+      "C1": {
+        "video_runs": 55,
+        "max_p1_calls": 165,
+        "max_p1_tokens": 5775000,
+        "max_judge_calls": 1680,
+        "recovery_max_p1_calls": 45,
+        "recovery_max_p1_tokens": 1575000
+      },
+      "C2": {
+        "video_runs": 55,
+        "max_p1_calls": 165,
+        "max_p1_tokens": 5775000,
+        "max_judge_calls": 1680,
+        "recovery_max_p1_calls": 45,
+        "recovery_max_p1_tokens": 1575000
+      },
+      "C3": {
+        "video_runs": 55,
+        "max_p1_calls": 165,
+        "max_p1_tokens": 5775000,
+        "max_judge_calls": 1680,
+        "recovery_max_p1_calls": 45,
+        "recovery_max_p1_tokens": 1575000
+      },
+      "C4": {
+        "video_runs": 55,
+        "max_p1_calls": 165,
+        "max_p1_tokens": 5775000,
+        "max_judge_calls": 1680,
+        "recovery_max_p1_calls": 45,
+        "recovery_max_p1_tokens": 1575000
+      }
+    },
+    "stage_total": {
+      "max_judge_calls": 6720,
+      "max_p1_calls": 660,
+      "max_p1_tokens": 23100000,
+      "recovery_max_p1_calls": 180,
+      "recovery_max_p1_tokens": 6300000,
+      "video_runs": 220
+    }
+  },
+  "p1_tokens_ceiling_per_attempt": 35000
+}

@@ -1,0 +1,32 @@
+{
+  "arm": "direct-vlm",
+  "baseline_ref": null,
+  "budget": {
+    "max_p1_calls": 165,
+    "max_p1_tokens": 5775000,
+    "max_judge_calls": 1680
+  },
+  "description": "Stage 3 C4: direct VLM with the selected V1 prompt on the 55 held-out test clips, 1 repeat, interleaved with the other three under retry-v2 and methodology v1.2. Run once (frozen_baseline guards a second run); never used to change a prompt, threshold, scoring rule or model setting.",
+  "experiment_id": "s3-c4-direct-v1",
+  "final": true,
+  "frozen_baseline": true,
+  "ground_truth": {
+    "dir": "eval_data/ground_truth/ground-truth-v1.0",
+    "allow_candidate": false
+  },
+  "model": "nvidia/cosmos-3-super-reasoner",
+  "pipeline": {
+    "profile": "accuracy",
+    "skip_rp1": true,
+    "skip_crops": true,
+    "agent_base_url": null,
+    "retry_policy": "retry-v2"
+  },
+  "prompt_id": "p1-v4-e01-severity",
+  "purpose": "experiment",
+  "repeats": 1,
+  "scoring": "full",
+  "selection_record": "2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity",
+  "split": "test",
+  "videos": null
+}
