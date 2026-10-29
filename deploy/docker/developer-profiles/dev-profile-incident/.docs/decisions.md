@@ -2,6 +2,23 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: Stage 2a recovery classifies DNS failures and expired R2 URLs as recoverable infrastructure failures
+- **Decision (approved by the owner 2026-10-29, after all 400 Stage 2a video-runs were recorded):**
+  - recovery-v1 also recovers an `http_error` whose stored error is a DNS or connection failure (`transport_error`), or R2's `403 Forbidden` on the signed video URL (`expired_url`);
+  - the runner records a new agent DNS failure as `transport_error`.
+- **Unchanged:** timeout limits, the retry-v2 rules, prompts, model settings, ground truth, τ and the methodology. Original results stay untouched, and reliability is reported both as original-run and recovery-adjusted, kept separate.
+- **Result:** 7 of 7 recovered with 11 attempts (462 of the 1,200 authorised).
+- **Why:** three Stage 2a runs had no model output for host-side reasons that recovery-v1 rejected:
+  - a 9-hour suspend expired a signed URL that the retry then reused;
+  - a brief laptop DNS outage hit two runs.
+
+  Leaving them out would have counted infrastructure as model misses.
+- **Alternatives rejected:**
+  - Re-run every `http_error`: a genuine agent or contract error must never be retried into a result.
+  - Re-sign the URL inside retry-v2: that changes the approved retry rules mid-stage. A recovered run signs a fresh URL anyway.
+  - Change the running process mid-stage: the owner forbade it.
+- **Links:** [Stage 2a results](../eval/docs/experiments/stage2a-results.md), [infrastructure and recovery §4](../eval/docs/experiments/infrastructure-and-recovery.md), `eval/experiment_recovery.py`.
+
 ### 2026-10-28: Incident search and evidence search share one search function; evidence search can be scoped to one video; the critic is off by default
 - **Decision:** `semantic_search` in `services/agent/src/vss_agents/api/incident_search.py` embeds the query and hands the vector to a `retrieve` callback; `POST /api/v1/incidents/search` (evidence crops) and `POST /api/v1/incidents/revisions/search` (revision summaries) both call it and differ only in what they retrieve. `filters.video_id` (agent) and `p_video_id` (`search_evidence_items`) restrict the search to one video inside the database. An empty query is allowed only with a video id: nothing is embedded and the video's crops come back in video time order. The VLM critic runs only when `INCIDENT_SEARCH_CRITIC` is truthy; otherwise every hit is `unverified` (rationale `Critic not run`), with no VLM call and no delay. The console dropped the verdict badge and the "Show N rejected" switch.
 - **Why:** "See evidence" on a library card showed nothing: the console filtered the global top 20 down to one video, so an incident outside that list gave zero hits. The critic called a rate-limited VLM (HTTP 429), which made searches take 10 to 30 seconds and added no usable signal.
