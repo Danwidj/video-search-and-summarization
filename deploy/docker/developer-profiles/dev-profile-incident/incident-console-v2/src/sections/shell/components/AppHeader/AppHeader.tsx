@@ -15,7 +15,6 @@ import { HealthStrip } from '@/sections/shell/components/HealthStrip';
 const NAV_ITEMS = [
   { href: '/', key: 'analyze', label: 'Analyze' },
   { href: '/library', key: 'library', label: 'Library' },
-  { href: '/videos', key: 'videos', label: 'Videos' },
   { href: '/dashboard', key: 'dashboard', label: 'Dashboard' },
 ] as const;
 
@@ -23,7 +22,7 @@ export function AppHeader({
   active,
   subtitle = 'Video intelligence',
 }: {
-  active: 'analyze' | 'library' | 'videos' | 'dashboard';
+  active?: 'analyze' | 'library' | 'dashboard';
   subtitle?: string;
 }) {
   return (

@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: Videos tab and screen removed in favour of focused incident workflow
+- **Decision:** Remove the Videos tab (`/videos`) from the primary navigation header and mobile dropdown, delete the `/videos` page route (`src/app/videos/page.tsx`) and the `VideosScreen` section component (`src/sections/videos/components/VideosScreen/`). Dashboard overview metrics ("Uploaded videos", "Awaiting official report", "Without a report") render as static summary cards without links to the removed route. The individual video history route (`/videos/[videoId]`) is retained for history inspection and re-runs.
+- **Why:** The dedicated `/videos` inventory table duplicated video discovery already served by the Incident Library (`/library`) and added navigational clutter. Removing the tab streamlines the console into three core areas: Analyze (upload orchestration), Library (incident exploration and evidence search), and Dashboard (analytics).
+- **Alternatives rejected:**
+  - *Retaining the Videos tab with reduced scope:* Rejected because user navigation is simpler when incident reports in `/library` serve as the single destination for video results.
+  - *Repointing dashboard video metrics to `/library`:* Rejected because `/library` displays analyzed incident reports, not unanalyzed video assets or clips awaiting an official report selection.
+- **Links:** `src/sections/shell/components/AppHeader/AppHeader.tsx`, `src/sections/dashboard/components/Dashboard/Dashboard.tsx`, `src/app/videos/page.tsx`, `src/sections/videos/components/VideosScreen/VideosScreen.tsx`.
+
 ### 2026-10-29: Remove orphaned "Analysis history for this video" section from report page
 - **Decision:** Remove the orphaned `AdvancedReportTools` component (`src/sections/reports/components/AdvancedReportTools/`) and its "Analysis history for this video" section from `incident-console-v2`. Re-analysis continues to be provided by `ReanalysisDialog` in the sticky top bar, while video run history remains on `/videos/[videoId]` (`VideoHistoryScreen`). Test assertions and documentation references are updated accordingly.
 - **Why:** The re-analysis card was migrated to `ReanalysisDialog` in the sticky top bar (#266), leaving `AdvancedReportTools` unmounted from the report page and orphaned. Deleting the component eliminates dead code and removes the obsolete bottom run history list per product direction.

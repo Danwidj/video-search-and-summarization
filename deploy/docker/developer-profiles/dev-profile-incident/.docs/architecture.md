@@ -227,7 +227,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 ### Console pages
 
 - **`/library`** (the old `/reports` redirects here with its query string): Find incidents shows six cards per page, one per video (official revision, else newest), with severity, "Official vN" or "No official version", summary, evidence and version counts, and MVP1's thumbnail: the upload-time screenshot only, with the severity and AI/Human badges on it, and MVP1's skeleton when the screenshot is missing or fails to load; filters are text, type, official only, severity band, added date and sort, shown as chips and kept in the URL. The text search falls back to the library's ILIKE match, with a note, when the agent fails or finds nothing. Find evidence shows the agent's top 20 hits with crop, match percentage, time, kind, threat and holder (no verdict badge: the critic is off); kind, threat and type filters and "Group by incident" work on the returned hits. A hit opens a viewer with the full frame and every box at that second (or the enlarged crop) and a link to the report at that second. "See evidence" on a card scopes Find evidence to that incident and loads its evidence at once; a query typed while scoped searches only that incident (the agent filters by `video_id` in the database, not in the browser).
-- **`/videos` and `/videos/<id>`:** the video list ("Awaiting official report", "Without a report"), and one video's re-generation card and full attempt history.
+- **`/videos/<id>`:** one video's re-generation card and full attempt history.
 - **`/reports/<videoId>`:** View mode has a fixed top band (video; a timeline with one lane per entity over its seen span, its held instruments, then "Holder unknown" and Assets lanes; the versions graph, where each AI run is a branch and the star marks the official version), a scrolling pane (report fields, evidence cards by holder, read-only model output, run details, the version chat) and a bottom bar with "Edit from vN". Edit mode is described below.
 - **`/dashboard`:** see [Dashboard analytics](#dashboard-analytics-and-cross-filtering). The browser uploads a WebP thumbnail (the frame 25% into each new upload, at most 640×360) to `thumbnails/<video-key>.webp`; a failure never blocks analysis.
 
@@ -262,7 +262,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 ### Dashboard analytics and cross-filtering
 
 `GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **official versions only**: one per video, through `videos.official_revision_id`.
-- Videos with revisions but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, and link to the matching `/videos` lists.
+- Videos with revisions but no official one ("awaiting official report"), videos without any report, and all uploaded videos are counted separately, all time, as static summary metric cards on the dashboard.
 - Evidence statistics are canonical entity types plus normalised instrument and asset names, counted per distinct incident.
 - Model coverage counts every analysis attempt in the period by outcome.
 - Every other number links to `/library?scope=official&...` with the same period and filters, using `match=exact` for instrument and asset names, so the reports total equals the clicked number. The URL is the reports page's filter state.

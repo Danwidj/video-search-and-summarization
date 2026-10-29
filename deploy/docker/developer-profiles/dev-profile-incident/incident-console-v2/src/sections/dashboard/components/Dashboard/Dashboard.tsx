@@ -161,7 +161,7 @@ export function Dashboard() {
         </Alert>
       )}
       <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="video-metrics">
-        <Metric href="/videos" label="Uploaded videos" note="all time" value={data.videos.uploaded} />
+        <Metric label="Uploaded videos" note="all time" value={data.videos.uploaded} />
         <Metric
           change={delta(data.total, previous?.total)}
           href={link()}
@@ -169,18 +169,8 @@ export function Dashboard() {
           note="in the selected period"
           value={data.total}
         />
-        <Metric
-          href="/videos?filter=awaiting-selection"
-          label="Awaiting official report"
-          note="have reports, none selected"
-          value={data.videos.awaitingSelection}
-        />
-        <Metric
-          href="/videos?filter=without-report"
-          label="Without a report"
-          note="no successful analysis yet"
-          value={data.videos.withoutReport}
-        />
+        <Metric label="Awaiting official report" note="have reports, none selected" value={data.videos.awaitingSelection} />
+        <Metric label="Without a report" note="no successful analysis yet" value={data.videos.withoutReport} />
       </section>
       <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
@@ -299,23 +289,33 @@ function Metric({
 }: {
   label: string;
   value: number | string;
-  href: string;
+  href?: string;
   change?: number | null;
   note?: string;
 }) {
+  const content = (
+    <div className="p-5">
+      <p className="text-sm text-ink/50">{label}</p>
+      <p className="mt-2 text-4xl font-semibold text-ink">{value}</p>
+      {note && <p className="mt-1 text-[11px] text-ink-caption">{note}</p>}
+      {change !== null && (
+        <p className="mt-2 text-xs text-ink-caption">
+          {change > 0 ? '+' : ''}
+          {change}% vs. previous
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <Card className="rounded-2xl border-ink/10 bg-white p-0 shadow-none transition-shadow hover:shadow-panel focus-within:ring-2 focus-within:ring-ring">
-      <Link className="block rounded-2xl p-5 focus:outline-none" href={url}>
-        <p className="text-sm text-ink/50">{label}</p>
-        <p className="mt-2 text-4xl font-semibold text-ink">{value}</p>
-        {note && <p className="mt-1 text-[11px] text-ink-caption">{note}</p>}
-        {change !== null && (
-          <p className="mt-2 text-xs text-ink-caption">
-            {change > 0 ? '+' : ''}
-            {change}% vs. previous
-          </p>
-        )}
-      </Link>
+      {url ? (
+        <Link className="block rounded-2xl focus:outline-none" href={url}>
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
     </Card>
   );
 }
