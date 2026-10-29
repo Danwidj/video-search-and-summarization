@@ -7,7 +7,7 @@ const stages = ['Upload secured', 'Video understood', 'Evidence structured', 'Re
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen overflow-hidden bg-canvas text-ink">
+    <main className="relative min-h-screen overflow-hidden bg-canvas text-ink">
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
@@ -37,23 +37,6 @@ export default function HomePage() {
         </div>
 
         <AnalysisWorkspace />
-      </section>
-
-      <section className="relative z-10 border-t border-ink/10 bg-white/45">
-        <div className="mx-auto grid max-w-[1440px] gap-8 px-6 py-10 text-sm lg:grid-cols-3 lg:px-12">
-          <p>
-            <strong className="block text-ink">Evidence first</strong>
-            <span className="text-ink/55">Every finding stays connected to a moment in the video.</span>
-          </p>
-          <p>
-            <strong className="block text-ink">Uncertainty included</strong>
-            <span className="text-ink/55">Confidence and ambiguity remain visible instead of being hidden.</span>
-          </p>
-          <p>
-            <strong className="block text-ink">Built for review</strong>
-            <span className="text-ink/55">Reports are designed to be scanned quickly and inspected deeply.</span>
-          </p>
-        </div>
       </section>
     </main>
   );

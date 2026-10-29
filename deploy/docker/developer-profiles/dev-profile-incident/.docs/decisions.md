@@ -2,6 +2,46 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: Videos tab and screen removed in favour of focused incident workflow
+- **Decision:** Remove the Videos tab (`/videos`) from the primary navigation header and mobile dropdown, delete the `/videos` page route (`src/app/videos/page.tsx`) and the `VideosScreen` section component (`src/sections/videos/components/VideosScreen/`). Dashboard overview metrics ("Uploaded videos", "Awaiting official report", "Without a report") render as static summary cards without links to the removed route. The individual video history route (`/videos/[videoId]`) is retained for history inspection and re-runs.
+- **Why:** The dedicated `/videos` inventory table duplicated video discovery already served by the Incident Library (`/library`) and added navigational clutter. Removing the tab streamlines the console into three core areas: Analyze (upload orchestration), Library (incident exploration and evidence search), and Dashboard (analytics).
+- **Alternatives rejected:**
+  - *Retaining the Videos tab with reduced scope:* Rejected because user navigation is simpler when incident reports in `/library` serve as the single destination for video results.
+  - *Repointing dashboard video metrics to `/library`:* Rejected because `/library` displays analyzed incident reports, not unanalyzed video assets or clips awaiting an official report selection.
+- **Links:** `src/sections/shell/components/AppHeader/AppHeader.tsx`, `src/sections/dashboard/components/Dashboard/Dashboard.tsx`, `src/app/videos/page.tsx`, `src/sections/videos/components/VideosScreen/VideosScreen.tsx`.
+
+### 2026-10-29: Remove orphaned "Analysis history for this video" section from report page
+- **Decision:** Remove the orphaned `AdvancedReportTools` component (`src/sections/reports/components/AdvancedReportTools/`) and its "Analysis history for this video" section from `incident-console-v2`. Re-analysis continues to be provided by `ReanalysisDialog` in the sticky top bar, while video run history remains on `/videos/[videoId]` (`VideoHistoryScreen`). Test assertions and documentation references are updated accordingly.
+- **Why:** The re-analysis card was migrated to `ReanalysisDialog` in the sticky top bar (#266), leaving `AdvancedReportTools` unmounted from the report page and orphaned. Deleting the component eliminates dead code and removes the obsolete bottom run history list per product direction.
+- **Alternatives rejected:**
+  - *Restyling or re-mounting the bottom run history on the report page:* Rejected as redundant with the version history panel in the top band and the dedicated video history screen.
+  - *Deleting `RunHistoryList` or `/api/videos/[videoId]/runs`:* Rejected because they are still actively used by the Videos screen (`VideoHistoryScreen`) and re-analysis orchestration.
+- **Links:** `src/sections/reports/components/ReportPage/ReportPage.tsx`, `tests/report-editing-ui.test.mjs`, PR #266.
+
+### 2026-10-29: AnalysisWorkspace upload target uses a composed shadcn dropzone
+- **Decision:** The hand-written drag-and-drop `<button>` in `AnalysisWorkspace.tsx` is replaced with a dropzone composed of shadcn/ui components (`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `Button`, `Badge`, and `lucide-react`'s `Upload` icon) over the native hidden file input. The dropzone Card is keyboard-accessible (`role="button"`, `tabIndex={0}`, with Enter and Space handlers dispatching to the hidden file input), displays a visual `Upload` orbit icon, a "New analysis" badge, title, description, and an outline "Browse video files" button. Drag-and-drop states (`border-primary bg-primary/10`) provide responsive feedback, and pre-upload validation behaviours are preserved: name checks, duplicate-name warning, unsafe-character replacement notice, progress, and error alert states.
+- **Why:** The previous upload target was a custom uncomposed HTML button with hardcoded inline SVG and ad-hoc styling that did not align with shadcn design system conventions.
+- **Alternatives rejected:**
+  - *Adding `react-dropzone`:* Unnecessary third-party dependency; composition from existing shadcn primitives (`Card`, `Button`, `Badge`) and standard HTML5 Drag and Drop API fully satisfies requirements with zero extra bundle weight.
+  - *Unwrapping Card/Button into raw divs:* Violates shadcn composition and accessibility rules.
+- **Links:** `src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx`.
+
+### 2026-10-29: Report band panels swap hand-written resize handles for shadcn Resizable
+- **Decision:** The report page (`ReportPage.tsx`) replaces the hand-written `<hr>` horizontal panel resize handle (`ReportBandResizeHandle`) with shadcn's `ResizablePanelGroup`, `ResizablePanel`, and `ResizableHandle withHandle` (`src/components/ui/resizable.tsx`). Default panel proportions (70% video, 30% version history) and minimum bounds (15% min, 85% max) are preserved. On mobile viewports (< 1024px / 390px), the panels stack vertically with `hidden lg:flex` on the separator handle and responsive CSS overrides. The vertical report band height handle (`ReportBandHeightHandle`) is retained for height adjustments (190px to 600px, default 270px) to preserve sticky bar behavior and scrolling ergonomics.
+- **Why:** The hand-written panel handle relied on manual pointer capture, clientX calculations, and bespoke keyboard handlers. Swapping to shadcn `Resizable` (backed by `react-resizable-panels`) leverages standard ARIA separator semantics, built-in keyboard navigation, fine/coarse cursor ergonomics, and component consistency across the console.
+- **Alternatives rejected:**
+  - *Wrapping the entire page in a vertical `ResizablePanelGroup`:* Rejected because `react-resizable-panels` groups require rigid container bounds with `overflow: hidden`, which would break the outer document's `position: sticky` top bar and native window scrolling.
+  - *Adding resize handles to `EvidenceFramePicker`:* Inspected and rejected because `EvidenceFramePicker` is a video frame crop canvas for drawing 2D bounding boxes, not a split panel.
+- **Links:** `src/sections/reports/components/ReportPage/ReportPage.tsx`, `src/components/ui/resizable.tsx`.
+
+### 2026-10-29: Rebuild 5-stage analysis progress bar on shadcn Progress component with accessible announcements
+- **Decision:** The video analysis workspace (`AnalysisWorkspace`) replaces the unsegmented stage card list and standalone upload bar with the unified shadcn `Progress` component (`@/components/ui/progress.tsx`). The continuous progress bar represents overall progress across the 5 analysis stages (`uploading` 0-20%, `preparing` 40%, `analyzing` 60%, `saving` 80%, `complete` 100%, and retains failed stage progress on error). Stage labels are maintained directly beneath the bar in a structured list (`<ol aria-label="Analysis stages">`) showing step numbers, checkmarks (`✓`), active indicator (`aria-current="step"`), failure indicators (`✕`), and upload percentage chips. Accessible screen reader support includes `role="progressbar"`, `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, `aria-valuetext`, and a polite live region (`role="status" aria-live="polite"`).
+- **Why:** The previous UI rendered the 5 stages solely as a list of static card borders with an upload-only progress bar displayed conditionally during file transfer, lacking a unified progress bar for the full analysis pipeline, proper ARIA progress values, and screen reader announcements.
+- **Alternatives rejected:**
+  - *Five separate disconnected Progress bars:* Rejected because Radix UI Progress represents a single value range; fragmented mini-bars clutter the UI and impair screen reader parsing.
+  - *Hiding stage labels entirely:* Rejected because operators need visual and semantic confirmation of each pipeline stage.
+- **Links:** `src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx`, `src/sections/analysis/stage-progress.ts`, `tests/analysis-progress-bar.test.mjs`.
+
 ### 2026-10-29: Stage 3 design: C1-C4 on the 55 test clips, 1 repeat, run once (prepared, not approved to run)
 - **Decision (owner's design, 2026-10-29):**
   - **Configurations:** C1 direct + `p1-v4-base`, C2 VSS + base, C3 VSS + V1, C4 direct + V1.
@@ -56,6 +96,20 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - Re-sign the URL inside retry-v2: that changes the approved retry rules mid-stage. A recovered run signs a fresh URL anyway.
   - Change the running process mid-stage: the owner forbade it.
 - **Links:** [Stage 2a results](../eval/docs/experiments/stage2a-results.md), [infrastructure and recovery §4](../eval/docs/experiments/infrastructure-and-recovery.md), `eval/experiment_recovery.py`.
+
+### 2026-10-28: Videos screen uses a unified lifecycle status badge, direct report action, and responsive card-table layout
+- **Decision:** The Videos list (`/videos`) replaces the separate "Reports" (version count) and "Status" (official boolean or dash) columns with a single consolidated "Report & Lifecycle Status" badge column (`Official`, `Report ready`, `Ready to analyse`, with subtext version counts). The table provides direct primary action buttons (`Open report →` when revisions exist, `Analyse video →` when 0 revisions exist) and a secondary `...` dropdown menu (`Analysis history`, `View report`, `Copy video ID`). Filtering supports `All`, `With report`, `Needs analysis`, and `Failed`. The header includes a filename search input and an `Upload video` button. On viewports below `md` (< 768px), the layout switches from a table to vertical stacked cards without horizontal clipping.
+- **Why:** The previous Status column showed `—` on every video where an official version had not been explicitly chosen, misleading operators into thinking processing was missing or broken. Users had to navigate through the intermediate `/videos/<id>` history screen just to open a report. On mobile screens (390px), the table clipped horizontally with an unhelpful swipe banner.
+- **Alternatives rejected:**
+  - *Pure card grid (like `/library`):* Rejected because video asset inventory requires high scan density, fast chronological triage, and batch monitoring.
+  - *Renaming the Status column only:* Rejected because it leaves mobile clipping, disjointed version counts, and missing direct report navigation unsolved.
+- **Links:** `src/sections/videos/components/VideosScreen/VideosScreen.tsx`, `src/app/api/videos/route.ts`, `src/modules/videos/domain/VideoRepository.ts`.
+
+### 2026-10-28: The shadcn skill is canonical under dev-profile-incident/skills/ with multi-harness symlinks
+- **Decision:** `shadcn` skill is housed at project level under `deploy/docker/developer-profiles/dev-profile-incident/skills/shadcn`. The repo root exposes symlinks to it at `.claude/skills/shadcn` (Claude Code) and `.agents/skills/shadcn` (Gemini CLI and other agentskills.io hosts).
+- **Why:** The skill was originally placed as a real directory under `.claude/skills/shadcn`, hiding it from non-Claude harnesses (such as Antigravity/Gemini). Housing it alongside the other incident skills under `dev-profile-incident/skills/` keeps project skills canonical in one place while symlinks expose it to all harnesses.
+- **Alternatives rejected:** keeping a real directory in `.claude/skills/shadcn` (Claude-specific, duplicates or hides skill from other agents); duplicating the folder into `.agents/skills/` (drift risk).
+- **Links:** [`../skills/README.md`](../skills/README.md), [`../incident-console-v2/README.md`](../incident-console-v2/README.md).
 
 ### 2026-10-28: Incident search and evidence search share one search function; evidence search can be scoped to one video; the critic is off by default
 - **Decision:** `semantic_search` in `services/agent/src/vss_agents/api/incident_search.py` embeds the query and hands the vector to a `retrieve` callback; `POST /api/v1/incidents/search` (evidence crops) and `POST /api/v1/incidents/revisions/search` (revision summaries) both call it and differ only in what they retrieve. `filters.video_id` (agent) and `p_video_id` (`search_evidence_items`) restrict the search to one video inside the database. An empty query is allowed only with a video id: nothing is embedded and the video's crops come back in video time order. The VLM critic runs only when `INCIDENT_SEARCH_CRITIC` is truthy; otherwise every hit is `unverified` (rationale `Critic not run`), with no VLM call and no delay. The console dropped the verdict badge and the "Show N rejected" switch.

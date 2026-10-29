@@ -3,6 +3,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 
 type OverallStatus = 'checking' | 'ready' | 'degraded';
 
@@ -25,9 +26,12 @@ export function HealthStrip() {
   const label = status === 'checking' ? 'Checking services' : status === 'ready' ? 'Systems ready' : 'Setup needed';
 
   return (
-    <span className="flex items-center gap-2 rounded-full border border-ink/10 bg-white/70 px-3 py-2 text-xs font-semibold">
+    <Badge
+      variant="outline"
+      className="gap-2 rounded-full border-ink/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-foreground shadow-none"
+    >
       <span className={`h-2 w-2 rounded-full ${status === 'ready' ? 'bg-signal' : status === 'checking' ? 'bg-amber-400' : 'bg-clay'}`} />
       {label}
-    </span>
+    </Badge>
   );
 }

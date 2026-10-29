@@ -40,8 +40,10 @@ export class InMemoryVideoRepository implements VideoRepository {
       .filter(
         (video) =>
           filter === 'all' ||
-          (filter === 'without-report' && video.revisionIds.length === 0) ||
-          (filter === 'awaiting-selection' && video.revisionIds.length > 0 && video.officialRevisionId === null),
+          ((filter === 'without-report' || filter === 'needs-analysis') && video.revisionIds.length === 0) ||
+          (filter === 'with-report' && video.revisionIds.length > 0) ||
+          (filter === 'awaiting-selection' && video.revisionIds.length > 0 && video.officialRevisionId === null) ||
+          (filter === 'failed' && false),
       )
       .sort((a, b) =>
         a.uploadedAt === b.uploadedAt

@@ -5,6 +5,20 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/modules/dashboard/domain/types';
 import { href, type Filters, type LinkFilters, type Range } from '@/modules/dashboard/domain/links';
 import { getViewerTimeZone } from '@/lib/time';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
+import { cn } from 'cn';
 
 const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -90,34 +104,64 @@ export function Dashboard() {
             are counted separately and never assigned to a category. Every number opens the matching reports.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="text-sm">
-            <input checked={compare} disabled={days === 'all'} onChange={(e) => setCompare(e.target.checked)} type="checkbox" />{' '}
-            <span className="ml-1">vs. previous period</span>
-          </label>
-          <select className="control w-auto" onChange={(e) => setDays(e.target.value)} value={days}>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="all">All time</option>
-          </select>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="compare-period"
+              checked={compare}
+              disabled={days === 'all'}
+              onCheckedChange={(checked) => setCompare(Boolean(checked))}
+            />
+            <Label htmlFor="compare-period" className="cursor-pointer text-sm font-normal select-none">
+              vs. previous period
+            </Label>
+          </div>
+          <Select value={days} onValueChange={(val) => setDays(val)}>
+            <SelectTrigger className="w-[140px] border-ink/10 bg-white text-ink">
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
       {active && (
-        <div className="mt-5 flex items-center rounded-2xl border border-moss/20 bg-white p-4 text-sm">
+        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-moss/20 bg-white p-4 text-sm">
           <strong className="text-moss">Dashboard filters active</strong>
-          <span className="ml-3 text-ink/50">
-            {[filters.type, filters.severity, filters.day && DAYS[+filters.day], filters.hour && `${filters.hour}:00 ${timeZone}`]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-          <button className="ml-auto font-semibold text-moss" onClick={() => setFilters(NONE)} type="button">
+          <span className="text-ink/50">·</span>
+          {[
+            filters.type && `Type: ${filters.type}`,
+            filters.severity && `Severity: ${filters.severity}`,
+            filters.day && `Day: ${DAYS[+filters.day]}`,
+            filters.hour && `Hour: ${filters.hour}:00 ${timeZone}`,
+          ]
+            .filter(Boolean)
+            .map((filterText) => (
+              <Badge key={filterText as string} variant="secondary" className="font-normal text-ink">
+                {filterText}
+              </Badge>
+            ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto font-semibold text-moss hover:bg-moss/10 hover:text-moss"
+            onClick={() => setFilters(NONE)}
+          >
             Reset
-          </button>
+          </Button>
         </div>
       )}
-      {error && <p className="mt-6 rounded-2xl border border-clay/30 bg-white p-4 text-clay">{error}</p>}
+      {error && (
+        <Alert variant="destructive" className="mt-6">
+          <AlertTitle>Error loading dashboard</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="video-metrics">
-        <Metric href="/videos" label="Uploaded videos" note="all time" value={data.videos.uploaded} />
+        <Metric label="Uploaded videos" note="all time" value={data.videos.uploaded} />
         <Metric
           change={delta(data.total, previous?.total)}
           href={link()}
@@ -125,18 +169,8 @@ export function Dashboard() {
           note="in the selected period"
           value={data.total}
         />
-        <Metric
-          href="/videos?filter=awaiting-selection"
-          label="Awaiting official report"
-          note="have reports, none selected"
-          value={data.videos.awaitingSelection}
-        />
-        <Metric
-          href="/videos?filter=without-report"
-          label="Without a report"
-          note="no successful analysis yet"
-          value={data.videos.withoutReport}
-        />
+        <Metric label="Awaiting official report" note="have reports, none selected" value={data.videos.awaitingSelection} />
+        <Metric label="Without a report" note="no successful analysis yet" value={data.videos.withoutReport} />
       </section>
       <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
@@ -179,17 +213,11 @@ export function Dashboard() {
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
         <Panel title="Incidents by type" subtitle="Expand a row for evidence and severity">
           <div className="space-y-2">
-            {data.types.map((item) => (
-              <TypeRow
-                expanded={expanded === item.type}
-                filters={filters}
-                item={item}
-                key={item.type}
-                max={maxType}
-                onToggle={() => setExpanded(expanded === item.type ? '' : item.type)}
-                range={range ?? null}
-              />
-            ))}
+            <Accordion type="single" collapsible value={expanded} onValueChange={setExpanded} className="space-y-2">
+              {data.types.map((item) => (
+                <TypeRow filters={filters} item={item} key={item.type} max={maxType} range={range ?? null} />
+              ))}
+            </Accordion>
             {!data.types.length && <Empty />}
           </div>
         </Panel>
@@ -251,6 +279,7 @@ function delta(now: number, before?: number) {
   if (before === undefined) return null;
   return before ? Math.round(((now - before) / before) * 100) : now ? 100 : 0;
 }
+
 function Metric({
   label,
   value,
@@ -260,98 +289,93 @@ function Metric({
 }: {
   label: string;
   value: number | string;
-  href: string;
+  href?: string;
   change?: number | null;
   note?: string;
 }) {
-  return (
-    <Link className="rounded-2xl border border-ink/10 bg-white p-5 hover:shadow-panel" href={url}>
+  const content = (
+    <div className="p-5">
       <p className="text-sm text-ink/50">{label}</p>
-      <p className="mt-2 text-4xl font-semibold">{value}</p>
-      {note && <p className="mt-1 text-[11px] text-ink/40">{note}</p>}
+      <p className="mt-2 text-4xl font-semibold text-ink">{value}</p>
+      {note && <p className="mt-1 text-[11px] text-ink-caption">{note}</p>}
       {change !== null && (
-        <p className="mt-2 text-xs text-ink/45">
+        <p className="mt-2 text-xs text-ink-caption">
           {change > 0 ? '+' : ''}
           {change}% vs. previous
         </p>
       )}
-    </Link>
+    </div>
   );
-}
-function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+
   return (
-    <section className="rounded-3xl border border-ink/10 bg-white p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <p className="mt-1 text-xs text-ink/45">{subtitle}</p>
-      <div className="mt-5">{children}</div>
-    </section>
+    <Card className="rounded-2xl border-ink/10 bg-white p-0 shadow-none transition-shadow hover:shadow-panel focus-within:ring-2 focus-within:ring-ring">
+      {url ? (
+        <Link className="block rounded-2xl focus:outline-none" href={url}>
+          {content}
+        </Link>
+      ) : (
+        content
+      )}
+    </Card>
   );
 }
 
-function TypeRow({
-  item,
-  expanded,
-  max,
-  onToggle,
-  filters,
-  range,
-}: {
-  item: TypeDetail;
-  expanded: boolean;
-  max: number;
-  onToggle: () => void;
-  filters: Filters;
-  range: Range;
-}) {
-  const typeFilters = { ...filters, type: item.type };
+function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <article className="rounded-2xl border border-ink/8">
-      <div className="flex items-center gap-3 p-4">
-        <Link className="min-w-0 flex-1" href={href(typeFilters, range)}>
-          <div className="flex justify-between text-sm">
-            <strong className="capitalize">{item.type}</strong>
-            <span>{item.count}</span>
-          </div>
-          <div className="mt-2 h-2 rounded-full bg-ink/8">
-            <div className="h-2 rounded-full bg-signal" style={{ width: `${(item.count / max) * 100}%` }} />
-          </div>
-        </Link>
-        <button
-          aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${item.type}`}
-          className="text-sm text-ink/50"
-          onClick={onToggle}
-          type="button"
-        >
-          {expanded ? '−' : '+'}
-        </button>
-      </div>
-      {expanded && (
-        <div className="border-t border-ink/8 p-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Evidence title="Entity types" items={item.entities} linkFor={(x) => href({ ...typeFilters, entityType: x.label }, range)} />
-            <Evidence title="Instruments" items={item.instruments} linkFor={(x) => href({ ...typeFilters, instrument: x.label }, range)} />
-            <Evidence title="Assets affected" items={item.assets} linkFor={(x) => href({ ...typeFilters, asset: x.label }, range)} />
-          </div>
-          <div className="mt-5">
-            <p className="text-[10px] font-bold uppercase text-ink/40">Severity split</p>
-            <Severity compact counts={item.severity} selected="" onSelect={() => undefined} />
-          </div>
-          <Link className="mt-5 inline-block text-sm font-semibold text-moss" href={href(typeFilters, range)}>
-            View all {item.type} reports →
-          </Link>
-        </div>
-      )}
-    </article>
+    <Card className="rounded-3xl border-ink/10 bg-white p-6 shadow-none">
+      <CardHeader className="gap-1 p-0">
+        <CardTitle className="text-lg font-semibold text-ink">{title}</CardTitle>
+        <CardDescription className="text-xs text-ink-caption">{subtitle}</CardDescription>
+      </CardHeader>
+      <CardContent className="mt-5 p-0">{children}</CardContent>
+    </Card>
   );
 }
+
+function TypeRow({ item, max, filters, range }: { item: TypeDetail; max: number; filters: Filters; range: Range }) {
+  const typeFilters = { ...filters, type: item.type };
+  return (
+    <AccordionItem value={item.type} className="rounded-2xl border border-ink/8 px-4 not-last:border-b-ink/8">
+      <div className="flex items-center gap-3 py-2">
+        <Link className="min-w-0 flex-1 hover:opacity-80" href={href(typeFilters, range)}>
+          <div className="flex justify-between text-sm">
+            <strong className="capitalize text-ink">{item.type}</strong>
+            <span className="text-ink">{item.count}</span>
+          </div>
+          <div className="mt-2">
+            <Progress value={(item.count / max) * 100} className="h-2 bg-ink/8 [&>[data-slot=progress-indicator]]:bg-signal" />
+          </div>
+        </Link>
+        <AccordionTrigger
+          className="flex-none py-2 text-ink/50 hover:no-underline hover:text-ink"
+          aria-label={`Toggle ${item.type} details`}
+        />
+      </div>
+      <AccordionContent className="border-t border-ink/8 pt-4 pb-2">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Evidence title="Entity types" items={item.entities} linkFor={(x) => href({ ...typeFilters, entityType: x.label }, range)} />
+          <Evidence title="Instruments" items={item.instruments} linkFor={(x) => href({ ...typeFilters, instrument: x.label }, range)} />
+          <Evidence title="Assets affected" items={item.assets} linkFor={(x) => href({ ...typeFilters, asset: x.label }, range)} />
+        </div>
+        <div className="mt-5">
+          <p className="text-[10px] font-bold uppercase text-ink-caption">Severity split</p>
+          <Severity compact counts={item.severity} selected="" onSelect={() => undefined} />
+        </div>
+        <Link className="mt-5 inline-block text-sm font-semibold text-moss" href={href(typeFilters, range)}>
+          View all {item.type} reports →
+        </Link>
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
 function Evidence({ title, items, linkFor }: { title: string; items: RankedValue[]; linkFor: (x: RankedValue) => string }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase text-ink/40">{title}</p>
+      <p className="text-[10px] font-bold uppercase text-ink-caption">{title}</p>
       <div className="mt-2 space-y-1">
         {items.map((x) => (
-          <Link className="flex gap-2 text-sm text-moss" href={linkFor(x)} key={x.label}>
+          <Link className="flex gap-2 text-sm text-moss hover:underline" href={linkFor(x)} key={x.label}>
             <span className="min-w-0 flex-1 truncate">{x.label}</span>
             <span>{x.count}</span>
           </Link>
@@ -361,6 +385,7 @@ function Evidence({ title, items, linkFor }: { title: string; items: RankedValue
     </div>
   );
 }
+
 function Severity({
   counts,
   selected,
@@ -384,7 +409,7 @@ function Severity({
         {rows.map(([k, label, color]) => (
           <button
             aria-label={`${label} severity`}
-            className={`${color} ${selected && selected !== k ? 'opacity-25' : ''}`}
+            className={`${color} ${selected && selected !== k ? 'opacity-25' : ''} transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
             disabled={compact}
             key={k}
             onClick={() => onSelect(k)}
@@ -395,32 +420,58 @@ function Severity({
       </div>
       <div className="mt-3 grid grid-cols-3 text-xs">
         {rows.map(([k, label]) => (
-          <button disabled={compact} key={k} onClick={() => onSelect(k)} type="button">
-            <strong className="block text-base">{counts[k]}</strong>
-            {label}
+          <button
+            disabled={compact}
+            key={k}
+            onClick={() => onSelect(k)}
+            type="button"
+            className="rounded p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <strong className="block text-base text-ink">{counts[k]}</strong>
+            <span className="text-ink/60">{label}</span>
           </button>
         ))}
       </div>
     </div>
   );
 }
+
+const trendChartConfig = {
+  count: {
+    label: 'Incidents',
+    color: '#174f3b',
+  },
+} satisfies ChartConfig;
+
 function Trend({ points }: { points: DashboardAnalytics['trend'] }) {
-  const max = Math.max(1, ...points.map((x) => x.count));
-  const line = points.map((x, i) => `${points.length === 1 ? 50 : (i / (points.length - 1)) * 100},${38 - (x.count / max) * 32}`).join(' ');
-  return points.length && points.some((x) => x.count) ? (
-    <div>
-      <svg aria-label="Daily official incident trend" className="h-48 w-full" preserveAspectRatio="none" role="img" viewBox="0 0 100 40">
-        <polyline fill="none" points={line} stroke="#315b3a" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="flex justify-between text-[10px] text-ink/40">
-        <span>{points[0].date}</span>
+  if (!points.length || !points.some((x) => x.count)) {
+    return <Empty />;
+  }
+
+  return (
+    <div className="w-full">
+      <ChartContainer config={trendChartConfig} className="h-48 w-full aspect-auto">
+        <AreaChart data={points} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+          <defs>
+            <linearGradient id="fillTrend" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#174f3b" stopOpacity={0.35} />
+              <stop offset="95%" stopColor="#174f3b" stopOpacity={0.0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-ink/10" />
+          <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink-caption" />
+          <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+          <Area dataKey="count" type="monotone" fill="url(#fillTrend)" fillOpacity={0.4} stroke="#174f3b" strokeWidth={2} />
+        </AreaChart>
+      </ChartContainer>
+      <div className="mt-2 flex justify-between text-[10px] text-ink-caption">
+        <span>{points[0]?.date}</span>
         <span>{points.at(-1)?.date}</span>
       </div>
     </div>
-  ) : (
-    <Empty />
   );
 }
+
 const HOURS_OF_DAY = Array.from({ length: 24 }, (_, h) => h);
 const CONFIDENCE_BUCKETS = Array.from({ length: 10 }, (_, b) => b);
 
@@ -438,69 +489,94 @@ function Heatmap({
   const map = useMemo(() => new Map(data.map((x) => [`${x.day}-${x.hour}`, x.count])), [data]);
   const max = Math.max(1, ...data.map((x) => x.count));
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[650px]">
-        {DAYS.map((name, d) => (
-          <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
-            <span className="text-[10px]">{name}</span>
-            {HOURS_OF_DAY.map((h) => {
-              const count = map.get(`${d}-${h}`) || 0;
-              return (
-                <button
-                  aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
-                  className={`aspect-square rounded-sm ${selected === `${d}-${h}` ? 'ring-2 ring-ink' : ''}`}
-                  key={`hour-${h}`}
-                  onClick={() => onSelect(d, h)}
-                  style={{ background: `rgba(49,91,58,${count ? 0.15 + (count / max) * 0.85 : 0.04})` }}
-                  title={`${name} ${h}:00 ${timeZone} · ${count}`}
-                  type="button"
-                />
-              );
-            })}
-          </div>
-        ))}
+    <TooltipProvider delayDuration={100}>
+      <div className="overflow-x-auto">
+        <div className="min-w-[520px]">
+          {DAYS.map((name, d) => (
+            <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
+              <span className="text-[10px]">{name}</span>
+              {HOURS_OF_DAY.map((h) => {
+                const count = map.get(`${d}-${h}`) || 0;
+                return (
+                  <Tooltip key={`hour-${h}`}>
+                    <TooltipTrigger asChild>
+                      <button
+                        aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
+                        className={cn(
+                          'aspect-square rounded-xs transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
+                        )}
+                        onClick={() => onSelect(d, h)}
+                        style={{ background: `rgba(49,91,58,${count ? 0.15 + (count / max) * 0.85 : 0.04})` }}
+                        type="button"
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <span>{`${name} ${h}:00 ${timeZone} · ${count}`}</span>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
+
 function Funnel({ data }: { data: DashboardAnalytics }) {
   const rows = [
-    ['AI as generated', data.revisions.ai, 'bg-clay/50'],
-    ['Human-edited', data.revisions.human, 'bg-signal'],
+    ['AI as generated', data.revisions.ai, '[&>[data-slot=progress-indicator]]:bg-clay/50'],
+    ['Human-edited', data.revisions.human, '[&>[data-slot=progress-indicator]]:bg-signal'],
   ] as const;
   const max = Math.max(1, ...rows.map((x) => x[1]));
   return (
     <div className="space-y-4">
-      {rows.map(([label, count, color]) => (
+      {rows.map(([label, count, indicatorColor]) => (
         <div key={label}>
           <div className="flex justify-between text-sm">
             <span>{label}</span>
             <strong>{count}</strong>
           </div>
-          <div className="mt-2 h-7 rounded bg-ink/5">
-            <div className={`h-7 rounded ${color}`} style={{ width: `${(count / max) * 100}%` }} />
+          <div className="mt-2">
+            <Progress value={(count / max) * 100} className={cn('h-7 rounded-sm bg-ink/5', indicatorColor)} />
           </div>
         </div>
       ))}
     </div>
   );
 }
+
+const histogramChartConfig = {
+  count: {
+    label: 'Analyses',
+    color: '#174f3b',
+  },
+} satisfies ChartConfig;
+
 function Histogram({ data }: { data: DashboardAnalytics['confidence'] }) {
-  if (!data.length) return <p className="text-sm text-ink/40">No confidence values were provided.</p>;
+  if (!data.length) return <p className="text-sm text-ink-caption">No confidence values were provided.</p>;
   const map = new Map(data.map((x) => [x.bucket, x.count]));
-  const max = Math.max(1, ...data.map((x) => x.count));
+  const chartData = CONFIDENCE_BUCKETS.map((b) => ({
+    bucket: `${b * 10}%`,
+    count: map.get(b) || 0,
+  }));
+
   return (
-    <div className="flex h-48 items-end gap-2">
-      {CONFIDENCE_BUCKETS.map((b) => (
-        <div className="flex h-full flex-1 flex-col justify-end text-center" key={`bucket-${b}`}>
-          <span className="text-[9px]">{map.get(b) || ''}</span>
-          <div className="min-h-1 bg-moss/75" style={{ height: `${((map.get(b) || 0) / max) * 100}%` }} />
-          <span className="mt-1 text-[9px]">{b * 10}</span>
-        </div>
-      ))}
+    <div className="w-full">
+      <ChartContainer config={histogramChartConfig} className="h-48 w-full aspect-auto">
+        <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-ink/10" />
+          <XAxis dataKey="bucket" tickLine={false} axisLine={false} tickMargin={8} className="text-[10px] text-ink-caption" />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Bar dataKey="count" fill="#174f3b" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
     </div>
   );
 }
+
 function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) {
   const map = new Map(data.map((x) => [x.level, x.count]));
   const max = Math.max(1, ...data.map((x) => x.count));
@@ -509,8 +585,11 @@ function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) {
       {[5, 4, 3, 2, 1].map((level) => (
         <div className="flex items-center gap-3 text-sm" key={level}>
           <span className="w-16 text-ink/55">Threat {level}</span>
-          <div className="h-3 flex-1 rounded bg-ink/5">
-            <div className="h-3 rounded bg-clay/60" style={{ width: `${((map.get(level) || 0) / max) * 100}%` }} />
+          <div className="flex-1">
+            <Progress
+              value={((map.get(level) || 0) / max) * 100}
+              className="h-3 rounded-sm bg-ink/5 [&>[data-slot=progress-indicator]]:bg-clay/60"
+            />
           </div>
           <strong className="w-8 text-right">{map.get(level) || 0}</strong>
         </div>
@@ -520,19 +599,24 @@ function ThreatLevels({ data }: { data: DashboardAnalytics['threatLevels'] }) {
     <Empty />
   );
 }
+
 function Leaders({ items, linkFor }: { items: RankedValue[]; linkFor: (x: RankedValue) => string }) {
   const max = Math.max(1, ...items.map((x) => x.count));
   return (
     <div className="space-y-4">
       {items.map((x, i) => (
-        <Link className="block" href={linkFor(x)} key={x.label}>
+        <Link
+          className="group -m-1 block rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          href={linkFor(x)}
+          key={x.label}
+        >
           <div className="flex gap-3 text-sm">
             <span className="text-ink/30">{i + 1}</span>
-            <span className="min-w-0 flex-1 truncate capitalize">{x.label}</span>
+            <span className="min-w-0 flex-1 truncate capitalize group-hover:underline">{x.label}</span>
             <strong>{x.count}</strong>
           </div>
-          <div className="ml-6 mt-2 h-1.5 bg-ink/8">
-            <div className="h-1.5 bg-signal" style={{ width: `${(x.count / max) * 100}%` }} />
+          <div className="ml-6 mt-2">
+            <Progress value={(x.count / max) * 100} className="h-1.5 rounded-none bg-ink/8 [&>[data-slot=progress-indicator]]:bg-signal" />
           </div>
         </Link>
       ))}
@@ -540,40 +624,44 @@ function Leaders({ items, linkFor }: { items: RankedValue[]; linkFor: (x: Ranked
     </div>
   );
 }
+
 function Coverage({ rows }: { rows: ModelCoverage[] }) {
   return rows.length ? (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">
-        <thead className="text-ink/45">
-          <tr>
-            <th className="py-1 pr-3 font-semibold">Model</th>
-            <th className="px-2">With report</th>
-            <th className="px-2">Valid</th>
-            <th className="px-2">IDs repaired</th>
-            <th className="px-2">Earlier</th>
-            <th className="px-2">Contract failed</th>
-            <th className="px-2">Request failed</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="text-xs">
+        <TableHeader>
+          <TableRow className="border-b border-ink/8 hover:bg-transparent">
+            <TableHead className="h-auto whitespace-normal py-1 pr-2 align-bottom font-semibold text-ink-caption">Model</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">With report</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Valid</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">IDs repaired</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Earlier</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Contract failed</TableHead>
+            <TableHead className="h-auto whitespace-normal px-1.5 align-bottom text-ink-caption">Request failed</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((row) => (
-            <tr className="border-t border-ink/8" key={row.model}>
-              <td className="max-w-[220px] truncate py-2 pr-3 font-semibold">{row.model}</td>
-              <td className="px-2">{row.withReport}</td>
-              <td className="px-2">{row.validFirstPass}</td>
-              <td className="px-2">{row.repaired}</td>
-              <td className="px-2">{row.legacy}</td>
-              <td className="px-2">{row.contractFailed}</td>
-              <td className="px-2">{row.requestFailed}</td>
-            </tr>
+            <TableRow className="border-t border-ink/8 hover:bg-black/5" key={row.model}>
+              <TableCell className="max-w-[160px] truncate py-2 pr-2 font-semibold text-ink" title={row.model}>
+                {row.model}
+              </TableCell>
+              <TableCell className="px-1.5">{row.withReport}</TableCell>
+              <TableCell className="px-1.5">{row.validFirstPass}</TableCell>
+              <TableCell className="px-1.5">{row.repaired}</TableCell>
+              <TableCell className="px-1.5">{row.legacy}</TableCell>
+              <TableCell className="px-1.5">{row.contractFailed}</TableCell>
+              <TableCell className="px-1.5">{row.requestFailed}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   ) : (
     <Empty />
   );
 }
+
 function Empty() {
-  return <p className="text-sm text-ink/40">No official incidents in this selection.</p>;
+  return <p className="text-sm text-ink-caption">No official incidents in this selection.</p>;
 }

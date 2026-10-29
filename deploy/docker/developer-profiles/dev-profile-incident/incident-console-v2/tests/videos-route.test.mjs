@@ -61,6 +61,26 @@ test('videos are listed with their revision count, official revision and paginat
   });
 });
 
+test('filters with-report and needs-analysis forward proper queries to Supabase', async () => {
+  let selectQuery = '';
+  globalThis.fetch = async (url) => {
+    selectQuery = new URL(String(url)).searchParams.get('select') || '';
+    return new Response(JSON.stringify([]), { headers: { 'content-range': '0-0/0' } });
+  };
+  const resWith = await GET(new Request('http://localhost/api/videos?filter=with-report'));
+  assert.equal(resWith.status, 200);
+  assert.match(selectQuery, /!inner\(id\)/);
+
+  const resNeeds = await GET(new Request('http://localhost/api/videos?filter=needs-analysis'));
+  assert.equal(resNeeds.status, 200);
+  assert.match(selectQuery, /\(id\)/);
+
+  const resFailed = await GET(new Request('http://localhost/api/videos?filter=failed'));
+  assert.equal(resFailed.status, 200);
+  const jsonFailed = await resFailed.json();
+  assert.deepEqual(jsonFailed.videos, []);
+});
+
 test('an unknown filter is rejected before Supabase', async () => {
   let called = false;
   globalThis.fetch = async () => {

@@ -4,10 +4,21 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Upload } from 'lucide-react';
+import { cn } from 'cn';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
-type StageKey = 'idle' | 'uploading' | 'preparing' | 'analyzing' | 'saving' | 'complete' | 'error';
+import { getStageAnnouncement, getStageProgress, type StageKey, stageLabels, stageOrder } from '@/sections/analysis/stage-progress';
+
+export type { StageKey };
+export { getStageAnnouncement, getStageProgress, stageLabels, stageOrder };
 
 interface ApiError {
   error?: string;
@@ -17,24 +28,6 @@ interface ModelOption {
   id: string;
   label: string;
 }
-
-const stageLabels: Array<{ key: StageKey; label: string }> = [
-  { key: 'uploading', label: 'Uploading video' },
-  { key: 'preparing', label: 'Preparing secure access' },
-  { key: 'analyzing', label: 'Understanding the incident' },
-  { key: 'saving', label: 'Structuring and saving report' },
-  { key: 'complete', label: 'Report ready' },
-];
-
-const stageOrder: Record<StageKey, number> = {
-  idle: -1,
-  uploading: 0,
-  preparing: 1,
-  analyzing: 2,
-  saving: 3,
-  complete: 4,
-  error: -1,
-};
 
 async function apiJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -57,21 +50,65 @@ function nameWarning(original: string, report: UploadNameReport): { name: string
   return { name: report.name, message: `${original} will be stored as ${report.name}: ${notes.join('; ')}.` };
 }
 
-export function AnalysisWorkspace() {
+export interface AnalysisWorkspaceProps {
+  initialStage?: StageKey;
+  initialUploadProgress?: number;
+  initialFileName?: string;
+  initialError?: string | null;
+}
+
+export function AnalysisWorkspace({ initialStage, initialUploadProgress, initialFileName, initialError }: AnalysisWorkspaceProps = {}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(() => {
+    if (initialFileName) {
+      return new File(['fixture'], initialFileName, { type: 'video/mp4' });
+    }
+    return null;
+  });
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [stage, setStage] = useState<StageKey>('idle');
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<StageKey>(initialStage ?? 'idle');
+  const [lastActiveStage, setLastActiveStage] = useState<StageKey>(
+    initialStage && initialStage !== 'idle' && initialStage !== 'error' ? initialStage : 'idle',
+  );
+  const [uploadProgress, setUploadProgress] = useState(initialUploadProgress ?? 0);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
   const [storedName, setStoredName] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
   const { upload } = useVideoUpload();
+
+  function changeStage(newStage: StageKey) {
+    setStage(newStage);
+    if (newStage !== 'idle' && newStage !== 'error') {
+      setLastActiveStage(newStage);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const fixtureStage = params.get('fixtureStage') as StageKey | null;
+    if (fixtureStage && fixtureStage in stageOrder) {
+      const mockFileName = params.get('fixtureFile') || 'Assault018_x264_demo.mp4';
+      const mockProgress = Number(params.get('fixtureProgress') || (fixtureStage === 'uploading' ? 45 : 0));
+      const mockError = params.get('fixtureError') || (fixtureStage === 'error' ? 'Analysis request timed out.' : null);
+
+      setFile(new File(['fixture-content'], mockFileName, { type: 'video/mp4' }));
+      setStage(fixtureStage);
+      if (fixtureStage !== 'idle' && fixtureStage !== 'error') {
+        setLastActiveStage(fixtureStage);
+      } else if (fixtureStage === 'error') {
+        const failedAt = (params.get('fixtureFailedAt') as StageKey) || 'analyzing';
+        setLastActiveStage(failedAt);
+      }
+      setUploadProgress(mockProgress);
+      if (mockError) setError(mockError);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -102,6 +139,7 @@ export function AnalysisWorkspace() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new file re-runs the check
   useEffect(() => {
     if (!file || stage !== 'idle') return;
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fixtureStage')) return;
     let active = true;
     void checkUploadName(file.name)
       .then((report) => (active ? nameWarning(file.name, report) : null))
@@ -129,6 +167,7 @@ export function AnalysisWorkspace() {
     setStoredName(null);
     setError(null);
     setStage('idle');
+    setLastActiveStage('idle');
     setUploadProgress(0);
   }
 
@@ -141,21 +180,21 @@ export function AnalysisWorkspace() {
     setUploadProgress(0);
 
     try {
-      setStage('uploading');
+      changeStage('uploading');
       const { sensorId, filePath, filename } = await upload(file, controller.signal, setUploadProgress);
 
-      setStage('preparing');
+      changeStage('preparing');
       await apiJson('/api/uploads/complete', { sensorId, filename });
 
-      setStage('analyzing');
+      changeStage('analyzing');
       const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
         sensorId,
         filepath: filePath,
         filename,
         ...(model ? { model } : {}),
       });
-      setStage('saving');
-      setStage('complete');
+      changeStage('saving');
+      changeStage('complete');
       router.push(`/reports/${encodeURIComponent(result.report.videoId)}?revision=${result.report.revisionId}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Analysis failed';
@@ -167,12 +206,16 @@ export function AnalysisWorkspace() {
   }
 
   const activeIndex = stageOrder[stage];
+  const effectiveActiveIndex = stage === 'error' ? stageOrder[lastActiveStage] : activeIndex;
+  const failedStageIndex = stage === 'error' ? stageOrder[lastActiveStage] : -1;
   const busy = ['uploading', 'preparing', 'analyzing', 'saving'].includes(stage);
+  const progressValue = getStageProgress(stage, uploadProgress, lastActiveStage);
+  const announcement = getStageAnnouncement(stage, uploadProgress, error);
 
   return (
-    <section
-      className="relative rounded-[2rem] border border-ink/10 bg-white/80 p-4 shadow-panel backdrop-blur md:p-6"
-      aria-labelledby="upload-title"
+    <Card
+      className="relative rounded-4xl border border-border bg-white/80 p-4 shadow-panel backdrop-blur-sm md:p-6 ring-0 flex flex-col gap-0"
+      aria-label="Video analysis workspace"
     >
       <input
         accept="video/mp4,video/x-matroska,video/quicktime,video/webm,.mp4,.mkv,.mov,.webm"
@@ -183,123 +226,193 @@ export function AnalysisWorkspace() {
       />
 
       {models.length > 0 && (
-        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
+        <Card className="mb-4 flex flex-col gap-2 rounded-2xl border border-border bg-card px-4 py-3 ring-0 shadow-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-4">
           {/* The select keeps its natural width (the longest model name) and never shrinks; the note wraps below it instead. */}
           <label
             className="flex flex-col gap-1 text-xs font-bold uppercase tracking-[0.12em] text-ink/45 sm:shrink-0 sm:flex-row sm:items-center sm:gap-3"
             htmlFor="analysis-model"
           >
             <span className="whitespace-nowrap">Vision-language model</span>
-            <select
-              className="control normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0"
-              disabled={busy}
-              id="analysis-model"
-              onChange={(event) => setModel(event.target.value)}
-              value={model}
-            >
-              {models.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <Select disabled={busy} onValueChange={(value) => setModel(value)} value={model}>
+              <SelectTrigger className="normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" id="analysis-model">
+                <SelectValue placeholder="Choose model" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
-          <p className="text-xs text-ink/45 sm:min-w-[12rem] sm:flex-1 sm:text-right">
-            Choose before selecting a video. Analysis can take several minutes.
-          </p>
-        </div>
+        </Card>
       )}
 
       {file && previewUrl ? (
         <div className="overflow-hidden rounded-[1.45rem] bg-ink text-white">
-          <video className="aspect-video w-full bg-black object-contain" controls preload="metadata" src={previewUrl}>
-            <track kind="captions" />
-          </video>
+          <div className="relative aspect-video w-full min-w-0 min-h-0 overflow-hidden bg-black flex items-center justify-center">
+            <video className="max-h-full max-w-full object-contain" controls preload="metadata" src={previewUrl}>
+              <track kind="captions" />
+            </video>
+          </div>
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="truncate font-semibold">{file.name}</p>
               <p className="mt-1 text-xs text-white/55">{(file.size / 1024 / 1024).toFixed(1)} MB · ready for analysis</p>
             </div>
             {!busy && (
-              <button className="text-sm font-semibold text-signal" onClick={() => inputRef.current?.click()} type="button">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-signal hover:text-signal/80 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => inputRef.current?.click()}
+                type="button"
+              >
                 Replace video
-              </button>
+              </Button>
             )}
           </div>
         </div>
       ) : (
-        <button
-          className={`block w-full rounded-[1.45rem] border border-dashed px-6 py-16 text-center transition sm:px-10 sm:py-24 ${dragging ? 'border-signal bg-signal/10' : 'border-ink/20 bg-[#e9eee5] hover:border-moss/50'}`}
+        <Card
+          className={cn(
+            'relative flex flex-col items-center justify-center rounded-3xl border-2 border-dashed py-14 px-6 text-center transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:py-20 sm:px-10',
+            dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50',
+          )}
+          role="button"
+          tabIndex={0}
+          aria-labelledby="upload-title"
+          aria-describedby="upload-description"
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           onDragEnter={(event) => {
             event.preventDefault();
             setDragging(true);
           }}
-          onDragLeave={() => setDragging(false)}
-          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+            setDragging(false);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }}
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
             chooseFile(event.dataTransfer.files[0] || null);
           }}
-          type="button"
         >
-          <span className="upload-orbit mx-auto grid h-20 w-20 place-items-center rounded-full border border-moss/20 bg-white shadow-lg shadow-moss/10">
-            <svg aria-hidden="true" className="h-8 w-8 text-moss" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 007.5 20h9a2.5 2.5 0 002.5-2.5v-3"
-              />
-            </svg>
-          </span>
-          <span className="mt-7 block font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-moss">New analysis</span>
-          <span className="mt-3 block text-2xl font-semibold tracking-tight" id="upload-title">
-            Drop a video here
-          </span>
-          <span className="mx-auto mt-3 block max-w-sm text-sm leading-6 text-ink/55">
-            MP4, MKV, MOV, or WebM. Analysis starts automatically after selection.
-          </span>
-        </button>
+          <CardHeader className="flex flex-col items-center gap-3 p-0">
+            <div className="upload-orbit mx-auto flex size-16 items-center justify-center rounded-full border border-primary/20 bg-background text-primary shadow-lg shadow-primary/10">
+              <Upload className="size-8" aria-hidden="true" />
+            </div>
+            <Badge variant="secondary" className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+              New analysis
+            </Badge>
+            <CardTitle className="text-2xl font-semibold tracking-tight text-foreground" id="upload-title">
+              Drop a video here
+            </CardTitle>
+            <CardDescription className="max-w-sm text-sm leading-6 text-muted-foreground" id="upload-description">
+              MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="mt-6 flex flex-col items-center p-0">
+            <Button variant="outline" size="sm" className="pointer-events-none rounded-full" tabIndex={-1} type="button">
+              <Upload data-icon="inline-start" />
+              Browse video files
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {error && !file && (
+        <Alert variant="destructive" className="mt-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {file && (
-        <div className="mt-5">
+        <div className="mt-5 flex flex-col gap-4">
           {stage !== 'idle' && (
-            <ol className="mb-5 grid gap-2 sm:grid-cols-5">
-              {stageLabels.map((item, index) => {
-                const done = stage === 'complete' || index < activeIndex;
-                const active = index === activeIndex;
-                return (
-                  <li
-                    className={`rounded-xl border px-3 py-3 text-xs ${done ? 'border-signal/30 bg-signal/10 text-moss' : active ? 'border-moss/30 bg-moss/5 text-moss' : 'border-ink/8 text-ink/35'}`}
-                    key={item.key}
-                  >
-                    <span className="mb-2 block font-mono">{done ? '✓' : String(index + 1).padStart(2, '0')}</span>
-                    {item.label}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+            <div className="flex flex-col gap-2.5" data-testid="analysis-progress">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {stage === 'complete' ? 'Analysis complete' : stage === 'error' ? 'Analysis stopped' : 'Analysis in progress'}
+                </span>
+                <span className="font-mono font-semibold text-foreground">{progressValue}%</span>
+              </div>
 
-          {stage === 'uploading' && (
-            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-ink/10">
-              <div className="h-full rounded-full bg-signal transition-all" style={{ width: `${uploadProgress}%` }} />
+              <Progress
+                className="h-2 w-full"
+                value={progressValue}
+                aria-label="Analysis progress"
+                aria-valuenow={progressValue}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuetext={announcement}
+              />
+
+              <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                {announcement}
+              </div>
+
+              <ol className="mt-1 grid gap-2 sm:grid-cols-5" aria-label="Analysis stages">
+                {stageLabels.map((item, index) => {
+                  const done = stage === 'complete' || (effectiveActiveIndex !== -1 && index < effectiveActiveIndex);
+                  const active = index === effectiveActiveIndex && stage !== 'error';
+                  const isFailed = stage === 'error' && index === failedStageIndex;
+                  return (
+                    <li
+                      className={cn(
+                        'flex flex-col gap-1.5 rounded-xl border p-3 text-xs transition-colors',
+                        done && 'border-primary/30 bg-primary/10 text-primary',
+                        active && 'border-primary bg-primary/5 text-primary font-medium shadow-xs',
+                        !done && !active && !isFailed && 'border-border text-muted-foreground bg-card/40',
+                        isFailed && 'border-destructive/40 bg-destructive/10 text-destructive',
+                      )}
+                      key={item.key}
+                      aria-current={active ? 'step' : undefined}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] font-semibold">
+                          {done ? '✓' : isFailed ? '✕' : String(index + 1).padStart(2, '0')}
+                        </span>
+                        {done && <span className="sr-only">(completed)</span>}
+                        {active && <span className="sr-only">(current step)</span>}
+                        {isFailed && <span className="sr-only">(failed)</span>}
+                        {active && item.key === 'uploading' && uploadProgress > 0 && (
+                          <span className="font-mono text-[11px] text-primary/80">{uploadProgress}%</span>
+                        )}
+                      </div>
+                      <span className="leading-snug">{item.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           )}
+
           {nameNotice && stage === 'idle' && (
-            <p className="mb-4 rounded-xl border border-clay/25 bg-clay/10 px-4 py-3 text-sm text-[#8c3d25]">{nameNotice}</p>
+            <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+              <AlertDescription>{nameNotice}</AlertDescription>
+            </Alert>
           )}
-          {error && <p className="mb-4 rounded-xl border border-clay/25 bg-clay/10 px-4 py-3 text-sm text-[#8c3d25]">{error}</p>}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           <div className="flex gap-3">
-            <button
-              className="flex-1 rounded-full bg-ink px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-moss disabled:cursor-wait disabled:opacity-60"
-              disabled={busy}
-              onClick={analyze}
-              type="button"
-            >
+            <Button size="lg" className="flex-1 rounded-full text-sm font-semibold" disabled={busy} onClick={analyze} type="button">
               {busy
                 ? stageLabels.find((item) => item.key === stage)?.label
                 : stage === 'error'
@@ -307,19 +420,21 @@ export function AnalysisWorkspace() {
                   : nameNotice && storedName
                     ? `Continue as ${storedName}`
                     : 'Analyze video'}
-            </button>
+            </Button>
             {busy && (
-              <button
-                className="rounded-full border border-ink/15 px-5 text-sm font-semibold"
+              <Button
+                variant="outline"
+                size="lg"
+                className="rounded-full text-sm font-semibold"
                 onClick={() => abortRef.current?.abort()}
                 type="button"
               >
                 Cancel
-              </button>
+              </Button>
             )}
           </div>
         </div>
       )}
-    </section>
+    </Card>
   );
 }
