@@ -1,6 +1,6 @@
 # Stage 2a results: VSS baseline and V1–V7 (dev, 25 clips × 2 repeats)
 
-> **Status, 2026-10-29:** Stage 2a is complete. All 400 scheduled video-runs are recorded, and recovery-v1 has run on the infrastructure failures. **V8 is proposed, not registered, and not run.** Stage 2b waits for the owner's approval.
+> **Status, 2026-10-29:** Stage 2a is complete. All 400 scheduled video-runs are recorded, and recovery-v1 has run on the infrastructure failures. **Update:** V8 was then registered unchanged and run in Stage 2b. The final Stage 2 selection is V1 ([Stage 2b results](stage2b-results.md)).
 > - **Unchanged throughout:** ground truth, methodology v1.2 (τ = 0.40), D9 v2, prompts, model and configs.
 > - **Ground truth:** `ground-truth-v1.0` is frozen on the owner's dataset-level approval of AI-assisted labels. It is not individually human-verified.
 > - **Matching calibration:** AI-labelled and AI-audited, not human-validated.
@@ -177,7 +177,7 @@ Recovery-adjusted figures; the original-run figures are in `reports/stage2a/orig
   - A check confirms each variant equals the base plus exactly its own blocks.
   - **Full text:** [`../../experiments/stage2-drafts/p1-v4-e08-combined.txt`](../../experiments/stage2-drafts/p1-v4-e08-combined.txt), 642 lines, 23,030 bytes, SHA-256 `9c21fc60f39ca46c5c226c02f17e4e60360cbbd543092c54ebdc7dfb21de7323`.
   - **Diff from the base:** [`p1-v4-e08-combined.diff`](../../experiments/stage2-drafts/p1-v4-e08-combined.diff).
-  - **Not registered and not run.** It would be registered unchanged with `prompt_registry.add` only after the owner approves Stage 2b.
+  - **Registered unchanged on 2026-10-29** after the owner approved Stage 2b, and run there ([Stage 2b results](stage2b-results.md)).
 - **Caveats for Stage 2b:**
   - Most of the seven blocks have ΔI intervals that include 0, so V8 combines several effects that may be noise.
   - The blocks were never tested together.

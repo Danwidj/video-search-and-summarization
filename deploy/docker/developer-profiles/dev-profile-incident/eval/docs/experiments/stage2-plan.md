@@ -1,10 +1,10 @@
 # Stage 2 prompt engineering: execution plan (final, not executed)
 
-> **Status (2026-10-29):** **Stage 2a is complete** and recovered ([results](stage2a-results.md)).
-> - 400 video-runs and 7 recoveries; 462 of 1,200 P1 attempts.
-> - D9 v2 selects V1. All seven of V1–V7 qualify for V8.
-> - V8 is proposed, not registered.
-> - **Stage 2b waits for the owner's approval.**
+> **Status (2026-10-29):** **Stage 2 is complete.** 2a and 2b both ran and were recovered.
+> - **Stage 2a** ([results](stage2a-results.md)): 400 video-runs and 7 recoveries; 462 of 1,200 P1 attempts. All seven of V1–V7 qualified for V8.
+> - **Stage 2b** ([results](stage2b-results.md)): V8 registered and run with `s2-vss-baseline-b`. 100 video-runs and 1 recovery; 106 of 300 P1 attempts. V8 has ΔI +0.022 [−0.025, +0.071].
+> - **Final selection (D9 v2): V1 `p1-v4-e01-severity`** (ΔI +0.051 [+0.013, +0.089]).
+> - **Stage 3 waits for the owner's approval.**
 >
 > **Approved so far by the owner:**
 > - the structure (concurrent baseline under the same retry policy and gateway conditions);
@@ -127,5 +127,5 @@
 | B1 | `retry-v2`, `recovery-v1` | **Approved** (2026-10-28) |
 | B2 | Stage 1 recovery (34 runs) | **Deferred** by the owner. It needs `--max-runs 18`, because Stage 1 ran without in-run retries |
 | C1 | V1–V7 | **Registered.** V5 received a completeness-and-consistency clause, as the owner's description asked ([record](stage2-prompts.md)) |
-| C2 | Schedule and budget (§3, §4) | **Stage 2a done** (2026-10-29, [results](stage2a-results.md)). **Stage 2b (V8) needs the owner's approval** |
+| C2 | Schedule and budget (§3, §4) | **Done** (2026-10-29): Stage 2a ([results](stage2a-results.md)) and Stage 2b ([results](stage2b-results.md)), both within their caps. Selection: V1. **Stage 3 needs the owner's approval** |
 | C3 | Stage 1 judge re-score | Existing judge outputs cover only 5 matched pairs. **193 judged fields** (names and descriptions of newly matched pairs) would need new judge calls: about 193–210 calls, at most 965 with retries, about 100k tokens, at $0. Not needed for D9 or Stage 2. **Not run; awaits approval** (it would need a pending-fields-only re-score command) |
