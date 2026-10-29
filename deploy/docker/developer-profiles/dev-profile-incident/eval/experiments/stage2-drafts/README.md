@@ -7,4 +7,7 @@ Drafts of V1–V7 for the owner's review ([Stage 2 plan](../../docs/experiments/
 - **Not runnable:** the registry and the agent know only registered prompts.
 - **After approval**, each draft is added unchanged with `prompt_registry.add(<id>, parent="p1-v4-base", text=..., hypothesis=...)`, and its SHA-256 must equal the one here.
 - **A reworded draft is a new draft, never an edit after registration** (the registry is append-only).
-- **V8** is not drafted. It is built after Stage 2a by the rule in the plan.
+- **V8** (`p1-v4-e08-combined.txt`, SHA-256 `9c21fc60f39c…`) is **proposed, not registered**.
+  - It was built 2026-10-29 by the fixed rule: all seven of V1–V7 qualified ([Stage 2a results §7](../../docs/experiments/stage2a-results.md#7-v8-qualification)).
+  - It is the base prompt plus every V1–V7 inserted block, unchanged and in section order. `p1-v4-e08-combined.diff` shows the change.
+  - It is registered only after the owner approves Stage 2b.
