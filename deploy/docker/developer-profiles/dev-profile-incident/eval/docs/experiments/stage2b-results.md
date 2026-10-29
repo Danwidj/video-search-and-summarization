@@ -1,7 +1,7 @@
 # Stage 2b results (V8) and the final Stage 2 selection
 
 > **Status (2026-10-29):** Stage 2b ran and was recovered.
-> - **Selection:** D9 v2 selects **V1 `p1-v4-e01-severity`** for Stage 3. V8 does not change the selection.
+> - **Selection:** D9 v2 selects **V1 `p1-v4-e01-severity`** for Stage 3, approved by the owner on 2026-10-29. V8 does not change the selection.
 > - **Stage 3 has not run**, and waits for the owner's approval.
 > - **Ground truth:** `ground-truth-v1.0` is frozen on the owner's dataset-level approval of AI-assisted labels. It is **not individually human-verified**.
 > - **Methodology:** v1.2 (τ = 0.40, AI-calibrated, not human-validated); severity MAE is v1.3, reporting only.
