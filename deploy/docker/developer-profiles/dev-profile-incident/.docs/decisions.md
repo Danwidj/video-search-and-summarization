@@ -2,6 +2,24 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity
+- **Decision:** the pre-registered D9 v2 rule (`select_d9` over every version that ran, each against its own interleaved baseline, merged `original+recovery-v1` records) selects **V1 `p1-v4-e01-severity`** (SHA-256 `004746ea7d19…`) as the Stage 3 prompt.
+  - **V1:** ΔI +0.051 [+0.013, +0.089].
+  - **Next best:** V4 +0.029. **V8:** `p1-v4-e08-combined`, +0.022 [−0.025, +0.071] against `s2-vss-baseline-b`.
+  - **No tie-breaker:** the gap is more than 0.01.
+  - **Original-run view:** the same result.
+- **Status:** this is the record of the rule's result, not an owner approval.
+  - **Stage 3 has not run.** It needs the owner's approval, its own configs and budget.
+  - This heading is the selection record that a final test config must name.
+- **Why:** the rule was fixed on 2026-10-27, before any Stage 2 output.
+  - V8 passed the +0.02 bar and every guardrail, so it qualified.
+  - V8 was not selected, because V1's ΔI is higher.
+  - The cross-stage check (V8 − V1 −0.016 [−0.054, +0.021], descriptive) gives no reason to prefer the more complex prompt.
+- **Rejected:**
+  - Choosing V8 because it combines every block (the rule ranks by ΔI, not by coverage).
+  - Re-pairing V1 and V8 against one baseline for selection (they were not interleaved; reported as sensitivity only).
+- **Links:** [Stage 2b results and final selection](../eval/docs/experiments/stage2b-results.md#7-final-stage-2-selection-d9-v2-pre-registered-2026-10-27); [Stage 2a results](../eval/docs/experiments/stage2a-results.md).
+
 ### 2026-10-29: Stage 2a recovery classifies DNS failures and expired R2 URLs as recoverable infrastructure failures
 - **Decision (approved by the owner 2026-10-29, after all 400 Stage 2a video-runs were recorded):**
   - recovery-v1 also recovers an `http_error` whose stored error is a DNS or connection failure (`transport_error`), or R2's `403 Forbidden` on the signed video URL (`expired_url`);

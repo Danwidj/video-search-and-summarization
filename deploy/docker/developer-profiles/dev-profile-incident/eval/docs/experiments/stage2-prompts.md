@@ -1,4 +1,4 @@
-# Stage 2 registered prompts (V1–V7)
+# Stage 2 registered prompts (V1–V8)
 
 > Registered 2026-10-28 in [`contracts/experiments/registry.json`](../../../contracts/experiments/registry.json) (append-only; status `candidate`). Each is `p1-v4-base` plus one change drawn from `annotation-guidelines-v1.0`. No few-shot example, no video-specific or ground-truth wording. None is assumed to help: each is a hypothesis tested against the concurrent baseline under D9 v2, and every version is reported whatever its result.
 
@@ -238,4 +238,18 @@
 - **Fewer than two qualifying versions:** V8 is not built. A single qualifying version is already its own candidate.
 - **Selection:** V8 is then a candidate like the others: `select_d9` over every version that ran. `ΔI ≥ +0.02` is needed to beat `p1-v4-base`.
 - **Disclosure:** V8 is chosen from dev results and scored on the same dev clips. Stage 3 is the held-out check.
+
+### V8 combined: `p1-v4-e08-combined` (registered 2026-10-29)
+
+- **SHA-256:** `9c21fc60f39ca46c5c226c02f17e4e60360cbbd543092c54ebdc7dfb21de7323`. **Parent:** `p1-v4-base`. **Full text:** [`contracts/experiments/p1/p1-v4-e08-combined.txt`](../../../contracts/experiments/p1/p1-v4-e08-combined.txt) (3,441 words, +768 on the base; 23,030 bytes). The diff is [`stage2-drafts/p1-v4-e08-combined.diff`](../../experiments/stage2-drafts/p1-v4-e08-combined.diff).
+- **Built by the rule above**, with no editing. All seven of V1–V7 qualified ([Stage 2a §7](stage2a-results.md#7-v8-qualification)).
+  - Every block is inserted unchanged at its base position, in section order (V6, V5, V1, V2, V3, V4, then V7 as a new section 10).
+  - Removing any one variant's blocks gives that variant again.
+- **Pre-registration checks (owner-requested):**
+  - no contradictory instructions (V7 item 2 settles the V3/V4 instrument-versus-asset overlap);
+  - no new or conflicting output fields; `incident-contract-v4` unchanged;
+  - inference settings unchanged;
+  - about +1,063 prompt tokens, so the worst case stays under the 35,000-token per-attempt ceiling.
+- **Result** ([Stage 2b](stage2b-results.md)):
+  - ΔI +0.022 [−0.025, +0.071] against `s2-vss-baseline-b`. It qualifies (≥ +0.02, guardrails pass) but is not selected: V1 has the higher ΔI.
 
