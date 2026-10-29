@@ -29,4 +29,20 @@ Report: `eval_data/results/reports/severity-v1.3/stage1/severity-report-v1.3.{js
 
 ## Stage 2a (baseline and V1–V7)
 
-Added when Stage 2a completes. Each version is paired against the interleaved `s2-vss-baseline`. Of particular interest: whether V1 (severity calibration) lowers MAE and the over-rating bias, read with its interval.
+Reports (local):
+- recovery-adjusted: `eval_data/results/reports/stage2a/recovery-adjusted-v1/severity-v1.3/`;
+- original runs: `eval_data/results/reports/stage2a/original/severity-v1.3/`.
+
+Each version is paired against the interleaved `s2-vss-baseline` over all 25 clips. Full table: [Stage 2a results §5](stage2a-results.md#5-severity-methodology-v13-reporting-extension-mae-is-never-used-in-selection).
+
+| | MAE | Signed error | Within ±1 | Over / under | Paired MAE difference [95% CI] | Signed-error difference [95% CI] |
+|---|---|---|---|---|---|---|
+| Baseline | 1.082 | +0.184 | 0.714 | 23 / 16 | – | – |
+| V1 severity | 0.860 | +0.420 | 0.880 | 28 / 9 | **−0.220 [−0.380, −0.080]** | +0.220 [−0.040, +0.520] |
+| V7 checklist | 0.857 | +0.204 | 0.775 | 20 / 11 | −0.220 [−0.420, −0.020] | +0.020 [−0.220, +0.280] |
+
+- **V1 lowers severity MAE:** the interval excludes 0. The original-run difference is −0.240 [−0.400, −0.100].
+- **V1 does not lower the over-rating bias:** the signed error rises, and its interval includes 0. The gain comes from fewer under-ratings (16 → 9) and fewer large misses, while over-ratings rise (23 → 28).
+- **The bias V1 targeted was not stable:** the Stage 2a baseline's bias (+0.18) is smaller than Stage 1 C2's (+0.53), which motivated V1.
+- **V7 matches V1's MAE reduction** without adding bias.
+- **D9 is unchanged:** it still scores severity by exact match (V1 +0.06, V7 +0.16 [+0.04, +0.30]).

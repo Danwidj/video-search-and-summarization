@@ -258,6 +258,18 @@ def _upstream_status(body) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# The agent's 500 when it could not reach the gateway at all (DNS or connection failure on the host): a transport
+# failure, not an HTTP error from the model service. Seen in Stage 2a during a brief laptop network outage.
+NETWORK_FAILURE = re.compile(r"Temporary failure in name resolution|Name or service not known|"
+                             r"nodename nor servname|getaddrinfo failed|Cannot connect to host|"
+                             r"Connection (?:refused|reset)|Network is unreachable", re.IGNORECASE)
+
+
+def network_failure(body) -> bool:
+    detail = body.get("detail") if isinstance(body, dict) else body
+    return bool(NETWORK_FAILURE.search(str(detail or ""))) and _upstream_status(body) is None
+
+
 def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str, started_at: str, finished_at: str):
     """The agent's answer as a ``ChatResult`` (the eval.md §4 Track X rules).
 
@@ -280,6 +292,7 @@ def vss_chat_result(response: VSSResponse, *, prompt_id: str, prompt_sha256: str
     else:
         status = _upstream_status(response.body) or response.status_code
         kind = {429: "rate_limited"}.get(status) or ("timeout" if status in GATEWAY_TIMEOUT_STATUS
+                                                     else "transport_error" if network_failure(response.body)
                                                      else "http_error")
         return ChatResult(ok=False, status_code=response.status_code, error=json.dumps(response.body)[:1000],
                           failure_kind=kind, raw=body, **timing)
