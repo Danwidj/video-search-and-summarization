@@ -374,9 +374,10 @@ def _s2_configs():
 
 
 def test_stage2_caps_survive_the_worst_case_of_three_unmetered_attempts_per_run(tmp_path):
-    """Every Stage 2a config completes all 50 runs even if every run needs 3 attempts and the first two report no usage."""
+    """Every Stage 2 config (2a and 2b) completes all 50 runs even if every run needs 3 attempts and the first two
+    report no usage."""
     configs = _s2_configs()
-    assert len(configs) == 8 and all(c["pipeline"]["retry_policy"] == "retry-v2" for c in configs)
+    assert len(configs) == 10 and all(c["pipeline"]["retry_policy"] == "retry-v2" for c in configs)
     out = _stage(configs, _gt_many(25), tmp_path, attempts=3)
     assert out["stopped"] is None and all(r["usage"]["p1_calls"] == 50 for r in out["records"])
     assert all(r["usage"]["p1_attempts"] == 150 for r in out["records"])

@@ -89,6 +89,17 @@
       "hypothesis": "Two outputs were contract-invalid in Stage 1 (VSS arm) and cross-field consistency is not checked by the model. An explicit final consistency check (annotation-guidelines-v1.0 \u00a76, \u00a78; prompt \u00a78) raises the valid-output rate and consistency without lowering any score.",
       "created": "2026-10-28",
       "status": "candidate"
+    },
+    {
+      "id": "p1-v4-e08-combined",
+      "parent": "p1-v4-base",
+      "file": "p1/p1-v4-e08-combined.txt",
+      "sha256": "9c21fc60f39ca46c5c226c02f17e4e60360cbbd543092c54ebdc7dfb21de7323",
+      "contract_version": "incident-contract-v4",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "V8 by the combination rule fixed before Stage 2: p1-v4-base with the inserted block of every V1-V7 version whose recovery-adjusted Stage 2a D9 v2 comparison has Delta I > 0 and no G1-G3 problem (all seven), applied unchanged in section order. Combining the blocks improves Delta I over p1-v4-base without a G2 regression; the blocks are not assumed to add up.",
+      "created": "2026-10-29",
+      "status": "candidate"
     }
   ]
 }
