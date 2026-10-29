@@ -46,3 +46,15 @@ Each version is paired against the interleaved `s2-vss-baseline` over all 25 cli
 - **The bias V1 targeted was not stable:** the Stage 2a baseline's bias (+0.18) is smaller than Stage 1 C2's (+0.53), which motivated V1.
 - **V7 matches V1's MAE reduction** without adding bias.
 - **D9 is unchanged:** it still scores severity by exact match (V1 +0.06, V7 +0.16 [+0.04, +0.30]).
+
+## Stage 2b (V8 and a fresh baseline)
+
+Reports (local): `eval_data/results/reports/stage2b/{recovery-adjusted-v1,original}/severity-v1.3/`. Full figures: [Stage 2b results §5](stage2b-results.md#5-severity-methodology-v13-reporting-only-and-per-category).
+
+| | MAE | Signed error | Within ±1 | Over / under | Paired MAE difference [95% CI] |
+|---|---|---|---|---|---|
+| Baseline-b | 0.898 | +0.163 | 0.837 | 21 / 15 | – |
+| V8 combined | 0.960 | +0.200 | 0.760 | 23 / 13 | +0.060 [−0.140, +0.260] |
+
+- **V8 does not lower MAE**, even though it contains V1's severity block.
+- **The baselines differ:** the fresh baseline's MAE (0.898) is already lower than Stage 2a's (1.082).

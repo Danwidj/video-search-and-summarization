@@ -3,6 +3,7 @@
 > **Status, 2026-10-29:** **`retry-v2` and `recovery-v1` are approved by the owner** (B1) as the standard protocol for future experiments. They are applied identically to every arm.
 > - **Stage 2a recovery ran (2026-10-29):** 7 of 7 infrastructure failures were recovered with 11 attempts ([results §2](stage2a-results.md#2-failures-and-recovery-recovery-v1)).
 >   - Two new classes were added first (owner-approved): a DNS or connection failure is `transport_error`, and R2's 403 on an expired signed URL is `expired_url`.
+> - **Stage 2b recovery ran (2026-10-29):** 1 of 1 infrastructure failure (an HTTP 524 timeout) recovered with 1 attempt ([results §2](stage2b-results.md#2-failures-and-recovery-recovery-v1)). The baseline's one invalid output was not retried.
 > - **Stage 1 recovery:** still deferred by the owner.
 > - **Stage 2:** the final execution plan and its reconciled budget are in [stage2-plan.md](stage2-plan.md) (§3–§4).
 > - **The original Stage 1 results are unchanged.**
