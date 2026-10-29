@@ -313,6 +313,9 @@ def test_committed_configs_are_valid_dev_runs():
     for path in sorted(er.CONFIG_DIR.glob("*.json")):
         config = er.load_config(path)
         assert er.config_problems(config) == [], path.name
+        if path.name.startswith("s3-"):  # the final test configs, checked in test_stage3.py
+            assert config["split"] == "test" and config["final"] and config["frozen_baseline"]
+            continue
         assert config["split"] == "dev" and not config["final"]
         if config["pipeline"]["profile"] == "end-to-end":
             assert config["experiment_id"].startswith("pilot-")  # cropping only in the pilot (and the later profile)
