@@ -34,8 +34,7 @@ test('dashboard numbers link to the library page with official scope and exact f
   );
   const dashboard = await readFile(new URL('dashboard/components/Dashboard/Dashboard.tsx', components), 'utf8');
   assert.doesNotMatch(dashboard, /clearFilters|dashboard: '1'/, 'no hidden dashboard-only filter markers');
-  assert.match(dashboard, /href="\/videos\?filter=awaiting-selection"/);
-  assert.match(dashboard, /href="\/videos\?filter=without-report"/);
+  assert.doesNotMatch(dashboard, /href="\/videos/, 'dashboard does not link to the removed videos tab');
   const filters = await readFile(new URL('../src/lib/library/filters.ts', import.meta.url), 'utf8');
   for (const key of ['scope', 'entityType', 'match', 'type', 'instrument', 'asset', 'after', 'before']) {
     assert.match(filters, new RegExp(`FILTER_KEYS = \\[[^\\]]*'${key}'`), key);
