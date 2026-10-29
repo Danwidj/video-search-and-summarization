@@ -8,7 +8,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - **Next best:** V4 +0.029. **V8:** `p1-v4-e08-combined`, +0.022 [−0.025, +0.071] against `s2-vss-baseline-b`.
   - **No tie-breaker:** the gap is more than 0.01.
   - **Original-run view:** the same result.
-- **Status:** this is the record of the rule's result, not an owner approval.
+- **Status:** the rule's result, **approved by the owner on 2026-10-29** for Stage 3.
   - **Stage 3 has not run.** It needs the owner's approval, its own configs and budget.
   - This heading is the selection record that a final test config must name.
 - **Why:** the rule was fixed on 2026-10-27, before any Stage 2 output.
