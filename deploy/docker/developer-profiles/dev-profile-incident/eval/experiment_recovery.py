@@ -17,7 +17,10 @@
 
 - **Only infrastructure failures are recovered:** a video-run whose request never produced a
   model output (rate limit, timeout, host suspended, transport error, or an agent 500 wrapping an
-  upstream 429 or gateway timeout). A model output, valid or not, is never re-run.
+  upstream 429 or gateway timeout, a DNS or connection failure, or R2 refusing an expired signed URL).
+  A model output, valid or not, is never re-run.
+- **Fresh URLs:** every recovered video-run signs its R2 URL just before its first attempt (TTL 1 h,
+  longer than the worst-case retry-v2 span of three attempts and two backoffs).
 - **The original result is never changed.** A recovery is a separate, immutable result
   (``<experiment>-recovery``), run under retry-v2 and interleaved across arms by the D10 order.
   Every recovered video-run carries ``recovers``, which links it to the original attempt.
@@ -31,6 +34,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import experiment_runner as er
@@ -39,8 +43,11 @@ import extraction_stats
 PROTOCOL = "recovery-v1"
 MERGED_PROTOCOL = "original+recovery-v1"
 RECOVERY_RETRY_POLICY = "retry-v2"
-RECOVERABLE = ("rate_limited", "timeout", "host_suspended", "transport_error")
+RECOVERABLE = ("rate_limited", "timeout", "host_suspended", "transport_error", "expired_url")
 GATEWAY_TIMEOUTS = (504, 522, 524)
+# The gateway could not fetch the video: R2 refused its signed URL (403), as when the URL expired during a host
+# suspend and a retry reused it. Recovery signs a fresh URL for every video-run, so this is recoverable.
+EXPIRED_URL = re.compile(r"403, message='Forbidden', url='https://[^']*\.r2\.cloudflarestorage\.com/")
 # The most video-runs one recovery re-attempts per configuration (approved hard budget, 2026-10-28). More than this
 # after retry-v2 means a persistent outage: the recovery is refused and the stage is reported instead.
 MAX_RECOVERED_RUNS = 15
@@ -69,6 +76,11 @@ def failure_class(video: dict) -> str | None:
         return "rate_limited"
     if status in GATEWAY_TIMEOUTS:
         return "timeout"
+    error = str(raw.get("error") or "")
+    if EXPIRED_URL.search(error.replace("\\", "")):
+        return "expired_url"
+    if er.network_failure(error):
+        return "transport_error"
     return None
 
 
