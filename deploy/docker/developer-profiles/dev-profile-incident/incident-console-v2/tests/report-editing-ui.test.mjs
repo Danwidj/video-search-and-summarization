@@ -60,8 +60,6 @@ test('the report page has a History of versions, a reviewer prompt and explicit 
   for (const name of [
     'reports/components/ReportPage/ReportPage.tsx',
     'reports/components/ReportPane/ReportPane.tsx',
-    'reports/components/ReportTimeline/ReportTimeline.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/OfficialControls/OfficialControls.tsx',
@@ -94,16 +92,13 @@ test('browser components import only browser-safe report modules', async () => {
   for (const name of [
     'reports/components/ReportPage/ReportPage.tsx',
     'reports/components/ReportPane/ReportPane.tsx',
-    'reports/components/ReportTimeline/ReportTimeline.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/ReportRunDetails/ReportRunDetails.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
     'analysis/components/RunHistory/RunHistory.tsx',
     'analysis/components/ReanalysisCard/ReanalysisCard.tsx',
     'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
-    'videos/components/VideosScreen/VideosScreen.tsx',
     'reports/components/RunComparison/RunComparison.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
     'library/components/IncidentCard/IncidentCard.tsx',
@@ -138,18 +133,18 @@ test('edit mode pairs every evidence row with A and saves the whole draft as a n
   assert.match(page, />\s*Revert\s*</, 'the editor can restore the opened version');
   assert.match(page, /<hr/, 'the report page has semantic resize handles in both modes');
   assert.doesNotMatch(page, /mode === 'edit'[\s\S]{0,120}<ReportBandResizeHandle/, 'View mode does not hide the width handles');
-  assert.match(page, /Resize video and timeline/);
-  assert.match(page, /Resize timeline and version history/);
-  assert.match(page, /Resize video, timeline and version history height/);
+  assert.match(page, /Resize video and version history/);
+  assert.match(page, /Resize video and version history height/);
   for (const classB of ['severity_reason', 'uncertainties', 'timeline']) {
     assert.ok(!new RegExp(`${classB}:`).test(editor), `${classB} must not be editable`);
   }
 });
 
-test('the report page offers re-analysis and history', async () => {
-  const tools = await readFile(new URL('reports/components/AdvancedReportTools/AdvancedReportTools.tsx', components), 'utf8');
-  assert.match(tools, /ReanalysisCard/);
-  assert.match(tools, /RunHistoryList/);
+test('the report page offers re-analysis', async () => {
+  const report = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
+  assert.match(report, /ReanalysisDialog/);
+  const reanalysis = await readFile(new URL('analysis/components/ReanalysisCard/ReanalysisCard.tsx', components), 'utf8');
+  assert.match(reanalysis, /ReanalysisDialog/);
   const library = await readFile(new URL('library/components/LibraryScreen/LibraryScreen.tsx', components), 'utf8');
   assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
   assert.match(await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8'), /library-repair-marker/);
@@ -166,8 +161,6 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
     'reports/components/RunComparison/RunComparison.tsx',
     'analysis/components/RunHistory/RunHistory.tsx',
     'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
-    'videos/components/VideosScreen/VideosScreen.tsx',
-    'reports/components/AdvancedReportTools/AdvancedReportTools.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
     'library/components/IncidentCard/IncidentCard.tsx',
     'library/components/HitCard/HitCard.tsx',
@@ -179,14 +172,16 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
 
 test('the new-analysis model selector shows full model names and never clips them', async () => {
   const workspace = await readFile(new URL('analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', components), 'utf8');
-  const select = /<select\s+className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
+  const select =
+    /<SelectTrigger\s+className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace) ||
+    /<select\s+className="([^"]*)"[^>]*id="analysis-model"/.exec(workspace);
   assert.ok(select, 'the model selector exists');
   const classes = select[1].split(/\s+/);
   for (const needed of ['sm:w-auto', 'sm:min-w-[19rem]', 'sm:shrink-0']) assert.ok(classes.includes(needed), `select has ${needed}`);
   assert.ok(!classes.some((name) => /max-w-/.test(name)), 'no max width that would clip a model name');
   assert.match(
     workspace,
-    /<option key=\{option\.id\} value=\{option\.id\}>\s*\{option\.label\}\s*<\/option>/,
+    /<(?:option|SelectItem) key=\{option\.id\} value=\{option\.id\}>\s*\{option\.label\}\s*<\/(?:option|SelectItem)>/,
     'options show the full friendly label and keep the model id as value',
   );
   assert.match(workspace, /sm:flex-wrap/, 'on narrow rows the note wraps instead of squeezing the selector');

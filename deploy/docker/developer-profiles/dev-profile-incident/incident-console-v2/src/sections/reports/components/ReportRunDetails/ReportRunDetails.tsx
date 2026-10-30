@@ -1,111 +1,122 @@
 // SPDX-License-Identifier: Apache-2.0
+'use client';
 
-import type { ReportView } from '@/modules/reports/domain/report-view';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { formatTimestamp } from '@/lib/time';
+import type { ReportView } from '@/modules/reports/domain/report-view';
 
 export function RunDetailsPanel({ report }: { report: ReportView }) {
   const { run } = report;
   const request = run.request;
   const response = run.response;
   return (
-    <section className="border-t border-ink/10 px-6 py-6 sm:px-8">
-      <details className="group rounded-2xl border border-ink/10 bg-canvas/60">
-        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-signal">
-          <span className="flex items-center justify-between">
+    <section className="border-t border-border px-6 py-6 sm:px-8">
+      <Accordion className="w-full" collapsible type="single">
+        <AccordionItem className="rounded-2xl border border-border bg-muted/40 px-5" value="run-details">
+          <AccordionTrigger className="cursor-pointer py-4 text-sm font-semibold hover:no-underline">
             <span>Run &amp; model output details</span>
-            <span className="text-ink/35 group-open:rotate-180">⌄</span>
-          </span>
-        </summary>
-        <div className="border-t border-ink/10 px-5 py-5">
-          <dl className="grid gap-x-6 gap-y-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
-            <Provenance label="Model" value={run.model} />
-            <Provenance label="Contract / prompt version" value={run.promptVersion || 'Legacy prompt'} />
-            <Provenance label="Model run" value={run.modelRunId ?? 'Not recorded'} />
-            <Provenance label="Generated" value={formatTimestamp(run.generatedAt)} />
-            {run.status && (
-              <Provenance
-                label="Analysis outcome"
-                value={`${OUTCOME_LABELS[run.status]}${run.statusInferred ? ' (recorded before outcomes were stored)' : ''}`}
-              />
+          </AccordionTrigger>
+          <AccordionContent className="border-t border-border pt-4 pb-2">
+            <dl className="grid gap-x-6 gap-y-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <Provenance label="Model" value={run.model} />
+              <Provenance label="Contract / prompt version" value={run.promptVersion || 'Legacy prompt'} />
+              <Provenance label="Model run" value={run.modelRunId ?? 'Not recorded'} />
+              <Provenance label="Generated" value={formatTimestamp(run.generatedAt)} />
+              {run.status && (
+                <Provenance
+                  label="Analysis outcome"
+                  value={`${OUTCOME_LABELS[run.status]}${run.statusInferred ? ' (recorded before outcomes were stored)' : ''}`}
+                />
+              )}
+              {request && <Provenance label="Additional instruction" value={request.additionalInstruction || 'None'} />}
+              {response && <Provenance label="Finish reason" value={response.finishReason || 'Not returned'} />}
+              {response && <Provenance label="Token usage" value={response.usage ? JSON.stringify(response.usage) : 'Not returned'} />}
+              {request?.inferenceConfig && <Provenance label="Inference settings" value={JSON.stringify(request.inferenceConfig)} />}
+              {request?.promptSha256 && <Provenance label="Prompt SHA-256" value={request.promptSha256} />}
+              {request?.schemaSha256 && <Provenance label="Schema SHA-256" value={request.schemaSha256} />}
+              {run.notesKind === 'contract' && (
+                <Provenance
+                  label="Validation policy"
+                  value={run.validation?.policy ?? 'Full contract validity (recorded before core-scored-v1)'}
+                />
+              )}
+              {run.validation?.fullContractValid !== undefined && (
+                <Provenance
+                  label="Full contract validity (first response)"
+                  value={run.validation.fullContractValid ? 'Valid' : 'Not valid: only unscored or ID issues, see below'}
+                />
+              )}
+              {request && 'videoDurationSeconds' in request && (
+                <Provenance
+                  label="Video length checked against"
+                  value={
+                    typeof request.videoDurationSeconds === 'number'
+                      ? `${Number(request.videoDurationSeconds.toFixed(3))} s`
+                      : 'Unknown (not checked)'
+                  }
+                />
+              )}
+            </dl>
+            {(run.firstPassViolations ?? []).some((violation) => violation.scope === 'enrichment') && (
+              <Alert
+                className="mt-4 rounded-xl border border-border bg-card/60 p-4 text-xs text-muted-foreground"
+                data-testid="enrichment-violations"
+              >
+                <AlertTitle className="text-xs font-semibold text-foreground">
+                  Issues in unscored model fields (recorded, not repaired, do not affect validity)
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-1 list-disc pl-5">
+                    {(run.firstPassViolations ?? [])
+                      .filter((violation) => violation.scope === 'enrichment')
+                      .map((violation) => (
+                        <li key={`${violation.code}:${violation.message}`}>
+                          <span className="font-mono">{violation.code}</span>: {violation.message}
+                        </li>
+                      ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
             )}
-            {request && <Provenance label="Additional instruction" value={request.additionalInstruction || 'None'} />}
-            {response && <Provenance label="Finish reason" value={response.finishReason || 'Not returned'} />}
-            {response && <Provenance label="Token usage" value={response.usage ? JSON.stringify(response.usage) : 'Not returned'} />}
-            {request?.inferenceConfig && <Provenance label="Inference settings" value={JSON.stringify(request.inferenceConfig)} />}
-            {request?.promptSha256 && <Provenance label="Prompt SHA-256" value={request.promptSha256} />}
-            {request?.schemaSha256 && <Provenance label="Schema SHA-256" value={request.schemaSha256} />}
-            {run.notesKind === 'contract' && (
-              <Provenance
-                label="Validation policy"
-                value={run.validation?.policy ?? 'Full contract validity (recorded before core-scored-v1)'}
-              />
+            {run.notesKind === 'invalid-contract' && (
+              <Alert className="mt-4" variant="destructive">
+                <AlertDescription>The stored model output could not be re-validated: {run.notesError}</AlertDescription>
+              </Alert>
             )}
-            {run.validation?.fullContractValid !== undefined && (
-              <Provenance
-                label="Full contract validity (first response)"
-                value={run.validation.fullContractValid ? 'Valid' : 'Not valid: only unscored or ID issues, see below'}
-              />
+            {run.notesKind === 'none' && (
+              <p className="mt-4 text-xs italic text-muted-foreground">The original model output was not retained for this run.</p>
             )}
-            {request && 'videoDurationSeconds' in request && (
-              <Provenance
-                label="Video length checked against"
-                value={
-                  typeof request.videoDurationSeconds === 'number'
-                    ? `${Number(request.videoDurationSeconds.toFixed(3))} s`
-                    : 'Unknown (not checked)'
+            {run.status === 'valid_after_structural_repair' && <RepairDetails run={run} />}
+            {run.rawModelOutput && (
+              <Block
+                title={
+                  run.status === 'valid_after_structural_repair'
+                    ? 'Original raw model response (before ID normalization)'
+                    : 'Raw model response'
                 }
-              />
+              >
+                {run.rawModelOutput}
+              </Block>
             )}
-          </dl>
-          {(run.firstPassViolations ?? []).some((violation) => violation.scope === 'enrichment') && (
-            <div className="mt-4 rounded-xl border border-ink/10 bg-white/60 p-4 text-xs text-ink/65" data-testid="enrichment-violations">
-              <p className="font-semibold">Issues in unscored model fields (recorded, not repaired, do not affect validity)</p>
-              <ul className="mt-1 list-disc pl-5">
-                {(run.firstPassViolations ?? [])
-                  .filter((violation) => violation.scope === 'enrichment')
-                  .map((violation) => (
-                    <li key={`${violation.code}:${violation.message}`}>
-                      <span className="font-mono">{violation.code}</span>: {violation.message}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-          {run.notesKind === 'invalid-contract' && (
-            <p className="mt-4 text-xs text-clay">The stored model output could not be re-validated: {run.notesError}</p>
-          )}
-          {run.notesKind === 'none' && (
-            <p className="mt-4 text-xs italic text-ink/40">The original model output was not retained for this run.</p>
-          )}
-          {run.status === 'valid_after_structural_repair' && <RepairDetails run={run} />}
-          {run.rawModelOutput && (
-            <Block
-              title={
-                run.status === 'valid_after_structural_repair'
-                  ? 'Original raw model response (before ID normalization)'
-                  : 'Raw model response'
-              }
-            >
-              {run.rawModelOutput}
-            </Block>
-          )}
-          {response?.reasoningContent && <Block title="Model reasoning">{response.reasoningContent}</Block>}
-          {run.originalReport !== undefined && (
-            <Block
-              title={
-                run.status === 'valid_after_structural_repair'
-                  ? 'Validated model output (after ID normalization)'
-                  : 'Original validated model output'
-              }
-            >
-              {JSON.stringify(run.originalReport, null, 2)}
-            </Block>
-          )}
-          {run.legacyReviewerEdits && (
-            <Block title="Reviewer edits made with the earlier editor">{JSON.stringify(run.legacyReviewerEdits, null, 2)}</Block>
-          )}
-        </div>
-      </details>
+            {response?.reasoningContent && <Block title="Model reasoning">{response.reasoningContent}</Block>}
+            {run.originalReport !== undefined && (
+              <Block
+                title={
+                  run.status === 'valid_after_structural_repair'
+                    ? 'Validated model output (after ID normalization)'
+                    : 'Original validated model output'
+                }
+              >
+                {JSON.stringify(run.originalReport, null, 2)}
+              </Block>
+            )}
+            {run.legacyReviewerEdits && (
+              <Block title="Reviewer edits made with the earlier editor">{JSON.stringify(run.legacyReviewerEdits, null, 2)}</Block>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </section>
   );
 }
@@ -130,39 +141,41 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
     return JSON.stringify(operation);
   };
   return (
-    <div className="mt-6 rounded-xl border border-[#e8d49a] bg-[#fffaf0] p-4 text-xs text-ink/70" data-testid="repair-details">
-      <h4 className="font-bold uppercase tracking-[0.12em] text-[#765300]">
+    <Alert className="mt-6 rounded-xl border border-amber-300 bg-amber-50/70 p-4 text-xs text-amber-950" data-testid="repair-details">
+      <AlertTitle className="text-xs font-bold uppercase tracking-[0.12em] text-amber-800">
         Contract repair applied (IDs only) · {String(repair.ruleSet ?? '')}
-      </h4>
-      <p className="mt-2">
-        The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was
-        changed, and the result passed validation again.
-      </p>
-      <p className="mt-3 font-semibold">First-pass violations</p>
-      <ul className="mt-1 list-disc pl-5">
-        {(run.firstPassViolations ?? []).map((violation) => (
-          <li key={`${violation.code}:${violation.message}`}>
-            <span className="font-mono">{violation.code}</span>: {violation.message}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 font-semibold">Repair operations</p>
-      <ul className="mt-1 list-disc pl-5">
-        {operations.map((operation) => (
-          <li className="font-mono" key={describe(operation)}>
-            {describe(operation)}
-          </li>
-        ))}
-      </ul>
-    </div>
+      </AlertTitle>
+      <AlertDescription>
+        <p className="mt-2 text-inherit">
+          The model&apos;s first response broke only identifier rules. Identifiers and list order were normalized; no text or value was
+          changed, and the result passed validation again.
+        </p>
+        <p className="mt-3 font-semibold text-inherit">First-pass violations</p>
+        <ul className="mt-1 list-disc pl-5">
+          {(run.firstPassViolations ?? []).map((violation) => (
+            <li key={`${violation.code}:${violation.message}`}>
+              <span className="font-mono">{violation.code}</span>: {violation.message}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 font-semibold text-inherit">Repair operations</p>
+        <ul className="mt-1 list-disc pl-5">
+          {operations.map((operation) => (
+            <li className="font-mono" key={describe(operation)}>
+              {describe(operation)}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
   );
 }
 
 function Provenance({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="font-bold uppercase tracking-[0.1em] text-ink/40">{label}</dt>
-      <dd className="mt-1 break-all font-mono text-ink/70">{value}</dd>
+      <dt className="font-bold uppercase tracking-widest text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-all font-mono text-foreground/80">{value}</dd>
     </div>
   );
 }
@@ -170,8 +183,8 @@ function Provenance({ label, value }: { label: string; value: string }) {
 function Block({ title, children }: { title: string; children: string }) {
   return (
     <div className="mt-6">
-      <h4 className="text-xs font-bold uppercase tracking-[0.12em] text-ink/45">{title}</h4>
-      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-ink p-4 font-mono text-xs leading-5 text-white/75">
+      <h4 className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">{title}</h4>
+      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-card border border-border p-4 font-mono text-xs leading-5 text-card-foreground">
         {children}
       </pre>
     </div>

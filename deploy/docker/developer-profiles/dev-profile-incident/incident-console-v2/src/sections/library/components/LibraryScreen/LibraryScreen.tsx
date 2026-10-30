@@ -4,6 +4,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { PlusIcon } from 'lucide-react';
 
 import { EvidenceTab, type EvidenceScope } from '@/sections/library/components/EvidenceTab';
 import { IncidentCard } from '@/sections/library/components/IncidentCard';
@@ -18,9 +19,14 @@ import {
   parseFilters,
   presetAfter,
 } from '@/lib/library/filters';
+import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 import { getViewerTimeZone } from '@/lib/time';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
 type Tab = 'incidents' | 'evidence';
 const STATE_KEY = 'report-library-state';
@@ -142,7 +148,6 @@ export function Library() {
   }
 
   async function deleteReport(item: ReportLibraryItem) {
-    if (!window.confirm('Permanently delete this video and every version of its report? Versions are never deleted one by one.')) return;
     setBusy(item.videoId);
     try {
       const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete`, { method: 'DELETE' });
@@ -203,10 +208,18 @@ export function Library() {
 
   /** "See evidence" on an incident card: that incident's evidence loads at once, and a typed query then searches only it. */
   function searchEvidenceIn(item: ReportLibraryItem) {
-    setScope({ videoId: item.videoId, title: item.title || item.incident_type });
+    setScope({ videoId: item.videoId, title: item.title || item.incident_type, filename: item.filename });
     setEvidenceQuery('');
     setTab('evidence');
     void searchEvidence('', item.videoId);
+  }
+
+  function showIncidentInIncidents(incident: EvidenceSearchHit['incident']) {
+    setTab('incidents');
+    clearScope();
+    const queryText = incident.title || incident.incidentType;
+    apply({ search: queryText });
+    setSearchText(queryText);
   }
 
   const chips = activeFilters(filters);
@@ -217,41 +230,41 @@ export function Library() {
   const first = (filters.page - 1) * PAGE_SIZE + 1;
 
   return (
-    <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
+    <div className="mx-auto w-full max-w-[1500px] px-6 pb-6 pt-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:px-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Incident reports</h1>
-        <Link className="w-fit rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white" href="/">
-          + Analyze video
-        </Link>
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-moss">Incident console</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Incident reports</h1>
+        </div>
+        <Button asChild className="bg-ink font-semibold text-white hover:bg-ink/90">
+          <Link href="/">
+            <PlusIcon className="size-4" />
+            Analyze video
+          </Link>
+        </Button>
       </div>
 
-      <div className="mt-6 flex gap-1 border-b border-ink/10" role="tablist">
-        {(
-          [
-            ['incidents', 'Find incidents'],
-            ['evidence', 'Find evidence'],
-          ] as [Tab, string][]
-        ).map(([value, label]) => (
-          <button
-            aria-selected={tab === value}
-            className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold ${tab === value ? 'border-ink text-ink' : 'border-transparent text-ink/50 hover:text-ink'}`}
-            key={value}
-            onClick={() => chooseTab(value)}
-            role="tab"
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
+      <div className="mt-3">
+        <Tabs onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
+          <TabsList className="h-auto w-full justify-start rounded-none border-b border-ink/10 p-0" variant="line">
+            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="incidents">
+              Find incidents
+            </TabsTrigger>
+            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="evidence">
+              Find evidence
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <section className="mt-5">
+      <section className="mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         {tab === 'evidence' ? (
           <EvidenceTab
             error={searchError}
             loading={searching}
             onQuery={setEvidenceQuery}
             onScope={(next) => (next ? setScope(next) : clearScope())}
+            onShowInIncidents={showIncidentInIncidents}
             onSubmit={() => void searchEvidence(evidenceQuery, scope?.videoId ?? null)}
             query={evidenceQuery}
             result={result}
@@ -267,19 +280,18 @@ export function Library() {
                 apply({ search: searchText });
               }}
             >
-              <label className="flex-1">
-                <span className="sr-only">Search incidents</span>
-                <input
-                  className="control"
+              <div className="relative flex-1">
+                <Input
+                  className="h-10 bg-white"
                   onChange={(event) => setSearchText(event.target.value)}
                   placeholder="Search incident titles, summaries and evidence"
                   type="search"
                   value={searchText}
                 />
-              </label>
-              <button className="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-white" type="submit">
+              </div>
+              <Button className="bg-ink font-semibold text-white hover:bg-ink/90" type="submit">
                 Search
-              </button>
+              </Button>
             </form>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <Select
@@ -342,16 +354,18 @@ export function Library() {
                     }}
                   />
                 ))}
-                <button
-                  className="text-xs font-semibold text-moss"
+                <Button
+                  className="h-7 px-2 text-xs font-semibold text-moss hover:bg-moss/10 hover:text-moss"
                   onClick={() => {
                     setFilters(EMPTY_FILTERS);
                     setSearchText('');
                   }}
+                  size="sm"
                   type="button"
+                  variant="ghost"
                 >
                   Clear all
-                </button>
+                </Button>
               </div>
             )}
             {filters.entity || filters.instrument || filters.asset ? (
@@ -361,7 +375,7 @@ export function Library() {
             ) : null}
             {filters.fromTime || filters.toTime ? <p className="mt-1 text-xs text-ink/50">Times are in {timeZone}.</p> : null}
 
-            <div className="mt-5 text-sm text-ink/50">
+            <div className="sr-only">
               {totalItems} {totalItems === 1 ? 'incident' : 'incidents'}
             </div>
             {searchMode === 'text' && (
@@ -378,9 +392,12 @@ export function Library() {
                 <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
                   <h2 className="text-xl font-semibold">Your library is empty.</h2>
                   <p className="mt-2 text-sm text-ink/50">Analyze a video to create the first incident report.</p>
-                  <Link className="mt-4 inline-block rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white" href="/">
-                    + Analyze video
-                  </Link>
+                  <Button asChild className="mt-4 bg-ink font-semibold text-white hover:bg-ink/90">
+                    <Link href="/">
+                      <PlusIcon className="size-4" />
+                      Analyze video
+                    </Link>
+                  </Button>
                 </div>
               ) : (
                 <div className="mt-8 rounded-2xl border border-dashed border-ink/20 p-14 text-center">
@@ -388,20 +405,19 @@ export function Library() {
                   <p className="mt-2 text-sm text-ink/50">Clear the filters or search the evidence instead.</p>
                   <div className="mt-4 flex justify-center gap-3">
                     {chips.length > 0 && (
-                      <button
-                        className="action"
+                      <Button
                         onClick={() => {
                           setFilters(EMPTY_FILTERS);
                           setSearchText('');
                         }}
                         type="button"
+                        variant="outline"
                       >
                         Clear all
-                      </button>
+                      </Button>
                     )}
                     {filters.search.trim() && (
-                      <button
-                        className="action"
+                      <Button
                         onClick={() => {
                           setScope(null);
                           setEvidenceQuery(filters.search.trim());
@@ -409,16 +425,17 @@ export function Library() {
                           void searchEvidence(filters.search);
                         }}
                         type="button"
+                        variant="outline"
                       >
                         Search evidence for &ldquo;{filters.search.trim()}&rdquo;
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
               )
             ) : (
               <>
-                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-cols-3 xl:grid-rows-2">
                   {reports.map((item) => (
                     <IncidentCard
                       busy={busy === item.videoId}
@@ -430,40 +447,51 @@ export function Library() {
                     />
                   ))}
                 </div>
-                <nav aria-label="Incident pages" className="mt-8 flex flex-col items-center gap-3">
+                <nav aria-label="Incident pages" className="mt-4 flex shrink-0 flex-col items-center justify-between gap-2 sm:flex-row">
                   <p className="text-sm font-semibold text-ink/65">
                     Showing {first}-{Math.min(filters.page * PAGE_SIZE, totalItems)} of {totalItems} incidents
                   </p>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      className="action"
-                      disabled={filters.page <= 1}
-                      onClick={() => apply({ page: filters.page - 1 }, true)}
-                      type="button"
-                    >
-                      Previous
-                    </button>
-                    {Array.from({ length: totalPages }, (_, index) => index + 1).map((value) => (
-                      <button
-                        aria-current={value === filters.page ? 'page' : undefined}
-                        aria-label={`Page ${value}`}
-                        className={`grid h-9 min-w-9 place-items-center rounded-full text-sm font-semibold ${value === filters.page ? 'bg-ink text-white' : 'border border-ink/10 bg-white'}`}
-                        key={value}
-                        onClick={() => apply({ page: value }, true)}
-                        type="button"
-                      >
-                        {value}
-                      </button>
-                    ))}
-                    <button
-                      className="action"
-                      disabled={filters.page >= totalPages}
-                      onClick={() => apply({ page: filters.page + 1 }, true)}
-                      type="button"
-                    >
-                      Next
-                    </button>
-                  </div>
+                  <Pagination className="mx-0 w-auto">
+                    <PaginationContent>
+                      <PaginationItem>
+                        <Button
+                          disabled={filters.page <= 1}
+                          onClick={() => apply({ page: filters.page - 1 }, true)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Previous
+                        </Button>
+                      </PaginationItem>
+                      {Array.from({ length: totalPages }, (_, index) => index + 1).map((value) => (
+                        <PaginationItem key={value}>
+                          <Button
+                            aria-current={value === filters.page ? 'page' : undefined}
+                            aria-label={`Page ${value}`}
+                            className={value === filters.page ? 'bg-ink text-white' : ''}
+                            onClick={() => apply({ page: value }, true)}
+                            size="sm"
+                            type="button"
+                            variant={value === filters.page ? 'default' : 'outline'}
+                          >
+                            {value}
+                          </Button>
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <Button
+                          disabled={filters.page >= totalPages}
+                          onClick={() => apply({ page: filters.page + 1 }, true)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Next
+                        </Button>
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </nav>
               </>
             )}

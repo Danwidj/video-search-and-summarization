@@ -67,21 +67,25 @@ export class SupabaseVideoAdapter implements VideoRepository {
   }
 
   async listVideos(filter: VideoListFilter, page: number, pageSize: number): Promise<Page<VideoListItem>> {
+    if (filter === 'failed') {
+      // The PostgreSQL schema records failed attempts in model_runs.notes, not as video flags;
+      // there are no standalone failed video rows.
+      return { items: [], totalItems: 0 };
+    }
     // videos and report_revisions are linked by two foreign keys (a revision -> its video, and
     // a video -> its official revision), so every embed names the revision -> video one.
     const base = 'id,filepath,uploaded_datetime,source,official_revision_id';
     const embed = 'report_revisions!report_revisions_video_id_fkey';
+    const isWithoutReport = filter === 'without-report' || filter === 'needs-analysis';
     const query: Record<string, string> = {
-      select:
-        filter === 'without-report'
-          ? `${base},${embed}(id)`
-          : // Awaiting selection: at least one revision, and none marked official.
-            filter === 'awaiting-selection'
-            ? `${base},${embed}!inner(id)`
-            : `${base},${embed}(id)`,
+      select: isWithoutReport
+        ? `${base},${embed}(id)`
+        : filter === 'awaiting-selection' || filter === 'with-report'
+          ? `${base},${embed}!inner(id)`
+          : `${base},${embed}(id)`,
       order: 'uploaded_datetime.desc.nullslast,id.asc',
     };
-    if (filter === 'without-report') query.report_revisions = 'is.null';
+    if (isWithoutReport) query.report_revisions = 'is.null';
     if (filter === 'awaiting-selection') query.official_revision_id = 'is.null';
     const { rows, total } = await this.db.selectPage('videos', query, pageSize, (page - 1) * pageSize);
     return { items: rows.map(videoListItem), totalItems: total };
