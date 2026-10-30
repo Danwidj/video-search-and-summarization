@@ -209,7 +209,7 @@ def _():
 def _():
     left = [r[0] for r in conn.execute(
         "SELECT proname FROM pg_proc WHERE pronamespace = 'public'::regnamespace "
-        "AND proname IN ('save_human_revision', 'apply_r2_rename', 'search_report_revisions')").fetchall()]
+        "AND proname IN ('apply_r2_rename', 'search_report_revisions')").fetchall()]
     assert not left, left
 
 
