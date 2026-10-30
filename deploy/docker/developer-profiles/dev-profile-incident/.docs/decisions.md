@@ -2,6 +2,32 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Evaluation plan audit: deviations recorded; ground truth and matching calibration are AI-assisted, not human-validated
+- **Decision:** the original plan's requirements, and how each was met, replaced, omitted or deferred, are recorded in one place ([plan audit and deviation record](../eval/docs/experiments/plan-audit.md)).
+  - **Replaced, by earlier owner decisions (R1-R7):**
+    - human ground-truth review and κ by AI-assisted adjudication;
+    - τ 0.75 by the AI-calibrated 0.40;
+    - D9 (c) by D9 v2;
+    - few-shot E6 by V6 boundaries;
+    - test N = 2 by 1;
+    - the crop pilot by the capped profile;
+    - the Stage 1 baseline as Stage 2's reference by concurrent baselines.
+  - **Deferred by the owner:** the Stage 1 recovery and the R2 workbook copy.
+  - **Not done, recorded for the owner's acceptance (O1-O4):**
+    - the judge-drift description-cosine check;
+    - matching sensitivity below τ (both need new embedding calls);
+    - the Stage 2 quarantine attestation;
+    - a recorded annotator review of the guidelines.
+- **Acknowledgement:** `ground-truth-v1.0` and the τ = 0.40 calibration are **AI-assisted and not human-validated**. No inter-rater agreement exists, and 8 calibration pairs await human review. Every result is accuracy against an AI-assisted reference approved at the dataset level.
+- **Offline checks added (no model, embedding, judge or cropping call; nothing frozen changed):**
+  - **Near-duplicates:** `scripts/eval_near_duplicates.py` (pHash, agent-venv OpenCV) found none across the 80 clips. The one flagged pair was visually confirmed as different scenes matched only through letterbox borders.
+  - **Secondary metrics:** `secondary_metrics.py` / `scripts/eval_secondary_metrics.py` add macro accuracy, per-video mean F1, instrument threat and holder accuracy, and stricter-threshold sensitivity (lower bounds) for Stage 3. These are reporting only; D9 v2, the primary metrics and the conclusions are unchanged.
+- **Why:** the final report must state which plan requirements were actually met, and which claims (human validation above all) the evaluation cannot make.
+- **Alternatives rejected:**
+  - computing the sub-τ sensitivity and the judge-drift check with the local embedder (new model calls, excluded by the owner);
+  - re-scoring or re-matching any stage.
+- **Links:** [plan audit](../eval/docs/experiments/plan-audit.md), [final report](../eval/docs/experiments/final-report.md).
+
 ### 2026-10-30: End-to-end VSS profile prepared with a per-request crop-call cap and its own budget (not approved to run)
 - **Decision:** the plan §F.2 profile runs C2 and C3 through the local experiment agent with cropping on, on 15 test clips (3 per category, `random.Random(20261027)`), 1 repeat, never scored (`purpose: profile`, `scoring: none`).
   - **Agent:** a new experimental `/analyze` field `max_crop_calls` (1-200, gated by `INCIDENT_EXPERIMENTS_ENABLED=1`). One counter per request is checked before every grounding HTTP attempt, retries included. An experimental crops-on request without it is 400. Production requests are unchanged and uncapped. The response's `experiment.crop` reports crop wall time, calls, tokens, images and gaps.
