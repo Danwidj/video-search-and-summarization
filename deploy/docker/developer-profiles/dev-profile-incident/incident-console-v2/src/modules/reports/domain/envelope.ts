@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The mvp3 revision payload envelope: one overview for the whole incident plus
-// one incident-contract-v4 report per camera (video). Pure functions, no I/O:
+// one incident-contract-v5 report per camera (video). Pure functions, no I/O:
 // parse a stored payload leniently, pick one camera's contract-valid report,
 // replace one camera or the overview (the edit saves the whole envelope as a
 // new revision) and compute the coverage verdict from the revision's

@@ -345,3 +345,28 @@ test("a drawn image's second and box are validated when present", () => {
   Object.assign(bad.entities[0], { image_box: [0, 0, 5000, 500] });
   expectError(bad, 422, /image_box/);
 });
+
+test('an asset handler follows its entity through a reorder, is dropped with a deleted entity, and stays optional', () => {
+  const draft = draftFromView(view(repaired));
+  const first = draft.entities[0];
+  draft.assets.push({
+    ...(draft.assets[0] ?? draft.entities[0]),
+    key: 'asset-x',
+    sourceId: null,
+    name: 'bag',
+    description: 'a bag',
+    handler: null,
+  });
+  draft.assets[0].handler = { holderKey: first.key, seconds: 3 };
+  draft.entities.reverse();
+  const edit = editFromDraft(draft);
+  assert.deepEqual(edit.assets[0].last_handled_by, { entity_id: 'E2', timestamp_seconds: 3 });
+  assert.doesNotThrow(() => validateStructuredEdit(edit));
+  draft.entities = draft.entities.filter((entity) => entity.key !== first.key);
+  draft.instruments.forEach((instrument) => {
+    if (instrument.holderKey === first.key) instrument.holderKey = null;
+  });
+  const without = editFromDraft(draft);
+  assert.equal('last_handled_by' in without.assets[0], false);
+  assert.doesNotThrow(() => validateStructuredEdit(without));
+});

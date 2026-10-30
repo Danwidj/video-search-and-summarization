@@ -203,14 +203,14 @@ def test_incident_contract_v4_schema_has_required_fields():
     for sch_name in ["entities", "instruments", "assets"]:
         assert "bounding_box" not in schema["properties"][sch_name]["items"].get(
             "properties", {}
-        ), f"incident-contract-v4 must NOT have bounding_box in {sch_name}"
+        ), f"incident-contract-v5 must NOT have bounding_box in {sch_name}"
 
 
 def test_incident_contract_v3_version():
-    """VERSION file matches incident-contract-v4."""
+    """VERSION file matches incident-contract-v5."""
     version = (CONTRACTS_DIR / "VERSION").read_text().strip()
-    assert version == "incident-contract-v4", (
-        f"Expected incident-contract-v4, got {version}"
+    assert version == "incident-contract-v5", (
+        f"Expected incident-contract-v5, got {version}"
     )
 
 

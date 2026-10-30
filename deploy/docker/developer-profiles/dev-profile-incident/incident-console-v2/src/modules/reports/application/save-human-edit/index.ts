@@ -72,7 +72,7 @@ export async function saveHumanEdit(
   if (missing.length)
     throw new StoreRejection(
       'invalid',
-      `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`,
+      `The saved report would not satisfy incident-contract-v5: ${missing.map((v) => v.message).join('; ')}`,
     );
   const crops = video.officialRevisionId === null ? await searchableCrops(payload, evidence, embed) : [];
   return incidents.saveHumanRevision({

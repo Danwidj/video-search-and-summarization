@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // id-normalization-v1: the only repair the application applies to a
-// contract-invalid first response. It changes identifiers, the one structured
-// reference to them (instruments[].entity_id) and list order - nothing else.
+// contract-invalid first response. It changes identifiers, the structured
+// references to them (instruments[].entity_id, assets[].last_handled_by.entity_id) and list order - nothing else.
 // It is attempted only when every first-pass violation is repair-eligible, it
 // never edits free text or any substantive value, and the caller must re-run
 // the full strict validator on its output. eval/ never uses it: eval scores
@@ -27,7 +27,7 @@ const ELIGIBLE_CODES: ReadonlySet<ContractViolationCode> = new Set([
  * INSTRUMENT_HOLDER_UNRESOLVABLE below; it is listed so the approved rule is
  * implemented literally rather than silently dropped.
  */
-const CONDITIONALLY_ELIGIBLE_CODES: ReadonlySet<ContractViolationCode> = new Set(['INSTRUMENT_HOLDER_UNKNOWN']);
+const CONDITIONALLY_ELIGIBLE_CODES: ReadonlySet<ContractViolationCode> = new Set(['INSTRUMENT_HOLDER_UNKNOWN', 'ASSET_HANDLER_UNKNOWN']);
 
 export type RepairIneligibility =
   | 'INELIGIBLE_VIOLATION'
@@ -35,6 +35,7 @@ export type RepairIneligibility =
   | 'RENAMED_ID_IN_FREE_TEXT'
   | 'TARGET_ID_IN_FREE_TEXT'
   | 'INSTRUMENT_HOLDER_UNRESOLVABLE'
+  | 'ASSET_HANDLER_UNRESOLVABLE'
   | 'INVARIANCE_CHECK_FAILED';
 
 export type RepairOperation =
@@ -104,7 +105,20 @@ function semanticProjection(report: IncidentContractReport): string {
         return { ...rest, holder: entity ? { type: entity.type, description: entity.description } : holder };
       }),
     ),
-    assets: sorted(report.assets.map(({ asset_id: _id, ...rest }) => rest)),
+    assets: sorted(
+      report.assets.map(({ asset_id: _id, last_handled_by: handler, ...rest }) => {
+        const entity = handler ? entityById.get(handler.entity_id) : null;
+        return {
+          ...rest,
+          last_handled_by: handler
+            ? {
+                holder: entity ? { type: entity.type, description: entity.description } : handler.entity_id,
+                timestamp_seconds: handler.timestamp_seconds,
+              }
+            : null,
+        };
+      }),
+    ),
   });
 }
 
@@ -189,11 +203,28 @@ export function attemptIdNormalization(report: IncidentContractReport, violation
     );
   }
 
+  const assets = (reordered.assets as IncidentContractReport['assets']).map((asset, index) => {
+    const handler = asset.last_handled_by;
+    if (!handler) return asset;
+    const target = entityMapping.get(handler.entity_id);
+    if (target === undefined) return null;
+    if (target !== handler.entity_id)
+      operations.push({ op: 'remap-reference', path: `assets/${index}/last_handled_by/entity_id`, from: handler.entity_id, to: target });
+    return { ...asset, last_handled_by: { ...handler, entity_id: target } };
+  });
+  if (assets.some((asset) => asset === null)) {
+    return ineligible(
+      'ASSET_HANDLER_UNRESOLVABLE',
+      ['ASSET_HANDLER_UNKNOWN'],
+      'an asset last_handled_by matches no entity ID, so ID normalization cannot resolve it',
+    );
+  }
+
   const repaired: IncidentContractReport = {
     ...report,
     entities: reordered.entities as IncidentContractReport['entities'],
     instruments: instruments as IncidentContractReport['instruments'],
-    assets: reordered.assets as IncidentContractReport['assets'],
+    assets: assets as IncidentContractReport['assets'],
   };
   if (semanticProjection(repaired) !== semanticProjection(report)) {
     return ineligible('INVARIANCE_CHECK_FAILED', [], 'the repair would change content other than identifiers and order');

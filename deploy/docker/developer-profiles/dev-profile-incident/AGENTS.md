@@ -17,7 +17,7 @@ Incident search and reporting capstone on the VSS blueprint (sponsor: NVIDIA NVA
 | `mock-backend/base_profile_mock/` | FastAPI, `uv` | Zero-GPU mock of vss-agent + VST :7777 | Active |
 | `mock-backend/search_profile_mock/` | FastAPI, `uv` | Standalone search mock :7778 (stock search-profile routes plus incident search from the :7777 finals snapshot) | Active |
 | `eval/` | Python, `uv` | Standalone P1/RP1 VLM benchmark | Active |
-| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v4`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
+| `contracts/` | JSON Schema, Markdown, JSON | Shared P1/RP1 prompts, incident output schema (`incident-contract-v5`), model allowlist + P1 settings (`inference.json`), shared validator fixtures | Active: eval, console (gateway and agent mode) and vss-agent all use it ([schema](.docs/analysis-schema.md)) |
 | `supabase/` | SQL, Python | Finals schema authority (`migrations/`: one baseline, then later finals migrations), SQL harness (`tests/`), midterm-to-finals copy (`copy/`) | Active. `supabase/midterm/` is the frozen midterm record: never push |
 | `start.sh`, `.scripts/`, `.dotfiles/` | Bash | Laptop launcher; VM lifecycle scripts; VM shell bootstrap | Active |
 | `archived/` | - | Retired v1 console, kept as read-only history | **Archived** (see Boundaries) |
@@ -53,7 +53,7 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 
 - **Reports are versioned snapshots:** each analysis writes an append-only `report_revisions` row (`kind='ai'`, JSONB `payload` and `evidence`, new `model_run_id`); a human edit is a later `kind='human'` revision. Re-generation is a new AI branch (`parent_id` NULL) and copies no earlier edits. `evidence_crops` and `query_results` key on `revision_id`.
 - **Analysis (mvp3):** `POST /api/analysis` is agent mode only: the console calls the native `vss-agent` (`:8001`), which stores the analysis and its R2 crops and creates no report version. The console builds versions (Regenerate: agent `synthesize`, then `create_ai_revision`). `ANALYSIS_MODE` and the gateway path remain only in pre-mvp3 video-keyed routes. See [architecture §5](.docs/architecture.md#5-mvp3-incidents-with-several-videos).
-- **Both modes use `incident-contract-v4`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
+- **Both modes use `incident-contract-v5`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).

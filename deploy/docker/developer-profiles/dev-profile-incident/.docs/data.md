@@ -53,12 +53,12 @@ The mvp3 database holds nine tables: `incidents`, `videos`, `queries`, `model_ru
 
 #### Revision `payload` envelope
 
-`report_revisions.payload` is an envelope, not a bare contract report. Each camera's `report` is the unchanged `incident-contract-v4` payload of that video's latest analysis ([analysis-schema.md](analysis-schema.md#4-storage)).
+`report_revisions.payload` is an envelope, not a bare contract report. Each camera's `report` is the unchanged `incident-contract-v5` payload of that video's latest analysis ([analysis-schema.md](analysis-schema.md#4-storage)).
 
 ```json
 {
   "overview": { "title": "...", "type": "...", "severity_level": 3, "description": "...", "location": "...", "confidence_score": 0.8 },
-  "cameras": [ { "video": "front-door.mp4", "report": { "...": "incident-contract-v4 payload" } } ],
+  "cameras": [ { "video": "front-door.mp4", "report": { "...": "incident-contract-v5 payload" } } ],
   "evidence_groups": [ { "id": "G1", "kind": "entity", "label": "man in blue shirt", "members": [ { "video": "front-door.mp4", "itemId": "E1" }, { "video": "lobby.mp4", "itemId": "E2" } ], "source": "ai", "reason": "..." } ]
 }
 ```

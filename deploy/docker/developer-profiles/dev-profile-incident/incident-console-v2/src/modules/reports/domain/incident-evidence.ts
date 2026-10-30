@@ -28,6 +28,8 @@ export interface IncidentEvidenceItem {
   threatLevel: number | null;
   /** Instruments: the holder's "E1 · label" title; null when nobody holds it. */
   holder: string | null;
+  /** Assets: who was last seen handling it ("E2 (person in white shirt)") and when; null when absent. */
+  lastHandledBy: { who: string; seconds: number | null } | null;
 }
 
 /** The time an item is shown at: its own, else its evidence crop's. */
@@ -36,6 +38,11 @@ const itemSeconds = (own: number | null, evidence: ItemEvidence | null): number 
 /** One camera's items in time order (items with no time last), ties kept in entity, instrument, asset order. */
 export function cameraEvidenceItems(video: string, playable: boolean, structured: ReportView['structured']): IncidentEvidenceItem[] {
   const holderOf = new Map(structured.entities.map((entity) => [entity.entityId, `${entity.entityId} · ${entity.label || entity.type}`]));
+  const handlerName = (entityId: string) => {
+    const entity = structured.entities.find((candidate) => candidate.entityId === entityId);
+    const label = entity && (entity.label || entity.type);
+    return label ? `${entityId} (${label})` : entityId;
+  };
   const items: IncidentEvidenceItem[] = [
     ...structured.entities.map((entity) => ({
       video,
@@ -53,6 +60,7 @@ export function cameraEvidenceItems(video: string, playable: boolean, structured
           : null,
       threatLevel: null,
       holder: null,
+      lastHandledBy: null,
     })),
     ...structured.instruments.map((instrument) => ({
       video,
@@ -67,6 +75,7 @@ export function cameraEvidenceItems(video: string, playable: boolean, structured
       onScreen: null,
       threatLevel: instrument.threatLevel,
       holder: (instrument.entityId && holderOf.get(instrument.entityId)) || null,
+      lastHandledBy: null,
     })),
     ...structured.assets.map((asset) => ({
       video,
@@ -81,6 +90,12 @@ export function cameraEvidenceItems(video: string, playable: boolean, structured
       onScreen: null,
       threatLevel: null,
       holder: null,
+      lastHandledBy: asset.lastHandledBy
+        ? {
+            who: handlerName(asset.lastHandledBy.entityId),
+            seconds: asset.lastHandledBy.seconds,
+          }
+        : null,
     })),
   ];
   // Array.prototype.sort is stable, so equal times keep the order above.

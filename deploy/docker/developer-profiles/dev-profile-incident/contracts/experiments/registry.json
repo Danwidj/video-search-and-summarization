@@ -100,6 +100,17 @@
       "hypothesis": "V8 by the combination rule fixed before Stage 2: p1-v4-base with the inserted block of every V1-V7 version whose recovery-adjusted Stage 2a D9 v2 comparison has Delta I > 0 and no G1-G3 problem (all seven), applied unchanged in section order. Combining the blocks improves Delta I over p1-v4-base without a G2 regression; the blocks are not assumed to add up.",
       "created": "2026-10-29",
       "status": "candidate"
+    },
+    {
+      "id": "p1-v5-base",
+      "parent": null,
+      "file": "p1/p1-v5-base.txt",
+      "sha256": "e36b0efa0d7d9c48858da96738709de37e9e0555830a8be188a3934b4c4f87a5",
+      "contract_version": "incident-contract-v5",
+      "guidelines": "annotation-guidelines-v1.0",
+      "hypothesis": "Baseline: byte-identical to the production P1 prompt (contracts/incident_extraction_prompt.txt) at incident-contract-v5. Adds the asset name and description hedge and the optional last_handled_by; p1-v4-base stays as the older baseline.",
+      "created": "2026-10-31",
+      "status": "baseline"
     }
   ]
 }

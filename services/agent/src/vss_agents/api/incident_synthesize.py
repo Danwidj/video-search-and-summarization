@@ -18,7 +18,7 @@
 Given one or more ``{video_name, payload}`` pairs (each ``payload`` is a contract-valid analysis
 from P1/``/analyze``) it returns:
 
-- ``overview`` - the ``incident`` block fields of ``incident-contract-v4``, synthesised across all
+- ``overview`` - the ``incident`` block fields of ``incident-contract-v5``, synthesised across all
   videos.  For exactly one video the overview is the video's own ``incident`` block unchanged.
 - ``embedding`` - a ``vector(1024)`` search embedding of the overview text (``title`` + ``description``).
 
@@ -72,7 +72,7 @@ Below are the structured incident analyses, one per camera. Synthesise them into
 CAMERA ANALYSES:
 {analyses}
 
-Return a JSON object with exactly these fields (same types and constraints as the incident-contract-v4 "incident" block):
+Return a JSON object with exactly these fields (same types and constraints as the incident-contract-v5 "incident" block):
 - "type": one of "road accident", "burglary", "explosion", "assault", "animal attack"
 - "title": short neutral headline, 4-10 words
 - "start_timestamp": integer seconds >= 0 (earliest across cameras)
@@ -119,7 +119,7 @@ class SynthesizeResponse(BaseModel):
     """Response for ``POST /api/v1/incidents/synthesize``."""
 
     overview: dict[str, Any] = Field(
-        description="Synthesised incident overview (incident-contract-v4 incident fields)."
+        description="Synthesised incident overview (incident-contract-v5 incident fields)."
     )
     embedding: list[float] = Field(description="Search embedding of the overview text (1024 dimensions).")
 

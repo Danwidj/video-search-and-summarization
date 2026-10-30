@@ -559,12 +559,12 @@ class R2EvidenceStore(EvidenceStore):
 
 
 def evidence_items(report: dict[str, Any]) -> list[dict[str, Any]]:
-    """The entities, instruments and assets of an incident-contract-v4 report as evidence entries.
+    """The entities, instruments and assets of an incident-contract-v5 report as evidence entries.
 
     Each entry carries the ``evidence_crops`` item columns (``item_type``, ``item_id``,
     ``item_name``, ``description``, ``threat_level``, ``holder_entity_id``, ``timestamp_seconds``)
     plus the detector ``label``. Entities also carry ``first_seen_seconds`` and ``last_seen_seconds``
-    (reports stored before ``incident-contract-v4`` lack them, so they fall back to ``timestamp_seconds``); :meth:`CropEvidenceService.process_incident_report` adds
+    (reports stored before ``incident-contract-v5`` lack them, so they fall back to ``timestamp_seconds``); :meth:`CropEvidenceService.process_incident_report` adds
     ``bounding_box``, ``image`` and ``image_gap``.
     """
     items: list[dict[str, Any]] = []

@@ -1,4 +1,4 @@
-# Incident contract (`incident-contract-v4`)
+# Incident contract (`incident-contract-v5`)
 
 The single source of truth for incident extraction: one prompt, one output schema and the shared inference settings, used by `eval/`, `incident-console-v2/` and `vss-agent`.
 
@@ -21,4 +21,4 @@ How the contract is validated, repaired and stored: [`../.docs/analysis-schema.m
 
 ## Experiment prompts (not part of the contract)
 
-[`experiments/`](experiments/README.md) holds the append-only prompt registry for the prompt experiments (PR 6A). Nothing there changes `incident-contract-v4`: `sync.py` does not vendor it, and the production P1 prompt stays `incident_extraction_prompt.txt`. Adopting an experiment prompt in production is a separate decision with a contract version bump.
+[`experiments/`](experiments/README.md) holds the append-only prompt registry for the prompt experiments (PR 6A). Nothing there changes `incident-contract-v5`: `sync.py` does not vendor it, and the production P1 prompt stays `incident_extraction_prompt.txt`. Adopting an experiment prompt in production is a separate decision with a contract version bump.

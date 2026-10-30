@@ -59,14 +59,14 @@ function editedContent(
   const mine = parent.evidence.filter((entry) => isCameraEvidence(entry, target.camera, videoKey));
   const others = parent.evidence.filter((entry) => !isCameraEvidence(entry, target.camera, videoKey));
   const content = humanRevisionContent({ payload: camera.report, evidence: mine }, target.edit);
-  // incident-contract-v4 forbids incident.duration in a camera report; consumers derive it from the two timestamps.
+  // incident-contract-v5 forbids incident.duration in a camera report; consumers derive it from the two timestamps.
   const { duration: _duration, ...incident } = content.payload.incident as Record<string, unknown>;
   content.payload = { ...content.payload, incident };
   const missing = missingItemFields(content.payload);
   if (missing.length) {
     throw new StoreRejection(
       'invalid',
-      `The saved report would not satisfy incident-contract-v4: ${missing.map((v) => v.message).join('; ')}`,
+      `The saved report would not satisfy incident-contract-v5: ${missing.map((v) => v.message).join('; ')}`,
     );
   }
   return {

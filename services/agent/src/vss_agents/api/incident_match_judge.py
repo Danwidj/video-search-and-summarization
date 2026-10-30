@@ -181,7 +181,7 @@ class MatchJudgeRequest(BaseModel):
     analysis: dict[str, Any] = Field(
         ...,
         description=(
-            "The new video's contract-valid analysis payload (incident-contract-v4, the payload field from "
+            "The new video's contract-valid analysis payload (incident-contract-v5, the payload field from "
             "video_analyses). Must contain at least analysis.incident.type and analysis.incident.location."
         ),
     )

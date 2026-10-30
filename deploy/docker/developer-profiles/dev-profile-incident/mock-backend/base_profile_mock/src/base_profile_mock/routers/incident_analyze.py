@@ -129,7 +129,7 @@ def _mock_category(incident_id: str) -> dict[str, object]:
 
 
 def _mock_report(category: dict[str, object]) -> dict[str, object]:
-    """A small incident-contract-v4 report: one incident and one human entity."""
+    """A small incident-contract-v5 report: one incident and one human entity."""
     return {
         "incident": {
             "type": category["type"],

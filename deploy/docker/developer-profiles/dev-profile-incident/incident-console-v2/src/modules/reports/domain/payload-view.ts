@@ -7,6 +7,7 @@
 
 import { canonicalEntityType, canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
 import type {
+  AssetHandler,
   ItemEvidence,
   StructuredAsset,
   StructuredEntity,
@@ -22,6 +23,13 @@ const num = (value: unknown): number | null => (typeof value === 'number' && Num
 const asRow = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
 const rows = (value: unknown): Row[] => (Array.isArray(value) ? value.map(asRow) : []);
 const byId = (key: string) => (a: Row, b: Row) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), undefined, { numeric: true });
+
+/** An asset's last_handled_by object (contract v5), or null when absent or malformed. */
+function assetHandler(value: unknown): AssetHandler | null {
+  const row = asRow(value);
+  const entityId = text(row.entity_id);
+  return entityId ? { entityId, seconds: num(row.timestamp_seconds) } : null;
+}
 
 function evidenceOf(entries: EvidenceEntry[], type: EvidenceItemType, itemId: string): ItemEvidence | null {
   const entry = entries.find((candidate) => candidate.item_type === type && candidate.item_id === itemId);
@@ -94,6 +102,7 @@ export function structuredFromPayload(payload: ReportPayload, evidence: Evidence
           description: String(row.description ?? ''),
           timestampSeconds: num(row.timestamp_seconds),
           label: String(row.label ?? ''),
+          lastHandledBy: assetHandler(row.last_handled_by),
           evidence: evidenceOf(evidence, 'asset', assetId),
         };
       }),

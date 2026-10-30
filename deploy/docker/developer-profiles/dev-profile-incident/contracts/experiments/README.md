@@ -12,7 +12,7 @@ Append-only registry of P1 prompts for the prompt experiments (plan §F.3). **No
 Enforced by `eval/prompt_registry.py` and `eval/tests/test_prompt_registry.py`:
 - **Immutable:** every file must match its recorded SHA-256. `prompt_text` refuses to serve a changed file.
 - **Append-only:** compared with `origin/main`, entries may only be added, never edited, reordered or removed. A changed prompt gets a new id with the old one as `parent`.
-- **Baseline:** `p1-v4-base` is byte-identical to `../incident_extraction_prompt.txt` at `incident-contract-v4`.
+- **Baseline:** `p1-v5-base` is byte-identical to `../incident_extraction_prompt.txt` at `incident-contract-v5`; `p1-v4-base` stays as the older baseline.
 - **Ids:** `p1-v<contract>-e<NN>-<topic>`. Each experiment prompt has a written hypothesis and an existing earlier parent.
 - **Selection** is recorded in `.docs/decisions.md`, never as an edit to an entry.
 

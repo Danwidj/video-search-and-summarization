@@ -28,7 +28,7 @@ export type VideoAnalysisResult =
       modelRunId: string;
       /** The agent's word for how the run ended, passed through as sent. */
       outcome: string;
-      /** The contract-valid incident-contract-v4 payload. */
+      /** The contract-valid incident-contract-v5 payload. */
       payload: Record<string, unknown>;
     }
   | {

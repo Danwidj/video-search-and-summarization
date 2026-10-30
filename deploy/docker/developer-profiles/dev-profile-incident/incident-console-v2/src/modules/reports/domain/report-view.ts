@@ -58,10 +58,17 @@ export interface StructuredInstrument extends ItemDetails {
   description: string;
   threatLevel: number | null;
 }
+/** The entity last seen touching or moving an asset, and when: observable interaction, never ownership. */
+export interface AssetHandler {
+  entityId: string;
+  seconds: number | null;
+}
 export interface StructuredAsset extends ItemDetails {
   assetId: string;
   name: string;
   description: string;
+  /** Absent for a revision saved before incident-contract-v5 and for an asset nobody is seen handling. */
+  lastHandledBy?: AssetHandler | null;
 }
 
 export interface TimelineEvent {

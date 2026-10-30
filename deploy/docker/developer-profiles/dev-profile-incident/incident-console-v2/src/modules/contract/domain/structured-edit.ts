@@ -38,6 +38,8 @@ export const EDITABLE_INSTRUMENT_FIELDS = [
   'label',
 ] as const;
 export const EDITABLE_ASSET_FIELDS = ['asset_id', 'name', 'description', 'timestamp_seconds', 'label'] as const;
+// Contract fields a pre-v5 item lacks, so an edit may omit them.
+const OPTIONAL_ASSET_FIELDS = ['last_handled_by'] as const;
 const EDIT_COLLECTIONS = ['incident', 'entities', 'instruments', 'assets'] as const;
 // Not contract fields: the opened revision's item ID as stored (up to evidence_crops' 20 characters),
 // and the item's evidence image key (up to the column's 1024 characters).
@@ -77,14 +79,18 @@ function editValidator(catalog?: ContractCatalog): ValidateFunction {
     };
   };
   const incidentProperties = contract.properties.incident.properties;
-  const collectionSchema = (items: { properties: Record<string, unknown> }, fields: readonly string[]) => ({
+  const collectionSchema = (
+    items: { properties: Record<string, unknown> },
+    fields: readonly string[],
+    optional: readonly string[] = [],
+  ) => ({
     type: 'array',
     items: {
       type: 'object',
       additionalProperties: false,
       required: [...fields, 'source_id', 'image'],
       properties: {
-        ...Object.fromEntries(fields.map((field) => [field, items.properties[field]])),
+        ...Object.fromEntries([...fields, ...optional].map((field) => [field, items.properties[field]])),
         source_id: SOURCE_ID_SCHEMA,
         image: IMAGE_SCHEMA,
         image_timestamp_seconds: IMAGE_TIMESTAMP_SCHEMA,
@@ -105,7 +111,7 @@ function editValidator(catalog?: ContractCatalog): ValidateFunction {
       },
       entities: collectionSchema(contract.properties.entities.items, EDITABLE_ENTITY_FIELDS),
       instruments: collectionSchema(contract.properties.instruments.items, EDITABLE_INSTRUMENT_FIELDS),
-      assets: collectionSchema(contract.properties.assets.items, EDITABLE_ASSET_FIELDS),
+      assets: collectionSchema(contract.properties.assets.items, EDITABLE_ASSET_FIELDS, OPTIONAL_ASSET_FIELDS),
     },
   };
   compiled = new Ajv2020({ allErrors: true, strict: false }).compile(editSchema);
