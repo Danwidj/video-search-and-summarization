@@ -28,6 +28,7 @@ import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAna
 import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
 import { HttpIncidentSynthesizer, type IncidentSynthesizer } from '@/modules/analysis/infrastructure/agent/incident-synthesizer';
 import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
+import { removeVstSensor } from '@/modules/videos/infrastructure/vst/sensor';
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
@@ -85,6 +86,7 @@ export function getAnalyseVideoPorts(config: ServiceConfiguration = getServiceCo
     videos: getIncidentVideos(config),
     objects: new R2VideoObjectStore(config),
     analyzer: new HttpVideoAnalyzer(config.agentUrl),
+    removeVstSensor: (video) => removeVstSensor(config, video),
     catalog: defaultContractCatalog,
     now: () => new Date(),
   };

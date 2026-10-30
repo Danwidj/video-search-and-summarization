@@ -39,11 +39,16 @@ function setup({ script, store = {}, videos = [] } = {}) {
   const repository = new InMemoryIncidentVideoRepository(videos, () => NOW);
   const analyzer = new FakeVideoAnalyzer(script);
   const stored = objects(store);
+  const removedSensors = [];
+  const removeVstSensor = async (sensor) => {
+    removedSensors.push(sensor);
+  };
   return {
     repository,
     analyzer,
     stored,
-    ports: { videos: repository, objects: stored, analyzer, catalog: defaultContractCatalog, now: () => NOW },
+    removedSensors,
+    ports: { videos: repository, objects: stored, analyzer, removeVstSensor, catalog: defaultContractCatalog, now: () => NOW },
   };
 }
 
@@ -146,6 +151,32 @@ describe('analyseVideo: a new upload', () => {
       assert.ok(await repository.getVideo('front-door.mp4'));
     });
   }
+
+  test("removes the new upload's VST camera, by its sensor id, before its row, after a failed first analysis", async () => {
+    const { ports, repository, removedSensors } = setup({ script: [{ kind: 'failed', status: 500, message: 'boom' }] });
+    const order = [];
+    const removeVideo = repository.removeVideo.bind(repository);
+    repository.removeVideo = async (id) => {
+      order.push('row');
+      return removeVideo(id);
+    };
+    const removeVstSensor = async (sensor) => {
+      order.push('camera');
+      await ports.removeVstSensor(sensor);
+    };
+    await rejects(analyseVideo(upload(), { ...ports, removeVstSensor }), 502);
+    assert.deepEqual(removedSensors, [{ videoId: 'front-door.mp4', sensorId: 'sensor-1' }]);
+    assert.deepEqual(order, ['camera', 'row']);
+  });
+
+  test('a VST failure during the rollback neither hides the analysis error nor keeps the row', async () => {
+    const { ports, repository } = setup({ script: [{ kind: 'failed', status: 500, message: 'boom' }] });
+    const removeVstSensor = async () => {
+      throw new Error('VST sensor delete returned HTTP 500');
+    };
+    await rejects(analyseVideo(upload(), { ...ports, removeVstSensor }), 502);
+    assert.equal(repository.videos.size, 0);
+  });
 
   test('a contract refusal carries the raw model output for the reviewer', async () => {
     const { ports } = setup({

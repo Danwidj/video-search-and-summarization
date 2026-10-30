@@ -56,7 +56,7 @@ The Phase 6 UI is merged ([screens](../../.docs/architecture.md#screens-phase-6)
 - New upload: `{"sensorId", "filepath": "<R2 key>", "filename", "model"?, "additionalInstruction"?}`. This creates the incident and the video.
 - Re-analysis of a stored video: `{"videoName", "model"?, "additionalInstruction"?}`. It adds an analysis; earlier ones are kept and the latest wins.
 
-Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. The model run id reads `<video name>@<UTC timestamp>`. If a new upload fails, the video and incident rows are removed again and the R2 object stays, so retry without re-uploading. No version exists yet.
+Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. The model run id reads `<video name>@<UTC timestamp>`. If a new upload fails, the video and incident rows and the upload's VST camera are removed again and the R2 object stays, so retry without re-uploading (analysis reads R2, not VST). No version exists yet.
 
 ### 3. Group videos (optional)
 
