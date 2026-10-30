@@ -202,7 +202,7 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
 ## 4. Runtime Interaction Sequences
 
 > [!WARNING]
-> The console subsections and Sequences A and B below describe the pre-mvp3 (video-keyed) behaviour on `main`: video-keyed `/reports/<videoId>` and `/videos/<id>` routes, `ANALYSIS_MODE` gateway or agent, and the agent writing report versions. On the mvp3 branch they are superseded by [section 5](#5-mvp3-incidents-with-several-videos) for analysis, versions, merge, remove and matching. Sequence C and the library, dashboard and pagination subsections still describe the screens, which the Phase 6 UI work has not yet replaced.
+> The console subsections and Sequences A and B below describe the pre-mvp3 (video-keyed) behaviour on `main`: video-keyed `/reports/<videoId>` and `/videos/<id>` routes, `ANALYSIS_MODE` gateway or agent, and the agent writing report versions. On the mvp3 branch they are superseded by [section 5](#5-mvp3-incidents-with-several-videos) for analysis, versions, merge, remove and matching. The Phase 6 UI is merged: the report, library, dashboard, upload and suggestion screens are described in [Screens (Phase 6)](#screens-phase-6), and where the subsections below name `/reports/<videoId>`, `/videos/<id>`, one card per video, or per-video official versions, read incident instead. Sequence C and the pagination and dashboard-query subsections still describe the data flow correctly.
 
 ### Console middle layer (ports and adapters)
 
@@ -424,7 +424,7 @@ sequenceDiagram
 
 ## 5. mvp3: Incidents with Several Videos
 
-mvp3 lets several videos belong to one incident, with one combined report. Each video is analysed once; reports are rebuilt from the stored analyses. Why: [decisions.md](decisions.md). Schema and functions: [data.md](data.md). This section describes what is merged on `origin/mvp3`; the Phase 6 UI is not merged, so the screens still show the pre-mvp3 layout.
+mvp3 lets several videos belong to one incident, with one combined report. Each video is analysed once; reports are rebuilt from the stored analyses. Why: [decisions.md](decisions.md). Schema and functions: [data.md](data.md). This section describes what is merged on `origin/mvp3`, including the Phase 6 screens.
 
 ### Model in one paragraph
 
@@ -450,6 +450,23 @@ flowchart TD
 - **Regenerate** takes the latest analysis of every current video. It is the only step that creates a version. Merge and remove never regenerate.
 - **Matching** only suggests. The database shortlists by vector similarity (limit 5, similarity at least 0.3), the agent scores the shortlist, and scores at or above 0.5 are stored. Time is a hint, not a filter.
 
+### Screens (Phase 6)
+
+All screens are in `incident-console-v2/src/sections/`; they call only the routes in [the table below](#console-api-routes-merged-on-originmvp3). The routes `/reports/<incidentId>` and `/library` keep their addresses; `incidentId` is the incident's number.
+
+| Screen | What it does |
+|---|---|
+| **Report page** `/reports/<incidentId>?revision=&camera=` | Opens the chosen version (else the official one, else the newest). An overview card (title, type, severity, description, location, and the version's coverage note) sits above the existing player, frames and report panes, which show one **camera** at a time. The camera switcher (toggle group from `sm` up, select below) is shown only with more than one camera and keeps the choice in `?camera=`. A camera of a removed video, or whose report fails the contract, is listed but disabled. When no camera can be shown the page says so and offers Regenerate. |
+| **Version list and compare** | Each version row and compare card carries a coverage badge: amber "Does not include: ..." or clay "Includes a removed video: ...". A complete version shows no badge. Compare takes a camera. The official star and its replace dialog speak per incident. |
+| **Regenerate** | A button above the version list (and in the no-camera fallback), disabled while an edit is open. It calls `POST /api/reports/<incidentId>/build`, shows three paced stages ("Reading stored analyses", "Combining the overview", "Saving the new version"; the route reports none, so progress follows elapsed time and stays below 100% until the answer), then selects the new version. A failure keeps the current version and offers Retry. No video is analysed again. |
+| **Edit pane** | Edit from vN edits one thing at a time, chosen by an Overview \| camera switch that is locked while there are unsaved changes: the selected camera's report (sent as `{camera, edit}`) or the overview (`{overview}`). Both save a new human version whose coverage copies its parent's. A camera edit drops `incident.duration` before saving, because `incident-contract-v4` forbids it. |
+| **Remove video** | A button on the report page opens a dialog with two choices: **Move to its own incident** (preselected; creates the incident, builds its first report with a progress bar, then offers "Open Incident #N" and "Stay here") or **Delete entirely** (needs a confirmation checkbox). For an incident's last video only delete is offered and the confirmation says the incident is deleted; the page then goes to `/library`. After a remove the page reads the incident again without a remount, so the camera is gone. |
+| **Merge** | "Merge into another incident" opens a chooser of every other incident (its title, video names and count), shows how many videos the target holds afterwards, then an alert-dialog confirmation. It calls `POST /api/reports/<target>/merge` and moves to the kept incident. |
+| **Batch upload** (`/`, the analysis workspace) | Pick or drop several files. Each file is a card with four stages (Upload, Analyse, Build report, Check matches), its own progress bar and error; two files run at a time and one failure never stops the others. "Retry this video" resumes at the stage that failed (a retry after a failed analyse re-analyses the stored video; an "already exists" refusal is treated as already stored). A summary counts done and failed files and is announced to screen readers. |
+| **Suggestions** | Report page: an amber banner under the video band for each pending match on the incident, with the other incident, reasons, score, Accept and Reject. Library: a **Matches** tab (`?tab=matches`) with a count badge and, above the incident list, a pending strip that opens it; each card shows both incidents with thumbnails, reasons, a score bar, Accept and Reject. Accept merges and keeps the lower incident id; it does not regenerate, and the banner says so. Reject is remembered. Outcomes are inline notices (no toast is mounted). Reasons are plain strings, so they render as a list. |
+| **Library** | One card per incident: a video-count chip on the thumbnail (the first video's screenshot), the first video's name with "+N more", and "Delete incident...". The delete dialog says how many videos, analyses, versions and evidence images go. Find evidence hits name their camera. Find evidence scoped with "See evidence" is per incident. |
+| **Dashboard and chat** | Labels only (the counts were already per incident): "Incidents awaiting official report", "Incidents without a report", "Uploaded videos ... across all incidents". Report chat citations read `<item> · <type> · <camera>` and the intro says answers span all cameras. |
+
 ### Deployment of the mvp3 agent
 
 The mvp3 agent is a native process from `/srv/rise-up/vss-mvp3` on GPU 0, listening on **8001** (`VSS_AGENT_PORT` in `generated.env.remote`; the scripts default to it). The main agent keeps 8000. VIOS, HAProxy, Redis and the rest of the Docker stack are shared. `start.sh` forwards `localhost:8001` and `localhost:7777`, and exports `INCIDENT_AGENT_BASE_URL=http://localhost:8001`.
@@ -464,12 +481,13 @@ The mvp3 agent is a native process from `/srv/rise-up/vss-mvp3` on GPU 0, listen
 
 | Route | Body or query | Result |
 |---|---|---|
-| `POST /api/analysis` | upload: `{sensorId, filepath, filename, model?, additionalInstruction?}`; re-analysis: `{videoName, model?, additionalInstruction?}` | `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. A new video that fails is removed again (its R2 object stays). No version is created. |
-| `POST /api/reports/[incidentId]/build` | `{note?}` | `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. 422 no videos, 409 `{videos}` still unanalysed, 503 agent not configured, 502 or 504 agent failure. |
+| `POST /api/analysis` | upload: `{sensorId, filepath, filename, model?, additionalInstruction?}`; re-analysis: `{videoName, model?, additionalInstruction?}` | `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. A new video that fails is removed again (its R2 object stays). No version is created. The console signs the stored key (1 h, under `R2_KEY_PREFIX`) and sends it to the agent as `video_url` next to `video_key`, and reads the contract report from the agent's `report` field (PRs #332, #333). A video the model cannot read answers 502 with a clear message ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze)). |
+| `POST /api/reports/[incidentId]/build` | `{note?}` | `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. 422 no videos, 409 `{videos}` still unanalysed, 503 agent not configured, 502 or 504 agent failure. The route file lives in a folder named `build`; the console `.gitignore` re-includes `src/**/build/` so a global `build/` ignore rule cannot hide it again (it did once, PR #319). |
 | `DELETE /api/reports/[incidentId]/delete` | none | `{deleted: true, ...}`. Objects are removed before rows. |
 | `POST /api/reports/[incidentId]/merge` | `{sourceIncidentId}` | `{merged}`. The path incident is kept. Moves no files. |
 | `POST /api/videos/[videoId]/remove` | `{choice: 'delete' \| 'move'}` | `{removed}`. A move of the last video is refused. |
 | `GET /api/suggestions` | `?incidentId=` | pending suggestions, highest score first |
+| `GET /api/suggestions/cards` | `?incidentId=` | the same pending suggestions as review cards: for each side the incident's overview title, its video names and a signed thumbnail of its first video (absent when signing fails). `kept` is the lower incident id, `joining` the higher. Read only; 400 unless `incidentId` is a positive integer. |
 | `POST /api/suggestions/evaluate` | `{incidentId}` | compares every video of the incident with the shortlist; decided pairs are skipped. 300 s limit. |
 | `POST /api/suggestions/[id]/accept` | `{incidentId?}` | merges; the kept incident defaults to the lower id |
 | `POST /api/suggestions/[id]/reject` | none | the pair is remembered |
@@ -491,5 +509,8 @@ The upload helper routes (`/api/uploads`, `/uploads/check`, `/uploads/r2`, `/upl
 
 ### Known leftovers on `origin/mvp3`
 
-- `GET /api/videos`, `POST /api/videos/[videoId]/runs`, `ANALYSIS_MODE` and the gateway client are still in the console and still use the pre-mvp3 video-keyed run code. They are stale against the mvp3 schema; do not use them.
+- `GET /api/videos`, `POST /api/videos/[videoId]/runs`, `ANALYSIS_MODE` and the gateway client are still in the console and still use the pre-mvp3 video-keyed run code. They are stale against the mvp3 schema; do not use them. The report page's **Re-analyse** dialog (`ReanalysisCard`) still posts to that stale `runs` route and reads its old `run.videoId` response, so it does not work on mvp3; re-analyse a stored video with `POST /api/analysis` and `{videoName}` instead.
+- The agent's analysis payload carries a derived `incident.duration`, which `incident-contract-v4` forbids in a camera report. The report read API therefore marks such a camera invalid, and the report page shows "No camera of this version can be shown" for it (seen live in PR #335). The agent's synthesise route already accepts this shape ([PR #327](vm-api-contracts.md#post-apiv1incidentssynthesize)); the per-camera validation fix had not merged when this was written.
+- Model failures that are not bugs: a video the model cannot decode (10-bit H.264 is unsupported) answers 502 "no answer", and a model that runs away into invalid JSON answers 422 for that file only; a batch isolates either.
 - The agent route `POST /api/v1/incidents/synthesize` was not mounted in the worker until PR #320 (merged). An agent started before that change answers `404` and Regenerate then fails with 502; restart it ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize)).
+- The Lavish mockup's strong and soft grouping of match reasons and its banner above the video band were not built: reasons carry no structure yet, and the banner sits below the band so a tall one does not stick.

@@ -150,6 +150,7 @@ Errors:
 | 422 | validation (including an invalid `video_duration_seconds`), or contract violation (including a window beyond the video): object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted by the agent; the caller records the attempt) |
 | 501 | string: `incident_report_gen tool is not configured on this profile` |
 | 504 | string: `Incident analysis timed out: ...` (P1 timeout) |
+| 502 | string: the VLM answered HTTP 200 with a null body or no choices (`VlmNoAnswerError`). The message says the video is probably in an unsupported format (for example 10-bit H.264) or unreadable. Nothing is stored; an 8-bit H.264 re-encode of the file is the likely fix (inferred, not proven) |
 | 500 | string: `Analysis failed: ...` |
 
 Example:
@@ -159,13 +160,15 @@ curl -s localhost:8001/api/v1/incidents/<video_name>/analyze -H 'content-type: a
   -d '{"video_url":"https://<signed-r2-url>","model_run_id":"<video_name>@2026-10-30T06:00:00Z","skip_rp1":true}'
 ```
 
+The agent logs the tool input with `video_url` reduced to its object key (no query, credentials or fragment), so a failed call leaves no usable presigned URL in the log.
+
 Live check of the error shape: `{}` body returns `422` `{"detail":[{"type":"missing","loc":["body","video_url"],"msg":"Field required","input":{}}]}`.
 
 ## `POST /api/v1/incidents/synthesize`
 
 Stateless. Turns the stored analyses of one incident's videos into the incident overview and its search vector. The console calls it from Regenerate ([architecture §5](architecture.md#5-mvp3-incidents-with-several-videos)), then writes the version itself with the `create_ai_revision` database function. The agent writes nothing.
 
-Request: `{"videos": [{"video_name": <string>, "payload": <the video's stored analysis report, incident-contract-v4>}, ...]}`. Response `200`: `{"overview": {title, type, severity_level, description, location}, "embedding": [<1024 floats>]}`. The embedding is the summary vector of the revision (title and description), the same model as revision search.
+Request: `{"videos": [{"video_name": <string>, "payload": <the video's stored analysis report, incident-contract-v4>}, ...]}`. A stored analysis carries the derived `incident.duration` that the analyse path adds; the contract model forbids extras, so the route validates a copy without that one field (any other extra field is still `422`) and passes the stored payload through unchanged (PR #327). Response `200`: `{"overview": {title, type, severity_level, description, location}, "embedding": [<1024 floats>]}`. The embedding is the summary vector of the revision (title and description), the same model as revision search.
 
 **Mounting:** the worker registers the route since PR #320. An agent process started from an earlier checkout answers `404` (Regenerate then fails with `502`); restart it after `git pull` (`incident-operate-vm`).
 
