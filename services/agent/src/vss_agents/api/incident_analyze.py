@@ -28,10 +28,10 @@ The agent needs no VST lookup: the console owns the ``videos`` row and signs the
 
 Status codes: 422 for an invalid body (including a ``video_duration_seconds`` that is not a
 finite number above 0) or when the model output fails ``core-scored-v1`` (nothing is persisted; the
-detail carries ``message``, ``raw_output``, ``finish_reason``, ``model`` and ``contract_version``
+detail carries ``message``, ``raw_output``, ``finish_reason``, ``model``, ``p1_attempts`` and ``contract_version``
 so the caller can record the attempt), 400 for a ``model`` outside the contract allowlist,
-504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
-500 for anything else.
+504 on a P1 timeout, 502 when the video model answered HTTP 200 with no completion (a video it
+cannot decode), 501 when the profile does not configure ``incident_report_gen``, 500 for anything else.
 
 Experimental settings (dev-profile-incident prompt experiments): ``experiment_prompt_id``,
 ``skip_crops`` and ``max_crop_calls`` are refused with 403 unless the agent runs with
@@ -66,6 +66,7 @@ from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
 from vss_agents.tools.incident_report_gen import MAX_CROP_CALLS_LIMIT
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
 from vss_agents.tools.incident_report_gen import ExperimentRefusedError
+from vss_agents.tools.incident_report_gen import VlmNoAnswerError
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -212,6 +213,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                 "raw_output": exc.raw_output,
                 "finish_reason": exc.finish_reason,
                 "model": exc.model,
+                "p1_attempts": getattr(exc, "attempts", []),
                 "contract_version": contract_version(),
             }
             if getattr(exc, "experiment", None) is not None:
@@ -228,6 +230,9 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ExperimentRefusedError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except VlmNoAnswerError as exc:
+            logger.error("/analyze: the video model returned no answer for incident_id=%s: %s", incident_id, exc)
+            raise HTTPException(status_code=502, detail=f"Video model returned no answer: {exc}") from exc
         except TimeoutError as exc:
             logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc

@@ -19,7 +19,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 |---|---|---|
 | `deploy/docker/scripts/dev-profile.sh down` (or `up`) for this profile | `down` runs `docker compose down -v` and wipes `VSS_DATA_DIR`, including about 35 GB of cached model weights. `dev-profile.sh` does not know the `incident` profile. | `./.scripts/down.sh` or plain `docker compose -p mdx stop` (or `docker compose -p mdx down --remove-orphans` for a clean slate, still never `-v`) |
 | Start the `vss-agent` Docker container | The native agent already owns `:8000` ("no double agent") | `./.scripts/native-services.sh restart vss-agent` |
-| `uv sync` in `services/agent` on the VM | `nvdataset` resolves only from NVIDIA's internal artifactory | The reinstall procedure below |
+| `uv sync` in `services/agent` on the VM | The VM venv was built by hand (editable install plus extras); a sync would replace it and needs `pycairo` build tools | The reinstall procedure below |
 | `_type: nim` for remote models, or a `*_BASE_URL` ending in `/v1` | `nim_langchain` leaks `verify_ssl` into the request body (HTTP 400), and clients append `/v1` themselves | `_type: openai`, bare host URL |
 | Set `INCIDENT_EXPERIMENTS_ENABLED=1` on the shared VM agent | It enables the eval-experiment `/analyze` settings (`experiment_prompt_id`, `skip_crops`, `max_crop_calls`) for every caller | Run prompt experiments on a separate local agent with no Supabase or R2 settings ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)) |
 
