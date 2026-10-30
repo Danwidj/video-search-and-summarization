@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildAfterApart, buildAfterJoin } from '../src/sections/suggestions/build-after-decision.ts';
+import { buildAfterApart } from '../src/sections/suggestions/build-after-decision.ts';
 
 const deps = (pending = []) => {
   const built = [];
@@ -18,18 +18,6 @@ const deps = (pending = []) => {
     },
   };
 };
-
-test('a join builds the kept incident once nothing on it is undecided', async () => {
-  const { built, deps: d } = deps();
-  assert.equal(await buildAfterJoin(d, 1), true);
-  assert.deepEqual(built, [1]);
-});
-
-test('a join with other matches still pending builds nothing yet', async () => {
-  const { built, deps: d } = deps([1]);
-  assert.equal(await buildAfterJoin(d, 1), null);
-  assert.deepEqual(built, []);
-});
 
 test('a pair kept apart builds only incidents without a report and without pending matches', async () => {
   const { built, deps: d } = deps([3]);

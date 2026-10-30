@@ -51,7 +51,7 @@ Test data: on 2026-10-24 the rows and R2 objects of the three end-to-end test vi
 
 ## 4. Known issues
 
-- **Phase 7 group A shipped (items 1, 6, 10, 24, G1, G2):** the report page counts the incident's videos after an accept or merge, lists videos missing from the open version as disabled chips, and keeps Merge and Regenerate on a page with no showable camera. Remaining Phase 7 items follow the fix plan.
+- **Phase 7 group A shipped (items 1, 6, 10, 24, G1, G2):** the report page counts the incident's videos after an accept or merge, lists videos missing from the open version as disabled chips, and keeps Merge and Regenerate on a page with no showable camera. - **Phase 7 group B and the merge audit shipped (items 2, 19, 20, 33, 34, G3):** a manual merge and a reviewer's Accept share one confirm dialog (video names of both sides, an official-version warning, a friendly inline error for 404 and 422) and end with one rebuild of the kept incident, then a success notice on that incident. Decisions and failures show as one inline notice (kept in `sessionStorage`, cleared when a version is built); the toaster stays unmounted. The suggestion banner sits under the top bar, above the sticky band, and Accept and Reject are held back in Edit mode. A stale open version makes Regenerate the primary button. Remaining Phase 7 items follow the fix plan.
 
 Deliberate behaviour that can look like an issue (the Cosmos timeline, chat about the official version, a human revision's search text) is recorded in [`decisions.md`](decisions.md). Only open issues are listed here; the number of an issue is stable, and resolved ones are in the [archive](#7-archive) under the same number.
 

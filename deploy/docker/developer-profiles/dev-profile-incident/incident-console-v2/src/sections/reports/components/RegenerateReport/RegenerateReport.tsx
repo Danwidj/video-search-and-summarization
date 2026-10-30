@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { incidentNotices, incidentScope } from '@/lib/reports/incident-notices';
 import { type RegeneratedVersion, regeneratedMessage, regenerateReport, regenerateStageAt } from '@/lib/reports/regenerate';
 
 type Status =
@@ -18,7 +19,8 @@ type Status =
 /**
  * Builds a new AI version of the incident from the latest stored analysis of each current video (no video is
  * re-processed), shows progress while it runs, and hands the new version to onDone so the page selects it. A failure
- * keeps the version being viewed and offers Retry. Disabled while the page holds an unsaved edit.
+ * keeps the version being viewed and offers Retry. Disabled while the page holds an unsaved edit. A version built clears the
+ * incident's inline notice.
  */
 export function RegenerateReport({
   incidentId,
@@ -26,9 +28,12 @@ export function RegenerateReport({
   disabled = false,
   caption = 'Build a new version from the stored analyses',
   label = 'Regenerate',
+  prominent = false,
   onDone,
 }: {
   caption?: string;
+  /** The open version is out of date: the button is the page's main action instead of an outline. */
+  prominent?: boolean;
   label?: string;
   incidentId: string;
   videoCount: number;
@@ -57,6 +62,8 @@ export function RegenerateReport({
     try {
       const version = await regenerateReport(incidentId, controller.signal);
       setStatus({ state: 'done', message: regeneratedMessage(version) });
+      // A notice about the earlier state of the report ("regenerate to include ...") is now out of date.
+      incidentNotices.clear(incidentScope(Number(incidentId)));
       onDone(version);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -78,7 +85,7 @@ export function RegenerateReport({
           onClick={() => void run()}
           size="sm"
           type="button"
-          variant="outline"
+          variant={prominent ? 'default' : 'outline'}
         >
           <RefreshCwIcon aria-hidden="true" className={running ? 'animate-spin' : undefined} />
           {running ? 'Building…' : label}

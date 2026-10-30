@@ -3,6 +3,8 @@
 
 import Link from 'next/link';
 
+import { incidentScope } from '@/lib/reports/incident-notices';
+import { IncidentNotice } from '@/sections/reports/components/IncidentNotice';
 import { EmptyIncident } from '@/sections/reports/components/EmptyIncident';
 import { RegenerateReport } from '@/sections/reports/components/RegenerateReport';
 import { SuggestionBanner } from '@/sections/suggestions/components/SuggestionBanner';
@@ -30,6 +32,7 @@ export function WaitingIncident({ incidentId, videos, onBuilt }: { incidentId: s
             below, or build the report now from the stored analyses.
           </p>
         </div>
+        <IncidentNotice flush fromIncidentId={Number(incidentId)} scope={incidentScope(Number(incidentId))} />
         <SuggestionBanner incidentId={Number(incidentId)} onMerged={onBuilt} />
         <RegenerateReport
           caption="Build the report now, without waiting for a match decision"

@@ -45,6 +45,8 @@ import {
   type EditDraft,
 } from '@/modules/reports/domain/edit-draft';
 import { cameraOptions, repeatsOverviewSummary } from '@/lib/reports/cameras';
+import { incidentScope } from '@/lib/reports/incident-notices';
+import { needsRegenerate } from '@/lib/reports/regenerate';
 import { topBarActions } from '@/lib/reports/top-bar-actions';
 import type { IncidentReportView } from '@/modules/reports/application/types';
 import type { Overview } from '@/modules/reports/domain/envelope';
@@ -60,6 +62,7 @@ import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { MergeIncidentDialog } from '@/sections/reports/components/MergeIncidentDialog';
 import { CameraSwitcher } from '@/sections/reports/components/CameraSwitcher';
+import { IncidentNotice } from '@/sections/reports/components/IncidentNotice';
 import { SuggestionBanner } from '@/sections/suggestions/components/SuggestionBanner';
 import { IncidentOverview } from '@/sections/reports/components/IncidentOverview';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
@@ -389,6 +392,7 @@ export function ReportPage({
             </Button>
             <MergeIncidentDialog incidentId={Number(incidentId)} videoNames={view.incidentVideos} />
           </div>
+          <IncidentNotice flush fromIncidentId={Number(incidentId)} scope={incidentScope(Number(incidentId))} />
           <CameraSwitcher
             actions={
               <Button
@@ -616,6 +620,16 @@ export function ReportPage({
             </Tabs>
           </div>
 
+          {/* Directly under the top bar: the notice about the last decision, then the matches waiting for one. Capped from lg so a long list cannot cover the band it sits above. */}
+          <div className="lg:max-h-[34vh] lg:overflow-y-auto" data-testid="report-decisions">
+            <IncidentNotice flush fromIncidentId={Number(incidentId)} scope={incidentScope(Number(incidentId))} />
+            <SuggestionBanner
+              disabled={mode === 'edit'}
+              incidentId={Number(incidentId)}
+              onMerged={() => setAttempt((value) => value + 1)}
+            />
+          </div>
+
           <CameraSwitcher
             actions={
               <RemoveVideoDialog
@@ -723,6 +737,7 @@ export function ReportPage({
                   <RegenerateReport
                     disabled={mode === 'edit'}
                     incidentId={incidentId}
+                    prominent={needsRegenerate(view.coverage)}
                     onDone={(version) => {
                       setAttempt((value) => value + 1);
                       openVersion(version.revisionId);
@@ -752,8 +767,6 @@ export function ReportPage({
             />
           </div>
         </div>
-
-        <SuggestionBanner incidentId={Number(incidentId)} onMerged={() => setAttempt((value) => value + 1)} />
 
         {mode === 'edit' && !officialRevision && revisions && (
           <Alert

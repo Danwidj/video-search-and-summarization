@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { incidentNotices, incidentScope } from '@/lib/reports/incident-notices';
 import {
   buildFirstReport,
   defaultRemoveChoice,
@@ -21,7 +22,9 @@ import {
   includingOfficial,
   isLastVideo,
   removeChoices,
+  removedNotice,
   removeVideo,
+  staleReportNote,
   type RemoveChoice,
 } from '@/lib/reports/remove-video';
 
@@ -101,6 +104,7 @@ export function RemoveVideoDialog({
       }
       setOpen(false);
       reset();
+      incidentNotices.set(incidentScope(Number(incidentId)), removedNotice(video, 'delete', Number(incidentId)));
       onRemoved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not remove the video');
@@ -122,6 +126,7 @@ export function RemoveVideoDialog({
       return;
     }
     // The video has left this incident; reload the page behind the dialog so the camera is gone.
+    incidentNotices.set(incidentScope(Number(incidentId)), removedNotice(video, 'move', Number(incidentId), newIncidentId));
     onRemoved();
     setStep({ name: 'working', label: `Building the first report of Incident #${newIncidentId}`, percent: 60 });
     try {
@@ -312,7 +317,8 @@ export function RemoveVideoDialog({
                 {video} moved to Incident #{step.newIncidentId}
               </DialogTitle>
               <DialogDescription>
-                {step.reportError ? 'The video moved, but its first report could not be built.' : 'Its first report is ready.'}
+                {step.reportError ? 'The video moved, but its first report could not be built.' : 'Its first report is ready.'}{' '}
+                {staleReportNote(incidentId)}
               </DialogDescription>
             </DialogHeader>
             {step.reportError && (

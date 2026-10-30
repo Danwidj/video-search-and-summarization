@@ -207,7 +207,7 @@ describe('suggestion UI wiring', () => {
   test('the report page mounts the banner for its own incident and reloads after a merge', () => {
     assert.match(
       read('sections/reports/components/ReportPage/ReportPage.tsx'),
-      /<SuggestionBanner incidentId=\{Number\(incidentId\)\} onMerged=/,
+      /<SuggestionBanner[^>]*incidentId=\{Number\(incidentId\)\}[^>]*onMerged=/s,
     );
   });
 
@@ -220,8 +220,8 @@ describe('suggestion UI wiring', () => {
 
   test('accept names the kept incident and reject posts to the reject route', () => {
     const hook = read('sections/suggestions/use-suggestion-cards.ts');
-    assert.match(hook, /\/api\/suggestions\/\$\{card\.id\}\/accept/);
-    assert.match(hook, /incidentId: card\.kept\.incidentId/);
+    assert.match(hook, /acceptSuggestionRequest\(card\.id, keptIncidentId\)/);
+    assert.match(read('lib/reports/merge-client.ts'), /\/api\/suggestions\/\$\{suggestionId\}\/accept/);
     assert.match(hook, /\/api\/suggestions\/\$\{card\.id\}\/reject/);
   });
 
