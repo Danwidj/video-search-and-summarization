@@ -63,6 +63,7 @@ import { IncidentOverview } from '@/sections/reports/components/IncidentOverview
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import type { EditTarget } from '@/sections/reports/components/ReportEditPane/EditTargetSwitch';
+import { RemoveVideoDialog } from '@/sections/reports/components/RemoveVideoDialog';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
@@ -279,6 +280,12 @@ export function ReportPage({
   const openCamera = (video: string) => {
     if (mode === 'edit') return;
     router.replace(`/reports/${encodeURIComponent(incidentId)}${reportQuery(revisionId, video)}`, { scroll: false });
+  };
+
+  // The video left this incident: drop the camera from the address and read the page again without it.
+  const videoRemoved = () => {
+    router.replace(`/reports/${encodeURIComponent(incidentId)}${reportQuery(revisionId, null)}`, { scroll: false });
+    setAttempt((value) => value + 1);
   };
 
   if (state.status === 'loading') {
@@ -517,6 +524,14 @@ export function ReportPage({
             <MergeIncidentDialog
               incidentId={Number(incidentId)}
               videoNames={view.cameras.filter((camera) => camera.current).map((camera) => camera.video)}
+            />
+            <RemoveVideoDialog
+              incidentId={incidentId}
+              onRemoved={videoRemoved}
+              title={heading}
+              versionCount={revisions?.length ?? null}
+              video={report.run.filename}
+              videoCount={videoCount}
             />
             <Button
               aria-expanded={chatOpen}
