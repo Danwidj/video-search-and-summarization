@@ -33,11 +33,15 @@ so the caller can record the attempt), 400 for a ``model`` outside the contract 
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
 500 for anything else.
 
-Experimental settings (dev-profile-incident prompt experiments): ``experiment_prompt_id`` and
-``skip_crops`` are refused with 403 unless the agent runs with ``INCIDENT_EXPERIMENTS_ENABLED=1``;
-an unknown or edited registry prompt is 400, combining one with ``reviewer_prompt`` is 400, and
-cropping that would upload to R2 is 409. An experimental request never writes a report revision,
-and its response adds ``experiment`` (prompt id and SHA-256 used), ``p1_elapsed_ms`` and ``usage``.
+Experimental settings (dev-profile-incident prompt experiments): ``experiment_prompt_id``,
+``skip_crops`` and ``max_crop_calls`` are refused with 403 unless the agent runs with
+``INCIDENT_EXPERIMENTS_ENABLED=1``; an unknown or edited registry prompt is 400, combining one with
+``reviewer_prompt`` is 400, an experimental crops-on request without ``max_crop_calls`` (or one with
+``skip_crops``) is 400, and cropping that would upload to R2 is 409. ``max_crop_calls`` caps the
+request's grounding HTTP attempts, retries included; an item beyond it keeps an ``image_gap``.
+An experimental request never writes a report revision, and its response adds ``experiment``
+(prompt id and SHA-256 used, and for a crops-on request ``crop``: wall time, calls against the cap,
+tokens, images and gaps), ``p1_elapsed_ms`` and ``usage``.
 A request without them gets exactly the production response.
 """
 
@@ -59,6 +63,7 @@ from vss_agents.incident_contract import allowed_models
 from vss_agents.incident_contract import contract_version
 from vss_agents.tools import incident_experiments
 from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
+from vss_agents.tools.incident_report_gen import MAX_CROP_CALLS_LIMIT
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
 from vss_agents.tools.incident_report_gen import ExperimentRefusedError
 
@@ -120,9 +125,18 @@ class AnalyzeIncidentRequest(BaseModel):
     skip_crops: bool = Field(
         default=False, description="Experimental (INCIDENT_EXPERIMENTS_ENABLED=1 only): skip evidence cropping."
     )
+    max_crop_calls: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_CROP_CALLS_LIMIT,
+        description=(
+            "Experimental (INCIDENT_EXPERIMENTS_ENABLED=1 only): the crop-call cap of a crops-on request "
+            "(grounding HTTP attempts, retries included). Required when an experimental request crops."
+        ),
+    )
 
     def is_experimental(self) -> bool:
-        return self.experiment_prompt_id is not None or self.skip_crops
+        return self.experiment_prompt_id is not None or self.skip_crops or self.max_crop_calls is not None
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
@@ -146,6 +160,12 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             )
         if body.is_experimental() and body.reviewer_prompt:
             raise HTTPException(status_code=400, detail="an experimental request cannot carry a reviewer_prompt")
+        if body.skip_crops and body.max_crop_calls is not None:
+            raise HTTPException(status_code=400, detail="max_crop_calls cannot be combined with skip_crops")
+        if body.is_experimental() and not body.skip_crops and body.max_crop_calls is None:
+            raise HTTPException(
+                status_code=400, detail="an experimental request with cropping on needs max_crop_calls (its cap)"
+            )
         if body.model and body.model not in allowed_models():
             raise HTTPException(
                 status_code=400, detail=f"Model {body.model!r} is not in the incident contract allowlist"
@@ -180,6 +200,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["experiment_prompt_id"] = body.experiment_prompt_id
         if body.skip_crops:
             tool_input["skip_crops"] = True
+        if body.max_crop_calls is not None:
+            tool_input["max_crop_calls"] = body.max_crop_calls
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)

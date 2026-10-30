@@ -154,8 +154,12 @@ def cmd_run(args) -> int:
         if len({c["ground_truth"]["dir"] for c in configs}) != 1:
             raise er.ExperimentRefused("configurations in one stage must use the same ground truth")
         gt_index, sheets = load_gt(configs[0])
-        # The embedding server is only needed when items are matched (scoring: full).
-        eval_run.evaluator_preflight(incident_only=all(c["scoring"] == "incident_only" for c in configs))
+        # The embedding server is only needed when items are matched (scoring: full); an unscored stage (the
+        # end-to-end profile) needs neither evaluator and sends no judge probe.
+        if not all(c["scoring"] == "none" for c in configs):
+            if any(c["scoring"] == "none" for c in configs):
+                raise er.ExperimentRefused("an unscored profile config cannot share a stage with scored configs")
+            eval_run.evaluator_preflight(incident_only=all(c["scoring"] == "incident_only" for c in configs))
         result = er.run_stage(configs, split=split, gt_index=gt_index, store=frozen_store(sheets),
                               video_source=video_source_from_manifest(), call_factory_for=call_factory_for,
                               run_one=eval_run.run_one_video, confirm_paid=True, resume=args.resume,

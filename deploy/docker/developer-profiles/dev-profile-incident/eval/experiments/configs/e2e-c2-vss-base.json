@@ -1,0 +1,52 @@
+{
+  "arm": "vss",
+  "baseline_ref": "s3-c2-vss-base",
+  "budget": {
+    "max_p1_calls": 45,
+    "max_p1_tokens": 1575000,
+    "max_judge_calls": 0,
+    "max_crop_calls": 720,
+    "max_crop_tokens": 4320000
+  },
+  "description": "End-to-end VSS profile (plan §F.2), C2: VSS with the base prompt, cropping on under a cap of 40 grounding calls per request, on 15 test clips (3 per category), 1 repeat. Latency and reliability only: never scored, never an accuracy result, and it never reads or writes the Stage 3 results (s3-c2-vss-base). Runs once.",
+  "experiment_id": "e2e-c2-vss-base",
+  "final": false,
+  "frozen_baseline": true,
+  "ground_truth": {
+    "dir": "eval_data/ground_truth/ground-truth-v1.0",
+    "allow_candidate": false
+  },
+  "model": "nvidia/cosmos-3-super-reasoner",
+  "pipeline": {
+    "profile": "end-to-end",
+    "skip_rp1": true,
+    "skip_crops": false,
+    "max_crop_calls_per_request": 40,
+    "request_timeout_s": 900,
+    "agent_base_url": "http://127.0.0.1:8765",
+    "retry_policy": "retry-v2"
+  },
+  "prompt_id": "p1-v4-base",
+  "purpose": "profile",
+  "repeats": 1,
+  "scoring": "none",
+  "selection_record": "2026-10-29: Stage 2 selection (D9 v2): p1-v4-e01-severity",
+  "split": "test",
+  "videos": [
+    "Animal003",
+    "Animal006",
+    "Animal015",
+    "Assault012",
+    "Assault018",
+    "Assault050",
+    "Burglary005",
+    "Burglary013",
+    "Burglary071",
+    "Explosion004",
+    "Explosion014",
+    "Explosion051",
+    "RoadAccidents008",
+    "RoadAccidents024",
+    "RoadAccidents069"
+  ]
+}

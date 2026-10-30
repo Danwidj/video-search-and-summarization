@@ -115,6 +115,10 @@ class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
     )
 
 
+# The highest per-request crop-call cap an experimental request may ask for.
+MAX_CROP_CALLS_LIMIT = 200
+
+
 class IncidentReportGenInput(BaseModel):
     incident_id: str = Field(..., min_length=1, max_length=20, description="Console videos.id.")
     video_url: str = Field(
@@ -153,6 +157,15 @@ class IncidentReportGenInput(BaseModel):
     skip_crops: bool = Field(
         default=False,
         description="Experimental: skip post-P1 evidence cropping (needs INCIDENT_EXPERIMENTS_ENABLED=1).",
+    )
+    max_crop_calls: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_CROP_CALLS_LIMIT,
+        description=(
+            "Experimental: the most grounding HTTP attempts (retries included) this request's cropping may make. "
+            "Required for an experimental crops-on request; items beyond it keep an image_gap."
+        ),
     )
 
 
@@ -347,14 +360,21 @@ async def collect_evidence(
     report: dict[str, Any],
     store: crop_evidence.EvidenceStore | None = None,
     video_key: str | None = None,
+    detector: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Crop and upload every evidence item. Never raises: a failure becomes an ``image_gap`` reason.
 
-    ``store`` overrides the service's store (R2 in production) for this call only.
+    ``store`` and ``detector`` override the service's own (R2 and the shared detector in production) for this
+    call only.
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
-            video_ref=video_url, video_id=incident_id, report=report, store=store, video_key=video_key
+            video_ref=video_url,
+            video_id=incident_id,
+            report=report,
+            store=store,
+            video_key=video_key,
+            detector=detector,
         )
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
@@ -363,6 +383,22 @@ async def collect_evidence(
             {**item, "bounding_box": None, "image": None, "image_gap": reason}
             for item in crop_evidence.evidence_items(report)
         ]
+
+
+def crop_telemetry(evidence: list[dict[str, Any]], budget: crop_evidence.CropCallBudget, elapsed_s: float) -> dict:
+    """What an experimental crop stage cost: wall time, grounding calls against the cap, images and gaps."""
+    gaps: dict[str, int] = {}
+    for entry in evidence:
+        if entry.get("image") is None:
+            reason = str(entry.get("image_gap") or "unknown").split(":")[0]
+            gaps[reason] = gaps.get(reason, 0) + 1
+    return {
+        "elapsed_ms": round(elapsed_s * 1000.0, 1),
+        "items": len(evidence),
+        "images": sum(1 for entry in evidence if entry.get("image") is not None),
+        "gaps": gaps,
+        **budget.summary(),
+    }
 
 
 async def revision_embedding(report: dict[str, Any]) -> list[float] | None:
@@ -434,13 +470,17 @@ def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str
     ``ExperimentPromptError`` for an unknown or edited prompt, ``ValueError`` when combined with a
     reviewer prompt, and ``ExperimentRefusedError`` when cropping would upload images to R2.
     """
-    if tool_input.experiment_prompt_id is None and not tool_input.skip_crops:
+    if tool_input.experiment_prompt_id is None and not tool_input.skip_crops and tool_input.max_crop_calls is None:
         return None
     incident_experiments.require_enabled()
     if reviewer_prompt:
         raise ValueError(
             "an experimental request cannot carry a reviewer prompt (the P1 request must be the prompt alone)"
         )
+    if tool_input.skip_crops and tool_input.max_crop_calls is not None:
+        raise ValueError("max_crop_calls applies only when cropping runs; it cannot be combined with skip_crops")
+    if not tool_input.skip_crops and tool_input.max_crop_calls is None:
+        raise ValueError("an experimental request with cropping on needs max_crop_calls (its crop-call cap)")
     if not tool_input.skip_crops and is_r2_configured():
         # Defence in depth: experimental crops go to a temporary in-memory store, and an experiment agent
         # must not hold shared-storage settings at all.
@@ -452,7 +492,12 @@ def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str
     if tool_input.experiment_prompt_id is not None:
         text, digest = incident_experiments.resolve_prompt(tool_input.experiment_prompt_id)
         settings = {"prompt_id": tool_input.experiment_prompt_id, "prompt_sha256": digest, "_prompt_text": text}
-    return {**settings, "skip_crops": tool_input.skip_crops, "persisted": False}
+    return {
+        **settings,
+        "skip_crops": tool_input.skip_crops,
+        "max_crop_calls": tool_input.max_crop_calls,
+        "persisted": False,
+    }
 
 
 @register_function(config_type=IncidentReportGenConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
@@ -507,14 +552,20 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         elif experiment is not None:
             # An experimental crop run uses its own temporary in-memory store: isolated from every other
             # request, holding no production data, never written to disk or R2, and discarded on return.
+            # Its grounding calls draw on the request's own cap, checked before every HTTP attempt.
+            budget = crop_evidence.CropCallBudget(experiment["max_crop_calls"])
+            detector = crop_evidence.with_call_budget(crop_evidence.get_crop_evidence_service().detector, budget)
+            crop_started = time.perf_counter()
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,
                 incident_id=tool_input.incident_id,
                 report=report,
                 store=crop_evidence.InMemoryEvidenceStore(),
                 video_key=tool_input.video_key,
+                detector=detector,
             )
             experiment["evidence_store"] = EXPERIMENT_EVIDENCE_STORE
+            experiment["crop"] = crop_telemetry(evidence, budget, time.perf_counter() - crop_started)
         else:
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,

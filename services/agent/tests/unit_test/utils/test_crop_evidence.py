@@ -27,6 +27,9 @@ import cv2
 import numpy as np
 import pytest
 
+from vss_agents.utils.crop_evidence import BudgetedDetector
+from vss_agents.utils.crop_evidence import CropCallBudget
+from vss_agents.utils.crop_evidence import CropCallCapReachedError
 from vss_agents.utils.crop_evidence import CropEvidenceService
 from vss_agents.utils.crop_evidence import CropResult
 from vss_agents.utils.crop_evidence import DefaultDetector
@@ -341,6 +344,45 @@ class TestDefaultDetector:
         with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply):
             assert detector.detect(self._frame(), "unicorn") == []
 
+    def test_a_call_budget_counts_every_http_attempt_including_retries(self) -> None:
+        limited = MagicMock(status_code=429, headers={"retry-after": "0"})
+        limited.json.return_value = {}
+        budget = CropCallBudget(2)
+        detector = DefaultDetector(api_key="k").with_call_budget(budget)
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", return_value=limited) as post,
+            patch("vss_agents.utils.crop_evidence.time.sleep"),
+            pytest.raises(CropCallCapReachedError),
+        ):
+            detector.detect(self._frame(), "knife")
+        assert post.call_count == 2  # the third attempt was refused before it was sent
+        assert budget.summary() == {
+            "cap": 2,
+            "calls": 2,
+            "refused_by_cap": 1,
+            "cap_reached": True,
+            "tokens": 0,
+            "calls_without_usage": 0,  # a 429 carries no usage and is not billed
+        }
+
+    def test_a_budgeted_copy_leaves_the_shared_detector_unbudgeted_and_records_tokens(self) -> None:
+        reply = MagicMock(status_code=200)
+        reply.json.return_value = {
+            "choices": [{"message": {"content": '{"bbox_2d": null}'}}],
+            "usage": {"prompt_tokens": 900, "completion_tokens": 20},
+        }
+        shared = DefaultDetector(api_key="k")
+        budget = CropCallBudget(5)
+        with patch("vss_agents.utils.crop_evidence.httpx.post", return_value=reply):
+            shared.with_call_budget(budget).detect(self._frame(), "knife")
+            shared.detect(self._frame(), "knife")
+        assert shared.call_budget is None
+        assert budget.calls == 1 and budget.tokens == 920 and budget.calls_without_usage == 0
+
+    def test_a_cap_below_one_is_refused(self) -> None:
+        with pytest.raises(ValueError):
+            CropCallBudget(0)
+
     def test_detect_without_credentials_makes_no_call(self) -> None:
         detector = DefaultDetector(api_key="")
         with patch("vss_agents.utils.crop_evidence.httpx.post") as post:
@@ -433,6 +475,20 @@ class TestCropEvidenceService:
             assert entry["image_gap"] is None
             assert len(entry["bounding_box"]) == 4
             assert await store.get_image(entry["image"]) is not None
+
+    @pytest.mark.asyncio
+    async def test_items_beyond_the_crop_call_cap_keep_a_cap_gap(self, tiny_video_path: Path) -> None:
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="x")])
+        budget = CropCallBudget(2)
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, detector=BudgetedDetector(detector, budget)
+        )
+        assert sum(1 for r in results if r["image"]) == 2
+        assert [r["image_gap"] for r in results if not r["image"]] == [
+            "crop-call cap reached: crop-call cap of 2 reached"
+        ]
+        assert budget.calls == 2 and budget.refused == 1
 
     @pytest.mark.asyncio
     async def test_each_run_gets_the_next_run_number_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
