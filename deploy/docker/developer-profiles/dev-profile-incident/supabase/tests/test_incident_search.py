@@ -234,6 +234,11 @@ def _():
                     "WHERE n.nspname = 'public' AND p.proname = %s", (name,))[0]
         assert count == 1, (name, count)
 
+# Other test files reuse these video names, so leave nothing behind.
+conn.execute("DELETE FROM public.incidents WHERE id IN (SELECT incident_id FROM public.videos WHERE id = ANY (%s))",
+             (["front-door.mp4", "back-yard.mp4", "bus-stop.mp4", "lobby.mp4", "empty.mp4"],))
+conn.execute("DELETE FROM public.model_runs WHERE id LIKE 'run-%%-%%'")
+
 conn.close()
 print(f"\n{len(PASSED)} passed")
 sys.exit(0)
