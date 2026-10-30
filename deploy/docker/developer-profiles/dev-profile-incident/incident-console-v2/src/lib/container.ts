@@ -24,6 +24,7 @@ import { SupabaseVideoAnalysisAdapter } from '@/modules/analysis/infrastructure/
 import type { ModelRunRepository } from '@/modules/analysis/domain/ModelRunRepository';
 import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
+import { HttpIncidentSynthesizer, type IncidentSynthesizer } from '@/modules/analysis/infrastructure/agent/incident-synthesizer';
 import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
@@ -92,4 +93,9 @@ export function getMatchingPorts(config: ServiceConfiguration = getServiceConfig
     suggestions: new SupabaseSuggestionAdapter(db),
     judge: config.agentUrl ? new HttpMatchJudge(config.agentUrl) : null,
   };
+}
+
+/** The incident synthesiser; null when the agent URL is not configured. */
+export function getIncidentSynthesizer(config: ServiceConfiguration = getServiceConfiguration()): IncidentSynthesizer | null {
+  return config.agentUrl ? new HttpIncidentSynthesizer(config.agentUrl) : null;
 }
