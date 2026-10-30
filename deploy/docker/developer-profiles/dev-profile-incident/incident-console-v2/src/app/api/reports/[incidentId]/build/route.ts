@@ -3,7 +3,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { getAnalysisStore, getDbAdapters, getIncidentSynthesizer, getIncidentVideos } from '@/lib/container';
+import { getAnalysisStore, getDbAdapters, getEvidenceLinker, getIncidentSynthesizer, getIncidentVideos } from '@/lib/container';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 import { BuildReportError, buildIncidentReport } from '@/modules/reports/application/build-incident-report';
@@ -30,6 +30,7 @@ export async function POST(request: Request, context: { params: Promise<{ incide
         videos: getIncidentVideos(config),
         ...getAnalysisStore(config),
         synthesizer: getIncidentSynthesizer(config),
+        linker: getEvidenceLinker(config),
       },
       { incidentId: id, note: parsed.data.note },
     );

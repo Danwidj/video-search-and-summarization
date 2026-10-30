@@ -72,6 +72,10 @@ def test_worker_exposes_synthesize_route():
     assert "/api/v1/incidents/synthesize" in _paths(app)
 
 
+def test_worker_exposes_link_evidence_route():
+    assert "/api/v1/incidents/link-evidence" in _paths(_mounted_app({}))
+
+
 def test_synthesize_reads_rp1_url_from_incident_report_gen(monkeypatch):
     monkeypatch.setenv("SYNTH_TEST_KEY", "k")
     cfg = SimpleNamespace(rp1_base_url="http://rp1.example", api_key_env="SYNTH_TEST_KEY")

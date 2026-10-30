@@ -68,7 +68,7 @@ Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, o
 
 ### 4. Build a version (Regenerate)
 
-`POST /api/reports/<incidentId>/build` with `{"note"?}` returns `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. Statuses: `422` no videos, `409 {videos}` some video has no analysis yet, `503` agent not configured, `502` or `504` agent failed. The synthesis run is `incident-<id>@<UTC timestamp>`.
+`POST /api/reports/<incidentId>/build` with `{"note"?}` returns `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. Statuses: `422` no videos, `409 {videos}` some video has no analysis yet, `503` agent not configured, `502` or `504` agent failed. The synthesis run is `incident-<id>@<UTC timestamp>`. A version of two or more videos also gets the optional `evidence_groups` field of its payload from the agent's `link-evidence` route (the same person or object across videos); a failed call leaves it out and the build still succeeds. Check it with `curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8001/api/v1/incidents/link-evidence -H 'Content-Type: application/json' -d '{}'` (`422` = mounted, `404` = the agent predates the route).
 
 The version's `video_names` is its coverage and never changes. After a merge or a removal the coverage note says "Does not include: ..." or "Includes a removed video: ..." until you regenerate (merge and Accept rebuild by themselves; Remove video leaves its notice and Regenerate, primary while the version is stale, clears it).
 

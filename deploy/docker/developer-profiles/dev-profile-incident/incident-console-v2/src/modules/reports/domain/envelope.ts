@@ -27,9 +27,33 @@ export interface Camera {
   report: ReportPayload;
 }
 
+/** One camera's own item (its E1, I1 or A1) named with the video it belongs to; ids repeat across videos. */
+export interface EvidenceGroupMember {
+  video: string;
+  itemId: string;
+}
+
+export type EvidenceGroupKind = 'entity' | 'instrument' | 'asset';
+
+/**
+ * The same real-world person or object seen by several cameras. Ids are G1, G2 ... per version; each (video, itemId)
+ * is in at most one group, a group has two or more members and at most one per video. The per-camera reports and
+ * their ids are never renumbered: the group only points at them.
+ */
+export interface EvidenceGroup {
+  id: string;
+  kind: EvidenceGroupKind;
+  label: string;
+  members: EvidenceGroupMember[];
+  source: 'ai' | 'human';
+  reason?: string;
+}
+
 export interface ReportEnvelope {
   overview: Overview;
   cameras: Camera[];
+  /** Absent on versions built before the cross-video linker, from one video, or when linking failed or found nothing. */
+  evidenceGroups?: EvidenceGroup[];
 }
 
 type Row = Record<string, unknown>;
@@ -53,6 +77,41 @@ export function normaliseOverview(value: unknown): Overview {
   };
 }
 
+const GROUP_KINDS: readonly string[] = ['entity', 'instrument', 'asset'];
+
+/**
+ * Groups from stored or agent JSON, read leniently: a group that is malformed, has fewer than two members, repeats a
+ * video, or reuses a member of an earlier group is dropped. Ids and order are kept as given.
+ */
+export function parseEvidenceGroups(value: unknown): EvidenceGroup[] {
+  if (!Array.isArray(value)) return [];
+  const used = new Set<string>();
+  const groups: EvidenceGroup[] = [];
+  for (const raw of value) {
+    const row = asRow(raw);
+    const id = text(row.id);
+    const label = text(row.label);
+    const kind = text(row.kind);
+    const source = row.source === 'human' ? 'human' : row.source === 'ai' ? 'ai' : null;
+    if (!id || !label || !kind || !GROUP_KINDS.includes(kind) || !source || !Array.isArray(row.members)) continue;
+    const members: EvidenceGroupMember[] = [];
+    for (const rawMember of row.members) {
+      const member = asRow(rawMember);
+      const video = text(member.video);
+      const itemId = text(member.itemId);
+      if (video && itemId) members.push({ video, itemId });
+    }
+    const keys = members.map((member) => JSON.stringify([member.video, member.itemId]));
+    const videos = new Set(members.map((member) => member.video));
+    if (members.length !== row.members.length || members.length < 2 || videos.size !== members.length) continue;
+    if (keys.some((key) => used.has(key))) continue;
+    for (const key of keys) used.add(key);
+    const reason = text(row.reason);
+    groups.push({ id, kind: kind as EvidenceGroupKind, label, members, source, ...(reason ? { reason } : {}) });
+  }
+  return groups;
+}
+
 /**
  * A stored payload -> the envelope. Cameras without a video name are dropped and a repeated name keeps its first
  * report. A payload that is not an envelope (no `cameras` array) gives no cameras and an overview read from the
@@ -69,7 +128,8 @@ export function parseEnvelope(payload: unknown): ReportEnvelope {
     seen.add(video);
     cameras.push({ video, report: asRow(camera.report) });
   }
-  return { overview: normaliseOverview(row.overview), cameras };
+  const evidenceGroups = parseEvidenceGroups(row.evidence_groups);
+  return { overview: normaliseOverview(row.overview), cameras, ...(evidenceGroups.length ? { evidenceGroups } : {}) };
 }
 
 /** The stored shape of an envelope: what a revision's payload column holds. */
@@ -77,6 +137,7 @@ export function envelopePayload(envelope: ReportEnvelope): ReportPayload {
   return {
     overview: { ...envelope.overview },
     cameras: envelope.cameras.map((camera) => ({ video: camera.video, report: camera.report })),
+    ...(envelope.evidenceGroups?.length ? { evidence_groups: envelope.evidenceGroups } : {}),
   };
 }
 

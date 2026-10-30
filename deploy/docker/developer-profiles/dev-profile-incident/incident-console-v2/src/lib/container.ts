@@ -26,6 +26,7 @@ import { SupabaseVideoAnalysisAdapter } from '@/modules/analysis/infrastructure/
 import type { ModelRunRepository } from '@/modules/analysis/domain/ModelRunRepository';
 import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
+import { type EvidenceLinker, HttpEvidenceLinker } from '@/modules/analysis/infrastructure/agent/evidence-linker';
 import { HttpIncidentSynthesizer, type IncidentSynthesizer } from '@/modules/analysis/infrastructure/agent/incident-synthesizer';
 import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
 import { removeVstSensor } from '@/modules/videos/infrastructure/vst/sensor';
@@ -114,4 +115,9 @@ export function getMatchingPorts(config: ServiceConfiguration = getServiceConfig
 /** The incident synthesiser; null when the agent URL is not configured. */
 export function getIncidentSynthesizer(config: ServiceConfiguration = getServiceConfiguration()): IncidentSynthesizer | null {
   return config.agentUrl ? new HttpIncidentSynthesizer(config.agentUrl) : null;
+}
+
+/** The cross-video evidence linker; null when the agent URL is not configured. */
+export function getEvidenceLinker(config: ServiceConfiguration = getServiceConfiguration()): EvidenceLinker | null {
+  return config.agentUrl ? new HttpEvidenceLinker(config.agentUrl) : null;
 }

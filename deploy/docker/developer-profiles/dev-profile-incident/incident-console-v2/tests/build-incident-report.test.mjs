@@ -18,6 +18,7 @@ const { InMemoryIncidentVideoRepository } = await import('../src/modules/videos/
 const { InMemoryModelRunRepository } = await import('../src/modules/analysis/infrastructure/memory/model-runs.ts');
 const { InMemoryVideoAnalysisRepository } = await import('../src/modules/analysis/infrastructure/memory/video-analyses.ts');
 const { FakeIncidentSynthesizer } = await import('../src/modules/analysis/infrastructure/agent/fake-incident-synthesizer.ts');
+const { FakeEvidenceLinker } = await import('../src/modules/analysis/infrastructure/agent/fake-evidence-linker.ts');
 const { AgentRequestError } = await import('../src/modules/analysis/domain/IncidentAgent.ts');
 const { StoreRejection } = await import('../src/modules/shared/domain/common.ts');
 const { POST } = await import('../src/app/api/reports/[incidentId]/build/route.ts');
@@ -193,6 +194,56 @@ describe('buildIncidentReport', () => {
   });
 });
 
+describe('buildIncidentReport evidence groups', () => {
+  const GROUP = {
+    id: 'G1',
+    kind: 'entity',
+    label: 'Man at the door',
+    members: [
+      { video: FRONT, itemId: 'E1' },
+      { video: LOBBY, itemId: 'E1' },
+    ],
+    source: 'ai',
+  };
+
+  test('stores the linker groups on a version built from two videos', async () => {
+    const { ports, reports } = await memoryPorts();
+    const linker = new FakeEvidenceLinker([{ kind: 'linked', groups: [GROUP] }]);
+    await buildIncidentReport({ ...ports, linker }, { incidentId: 1 });
+    assert.deepEqual(
+      linker.calls[0].map((video) => video.videoName),
+      [FRONT, LOBBY],
+    );
+    assert.deepEqual(reports.revisions.at(-1).payload.evidence_groups, [GROUP]);
+  });
+
+  test('a failed, thrown or empty link stores no field and never fails the build', async () => {
+    for (const script of [
+      [{ kind: 'failed', status: 502, message: 'x' }],
+      [new AgentRequestError('AGENT_TIMEOUT', 'slow')],
+      [{ kind: 'linked', groups: [] }],
+    ]) {
+      const { ports, reports } = await memoryPorts();
+      const built = await buildIncidentReport({ ...ports, linker: new FakeEvidenceLinker(script) }, { incidentId: 1 });
+      assert.equal(built.revisionNo, 1);
+      assert.equal('evidence_groups' in reports.revisions.at(-1).payload, false);
+    }
+  });
+
+  test('a one-video version skips the linker', async () => {
+    const { ports, reports } = await memoryPorts();
+    ports.videos.videos.delete(LOBBY);
+    reports.videos.splice(
+      reports.videos.findIndex((video) => video.videoId === LOBBY),
+      1,
+    );
+    const linker = new FakeEvidenceLinker([{ kind: 'linked', groups: [GROUP] }]);
+    await buildIncidentReport({ ...ports, linker }, { incidentId: 1 });
+    assert.equal(linker.calls.length, 0);
+    assert.equal('evidence_groups' in reports.revisions.at(-1).payload, false);
+  });
+});
+
 describe('POST /api/reports/[incidentId]/build', () => {
   const store = () => ({
     incidents: [{ id: 1, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' }],
@@ -289,6 +340,34 @@ describe('POST /api/reports/[incidentId]/build', () => {
       fake.store.model_runs.some((run) => run.id === built.modelRunId),
       true,
     );
+  });
+
+  test('stores evidence_groups from the agent link-evidence answer and survives a failing link', async () => {
+    const group = {
+      id: 'G1',
+      kind: 'entity',
+      label: 'Man at the door',
+      members: [
+        { video: FRONT, itemId: 'E1' },
+        { video: LOBBY, itemId: 'E1' },
+      ],
+      source: 'ai',
+    };
+    const links = [
+      { respond: () => new Response(JSON.stringify({ evidence_groups: [group] })), stored: [group] },
+      { respond: () => new Response('down', { status: 503 }), stored: undefined },
+    ];
+    for (const link of links) {
+      const fake = fakePostgrest(store(), { rpc: incidentRpcs, identity: { report_revisions: 'id', video_analyses: 'id' } });
+      globalThis.fetch = async (url, init) => {
+        if (String(url) === 'http://agent.test/api/v1/incidents/link-evidence') return link.respond();
+        if (String(url).startsWith('http://agent.test/')) return synthesis(JSON.parse(init.body));
+        return fake.fetch(url, init);
+      };
+      assert.equal((await call('1', '')).status, 200);
+      const [row] = fake.store.report_revisions;
+      assert.deepEqual(row.payload.evidence_groups, link.stored);
+    }
   });
 
   test('answers 400, 404, 409 and 502 for a bad id, an unknown incident, an unanalysed video and an agent failure', async () => {

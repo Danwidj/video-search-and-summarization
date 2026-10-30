@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-31: Cross-video evidence is linked at build time by a text-only agent call, stored as `evidence_groups` in the version payload
+- **Decision:** Regenerate (for two or more videos) calls the stateless `POST /api/v1/incidents/link-evidence` after `synthesize`: one temperature-0 RP1 call over each camera's items as text returns groups of items that are the same person, instrument or asset in different videos. The console stores them as the optional `evidence_groups` of the version payload (`{id: G1.., kind, label, members: [{video, itemId}], source: ai|human, reason?}`). The agent enforces the group rules (two or more members, one kind, one per video, each member once, members exist) and answers an empty list on any model failure; a failed call stores nothing and never blocks the build. Per-camera reports and their ids are not renumbered.
+- **Why:** Each video is analysed alone, before it is in an incident, so ids (E1, A1) repeat across cameras and the same man or bag appears as separate evidence. Linking at build time sees all cameras at once and a version is the unit a reviewer reads.
+- **Rejected:** renumbering ids per incident (breaks stored crops, evidence keys and every video-keyed reference, and the analysis is stored before the incident exists); a new table or migration (the payload is JSONB and groups belong to one version); linking from pixels (heavier, and the descriptions already carry colour and clothing); failing the build when linking fails (linking is an enhancement).
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentslink-evidence), [data.md](data.md#revision-payload-envelope), [`../../../../services/agent/src/vss_agents/api/incident_link_evidence.py`](../../../../services/agent/src/vss_agents/api/incident_link_evidence.py).
+
 ### 2026-10-30: After an automatic join the kept incident is checked again (audit U7)
 - **Decision:** `evaluateIncident` re-runs itself for the kept incident after a join (`autoJoin: false`), so matches the merge deleted come back as pending suggestions. Console only: no agent change, no migration.
 - **Why:** `merge_incidents` deletes the source with its other pending rows and the new upload always has the higher id, so the Matches tab, Accept, Reject and "Awaiting your decision" were unreachable in normal use.
