@@ -127,10 +127,10 @@ with tempfile.TemporaryDirectory() as tmp:
                      "select_official_report", "set_review_status", "effective_incidents",
                      "set_official_revision", "searchable_revision_id", "replace_video_crops",
                      "set_revision_crops", "search_evidence_items", "list_incident_report_summaries",
-                     "get_incident_dashboard", "save_human_revision_with_crops"):
+                     "get_incident_dashboard", "save_human_revision_with_crops",
+                     "save_human_revision", "apply_r2_rename", "search_report_revisions"):
             assert gone not in names, gone
-        for present in ("save_human_revision", "report_revisions_append_only",
-                        "apply_r2_rename", "search_report_revisions", "evidence_image"):
+        for present in ("report_revisions_append_only", "evidence_image"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
         vid_cols = [r[0] for r in conn.execute(
@@ -153,9 +153,6 @@ with tempfile.TemporaryDirectory() as tmp:
                 assert not one(conn, "SELECT has_table_privilege(%s, %s, 'SELECT')", (role, table))[0], (role, table)
             for fn in functions:
                 assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, fn))[0], (role, fn)
-            conn.execute(f"SET ROLE {role}")
-            refused(conn, "SELECT public.save_human_revision('v', 1, 'x', NULL, '{}', '[]', 'assault', 3, 0, 1)",
-                    kind=errors.InsufficientPrivilege)
             conn.execute("RESET ROLE")
 
     @test("security: objects created later in public are not exposed either (default privileges)")
@@ -175,161 +172,6 @@ with tempfile.TemporaryDirectory() as tmp:
     def _():
         rows = conn.execute((HERE / "security_check.sql").read_text()).fetchall()
         assert rows == [], rows
-
-    conn.execute("SET ROLE service_role")
-    # Each video requires an incident (mvp3: official pointer lives on the incident).
-    # One shared incident covers the four baseline test videos.
-    (base_incident_id,) = conn.execute(
-        "INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
-    for video in ("v1", "v2", "v3", "v4"):
-        conn.execute(
-            "INSERT INTO public.videos (id, filepath, source, incident_id) VALUES (%s, %s, 'cam', %s)",
-            (video, f"uploads/{video}/clip.mp4", base_incident_id))
-    conn.execute("INSERT INTO public.model_runs (id, model_name, notes) VALUES ('m1', 'model-a', %s), ('m2', 'model-b', NULL)",
-                 (json.dumps({"incidentConsoleV2": {"contractVersion": "incident-contract-v3", "status": "valid_first_pass"}}),))
-
-    def ai_revision(video: str, revision_no: int, run: str, payload: dict, evidence: list) -> int:
-        inc = payload["incident"]
-        return one(conn, """
-            INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
-                incident_type, severity_level, start_seconds, end_seconds)
-            VALUES (%s, %s, 'ai', %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (video, revision_no, run, json.dumps(payload), json.dumps(evidence), inc["type"], inc["severity_level"],
-             inc["start_timestamp"], inc["end_timestamp"]))[0]
-
-    ai1 = ai_revision("v1", 1, "m1", report(), EVIDENCE)
-    ai2 = ai_revision("v2", 1, "m2", report(kind="burglary", severity=2, title="Shop break-in"), [])
-
-    def save(video, parent, payload, evidence, by="Dana", note=None, incident_type=None, severity=None,
-             start=None, end=None):
-        incident = payload["incident"]
-        return one(conn, """
-            SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (video, parent, by, note, json.dumps(payload), json.dumps(evidence),
-             incident_type if incident_type is not None else incident["type"],
-             severity if severity is not None else incident["severity_level"],
-             start if start is not None else incident["start_timestamp"],
-             end if end is not None else incident["end_timestamp"]))[0]
-
-    human = save("v1", ai1, report(kind="explosion", severity=5, start=1, end=8, entity="Woman in a coat"),
-                 EVIDENCE, note=" fixed type ", incident_type="explosion", severity=5, start=1, end=8)
-
-    @test("save_human_revision appends the next revision with the caller's facets and parent run")
-    def _():
-        assert human["revisionNo"] == 2 and human["kind"] == "human" and human["parentId"] == ai1, human
-        assert human["modelRunId"] == "m1" and human["createdBy"] == "Dana" and human["note"] == "fixed type", human
-        row = one(conn, "SELECT incident_type, severity_level, start_seconds, end_seconds, created_by, kind FROM public.report_revisions WHERE id = %s",
-                  (human["revisionId"],))
-        assert row == ("explosion", 5, 1, 8, "Dana", "human"), row
-
-    @test("save_human_revision hands out one revision_no at a time per video")
-    def _():
-        first = save("v3", ai_revision("v3", 1, "m1", report(), []), report(), [])
-        second = save("v3", first["revisionId"], report(), [])
-        assert (first["revisionNo"], second["revisionNo"]) == (2, 3), (first, second)
-        assert second["parentId"] == first["revisionId"], second
-        assert [r[0] for r in conn.execute("SELECT revision_no FROM public.report_revisions WHERE video_id = 'v3' ORDER BY 1").fetchall()] == [1, 2, 3]
-
-    @test("save_human_revision refuses a bad parent, name, payload or evidence")
-    def _():
-        args = "SELECT public.save_human_revision(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-        refused(conn, args, ("v1", ai2, "Dana", None, json.dumps(report()), "[]", "assault", 4, 2, 9),
-                contains="Revision not found for this video")
-        refused(conn, args, ("nope", ai1, "Dana", None, json.dumps(report()), "[]", "assault", 4, 2, 9),
-                contains="Video not found")
-        refused(conn, args, ("v1", None, "Dana", None, json.dumps(report()), "[]", "assault", 4, 2, 9),
-                contains="parent revision")
-        refused(conn, args, ("v1", ai1, "  ", None, json.dumps(report()), "[]", "assault", 4, 2, 9),
-                contains="reviewer name")
-        refused(conn, args, ("v1", ai1, "Dana", None, json.dumps({"entities": []}), "[]", "assault", 4, 2, 9),
-                contains="incident")
-        refused(conn, args, ("v1", ai1, "Dana", None, json.dumps(report()), "{}", "assault", 4, 2, 9),
-                contains="evidence must be a list")
-
-    @test("revisions are append-only")
-    def _():
-        refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE id = %s", (ai1,), contains="append-only")
-        refused(conn, "DELETE FROM public.report_revisions WHERE id = %s", (ai1,), contains="append-only")
-
-    @test("apply_r2_rename points a video, its evidence and its crops at renamed keys and nothing else")
-    def _():
-        (r10_inc,) = conn.execute("INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
-        conn.execute("INSERT INTO public.videos (id, filepath, source, incident_id) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam', %s)", (r10_inc,))
-        evidence = [
-            {"item_type": "entity", "item_id": "E1", "image": "evidence/old/E1.jpg"},
-            {"item_type": "asset", "item_id": "A1", "image": None},
-            {"item_type": "instrument", "item_id": "I1", "image": "evidence/old/I1.jpg"},
-        ]
-        rev = ai_revision("v10", 1, "m1", report(), evidence)
-        for item_type, item_id, image in (("entity", "E1", "evidence/old/E1.jpg"), ("instrument", "I1", "evidence/old/I1.jpg")):
-            conn.execute("""INSERT INTO public.evidence_crops (revision_id, item_type, item_id, item_name, description, timestamp_seconds, bounding_box, image)
-                            VALUES (%s, %s, %s, 'n', 'd', 1, '{1,2,3,4}', %s)""", (rev, item_type, item_id, image))
-        before = one(conn, "SELECT payload, note, created_at FROM public.report_revisions WHERE id = %s", (rev,))
-        notes = one(conn, "SELECT notes FROM public.model_runs WHERE id = 'm1'")[0]
-        key_map = json.dumps({"evidence/old/E1.jpg": "evidence/Clip.mp4/run-1/E1.jpg", "evidence/old/I1.jpg": "evidence/Clip.mp4/run-1/I1.jpg"})
-        result = one(conn, "SELECT public.apply_r2_rename('v10', 'uploads/Clip.mp4', %s)", (key_map,))[0]
-        assert result == {"videoId": "v10", "filepath": "uploads/Clip.mp4", "revisions": 1, "crops": 2}, result
-        assert one(conn, "SELECT filepath FROM public.videos WHERE id = 'v10'")[0] == "uploads/Clip.mp4"
-        row = one(conn, "SELECT evidence, payload, note, created_at FROM public.report_revisions WHERE id = %s", (rev,))
-        assert [e["image"] for e in row[0]] == ["evidence/Clip.mp4/run-1/E1.jpg", None, "evidence/Clip.mp4/run-1/I1.jpg"], row[0]
-        assert [e["item_id"] for e in row[0]] == ["E1", "A1", "I1"], "evidence order is kept"
-        assert (row[1], row[2], row[3]) == before, "only the evidence column of a revision changes"
-        images = sorted(r[0] for r in conn.execute("SELECT image FROM public.evidence_crops WHERE revision_id = %s", (rev,)).fetchall())
-        assert images == ["evidence/Clip.mp4/run-1/E1.jpg", "evidence/Clip.mp4/run-1/I1.jpg"], images
-        assert one(conn, "SELECT notes FROM public.model_runs WHERE id = 'm1'")[0] == notes, "model_runs.notes is immutable"
-        again = one(conn, "SELECT public.apply_r2_rename('v10', 'uploads/Clip.mp4', %s)", (key_map,))[0]
-        assert again["revisions"] == 0 and again["crops"] == 0, "running it again changes nothing"
-        other = one(conn, "SELECT evidence FROM public.report_revisions WHERE video_id = 'v2'")[0]
-        assert other == [], other
-
-    @test("apply_r2_rename leaves the append-only guard in force and refuses bad input")
-    def _():
-        refused(conn, "UPDATE public.report_revisions SET evidence = '[]' WHERE video_id = 'v10'", contains="append-only")
-        refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE video_id = 'v10'", contains="append-only")
-        refused(conn, "DELETE FROM public.report_revisions WHERE video_id = 'v10'", contains="append-only")
-        refused(conn, "SELECT public.apply_r2_rename('v10', NULL, '[]')", contains="object")
-        refused(conn, "SELECT public.apply_r2_rename('v10', NULL, '{\"a\": 1}')", contains="string")
-        refused(conn, "SELECT public.apply_r2_rename('nope', 'uploads/x.mp4', '{}')", contains="Video not found")
-        assert one(conn, "SELECT current_setting('app.r2_rename', true)")[0] in (None, "", "off")
-        conn.execute("DELETE FROM public.videos WHERE id = 'v10'")
-        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v10'")[0] == 0
-
-    @test("security: apply_r2_rename is for the service role only")
-    def _():
-        conn.execute("RESET ROLE")
-        sig = "public.apply_r2_rename(character varying, text, jsonb)"
-        for role in ("anon", "authenticated"):
-            assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, sig))[0], role
-        assert one(conn, "SELECT has_function_privilege('service_role', %s, 'EXECUTE')", (sig,))[0]
-        conn.execute("SET ROLE service_role")
-
-    @test("search_report_revisions ranks embedded revisions and skips NULL vectors")
-    def _():
-        (r89_inc,) = conn.execute("INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
-        conn.execute("INSERT INTO public.videos (id, incident_id) VALUES ('v8', %s), ('v9', %s)", (r89_inc, r89_inc))
-        embedded = one(conn, """
-            INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
-                incident_type, severity_level, start_seconds, end_seconds, embedding)
-            VALUES ('v8', 1, 'ai', 'm1', %s, '[]', 'assault', 4, 2, 9, %s::extensions.vector) RETURNING id""",
-            (json.dumps(report(title="Vector hit")), vector_literal(7)))[0]
-        ai_revision("v9", 1, "m1", report(title="No vector"), [])
-        rows = conn.execute("""SELECT revision_id, video_id, title, similarity_score FROM public.search_report_revisions(%s::extensions.vector, 5, 0.0)""",
-                            (vector_literal(7),)).fetchall()
-        assert rows == [(embedded, "v8", "Vector hit", 1.0)], rows
-        assert conn.execute("SELECT count(*) FROM public.search_report_revisions(%s::extensions.vector, 5, 1.1)",
-                            (vector_literal(7),)).fetchone()[0] == 0
-        refused(conn, "UPDATE public.report_revisions SET embedding = NULL WHERE id = %s", (embedded,), contains="append-only")
-        assert one(conn, "SELECT count(*) FROM pg_indexes WHERE indexname = 'report_revisions_embedding_hnsw_idx'")[0] == 1
-
-    @test("deleting a video removes its revisions, crops and query results")
-    def _():
-        conn.execute("INSERT INTO public.queries (id, query_text) VALUES ('q1', 'man')")
-        conn.execute("""INSERT INTO public.query_results (id, query_id, revision_id, item_type, item_id, rank, similarity_score, critic_verdict)
-                        VALUES ('r1', 'q1', %s, 'entity', 'E1', 1, 0.9, 'confirmed')""", (ai1,))
-        conn.execute("DELETE FROM public.videos WHERE id = 'v1'")
-        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v1'")[0] == 0
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops")[0] == 0
-        assert one(conn, "SELECT count(*) FROM public.query_results")[0] == 0
 
     conn.execute("RESET ROLE")
     conn.close()

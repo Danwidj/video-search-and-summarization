@@ -78,13 +78,10 @@ def _():
                    "WHERE table_schema='public' AND table_name='videos' AND column_name='id'")[0]
     run_type = one(conn, "SELECT data_type FROM information_schema.columns "
                    "WHERE table_schema='public' AND table_name='model_runs' AND column_name='id'")[0]
-    rr_vid_type = one(conn, "SELECT data_type FROM information_schema.columns "
-                      "WHERE table_schema='public' AND table_name='report_revisions' AND column_name='video_id'")[0]
     rr_run_type = one(conn, "SELECT data_type FROM information_schema.columns "
                       "WHERE table_schema='public' AND table_name='report_revisions' AND column_name='model_run_id'")[0]
     assert vid_type == "text", vid_type
     assert run_type == "text", run_type
-    assert rr_vid_type == "text", rr_vid_type
     assert rr_run_type == "text", rr_run_type
 
 
@@ -121,17 +118,17 @@ def _():
         conn.execute(
             "INSERT INTO public.model_runs (id, model_name, notes) VALUES ('chain-test.mp4@2026-01-01T00:00:00Z', 'model', NULL)")
         rev_id = one(conn, """
-            INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+            INSERT INTO public.report_revisions (incident_id, revision_no, kind, model_run_id, payload, evidence,
                 incident_type, severity_level, start_seconds, end_seconds)
-            VALUES ('chain-test.mp4', 1, 'ai', 'chain-test.mp4@2026-01-01T00:00:00Z',
+            VALUES (%s, 1, 'ai', 'chain-test.mp4@2026-01-01T00:00:00Z',
                     '{"incident":{"type":"assault"}}', '[]', 'assault', 3, 0, 5)
-            RETURNING id""")[0]
+            RETURNING id""", (inc_id,))[0]
         # Wire official_revision_id on the incident
         conn.execute("UPDATE public.incidents SET official_revision_id = %s WHERE id = %s", (rev_id, inc_id))
         assert one(conn, "SELECT official_revision_id FROM public.incidents WHERE id = %s", (inc_id,))[0] == rev_id
 
 
-@test("p1.1: deleting an incident cascades to its videos (and their revisions)")
+@test("p1.1: deleting an incident cascades to its videos and revisions")
 def _():
     with conn.transaction(force_rollback=True):
         (inc_id,) = conn.execute("INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
@@ -140,14 +137,14 @@ def _():
         conn.execute(
             "INSERT INTO public.model_runs (id, model_name) VALUES ('cascade-test.mp4@now', 'model')")
         conn.execute("""
-            INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
+            INSERT INTO public.report_revisions (incident_id, revision_no, kind, model_run_id, payload, evidence,
                 incident_type, severity_level, start_seconds, end_seconds)
-            VALUES ('cascade-test.mp4', 1, 'ai', 'cascade-test.mp4@now',
-                    '{"incident":{"type":"assault"}}', '[]', 'assault', 3, 0, 5)""")
+            VALUES (%s, 1, 'ai', 'cascade-test.mp4@now',
+                    '{"incident":{"type":"assault"}}', '[]', 'assault', 3, 0, 5)""", (inc_id,))
         assert one(conn, "SELECT count(*) FROM public.videos WHERE id = 'cascade-test.mp4'")[0] == 1
         conn.execute("DELETE FROM public.incidents WHERE id = %s", (inc_id,))
         assert one(conn, "SELECT count(*) FROM public.videos WHERE id = 'cascade-test.mp4'")[0] == 0
-        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'cascade-test.mp4'")[0] == 0
+        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE incident_id = %s", (inc_id,))[0] == 0
 
 
 @test("p1.1: video without incident_id is refused")
