@@ -22,6 +22,9 @@ export const defaultRemoveChoice = (videoCount: number): RemoveChoice => removeC
 export const effectiveRemoveChoice = (picked: RemoveChoice, videoCount: number): RemoveChoice =>
   removeChoices(videoCount).includes(picked) ? picked : defaultRemoveChoice(videoCount);
 
+/** Deleting the last video deletes the incident's versions; the official one is only named when there is one. */
+export const includingOfficial = (hasOfficial: boolean): string => (hasOfficial ? ' (including the official one)' : '');
+
 export const isLastVideo = (videoCount: number): boolean => videoCount <= 1;
 
 async function readJson<T>(response: Response, fallback: string): Promise<T> {

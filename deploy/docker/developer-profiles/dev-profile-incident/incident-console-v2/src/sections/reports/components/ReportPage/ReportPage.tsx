@@ -44,7 +44,8 @@ import {
   withUploadedImages,
   type EditDraft,
 } from '@/modules/reports/domain/edit-draft';
-import { cameraOptions, showCameraSwitcher } from '@/lib/reports/cameras';
+import { cameraOptions } from '@/lib/reports/cameras';
+import { topBarActions } from '@/lib/reports/top-bar-actions';
 import type { IncidentReportView } from '@/modules/reports/application/types';
 import type { Overview } from '@/modules/reports/domain/envelope';
 import {
@@ -319,7 +320,7 @@ export function ReportPage({
       <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center px-6 text-center">
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-destructive">Report unavailable</p>
-          <h1 className="mt-3 text-3xl font-semibold">We couldn&apos;t reopen this analysis.</h1>
+          <h1 className="mt-3 text-3xl font-semibold">This incident could not be opened.</h1>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">{state.message}</p>
           <div className="mt-7 flex justify-center gap-3">
             <Button onClick={() => setAttempt((value) => value + 1)} type="button">
@@ -336,8 +337,10 @@ export function ReportPage({
 
   const { report, view } = state;
   const options = cameraOptions(view.cameras);
-  const videoCount = view.cameras.filter((entry) => entry.current).length;
-  const switcher = showCameraSwitcher(view.cameras) ? <CameraSwitcher onChange={openCamera} options={options} value={view.camera} /> : null;
+  // The incident's videos, not the open version's cameras: an accept or merge adds videos the version does not cover yet.
+  const videoCount = view.incidentVideos.length;
+  const actions = topBarActions(view);
+  const hasOfficial = view.officialRevisionId !== null;
 
   if (!report) {
     return (
@@ -348,12 +351,44 @@ export function ReportPage({
               ← Library
             </Link>
             <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">Incident #{incidentId}</h1>
+            <Button
+              aria-label="Re-analyse this camera"
+              className="text-xs font-semibold"
+              data-testid="reanalysis-trigger"
+              disabled
+              size="sm"
+              title={actions.reanalyse.reason ?? undefined}
+              type="button"
+              variant="outline"
+            >
+              Re-analyse
+            </Button>
+            <MergeIncidentDialog incidentId={Number(incidentId)} videoNames={view.incidentVideos} />
           </div>
-          {switcher}
+          <CameraSwitcher
+            actions={
+              <Button
+                className="text-xs font-semibold"
+                data-testid="remove-video"
+                disabled
+                size="sm"
+                title={actions.remove.reason ?? undefined}
+                type="button"
+                variant="outline"
+              >
+                Remove video
+              </Button>
+            }
+            onChange={openCamera}
+            options={options}
+            value={view.camera}
+          />
           <div className="px-5 pb-16 sm:px-8">
             <IncidentOverview view={view} />
             <Alert className="mt-4" data-testid="no-camera" variant="destructive">
-              <AlertDescription>No camera of this version can be shown. Open another version or regenerate the report.</AlertDescription>
+              <AlertDescription>
+                {actions.remove.reason} Re-analyse and Remove video need a camera to act on; Merge and Regenerate still work.
+              </AlertDescription>
             </Alert>
             <div className="mt-3 max-w-md overflow-hidden rounded-lg border border-border">
               <RegenerateReport
@@ -533,18 +568,7 @@ export function ReportPage({
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
             <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoName={report.run.filename} />
-            <MergeIncidentDialog
-              incidentId={Number(incidentId)}
-              videoNames={view.cameras.filter((camera) => camera.current).map((camera) => camera.video)}
-            />
-            <RemoveVideoDialog
-              incidentId={incidentId}
-              onRemoved={videoRemoved}
-              title={heading}
-              versionCount={revisions?.length ?? null}
-              video={report.run.filename}
-              videoCount={videoCount}
-            />
+            <MergeIncidentDialog incidentId={Number(incidentId)} videoNames={view.incidentVideos} />
             <Button
               aria-expanded={chatOpen}
               className="text-xs font-semibold"
@@ -568,7 +592,22 @@ export function ReportPage({
             </Tabs>
           </div>
 
-          {switcher}
+          <CameraSwitcher
+            actions={
+              <RemoveVideoDialog
+                hasOfficial={hasOfficial}
+                incidentId={incidentId}
+                onRemoved={videoRemoved}
+                title={heading}
+                versionCount={revisions?.length ?? null}
+                video={report.run.filename}
+                videoCount={videoCount}
+              />
+            }
+            onChange={openCamera}
+            options={options}
+            value={view.camera}
+          />
 
           <div
             className="relative border-b border-border bg-card lg:h-(--report-band-height)"
@@ -691,7 +730,9 @@ export function ReportPage({
             className="rounded-none border-x-0 border-t-0 border-b border-amber-300 bg-amber-50/80 px-5 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
             data-testid="official-status"
           >
-            <AlertDescription>No official version has been selected for this video. Star a version to make it official.</AlertDescription>
+            <AlertDescription>
+              No official version has been selected for this incident. Star a version to make it official.
+            </AlertDescription>
           </Alert>
         )}
 

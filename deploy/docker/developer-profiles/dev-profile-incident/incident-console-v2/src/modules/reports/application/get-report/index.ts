@@ -9,7 +9,7 @@ import { cameraReport, firstValidCamera } from '@/modules/reports/domain/envelop
 import type { IncidentId, IncidentReportRepository } from '@/modules/reports/domain/IncidentReportRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import { coverageView, toCameraReportView } from '@/modules/reports/application/report-view';
-import type { IncidentReportView, SignStorageKey } from '@/modules/reports/application/types';
+import type { CameraView, IncidentReportView, SignStorageKey } from '@/modules/reports/application/types';
 import { StoreRejection } from '@/modules/shared/domain/common';
 
 /** Signs each item's image so the browser can show it; an image that cannot be signed is shown as missing. */
@@ -32,7 +32,8 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
 /**
  * One revision of the incident (revisionId null: the official revision, else the newest) and one of its cameras
  * (camera null: the first contract-valid camera still in the incident, else the first valid one). Null when the
- * incident or revision is missing. Throws StoreRejection 'not-found' for a camera the revision does not hold.
+ * incident or revision is missing. Throws StoreRejection 'not-found' for a camera the revision does not hold. The view
+ * also lists the incident's videos, so the page counts the incident rather than the open version.
  * A camera whose video was removed shows its report without a player; one whose report is not contract-valid
  * is listed but never shown.
  */
@@ -50,14 +51,22 @@ export async function getReport(
 
   const { envelope } = record;
   const current = new Set(incident.videos.map((video) => video.videoId));
-  const cameras = envelope.cameras.map((entry) => ({
-    video: entry.video,
-    current: current.has(entry.video),
-    valid: cameraReport(envelope, entry.video) !== null,
-  }));
+  const inVersion = new Set(envelope.cameras.map((entry) => entry.video));
+  // An incident video the version does not cover (added by an accept or merge since) is listed so the page counts it, but it has no report.
+  const cameras: CameraView[] = [
+    ...envelope.cameras.map((entry) => ({
+      video: entry.video,
+      current: current.has(entry.video),
+      inVersion: true,
+      valid: cameraReport(envelope, entry.video) !== null,
+    })),
+    ...incident.videos
+      .filter((video) => !inVersion.has(video.videoId))
+      .map((video) => ({ video: video.videoId, current: true, inVersion: false, valid: false })),
+  ];
   let chosen: string | null;
   if (camera !== null) {
-    if (!cameras.some((entry) => entry.video === camera)) throw new StoreRejection('not-found', `The revision has no camera for ${camera}`);
+    if (!inVersion.has(camera)) throw new StoreRejection('not-found', `The revision has no camera for ${camera}`);
     chosen = cameraReport(envelope, camera) === null ? null : camera;
   } else chosen = firstValidCamera(envelope, [...current]) ?? firstValidCamera(envelope);
 
@@ -74,6 +83,7 @@ export async function getReport(
     overview: envelope.overview,
     coverage: coverageView(record.revision, incident),
     cameras,
+    incidentVideos: incident.videos.map((video) => video.videoId),
     camera: camera ?? entry?.video ?? null,
     report,
     officialRevisionId: incident.officialRevisionId,

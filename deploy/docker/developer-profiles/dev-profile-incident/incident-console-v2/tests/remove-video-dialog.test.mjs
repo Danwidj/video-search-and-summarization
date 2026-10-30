@@ -8,6 +8,7 @@ import {
   defaultRemoveChoice,
   effectiveRemoveChoice,
   incidentHref,
+  includingOfficial,
   isLastVideo,
   removeChoices,
   removeVideo,
@@ -70,4 +71,21 @@ test('a move picked while the incident had several videos becomes delete once on
   assert.equal(effectiveRemoveChoice('move', 3), 'move');
   assert.equal(effectiveRemoveChoice('move', 1), 'delete');
   assert.equal(effectiveRemoveChoice('delete', 3), 'delete');
+});
+
+test('the official version is only named in the delete-the-incident text when one exists', () => {
+  assert.equal(includingOfficial(true), ' (including the official one)');
+  assert.equal(includingOfficial(false), '');
+});
+
+test('the dialog takes its video count and official flag from the incident, and sits beside the camera switcher', async () => {
+  const page = await readFile(new URL('../src/sections/reports/components/ReportPage/ReportPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /videoCount = view\.incidentVideos\.length/);
+  assert.match(page, /hasOfficial = view\.officialRevisionId !== null/);
+  assert.match(page, /<CameraSwitcher[\s\S]*actions=\{[\s\S]*<RemoveVideoDialog[\s\S]*hasOfficial=\{hasOfficial\}/);
+  const dialog = await readFile(
+    new URL('../src/sections/reports/components/RemoveVideoDialog/RemoveVideoDialog.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(dialog, /including the official one/);
 });

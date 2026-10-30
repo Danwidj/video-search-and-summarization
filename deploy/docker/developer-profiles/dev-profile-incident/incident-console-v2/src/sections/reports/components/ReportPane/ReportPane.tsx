@@ -89,12 +89,12 @@ export function ReportPane({
           {run.notesKind === 'legacy' && <p className="px-4 py-2 text-xs text-muted-foreground">Earlier prompt version</p>}
           {officialMissing && (
             <p className="bg-amber-50/80 px-4 py-2 text-xs text-amber-950" data-testid="official-status">
-              No official version has been selected for this video. Star a version to make it official.
+              No official version has been selected for this incident. Star a version to make it official.
             </p>
           )}
           {compareHref && (
             <p className="px-4 py-2 text-xs">
-              <span className="text-muted-foreground">Another AI version is available for this video. </span>
+              <span className="text-muted-foreground">Another AI version is available for this incident. </span>
               <Link
                 className="font-semibold text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
                 href={compareHref}

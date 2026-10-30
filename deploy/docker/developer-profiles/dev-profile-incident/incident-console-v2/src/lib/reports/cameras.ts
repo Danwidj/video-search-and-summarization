@@ -7,23 +7,37 @@ export interface CameraOption {
   selectable: boolean;
   /** Why the camera cannot be picked; null when it can. */
   reason: string | null;
+  /** The short tag the switcher shows on a disabled camera; null when it can be picked. */
+  badge: string | null;
 }
 
 /**
- * The switcher's options. A camera of a video that has left the incident is history and cannot be picked; a camera
- * whose report does not pass the contract cannot be shown by the report panes. Cameras of removed videos are listed
- * (disabled) so an older version still says what it covered.
+ * The switcher's options. A camera of a video that has left the incident is history and cannot be picked; a video the
+ * open version does not cover has no report in it yet; a camera whose report does not pass the contract cannot be shown
+ * by the report panes. Disabled cameras stay listed so the switcher says what the incident and the version cover.
  */
 export function cameraOptions(cameras: readonly CameraView[]): CameraOption[] {
   return cameras.map((camera) => {
-    if (!camera.current) return { video: camera.video, selectable: false, reason: 'This video was removed from the incident' };
-    if (!camera.valid) return { video: camera.video, selectable: false, reason: 'This camera has no valid report in this version' };
-    return { video: camera.video, selectable: true, reason: null };
+    if (!camera.current)
+      return { video: camera.video, selectable: false, reason: 'This video was removed from the incident', badge: 'removed' };
+    if (!camera.inVersion)
+      return {
+        video: camera.video,
+        selectable: false,
+        reason: 'This video is not in this version. Regenerate the report to include it.',
+        badge: 'not in this version',
+      };
+    if (!camera.valid)
+      return { video: camera.video, selectable: false, reason: 'This camera has no valid report in this version', badge: 'unavailable' };
+    return { video: camera.video, selectable: true, reason: null, badge: null };
   });
 }
 
-/** The switcher is only useful when there is more than one camera to choose between. */
-export const showCameraSwitcher = (cameras: readonly CameraView[]): boolean => cameras.length > 1;
+/** The number of videos the open version covers that are still in the incident. */
+export const currentCameraCount = (cameras: readonly CameraView[]): number =>
+  cameras.filter((camera) => camera.current && camera.inVersion).length;
 
-/** The number of cameras of the version whose video is still in the incident. */
-export const currentCameraCount = (cameras: readonly CameraView[]): number => cameras.filter((camera) => camera.current).length;
+/** "2 of 3 videos in v3": how many of the incident's videos the open version covers. */
+export function versionCoverageLabel(coveredVideos: number, incidentVideos: number, revisionNo: number): string {
+  return `${coveredVideos} of ${incidentVideos} ${incidentVideos === 1 ? 'video' : 'videos'} in v${revisionNo}`;
+}

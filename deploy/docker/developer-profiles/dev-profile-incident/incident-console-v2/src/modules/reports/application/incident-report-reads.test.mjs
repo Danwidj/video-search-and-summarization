@@ -108,10 +108,24 @@ test('getReport lists every camera; a removed video has no player and an invalid
       [GONE, false, true],
     ],
   );
+  assert.deepEqual(view.incidentVideos, [A, B]);
   const removed = await getReport(repository(), 1, 1, GONE, sign());
   assert.equal(removed.report.run.playbackUrl, '');
   const invalid = await getReport(repository(), 1, 1, B, sign());
   assert.deepEqual([invalid.camera, invalid.report], [B, null]);
+});
+
+test('getReport lists an incident video the open version does not cover as a camera without a report', async () => {
+  const view = await getReport(repository(), 1, 2, null, sign());
+  assert.deepEqual(view.incidentVideos, [A, B]);
+  assert.deepEqual(
+    view.cameras.map((camera) => [camera.video, camera.current, camera.inVersion, camera.valid]),
+    [
+      [A, true, true, true],
+      [B, true, false, false],
+    ],
+  );
+  assert.equal(view.camera, A);
 });
 
 test('getReport is null for an unknown incident or revision and rejects a camera the revision does not hold', async () => {
