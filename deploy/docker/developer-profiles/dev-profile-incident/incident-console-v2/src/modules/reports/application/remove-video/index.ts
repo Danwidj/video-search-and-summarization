@@ -5,7 +5,7 @@
 import type { IncidentVideoRepository, VideoMove, VideoRemoval } from '@/modules/videos/domain/IncidentVideoRepository';
 import { evidenceFolder, isEvidenceKeyOfVideo } from '@/modules/reports/domain/revision';
 import { StoreRejection } from '@/modules/shared/domain/common';
-import type { EvidenceObjectStore, RemoveStoredVideo } from '@/modules/reports/application/types';
+import type { EvidenceObjectStore, RemoveStoredVideo, RemoveVstSensor } from '@/modules/reports/application/types';
 
 export type RemoveChoice = 'delete' | 'move';
 
@@ -15,19 +15,21 @@ export interface RemoveVideoPorts {
   videos: Pick<IncidentVideoRepository, 'getVideo' | 'listVideos' | 'removeVideo' | 'moveVideoToNewIncident' | 'deleteEmptyIncident'>;
   evidence: EvidenceObjectStore;
   removeStoredVideo: RemoveStoredVideo;
+  removeVstSensor: RemoveVstSensor;
 }
 
 /**
  * Deletes the video's stored objects first (the video, its thumbnail and every evidence image under
- * evidence/<video key>/), then its row (analyses and crops go with it; the incident's revisions stay
+ * evidence/<video key>/), then its VST camera, then its row (analyses and crops go with it; the incident's revisions stay
  * as history, and the last video takes the incident with it).
  *
  * Objects go before rows because the orphan sweep refuses a video that has no row: once the row is
- * gone nothing could find its images again. Any listing or removal failure throws before the row is
- * deleted, so the delete can be repeated (removing an absent object succeeds).
+ * gone nothing could find its images again. The camera goes just before the row for the same reason:
+ * the row holds the sensor id (videos.source). Any listing or removal failure throws before the row is
+ * deleted, so the delete can be repeated (removing an absent object or camera succeeds).
  */
 export async function deleteVideoObjectsAndRow(
-  { videos, evidence, removeStoredVideo }: RemoveVideoPorts,
+  { videos, evidence, removeStoredVideo, removeVstSensor }: RemoveVideoPorts,
   videoId: string,
 ): Promise<VideoRemoval> {
   const video = await videos.getVideo(videoId);
@@ -49,6 +51,7 @@ export async function deleteVideoObjectsAndRow(
       `Could not remove ${failures.length} of ${images.length} evidence images, so the video was kept: ${failures.join('; ')}`,
     );
   }
+  await removeVstSensor({ videoId, sensorId: video.source });
   return videos.removeVideo(videoId);
 }
 

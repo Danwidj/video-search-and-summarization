@@ -61,6 +61,21 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 let db;
 
+// A fake VST in front of the fake PostgREST: its sensor list and sensor delete, recording each call.
+const vstCalls = [];
+let vstSensors = [];
+const fakeVst = (next) => async (input, init) => {
+  const url = String(input instanceof Request ? input.url : input);
+  if (!url.startsWith('http://vst.test')) return next(input, init);
+  const method = init?.method ?? 'GET';
+  vstCalls.push(`${method} ${url.slice('http://vst.test'.length)}`);
+  if (method === 'GET') return Response.json(vstSensors);
+  const sensorId = url.split('/').pop();
+  const found = vstSensors.some((sensor) => sensor.sensorId === sensorId);
+  vstSensors = vstSensors.filter((sensor) => sensor.sensorId !== sensorId);
+  return new Response(found ? null : 'not found', { status: found ? 204 : 404 });
+};
+
 beforeEach(() => {
   Object.assign(process.env, {
     INCIDENT_SUPABASE_URL: 'https://supabase.test',
@@ -70,7 +85,15 @@ beforeEach(() => {
     R2_SECRET_KEY: 'c',
     R2_BUCKET: 'd',
     R2_KEY_PREFIX: 'mvp3/',
+    INCIDENT_VST_BASE_URL: 'http://vst.test',
   });
+  vstCalls.length = 0;
+  vstSensors = [
+    { sensorId: 'sensor-a', name: 'a' },
+    { sensorId: 'sensor-b', name: 'b' },
+    { sensorId: 'sensor-c', name: 'c' },
+    { sensorId: 'sensor-other', name: 'other' },
+  ];
   deletedObjects.length = 0;
   listedPrefixes.length = 0;
   bucket = [];
@@ -126,14 +149,14 @@ function seed() {
     {
       incidents: [{ id: 1 }, { id: 2 }],
       videos: [
-        { id: 'a.mp4', incident_id: 1, filepath: 'uploads/a.mp4' },
-        { id: 'b.mp4', incident_id: 1, filepath: 'uploads/b.mp4' },
-        { id: 'c.mp4', incident_id: 2, filepath: 'uploads/c.mp4' },
+        { id: 'a.mp4', incident_id: 1, filepath: 'uploads/a.mp4', source: 'sensor-a' },
+        { id: 'b.mp4', incident_id: 1, filepath: 'uploads/b.mp4', source: null },
+        { id: 'c.mp4', incident_id: 2, filepath: 'uploads/c.mp4', source: 'sensor-c' },
       ],
     },
     { rpc: { remove_video: removeVideoRpc, merge_incidents: mergeRpc }, identity: { incidents: 'id' } },
   );
-  globalThis.fetch = db.fetch;
+  globalThis.fetch = fakeVst(db.fetch);
 }
 
 const post = (handler, params, body) =>
@@ -165,6 +188,12 @@ test('deleting an incident removes each video, thumbnail and evidence image unde
     ['c.mp4'],
   );
   assert.deepEqual(db.store.incidents, [{ id: 2 }]);
+  assert.deepEqual(vstCalls, ['DELETE /vst/api/v1/sensor/sensor-a', 'GET /vst/api/v1/sensor/list', 'DELETE /vst/api/v1/sensor/sensor-b']);
+  assert.deepEqual(
+    vstSensors.map((sensor) => sensor.sensorId),
+    ['sensor-c', 'sensor-other'],
+    "only the two videos' cameras went",
+  );
 });
 
 test('deleting an unknown or malformed incident is refused without touching R2', async () => {
@@ -172,7 +201,7 @@ test('deleting an unknown or malformed incident is refused without touching R2',
   const call = (incidentId) => DELETE(new Request('http://localhost/x', { method: 'DELETE' }), { params: Promise.resolve({ incidentId }) });
   assert.equal((await call('9')).status, 404);
   assert.equal((await call('abc')).status, 400);
-  assert.deepEqual([...deletedObjects, ...listedPrefixes], []);
+  assert.deepEqual([...deletedObjects, ...listedPrefixes, ...vstCalls], []);
 });
 
 test('removing a video entirely deletes its objects, and the incident when it was the last video', async () => {
@@ -189,6 +218,33 @@ test('removing a video entirely deletes its objects, and the incident when it wa
     'mvp3/uploads/c.mp4',
   ]);
   assert.deepEqual(db.store.incidents, [{ id: 1 }]);
+  assert.deepEqual(vstCalls, ['DELETE /vst/api/v1/sensor/sensor-c']);
+  assert.deepEqual(
+    vstSensors.map((sensor) => sensor.sensorId),
+    ['sensor-a', 'sensor-b', 'sensor-other'],
+  );
+});
+
+test('a VST failure keeps the video row, and removing again finishes the job', async () => {
+  seed();
+  const working = globalThis.fetch;
+  globalThis.fetch = async (input, init) =>
+    String(input).startsWith('http://vst.test') && init?.method === 'DELETE' ? new Response('down', { status: 503 }) : working(input, init);
+  const failed = await post(remove, { videoId: 'c.mp4' }, { choice: 'delete' });
+  assert.equal(failed.status, 500);
+  assert.equal(
+    db.store.videos.some((row) => row.id === 'c.mp4'),
+    true,
+    'the row, which holds the sensor id, is kept',
+  );
+  globalThis.fetch = working;
+  vstSensors = vstSensors.filter((sensor) => sensor.sensorId !== 'sensor-c');
+  const repeated = await post(remove, { videoId: 'c.mp4' }, { choice: 'delete' });
+  assert.equal(repeated.status, 200, 'a camera VST no longer has counts as removed');
+  assert.equal(
+    db.store.videos.some((row) => row.id === 'c.mp4'),
+    false,
+  );
 });
 
 test('moving a video makes a new incident, moves no file, and the last video cannot be moved', async () => {
@@ -196,7 +252,7 @@ test('moving a video makes a new incident, moves no file, and the last video can
   const moved = await post(remove, { videoId: 'b.mp4' }, { choice: 'move' });
   assert.equal(moved.status, 200);
   assert.deepEqual((await moved.json()).removed, { choice: 'move', videoId: 'b.mp4', incidentId: 1, newIncidentId: 3 });
-  assert.deepEqual([...deletedObjects, ...listedPrefixes], []);
+  assert.deepEqual([...deletedObjects, ...listedPrefixes, ...vstCalls], []);
 
   const last = await post(remove, { videoId: 'c.mp4' }, { choice: 'move' });
   assert.equal(last.status, 422);
