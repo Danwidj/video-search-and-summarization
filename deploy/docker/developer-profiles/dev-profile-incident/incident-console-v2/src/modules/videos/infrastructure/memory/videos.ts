@@ -10,7 +10,6 @@ import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import type {
   OfficialChange,
   RevisionCropsChange,
-  RunHistoryRecords,
   VideoListFilter,
   VideoListItem,
   VideoRecord,
@@ -70,13 +69,6 @@ export class InMemoryVideoRepository implements VideoRepository {
     if (!video) return null;
     const { revisionIds: _ids, ...record } = video;
     return record;
-  }
-
-  /** Run records are not modelled in memory: the history has the video and no runs. */
-  async listRunHistory(videoId: string): Promise<RunHistoryRecords | null> {
-    const video = await this.getVideo(videoId);
-    if (!video) return null;
-    return { video, revisions: [], attempts: [], sharedRunIds: new Set() };
   }
 
   async setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange> {

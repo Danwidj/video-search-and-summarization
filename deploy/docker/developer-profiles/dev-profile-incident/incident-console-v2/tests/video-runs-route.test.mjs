@@ -39,7 +39,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/stored.mp4' } });
 
-const { GET, POST } = await import('../src/app/api/videos/[videoId]/runs/route.ts');
+const { POST } = await import('../src/app/api/videos/[videoId]/runs/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
@@ -100,7 +100,6 @@ const post = (body) =>
     }),
     { params: Promise.resolve({ videoId: V }) },
   );
-const history = () => GET(new Request(`http://localhost/api/videos/${V}/runs`), { params: Promise.resolve({ videoId: V }) });
 const writes = (db) => db.requests.filter((r) => r.method !== 'GET');
 
 test('re-analysis uses the stored video object, creates a new run and a new AI revision, and never writes the videos row', async () => {
@@ -212,48 +211,4 @@ test('re-analysis refuses unknown models and a missing video', async () => {
   db.store.videos.length = 0;
   assert.equal((await post({ model: 'nvidia/cosmos-3-super-reasoner' })).status, 404);
   assert.deepEqual(writes(db), []);
-});
-
-test('history GET combines revision-backed runs with explicitly associated attempts', async () => {
-  const failed = {
-    id: 'm-cf',
-    model_name: 'nvidia/cosmos-3-super-reasoner',
-    run_datetime: '2026-09-27T12:00:00',
-    notes: JSON.stringify({
-      incidentConsoleV2: {
-        recordType: 'analysis_attempt',
-        status: 'contract_failed',
-        contractVersion: 'incident-contract-v2',
-        videoId: V,
-        attemptedAt: '2026-09-27T12:00:00Z',
-        stage: 'contract_validation',
-        failure: { code: 'TIMELINE_START_OUTSIDE_WINDOW', message: 'x' },
-        request: { model: 'nvidia/cosmos-3-super-reasoner' },
-        validation: { firstPass: [] },
-        repair: null,
-      },
-    }),
-  };
-  // The fake PostgREST does not embed, so the run's model_runs row sits on its revision row.
-  const { db } = services(validReport, { extraRuns: [failed], official: 1 });
-  db.store.report_revisions[0].model_runs = repaired.modelRun;
-  const response = await history();
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.video.uploadedAt, repaired.video.uploaded_datetime);
-  assert.deepEqual(
-    body.runs.map((run) => [run.modelRunId, run.outcome, run.revision?.revisionId ?? null, run.isOfficial]),
-    [
-      ['m-cf', 'contract_failed', null, false],
-      [repaired.modelRunId, 'valid_after_structural_repair', 1, true],
-    ],
-  );
-  assert.equal(body.counts.withReport, 1);
-  assert.equal(body.officialRevisionId, 1);
-});
-
-test('history of an unknown video is 404', async () => {
-  const { db } = services(validReport);
-  db.store.videos.length = 0;
-  assert.equal((await history()).status, 404);
 });

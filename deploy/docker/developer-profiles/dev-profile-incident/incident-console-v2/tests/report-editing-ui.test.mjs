@@ -95,9 +95,7 @@ test('browser components import only browser-safe report modules', async () => {
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/ReportRunDetails/ReportRunDetails.tsx',
     'reports/components/ReportEditPane/ReportEditPane.tsx',
-    'analysis/components/RunHistory/RunHistory.tsx',
     'analysis/components/ReanalysisCard/ReanalysisCard.tsx',
-    'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
     'reports/components/RunComparison/RunComparison.tsx',
     'analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
@@ -148,9 +146,6 @@ test('the report page offers re-analysis', async () => {
   const library = await readFile(new URL('library/components/LibraryScreen/LibraryScreen.tsx', components), 'utf8');
   assert.doesNotMatch(library, /\/api\/analysis/, 'the library no longer re-runs with the default model');
   assert.match(await readFile(new URL('library/components/IncidentCard/IncidentCard.tsx', components), 'utf8'), /library-repair-marker/);
-  const history = await readFile(new URL('analysis/components/RunHistory/RunHistory.tsx', components), 'utf8');
-  assert.match(history, /no report/);
-  assert.match(history, /Contract violations/);
 });
 
 test('no component renders stored timestamps with a bare new Date(...).toLocaleString()', async () => {
@@ -159,8 +154,6 @@ test('no component renders stored timestamps with a bare new Date(...).toLocaleS
     'reports/components/ReportEditPane/ReportEditPane.tsx',
     'reports/components/ReportVersions/ReportVersions.tsx',
     'reports/components/RunComparison/RunComparison.tsx',
-    'analysis/components/RunHistory/RunHistory.tsx',
-    'videos/components/VideoHistoryScreen/VideoHistoryScreen.tsx',
     'library/components/LibraryScreen/LibraryScreen.tsx',
     'library/components/IncidentCard/IncidentCard.tsx',
     'library/components/HitCard/HitCard.tsx',

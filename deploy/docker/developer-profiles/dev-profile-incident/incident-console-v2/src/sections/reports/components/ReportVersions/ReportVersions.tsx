@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
 
 import {
@@ -84,9 +83,6 @@ export function ReportVersions({
           <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
             Versions{revisions ? ` · ${revisions.length}` : ''}
           </h3>
-          <Link className="text-[11px] font-semibold text-primary hover:underline" href={`/videos/${encodeURIComponent(videoId)}`}>
-            Analysis history
-          </Link>
         </div>
         {error && <p className="px-3 py-2 text-xs text-destructive">{error}</p>}
         {actionError && (
