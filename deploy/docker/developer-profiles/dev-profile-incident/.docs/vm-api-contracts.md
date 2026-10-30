@@ -123,6 +123,10 @@ Searches saved report revisions by their summary embedding. The route embeds `qu
 
 Request: `{"query": <1-1000 chars>, "top_k": <1-50, default 10>, "min_similarity": <-1.0 to 1.0, default 0.0>}`. Response `200`: a list, best first, of `{incident_id, revision_id, video_names, revision_no, kind, model_run_id, title, description, incident_type, severity_level, start_seconds, end_seconds, similarity_score}` (`video_names` is the revision's immutable coverage); empty when nothing matches. Errors: `422` invalid body, `502` embedding service failed, `503` database or query embedding key not configured.
 
+## `POST /api/v1/incidents/chat` citations
+
+Each answer's `citations[]` entry carries `incident_id`, `video_id` (the camera the item was seen in, from the evidence entry; `null` when the evidence names none and the revision covers more than one video), `item_id`, `item_type`, `timestamp_seconds` and `crop_image_url`. The console shows `video_id` in the citation title, and Jump to opens that camera before seeking; a citation with `video_id` null seeks the camera already open. The route is unchanged by this: it already returned `video_id`.
+
 ## `POST /api/v1/incidents/{video_name}/analyze`
 
 Runs the `incident_report_gen` tool (P1 extraction, then RP1 prose report) on an uploaded video and **stores the analysis**: one `video_analyses` row, the evidence crops (under `R2_KEY_PREFIX`) and the `model_runs` row. It creates **no report revision**; the console builds incident versions from stored analyses ([Synthesize](#post-apiv1incidentssynthesize)). Called by `incident-console-v2`; `video_name` is the video's real file name (`videos.id`, URL-encoded). Field-level report schema: [analysis-schema.md](analysis-schema.md).

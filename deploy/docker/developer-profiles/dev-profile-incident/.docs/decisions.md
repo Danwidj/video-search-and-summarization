@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Chat Jump to opens the citation's camera before seeking
+- **Decision:** A chat citation carries the camera it came from, and Jump to switches to that camera (`openCamera`), then seeks when its player has loaded (`seekPlan` in `lib/chat/report-chat.ts`). A citation with no camera seeks the open video. In Edit mode a jump into another camera does nothing.
+- **Why:** `onSeek(seconds)` always set `currentTime` on the open video, so a citation from another camera landed on the wrong footage. The agent already returns `video_id`, so no agent change.
+- **Alternatives rejected:**
+  - *Switch camera in Edit mode:* Rejected because Edit is bound to the camera being edited and a switch would drop the draft.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat-citations).
+
 ### 2026-10-30: Match judge returns structured reasons beside the text ones
 - **Decision:** Each judgement carries `structured_reasons` (`{kind, label, detail}`) next to the unchanged free-text `reasons`, built from the same comparison. Kinds: `same_event_type`, `different_event_type`, `same_place`, `similar_place`, `different_place`, `place_unknown`, `time_overlap`, `time_apart`. The score and its weights are unchanged. The console ignores the field until a later change renders it as chips.
 - **Why:** Suggestion reasons read like log lines with raw quoted location strings; the accepted mockup shows chips such as Same place, Same event type and Time overlap. Adding a field keeps the running console working, and unchanged scores keep automatic joining safe to build on.
