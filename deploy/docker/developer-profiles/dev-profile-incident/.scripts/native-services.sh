@@ -11,7 +11,7 @@
 #   ./native-services.sh logs [service] [-f]
 #
 # Services supported:
-#   - vss-agent (default port 8000)
+#   - vss-agent (default port 8001)
 #   - video-analytics-api (default port 8081)
 #   - behavior-analytics (default port 8080)
 #
@@ -153,7 +153,7 @@ is_running() {
     return 0
   fi
   if [ "${svc}" = "vss-agent" ]; then
-    local port="${VSS_AGENT_PORT:-8000}"
+    local port="${VSS_AGENT_PORT:-8001}"
     if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
       return 0
     fi
@@ -171,7 +171,7 @@ start_vss_agent() {
 _start_vss_agent() {
   local svc="vss-agent"
   local host="${VSS_AGENT_HOST:-127.0.0.1}"
-  local port="${VSS_AGENT_PORT:-8000}"
+  local port="${VSS_AGENT_PORT:-8001}"
 
   if curl -sf --max-time 2 "http://localhost:${port}/health" 2>/dev/null | grep -q "isAlive"; then
     local pid
@@ -481,7 +481,7 @@ status_service() {
 
   local port="unknown"
   case "${svc}" in
-    vss-agent) port="${VSS_AGENT_PORT:-8000}" ;;
+    vss-agent) port="${VSS_AGENT_PORT:-8001}" ;;
     video-analytics-api) port="8081" ;;
     behavior-analytics) port="8080" ;;
   esac
