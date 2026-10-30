@@ -27,6 +27,9 @@ import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incid
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
+import type { MatchingPorts } from '@/modules/matching/domain/matching';
+import { SupabaseMatchShortlistAdapter, SupabaseSuggestionAdapter } from '@/modules/matching/infrastructure/supabase/matching';
+import { HttpMatchJudge } from '@/modules/matching/infrastructure/agent/match-judge';
 
 /** Outbound contract catalog port: provides shared prompts, schemas and model allowlists. */
 export function getContractCatalog(): ContractCatalog {
@@ -77,4 +80,14 @@ export function getAnalysisStore(config?: ServiceConfiguration): {
 } {
   const db = createPostgrestClient(config);
   return { modelRuns: new SupabaseModelRunAdapter(db), analyses: new SupabaseVideoAnalysisAdapter(db) };
+}
+
+/** The matching ports. The judge is null when the agent URL is not configured. Throws like getDbAdapters when the database is not configured. */
+export function getMatchingPorts(config: ServiceConfiguration = getServiceConfiguration()): MatchingPorts {
+  const db = createPostgrestClient(config);
+  return {
+    shortlist: new SupabaseMatchShortlistAdapter(db),
+    suggestions: new SupabaseSuggestionAdapter(db),
+    judge: config.agentUrl ? new HttpMatchJudge(config.agentUrl) : null,
+  };
 }
