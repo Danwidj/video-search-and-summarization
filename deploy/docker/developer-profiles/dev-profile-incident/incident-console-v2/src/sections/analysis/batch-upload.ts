@@ -16,9 +16,10 @@ export const batchStageLabels: Record<BatchStage, string> = {
 
 /**
  * `waiting`: analysed, held until every file of the batch is analysed or failed so matches compare the whole batch.
+ * `checked`: matches checked and none left to decide (including a file joined automatically); the report is built next.
  * `deciding`: matches checked, report not built because a suggestion on its incident is undecided; the Matches tab and report banner build it after the decision.
  */
-export type BatchStatus = 'queued' | 'running' | 'waiting' | 'deciding' | 'failed' | 'done';
+export type BatchStatus = 'queued' | 'running' | 'waiting' | 'checked' | 'deciding' | 'failed' | 'done';
 
 export interface BatchItem {
   /** Local key; the stored name is only known after the upload. */
@@ -192,14 +193,14 @@ export function followJoin(items: BatchItem[], joined: NonNullable<BatchCheckRes
 
 /**
  * Checks one analysed file against every other incident, including the other files of the batch, and
- * leaves it `deciding`. Never throws: a failure is recorded at the matches stage and a retry repeats only the check.
+ * leaves it `deciding` when a suggested match is left to decide, `checked` otherwise. Never throws: a failure is recorded at the matches stage and a retry repeats only the check.
  */
 export async function checkBatchItem(start: BatchItem, deps: BatchDeps, update: (change: Partial<BatchItem>) => void): Promise<void> {
   try {
     update({ status: 'running', stage: 'matches', error: null });
     const { suggestions, joined } = await deps.evaluate((start.analysed as NonNullable<BatchItem['analysed']>).incidentId);
     update({
-      status: 'deciding',
+      status: suggestions > 0 ? 'deciding' : 'checked',
       stage: 'report',
       checked: true,
       matches: suggestions,
@@ -233,7 +234,7 @@ export async function buildBatchIncident(
 export function retryChange(item: BatchItem): Partial<BatchItem> {
   if (!item.analysed) return { status: 'queued', error: null, stage: item.uploaded ? 'analyse' : 'upload' };
   if (!item.checked) return { status: 'waiting', error: null, stage: 'matches' };
-  return { status: 'deciding', error: null, stage: 'report' };
+  return { status: item.matches ? 'deciding' : 'checked', error: null, stage: 'report' };
 }
 
 export interface BatchPlan {
@@ -245,9 +246,9 @@ export interface BatchPlan {
 
 /**
  * What the batch does next. Matches are checked only once no file is still uploading or analysing, so
- * the batch is compared as a whole. A report is built only when no file is still waiting to be checked,
- * `pendingIncidentIds` is known and no undecided suggestion names the file's incident. A file with a pending
- * suggestion stays `deciding`: the reviewer decides in the library's Matches tab or on the report page, which build the report.
+ * the batch is compared as a whole. A report is built only when no file is still waiting to be checked. A
+ * `checked` file is built at once; a `deciding` one also needs `pendingIncidentIds` known and no undecided
+ * suggestion naming its incident. A file with a pending suggestion stays `deciding`: the reviewer decides in the library's Matches tab or on the report page, which build the report.
  */
 export function planBatch(items: BatchItem[], pendingIncidentIds: ReadonlySet<number> | null): BatchPlan {
   const early = items.some(
@@ -257,11 +258,11 @@ export function planBatch(items: BatchItem[], pendingIncidentIds: ReadonlySet<nu
   const checking = items.some((item) => item.status === 'running' && item.stage === 'matches');
   const check = early ? [] : waiting.map((item) => item.key);
   const build = new Map<number, string[]>();
-  if (waiting.length === 0 && !checking && pendingIncidentIds) {
+  if (waiting.length === 0 && !checking) {
     for (const item of items) {
-      if (item.status !== 'deciding' || !item.analysed) continue;
+      if ((item.status !== 'deciding' && item.status !== 'checked') || !item.analysed) continue;
       const { incidentId } = item.analysed;
-      if (pendingIncidentIds.has(incidentId)) continue;
+      if (item.status === 'deciding' && (!pendingIncidentIds || pendingIncidentIds.has(incidentId))) continue;
       build.set(incidentId, [...(build.get(incidentId) ?? []), item.key]);
     }
   }
