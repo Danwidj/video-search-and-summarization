@@ -28,7 +28,7 @@ Two ways to run it, both through [`start.sh`](../start.sh):
 | Mode | Backend | Analysis path (`ANALYSIS_MODE`) | Needs |
 |---|---|---|---|
 | `--mode mock` | `mock-backend` + `vlm-gateway` on the laptop | `gateway`: console calls the gateway, the console writes Supabase | `.env.local`, no GPU, no SSH |
-| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent`: console calls `POST /api/v1/incidents/{id}/analyze` (`skip_rp1: true`); the agent inserts the AI revision and returns `revision_id`, the console writes `model_runs` | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
+| `--mode vm` (default) | Native `vss-agent` + Docker VIOS on `kwanz-ws` | `agent` (mvp3: the only path): console calls `POST /api/v1/incidents/{video_name}/analyze` on `:8001`; the agent stores the analysis and crops and creates no version, and the console builds versions with Regenerate ([architecture §5](../.docs/architecture.md#5-mvp3-incidents-with-several-videos)) | Tailscale, `Host kwanz-ws` SSH config, `.env.local` |
 
 ---
 

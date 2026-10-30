@@ -2,6 +2,68 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Batch upload runs four stages per file, two files at a time, and isolates failures
+- **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once. A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
+- **Why:** One slow or unreadable clip (a 10-bit H.264 file, a model that returns invalid JSON) must not stop the rest, and re-uploading a large file to retry one later stage is waste. Every file builds its first report and checks matches itself, so batch members find each other whatever order they finish.
+- **Alternatives rejected:**
+  - *Run the whole batch as one request:* Rejected because a single failure would hide which file failed and at which step.
+  - *Unlimited parallelism:* Rejected because analyse calls queue on one VLM; two keeps the screen responsive without flooding it.
+- **Links:** [architecture §5 Screens](architecture.md#screens-phase-6), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
+### 2026-10-30: The report page shows one camera at a time; removed or invalid cameras stay listed but disabled
+- **Decision:** The report page keeps its existing player, frames and report panes and feeds them one camera's report, chosen with a switcher kept in `?camera=`. An overview card above them shows the incident's title, type, severity, description, location and coverage note. A camera of a removed video, or whose report fails the contract, is listed but cannot be picked. The edit pane edits the selected camera or the overview, one at a time, and the switch is locked while there are unsaved changes.
+- **Why:** The per-camera report is unchanged `incident-contract-v4`, so reusing the panes needs no new report screens. Listing disabled cameras lets an older version still say what it covered. Editing one thing per version keeps each human version a small, explainable change.
+- **Alternatives rejected:**
+  - *Show every camera at once:* Rejected because the player, frames and timeline are per video.
+  - *Hide cameras that cannot be shown:* Rejected because a version would silently look like it covered fewer videos.
+- **Links:** [architecture §5 Screens](architecture.md#screens-phase-6).
+
+### 2026-10-30: Regenerate, remove and merge dialogs follow the accepted mockups and never regenerate behind the reviewer's back
+- **Decision:** Regenerate is a button with elapsed-time progress (the build route reports no stages) held below 100% until it answers; a failure keeps the current version. Remove offers "Move to its own incident" (preselected, loses nothing) and "Delete entirely" (needs a checkbox); the last video offers only delete and the confirmation says the incident is deleted. A move builds the new incident's first report at once, because an incident without a version has nothing to show. Merge asks for a target from a list and a confirmation, and after a merge, a move or an accepted suggestion the coverage note says what the current version lacks until the reviewer regenerates.
+- **Why:** The reviewer decides when a version is rebuilt; only a brand-new incident needs its first report automatically.
+- **Alternatives rejected:**
+  - *Regenerate after every merge or remove:* Rejected for the reason above and because it hides the coverage note.
+  - *A real progress stream from the route:* Rejected as out of scope for a UI phase; the route is one call.
+- **Links:** [Regenerate is explicit](#2026-10-30-regenerate-is-explicit-merge-and-remove-do-not-regenerate), [architecture §5 Screens](architecture.md#screens-phase-6).
+
+### 2026-10-30: Suggestions appear as a banner on the report page and a Matches tab in the library, read through one cards route
+- **Decision:** `GET /api/suggestions/cards[?incidentId]` returns pending suggestions with each incident's title, video names and signed thumbnail, because `GET /api/suggestions` carries none of these. The report page shows a banner per pending match under the video band (not above it, so a tall banner does not stick), and the library has a Matches tab with a count badge and a pending strip above the incident list. Accept merges and keeps the lower incident id; reject is remembered. Outcomes are inline notices because no toast is mounted.
+- **Why:** The reviewer needs to see what they are merging before they accept. Adding a read-only route avoids changing the shape other callers use.
+- **Alternatives rejected:**
+  - *Join titles and thumbnails in the browser:* Rejected because signing thumbnails needs the server's R2 settings.
+  - *Group reasons into strong and soft:* Not possible while reasons are plain strings.
+- **Links:** [Matching only suggests](#2026-10-30-matching-only-suggests-time-is-a-soft-hint-rejected-pairs-are-remembered), [architecture §5 Screens](architecture.md#screens-phase-6).
+
+### 2026-10-30: The analyse client signs the video URL and reads the agent's report field
+- **Decision:** The console signs the stored video key through the prefix-aware object store (1 hour, as the agent chat path does) and sends it as `video_url` next to `video_key`. It reads the contract report from the agent's `report` field and stores it unchanged as the per-video payload. A response without a `report` object is a 502 with a clear message.
+- **Why:** The agent's request model requires `video_url` and its response is an `IncidentReportGenOutput` whose report is under `report`. The console had guessed neither, so every live analyse failed until PRs #332 and #333; unit stubs had used the wrong shape, so tests passed.
+- **Alternatives rejected:**
+  - *Let the agent sign from `video_key`:* Rejected because that moves the console's R2 signing into the agent and changes a stable request contract.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze).
+
+### 2026-10-30: The agent answers 502 when the video model returns no answer, and keeps the signed URL out of its log
+- **Decision:** If the VLM answers HTTP 200 with a null body or no choices, `run_p1` raises `VlmNoAnswerError` and the analyse route answers 502 saying the video is probably in an unsupported format (for example 10-bit H.264) or unreadable. No format conversion is attempted. The tool input prints `video_url` without query, credentials or fragment, so NAT's error log no longer carries the presigned signature.
+- **Why:** The generic 500 gave no hint; the cause is the file. A presigned URL in a log is a credential for an hour.
+- **Alternatives rejected:**
+  - *Transcode unsupported videos:* Rejected as a new dependency and a change to what "the uploaded video" means.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze).
+
+### 2026-10-30: Synthesise validates a copy without the derived incident.duration and passes the stored payload through
+- **Decision:** The analyse path adds `incident.duration` (derived from the two timestamps) to a stored analysis, but `incident-contract-v4` forbids extras. Synthesise validates a copy without `incident.duration`, still rejects any other extra field, and leaves the stored payload untouched. An edited camera drops `incident.duration` before it is saved, because a human version must be contract-valid as stored.
+- **Why:** Synthesise returned 422 for every stored analysis before the fix (PR #327). The contract and the stored analysis stay as they are; consumers derive duration from the timestamps.
+- **Alternatives rejected:**
+  - *Allow `duration` in the contract:* Rejected because the contract is shared with eval and the console validators.
+  - *Strip it when storing the analysis:* Rejected because the analysis is the record of what the agent returned.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize), [analysis-schema.md](analysis-schema.md).
+
+### 2026-10-30: Console folders named build are re-included in the console .gitignore
+- **Decision:** `incident-console-v2/.gitignore` has `!src/**/build/`. The global ignore file is untouched.
+- **Why:** A global `build/` rule hid `src/app/api/reports/[incidentId]/build/route.ts`, so PR #312 merged the use case and its test without the route and the test failed on `mvp3` (fixed by PR #319). A negation in the project makes every clone safe.
+- **Alternatives rejected:**
+  - *Rename the route folder:* Rejected because the URL segment `build` is the contract.
+  - *Edit each developer's global ignore:* Rejected because it cannot be enforced.
+- **Links:** [architecture §5 routes](architecture.md#console-api-routes-merged-on-originmvp3).
+
 ### 2026-10-30: Docs are written by a closing docs worker per phase
 - **Decision:** During mvp3 the feature workers change code and tests only. One docs worker at the end of each phase updates `.docs/` and the `incident-*` skills, and describes what is merged. Where the code differs from the plan, the code wins and the difference goes in the PR description.
 - **Why:** Parallel feature PRs that all edit the same docs conflict constantly, and the docs then describe a plan rather than the merged behaviour.
