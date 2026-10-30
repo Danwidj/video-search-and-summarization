@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -13,8 +13,16 @@ import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/modules/reports/domain/normalize';
-import { reportHeading, type ReportView, type StructuredEntity, type StructuredInstrument } from '@/modules/reports/domain/report-view';
+import {
+  assetDetail,
+  type EvidenceDetailItem,
+  entityDetail,
+  evidenceDetailLines,
+  instrumentDetail,
+} from '@/modules/reports/domain/evidence-detail';
+import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
+import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
 import { RunDetailsPanel } from '@/sections/reports/components/ReportRunDetails';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
@@ -28,7 +36,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The scrolling part of View mode: the version, its report fields, its evidence grouped by holder, and the model's own output. */
+/** The scrolling part of View mode: the version, its report fields, its evidence grouped by holder (each card opens in detail), and the model's own output. */
 export function ReportPane({
   report,
   playerDuration,
@@ -51,9 +59,7 @@ export function ReportPane({
   const heldBy = (entityId: string) => structured.instruments.filter((instrument) => instrument.entityId === entityId);
   const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
   const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
-  const holderTitle = new Map(
-    structured.entities.map((entity) => [entity.entityId, `${entity.entityId} · ${entity.label || entity.type}`]),
-  );
+  const [detail, setDetail] = useState<EvidenceDetailItem | null>(null);
   const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
 
   return (
@@ -188,18 +194,12 @@ export function ReportPane({
             <div className="grid gap-3 sm:grid-cols-[6rem_1fr]" data-holder={entity.entityId} key={entity.entityId}>
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Entity</span>
               <div className="flex flex-wrap gap-3">
-                <EntityCard
-                  entity={entity}
-                  holds={heldBy(entity.entityId).map((instrument) => instrument.name)}
-                  onSeek={onSeek}
-                  videoId={report.videoId}
-                />
+                <Card item={entityDetail(entity, structured.instruments)} onOpen={setDetail} videoId={report.videoId} />
                 {heldBy(entity.entityId).map((instrument) => (
-                  <InstrumentCard
-                    holder={holderTitle.get(entity.entityId)}
-                    instrument={instrument}
+                  <Card
+                    item={instrumentDetail(instrument, structured.entities)}
                     key={instrument.instrumentId}
-                    onSeek={onSeek}
+                    onOpen={setDetail}
                     videoId={report.videoId}
                   />
                 ))}
@@ -211,7 +211,12 @@ export function ReportPane({
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Holder unknown</span>
               <div className="flex flex-wrap gap-3">
                 {unheld.map((instrument) => (
-                  <InstrumentCard instrument={instrument} key={instrument.instrumentId} onSeek={onSeek} videoId={report.videoId} />
+                  <Card
+                    item={instrumentDetail(instrument, structured.entities)}
+                    key={instrument.instrumentId}
+                    onOpen={setDetail}
+                    videoId={report.videoId}
+                  />
                 ))}
               </div>
             </div>
@@ -221,24 +226,15 @@ export function ReportPane({
               <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Assets</span>
               <div className="flex flex-wrap gap-3">
                 {structured.assets.map((asset) => (
-                  <Card
-                    evidence={asset.evidence}
-                    id={asset.assetId}
-                    key={asset.assetId}
-                    kind="asset"
-                    onSeek={onSeek}
-                    seconds={asset.timestampSeconds}
-                    title={asset.name}
-                    videoId={report.videoId}
-                  >
-                    <p className="text-muted-foreground">{asset.description}</p>
-                  </Card>
+                  <Card item={assetDetail(asset)} key={asset.assetId} onOpen={setDetail} videoId={report.videoId} />
                 ))}
               </div>
             </div>
           )}
         </div>
       )}
+
+      <EvidenceDetailDialog item={detail} onClose={() => setDetail(null)} onPlayFrom={onSeek} videoId={report.videoId} />
 
       <ModelSection title="Model event timeline" source={modelOutput?.source}>
         {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
@@ -368,36 +364,18 @@ function IdBadge({ id }: { id: string }) {
   );
 }
 
-/** One evidence item: its whole video frame with the box drawn on it (never a cut-out crop), which plays the video from that second. */
-function Card({
-  evidence,
-  id,
-  kind,
-  title,
-  seconds,
-  onSeek,
-  videoId,
-  children,
-}: {
-  evidence: StructuredEntity['evidence'];
-  id: string;
-  kind: 'entity' | 'instrument' | 'asset';
-  title: string;
-  seconds: number | null;
-  onSeek: (seconds: number) => void;
-  /** The video the item was analysed from; the frame of an older item is cut from its stored file. */
-  videoId: string;
-  children: ReactNode;
-}) {
-  const at = seconds ?? evidence?.timestampSeconds ?? null;
-  const shown = evidenceDisplay(evidence, videoId);
+/** One evidence item: its whole video frame with the box drawn on it (never a cut-out crop), which opens the item in detail. */
+function Card({ item, videoId, onOpen }: { item: EvidenceDetailItem; videoId: string; onOpen: (item: EvidenceDetailItem) => void }) {
+  const { seconds } = item;
+  const lines = evidenceDetailLines(item);
+  const shown = evidenceDisplay(item.evidence, videoId);
   return (
     <UICard className="w-64 max-w-full overflow-hidden text-xs" data-testid="evidence-card">
       <button
-        aria-label={at === null ? `${title} image` : `Play video from ${formatClock(at)}: ${title}`}
-        className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-        disabled={at === null}
-        onClick={() => at !== null && onSeek(at)}
+        aria-label={`Show ${item.title} in detail`}
+        className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="evidence-open"
+        onClick={() => onOpen(item)}
         type="button"
       >
         <EvidenceFrame
@@ -406,94 +384,37 @@ function Card({
           className="rounded-none!"
           frameSrc={shown.frameSrc}
           fullFrame
-          kind={kind}
-          label={title}
+          kind={item.kind}
+          label={item.title}
           notLocated={shown.notLocated}
-          seconds={at}
+          seconds={seconds}
           src={shown.src}
         />
       </button>
       <CardContent className="space-y-1 p-3">
         <h4 className="flex items-center gap-2 text-sm font-semibold">
-          <IdBadge id={id} />
-          <span className="min-w-0">{title}</span>
+          <IdBadge id={item.id} />
+          <span className="min-w-0">{item.title}</span>
         </h4>
-        {children}
-        {at !== null && (
+        <p className="text-muted-foreground">{item.description}</p>
+        {lines.holds && (
+          <p>
+            Holds <b>{lines.holds}</b>
+          </p>
+        )}
+        {lines.threat && <p className="text-muted-foreground">{lines.threat}</p>}
+        {lines.heldBy && (
+          <p>
+            Held by <b>{lines.heldBy}</b>
+          </p>
+        )}
+        {lines.onScreen && <p className="text-muted-foreground">{lines.onScreen}</p>}
+        {lines.time && (
           <p className="text-muted-foreground">
-            Most visible at <b className="font-mono">{formatClock(at)}</b>
+            Most visible at <b className="font-mono">{lines.time}</b>
           </p>
         )}
       </CardContent>
     </UICard>
-  );
-}
-
-function EntityCard({
-  entity,
-  holds,
-  onSeek,
-  videoId,
-}: {
-  entity: StructuredEntity;
-  holds: string[];
-  onSeek: (seconds: number) => void;
-  videoId: string;
-}) {
-  const span =
-    entity.firstSeenSeconds !== null && entity.lastSeenSeconds !== null
-      ? `${formatClock(entity.firstSeenSeconds)}–${formatClock(entity.lastSeenSeconds)}`
-      : null;
-  return (
-    <Card
-      evidence={entity.evidence}
-      id={entity.entityId}
-      kind="entity"
-      onSeek={onSeek}
-      seconds={entity.timestampSeconds}
-      title={entity.label || entity.type}
-      videoId={videoId}
-    >
-      <p className="text-muted-foreground">{entity.description}</p>
-      {holds.length > 0 && (
-        <p>
-          Holds <b>{holds.join(', ')}</b>
-        </p>
-      )}
-      {span && <p className="text-muted-foreground">On screen {span}</p>}
-    </Card>
-  );
-}
-
-function InstrumentCard({
-  instrument,
-  holder,
-  onSeek,
-  videoId,
-}: {
-  instrument: StructuredInstrument;
-  holder?: string;
-  onSeek: (seconds: number) => void;
-  videoId: string;
-}) {
-  return (
-    <Card
-      evidence={instrument.evidence}
-      id={instrument.instrumentId}
-      kind="instrument"
-      onSeek={onSeek}
-      seconds={instrument.timestampSeconds}
-      title={instrument.name}
-      videoId={videoId}
-    >
-      <p className="text-muted-foreground">{instrument.description}</p>
-      <p className="text-muted-foreground">
-        Threat {instrument.threatLevel ?? 'unrated'}
-        {instrument.threatLevel !== null ? '/5' : ''}
-      </p>
-      <p>
-        Held by <b>{holder ?? 'unknown'}</b>
-      </p>
-    </Card>
   );
 }
