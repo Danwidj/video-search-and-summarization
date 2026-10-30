@@ -84,7 +84,7 @@ test('agent mode: ready even when gateway is unreachable', async () => {
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.status, 'ready');
-  assert.equal(payload.services.gateway.reachable, false);
+  assert.equal('gateway' in payload.services, false);
   assert.equal(payload.services.agent.reachable, true);
   assert.equal(payload.services.postgrest.reachable, true);
   assert.equal(payload.services.r2.configured, true);
@@ -100,8 +100,22 @@ test('agent mode: ready when gateway is unconfigured', async () => {
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.status, 'ready');
-  assert.equal(payload.services.gateway.configured, false);
-  assert.equal(payload.services.gateway.reachable, false);
+  assert.equal('gateway' in payload.services, false);
+});
+
+test('agent mode: does not probe the gateway', async () => {
+  process.env.ANALYSIS_MODE = 'agent';
+  const probed = [];
+  globalThis.fetch = async (url) => {
+    probed.push(String(url));
+    return { ok: true, status: 200 };
+  };
+
+  await GET();
+  assert.equal(
+    probed.some((url) => url.includes('8600')),
+    false,
+  );
 });
 
 test('agent mode: degraded when agent is unreachable', async () => {
