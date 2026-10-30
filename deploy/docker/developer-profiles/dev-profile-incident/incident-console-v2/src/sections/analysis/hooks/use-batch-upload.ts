@@ -19,7 +19,7 @@ import { useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 import { requestAnalysis } from '@/lib/analysis/analyse-client';
 
 /** Files that upload and analyse at once; the VLM is the slow step, so a small pool is enough. */
-const CONCURRENCY = 2;
+const CONCURRENCY = 3;
 
 interface ApiError {
   error?: string;

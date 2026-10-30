@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Batch upload runs three files at a time, up from two
+- **Decision:** `CONCURRENCY` in `use-batch-upload.ts` is 3, so up to three files run through their stages at once. Nothing else about the batch flow changes.
+- **Why:** The captain asked why only two videos analyse at a time and asked for three. Two at once was a cautious first choice, not a measured limit; the live timing for one, two and three at once is in the PR that made the change.
+- **Alternatives rejected:**
+  - *Keep two:* Rejected on the captain's instruction.
+  - *Unlimited parallelism:* Still rejected, see the entry below; analyse calls queue on one VLM.
+- **Links:** [architecture §5 Screens](architecture.md#screens-phase-6), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
 ### 2026-10-30: Suggestions come before reports; a decision builds the report
 - **Decision:** A batch uploads and analyses every file, then checks matches for all of them, and only then builds. A file with no pending suggestion is built at once; an incident with a pending suggestion waits, and the Accept or Reject on the Matches tab or report banner builds the report of each incident it leaves (one report for an accepted merge). The build step takes an incident id and does not know who decided the join, so an automatic rule (score threshold) can call it later. Nothing merges without Accept. An incident with no version shows as waiting in the library and on its report page, with its videos, the pending suggestions and "Build report now".
 - **Why:** Building a report per file first made three clips of one event become three reports, and the merge left a stale or missing combined report. Deciding first gives one report from all the videos.
@@ -59,8 +67,8 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Open:** at temperature 0 the retry may repeat the same output; this is unmeasured. The agent returns `p1_attempts` for the console to record; the console does not read it yet (console change not made here, inferred from the unchanged console code), so a retried first attempt is in the agent log only until it does. Live verification waits for the next approved agent refresh.
 - **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze), [status known issue 6](status.md).
 
-### 2026-10-30: Batch upload runs four stages per file, two files at a time, and isolates failures
-- **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once. A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
+### 2026-10-30: Batch upload runs four stages per file, limits parallel files, and isolates failures
+- **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once (raised to three by the entry above). A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
 - **Why:** One slow or unreadable clip (a 10-bit H.264 file, a model that returns invalid JSON) must not stop the rest, and re-uploading a large file to retry one later stage is waste. Every file builds its first report and checks matches itself, so batch members find each other whatever order they finish.
 - **Alternatives rejected:**
   - *Run the whole batch as one request:* Rejected because a single failure would hide which file failed and at which step.
