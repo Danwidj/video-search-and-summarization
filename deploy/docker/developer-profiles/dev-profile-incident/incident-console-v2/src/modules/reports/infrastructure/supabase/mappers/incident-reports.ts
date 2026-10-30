@@ -5,7 +5,9 @@
 // functions. The only place that knows these column and result names.
 
 import { parseEnvelope } from '@/modules/reports/domain/envelope';
+import { readStoredReasons } from '@/modules/matching/domain/matching';
 import type {
+  AutoJoinRecord,
   CreatedAiRevision,
   IncidentOfficialChange,
   IncidentRecord,
@@ -58,7 +60,15 @@ export function incidentVideoFromRow(row: Row): IncidentVideo {
     recordedAt: text(row.recorded_at),
     durationSeconds: num(row.duration),
     source: text(row.source),
+    autoJoin: autoJoinFromRow(row),
   };
+}
+
+/** The automatic-join columns of a video row; null when the video was not joined by the rule. */
+function autoJoinFromRow(row: Row): AutoJoinRecord | null {
+  const score = num(row.auto_joined_score);
+  if (score === null) return null;
+  return { score, ...readStoredReasons(row.auto_joined_reasons), joinedAt: text(row.auto_joined_at) };
 }
 
 /** Earliest upload first, ties by name (the order the library uses for the first video). */

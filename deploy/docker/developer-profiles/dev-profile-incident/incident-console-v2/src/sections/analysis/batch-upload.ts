@@ -37,8 +37,16 @@ export interface BatchItem {
   /** Matches have been checked for this file. */
   checked: boolean;
   built: boolean;
-  /** Suggested matches found for the incident; null until the check ends. */
+  /** Suggested matches left for the reviewer; null until the check ends. */
   matches: number | null;
+  /** The incident this file was joined into automatically, with the score; null when it was not. */
+  autoJoined: { incidentId: number; score: number } | null;
+}
+
+/** What the check found: the matches left to decide, and the join the rule made by itself, if any. */
+export interface BatchCheckResult {
+  suggestions: number;
+  joined: { keptIncidentId: number; mergedIncidentId: number; score: number } | null;
 }
 
 export interface BatchDeps {
@@ -47,7 +55,7 @@ export interface BatchDeps {
   complete(uploaded: { sensorId: string; filename: string }): Promise<void>;
   analyse(input: { uploaded: { sensorId: string; filePath: string; filename: string }; model: string }): Promise<{ incidentId: number }>;
   build(incidentId: number): Promise<void>;
-  evaluate(incidentId: number): Promise<{ suggestions: number }>;
+  evaluate(incidentId: number): Promise<BatchCheckResult>;
 }
 
 export function newBatchItem(file: File, key: string): BatchItem {
@@ -64,6 +72,7 @@ export function newBatchItem(file: File, key: string): BatchItem {
     checked: false,
     built: false,
     matches: null,
+    autoJoined: null,
   };
 }
 
@@ -150,14 +159,33 @@ export async function runBatchItem(
 }
 
 /**
+ * After an automatic join the merged incident no longer exists: every file that pointed at it now belongs
+ * to the kept one. The files joined into it keep their own note, and the one that carried the new video
+ * says where it went; files already in the kept incident are unchanged.
+ */
+export function followJoin(items: BatchItem[], joined: NonNullable<BatchCheckResult['joined']>): BatchItem[] {
+  return items.map((item) =>
+    item.analysed?.incidentId === joined.mergedIncidentId
+      ? { ...item, analysed: { incidentId: joined.keptIncidentId }, autoJoined: { incidentId: joined.keptIncidentId, score: joined.score } }
+      : item,
+  );
+}
+
+/**
  * Checks one analysed file against every other incident, including the other files of the batch, and
  * leaves it `deciding`. Never throws: a failure is recorded at the matches stage and a retry repeats only the check.
  */
 export async function checkBatchItem(start: BatchItem, deps: BatchDeps, update: (change: Partial<BatchItem>) => void): Promise<void> {
   try {
     update({ status: 'running', stage: 'matches', error: null });
-    const { suggestions } = await deps.evaluate((start.analysed as NonNullable<BatchItem['analysed']>).incidentId);
-    update({ status: 'deciding', stage: 'report', checked: true, matches: suggestions });
+    const { suggestions, joined } = await deps.evaluate((start.analysed as NonNullable<BatchItem['analysed']>).incidentId);
+    update({
+      status: 'deciding',
+      stage: 'report',
+      checked: true,
+      matches: suggestions,
+      ...(joined ? { autoJoined: { incidentId: joined.keptIncidentId, score: joined.score } } : {}),
+    });
   } catch (error) {
     update({ status: 'failed', stage: 'matches', error: failureMessage(error) });
   }

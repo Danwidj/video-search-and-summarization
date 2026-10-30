@@ -11,9 +11,11 @@
 // newest/oldest order are modelled, and any other filter is refused rather
 // than ignored.
 
+import { readStoredReasons } from '@/modules/matching/domain/matching';
 import { parseEnvelope } from '@/modules/reports/domain/envelope';
 import type { ReportListQuery } from '@/modules/reports/domain/IncidentRepository';
 import type {
+  AutoJoinInput,
   AiIncidentRevisionInput,
   CreatedAiRevision,
   HumanIncidentRevisionInput,
@@ -99,7 +101,7 @@ export class InMemoryIncidentReportRepository implements IncidentReportRepositor
 
   constructor(seed: IncidentSeed = {}) {
     this.incidents = (seed.incidents ?? []).map((incident) => ({ ...incident }));
-    this.videos = (seed.videos ?? []).map((video) => ({ ...video }));
+    this.videos = (seed.videos ?? []).map((video) => ({ ...video, autoJoin: video.autoJoin ?? null }));
     this.revisions = [...(seed.revisions ?? [])];
     this.crops = (seed.crops ?? []).map((crop) => ({ ...crop }));
     this.modelRuns = new Map(Object.entries(seed.modelRuns ?? {}));
@@ -386,12 +388,19 @@ export class InMemoryIncidentReportRepository implements IncidentReportRepositor
     return [...keys];
   }
 
-  async mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId): Promise<MergeResult> {
+  async mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId, autoJoin?: AutoJoinInput): Promise<MergeResult> {
     if (targetIncidentId === sourceIncidentId) refuse('invalid', 'An incident cannot be merged into itself');
     this.incidentOrRefuse(targetIncidentId);
     this.incidentOrRefuse(sourceIncidentId);
     const moved = this.videosOf(sourceIncidentId);
-    for (const video of moved) video.incidentId = targetIncidentId;
+    for (const video of moved) {
+      video.incidentId = targetIncidentId;
+      // As auto_merge_incidents: a moved video that already carries a record keeps it.
+      if (autoJoin && !video.autoJoin) {
+        const { reasons, structuredReasons } = readStoredReasons(autoJoin.reasons);
+        video.autoJoin = { score: autoJoin.score, reasons, structuredReasons, joinedAt: new Date().toISOString() };
+      }
+    }
     const sourceRevisions = new Set(this.ofIncident(sourceIncidentId).map((row) => row.revision.revisionId));
     const orphaned = this.crops.filter((crop) => sourceRevisions.has(crop.revisionId)).map((crop) => crop.image);
     this.crops = this.crops.filter((crop) => !sourceRevisions.has(crop.revisionId));

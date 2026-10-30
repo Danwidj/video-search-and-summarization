@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   type BatchDeps,
+  type BatchCheckResult,
   type BatchItem,
   buildBatchIncident,
+  followJoin,
   checkBatchItem,
   isAlreadyStored,
   newBatchItem,
@@ -107,11 +109,19 @@ export function useBatchUpload() {
       },
       build: buildReport,
       evaluate: async (incidentId) => {
-        const result = await post<{ suggestions?: unknown[] }>('/api/suggestions/evaluate', { incidentId });
-        return { suggestions: result.suggestions?.length ?? 0 };
+        const result = await post<{ suggestions?: unknown[]; joined?: BatchCheckResult['joined'] & { suggestionId?: number } }>(
+          '/api/suggestions/evaluate',
+          { incidentId },
+        );
+        const joined = result.joined
+          ? { keptIncidentId: result.joined.keptIncidentId, mergedIncidentId: result.joined.mergedIncidentId, score: result.joined.score }
+          : null;
+        // The merged incident is gone: files that pointed at it follow the join before anything reads their incident.
+        if (joined) commit(followJoin(current.current, joined));
+        return { suggestions: result.suggestions?.length ?? 0, joined };
       },
     }),
-    [upload],
+    [commit, upload],
   );
 
   /**
@@ -130,7 +140,8 @@ export function useBatchUpload() {
         const toCheck = planBatch(current.current, null).check;
         if (toCheck.length > 0) {
           for (const key of toCheck) patch(key, { status: 'running', stage: 'matches', error: null });
-          await runPool(toCheck, CONCURRENCY, async (key) => {
+          // One at a time: a join deletes an incident, so the next check must start from the merged state.
+          await runPool(toCheck, 1, async (key) => {
             const item = current.current.find((entry) => entry.key === key);
             if (item) await checkBatchItem(item, depsFor(key), (change) => patch(key, change));
           });

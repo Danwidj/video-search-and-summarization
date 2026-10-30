@@ -48,6 +48,8 @@ This document describes how incident analysis output is defined, validated, stor
 - the cross-field rules;
 - derived `incident.duration = end_timestamp - start_timestamp`.
 
+**Not part of the contract.** An automatic join (score 0.5 or more) is stored on the `videos` row, not in the analysis or the envelope (`auto_joined_*`, [`data.md`](data.md)); the report response carries it per camera as `autoJoin {score, reasons, structuredReasons, joinedAt}` so the page can say why a video is in the incident. The analysis a video produced is unchanged by the join.
+
 Every violation carries a machine-readable code: `EMPTY_CONTENT`, `INVALID_JSON`, `SCHEMA_VIOLATION`, `WINDOW_END_BEFORE_START`, `ID_NOT_SEQUENTIAL_{ENTITY,INSTRUMENT,ASSET}`, `INSTRUMENT_HOLDER_UNKNOWN`, `TIMELINE_{START,END}_OUTSIDE_WINDOW`, `TIMELINE_NOT_CHRONOLOGICAL`, and the contextual `WINDOW_BEYOND_VIDEO` / `TIMELINE_BEYOND_VIDEO`. Shared fixtures in `contracts/fixtures/` (including `fixtures/policy/`) are checked by both the Python and the TypeScript validator.
 
 **Validation policy `core-scored-v1`** (`validateCore`; eval's `evaluate_policy`; the agent's `core_violations`). Its id is recorded beside the contract version; it changed nothing sent to or returned by the model, so it carries no `VERSION` bump:

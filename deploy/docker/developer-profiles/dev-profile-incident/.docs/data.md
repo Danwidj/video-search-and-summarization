@@ -33,6 +33,7 @@ The mvp3 migrations, in order (each is a single transaction and ends with `NOTIF
 | `20261030160000_merge_remove.sql` | `test_p3_5.py` | `merge_incidents`, `remove_video` |
 | `20261030170000_ai_revision.sql` | `test_p3_6.py` | `create_ai_revision` |
 | `20261030180000_matching.sql` | `test_matching.py` | `shortlist_similar_incidents`, `record_match_suggestion`, `reject_match_suggestion` |
+| `20261030190000_auto_join.sql` | `test_auto_join.py` | `videos.auto_joined_score/_reasons/_at`, `auto_merge_incidents`; `remove_video` 'move' clears them |
 
 Which of these are applied to which database is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres; `test_baseline.py` applies every migration in order and then runs every other `test_*.py` in that folder.
 
@@ -95,6 +96,9 @@ Registry of ingested video assets. Each belongs to exactly one incident.
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC upload time |
 | `duration` | `INTEGER` | NULLABLE | Duration in integer seconds |
 | `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
+| `auto_joined_score` | `DOUBLE PRECISION` | NULLABLE; CHECK 0 to 1 | Match score when the system joined this video to its incident by itself; NULL otherwise. Set by `auto_merge_incidents`, cleared by `remove_video` 'move' |
+| `auto_joined_reasons` | `JSONB` | NULLABLE | Why: a JSON array of strings or `{kind,label,detail}` chips |
+| `auto_joined_at` | `TIMESTAMP` | NULLABLE | Naive UTC time of the automatic join |
 
 Deleting a video deletes its analyses and its crops. Revisions stay as history and keep the name in `video_names`.
 
@@ -340,12 +344,21 @@ merge_incidents(p_target_incident_id BIGINT, p_source_incident_id BIGINT) RETURN
 
 Moves the source's videos (their analyses follow by video id) into the target, marks a **pending** suggestion for the pair `accepted`, then deletes the source incident with its revisions, crops and suggestions (the accepted row goes with the source). The source's old id, human edits and official choice are not carried over; the target's revisions are not changed, so its coverage note will say "Does not include" the moved videos until the report is regenerated. Refused for the same incident twice (`22023`) or an unknown incident (`P0002`). It moves no files. Returns `{incident_id (the target), source_incident_id, moved_video_ids, orphaned_crop_images}`; `orphaned_crop_images` are the R2 keys of the crops that went with the source's revisions, for the console's sweep.
 
+#### `auto_merge_incidents`
+
+```
+auto_merge_incidents(p_target_incident_id BIGINT, p_source_incident_id BIGINT, p_score DOUBLE PRECISION, p_reasons JSONB) RETURNS JSONB
+```
+
+Calls `merge_incidents`, then stamps the videos it moved (those with no record yet) with `auto_joined_score` (0 to 1, else `22023`), `auto_joined_reasons` (JSON array of strings or `{kind,label,detail}`) and `auto_joined_at` (naive UTC). Returns the merge result. `service_role` only. The stamp lives on the video because the merge deletes the source incident and its suggestion rows.
+
 #### `remove_video`
 
 ```
 remove_video(p_video_id TEXT, p_mode TEXT) RETURNS JSONB   -- p_mode: 'delete' | 'move'
 ```
 
+- `'move'` also clears the video's `auto_joined_*` columns (the move records the pair rejected, so the rule will not join it again).
 - `'delete'`: deletes the video with its analyses and crops. The incident's revisions stay as history. If it was the incident's **last** video, the incident is deleted too, with its revisions, crops and suggestions.
 - `'move'`: moves the video, its analyses and crops into a **new** incident and records the pair (old, new) as a `rejected` suggestion (score 0) so it is never suggested back. The old incident's revisions are untouched. Refused for the last video (`23514`: delete it instead).
 

@@ -52,6 +52,7 @@ export async function getReport(
   const { envelope } = record;
   const current = new Set(incident.videos.map((video) => video.videoId));
   const inVersion = new Set(envelope.cameras.map((entry) => entry.video));
+  const autoJoinOf = new Map(incident.videos.map((video) => [video.videoId, video.autoJoin]));
   // An incident video the version does not cover (added by an accept or merge since) is listed so the page counts it, but it has no report.
   const cameras: CameraView[] = [
     ...envelope.cameras.map((entry) => ({
@@ -59,10 +60,11 @@ export async function getReport(
       current: current.has(entry.video),
       inVersion: true,
       valid: cameraReport(envelope, entry.video) !== null,
+      autoJoin: autoJoinOf.get(entry.video) ?? null,
     })),
     ...incident.videos
       .filter((video) => !inVersion.has(video.videoId))
-      .map((video) => ({ video: video.videoId, current: true, inVersion: false, valid: false })),
+      .map((video) => ({ video: video.videoId, current: true, inVersion: false, valid: false, autoJoin: video.autoJoin })),
   ];
   let chosen: string | null;
   if (camera !== null) {
