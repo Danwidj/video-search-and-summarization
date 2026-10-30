@@ -51,6 +51,7 @@ from PIL import Image
 
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.r2 import get_r2_client
+from vss_agents.utils.r2 import get_r2_key_prefix
 from vss_agents.utils.r2 import is_r2_configured
 
 logger = logging.getLogger(__name__)
@@ -500,7 +501,12 @@ class InMemoryEvidenceStore(EvidenceStore):
 
 
 class R2EvidenceStore(EvidenceStore):
-    """Cloudflare R2 adapter for evidence crop images (the production store)."""
+    """Cloudflare R2 adapter for evidence crop images (the production store).
+
+    ``R2_KEY_PREFIX`` is prepended to every R2 request so all objects land
+    under the configured prefix (e.g. ``mvp3/``).  The logical keys returned
+    to callers and stored in the database stay prefix-free.
+    """
 
     def __init__(self, bucket: str | None = None, client: Any = None) -> None:
         self.bucket = bucket or os.getenv("R2_BUCKET", "")
@@ -509,29 +515,34 @@ class R2EvidenceStore(EvidenceStore):
     def _get_client(self) -> Any:
         return self._client if self._client is not None else get_r2_client()
 
+    def _r2_key(self, logical_key: str) -> str:
+        """Apply the R2 key prefix to a logical (DB) key."""
+        return get_r2_key_prefix() + logical_key.lstrip("/")
+
     async def put_image(self, key: str, image_bytes: bytes, content_type: str = "image/jpeg") -> str:
         # IfNoneMatch="*" makes R2 refuse (412) a key that exists, so a stored crop is never overwritten.
         await asyncio.to_thread(
             self._get_client().put_object,
             Bucket=self.bucket,
-            Key=key,
+            Key=self._r2_key(key),
             Body=image_bytes,
             ContentType=content_type,
             IfNoneMatch="*",
         )
-        return key
+        return key  # return the prefix-free key so the DB stores a portable reference
 
     async def next_batch_id(self, video_key: str) -> str:
         def _list_batches() -> list[str]:
-            prefix = f"evidence/{video_key}/"
+            logical_prefix = f"evidence/{video_key}/"
+            r2_prefix = self._r2_key(logical_prefix)
             batches: list[str] = []
             for page in (
                 self._get_client()
                 .get_paginator("list_objects_v2")
-                .paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/")
+                .paginate(Bucket=self.bucket, Prefix=r2_prefix, Delimiter="/")
             ):
                 batches.extend(
-                    str(entry["Prefix"])[len(prefix) :].rstrip("/") for entry in page.get("CommonPrefixes", [])
+                    str(entry["Prefix"])[len(r2_prefix) :].rstrip("/") for entry in page.get("CommonPrefixes", [])
                 )
             return batches
 
@@ -539,7 +550,7 @@ class R2EvidenceStore(EvidenceStore):
 
     async def get_image(self, key: str) -> bytes | None:
         try:
-            obj = await asyncio.to_thread(self._get_client().get_object, Bucket=self.bucket, Key=key)
+            obj = await asyncio.to_thread(self._get_client().get_object, Bucket=self.bucket, Key=self._r2_key(key))
             return bytes(obj["Body"].read())
         except Exception as exc:
             if getattr(exc, "response", {}).get("Error", {}).get("Code") in ("NoSuchKey", "404"):
