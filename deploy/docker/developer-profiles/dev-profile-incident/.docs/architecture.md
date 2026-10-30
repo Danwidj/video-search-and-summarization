@@ -150,7 +150,7 @@ flowchart TD
 
     OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
-    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
+    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>INCIDENT_VST_BASE_URL=http://localhost:7777,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
@@ -217,6 +217,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
 | `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
 | `INCIDENT_AGENT_BASE_URL` | the agent or the mock (upload, chat, search, embeddings, and analysis in agent mode) |
+| `INCIDENT_VST_BASE_URL` | the VST API through HAProxy (`/vst/api/v1/sensor/...`), for deleting a video's camera; `start.sh --mode vm` exports `http://localhost:7777`, and the agent URL is used when unset (the mock) |
 | `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
