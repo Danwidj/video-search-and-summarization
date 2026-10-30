@@ -68,7 +68,7 @@ export function ReportPane({
               {revision.kind === 'ai' && <span className="text-muted-foreground">{run.model}</span>}
               {report.official.isOfficial && (
                 <Badge
-                  className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                  className="border-amber-400 bg-amber-50 text-[11px] font-bold text-amber-800"
                   data-testid="official-status"
                   variant="outline"
                 >
@@ -240,10 +240,7 @@ export function ReportPane({
           </p>
         )}
         {modelOutput && !modelOutput.timelineCheck.consistentWithWindow && (
-          <Alert
-            className="mb-2 border-amber-300 bg-amber-50/80 p-3 text-xs leading-5 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
-            data-testid="timeline-inconsistent"
-          >
+          <Alert className="mb-2 border-amber-300 bg-amber-50/80 p-3 text-xs leading-5 text-amber-950" data-testid="timeline-inconsistent">
             <AlertDescription>
               Model-generated timeline, not consistent with the detected incident window
               {original && original.startSeconds !== null && original.endSeconds !== null

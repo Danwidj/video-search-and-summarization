@@ -145,10 +145,7 @@ export function ReportVersions({
                         <b>v{revision.revisionNo}</b>
                         <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
                         {revision.isOfficial && (
-                          <Badge
-                            className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                            variant="outline"
-                          >
+                          <Badge className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800" variant="outline">
                             ★ Official
                           </Badge>
                         )}
