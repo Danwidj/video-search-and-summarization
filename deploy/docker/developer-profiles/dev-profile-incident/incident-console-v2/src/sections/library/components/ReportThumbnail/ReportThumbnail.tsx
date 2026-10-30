@@ -6,7 +6,7 @@ import type * as React from 'react';
 import { VideoIcon } from 'lucide-react';
 import { cn } from 'cn';
 
-import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import type { RevisionKind } from '@/modules/reports/domain/revision';
 import { libraryCardThumbnail } from '@/lib/ui/thumbnail';
 import { severityClass } from '@/sections/library/components/Shared';
 import { Badge } from '@/components/ui/badge';
@@ -16,13 +16,16 @@ export function ReportThumbnail({
   severity,
   kind,
   duration,
+  videoCount,
   alt,
   children,
 }: {
   thumbnailUrl?: string;
   severity: number;
-  kind?: ReportLibraryItem['kind'];
+  kind?: RevisionKind;
   duration?: string;
+  /** Videos in the incident; the chip shows only when given. */
+  videoCount?: number;
   alt: string;
   children?: React.ReactNode;
 }) {
@@ -63,7 +66,16 @@ export function ReportThumbnail({
       <span className="sr-only" data-testid="library-kind-badge">
         {kindLabel}
       </span>
-      {duration && (
+      {videoCount !== undefined && (
+        <span
+          className="absolute bottom-2 left-2.5 inline-flex items-center gap-1 rounded bg-ink/80 px-1.5 py-0.5 font-mono text-[11px] text-white"
+          data-testid="video-count"
+        >
+          <VideoIcon aria-hidden className="size-3" />
+          {videoCount} {videoCount === 1 ? 'video' : 'videos'}
+        </span>
+      )}
+      {duration && !videoCount && (
         <span className="absolute bottom-2 left-2.5 rounded bg-ink/80 px-1.5 py-0.5 font-mono text-[11px] text-white">{duration}</span>
       )}
       {children}

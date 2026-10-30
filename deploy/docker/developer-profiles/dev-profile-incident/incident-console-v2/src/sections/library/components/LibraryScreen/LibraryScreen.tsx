@@ -21,7 +21,7 @@ import {
 } from '@/lib/library/filters';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import type { LibrarySearchResponse } from '@/lib/library/search';
-import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import type { LibraryIncident } from '@/sections/library/types';
 import { getViewerTimeZone } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ export function Library() {
   const [searchText, setSearchText] = useState('');
   const [ready, setReady] = useState(false);
   const [timeZone, setTimeZone] = useState('UTC');
-  const [reports, setReports] = useState<ReportLibraryItem[]>([]);
+  const [reports, setReports] = useState<LibraryIncident[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<string[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -95,7 +95,7 @@ export function Library() {
         { cache: 'no-store', signal },
       );
       const payload = (await response.json()) as {
-        reports?: ReportLibraryItem[];
+        reports?: LibraryIncident[];
         incidentTypes?: string[];
         pagination?: { totalItems: number; totalPages: number };
         searchMode?: 'semantic' | 'text' | null;
@@ -143,14 +143,14 @@ export function Library() {
     }
   }, [loading]);
 
-  function rememberPosition(item: ReportLibraryItem) {
-    window.sessionStorage.setItem(STATE_KEY, JSON.stringify({ filters, scrollY: window.scrollY, revisionId: String(item.revisionId) }));
+  function rememberPosition(item: LibraryIncident) {
+    window.sessionStorage.setItem(STATE_KEY, JSON.stringify({ filters, scrollY: window.scrollY, revisionId: String(item.incidentId) }));
   }
 
-  async function deleteReport(item: ReportLibraryItem) {
-    setBusy(item.videoId);
+  async function deleteReport(item: LibraryIncident) {
+    setBusy(String(item.incidentId));
     try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(item.videoId)}/delete`, { method: 'DELETE' });
+      const response = await fetch(`/api/reports/${encodeURIComponent(String(item.incidentId))}/delete`, { method: 'DELETE' });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Delete failed');
       if (reports.length === 1 && filters.page > 1) apply({ page: filters.page - 1 }, true);
@@ -207,11 +207,11 @@ export function Library() {
   }
 
   /** "See evidence" on an incident card: that incident's evidence loads at once, and a typed query then searches only it. */
-  function searchEvidenceIn(item: ReportLibraryItem) {
-    setScope({ incidentId: item.videoId, title: item.title || item.incident_type, filename: item.filename });
+  function searchEvidenceIn(item: LibraryIncident) {
+    setScope({ incidentId: String(item.incidentId), title: item.title || item.incidentType });
     setEvidenceQuery('');
     setTab('evidence');
-    void searchEvidence('', item.videoId);
+    void searchEvidence('', String(item.incidentId));
   }
 
   function showIncidentInIncidents(incident: EvidenceSearchHit['incident']) {
@@ -438,9 +438,9 @@ export function Library() {
                 <div className="mt-4 grid gap-4 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-3 xl:grid-cols-3 xl:grid-rows-2">
                   {reports.map((item) => (
                     <IncidentCard
-                      busy={busy === item.videoId}
+                      busy={busy === String(item.incidentId)}
                       item={item}
-                      key={item.videoId}
+                      key={item.incidentId}
                       onDelete={deleteReport}
                       onOpen={rememberPosition}
                       onSearchEvidence={searchEvidenceIn}

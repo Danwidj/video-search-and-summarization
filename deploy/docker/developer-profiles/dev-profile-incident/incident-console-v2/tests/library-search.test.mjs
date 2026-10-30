@@ -31,7 +31,21 @@ const { POST } = await import('../src/app/api/search/route.ts');
 
 const contractDir = join(process.cwd(), '..', 'contracts', 'search-contract-v1', 'fixtures', 'valid');
 const full = JSON.parse(readFileSync(join(contractDir, 'full-response.json'), 'utf8'));
-const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
+/** One row of list_incident_report_summaries (an incident of two videos), as the RPC builds it. */
+const incidentSummary = {
+  incidentId: 42,
+  revisionId: 7,
+  revisionNo: 2,
+  kind: 'ai',
+  title: 'Forced entry',
+  incident_type: 'intrusion',
+  severity: 3,
+  isOfficial: true,
+  versionCount: 2,
+  videoCount: 2,
+  firstVideoName: 'front-door.mp4',
+  firstVideoKey: 'front-door.mp4',
+};
 
 test('a request becomes the agent body with only what was set', () => {
   assert.deepEqual(toAgentSearchBody({ query: 'knife' }), { query: 'knife' });
@@ -114,22 +128,22 @@ test("/api/search asks the agent for every ranked hit and adds each video's sear
       return new Response(
         JSON.stringify({
           ...full,
-          hits: full.hits.map((hit) => ({ ...hit, incident: { ...hit.incident, incident_id: summaries.reports[0].videoId } })),
+          hits: full.hits.map((hit) => ({ ...hit, incident: { ...hit.incident, incident_id: incidentSummary.incidentId } })),
         }),
         { status: 200 },
       );
     }
     assert.match(String(url), /rpc\/list_incident_report_summaries$/);
-    return new Response(JSON.stringify(summaries), { status: 200 });
+    return new Response(JSON.stringify({ reports: [incidentSummary], totalItems: 1, incidentTypes: [] }), { status: 200 });
   };
   const response = await post({ query: ' blade ' });
   assert.equal(response.status, 200);
   assert.deepEqual(agentBodies, [{ query: 'blade', top_k: 20, min_similarity: 0 }]);
   const body = await response.json();
   assert.equal(body.hits.length, 2);
-  const version = body.versions[summaries.reports[0].videoId];
-  assert.equal(version.revisionNo, summaries.reports[0].revisionNo);
-  assert.equal(version.isOfficial, summaries.reports[0].isOfficial);
+  const version = body.versions[String(incidentSummary.incidentId)];
+  assert.equal(version.revisionNo, incidentSummary.revisionNo);
+  assert.equal(version.isOfficial, incidentSummary.isOfficial);
 });
 
 test('/api/search with an incidentId asks the agent for that incident only, and allows an empty query', async () => {
@@ -181,6 +195,6 @@ test('the evidence UI shows no critic verdict, and the incident card search load
     assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /critic|verdict|rejected/i, file);
   }
   const screen = readFileSync(join(dir, 'LibraryScreen', 'LibraryScreen.tsx'), 'utf8');
-  assert.match(screen, /void searchEvidence\('', item\.videoId\)/);
+  assert.match(screen, /void searchEvidence\('', String\(item\.incidentId\)\)/);
   assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.incidentId \?\? null\)/);
 });
