@@ -591,7 +591,7 @@ export function ReportPage({
             <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
               ← Library
             </Link>
-            <h1 className="min-w-0 flex-1 truncate text-sm font-semibold" title={filename}>
+            <h1 className="min-w-0 basis-full truncate text-sm font-semibold sm:flex-1 sm:basis-0" title={filename}>
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
