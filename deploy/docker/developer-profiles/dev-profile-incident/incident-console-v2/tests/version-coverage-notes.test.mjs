@@ -41,7 +41,12 @@ test('both notes show together and read like the route note', () => {
 test('the version graph keeps the extra fields of each row, such as coverage', () => {
   const rows = [
     { revisionId: 12, revisionNo: 2, parentId: null, coverage: { verdict: { status: 'complete' }, note: null } },
-    { revisionId: 11, revisionNo: 1, parentId: null, coverage: { verdict: { status: 'lacks', missing: ['b.mp4'] }, note: 'Does not include: b.mp4' } },
+    {
+      revisionId: 11,
+      revisionNo: 1,
+      parentId: null,
+      coverage: { verdict: { status: 'lacks', missing: ['b.mp4'] }, note: 'Does not include: b.mp4' },
+    },
   ];
   const { rows: laid } = layoutVersions(rows);
   assert.equal(laid[1].revision.coverage.note, 'Does not include: b.mp4');
