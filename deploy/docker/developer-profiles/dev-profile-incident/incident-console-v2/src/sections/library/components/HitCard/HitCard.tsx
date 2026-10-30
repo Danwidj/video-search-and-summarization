@@ -15,6 +15,7 @@ import { IncidentThumbnail, SeverityChip } from '@/sections/library/components/S
 import { type HitRelationship, type SearchedVersion, matchPercent, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { evidenceLabel, hitDisplay } from '@/lib/evidence/evidence-view';
 
 export function RelationshipLine({ relationship }: { relationship: HitRelationship }) {
   const parts: string[] = [];
@@ -49,6 +50,7 @@ export function HitCard({
   const href = reportHref(hit, version);
   const clock = formatClock(item.timestampSeconds);
   const label = `${item.itemId} · ${item.name || item.label}`;
+  const shown = hitDisplay(item, incident.incidentId);
 
   return (
     <Card
@@ -56,7 +58,7 @@ export function HitCard({
       role="link"
       tabIndex={0}
       aria-label={`Open report at ${clock}: ${label}`}
-      className="group relative flex max-h-[40vh] cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
+      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
       onClick={(event) => {
         if (!event.currentTarget.contains(event.target as Node)) return;
         if ((event.target as HTMLElement).closest('[data-no-card-nav]')) return;
@@ -69,7 +71,7 @@ export function HitCard({
         }
       }}
     >
-      <div className="relative h-24 shrink-0 overflow-hidden bg-[#dfe3dc]">
+      <div className="relative aspect-video shrink-0 overflow-hidden bg-[#dfe3dc]">
         <button
           aria-label={`View ${item.name || item.itemId} in its frame`}
           className="relative block h-full w-full text-left"
@@ -79,13 +81,15 @@ export function HitCard({
         >
           <EvidenceFrame
             aspect={16 / 9}
-            box={item.boundingBox}
+            box={shown.box}
             className="h-full w-full rounded-none"
             drawBox
-            frameSrc={`/api/reports/${encodeURIComponent(incident.incidentId)}/frame?t=${item.timestampSeconds}`}
+            frameSrc={shown.frameSrc}
+            fullFrame
             kind={item.itemType}
             label={item.name || item.itemId}
-            src={item.cropImageUrl}
+            notLocated={shown.notLocated}
+            src={shown.src}
           />
         </button>
 
@@ -152,7 +156,9 @@ export function HitCard({
             <span className="uppercase tracking-[0.12em] text-[11px]">{KIND_LABEL[item.itemType]}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="font-mono text-[11px] text-ink-caption">{item.itemId}</span>
+            <span className="font-mono text-[11px] text-ink-caption">
+              {item.videoName ? evidenceLabel(item.videoName, item.itemId) : item.itemId}
+            </span>
             {item.threatLevel != null && (
               <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                 Threat {item.threatLevel}

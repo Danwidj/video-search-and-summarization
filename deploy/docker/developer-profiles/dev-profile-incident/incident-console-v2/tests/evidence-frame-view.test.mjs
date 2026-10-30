@@ -7,7 +7,9 @@ import test from 'node:test';
 register('./support/alias-loader.mjs', import.meta.url);
 
 const { containFrame, evidenceFrameState } = await import('../src/lib/evidence/frame-geometry.ts');
-const { coversWholeFrame, evidenceDisplay, evidenceLabel, videoFrameUrl } = await import('../src/lib/evidence/evidence-view.ts');
+const { coversWholeFrame, evidenceDisplay, evidenceLabel, hitDisplay, videoFrameUrl } = await import(
+  '../src/lib/evidence/evidence-view.ts'
+);
 const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
 const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
 
@@ -159,4 +161,17 @@ test('a human edit keeps the frame of an object that was not located while the r
     ['E1'],
     'removing a located image still drops its entry',
   );
+});
+
+test("a search hit shows its camera's frame with the box, or a not-located note for the old whole-frame box", () => {
+  const hit = { videoName: 'IMG_9170_480.mp4', timestampSeconds: 81, boundingBox: [100, 200, 300, 400], cropImageUrl: 'https://crop' };
+  const shown = hitDisplay(hit, '189');
+  assert.equal(shown.frameSrc, '/api/reports/189/frame?video=IMG_9170_480.mp4&t=81');
+  assert.deepEqual(shown.box, [100, 200, 300, 400]);
+  assert.equal(shown.notLocated, false);
+  assert.equal(shown.src, 'https://crop');
+  const whole = hitDisplay({ ...hit, boundingBox: [0, 0, 1000, 1000] }, '189');
+  assert.equal(whole.box, null);
+  assert.equal(whole.notLocated, true);
+  assert.equal(hitDisplay({ ...hit, videoName: '' }, '189').frameSrc, null);
 });

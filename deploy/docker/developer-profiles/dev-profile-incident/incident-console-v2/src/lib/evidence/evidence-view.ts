@@ -44,6 +44,20 @@ export function evidenceDisplay(evidence: ItemEvidence | null | undefined, incid
   return { frameSrc: evidence.frameUrl ?? fromVideo, src: evidence.imageUrl, box, notLocated };
 }
 
+/**
+ * The frame, box and note for an evidence search hit. A hit's crop row has no stored frame, so the frame is cut from the
+ * camera's stored video at the item's second; a box covering the whole frame is the old fallback, read as not located.
+ */
+export function hitDisplay(
+  item: { videoName: string; timestampSeconds: number; boundingBox: readonly number[] | null; cropImageUrl: string },
+  incidentId: string,
+): EvidenceDisplay {
+  const notLocated = coversWholeFrame(item.boundingBox);
+  const box = notLocated || !boxRegion(item.boundingBox) ? null : item.boundingBox;
+  const frameSrc = item.videoName ? videoFrameUrl(incidentId, item.videoName, item.timestampSeconds) : null;
+  return { frameSrc, src: item.cropImageUrl || null, box, notLocated };
+}
+
 /** "IMG_8206 · E1": the video (without its extension) and the camera's own item id, which repeats from video to video. */
 export function evidenceLabel(video: string, id: string): string {
   return `${video.replace(/\.[A-Za-z0-9]{1,5}$/, '')} · ${id}`;
