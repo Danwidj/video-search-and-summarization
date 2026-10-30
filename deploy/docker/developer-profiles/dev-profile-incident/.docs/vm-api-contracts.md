@@ -150,15 +150,16 @@ Request:
 | `skip_crops` | bool | false | **Experimental**, prompt experiments only (below): skip post-P1 evidence cropping |
 | `max_crop_calls` | int 1-200 | null | **Experimental** (below): the crop-call cap of a crops-on experimental request (grounding HTTP attempts, retries included); required when an experimental request crops |
 
-Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `timestamp_seconds`, for entities also `first_seen_seconds` and `last_seen_seconds` (falling back to `timestamp_seconds` for reports without them), `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image), and the video-bounds outcome: `video_duration_seconds` (the length `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` used, or `null`), `video_duration_source` (`request`, `mp4_header` or `null`), `video_bounds_checked` and `video_bounds_unchecked_reason` (why the rules did not apply, e.g. `video length unknown: a ranged read of the video returned HTTP 403`). Takes tens of seconds to minutes (VLM calls); use a long timeout.
+Response `200`: an `IncidentReportGenOutput` JSON object, not the bare report: `report` (the validated contract report under `core-scored-v1`), `report_text` and `report_text_error` (RP1 output; `null` when `skip_rp1`), `model`, `contract_version`, `raw_output` (the raw P1 text, which the console re-validates and records), `finish_reason`, `p1_attempts` (every P1 call of the request, in order: `attempt`, `outcome` `valid`/`retried`/`failed`, `finish_reason`, `output_chars`; two entries when the first output was cut off by length or over 30,000 characters and the identical request was retried once, never repaired), and, when the database is configured, `revision_id` (the new `report_revisions` row; `null` if the best-effort write failed) and `evidence` (one entry per entity, instrument and asset: `item_type`, `item_id`, `timestamp_seconds`, for entities also `first_seen_seconds` and `last_seen_seconds` (falling back to `timestamp_seconds` for reports without them), `bounding_box`, `image` R2 key or `null`, `image_gap` reason when there is no image), and the video-bounds outcome: `video_duration_seconds` (the length `WINDOW_BEYOND_VIDEO` and `TIMELINE_BEYOND_VIDEO` used, or `null`), `video_duration_source` (`request`, `mp4_header` or `null`), `video_bounds_checked` and `video_bounds_unchecked_reason` (why the rules did not apply, e.g. `video length unknown: a ranged read of the video returned HTTP 403`). Takes tens of seconds to minutes (VLM calls); use a long timeout.
 
 Errors:
 
 | Status | `detail` |
 |---|---|
-| 422 | validation (including an invalid `video_duration_seconds`), or contract violation (including a window beyond the video): object with `message`, `raw_output`, `finish_reason`, `model`, `contract_version` (nothing persisted by the agent; the caller records the attempt) |
+| 422 | validation (including an invalid `video_duration_seconds`), or contract violation (including a window beyond the video): object with `message`, `raw_output`, `finish_reason`, `model`, `p1_attempts` (the last rejected output is `raw_output`), `contract_version` (nothing persisted by the agent; the caller records the attempt) |
 | 501 | string: `incident_report_gen tool is not configured on this profile` |
 | 504 | string: `Incident analysis timed out: ...` (P1 timeout) |
+| 502 | string: `Video model returned no answer: ...`: the VLM answered HTTP 200 with a null body or no choices (`VlmNoAnswerError`). The message says the video is probably in an unsupported format (for example 10-bit H.264) or unreadable. Nothing is stored; an 8-bit H.264 re-encode of the file is the likely fix (inferred, not proven) |
 | 500 | string: `Analysis failed: ...` |
 
 Example:
@@ -167,6 +168,8 @@ Example:
 curl -s localhost:8000/api/v1/incidents/<videos.id>/analyze -H 'content-type: application/json' \
   -d '{"video_url":"https://<signed-r2-url>","model_run_id":"m86a5c319e26659804b0","skip_rp1":true}'
 ```
+
+The agent logs the tool input with `video_url` reduced to its object key (no query, credentials or fragment), so a failed call leaves no usable presigned URL in the log. The field is a `str` subclass (`SignedUrl`) whose `repr` is redacted, because NAT logs a failed call's input as the plain kwargs dict (a model `__repr__` alone would not cover it).
 
 Live check of the error shape: `{}` body returns `422` `{"detail":[{"type":"missing","loc":["body","video_url"],"msg":"Field required","input":{}}]}`.
 
