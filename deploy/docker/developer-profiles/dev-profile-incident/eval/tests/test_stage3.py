@@ -44,12 +44,13 @@ def configs():
     return stage3.load_configs()
 
 
-def test_the_committed_configs_are_final_test_runs_of_the_selected_prompt(configs):
+def test_the_committed_configs_are_final_test_runs_of_the_selected_prompt(configs, tmp_path):
     assert stage3.role_problems(configs) == []
     assert stage3.shared_setting_problems(configs) == []
     for config in configs.values():
         assert er.config_problems(config) == []
-        assert er.preflight(config, SPLIT)["planned_p1_calls"] == 55
+        # an empty results root: hermetic, and independent of whether Stage 3 has run on this host
+        assert er.preflight(config, SPLIT, results_root=tmp_path)["planned_p1_calls"] == 55
     assert {c["prompt_id"] for c in configs.values()} == {"p1-v4-base", stage3.selected_prompt()}
     assert stage3.selected_prompt() == "p1-v4-e01-severity"
 
