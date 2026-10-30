@@ -63,10 +63,6 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
-[[tool.uv.index]]
-name = "ngc-data-platform"
-url = "https://urm.nvidia.com/artifactory/api/pypi/sw-ngc-data-platform-pypi/simple"
-explicit = true
 
 
 
@@ -153,7 +149,6 @@ dev = [
 ]
 eval = [
     "nvidia-nat[langchain,weave]==1.6.0",
-    "nvdataset>=0.77",
     "spacy>=3.7,<4.0",
 ]
 
@@ -178,7 +173,6 @@ torch = [
 torchvision = [
     { index = "pytorch-cpu", marker = "platform_machine == 'x86_64' or platform_machine == 'aarch64'" },
 ]
-nvdataset = { index = "ngc-data-platform" }
 
 [tool.ruff]
 # Basic settings

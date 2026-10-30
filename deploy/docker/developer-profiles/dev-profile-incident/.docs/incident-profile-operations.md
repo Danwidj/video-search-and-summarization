@@ -81,7 +81,7 @@ Shared contract files are vendored in `services/agent/src/vss_agents/incident_co
 Environment variables are captured at process start: editing `generated.env.remote` does not take effect until `native-services.sh restart vss-agent` sources the file. Live environment values can be inspected in `/proc/<pid>/environ`.
 
 **VM Agent Reinstall Procedure:**
-A full `uv sync` in `services/agent` on `kwanz-ws` fails because `nvdataset` only resolves from NVIDIA's internal artifactory. To relink `vss_agents` editably to the repo code and install dependencies:
+The agent's `uv.lock` no longer needs NVIDIA's internal artifactory (`nvdataset` was dropped), but the live VM venv was built by hand and a full `uv sync` would replace it. To relink `vss_agents` editably to the repo code and install dependencies:
 ```bash
 cd /srv/rise-up/vss/services/agent
 uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/simple -e .
@@ -202,7 +202,7 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 
 Run through these checks before any live demo or presentation:
 
-- [ ] **Health Endpoint Check:** Call `GET /api/health` on `incident-console-v2` (`curl -s http://localhost:3200/api/health`). It should answer 200 with `status: "ready"` (`services.agent`, `services.gateway` (gateway mode only), `services.postgrest` and `services.r2`). `degraded` (503) is an active warning: investigate before presenting.
+- [ ] **Health Endpoint Check:** Call `GET /api/health` on `incident-console-v2` (`curl -s http://localhost:3200/api/health`). It should answer 200 with `status: "ready"` (`services.agent`, `services.gateway` (absent in agent mode), `services.postgrest` and `services.r2`). `degraded` (503) is an active warning: investigate before presenting.
 - [ ] **Search Configuration & UX:** Keep search `top_k` set to 5–10 (with the critic off, the default, latency does not grow with `top_k`; if `INCIDENT_SEARCH_CRITIC` is on, each candidate hit adds ~1 s of critic delay spacing). Ensure the frontend displays a loading state during query evaluation.
 - [ ] **Recorded Fallback Asset:** Keep a pre-recorded demo video or offline screencast ready in case remote inference or network connectivity degrades during the demo.
 - [ ] **Evidence Rows:** Search needs `evidence_crops` rows for each demo video's searchable revision ([what writes them](data.md#evidence_crops)). Confirm a search returns the demo incidents before the demo.

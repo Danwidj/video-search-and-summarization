@@ -24,7 +24,9 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
    settings from ``inference.json``. The response is validated under ``core-scored-v1`` with the
    ``id-normalization-v1`` recovery (``incident_contract.parse_report``), like the console;
    a core or schema violation raises :class:`IncidentExtractionError` carrying the raw output,
-   and nothing is persisted. The video-bounds rules (``WINDOW_BEYOND_VIDEO``,
+   and nothing is persisted. An output cut off by length (``finish_reason=length``) or over
+   ``MAX_P1_OUTPUT_CHARS`` is retried once with the identical request (never repaired); the response
+   and the error list every call in ``p1_attempts``. The video-bounds rules (``WINDOW_BEYOND_VIDEO``,
    ``TIMELINE_BEYOND_VIDEO``) apply whenever the video length is known: the caller's
    ``video_duration_seconds``, else the MP4 header read from the signed URL by byte ranges
    (``utils/video_duration.py``). When neither gives a length the rules cannot apply, as in the
@@ -52,8 +54,10 @@ import logging
 import os
 import re
 import time
+from typing import Annotated
 from typing import Any
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from nat.builder.builder import Builder
@@ -61,6 +65,7 @@ from nat.builder.framework_enum import LLMFrameworkEnum
 from nat.builder.function_info import FunctionInfo
 from nat.cli.register_workflow import register_function
 from nat.data_models.function import FunctionBaseConfig
+from pydantic import AfterValidator
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -95,6 +100,32 @@ REVIEWER_PROMPT_PREAMBLE = "\n".join(
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
+class VlmNoAnswerError(ValueError):
+    """The video model answered HTTP 200 with a null body or no choices (``/analyze`` returns 502)."""
+
+
+def redact_url(url: str) -> str:
+    """``url`` without credentials, query or fragment, so a signed URL never reaches a log (the path keeps the object key)."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return f"{parts.scheme}://{host}{parts.path}" if parts.scheme and host else "<redacted url>"
+
+
+class SignedUrl(str):
+    """A ``str`` whose ``repr`` is the redacted URL, so a signed URL never reaches a log through a container.
+
+    NAT logs a failed tool call's input as the plain kwargs dict LangChain hands over, which has no model
+    ``__repr__`` to hook; the value itself must print safely. The string content is unchanged.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return repr(redact_url(str(self)))
+
+
 class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
     """Endpoints and identity for the contract P1/RP1 calls.
 
@@ -121,7 +152,7 @@ MAX_CROP_CALLS_LIMIT = 200
 
 class IncidentReportGenInput(BaseModel):
     incident_id: str = Field(..., min_length=1, max_length=20, description="Console videos.id.")
-    video_url: str = Field(
+    video_url: Annotated[str, AfterValidator(SignedUrl)] = Field(
         ..., min_length=1, description="Signed R2 URL of the uploaded video, created by the console."
     )
     video_key: str | None = Field(
@@ -188,6 +219,10 @@ class IncidentReportGenOutput(BaseModel):
     contract_version: str
     raw_output: str
     finish_reason: str | None = None
+    p1_attempts: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Every P1 call this request made, in order: attempt, outcome, finish_reason, output_chars.",
+    )
     revision_id: int | None = Field(
         default=None, description="report_revisions.id of the AI revision written, or null when none was written."
     )
@@ -322,7 +357,13 @@ async def run_p1(
     if response.status_code >= 400:
         raise RuntimeError(f"P1 call returned HTTP {response.status_code}: {response.text[:500]}")
     body = response.json()
-    if telemetry is not None and isinstance(body, dict):
+    if not isinstance(body, dict) or not body.get("choices"):
+        # HTTP 200 with a null body is how the video host answers a video it cannot decode.
+        raise VlmNoAnswerError(
+            f"no completion in response body: {str(body)[:300]}. The video model returned no answer; the video is "
+            "probably in an unsupported format (for example 10-bit H.264) or unreadable."
+        )
+    if telemetry is not None:
         telemetry["usage"] = body.get("usage") or {}
     content, finish_reason = _message_content(body)
     try:
@@ -336,6 +377,55 @@ async def run_p1(
         raise IncidentExtractionError(
             str(exc), raw_output=content, finish_reason=finish_reason, model=model_name
         ) from exc
+
+
+# A valid report is a few KB; the P1 token cap (16384) is about 60k characters, which is what a runaway reaches.
+MAX_P1_OUTPUT_CHARS = 30_000
+P1_MAX_ATTEMPTS = 2
+
+
+def _runaway(exc: IncidentExtractionError) -> bool:
+    """Whether a rejected P1 output was cut off by length or is over the size limit, so one retry may help."""
+    return exc.finish_reason == "length" or len(exc.raw_output) > MAX_P1_OUTPUT_CHARS
+
+
+async def run_p1_with_retry(
+    client: httpx.AsyncClient, config: IncidentReportGenConfig, video_url: str, **kwargs: Any
+) -> tuple[dict[str, Any], str, str | None, list[dict[str, Any]]]:
+    """``run_p1`` with one automatic retry after a runaway output; returns ``run_p1``'s result plus every attempt.
+
+    The retry repeats the identical request: nothing in the rejected output is repaired or reused, so the
+    stored report is always a fresh, strictly validated answer. Any other failure is raised at once. On final
+    failure the error carries ``attempts`` and the last rejected output.
+    """
+    attempts: list[dict[str, Any]] = []
+    for attempt in range(1, P1_MAX_ATTEMPTS + 1):
+        try:
+            report, raw_output, finish_reason = await run_p1(client, config, video_url, **kwargs)
+        except IncidentExtractionError as exc:
+            retry = attempt < P1_MAX_ATTEMPTS and _runaway(exc)
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "outcome": "retried" if retry else "failed",
+                    "finish_reason": exc.finish_reason,
+                    "output_chars": len(exc.raw_output),
+                }
+            )
+            if not retry:
+                exc.attempts = attempts  # type: ignore[attr-defined]
+                raise
+            logger.warning(
+                "incident_report_gen: P1 output rejected (finish_reason=%s, %d chars); retrying once",
+                exc.finish_reason,
+                len(exc.raw_output),
+            )
+            continue
+        attempts.append(
+            {"attempt": attempt, "outcome": "valid", "finish_reason": finish_reason, "output_chars": len(raw_output)}
+        )
+        return report, raw_output, finish_reason, attempts
+    raise AssertionError("unreachable: the last attempt returns or raises")  # pragma: no cover
 
 
 async def run_rp1(
@@ -531,7 +621,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         async with httpx.AsyncClient(timeout=config.request_timeout_seconds, headers=headers) as client:
             try:
-                report, raw_output, finish_reason = await run_p1(
+                report, raw_output, finish_reason, p1_attempts = await run_p1_with_retry(
                     client,
                     config,
                     tool_input.video_url,
@@ -612,6 +702,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             contract_version=incident_contract.contract_version(),
             raw_output=raw_output,
             finish_reason=finish_reason,
+            p1_attempts=p1_attempts,
             revision_id=revision_id,
             evidence=evidence,
             video_duration_seconds=video_length.seconds,
