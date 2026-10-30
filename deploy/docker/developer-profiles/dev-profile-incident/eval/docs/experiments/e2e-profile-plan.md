@@ -1,8 +1,7 @@
 # End-to-end VSS profile (plan §F.2): execution plan and budget
 
-> **Status (2026-10-30): prepared, not run. Execution waits for the owner's approval of the budget below.**
+> **Status (2026-10-30): done.** The owner approved this budget unchanged, and the profile ran once under it. Results: [e2e-profile-results.md](e2e-profile-results.md). The text below is the plan as approved.
 > - **Done offline:** configs, the pinned manifest, the agent's per-request crop-call cap, the runner's profile mode and crop budget, and the preflight. The preflight passes.
-> - **Calls so far:** none. No model, grounding or judge request has been sent for the profile.
 > - **Scope:** latency and reliability only. The profile is never scored and never feeds an accuracy result. Stage 3 is complete and is not touched.
 
 ## 1. Design
