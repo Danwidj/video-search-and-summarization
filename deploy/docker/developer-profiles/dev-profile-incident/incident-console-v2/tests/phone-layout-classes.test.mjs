@@ -30,3 +30,26 @@ test('edit-mode start and end inputs cap at the video length', () => {
   const page = source('sections/reports/components/ReportPage/ReportPage.tsx');
   assert.match(page, /videoLength=\{playerDuration\}/);
 });
+
+test('report title takes its own full-width row below sm, with the controls wrapping under it', () => {
+  const page = source('sections/reports/components/ReportPage/ReportPage.tsx');
+  const title = page.match(/<h1\s+className="([^"]*)"\s+title=\{filename\}/)?.[1] ?? '';
+  assert.doesNotMatch(title, /\border-/);
+  assert.match(title, /\bbasis-full\b/);
+  assert.match(title, /\bsm:flex-1\b/);
+  assert.match(title, /\bsm:basis-0\b/);
+});
+
+test('version rows wrap their pills and only the star, badge and buttons keep their width', () => {
+  const versions = source('sections/reports/components/ReportVersions/ReportVersions.tsx');
+  assert.match(versions, /<span className="flex flex-wrap items-center gap-x-1\.5 gap-y-1 text-muted-foreground">/);
+  assert.doesNotMatch(versions, /<span className="truncate">/);
+  assert.match(versions, /<span className="min-w-0 \[overflow-wrap:anywhere\]">/);
+  for (const marker of [
+    'h-7 w-7 shrink-0',
+    'h-6 shrink-0 self-center px-2 text-\\[10\\.5px\\] font-bold',
+    'shrink-0 self-center px-2 py-0\\.5',
+  ]) {
+    assert.match(versions, new RegExp(marker));
+  }
+});
