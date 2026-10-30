@@ -83,6 +83,7 @@ describe('analyseVideo: a new upload', () => {
     assert.deepEqual(analyzer.requests[0], {
       videoName: 'front-door.mp4',
       videoKey: 'uploads/front-door.mp4',
+      videoUrl: 'https://signed.test/video.mp4',
       model: MODEL.id,
       reviewerPrompt: 'look at the door',
       modelRunId: 'front-door.mp4@2026-10-30T01:02:03.000Z',

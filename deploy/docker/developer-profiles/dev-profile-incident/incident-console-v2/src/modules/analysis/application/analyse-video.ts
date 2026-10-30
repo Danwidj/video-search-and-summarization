@@ -135,6 +135,8 @@ export async function analyseVideo(input: AnalyseVideoInput, ports: AnalyseVideo
       incidentId = video.incidentId;
     }
 
+    operation = 'signing the video URL';
+    const videoUrl = await ports.objects.playbackUrl(storageKey);
     const runId = modelRunId(input.videoName, ports.now());
     const remaining = deadline - ports.now().getTime();
     operation = 'the agent analysis';
@@ -142,6 +144,7 @@ export async function analyseVideo(input: AnalyseVideoInput, ports: AnalyseVideo
       {
         videoName: input.videoName,
         videoKey: storageKey,
+        videoUrl,
         model: model.id,
         reviewerPrompt: prompt,
         modelRunId: runId,

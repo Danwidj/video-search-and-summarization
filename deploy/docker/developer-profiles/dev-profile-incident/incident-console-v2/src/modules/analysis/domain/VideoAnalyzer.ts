@@ -10,6 +10,8 @@ export interface VideoAnalysisRequest {
   videoName: string;
   /** The video's logical R2 key (no prefix); the agent names its evidence crops after it. */
   videoKey: string;
+  /** A signed GET URL for the video, which the agent fetches it from (valid long enough for a slow model). */
+  videoUrl: string;
   model: string;
   /** The reviewer prompt, sent only when present. */
   reviewerPrompt: string | null;
