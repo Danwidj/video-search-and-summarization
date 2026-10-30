@@ -8,6 +8,13 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Alternatives rejected:**
   - *Switch camera in Edit mode:* Rejected because Edit is bound to the camera being edited and a switch would drop the draft.
 - **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentschat-citations).
+### 2026-10-30: Suggestion cards read each side narrowly and in parallel; Mark official shows its progress
+- **Decision:** `IncidentReportRepository.getSideSummary` is the read behind a suggestion card: the incident row, its videos (three columns) and the shown revision's `overview.title` only (PostgREST pulls it out of the payload), in at most two round trips; the cards route reads every side and suggestion in parallel. Mark official fetches the incident and the revision together and embeds all cameras at once. The star shows a spinner while the request runs, and the answer of a successful mark or clear counts as the official state until the refetched list arrives (`lib/reports/official-state.ts`), so a quick second mark still asks before it replaces.
+- **Why:** A card needed about six serial reads per side, including the whole `model_runs` row for a title; the banner and the library's match strip arrived seconds after the page. Thumbnail signing is local and was never the cost. The stale list let a second click skip the replace confirmation.
+- **Alternatives rejected:**
+  - *Cache cards in the browser or server:* Rejected because a stale card would hide a new suggestion; the narrow read is cheap enough.
+  - *Skip re-embedding when the revision's crops exist:* Deferred; one embedding call per camera remains the main cost of a mark.
+- **Links:** [`architecture.md`](architecture.md#5-mvp3-incidents-with-several-videos); `list-suggestion-cards.ts`, `ReportVersions.tsx`.
 
 ### 2026-10-30: Match judge returns structured reasons beside the text ones
 - **Decision:** Each judgement carries `structured_reasons` (`{kind, label, detail}`) next to the unchanged free-text `reasons`, built from the same comparison. Kinds: `same_event_type`, `different_event_type`, `same_place`, `similar_place`, `different_place`, `place_unknown`, `time_overlap`, `time_apart`. The score and its weights are unchanged. The console ignores the field until a later change renders it as chips.

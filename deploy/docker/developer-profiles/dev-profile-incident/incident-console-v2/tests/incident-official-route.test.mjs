@@ -143,3 +143,24 @@ test('an image-less revision is marked official with no embedding call and no cr
   assert.equal(agentCalls.length, 0);
   assert.deepEqual(cropsOf(db), []);
 });
+
+test('the cameras are embedded together, not one after the other', async () => {
+  const db = incidentDatabase();
+  let inFlight = 0;
+  let peak = 0;
+  withAgent(db, {
+    agent: async (body) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight -= 1;
+      return new Response(
+        JSON.stringify(
+          (body.evidence ?? []).map((item) => ({ item_type: item.item_type, item_id: item.item_id, embedding: Array(1024).fill(0.1) })),
+        ),
+      );
+    },
+  });
+  assert.equal((await put({ revisionId: 1 })).status, 200);
+  assert.equal(peak, 2);
+});
