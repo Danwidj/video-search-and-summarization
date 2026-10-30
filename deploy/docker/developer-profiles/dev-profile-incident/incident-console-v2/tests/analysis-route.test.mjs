@@ -197,9 +197,6 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
 
-const { compactId } = await import('../src/lib/ids.ts');
-const compactVideoId = (sensorId) => compactId('v', sensorId);
-
 const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');
 const validContractReport = () => JSON.parse(contractFixture('valid/full-report.json'));
 
@@ -445,7 +442,7 @@ test('agent mode: a revision the agent already stored is verified, not inserted 
       // The agent writes its AI revision against the console's model run before it answers.
       testDb.store.report_revisions.push({
         id: 41,
-        video_id: compactVideoId('s-ag'),
+        video_id: 'clip.mp4',
         revision_no: 1,
         kind: 'ai',
         model_run_id: body.model_run_id,
@@ -685,7 +682,7 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     assert.equal(row.prompt_version, 'incident-contract-v4');
     assert.equal(notes.status, 'contract_failed');
     assert.equal(notes.stage, 'contract_validation');
-    assert.equal(notes.videoId, compactVideoId('s-bad'));
+    assert.equal(notes.videoId, 'clip.mp4');
     assert.equal(notes.response.content, content, 'the original response is stored unaltered');
     assert.deepEqual(
       notes.validation.firstPass.map((v) => v.code),
