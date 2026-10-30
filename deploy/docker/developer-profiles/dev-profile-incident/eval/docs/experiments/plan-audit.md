@@ -1,6 +1,6 @@
 # Evaluation plan audit and deviation record
 
-> **Status (2026-10-30, updated after the end-to-end profile and the owner's acceptance of O1, O2 and O4).** This page audits the [original plan](../../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) (PRs 0-7, decisions D1-D15) against what was built and run. It records every requirement that was replaced, omitted or deferred, and the two offline checks added on 2026-10-30.
+> **Status (2026-10-30, updated after the end-to-end profile and the owner's acceptance of O1, O2 and O4).** This page audits the original plan (local planning document `.docs/mvp2/ground-truth-and-prompt-experiments-plan.md`, not tracked in Git) (PRs 0-7, decisions D1-D15) against what was built and run. It records every requirement that was replaced, omitted or deferred, and the two offline checks added on 2026-10-30.
 > - **Explicit acknowledgement:** the ground truth (`ground-truth-v1.0`) and the item-matching calibration (τ = 0.40) are **AI-assisted, not human-validated**. The plan's human review and agreement steps were not carried out. Every reported accuracy is accuracy against an AI-assisted reference that the owner approved at the dataset level.
 > - **Read-only:** nothing on this page changed the frozen ground truth, split, methodology, D9 v2, prompts or any Stage 0-3 result. The offline checks sent no model, embedding, judge or cropping request.
 
@@ -39,7 +39,7 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 | Stage 2 | E1-E7 on dev through VSS, combined candidate, pre-registered selection | Done (executed) | #240-#275; [2a](stage2a-results.md), [2b](stage2b-results.md) |
 | Stage 2 | E6 few-shot examples | **Done (replaced)** by V6 incident boundaries | §2 R4 |
 | Stage 2 | D9 (c) selection rule | **Done (replaced)** by D9 v2 | §2 R3 |
-| Stage 2 | Quarantine attestation by the prompt authors | **Partial**: AI author verified retrospectively; owner attestation not obtained | §2 O3; [attestation](stage2-quarantine-attestation.md) |
+| Stage 2 | Quarantine attestation by the prompt authors | **Partial, accepted as a limitation**: factual audit of the AI drafting sessions; full quarantine not established; owner's attestation unprovided | §2 O3; [quarantine audit](stage2-quarantine-attestation.md) |
 | Stage 3 | C1-C4 on 55 test clips, run once, four comparisons plus C3−C1 | Done (executed) | #276, #339; [results](stage3-results.md) |
 | Stage 3 | N = 2 on test (D10) | **Done (replaced)**: N = 1 | §2 R5 |
 | Stage 3 | D15 sensitivity on the 52 clips | Done | Stage 3 §3 |
@@ -135,6 +135,6 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 
 1. ~~Run the end-to-end profile~~: **done 2026-10-30** ([results](e2e-profile-results.md)).
 2. ~~Owner acceptance of O1, O2 and O4~~: **accepted 2026-10-30**.
-3. **O3, the owner's part of the quarantine attestation:** open. The AI author's part is verified ([attestation](stage2-quarantine-attestation.md)); the owner's own statement can be added verbatim if they choose to give one.
+3. ~~O3~~: **closed as a documented limitation (owner, 2026-10-30).** A factual audit shows that the AI drafting sessions read no per-video test results in the verified window, and discloses aggregate benchmark exposure and access to test ground-truth labels. Full quarantine cannot be established; the owner's attestation remains unprovided unless supplied ([quarantine audit](stage2-quarantine-attestation.md)). No rerun is required.
 
-Apart from item 3, nothing in the plan is outstanding as mandatory work. The human validation that R1 and R2 replaced stays a disclosed limitation unless the owner commissions a human review, which would start a new ground-truth or calibration version and a re-score.
+Nothing in the plan is outstanding as mandatory work. The human validation that R1 and R2 replaced stays a disclosed limitation unless the owner commissions a human review, which would start a new ground-truth or calibration version and a re-score.

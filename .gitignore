@@ -27,3 +27,17 @@ deploy/docker/rag-secret.override.yml
 *.log
 *checkpoint.*
 .orchestrator-artifacts/*
+
+# Owner rule (2026-10-30): planning documents and spreadsheets stay local, never in Git.
+ground-truth-and-prompt-experiments-plan.md
+ground-truth-planning-instructions.md
+resolve-ground-truth proposals.md
+resolve-ground-truth-proposals.md
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.xltx
+*.xltm
+# Exception: NVIDIA's upstream VIOS sanity-test plan, read by services/vios's vios-dev-sanity agent (owner, 2026-10-30).
+!services/vios/test/vios_dev_sanity.xlsx
