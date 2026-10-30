@@ -13,6 +13,9 @@ register('./support/alias-loader.mjs', import.meta.url);
 const { listSuggestionCards } = await import('../src/modules/matching/application/list-suggestion-cards.ts');
 const { InMemorySuggestionStore } = await import('../src/modules/matching/infrastructure/memory/matching.ts');
 const { InMemoryIncidentReportRepository } = await import('../src/modules/reports/infrastructure/memory/incident-reports.ts');
+const { SupabaseIncidentReportAdapter } = await import('../src/modules/reports/infrastructure/supabase/incident-reports.ts');
+const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
+const { A, B, incidentDatabase } = await import('./support/incident-write-fixture.mjs');
 const cardsRoute = await import('../src/app/api/suggestions/cards/route.ts');
 
 const video = (incidentId, videoId, storageKey) => ({
@@ -112,6 +115,61 @@ describe('listSuggestionCards', () => {
       (await listSuggestionCards(w, sign)).map((c) => c.id),
       [2],
     );
+  });
+});
+
+describe('listSuggestionCards over the Supabase adapter', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  // Incident 1 has two videos and a revision; 2 and 3 are one video each with no revision.
+  function database() {
+    const db = incidentDatabase({ official: 1 });
+    for (const [id, video] of [
+      [2, 'gate.mp4'],
+      [3, 'van.mp4'],
+    ]) {
+      db.store.incidents.push({ id, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' });
+      db.store.videos.push({ id: video, incident_id: id, filepath: `uploads/${video}`, uploaded_datetime: '2026-10-01T01:00:00' });
+    }
+    globalThis.fetch = db.fetch;
+    return db;
+  }
+  const reports = () => new SupabaseIncidentReportAdapter(new PostgrestClient('https://supabase.test', 'k'));
+  const pending = (pairs) => ({
+    listPending: async () => pairs.map(([a, b], id) => ({ id: id + 1, incidentAId: a, incidentBId: b, score: 0.9, reasons: [] })),
+  });
+
+  test('reads each side with a few narrow requests and never loads a model run', async () => {
+    const db = database();
+    const cards = await listSuggestionCards({ suggestions: pending([[1, 2]]), reports: reports() }, sign);
+    assert.equal(cards[0].kept.title, 'Two cameras');
+    assert.deepEqual(cards[0].kept.videoNames, [A, B]);
+    assert.equal(cards[0].joining.title, null);
+    assert.deepEqual(cards[0].joining.videoNames, ['gate.mp4']);
+    assert.equal(cards[0].joining.thumbnailUrl, 'https://signed.test/thumbnails/uploads/gate.mp4.webp');
+    const paths = db.requests.map((request) => request.path);
+    assert.ok(!paths.includes('model_runs'), 'a title needs no model run');
+    assert.ok(paths.length <= 7, `at most 3 requests per side, saw ${paths.length}: ${paths}`);
+  });
+
+  test('a side shared by several suggestions is read once', async () => {
+    const db = database();
+    const cards = await listSuggestionCards(
+      {
+        suggestions: pending([
+          [1, 2],
+          [1, 3],
+          [2, 3],
+        ]),
+        reports: reports(),
+      },
+      sign,
+    );
+    assert.equal(cards.length, 3);
+    assert.equal(db.requests.filter((request) => request.path === 'incidents').length, 3);
   });
 });
 

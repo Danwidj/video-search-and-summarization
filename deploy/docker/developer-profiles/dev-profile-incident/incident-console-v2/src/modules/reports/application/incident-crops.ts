@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The searchable crops of an incident revision: one embedding call per camera, because item ids repeat from
+// The searchable crops of an incident revision: one embedding call per camera (all in flight together), because item ids repeat from
 // camera to camera, and each crop is tagged with its source video. Shared by Save, Mark official and the
 // searchable-crops step.
 
@@ -22,14 +22,15 @@ export async function incidentCrops(
   videos: readonly IncidentVideo[],
   embed: EmbedEvidence,
 ): Promise<IncidentCrop[]> {
-  const crops: IncidentCrop[] = [];
-  for (const camera of envelope.cameras) {
-    const video = videos.find((candidate) => candidate.videoId === camera.video);
-    if (!video || !covered.includes(camera.video)) continue;
-    const mine = evidence.filter((entry) => entry.image && isCameraEvidence(entry, camera.video, video.storageKey));
-    if (!mine.length) continue;
-    const embeddings = await embed(mine);
-    for (const crop of officialCrops(camera.report, mine, embeddings)) crops.push({ ...crop, video_id: camera.video });
-  }
-  return crops;
+  const perCamera = await Promise.all(
+    envelope.cameras.map(async (camera): Promise<IncidentCrop[]> => {
+      const video = videos.find((candidate) => candidate.videoId === camera.video);
+      if (!video || !covered.includes(camera.video)) return [];
+      const mine = evidence.filter((entry) => entry.image && isCameraEvidence(entry, camera.video, video.storageKey));
+      if (!mine.length) return [];
+      const embeddings = await embed(mine);
+      return officialCrops(camera.report, mine, embeddings).map((crop) => ({ ...crop, video_id: camera.video }));
+    }),
+  );
+  return perCamera.flat();
 }

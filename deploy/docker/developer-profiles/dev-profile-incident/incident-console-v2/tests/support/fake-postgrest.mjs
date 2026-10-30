@@ -3,8 +3,8 @@
 // A small in-memory PostgREST for adapter contract tests: eq, neq, is.null,
 // like and in filters, order, limit, upsert with on_conflict, delete, identity
 // ids for the tables named in `identity`, and RPCs and read-only views
-// supplied by the test. Every request is recorded. Embedded selects and
-// cascades are not modelled.
+// supplied by the test. Every request is recorded. A select is ignored except for `alias:col->a->>b`
+// JSON columns. Embedded selects and cascades are not modelled.
 
 const CONTROL = new Set(['select', 'limit', 'offset', 'on_conflict', 'order']);
 
@@ -45,6 +45,27 @@ function sorted(rows, order) {
     }
     return 0;
   });
+}
+
+/** Adds the `alias:col->a->>b` columns of a select (a value pulled out of a JSON column); every other column is left as it is. */
+function withJsonColumns(rows, select) {
+  const aliases = (select ?? '')
+    .split(',')
+    .map((part) => part.match(/^(\w+):(\w+)((?:->>?\w+)+)$/))
+    .filter(Boolean);
+  if (!aliases.length) return rows;
+  return rows.map((row) => ({
+    ...row,
+    ...Object.fromEntries(
+      aliases.map(([, alias, column, path]) => [
+        alias,
+        path
+          .split(/->>?/)
+          .filter(Boolean)
+          .reduce((value, key) => value?.[key], row[column]) ?? null,
+      ]),
+    ),
+  }));
 }
 
 function matches(row, params) {
@@ -97,7 +118,7 @@ export function fakePostgrest(tables, { rpc = {}, views = {}, identity = {} } = 
         parsed.searchParams.get('order'),
       );
       const limit = Number(parsed.searchParams.get('limit') || found.length);
-      return json(found.slice(0, limit));
+      return json(withJsonColumns(found.slice(0, limit), parsed.searchParams.get('select')));
     }
     if (method === 'DELETE') {
       store[path] = rows.filter((row) => !matches(row, parsed.searchParams));

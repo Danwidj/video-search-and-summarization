@@ -102,6 +102,17 @@ export interface IncidentRecord {
   revisions: IncidentRevisionSummary[];
 }
 
+/** What a review card shows of an incident: its shown version's title, its video names and its first video's key. */
+export interface IncidentSideSummary {
+  incidentId: IncidentId;
+  /** The overview title of the shown revision (official, else newest); null when it has no revision or no title. */
+  title: string | null;
+  /** The real file names, earliest upload first, ties by name. */
+  videoNames: string[];
+  /** videos.filepath of the first video (logical R2 key, no environment prefix); null when none is recorded. */
+  firstVideoKey: string | null;
+}
+
 /** One stored revision in full. */
 export interface IncidentRevisionRecord {
   revision: IncidentRevisionSummary;
@@ -173,6 +184,8 @@ export interface IncidentReportRepository {
   listIncidents(query: ReportListQuery): Promise<IncidentSummaryList>;
   /** The incident with its videos and revisions (with coverage names); null when it does not exist. */
   getIncident(incidentId: IncidentId): Promise<IncidentRecord | null>;
+  /** The narrow read behind a review card: a few columns, no payload, evidence or run. Null when the incident does not exist. */
+  getSideSummary(incidentId: IncidentId): Promise<IncidentSideSummary | null>;
   /**
    * One revision in full. With revisionId null: the official revision, else the newest. Null when the
    * incident, or that revision of it, is missing.
