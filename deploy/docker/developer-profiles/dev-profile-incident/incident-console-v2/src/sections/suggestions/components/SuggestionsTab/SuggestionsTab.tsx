@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DecisionButtons, ReasonList, ScoreReadout, SideLink } from '@/sections/suggestions/components/Shared';
+import { matchesSortNote } from '@/lib/library/view';
 import type { SuggestionCards } from '@/sections/suggestions/use-suggestion-cards';
 import type { SuggestionCard } from '@/sections/suggestions/types';
 
@@ -67,7 +68,7 @@ export function SuggestionsTab({ state }: { state: SuggestionCards }) {
             time overlap is only a hint.
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">{cards.length} pending · highest score first</p>
+        {matchesSortNote(cards.length) && <p className="text-xs text-muted-foreground">{matchesSortNote(cards.length)}</p>}
       </div>
       {notice && (
         <Alert className="mt-4" data-testid="suggestion-notice">

@@ -16,9 +16,12 @@ import {
   EMPTY_FILTERS,
   FILTER_KEYS,
   type IncidentFilters,
+  type LibraryTab,
   activeFilters,
   filterParams,
+  libraryUrl,
   parseFilters,
+  parseTab,
   presetAfter,
 } from '@/lib/library/filters';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
@@ -31,16 +34,14 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
-type Tab = 'incidents' | 'evidence' | 'matches';
+type Tab = LibraryTab;
 const STATE_KEY = 'report-library-state';
 const PAGE_SIZE = 6;
 
 export function Library() {
   const query = useSearchParams();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>(
-    query.get('tab') === 'evidence' ? 'evidence' : query.get('tab') === 'matches' ? 'matches' : 'incidents',
-  );
+  const [tab, setTab] = useState<Tab>(parseTab(query.get('tab')));
   const suggestions = useSuggestionCards();
   const [filters, setFilters] = useState<IncidentFilters>(EMPTY_FILTERS);
   const [searchText, setSearchText] = useState('');
@@ -116,9 +117,7 @@ export function Library() {
       setSearchMode(payload.searchMode ?? null);
       if (activeFilters(filters).length === 0) setLibrary(payload.reports.length ? 'has-reports' : 'empty');
       else setLibrary((current) => (payload.reports?.length ? 'has-reports' : current));
-      router.replace(`/library?${new URLSearchParams([...(tab === 'incidents' ? [] : [['tab', tab]]), ...params])}`, {
-        scroll: false,
-      });
+      router.replace(libraryUrl(tab, filters), { scroll: false });
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError') && sequence === loadSequence.current)
         setError(cause instanceof Error ? cause.message : 'Could not load incidents');
@@ -134,6 +133,12 @@ export function Library() {
     void load(controller.signal);
     return () => controller.abort();
   }, [ready, tab, filters, timeZone]);
+
+  // The tab is part of the URL: every tab change writes it (the incidents tab also writes it as its list loads).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a tab change writes the URL here; filters are written by load
+  useEffect(() => {
+    if (ready && tab !== 'incidents') router.replace(libraryUrl(tab, filters), { scroll: false });
+  }, [ready, tab]);
 
   useEffect(() => {
     if (loading || restoredPosition.current) return;
@@ -245,7 +250,7 @@ export function Library() {
         <Button asChild className="bg-ink font-semibold text-white hover:bg-ink/90">
           <Link href="/">
             <PlusIcon className="size-4" />
-            Analyze video
+            Analyze videos
           </Link>
         </Button>
       </div>
@@ -415,7 +420,7 @@ export function Library() {
                   <Button asChild className="mt-4 bg-ink font-semibold text-white hover:bg-ink/90">
                     <Link href="/">
                       <PlusIcon className="size-4" />
-                      Analyze video
+                      Analyze videos
                     </Link>
                   </Button>
                 </div>
