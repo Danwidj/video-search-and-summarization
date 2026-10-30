@@ -11,6 +11,8 @@ export interface ServiceConfiguration {
   r2AccessKey?: string;
   r2SecretKey?: string;
   r2Bucket?: string;
+  /** Prepended to every R2 key at the storage boundary; DB keys stay prefix-free. */
+  r2KeyPrefix?: string;
 }
 
 function optionalEnvironmentValue(name: string): string | undefined {
@@ -33,6 +35,7 @@ export function getServiceConfiguration(): ServiceConfiguration {
     r2AccessKey: optionalEnvironmentValue('R2_ACCESS_KEY'),
     r2SecretKey: optionalEnvironmentValue('R2_SECRET_KEY'),
     r2Bucket: optionalEnvironmentValue('R2_BUCKET'),
+    r2KeyPrefix: optionalEnvironmentValue('R2_KEY_PREFIX'),
   };
 }
 
