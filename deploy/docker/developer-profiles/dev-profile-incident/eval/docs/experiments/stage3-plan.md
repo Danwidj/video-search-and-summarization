@@ -1,8 +1,6 @@
 # Stage 3: final held-out comparison (C1-C4): execution plan
 
-> **Status (2026-10-29): prepared, not run.** **Execution waits for the owner's approval** of this plan, its caps and its runtime.
-> - **Done offline:** the configs, the reproducibility manifest and the preflight are committed. The preflight passes.
-> - **Calls so far:** none. No inference or judge request has been sent for Stage 3.
+> **Status (2026-10-30): done.** Approved by the owner on 2026-10-29 and run unchanged under this plan: 220 video-runs, recovery-v1, both report views and the integrity audit (passed). Results: [stage3-results.md](stage3-results.md).
 > - **Ground truth:** `ground-truth-v1.0` is frozen on the owner's dataset-level approval of AI-assisted labels. It is **not individually human-verified**.
 > - **Matching:** τ = 0.40 is AI-calibrated, **not human-validated**.
 
@@ -88,7 +86,46 @@
 - **Clips:** test clips are like dev ones (median 42 s against 49 s, max 333 s, 5 over 120 s).
 - **Cost:** the gateway reports $0 per token. That is the project's gateway charge only. The sponsor's GPU and infrastructure cost is real, not visible to the project, and **not free**.
 
-## 4. Execution (only after approval)
+## 4. Execution (approved 2026-10-29)
+
+**Automated:** `uv run python scripts/eval_stage3.py supervise`, from `eval/`, on AC power with the lid open. It is the single resumable launch command (`stage3_automation.py`), and does steps 1–6 below without further input.
+
+- **Before every session:**
+  - the full preflight;
+  - an integrity check of the checkpoint against `schedule.json`;
+  - AC power and DNS;
+  - it starts the embedder and the local agent if they are down.
+- **Sessions:** the frozen run in 4-hour sessions, resuming from the checkpoint:
+  - a session-limit pause resumes at once;
+  - an outage or rate-limit pause waits 15 min and resumes, at most twice;
+  - an interrupted runner resumes at most twice.
+- **Stops for the owner:** a cap, a runner refusal, a failed preflight, manifest drift, checkpoint corruption, a second stage directory or an existing recovery. It never resets the stage or starts a second run.
+- **Progress:** `<stage>/progress.json` is rewritten every minute, and `progress.jsonl` keeps the history. They cover:
+  - runs done and remaining;
+  - original and retry attempts;
+  - valid and invalid outputs, and infrastructure failures;
+  - tokens and judge calls against the caps;
+  - elapsed time, the rate and the estimated time left;
+  - checkpoint and manifest integrity.
+
+  `eval_stage3.py progress` prints it.
+- **Finalise:**
+  1. `verify`.
+  2. recovery-v1 on eligible failures (dry run, then paid; refused above 15 per config or if a recovery already exists).
+  3. `recovered: 0` merged views where nothing was eligible.
+  4. Both report views under `eval_data/results/reports/stage3/{original,recovery-adjusted-v1}/`.
+  5. The integrity audit `reports/stage3/audit-<time>.json`. It checks:
+     - 220 runs, none repeated;
+     - every result linked to the manifest;
+     - the ground truth and methodology unchanged;
+     - originals untouched, and recovered runs linked and distinguishable;
+     - the reports re-computed from the saved results;
+     - items re-matched offline;
+     - usage within the caps;
+     - a cost log of 220 lines.
+- **After any stop:** rerun the same command. Supervisor logs: `eval_data/results/stage3-supervisor/`.
+
+The manual equivalent:
 
 1. **Preflight** (offline): `uv run python scripts/eval_stage3.py preflight` must print `"ok": true`.
    - It checks roles, shared settings, the runner's test guards, the manifest, the ground-truth digest, the 55 clips, the caps, run-once and request parity.
@@ -118,7 +155,7 @@
    - A config with nothing to recover gets a `recovered: 0` merged view, so all four share the `original+recovery-v1` protocol.
 6. **Report** (offline), for the merged records and again for the original runs:
    - `eval_stage3.py report --title … --out eval_data/results/reports/stage3/<view>/ C1=… C2=… C3=… C4=…`
-   - `eval_severity_report.py` with each baseline.
+   - `eval_severity_report.py --baseline C2` (the Stage 3 report also has the paired severity differences of every comparison).
 
 ## 5. Reporting (`eval_stage3.py report`, paired per video)
 

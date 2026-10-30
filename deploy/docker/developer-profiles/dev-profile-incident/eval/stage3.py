@@ -268,6 +268,38 @@ def expected_usage(configs: dict[str, dict], split: dict, gt_index: dict) -> dic
             "runtime_hours": [round(runs / high, 1), round(runs / low, 1)], "basis": MEASURED}
 
 
+def preflight_checks(*, skip_agent_parity: bool = False, results_root: Path = er.RESULTS_ROOT) -> dict:
+    """Every offline Stage 3 check (``eval_stage3.py preflight``; the supervisor repeats it before each session)."""
+    import eval_experiment
+
+    configs, split = load_configs(), json.loads(er.SPLIT_PATH.read_text())
+    gt_index, _ = eval_experiment.load_gt(configs["C1"])
+    checks = {"roles": role_problems(configs), "shared settings": shared_setting_problems(configs),
+              "runner guards": [f"{n}: {p}" for n, c in configs.items() for p in er.config_problems(c)]}
+    try:
+        for config in configs.values():
+            er.preflight(config, split, results_root=results_root)
+    except er.ExperimentRefused as exc:
+        checks["runner guards"].append(str(exc))
+    committed = json.loads(MANIFEST_PATH.read_text()) if MANIFEST_PATH.exists() else {}
+    checks["manifest"] = manifest_problems(committed, build_manifest(configs, split)) if committed \
+        else ["experiments/stage3/manifest.json is missing"]
+    checks["ground truth"] = [] if gt_index["manifest"].get("records_sha256") == committed.get("ground_truth", {}).get(
+        "records_sha256") else ["the loaded frozen ground truth does not match the manifest digest"]
+    checks["test clips"] = clip_problems(split, json.loads(eval_experiment.DATASET_MANIFEST.read_text()), gt_index)
+    checks["caps"] = cap_problems(configs, split, gt_index)
+    checks["run once"] = run_once_problems(configs, results_root)
+    request_parity = None
+    if skip_agent_parity:
+        checks["request parity"] = ["skipped (--skip-agent-parity): not a passing preflight"]
+    else:
+        request_parity = parity(configs)
+        checks["request parity"] = [f"{pair}: {row['differences']}" for pair, row in request_parity.items()
+                                    if row["differences"]]
+    return {"ok": not any(checks.values()), "checks": checks, "request_parity": request_parity,
+            "caps": stage_caps(configs, split, gt_index), "expected": expected_usage(configs, split, gt_index)}
+
+
 # --- report ---------------------------------------------------------------------------------------
 
 COMPARISONS = (*er.COMPARISONS, ("C3-C1", "C3", "C1", ("best VSS vs fixed direct baseline = (C3-C4) + (C4-C1); "
