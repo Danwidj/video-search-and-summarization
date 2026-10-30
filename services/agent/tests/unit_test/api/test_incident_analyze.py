@@ -230,6 +230,7 @@ PRODUCTION_KEYS = {
     "contract_version",
     "raw_output",
     "finish_reason",
+    "p1_attempts",
     "analysis_id",
     "model_run_id",
     "outcome",
@@ -317,4 +318,4 @@ def test_a_rejected_experimental_output_names_its_prompt_in_the_422(monkeypatch)
 def test_a_production_422_keeps_its_documented_detail():
     client, _ = _client(side_effect=IncidentExtractionError("bad", raw_output="{bad", model="m"))
     detail = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()["detail"]
-    assert set(detail) == {"message", "raw_output", "finish_reason", "model", "contract_version"}
+    assert set(detail) == {"message", "raw_output", "finish_reason", "model", "p1_attempts", "contract_version"}
