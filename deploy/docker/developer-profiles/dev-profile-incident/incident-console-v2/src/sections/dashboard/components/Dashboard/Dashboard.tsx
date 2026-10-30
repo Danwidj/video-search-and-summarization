@@ -24,7 +24,8 @@ const NONE: Filters = { type: '', severity: '', day: '', hour: '' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const EMPTY: DashboardAnalytics = {
   total: 0,
-  videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
+  incidents: { total: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
+  videos: { uploaded: 0 },
   previous: null,
   averageConfidence: null,
   confidenceNotProvided: 0,
@@ -169,8 +170,8 @@ export function Dashboard() {
           note="in the selected period"
           value={data.total}
         />
-        <Metric label="Awaiting official report" note="have reports, none selected" value={data.videos.awaitingSelection} />
-        <Metric label="Without a report" note="no successful analysis yet" value={data.videos.withoutReport} />
+        <Metric label="Awaiting official report" note="have reports, none selected" value={data.incidents.awaitingSelection} />
+        <Metric label="Without a report" note="no successful analysis yet" value={data.incidents.withoutReport} />
       </section>
       <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric

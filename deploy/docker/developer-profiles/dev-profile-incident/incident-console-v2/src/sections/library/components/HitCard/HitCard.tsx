@@ -82,7 +82,7 @@ export function HitCard({
             box={item.boundingBox}
             className="h-full w-full rounded-none"
             drawBox
-            frameSrc={`/api/reports/${encodeURIComponent(incident.videoId)}/frame?t=${item.timestampSeconds}`}
+            frameSrc={`/api/reports/${encodeURIComponent(incident.incidentId)}/frame?t=${item.timestampSeconds}`}
             kind={item.itemType}
             label={item.name || item.itemId}
             src={item.cropImageUrl}

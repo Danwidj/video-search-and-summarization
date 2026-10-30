@@ -33,13 +33,19 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
+// The agent takes incident_id as an integer (mvp3); the frozen chat-contract-v1 schema still says string.
+const asContractV1 = (body) => ({
+  ...body,
+  ...(body.context ? { context: { ...body.context, incident_id: String(body.context.incident_id) } } : {}),
+});
+
 const post = (body) => POST(new Request('http://console.test/api/chat', { method: 'POST', body: JSON.stringify(body) }));
 
 test('the route calls POST /api/v1/incidents/chat with a chat-contract-v1 request scoped to the incident', async () => {
   const response = await post({
     messages: [{ role: 'user', content: 'What weapon?' }],
     sessionId: 'session_abc',
-    incidentId: 'Assault007',
+    incidentId: '12',
   });
   assert.equal(response.status, 200);
   assert.equal(upstream.calls.length, 1);
@@ -47,9 +53,9 @@ test('the route calls POST /api/v1/incidents/chat with a chat-contract-v1 reques
   assert.deepEqual(upstream.calls[0].body, {
     session_id: 'session_abc',
     messages: [{ role: 'user', content: 'What weapon?' }],
-    context: { scope: 'incident', incident_id: 'Assault007' },
+    context: { scope: 'incident', incident_id: 12 },
   });
-  assert.equal(validateRequest(upstream.calls[0].body), true, JSON.stringify(validateRequest.errors));
+  assert.equal(validateRequest(asContractV1(upstream.calls[0].body)), true, JSON.stringify(validateRequest.errors));
 });
 
 test('the session and context are left out when not given', async () => {
@@ -64,7 +70,8 @@ test('the response carries the session and the cited evidence in camelCase', asy
   assert.equal(body.message.content, agentResponse.message.content);
   const [first] = agentResponse.message.citations;
   assert.deepEqual(body.message.citations[0], {
-    incidentId: first.incident_id,
+    incidentId: String(first.incident_id),
+    videoName: first.video_id ?? null,
     itemId: first.item_id,
     itemType: first.item_type,
     timestampSeconds: first.timestamp_seconds,
@@ -101,19 +108,19 @@ test('a malformed agent response is a 500', async () => {
 
 test('a version and an unsaved draft are forwarded as version_id and draft_report', async () => {
   const draftReport = { entities: [{ entity_id: 'E1', type: 'human', description: 'Guard' }] };
-  const response = await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: 'Assault007', versionId: 7, draftReport });
+  const response = await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: '12', versionId: 7, draftReport });
   assert.equal(response.status, 200);
   assert.deepEqual(upstream.calls[0].body, {
     messages: [{ role: 'user', content: 'Who?' }],
-    context: { scope: 'incident', incident_id: 'Assault007' },
+    context: { scope: 'incident', incident_id: 12 },
     version_id: 7,
     draft_report: draftReport,
   });
-  assert.equal(validateRequest(upstream.calls[0].body), true, JSON.stringify(validateRequest.errors));
+  assert.equal(validateRequest(asContractV1(upstream.calls[0].body)), true, JSON.stringify(validateRequest.errors));
 });
 
 test('a version alone sends no draft_report', async () => {
-  await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: 'Assault007', versionId: 3 });
+  await post({ messages: [{ role: 'user', content: 'Who?' }], incidentId: '12', versionId: 3 });
   assert.equal(upstream.calls[0].body.version_id, 3);
   assert.equal('draft_report' in upstream.calls[0].body, false);
 });

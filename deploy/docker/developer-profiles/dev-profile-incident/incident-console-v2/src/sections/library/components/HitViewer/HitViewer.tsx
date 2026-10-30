@@ -33,7 +33,7 @@ export function HitViewer({
   useEffect(() => setSelectedKey(hitKey(hit)), [hit]);
 
   // The frame is cut from the video on demand; when it cannot be (no ffmpeg, no video), the enlarged crop stands in.
-  const frameSrc = `/api/reports/${encodeURIComponent(hit.incident.videoId)}/frame?t=${hit.item.timestampSeconds}`;
+  const frameSrc = `/api/reports/${encodeURIComponent(hit.incident.incidentId)}/frame?t=${hit.item.timestampSeconds}`;
   const [frameReady, setFrameReady] = useState(false);
   useEffect(() => {
     setFrameReady(false);
@@ -49,7 +49,7 @@ export function HitViewer({
   const selected = inFrame.find((other) => hitKey(other) === selectedKey) ?? hit;
   const { item } = selected;
   const relationship = relationshipOf(selected, hits);
-  const version = versions[selected.incident.videoId];
+  const version = versions[selected.incident.incidentId];
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -60,7 +60,7 @@ export function HitViewer({
         <DialogHeader className="flex flex-row items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-moss">
-              {selected.incident.incidentType} · {selected.incident.videoId}
+              {selected.incident.incidentType} · incident {selected.incident.incidentId} · {selected.item.videoName}
             </p>
             <DialogTitle className="text-xl font-semibold">
               {version?.title || selected.incident.title || selected.incident.incidentType}

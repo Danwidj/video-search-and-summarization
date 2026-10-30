@@ -6,19 +6,19 @@
 
 import type { EvidenceItemType, EvidenceSearchHit, EvidenceSearchResult } from '@/modules/search/domain/search';
 
-/** The version a hit came from: the video's official revision, else its newest (what search reads). */
+/** The version a hit came from: the incident's official revision, else its newest (what search reads). */
 export interface SearchedVersion {
   revisionId: number;
   revisionNo: number;
   isOfficial: boolean;
-  /** The library title of the video, which a hit's own incident title can lack. */
+  /** The library title of the incident, which a hit's own incident title can lack. */
   title?: string;
   thumbnailUrl?: string;
 }
 
 /** /api/search's body. */
 export interface LibrarySearchResponse extends EvidenceSearchResult {
-  /** By video id; a video missing here could not be looked up. */
+  /** By incident id; an incident missing here could not be looked up. */
   versions: Record<string, SearchedVersion>;
 }
 
@@ -40,7 +40,10 @@ export interface HitRelationship {
 
 /** The holder / holds relationship, as far as the other hits of the same incident show it. */
 export function relationshipOf(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): HitRelationship {
-  const sameIncident = hits.filter((other) => other.incident.videoId === hit.incident.videoId);
+  // Item ids (E1, I2) repeat in every camera's report, so a relationship holds only within one camera.
+  const sameIncident = hits.filter(
+    (other) => other.incident.incidentId === hit.incident.incidentId && other.item.videoName === hit.item.videoName,
+  );
   const holderId = hit.item.holderEntityId;
   const holder = holderId ? sameIncident.find((other) => other.item.itemType === 'entity' && other.item.itemId === holderId) : undefined;
   return {
@@ -55,7 +58,7 @@ export function relationshipOf(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]
 }
 
 export interface IncidentGroup {
-  videoId: string;
+  incidentId: string;
   incident: EvidenceSearchHit['incident'];
   hits: EvidenceSearchHit[];
   /** Best similarity among the hits, 0 to 1. */
@@ -66,12 +69,17 @@ export interface IncidentGroup {
 export function groupByIncident(hits: EvidenceSearchHit[]): IncidentGroup[] {
   const groups = new Map<string, IncidentGroup>();
   for (const hit of hits) {
-    const group = groups.get(hit.incident.videoId);
+    const group = groups.get(hit.incident.incidentId);
     if (group) {
       group.hits.push(hit);
       group.best = Math.max(group.best, hit.similarityScore);
     } else {
-      groups.set(hit.incident.videoId, { videoId: hit.incident.videoId, incident: hit.incident, hits: [hit], best: hit.similarityScore });
+      groups.set(hit.incident.incidentId, {
+        incidentId: hit.incident.incidentId,
+        incident: hit.incident,
+        hits: [hit],
+        best: hit.similarityScore,
+      });
     }
   }
   return [...groups.values()].sort((a, b) => b.best - a.best);
@@ -79,19 +87,23 @@ export function groupByIncident(hits: EvidenceSearchHit[]): IncidentGroup[] {
 
 export const matchPercent = (hit: EvidenceSearchHit): number => Math.round(hit.similarityScore * 100);
 
-/** Hits of the same incident taken at the same video second: the boxes the frame viewer draws together. */
+/** Hits of the same camera taken at the same video second: the boxes the frame viewer draws together. */
 export function hitsInFrame(hit: EvidenceSearchHit, hits: EvidenceSearchHit[]): EvidenceSearchHit[] {
   return hits.filter(
-    (other) => other.incident.videoId === hit.incident.videoId && other.item.timestampSeconds === hit.item.timestampSeconds,
+    (other) =>
+      other.incident.incidentId === hit.incident.incidentId &&
+      other.item.videoName === hit.item.videoName &&
+      other.item.timestampSeconds === hit.item.timestampSeconds,
   );
 }
 
-/** The report page for a hit: its version, and the second the hit was taken at (?t=). */
+/** The report page for a hit: its version, the camera (?video=) and the second the hit was taken at (?t=). */
 export function reportHref(hit: EvidenceSearchHit, version?: SearchedVersion): string {
   const query = new URLSearchParams();
   if (version) query.set('revision', String(version.revisionId));
+  if (hit.item.videoName) query.set('video', hit.item.videoName);
   query.set('t', String(Math.floor(hit.item.timestampSeconds)));
-  return `/reports/${encodeURIComponent(hit.incident.videoId)}?${query}`;
+  return `/reports/${encodeURIComponent(hit.incident.incidentId)}?${query}`;
 }
 
 /** The ?t= second a report page opens at; null when absent or not a non-negative number. */
@@ -101,6 +113,7 @@ export function parseStartSeconds(value: string | null | undefined): number | nu
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
-export const hitKey = (hit: EvidenceSearchHit): string => hit.resultId || `${hit.incident.videoId}:${hit.item.itemType}:${hit.item.itemId}`;
+export const hitKey = (hit: EvidenceSearchHit): string =>
+  hit.resultId || `${hit.incident.incidentId}:${hit.item.videoName}:${hit.item.itemType}:${hit.item.itemId}`;
 
 export const ITEM_KINDS: ('all' | EvidenceItemType)[] = ['all', 'entity', 'instrument', 'asset'];
