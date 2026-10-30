@@ -93,7 +93,9 @@ export interface BatchSummary {
   deciding: number;
   /** Files still queued, running or waiting for the rest of the batch. */
   running: number;
-  /** Percent of files that are done. */
+  /** Files whose upload is in flight; only these can be cancelled. */
+  uploading: number;
+  /** Percent of the batch's work done: each file's own progress averaged, a file awaiting a decision counted as finished. */
   percent: number;
   settled: boolean;
 }
@@ -110,9 +112,22 @@ export function summariseBatch(items: BatchItem[]): BatchSummary {
     failed,
     deciding,
     running,
-    percent: items.length ? Math.round((done / items.length) * 100) : 0,
+    uploading: items.filter((item) => item.status === 'running' && item.stage === 'upload').length,
+    percent: items.length
+      ? Math.round(items.reduce((sum, item) => sum + (item.status === 'deciding' ? 100 : itemProgress(item)), 0) / items.length)
+      : 0,
     settled: items.length > 0 && running === 0,
   };
+}
+
+/** Where the batch's final button leads: the Matches tab while a suggested match awaits a decision, the library otherwise. */
+export const libraryHref = (summary: Pick<BatchSummary, 'deciding'>): string =>
+  summary.deciding > 0 ? '/library?tab=matches' : '/library';
+
+/** Whole seconds as m:ss for the step that is running. */
+export function formatElapsed(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
 const failureMessage = (error: unknown): string => (error instanceof Error && error.message ? error.message : 'The step failed');

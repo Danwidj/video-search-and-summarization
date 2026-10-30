@@ -2,6 +2,7 @@
 
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Check, Loader2, RotateCcw, Video, X } from 'lucide-react';
 import { cn } from 'cn';
@@ -10,7 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { BATCH_STAGES, type BatchItem, batchStageLabels, itemProgress } from '@/sections/analysis/batch-upload';
+import { BATCH_STAGES, type BatchItem, batchStageLabels, formatElapsed, itemProgress } from '@/sections/analysis/batch-upload';
 
 const statusLabel = {
   queued: 'Waiting',
@@ -34,6 +35,19 @@ function announcement(item: BatchItem): string {
 /** The message as a sentence, so what follows it reads on. */
 const sentence = (text: string | null): string => (text && !/[.!?]$/.test(text) ? `${text}.` : (text ?? ''));
 
+/** Seconds the file has spent in its current step; restarts when the step changes and ticks only while it runs. */
+function useStepSeconds(running: boolean, stage: BatchItem['stage']): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    setSeconds(0);
+    if (!running || !stage) return;
+    const started = Date.now();
+    const timer = setInterval(() => setSeconds((Date.now() - started) / 1000), 1000);
+    return () => clearInterval(timer);
+  }, [running, stage]);
+  return seconds;
+}
+
 export interface BatchFileRowProps {
   item: BatchItem;
   onRetry(key: string): void;
@@ -42,6 +56,7 @@ export interface BatchFileRowProps {
 export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
   const progress = itemProgress(item);
   const stageIndex = BATCH_STAGES.indexOf(item.stage);
+  const stepSeconds = useStepSeconds(item.status === 'running', item.stage);
   return (
     <li className="rounded-2xl border border-border bg-card p-3.5 sm:p-4" data-file={item.name}>
       <div className="flex items-start justify-between gap-3">
@@ -50,7 +65,7 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
             <Video className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{item.name}</p>
+            <p className="break-all text-sm font-semibold">{item.name}</p>
             <p className="text-xs text-muted-foreground">{(item.size / 1024 / 1024).toFixed(1)} MB</p>
           </div>
         </div>
@@ -101,12 +116,17 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
                 {active && stage === 'upload' && item.uploadProgress > 0 && (
                   <span className="ml-auto text-primary/80">{item.uploadProgress}%</span>
                 )}
+                {active && stage !== 'upload' && <span className="ml-auto text-primary/80">{formatElapsed(stepSeconds)}</span>}
               </span>
               <span className="leading-snug">{batchStageLabels[stage]}</span>
             </li>
           );
         })}
       </ol>
+
+      {item.status === 'running' && item.stage === 'analyse' && (
+        <p className="mt-2 text-xs text-muted-foreground">Analysing takes about a minute per video, so this bar holds here a while.</p>
+      )}
 
       {item.status === 'failed' && (
         <Alert className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" variant="destructive">
