@@ -44,7 +44,7 @@ The Phase 6 UI is merged ([screens](../../.docs/architecture.md#screens-phase-6)
 
 ### 1. Upload
 
-1. `POST /api/uploads/check` with `{"filename"}` (name collision check; a video name is its real, sanitised file name).
+1. `POST /api/uploads/check` with `{"filename"}` (a video name is its real, sanitised file name; a name already stored is not refused but gets `-2`, `-3`, ... before the extension, and the answer's `name` is the one the file will be stored under, `exists: true` when it differs from the file's own).
 2. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL; chunked upload to it (the browser does this in `modules/videos/infrastructure/vst/chunked-upload.ts`).
 3. `POST /api/uploads/r2` puts the file in R2 (VST returns no R2 key). With `R2_KEY_PREFIX=mvp3/` the console adds the prefix itself.
 4. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.

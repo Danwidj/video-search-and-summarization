@@ -259,10 +259,11 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
 - **Links:** [data.md](data.md).
 
 ### 2026-10-30: Real video names, no hashing
-- **Decision:** `videos.id` is the real, sanitised file name and incidents are shown by number. `model_runs.id` is readable (`<video name or incident-<id>>@<UTC timestamp>`). The prompt and schema fingerprints stay, because they say which prompt produced a result.
-- **Why:** People read and quote these in the console, logs and SQL. A hash gave them nothing to read, and a name collision is already refused at upload.
+- **Decision:** `videos.id` is the real, sanitised file name and incidents are shown by number. A name that is already stored is not refused: the file is stored as `name-2.ext`, `name-3.ext`, ... (the first free one, found with `firstFreeName` in `src/lib/r2/names.ts`), the object is never overwritten, and that suffixed name is the video's id. `POST /api/uploads/check` returns the name the file would get (`exists: true` when it differs) and `POST /api/uploads/r2` stores under it, so the batch card shows the stored name once the upload has finished. A name freed by deleting its video can be used again. `model_runs.id` is readable (`<video name or incident-<id>>@<UTC timestamp>`). The prompt and schema fingerprints stay, because they say which prompt produced a result.
+- **Why:** People read and quote these in the console, logs and SQL. A hash gave them nothing to read, and a suffix keeps a second copy of a clip uploadable without overwriting the first (audit U8: the captain kept the suffix rather than refusing).
 - **Alternatives rejected:**
   - *Content hash as id:* Rejected for unreadability.
+  - *Refuse a taken name:* Rejected; the suffix already works and a repeated upload of the same clip is a normal test case.
 - **Links:** [data.md](data.md).
 
 ### 2026-10-30: Revisions are append-only and the official pointer is the incident's own

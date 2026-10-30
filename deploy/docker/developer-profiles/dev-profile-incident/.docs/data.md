@@ -216,7 +216,7 @@ Primary key `(revision_id, video_id, item_type, item_id)`; index on `video_id`. 
 
 #### `incident_match_suggestions`
 
-Suggested joins between two incidents. The system only suggests; the reviewer decides.
+Suggested joins between two incidents. A match scoring 0.5 or more is joined by the console at once (recorded on the video, not here); a lower one, and any other match of 0.5 or more left after a join, stays pending here until the reviewer accepts or rejects it.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
