@@ -2,6 +2,136 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Docs are written by a closing docs worker per phase
+- **Decision:** During mvp3 the feature workers change code and tests only. One docs worker at the end of each phase updates `.docs/` and the `incident-*` skills, and describes what is merged. Where the code differs from the plan, the code wins and the difference goes in the PR description.
+- **Why:** Parallel feature PRs that all edit the same docs conflict constantly, and the docs then describe a plan rather than the merged behaviour.
+- **Alternatives rejected:**
+  - *Docs in every feature PR (the standing docs rule):* Rejected for mvp3 only, because of the merge conflicts above. The standing rule still applies outside mvp3.
+- **Links:** [architecture §5](architecture.md#5-mvp3-incidents-with-several-videos).
+
+### 2026-10-30: Search, chat and the dashboard work per incident
+- **Decision:** `POST /api/search`, `POST /api/chat` and `GET /api/dashboard` take and count incidents. A search hit names its incident and its camera (the video the item was seen in). `filters.incident_id` keeps one incident, every camera. Chat takes `incidentId` and `versionId`, and cites evidence from every camera of that version.
+- **Why:** The incident, not the video, is now the thing people look for and read.
+- **Alternatives rejected:**
+  - *Keep video-keyed search and group in the UI:* Rejected because ranking and `top_k` would be spent on one incident's duplicate cameras.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md), [`incident-search`](../skills/incident-search/SKILL.md).
+
+### 2026-10-30: Eval harness and mock backend are not updated for mvp3
+- **Decision:** `eval/` and `mock-backend/` keep their pre-mvp3 contracts (video-keyed revisions, no incidents). They are not used to verify mvp3 work. Verify on the VM.
+- **Why:** Neither feeds the product, and updating them would add a phase of work for no user-visible gain. The eval scores one video at a time against ground truth, which mvp3 does not change.
+- **Alternatives rejected:**
+  - *Update both to the incident model:* Rejected as cost without benefit now; revisit if the mock is needed again.
+- **Links:** [`incident-run-eval`](../skills/incident-run-eval/SKILL.md).
+
+### 2026-10-30: Migrations assume an empty database and go to a new database
+- **Decision:** The mvp3 migrations (`20261030090000` to `20261030180000`) assume an empty database. They are never applied to the finals project. mvp3 runs on a separate, new Supabase project.
+- **Why:** The schema moves ownership from video to incident. A data migration for a few hundred test rows is not worth the risk to the finals data.
+- **Alternatives rejected:**
+  - *Migrate the finals data in place:* Rejected because a mistake there is not reversible and the finals snapshot is the fallback.
+- **Links:** [data.md](data.md), [`incident-manage-database`](../skills/incident-manage-database/SKILL.md).
+
+### 2026-10-30: A separate native mvp3 agent on port 8001
+- **Decision:** The mvp3 agent is a native process started from `/srv/rise-up/vss-mvp3` on GPU 0, on port 8001 (`VSS_AGENT_PORT` in `generated.env.remote`). The main agent keeps 8000. The Docker stack (VIOS, HAProxy, Redis) is shared.
+- **Why:** mvp3 and main need different agent code and different databases at the same time. A second native process costs about 2 s to restart, and the appliances do not care which agent calls them.
+- **Alternatives rejected:**
+  - *Replace the main agent:* Rejected because it breaks everyone still on main.
+  - *A second full Docker stack:* Rejected because GPU memory and ports do not allow it.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md), [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md).
+
+### 2026-10-30: Analyse is agent mode only, finishes inside the route limit and rolls back a failed new video
+- **Decision:** `POST /api/analysis` calls the agent (the gateway path is not used for it). It must finish inside the route's time limit (`maxDuration` 360 s, 345 s deadline). When a new upload fails, the console removes the video and incident rows it just created and keeps the R2 object, so a retry needs no re-upload.
+- **Why:** A half-created incident with no analysis would show up in the library with nothing to read.
+- **Alternatives rejected:**
+  - *A background job queue:* Rejected as more moving parts than one request needs.
+  - *Leave the failed video in place:* Rejected because of the empty incident.
+- **Links:** [architecture §5](architecture.md#5-mvp3-incidents-with-several-videos).
+
+### 2026-10-30: Regenerate is explicit; merge and remove do not regenerate
+- **Decision:** A new version is built only when the user presses Regenerate (`POST /api/reports/<incidentId>/build`). Analysing a video, merging incidents and removing a video leave the existing versions alone. The coverage note tells the reader what a version leaves out.
+- **Why:** Building a version costs a model call and creates a permanent revision. People should choose when to pay for it, and old versions must stay as they were written.
+- **Alternatives rejected:**
+  - *Rebuild automatically after every change:* Rejected because it would bury the official version under unrequested ones.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Remove a video by delete or by move
+- **Decision:** `POST /api/videos/<name>/remove` takes `choice: 'delete'` (the video and its files go) or `'move'` (the video becomes a new incident of its own, files untouched, and the caller builds its first report). Only delete is offered for the last video of an incident. A move records the pair as rejected so it is not suggested again. Objects are deleted before rows, because the sweep refuses a video that has no row.
+- **Why:** Removing a video that was merged by mistake should be reversible without re-uploading.
+- **Alternatives rejected:**
+  - *Delete only:* Rejected because a wrong merge would cost a re-upload and re-analysis.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Merge keeps the target and deletes the source; no files move
+- **Decision:** `POST /api/reports/<targetId>/merge {sourceIncidentId}` moves the source's videos to the target and deletes the source incident with its versions. The target keeps its official pointer. No R2 object is copied or moved. Orphan crop images are left for the evidence sweep. Accepting a suggestion is a merge; the kept incident defaults to the lower id.
+- **Why:** Object keys are video-keyed, so a merge is rows only. Copying files would add a failure mode for no gain.
+- **Alternatives rejected:**
+  - *Keep both incidents linked:* Rejected because there is no link table (a video belongs to one incident).
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Matching only suggests; time is a soft hint; rejected pairs are remembered
+- **Decision:** After an analysis, the console asks the database for a shortlist (`shortlist_similar_incidents`, limit 5, minimum similarity 0.3) and the agent to judge it (`match-judge`, stateless; scores at or above 0.5 are kept). Results are stored in `incident_match_suggestions`, one row per unordered pair. A person accepts (a merge) or rejects. A rejected pair is never suggested again. Recording time raises or lowers a score and never filters.
+- **Why:** A wrong automatic merge is worse than a missed suggestion. Recording times are often missing or wrong in uploaded clips.
+- **Alternatives rejected:**
+  - *Merge automatically above a threshold:* Rejected as above.
+  - *Hard time window:* Rejected because clips without times would never match.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md).
+
+### 2026-10-30: `R2_KEY_PREFIX` is applied only at the R2 boundary
+- **Decision:** `R2_KEY_PREFIX` (empty keeps the old behaviour, `mvp3/` for mvp3) is added to a key only where the console or the agent talks to R2. Database keys, `video_key` and evidence `image` keys stay prefix-free.
+- **Why:** mvp3 and main share one bucket. A prefix in the database would make rows unportable between the two and break any code that compares keys.
+- **Alternatives rejected:**
+  - *Separate bucket:* Rejected as extra credentials and CORS setup for the same isolation.
+  - *Store the prefixed key:* Rejected as above.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Real video names, no hashing
+- **Decision:** `videos.id` is the real, sanitised file name and incidents are shown by number. `model_runs.id` is readable (`<video name or incident-<id>>@<UTC timestamp>`). The prompt and schema fingerprints stay, because they say which prompt produced a result.
+- **Why:** People read and quote these in the console, logs and SQL. A hash gave them nothing to read, and a name collision is already refused at upload.
+- **Alternatives rejected:**
+  - *Content hash as id:* Rejected for unreadability.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Revisions are append-only and the official pointer is the incident's own
+- **Decision:** `report_revisions` rows belong to an incident and are never updated. `incidents.official_revision_id` has a composite foreign key to that incident's own revisions, so another incident's version cannot be official. `PUT/DELETE /api/videos/<incidentId>/official` keeps its old path name and takes an incident id.
+- **Why:** An official report must not change under the people reading it, and the database, not the code, should refuse a wrong pointer.
+- **Alternatives rejected:**
+  - *Pointer on the revision (a flag):* Rejected because two rows could both claim to be official.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: Coverage is immutable `video_names`; the coverage note is computed
+- **Decision:** Each version stores `video_names TEXT[]`, the videos it was built from, and it never changes. The console computes the note on read: "Does not include: <names>" for current videos the version left out, and "Includes a removed video: <names>" for videos no longer in the incident.
+- **Why:** Storing the note would go stale after every merge or removal. The coverage list is the fact; the note is a view of it.
+- **Alternatives rejected:**
+  - *Rewrite old versions on merge or removal:* Rejected because it breaks append-only.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: The console assembles the incident version
+- **Decision:** Regenerate takes the latest analysis of each current video, calls the agent's stateless `synthesize` for the overview and embedding, records a synthesis model run (`incident-<id>@<timestamp>`), and then calls the `create_ai_revision` database function. The agent does not write versions any more.
+- **Why:** Only the console knows which videos are current, and so the coverage. The agent stays a pure function of its input.
+- **Alternatives rejected:**
+  - *The agent writes the revision (as on main):* Rejected because it would need the incident's video list and database logic on the agent.
+- **Links:** [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize), [architecture §5](architecture.md#5-mvp3-incidents-with-several-videos).
+
+### 2026-10-30: The per-camera report stays `incident-contract-v4`; the payload is an envelope
+- **Decision:** A version's payload is `{overview, cameras: [{video, report}]}`. Each camera `report` is the unchanged `incident-contract-v4` report. The overview (title, type, severity, description, location) is the only new part.
+- **Why:** Everything that reads, scores or edits a report keeps working, per camera. A combined report is a wrapper, not a new schema.
+- **Alternatives rejected:**
+  - *One merged report in a new contract:* Rejected because entity and timeline ids would collide across cameras.
+- **Links:** [analysis-schema.md](analysis-schema.md), [data.md](data.md).
+
+### 2026-10-30: Each video is analysed once; reports are rebuilt from stored analyses
+- **Decision:** An analysis (`video_analyses`, the contract report plus its model run) is stored once per run and creates no version. The latest analysis of a video wins. Re-analysing adds a row; it does not replace the earlier ones.
+- **Why:** Analysis is the slow, costly part. Building a combined report for a changed set of videos should not repeat it.
+- **Alternatives rejected:**
+  - *Analyse the incident as a whole:* Rejected because adding one video would redo every video.
+- **Links:** [data.md](data.md).
+
+### 2026-10-30: A video belongs to exactly one incident
+- **Decision:** `videos.incident_id` is NOT NULL, and `incidents` is the root table. There is no link table. Uploading a video creates its incident; merging and moving change `videos.incident_id`.
+- **Why:** It is the simplest model that gives one combined report per incident, and a video in two incidents has no clear meaning.
+- **Alternatives rejected:**
+  - *Many-to-many link table:* Rejected because nothing needs a video in two incidents, and every query would pay for the join.
+- **Links:** [data.md](data.md).
+
 ### 2026-10-29: Videos tab and screen removed in favour of focused incident workflow
 - **Decision:** Remove the Videos tab (`/videos`) from the primary navigation header and mobile dropdown, delete the `/videos` page route (`src/app/videos/page.tsx`) and the `VideosScreen` section component (`src/sections/videos/components/VideosScreen/`). Dashboard overview metrics ("Uploaded videos", "Awaiting official report", "Without a report") render as static summary cards without links to the removed route. The individual video history route (`/videos/[videoId]`) is retained for history inspection and re-runs.
 - **Why:** The dedicated `/videos` inventory table duplicated video discovery already served by the Incident Library (`/library`) and added navigational clutter. Removing the tab streamlines the console into three core areas: Analyze (upload orchestration), Library (incident exploration and evidence search), and Dashboard (analytics).
