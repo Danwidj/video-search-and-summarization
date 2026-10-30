@@ -225,7 +225,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET` | video and evidence storage |
 
-`GET /api/health` answers `status` (`ready` or `degraded`) and per-service booleans only; gateway readiness is skipped in agent mode.
+`GET /api/health` answers `status` (`ready` or `degraded`) and per-service booleans only; the `gateway` row is omitted (and not probed) in agent mode and reported only in gateway and mock modes.
 
 ### Console pages
 
