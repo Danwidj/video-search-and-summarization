@@ -177,6 +177,21 @@ for (const [name, make] of Object.entries(implementations)) {
       );
     });
 
+    test('structured reasons are kept with the suggestion and a text-only one has none', async () => {
+      const { suggestions } = make();
+      const chips = [
+        { kind: 'same_place', label: 'Same place', detail: 'Block 12' },
+        { kind: 'time_overlap', label: 'Time overlap', detail: 'about 02:12' },
+      ];
+      await suggestions.record(1, 2, 0.9, ['ignored when chips exist'], chips);
+      await suggestions.record(1, 3, 0.6, ['same type']);
+      const [withChips, textOnly] = await suggestions.listPending();
+      assert.deepEqual(withChips.structuredReasons, chips);
+      assert.deepEqual(withChips.reasons, ['Same place: Block 12', 'Time overlap: about 02:12']);
+      assert.deepEqual(textOnly.structuredReasons, []);
+      assert.deepEqual(textOnly.reasons, ['same type']);
+    });
+
     test('a self pair, a bad score or an unknown pair status is refused as invalid', async () => {
       const { suggestions } = make();
       await assert.rejects(suggestions.record(1, 1, 0.5, []), rejection('invalid'));
@@ -237,11 +252,49 @@ describe('SupabaseSuggestionAdapter', () => {
         incidentBId: 2,
         score: 0.8,
         reasons: ['a'],
+        structuredReasons: [],
         status: 'pending',
         createdAt: '2026-10-30T00:00:00',
         decidedAt: null,
       },
     ]);
+  });
+
+  test('stored reasons are strings (older rows), chip objects, or both, and chips are recorded as objects', async () => {
+    const stored = [
+      { kind: 'same_place', label: 'Same place', detail: 'Block 12' },
+      { kind: 'time_overlap', label: 'Time overlap', detail: '' },
+    ];
+    const db = fakePostgrest(
+      {
+        incident_match_suggestions: [
+          { id: 1, incident_a_id: 1, incident_b_id: 2, score: 0.9, reasons: stored, status: 'pending', created_at: null, decided_at: null },
+          {
+            id: 2,
+            incident_a_id: 1,
+            incident_b_id: 3,
+            score: 0.8,
+            reasons: ['old text', stored[0], { nope: 1 }],
+            status: 'pending',
+            created_at: null,
+            decided_at: null,
+          },
+        ],
+      },
+      { rpc: { record_match_suggestion: () => ({ suggestionId: 3, status: 'pending', created: true }) } },
+    );
+    globalThis.fetch = db.fetch;
+    const adapter = new SupabaseSuggestionAdapter(new PostgrestClient('https://supabase.test', 'k'));
+    const [chips, mixed] = await adapter.listPending();
+    assert.deepEqual(chips.structuredReasons, stored);
+    assert.deepEqual(chips.reasons, ['Same place: Block 12', 'Time overlap']);
+    assert.deepEqual(mixed.structuredReasons, [stored[0]]);
+    assert.deepEqual(mixed.reasons, ['old text', 'Same place: Block 12', '[object Object]']);
+    await adapter.record(1, 4, 0.7, ['text'], stored);
+    await adapter.record(1, 5, 0.7, ['text']);
+    const recorded = db.requests.filter((request) => request.path === 'rpc/record_match_suggestion');
+    assert.deepEqual(recorded[0].body.p_reasons, stored);
+    assert.deepEqual(recorded[1].body.p_reasons, ['text']);
   });
 
   test('a failure that is not a domain refusal is rethrown unchanged', async () => {

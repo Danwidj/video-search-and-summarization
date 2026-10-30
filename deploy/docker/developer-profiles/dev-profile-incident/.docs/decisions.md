@@ -16,8 +16,16 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - *Skip re-embedding when the revision's crops exist:* Deferred; one embedding call per camera remains the main cost of a mark.
 - **Links:** [`architecture.md`](architecture.md#5-mvp3-incidents-with-several-videos); `list-suggestion-cards.ts`, `ReportVersions.tsx`.
 
+### 2026-10-30: Suggestions show the agent's structured reasons as chips and fall back to the text ones
+- **Decision:** The console parses `structured_reasons` from the match judge (accepting none, and ignoring the whole field if any entry is malformed), passes it through `evaluateIncident`, and stores it in the existing `incident_match_suggestions.reasons` JSONB: chip objects when there are any, otherwise the text strings as before. Reading accepts strings, objects or both. The report-page banner shows chips (detail as tooltip and a line below) and the library Matches tab shows each chip with its detail beside it; without chips both show the text reasons unchanged. Place and event type are solid chips; time and differences are dashed. An unknown `kind` still renders, as a dashed chip.
+- **Why:** This is the console half of the change below. The running VM agent returns no `structured_reasons` until it is restarted with the new code, so the console must work with and without it, and suggestions already stored keep rendering.
+- **Alternatives rejected:**
+  - *A new column or migration:* Rejected because the JSONB column already holds either shape.
+  - *Store both text and chips:* Rejected because the text is derivable from the chip's label and detail, and a mixed array is harder to read back.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentsmatch-judge); `incident-console-v2/src/modules/matching/` and `src/sections/suggestions/`.
+
 ### 2026-10-30: Match judge returns structured reasons beside the text ones
-- **Decision:** Each judgement carries `structured_reasons` (`{kind, label, detail}`) next to the unchanged free-text `reasons`, built from the same comparison. Kinds: `same_event_type`, `different_event_type`, `same_place`, `similar_place`, `different_place`, `place_unknown`, `time_overlap`, `time_apart`. The score and its weights are unchanged. The console ignores the field until a later change renders it as chips.
+- **Decision:** Each judgement carries `structured_reasons` (`{kind, label, detail}`) next to the unchanged free-text `reasons`, built from the same comparison. Kinds: `same_event_type`, `different_event_type`, `same_place`, `similar_place`, `different_place`, `place_unknown`, `time_overlap`, `time_apart`. The score and its weights are unchanged. The console renders it as chips (see the entry above).
 - **Why:** Suggestion reasons read like log lines with raw quoted location strings; the accepted mockup shows chips such as Same place, Same event type and Time overlap. Adding a field keeps the running console working, and unchanged scores keep automatic joining safe to build on.
 - **Alternatives rejected:**
   - *Replace `reasons` with objects:* Rejected because stored `reasons` JSONB rows and the current console parse strings.

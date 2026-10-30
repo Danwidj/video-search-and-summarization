@@ -80,9 +80,19 @@ describe('listSuggestionCards', () => {
       ],
     );
     assert.deepEqual(cards[0].reasons, ['Same place', 'Same event type']);
+    assert.deepEqual(cards[0].structuredReasons, []);
     assert.equal(cards[0].kept.title, 'Forced entry');
     assert.deepEqual(cards[0].kept.videoNames, ['door-1.mp4', 'door-2.mp4']);
     assert.equal(cards[0].kept.thumbnailUrl, 'https://signed.test/thumbnails/uploads/door-1.mp4.webp');
+  });
+
+  test('a card carries the chips recorded with its suggestion', async () => {
+    const w = world();
+    const chips = [{ kind: 'same_place', label: 'Same place', detail: 'Block 12' }];
+    await w.suggestions.record(3, 1, 0.9, ['Same place: Block 12'], chips);
+    const [card] = await listSuggestionCards(w, sign);
+    assert.deepEqual(card.structuredReasons, chips);
+    assert.deepEqual(card.reasons, ['Same place: Block 12']);
   });
 
   test('a side without a version has no title, and one without a stored video has no thumbnail', async () => {
@@ -213,6 +223,19 @@ describe('suggestion UI wiring', () => {
     assert.match(hook, /\/api\/suggestions\/\$\{card\.id\}\/accept/);
     assert.match(hook, /incidentId: card\.kept\.incidentId/);
     assert.match(hook, /\/api\/suggestions\/\$\{card\.id\}\/reject/);
+  });
+
+  test('the reasons render as chips when structured and as the text lines otherwise, on the card and the banner', () => {
+    const shared = read('sections/suggestions/components/Shared/Shared.tsx');
+    assert.match(shared, /structuredReasons\.length > 0/);
+    assert.match(shared, /suggestion-reason-chip/);
+    assert.match(
+      read('sections/suggestions/components/SuggestionsTab/SuggestionsTab.tsx'),
+      /structuredReasons=\{card\.structuredReasons\}/,
+    );
+    const banner = read('sections/suggestions/components/SuggestionBanner/SuggestionBanner.tsx');
+    assert.match(banner, /layout="chips"[^>]*structuredReasons=\{card\.structuredReasons\}/);
+    assert.match(banner, /<ReasonDetails[^>]*structuredReasons=\{card\.structuredReasons\}/);
   });
 
   test('every card shows its reasons, a score and accept and reject', () => {

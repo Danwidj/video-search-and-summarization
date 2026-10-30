@@ -8,7 +8,7 @@
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import type { IncidentId, IncidentReportRepository, IncidentVideo } from '@/modules/reports/domain/IncidentReportRepository';
-import type { JudgeCandidate, MatchingPorts } from '@/modules/matching/domain/matching';
+import type { JudgeCandidate, MatchingPorts, StructuredReason } from '@/modules/matching/domain/matching';
 
 export const DEFAULT_SHORTLIST_LIMIT = 5;
 export const DEFAULT_MIN_SIMILARITY = 0.3;
@@ -44,6 +44,8 @@ export interface EvaluatedSuggestion {
   incidentId: IncidentId;
   score: number;
   reasons: string[];
+  /** Empty while the agent returns text reasons only. */
+  structuredReasons: StructuredReason[];
   /** False when the pair already had a row, which is kept as it is. */
   created: boolean;
 }
@@ -103,7 +105,7 @@ export async function evaluateIncident(
   };
 
   // The best judgement per candidate incident over all of this incident's videos.
-  const best = new Map<IncidentId, { score: number; reasons: string[] }>();
+  const best = new Map<IncidentId, { score: number; reasons: string[]; structuredReasons: StructuredReason[] }>();
   let judged = 0;
   for (const video of incident.videos) {
     const analysis = await analyses.latestAnalysis(video.videoId);
@@ -125,15 +127,26 @@ export async function evaluateIncident(
       judged += 1;
       const current = best.get(judgement.incidentId);
       if (!current || judgement.score > current.score)
-        best.set(judgement.incidentId, { score: judgement.score, reasons: judgement.reasons });
+        best.set(judgement.incidentId, {
+          score: judgement.score,
+          reasons: judgement.reasons,
+          structuredReasons: judgement.structuredReasons ?? [],
+        });
     }
   }
 
   const suggestions: EvaluatedSuggestion[] = [];
-  for (const [candidateId, { score, reasons }] of [...best].sort((a, b) => b[1].score - a[1].score || a[0] - b[0])) {
+  for (const [candidateId, { score, reasons, structuredReasons }] of [...best].sort((a, b) => b[1].score - a[1].score || a[0] - b[0])) {
     if (score < minScore) continue;
-    const recorded = await matching.suggestions.record(incidentId, candidateId, score, reasons);
-    suggestions.push({ suggestionId: recorded.suggestionId, incidentId: candidateId, score, reasons, created: recorded.created });
+    const recorded = await matching.suggestions.record(incidentId, candidateId, score, reasons, structuredReasons);
+    suggestions.push({
+      suggestionId: recorded.suggestionId,
+      incidentId: candidateId,
+      score,
+      reasons,
+      structuredReasons,
+      created: recorded.created,
+    });
   }
   return { incidentId, judged, suggestions };
 }

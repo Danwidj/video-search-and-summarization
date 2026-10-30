@@ -39,7 +39,7 @@ function SuggestionRow({
         </div>
         <div className="min-w-0">
           <p className={LABEL}>Why it matched</p>
-          <ReasonList className="mt-2" reasons={card.reasons} />
+          <ReasonList className="mt-2" reasons={card.reasons} structuredReasons={card.structuredReasons} />
         </div>
         <div className="flex flex-col gap-3 xl:w-44">
           <div>
