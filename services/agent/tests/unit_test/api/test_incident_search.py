@@ -63,6 +63,14 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _incident_addressed(document: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a shared search-contract-v1 fixture (video-named incidents) to the incident-addressed shape."""
+    for hit in document.get("hits", []):
+        hit["incident"]["incident_id"] = 1
+        hit["item"]["video_id"] = "front.mp4"
+    return document
+
+
 class MockCriticEvaluator(CriticEvaluator):
     """Configurable mock critic for testing deterministic verdicts and simulated failures."""
 
@@ -97,7 +105,8 @@ class MockCriticEvaluator(CriticEvaluator):
 def sample_candidates() -> list[EvidenceCandidate]:
     return [
         EvidenceCandidate(
-            incident_id="Assault001",
+            incident_id=1,
+            video_id="assault1.mp4",
             revision_id=1,
             model_run_id="run-001",
             playback_url="https://pub-r2.example.com/videos/assault1.mp4",
@@ -119,7 +128,8 @@ def sample_candidates() -> list[EvidenceCandidate]:
             similarity_score=0.88,
         ),
         EvidenceCandidate(
-            incident_id="Assault001",
+            incident_id=1,
+            video_id="assault1.mp4",
             revision_id=2,
             model_run_id="run-001",
             playback_url="https://pub-r2.example.com/videos/assault1.mp4",
@@ -141,7 +151,8 @@ def sample_candidates() -> list[EvidenceCandidate]:
             similarity_score=0.82,
         ),
         EvidenceCandidate(
-            incident_id="Burglary002",
+            incident_id=2,
+            video_id="burglary2.mp4",
             revision_id=3,
             model_run_id="run-002",
             playback_url="https://pub-r2.example.com/videos/burglary2.mp4",
@@ -163,7 +174,8 @@ def sample_candidates() -> list[EvidenceCandidate]:
             similarity_score=0.75,
         ),
         EvidenceCandidate(
-            incident_id="Accident003",
+            incident_id=3,
+            video_id="accident3.mp4",
             revision_id=4,
             model_run_id="run-003",
             playback_url="https://pub-r2.example.com/videos/accident3.mp4",
@@ -252,7 +264,7 @@ class TestContractFixturesValidation:
     def test_valid_response_full(self) -> None:
         path = CONTRACT_FIXTURES_DIR / "valid/full-response.json"
         assert path.exists()
-        data = _load_json(path)
+        data = _incident_addressed(_load_json(path))
         resp = SearchResponse.model_validate(data)
         assert resp.total_hits == 2
         assert len(resp.hits) == 2
@@ -318,6 +330,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
+            video_id="cam.mp4",
             name="knife",
             label="knife",
             description="hunting knife",
@@ -325,7 +338,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=10,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="assault",
             severity_level=4,
@@ -364,6 +377,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I2",
+            video_id="cam.mp4",
             name="phone",
             label="cell phone",
             description="handheld electronic device",
@@ -371,7 +385,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=12,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="assault",
             severity_level=4,
@@ -410,6 +424,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
+            video_id="cam.mp4",
             name="knife",
             label="knife",
             description="hunting knife",
@@ -417,7 +432,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=10,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="assault",
             severity_level=4,
@@ -441,6 +456,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
+            video_id="cam.mp4",
             name="crowbar",
             label="crowbar",
             description="metal bar",
@@ -448,7 +464,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=20,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="burglary",
             severity_level=3,
@@ -471,6 +487,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
+            video_id="cam.mp4",
             name="crowbar",
             label="crowbar",
             description="metal bar",
@@ -478,7 +495,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=20,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="burglary",
             severity_level=3,
@@ -518,6 +535,7 @@ class TestCriticVerdictHandling:
         item = ItemHit(
             item_type="instrument",
             item_id="I1",
+            video_id="cam.mp4",
             name="machete",
             label="machete",
             description="blade",
@@ -525,7 +543,7 @@ class TestCriticVerdictHandling:
             timestamp_seconds=14,
         )
         incident = IncidentHit(
-            incident_id="inc-1",
+            incident_id=1,
             model_run_id="run-1",
             incident_type="assault",
             severity_level=4,
@@ -672,7 +690,8 @@ class TestSearchRouteEndToEnd:
 
     def test_search_route_default_has_no_similarity_cutoff(self) -> None:
         low = EvidenceCandidate(
-            incident_id="I1",
+            incident_id=9,
+            video_id="low.mp4",
             revision_id=5,
             model_run_id="run-001",
             playback_url="",
@@ -791,7 +810,8 @@ class TestSearchStores:
         mock_client = MagicMock()
         rpc_builder = MagicMock()
         sample_rpc_row = {
-            "video_id": "Assault007_x264",
+            "incident_id": 4,
+            "video_id": "Assault007_x264.mp4",
             "revision_id": 7,
             "model_run_id": "m86a5c319e26659804b0",
             "video_filepath": "videos/anomaly/assault/Assault007_x264.mp4",
@@ -832,7 +852,8 @@ class TestSearchStores:
 
         assert len(hits) == 1
         cand = hits[0]
-        assert cand.incident_id == "Assault007_x264"
+        assert cand.incident_id == 4
+        assert cand.video_id == "Assault007_x264.mp4"
         assert cand.revision_id == 7
         assert cand.model_run_id == "m86a5c319e26659804b0"
         assert cand.playback_url == "https://mock-r2.test/videos/anomaly/assault/Assault007_x264.mp4"
@@ -900,7 +921,8 @@ class TestSearchStores:
         mock_client = MagicMock()
         rpc_builder = MagicMock()
         sample_rpc_row = {
-            "video_id": "Assault007_x264",
+            "incident_id": 4,
+            "video_id": "Assault007_x264.mp4",
             "revision_id": 7,
             "model_run_id": "m86a5c319e26659804b0",
             "video_filepath": "videos/Assault007_x264.mp4",
@@ -1377,34 +1399,34 @@ class TestScopedSearch:
         app.include_router(create_incident_search_router(store=InMemorySearchStore(candidates=candidates)))
         return TestClient(app)
 
-    def test_video_id_limits_hits_to_that_incident(self, sample_candidates: list[EvidenceCandidate]) -> None:
-        other = sample_candidates[0].model_copy(update={"incident_id": "Other002", "item_id": "I9"})
+    def test_incident_id_limits_hits_to_that_incident(self, sample_candidates: list[EvidenceCandidate]) -> None:
+        other = sample_candidates[0].model_copy(update={"incident_id": 22, "item_id": "I9"})
         client = self._client([*sample_candidates, other])
 
         resp = client.post(
             "/api/v1/incidents/search",
-            json={"query": "machete", "top_k": 20, "min_similarity": 0, "filters": {"video_id": "Other002"}},
+            json={"query": "machete", "top_k": 20, "min_similarity": 0, "filters": {"incident_id": 22}},
         )
 
         assert resp.status_code == 200
-        assert {h["incident"]["incident_id"] for h in resp.json()["hits"]} == {"Other002"}
+        assert {h["incident"]["incident_id"] for h in resp.json()["hits"]} == {22}
 
-    def test_empty_query_with_video_id_lists_that_incident_by_video_time(
+    def test_empty_query_with_incident_id_lists_that_incident_by_video_time(
         self, sample_candidates: list[EvidenceCandidate]
     ) -> None:
-        other = sample_candidates[0].model_copy(update={"incident_id": "Other002", "item_id": "I9"})
+        other = sample_candidates[0].model_copy(update={"incident_id": 22, "item_id": "I9"})
         client = self._client([*sample_candidates, other])
 
-        resp = client.post("/api/v1/incidents/search", json={"query": "", "filters": {"video_id": "Assault001"}})
+        resp = client.post("/api/v1/incidents/search", json={"query": "", "filters": {"incident_id": 1}})
 
         assert resp.status_code == 200
         hits = resp.json()["hits"]
         assert hits
-        assert {h["incident"]["incident_id"] for h in hits} == {"Assault001"}
+        assert {h["incident"]["incident_id"] for h in hits} == {1}
         times = [h["item"]["timestamp_seconds"] for h in hits]
         assert times == sorted(times)
 
-    def test_empty_query_without_video_id_is_rejected(self, sample_candidates: list[EvidenceCandidate]) -> None:
+    def test_empty_query_without_a_scope_is_rejected(self, sample_candidates: list[EvidenceCandidate]) -> None:
         resp = self._client(sample_candidates).post("/api/v1/incidents/search", json={"query": "  "})
 
         assert resp.status_code == 422

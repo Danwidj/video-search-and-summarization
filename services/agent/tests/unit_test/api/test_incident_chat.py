@@ -24,7 +24,23 @@ CONTRACTS_DIR = Path(__file__).resolve().parents[5] / "deploy/docker/developer-p
 CHAT_RESPONSE_SCHEMA = json.loads(
     (CONTRACTS_DIR / "chat-contract-v1" / "chat_response.schema.json").read_text(encoding="utf-8")
 )
+
+# chat-contract-v1 still names a video in ``incident_id``; mvp3 addresses the incident by number and names the
+# source video in ``video_id``. The shared contract files are untouched, so check the schema with that overlay.
+_citation_schema = CHAT_RESPONSE_SCHEMA["properties"]["message"]["properties"]["citations"]["items"]
+_citation_schema["properties"]["incident_id"] = {"type": "integer", "minimum": 1}
+_citation_schema["properties"]["video_id"] = {"type": ["string", "null"]}
 response_validator = Draft202012Validator(CHAT_RESPONSE_SCHEMA)
+
+
+def _incident_addressed(document: dict[str, Any]) -> dict[str, Any]:
+    """A shared contract fixture with ``context.incident_id`` / citation ``incident_id`` made numeric."""
+    context = document.get("context")
+    if isinstance(context, dict) and isinstance(context.get("incident_id"), str):
+        context["incident_id"] = 1
+    for citation in (document.get("message") or {}).get("citations", []):
+        citation["incident_id"] = 1
+    return document
 
 
 class FakeSearchClient:
@@ -55,12 +71,12 @@ class FakeSearchClient:
 
 
 class FakeRevisionStore:
-    """Revisions keyed by id; ``official`` maps video_id to its official revision id."""
+    """Revisions keyed by id; ``official`` maps incident_id to its official revision id."""
 
     def __init__(
         self,
         revisions: dict[int, dict[str, Any]] | None = None,
-        official: dict[str, int] | None = None,
+        official: dict[int, int] | None = None,
         error: Exception | None = None,
     ) -> None:
         self.revisions = revisions or {}
@@ -72,8 +88,8 @@ class FakeRevisionStore:
             raise self.error
         return self.revisions.get(revision_id)
 
-    async def get_official_revision_id(self, video_id: str) -> int | None:
-        return self.official.get(video_id)
+    async def get_official_revision_id(self, incident_id: int) -> int | None:
+        return self.official.get(incident_id)
 
 
 def _make_client(search_client=None, revision_store=None) -> TestClient:
@@ -82,10 +98,13 @@ def _make_client(search_client=None, revision_store=None) -> TestClient:
     return TestClient(app)
 
 
-def _revision(revision_id: int, video_id: str = "V1") -> dict[str, Any]:
+def _revision(
+    revision_id: int, incident_id: int = 1, video_names: list[str] | None = None, video_id: str = "front.mp4"
+) -> dict[str, Any]:
     return {
         "id": revision_id,
-        "video_id": video_id,
+        "incident_id": incident_id,
+        "video_names": [video_id] if video_names is None else video_names,
         "evidence": [
             {
                 "item_type": "instrument",
@@ -130,7 +149,8 @@ def test_chat_minimal_request_returns_grounded_answer():
     cit = data["message"]["citations"][0]
     assert cit["item_id"] == "I1"
     assert cit["item_type"] == "instrument"
-    assert cit["incident_id"] == "Assault007"
+    assert cit["incident_id"] == 1
+    assert cit["video_id"] == "Assault007.mp4"
     assert "machete" in data["message"]["content"].lower()
 
     # Validate against chat-contract-v1 JSON Schema
@@ -146,6 +166,7 @@ def test_chat_with_custom_search_client_fake():
         "item": {
             "item_type": "instrument",
             "item_id": "I99",
+            "video_id": "V1.mp4",
             "name": "hammer",
             "label": "hammer",
             "description": "Claw hammer dropped on sidewalk",
@@ -154,7 +175,7 @@ def test_chat_with_custom_search_client_fake():
             "timestamp_seconds": 42.0,
         },
         "incident": {
-            "incident_id": "V1",
+            "incident_id": 7,
             "incident_type": "burglary",
             "title": "Hardware store break-in",
         },
@@ -175,6 +196,8 @@ def test_chat_with_custom_search_client_fake():
     assert fake_client.last_query == "What tools were found?"
     assert len(data["message"]["citations"]) == 1
     assert data["message"]["citations"][0]["item_id"] == "I99"
+    assert data["message"]["citations"][0]["incident_id"] == 7
+    assert data["message"]["citations"][0]["video_id"] == "V1.mp4"
     assert data["message"]["citations"][0]["timestamp_seconds"] == 42.0
     assert "hammer" in data["message"]["content"]
 
@@ -205,11 +228,11 @@ def test_chat_incident_scope_filters_by_incident_id():
         "/api/v1/incidents/chat",
         json={
             "messages": [{"role": "user", "content": "What did you see?"}],
-            "context": {"scope": "incident", "incident_id": "Assault007"},
+            "context": {"scope": "incident", "incident_id": 1},
         },
     )
     assert resp.status_code == 200
-    assert fake_client.last_filters == {"incident_id": "Assault007"}
+    assert fake_client.last_filters == {"incident_id": 1}
 
 
 def test_chat_search_client_error_returns_502():
@@ -289,7 +312,7 @@ def _fixture_id(path: Path) -> str:
     "path", _fixtures("valid", "full-request") + _fixtures("valid", "minimal-request"), ids=_fixture_id
 )
 def test_models_accept_valid_request_fixtures(path: Path):
-    ChatRequest.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    ChatRequest.model_validate(_incident_addressed(json.loads(path.read_text(encoding="utf-8"))))
 
 
 @pytest.mark.parametrize("path", _fixtures("invalid", "request-"), ids=_fixture_id)
@@ -302,7 +325,7 @@ def test_models_reject_invalid_request_fixtures(path: Path):
     "path", _fixtures("valid", "full-response") + _fixtures("valid", "empty-response"), ids=_fixture_id
 )
 def test_models_accept_valid_response_fixtures(path: Path):
-    ChatResponse.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    ChatResponse.model_validate(_incident_addressed(json.loads(path.read_text(encoding="utf-8"))))
 
 
 @pytest.mark.parametrize("path", _fixtures("invalid", "response-"), ids=_fixture_id)
@@ -318,29 +341,29 @@ def test_assistant_message_requires_citations():
 
 def test_chat_non_official_version_cites_its_own_saved_crops():
     search = FakeSearchClient(hits=[])
-    store = FakeRevisionStore(revisions={2: _revision(2), 3: _revision(3)}, official={"V1": 3})
+    store = FakeRevisionStore(revisions={2: _revision(2), 3: _revision(3)}, official={1: 3})
     resp = _ask(_make_client(search, store), version_id=2)
     assert resp.status_code == 200
     data = resp.json()
     assert search.last_query is None  # evidence_crops is never searched for a non-official revision
     first = data["message"]["citations"][0]
-    assert (first["incident_id"], first["item_id"], first["item_type"]) == ("V1", "I1", "instrument")
+    assert (first["incident_id"], first["item_id"], first["item_type"]) == (1, "I1", "instrument")
     assert first["timestamp_seconds"] == 8
-    assert first["crop_image_url"].endswith("evidence/V1/batch2/I1.jpg")
+    assert first["crop_image_url"].endswith("evidence/front.mp4/batch2/I1.jpg")
     assert not list(response_validator.iter_errors(data))
 
 
 def test_chat_official_version_uses_search_index():
     search = FakeSearchClient(hits=[])
-    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    store = FakeRevisionStore(revisions={3: _revision(3)}, official={1: 3})
     resp = _ask(_make_client(search, store), version_id=3)
     assert resp.status_code == 200
-    assert search.last_filters == {"incident_id": "V1"}
+    assert search.last_filters == {"incident_id": 1}
 
 
 def test_chat_draft_uses_draft_items_with_crops_from_base_version():
     search = FakeSearchClient(hits=[])
-    store = FakeRevisionStore(revisions={3: _revision(3)}, official={"V1": 3})
+    store = FakeRevisionStore(revisions={3: _revision(3)}, official={1: 3})
     draft = {
         "instruments": [
             {"instrument_id": "I1", "name": "lockpick", "description": "Thin tool", "timestamp_seconds": 9},
@@ -353,7 +376,7 @@ def test_chat_draft_uses_draft_items_with_crops_from_base_version():
     cits = {c["item_id"]: c for c in resp.json()["message"]["citations"]}
     assert set(cits) == {"I1", "I2"}
     assert cits["I1"]["timestamp_seconds"] == 9
-    assert cits["I1"]["crop_image_url"].endswith("evidence/V1/batch3/I1.jpg")
+    assert cits["I1"]["crop_image_url"].endswith("evidence/front.mp4/batch3/I1.jpg")
     assert cits["I2"]["crop_image_url"] == ""
 
 
@@ -372,11 +395,11 @@ def test_chat_unknown_version_returns_404():
 
 
 def test_chat_version_from_other_incident_returns_400():
-    store = FakeRevisionStore(revisions={2: _revision(2, "V1")})
+    store = FakeRevisionStore(revisions={2: _revision(2, 1)})
     resp = _ask(
         _make_client(FakeSearchClient(), store),
         version_id=2,
-        context={"scope": "incident", "incident_id": "V2"},
+        context={"scope": "incident", "incident_id": 2},
     )
     assert resp.status_code == 400
 

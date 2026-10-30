@@ -23,10 +23,12 @@ Follows a hexagonal architecture: calls evidence search capabilities through the
 :class:`SearchClient` port. An in-memory adapter is provided for testing and offline
 operation.
 
-A request may name a report revision (``version_id``) and carry an inline ``draft_report``. The
-official revision is answered from the search index (``evidence_crops``); any other revision, and
-any draft, is answered from that revision's own saved ``evidence``, because ``evidence_crops`` only
-holds official revisions. Revisions are read through the :class:`RevisionStore` port.
+A request may name a report revision (``version_id``) and carry an inline ``draft_report``. An incident
+can hold several videos (cameras), and answers use every camera's content. The incident's searchable
+revision is answered from the search index (``evidence_crops``); any other revision, and any draft, is
+answered from that revision's own saved ``evidence`` (a draft may be the whole envelope, with one report
+per camera), because ``evidence_crops`` only holds the searchable revision. Citations name the incident
+and, when known, the source video. Revisions are read through the :class:`RevisionStore` port.
 
 TODO(MVP2 Phase 4 / search route owner): Wire SearchClient to live search endpoint /
 pgvector RPC once merged.
@@ -84,6 +86,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
         "item": {
             "item_type": "instrument",
             "item_id": "I1",
+            "video_id": "Assault007.mp4",
             "name": "machete",
             "label": "machete",
             "description": "Long curved blade held by assailant during storefront altercation.",
@@ -94,7 +97,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
             "bounding_box": [320, 450, 510, 600],
         },
         "incident": {
-            "incident_id": "Assault007",
+            "incident_id": 1,
             "model_run_id": "m86a5c319e26659804b0",
             "incident_type": "assault",
             "severity_level": 4,
@@ -116,6 +119,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
         "item": {
             "item_type": "entity",
             "item_id": "E1",
+            "video_id": "Assault007.mp4",
             "name": "perpetrator",
             "label": "person",
             "description": "Adult wearing dark hooded jacket lunging toward victim.",
@@ -126,7 +130,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
             "bounding_box": [210, 390, 820, 640],
         },
         "incident": {
-            "incident_id": "Assault007",
+            "incident_id": 1,
             "model_run_id": "m86a5c319e26659804b0",
             "incident_type": "assault",
             "severity_level": 4,
@@ -148,6 +152,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
         "item": {
             "item_type": "instrument",
             "item_id": "I1",
+            "video_id": "Burglary005.mp4",
             "name": "crowbar",
             "label": "crowbar",
             "description": "Heavy metal pry bar used to force open the storefront entrance door.",
@@ -158,7 +163,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
             "bounding_box": [400, 280, 520, 410],
         },
         "incident": {
-            "incident_id": "Burglary005",
+            "incident_id": 2,
             "model_run_id": "m41d7e220f18831902a2",
             "incident_type": "burglary",
             "severity_level": 3,
@@ -180,6 +185,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
         "item": {
             "item_type": "asset",
             "item_id": "A1",
+            "video_id": "Burglary005.mp4",
             "name": "cash safe",
             "label": "safe",
             "description": "Anchored metal safe box targeted by intruder.",
@@ -190,7 +196,7 @@ _DEFAULT_SEED_HITS: list[dict[str, Any]] = [
             "bounding_box": [500, 600, 750, 850],
         },
         "incident": {
-            "incident_id": "Burglary005",
+            "incident_id": 2,
             "model_run_id": "m41d7e220f18831902a2",
             "incident_type": "burglary",
             "severity_level": 3,
@@ -251,7 +257,7 @@ class InMemorySearchClient:
                     str(item.get("name", "")),
                     str(item.get("label", "")),
                     str(item.get("description", "")),
-                    str(incident.get("incident_id", "")),
+                    str(item.get("video_id", "")),
                     str(incident.get("title", "")),
                     str(incident.get("incident_type", "")),
                     str(incident.get("description", "")),
@@ -294,8 +300,8 @@ class RevisionStore(Protocol):
         """The ``report_revisions`` row, or ``None`` when it does not exist."""
         ...
 
-    async def get_official_revision_id(self, video_id: str) -> int | None:
-        """The video's ``official_revision_id``, or ``None`` when it has none."""
+    async def get_official_revision_id(self, incident_id: int) -> int | None:
+        """The incident's ``official_revision_id``, or ``None`` when it has none."""
         ...
 
 
@@ -311,9 +317,9 @@ class IncidentDBRevisionStore:
     async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
         return await (await self._db()).get_revision(revision_id)
 
-    async def get_official_revision_id(self, video_id: str) -> int | None:
-        video = await (await self._db()).get_video(video_id)
-        official = video.get("official_revision_id") if video else None
+    async def get_official_revision_id(self, incident_id: int) -> int | None:
+        incident = await (await self._db()).get_incident(incident_id)
+        official = incident.get("official_revision_id") if incident else None
         return int(official) if official is not None else None
 
 
@@ -323,16 +329,20 @@ def _query_tokens(query: str) -> list[str]:
 
 def _revision_hits(
     query: str,
-    video_id: str,
+    incident_id: int,
     evidence: list[dict[str, Any]],
     top_k: int,
+    video_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Rank a revision's own evidence entries for ``query`` and shape them like search hits.
 
     Crops come from each entry's ``image`` key in this revision's saved evidence (never from
     ``evidence_crops``). Matching is the same keyword match as the in-memory search client; when
-    nothing matches, the revision's items are returned in order, as for an incident-scoped search.
+    nothing matches, the revision's items are returned in order, as for an incident-scoped search. An
+    entry names its camera in ``video_id``; one without it belongs to the revision's only video, when
+    ``video_names`` has exactly one.
     """
+    sole_video = video_names[0] if video_names and len(video_names) == 1 else None
     tokens = _query_tokens(query)
     scored: list[tuple[float, dict[str, Any]]] = []
     for entry in evidence:
@@ -347,24 +357,42 @@ def _revision_hits(
             "item": {
                 "item_type": entry["item_type"],
                 "item_id": entry["item_id"],
+                "video_id": entry.get("video_id") or sole_video,
                 "name": entry.get("item_name"),
                 "label": entry.get("label"),
                 "timestamp_seconds": entry.get("timestamp_seconds") or 0,
                 "crop_image_url": resolve_r2_url(str(entry.get("image") or "")),
             },
-            "incident": {"incident_id": video_id},
+            "incident": {"incident_id": incident_id},
         }
         for _, entry in scored[:top_k]
     ]
 
 
-def _draft_evidence(draft_report: dict[str, Any], saved: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The draft's items, each with the saved crop of the same item in the base revision (if any)."""
-    crops = {(e.get("item_type"), e.get("item_id")): e for e in saved}
+def _draft_reports(draft_report: dict[str, Any], video_names: list[str]) -> list[tuple[str | None, dict[str, Any]]]:
+    """The camera reports of a draft: each ``(video name, report)`` of an envelope, else the report itself."""
+    cameras = draft_report.get("cameras")
+    if isinstance(cameras, list):
+        return [
+            (str(camera.get("video")) if camera.get("video") else None, camera["report"])
+            for camera in cameras
+            if isinstance(camera, dict) and isinstance(camera.get("report"), dict)
+        ]
+    return [(video_names[0] if len(video_names) == 1 else None, draft_report)]
+
+
+def _draft_evidence(
+    draft_report: dict[str, Any], saved: list[dict[str, Any]], video_names: list[str] | None = None
+) -> list[dict[str, Any]]:
+    """Every camera's draft items, each with the saved crop of the same item in the base revision (if any)."""
+    names = video_names or []
+    sole_video = names[0] if len(names) == 1 else None
+    crops = {(e.get("video_id") or sole_video, e.get("item_type"), e.get("item_id")): e for e in saved}
     merged = []
-    for item in evidence_items(draft_report):
-        base = crops.get((item["item_type"], item["item_id"]))
-        merged.append({**item, "image": base.get("image") if base else None})
+    for video, report in _draft_reports(draft_report, names):
+        for item in evidence_items(report):
+            base = crops.get((video, item["item_type"], item["item_id"]))
+            merged.append({**item, "video_id": video, "image": base.get("image") if base else None})
     return merged
 
 
@@ -388,7 +416,7 @@ class ChatContext(BaseModel):
     scope: Literal["global", "incident"] = Field(
         default="global", description="Scope of conversation: 'global' or 'incident'"
     )
-    incident_id: str | None = Field(default=None, description="Optional incident_id when scope is 'incident'")
+    incident_id: int | None = Field(default=None, ge=1, description="Optional incident id when scope is 'incident'")
     evidence_crop_ids: list[str] | None = Field(default=None, description="Optional evidence item IDs")
 
 
@@ -416,7 +444,8 @@ class ChatRequest(BaseModel):
 class EvidenceCitation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    incident_id: str = Field(..., min_length=1)
+    incident_id: int = Field(..., ge=1)
+    video_id: str | None = Field(default=None, description="Name of the source video (camera), when known")
     item_id: str = Field(..., min_length=1)
     item_type: Literal["entity", "instrument", "asset"]
     timestamp_seconds: float = Field(..., ge=0)
@@ -465,14 +494,14 @@ def create_incident_chat_router(
             revision = await store.get_revision(body.version_id)
             if revision is None:
                 raise HTTPException(status_code=404, detail=f"Report version {body.version_id} not found")
-            video_id = str(revision["video_id"])
-            if filters.get("incident_id", video_id) != video_id:
+            incident_id = int(revision["incident_id"])
+            if filters.get("incident_id", incident_id) != incident_id:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Report version {body.version_id} belongs to incident {video_id}, "
+                    detail=f"Report version {body.version_id} belongs to incident {incident_id}, "
                     f"not {filters['incident_id']}",
                 )
-            official = await store.get_official_revision_id(video_id) == body.version_id
+            official = await store.get_official_revision_id(incident_id) == body.version_id
         except RevisionStoreUnavailableError as exc:
             raise HTTPException(status_code=503, detail=f"Report revisions unavailable: {exc}") from exc
         except HTTPException:
@@ -484,14 +513,15 @@ def create_incident_chat_router(
         if official and body.draft_report is None:
             # evidence_crops holds the official revision only, and it is what search indexes.
             try:
-                return await search.search(query=query_text, top_k=5, filters={"incident_id": video_id})
+                return await search.search(query=query_text, top_k=5, filters={"incident_id": incident_id})
             except Exception as exc:
                 logger.error("SearchClient failed during incident chat: %s", exc, exc_info=True)
                 raise HTTPException(status_code=502, detail=f"Evidence search error: {exc}") from exc
 
         saved = revision.get("evidence") or []
-        evidence = _draft_evidence(body.draft_report, saved) if body.draft_report is not None else saved
-        return _revision_hits(query_text, video_id, evidence, top_k=5)
+        video_names = [str(name) for name in revision.get("video_names") or []]
+        evidence = _draft_evidence(body.draft_report, saved, video_names) if body.draft_report is not None else saved
+        return _revision_hits(query_text, incident_id, evidence, top_k=5, video_names=video_names)
 
     @router.post(
         "/api/v1/incidents/chat",
@@ -554,24 +584,28 @@ def create_incident_chat_router(
 
         # Ground answer with citations
         citations: list[EvidenceCitation] = []
-        seen_items: set[tuple[str, str]] = set()
+        seen_items: set[tuple[int, str | None, str]] = set()
         item_summaries: list[str] = []
 
         for hit in hits:
             item = hit.get("item", {})
             incident = hit.get("incident", {})
-            inc_id = incident.get("incident_id", "unknown")
+            inc_id = incident.get("incident_id")
+            if inc_id is None:
+                continue
+            video_id = item.get("video_id")
             item_id = item.get("item_id", "unknown")
             item_type = item.get("item_type", "entity")
             ts = float(item.get("timestamp_seconds", 0.0))
             crop_url = item.get("crop_image_url", "")
 
-            key = (inc_id, item_id)
+            key = (inc_id, video_id, item_id)
             if key not in seen_items:
                 seen_items.add(key)
                 citations.append(
                     EvidenceCitation(
                         incident_id=inc_id,
+                        video_id=video_id,
                         item_id=item_id,
                         item_type=item_type,
                         timestamp_seconds=ts,
@@ -580,7 +614,10 @@ def create_incident_chat_router(
                 )
                 item_name = item.get("name") or item.get("label") or item_id
                 inc_type = incident.get("incident_type", "incident")
-                item_summaries.append(f"{item_name} ({item_id}) in {inc_id} ({inc_type} at {int(ts)}s)")
+                camera = f", camera {video_id}" if video_id else ""
+                item_summaries.append(
+                    f"{item_name} ({item_id}) in incident {inc_id}{camera} ({inc_type} at {int(ts)}s)"
+                )
 
         summary_text = "; ".join(item_summaries)
         content = (

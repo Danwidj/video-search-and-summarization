@@ -71,8 +71,8 @@ def test_returns_one_passage_embedding_per_evidence_item():
         _stop(client)
     assert response.status_code == 200
     assert response.json() == [
-        {"item_type": "entity", "item_id": "E1", "embedding": [0.1, 0.2]},
-        {"item_type": "instrument", "item_id": "I1", "embedding": [0.3, 0.4]},
+        {"item_type": "entity", "item_id": "E1", "video_id": None, "embedding": [0.1, 0.2]},
+        {"item_type": "instrument", "item_id": "I1", "video_id": None, "embedding": [0.3, 0.4]},
     ]
     db.get_revision.assert_awaited_once_with(7)
     embedder.embed.assert_awaited_once_with(["human: Person in a hood.", "crowbar: Used on A1."], input_type="passage")
@@ -142,7 +142,7 @@ def test_evidence_in_the_body_is_embedded_without_reading_a_revision():
     finally:
         _stop(client)
     assert response.status_code == 200
-    assert response.json() == [{"item_type": "entity", "item_id": "E1", "embedding": [0.1, 0.2]}]
+    assert response.json() == [{"item_type": "entity", "item_id": "E1", "video_id": None, "embedding": [0.1, 0.2]}]
     embedder.embed.assert_awaited_once_with(["human: Person in a hood."], input_type="passage")
     db.get_revision.assert_not_awaited()
 

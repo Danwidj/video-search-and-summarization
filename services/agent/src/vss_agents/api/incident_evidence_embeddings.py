@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-"""``POST /api/v1/incidents/evidence-embeddings`` - embeddings for a report revision's evidence.
+"""``POST /api/v1/incidents/evidence-embeddings`` - embeddings for an incident revision's evidence.
 
 ``incident-console-v2`` calls this when a human makes a revision official, and before it saves a
 new revision that will be searchable. The body names either a stored revision (``revision_id``: the
@@ -22,7 +22,9 @@ route reads its ``evidence`` JSONB from ``report_revisions``) or the evidence it
 (``evidence``: nothing is read, so a revision can be embedded before it exists). Each item is embedded
 as ``"{item_name}: {description}"`` passage text with the same embedding model search embeds queries
 with (``RemoteTextEmbedder``, ``vector(1024)``). It returns the vectors only: the console writes
-the ``evidence_crops`` rows itself.
+the ``evidence_crops`` rows itself. A revision can cover several videos, whose items reuse ids
+(every camera has an ``E1``), so an item may name its source video (``video_id``); it is echoed back so the
+caller can tell the vectors apart.
 
 Status codes: 404 for an unknown revision, 422 when the body names neither or both sources, 503 when
 the incident database or the embedding endpoint is not available, 502 when the embedding endpoint
@@ -53,6 +55,7 @@ class EvidenceItemText(BaseModel):
 
     item_type: str
     item_id: str
+    video_id: str | None = None
     item_name: str | None = None
     description: str | None = None
 
@@ -78,6 +81,7 @@ class EvidenceEmbedding(BaseModel):
 
     item_type: str
     item_id: str
+    video_id: str | None = None
     embedding: list[float]
 
 
@@ -121,7 +125,12 @@ def create_incident_evidence_embeddings_router(embedder: RemoteTextEmbedder | No
             logger.error("Evidence embedding failed for revision_id=%s: %s", body.revision_id, exc, exc_info=True)
             raise HTTPException(status_code=502, detail=f"Embedding endpoint failed: {exc}") from exc
         return [
-            EvidenceEmbedding(item_type=str(entry["item_type"]), item_id=str(entry["item_id"]), embedding=vector)
+            EvidenceEmbedding(
+                item_type=str(entry["item_type"]),
+                item_id=str(entry["item_id"]),
+                video_id=str(entry["video_id"]) if entry.get("video_id") else None,
+                embedding=vector,
+            )
             for entry, vector in zip(items, vectors, strict=True)
         ]
 
