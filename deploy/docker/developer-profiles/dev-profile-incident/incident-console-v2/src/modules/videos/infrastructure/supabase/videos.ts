@@ -2,11 +2,8 @@
 
 import { StoreRejection, type Page } from '@/modules/shared/domain/common';
 import type {
-  AttemptRunRecord,
   OfficialChange,
   RevisionCropsChange,
-  RevisionRunRecord,
-  RunHistoryRecords,
   VideoListFilter,
   VideoListItem,
   VideoRecord,
@@ -21,7 +18,6 @@ type Row = Record<string, unknown>;
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const asRow = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
-const first = (value: unknown): Row => (Array.isArray(value) ? asRow(value[0]) : asRow(value));
 
 function videoRecord(videoId: string, row: Row): VideoRecord {
   return {
@@ -94,57 +90,6 @@ export class SupabaseVideoAdapter implements VideoRepository {
   async getVideo(videoId: string): Promise<VideoRecord | null> {
     const row = await this.db.selectOne('videos', { id: videoId });
     return row ? videoRecord(videoId, row) : null;
-  }
-
-  async listRunHistory(videoId: string): Promise<RunHistoryRecords | null> {
-    const row = await this.db.selectOne('videos', { id: videoId });
-    if (!row) return null;
-    const [revisionRows, attemptRows] = await Promise.all([
-      this.db.selectMany('report_revisions', {
-        filters: { video_id: videoId, kind: 'ai' },
-        select: 'id,model_run_id,incident_type,severity_level,created_at,model_runs(id,model_name,prompt_version,run_datetime,notes)',
-      }),
-      this.db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,model_name,prompt_version,run_datetime,notes'),
-    ]);
-    const revisions: RevisionRunRecord[] = [];
-    for (const revisionRow of revisionRows) {
-      const revisionId = numberOrNull(revisionRow.id);
-      if (revisionId === null) continue;
-      const modelRun = first(revisionRow.model_runs);
-      revisions.push({
-        revisionId,
-        modelRunId: text(revisionRow.model_run_id) ?? '',
-        incidentType: text(revisionRow.incident_type),
-        severityLevel: numberOrNull(revisionRow.severity_level),
-        createdAt: text(revisionRow.created_at),
-        modelName: text(modelRun.model_name),
-        runDatetime: text(modelRun.run_datetime),
-        notes: text(modelRun.notes),
-      });
-    }
-    const attempts: AttemptRunRecord[] = attemptRows.map((attempt) => ({
-      modelRunId: text(attempt.id) ?? '',
-      modelName: text(attempt.model_name),
-      runDatetime: text(attempt.run_datetime),
-      notes: text(attempt.notes),
-    }));
-    // A run used by more than one video is a batch run; its history is not this video's alone.
-    const usage = revisions.length
-      ? await this.db.selectIn(
-          'report_revisions',
-          'model_run_id',
-          revisions.map((revision) => revision.modelRunId),
-          'model_run_id,video_id',
-        )
-      : [];
-    const videosPerRun = new Map<string, Set<string>>();
-    for (const usageRow of usage) {
-      const set = videosPerRun.get(String(usageRow.model_run_id)) ?? new Set<string>();
-      set.add(String(usageRow.video_id));
-      videosPerRun.set(String(usageRow.model_run_id), set);
-    }
-    const sharedRunIds = new Set([...videosPerRun].filter(([, set]) => set.size > 1).map(([id]) => id));
-    return { video: videoRecord(videoId, row), revisions, attempts, sharedRunIds };
   }
 
   async setOfficialRevision(videoId: string, revisionId: number | null, crops: OfficialCrop[]): Promise<OfficialChange> {
