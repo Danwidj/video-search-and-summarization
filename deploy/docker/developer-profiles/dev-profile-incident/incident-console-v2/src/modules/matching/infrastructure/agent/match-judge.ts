@@ -2,11 +2,19 @@
 
 // HttpMatchJudge: the vss-agent's "Agent judge" contract (plan section 1), POST /api/v1/incidents/match-judge.
 // Stateless: it takes a new video's analysis and candidate incidents and returns a 0 to 1 score and
-// plain-language reasons per candidate. Only a network failure or a timeout is thrown (as
+// plain-language reasons per candidate
+// and, from a newer agent, the same reasons as structured chips. Only a network failure or a timeout is thrown (as
 // AgentRequestError); every HTTP answer becomes a result.
 
 import { AgentRequestError } from '@/modules/analysis/domain/IncidentAgent';
-import type { CandidateJudgement, JudgeRequest, JudgeResult, MatchJudge } from '@/modules/matching/domain/matching';
+import {
+  structuredReasonOf,
+  type CandidateJudgement,
+  type JudgeRequest,
+  type JudgeResult,
+  type MatchJudge,
+  type StructuredReason,
+} from '@/modules/matching/domain/matching';
 
 function failed(status: number, message: string): JudgeResult {
   return { kind: 'failed', status, message };
@@ -28,11 +36,19 @@ function errorMessage(body: string, statusText: string): string {
 
 function judgementOf(value: unknown): CandidateJudgement | null {
   if (!isRecord(value)) return null;
-  const { incident_id: incidentId, score, reasons } = value;
+  const { incident_id: incidentId, score, reasons, structured_reasons: structured } = value;
   if (typeof incidentId !== 'number' || !Number.isInteger(incidentId)) return null;
   if (typeof score !== 'number' || !(score >= 0 && score <= 1)) return null;
   if (!Array.isArray(reasons) || !reasons.every((reason) => typeof reason === 'string')) return null;
-  return { incidentId, score, reasons: reasons as string[] };
+  const structuredReasons = structuredReasonsOf(structured);
+  return { incidentId, score, reasons: reasons as string[], ...(structuredReasons.length > 0 ? { structuredReasons } : {}) };
+}
+
+/** The agent's chips, or none when the field is absent or any entry is malformed: the text reasons then stand alone. */
+function structuredReasonsOf(value: unknown): StructuredReason[] {
+  if (!Array.isArray(value)) return [];
+  const parsed = value.map(structuredReasonOf);
+  return parsed.every((reason) => reason !== null) ? (parsed as StructuredReason[]) : [];
 }
 
 export function parseJudgeResponse(status: number, ok: boolean, statusText: string, body: string): JudgeResult {

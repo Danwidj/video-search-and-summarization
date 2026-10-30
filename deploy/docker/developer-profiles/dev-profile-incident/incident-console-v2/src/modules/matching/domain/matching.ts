@@ -38,11 +38,20 @@ export interface JudgeRequest {
   candidates: JudgeCandidate[];
 }
 
+/** One outcome of the judge's comparison, for a chip: `kind` says which (for example `same_place`), `label` is the chip text. */
+export interface StructuredReason {
+  kind: string;
+  label: string;
+  detail: string;
+}
+
 export interface CandidateJudgement {
   incidentId: number;
   /** 0 to 1. */
   score: number;
   reasons: string[];
+  /** Absent when the agent does not return it yet; the text reasons are then all there is. */
+  structuredReasons?: StructuredReason[];
 }
 
 export type JudgeResult = { kind: 'judged'; judgements: CandidateJudgement[] } | { kind: 'failed'; status: number; message: string };
@@ -59,6 +68,8 @@ export interface MatchSuggestion {
   incidentBId: number;
   score: number;
   reasons: string[];
+  /** Empty for a suggestion recorded from text reasons only. */
+  structuredReasons: StructuredReason[];
   status: SuggestionStatus;
   createdAt: string | null;
   decidedAt: string | null;
@@ -73,7 +84,13 @@ export interface RecordedSuggestion {
 
 export interface SuggestionStore {
   /** One row per unordered pair of incidents. Throws StoreRejection('invalid') for a self pair or a score outside 0 to 1. */
-  record(incidentAId: number, incidentBId: number, score: number, reasons: string[]): Promise<RecordedSuggestion>;
+  record(
+    incidentAId: number,
+    incidentBId: number,
+    score: number,
+    reasons: string[],
+    structuredReasons?: StructuredReason[],
+  ): Promise<RecordedSuggestion>;
   /** Pending suggestions, highest score first; only those naming `incidentId` when given. */
   listPending(incidentId?: number): Promise<MatchSuggestion[]>;
   /**
@@ -88,4 +105,33 @@ export interface MatchingPorts {
   shortlist: MatchShortlist;
   suggestions: SuggestionStore;
   judge: MatchJudge | null;
+}
+
+/** A stored reason entry as the text a reviewer reads: the chip's label and what was compared. */
+export const reasonText = (reason: StructuredReason): string => (reason.detail ? `${reason.label}: ${reason.detail}` : reason.label);
+
+/** The reasons as stored: the structured ones when there are any, else the text ones. Read back with `readStoredReasons`. */
+export const storedReasons = (reasons: string[], structuredReasons: StructuredReason[]): Array<string | StructuredReason> =>
+  structuredReasons.length > 0 ? structuredReasons : reasons;
+
+/** Reads a reasons list from the agent or the store: plain strings (older rows) and `{kind, label, detail}` entries. */
+export function readStoredReasons(value: unknown): { reasons: string[]; structuredReasons: StructuredReason[] } {
+  const reasons: string[] = [];
+  const structuredReasons: StructuredReason[] = [];
+  for (const entry of Array.isArray(value) ? value : []) {
+    const structured = structuredReasonOf(entry);
+    if (structured) {
+      structuredReasons.push(structured);
+      reasons.push(reasonText(structured));
+    } else reasons.push(typeof entry === 'string' ? entry : String(entry));
+  }
+  return { reasons, structuredReasons };
+}
+
+/** A well-formed `{kind, label, detail}`; null for anything else, including a missing label. */
+export function structuredReasonOf(value: unknown): StructuredReason | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const { kind, label, detail } = value as Record<string, unknown>;
+  if (typeof kind !== 'string' || typeof label !== 'string' || label === '') return null;
+  return { kind, label, detail: typeof detail === 'string' ? detail : '' };
 }

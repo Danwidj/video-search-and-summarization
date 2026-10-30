@@ -5,7 +5,7 @@
 
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import type { IncidentId, IncidentReportRepository } from '@/modules/reports/domain/IncidentReportRepository';
-import type { SuggestionStore } from '@/modules/matching/domain/matching';
+import type { StructuredReason, SuggestionStore } from '@/modules/matching/domain/matching';
 
 export interface SuggestionSide {
   incidentId: IncidentId;
@@ -20,6 +20,8 @@ export interface SuggestionCard {
   id: number;
   score: number;
   reasons: string[];
+  /** Chips for the reasons; empty when only text reasons were recorded. */
+  structuredReasons: StructuredReason[];
   /** The newer incident (higher id): by default it joins `kept`. */
   joining: SuggestionSide;
   /** The older incident (lower id): by default it keeps its id and takes the other's videos. */
@@ -68,7 +70,16 @@ export async function listSuggestionCards(
         sideOf(Math.min(suggestion.incidentAId, suggestion.incidentBId)),
         sideOf(Math.max(suggestion.incidentAId, suggestion.incidentBId)),
       ]);
-      return kept && joining ? { id: suggestion.id, score: suggestion.score, reasons: suggestion.reasons, joining, kept } : null;
+      return kept && joining
+        ? {
+            id: suggestion.id,
+            score: suggestion.score,
+            reasons: suggestion.reasons,
+            structuredReasons: suggestion.structuredReasons,
+            joining,
+            kept,
+          }
+        : null;
     }),
   );
   return cards.filter((card): card is SuggestionCard => card !== null);

@@ -59,7 +59,7 @@ Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, o
 
 ### 3. Group videos (optional)
 
-- `POST /api/suggestions/evaluate` with `{"incidentId"}` compares every video of the incident with similar incidents (shortlist of 5, similarity at least 0.3, score at least 0.5; decided pairs are skipped). Needs the agent's `match-judge`. Time is only a hint.
+- `POST /api/suggestions/evaluate` with `{"incidentId"}` compares every video of the incident with similar incidents (shortlist of 5, similarity at least 0.3, score at least 0.5; decided pairs are skipped). Needs the agent's `match-judge`. Time is only a hint. Each suggestion carries `reasons` (text) and, from an agent that returns `structured_reasons`, `structuredReasons` chips (`kind`, `label`, `detail`); the report-page banner and the library Matches tab show the chips and fall back to the text.
 - `GET /api/suggestions?incidentId=<id>` lists pending suggestions, best first.
 - `POST /api/suggestions/<id>/accept` (body `{"incidentId"?}`) merges; the kept incident defaults to the lower id. `POST /api/suggestions/<id>/reject` is remembered for good.
 - `POST /api/reports/<targetId>/merge` with `{"sourceIncidentId"}` merges directly. The source incident, its versions and its official choice are deleted; no files move.
