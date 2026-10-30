@@ -30,7 +30,7 @@ The agent needs no VST lookup: the console owns the ``videos`` row and signs the
 
 Status codes: 422 for an invalid body (including a ``video_duration_seconds`` that is not a
 finite number above 0) or when the model output fails ``core-scored-v1`` (nothing is persisted; the
-detail carries ``message``, ``raw_output``, ``finish_reason``, ``model`` and ``contract_version``
+detail carries ``message``, ``raw_output``, ``finish_reason``, ``model``, ``p1_attempts`` and ``contract_version``
 so the caller can record the attempt), 400 for a ``model`` outside the contract allowlist,
 504 on a P1 timeout, 501 when the profile does not configure ``incident_report_gen``,
 500 for anything else.
@@ -193,6 +193,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
                 "raw_output": exc.raw_output,
                 "finish_reason": exc.finish_reason,
                 "model": exc.model,
+                "p1_attempts": getattr(exc, "attempts", []),
                 "contract_version": contract_version(),
             }
             if getattr(exc, "experiment", None) is not None:

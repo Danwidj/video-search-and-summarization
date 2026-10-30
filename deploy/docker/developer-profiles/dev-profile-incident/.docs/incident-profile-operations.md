@@ -81,7 +81,7 @@ Shared contract files are vendored in `services/agent/src/vss_agents/incident_co
 Environment variables are captured at process start: editing `generated.env.remote` does not take effect until `native-services.sh restart vss-agent` sources the file. Live environment values can be inspected in `/proc/<pid>/environ`.
 
 **VM Agent Reinstall Procedure:**
-A full `uv sync` in `services/agent` on `kwanz-ws` fails because `nvdataset` only resolves from NVIDIA's internal artifactory. To relink `vss_agents` editably to the repo code and install dependencies:
+The agent's `uv.lock` has `supabase` and no longer needs NVIDIA's internal artifactory (`nvdataset` was dropped from the `eval` group, mvp3 fix L), but the live VM install was built by hand and has not been re-synced from it. To relink `vss_agents` editably to the repo code and install dependencies:
 ```bash
 cd /srv/rise-up/vss-mvp3/services/agent
 uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/simple -e .

@@ -15,12 +15,14 @@
 
 """A video the VLM cannot decode (HTTP 200, null body) fails clearly, and the signed URL stays out of logs."""
 
+import logging
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
+from langchain_core.tools import StructuredTool
 import pytest
 
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
@@ -74,3 +76,21 @@ def test_the_tool_input_never_prints_the_signed_url():
         assert "SECRETSIG" not in text and "X-Amz" not in text
         assert "bucket/uploads/clip.mp4" in text
     assert tool_input.video_url == SIGNED_URL  # only the printed form is redacted
+
+
+@pytest.mark.asyncio
+async def test_a_failing_tool_call_never_logs_the_signed_url(caplog: pytest.LogCaptureFixture):
+    # NAT logs a failed call's input as the plain kwargs dict LangChain passes to ``acall_invoke``.
+    logger = logging.getLogger("nat.builder.function")
+
+    async def failing_call(**kwargs: object) -> None:
+        logger.error("Error with ainvoke in function with input: %s. Error: %s", kwargs, "boom")
+        raise ValueError("boom")
+
+    tool = StructuredTool.from_function(
+        coroutine=failing_call, name="incident_report_gen", description="x", args_schema=IncidentReportGenInput
+    )
+    with caplog.at_level(logging.ERROR, logger="nat.builder.function"), pytest.raises(ValueError):
+        await tool.ainvoke({"video_name": "clip.mp4", "video_url": SIGNED_URL})
+    assert "bucket/uploads/clip.mp4" in caplog.text
+    assert "SECRETSIG" not in caplog.text and "X-Amz-Signature" not in caplog.text
