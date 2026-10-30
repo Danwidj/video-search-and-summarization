@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import { DeleteIncidentDialog } from '@/sections/library/components/IncidentCard/DeleteIncidentDialog';
 import type { LibraryIncident } from '@/sections/library/types';
+import { cardTitle } from '@/lib/library/view';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,7 +39,7 @@ export function IncidentCard({
 
   const href = `/reports/${encodeURIComponent(item.incidentId)}${item.revisionId === null ? '' : `?revision=${item.revisionId}`}`;
   const versions = item.versionCount ?? 0;
-  const displayTitle = item.title || `${item.incidentType} · ${formatTimestamp(item.uploadedAt)}`;
+  const displayTitle = cardTitle(item, `${item.incidentType} · ${formatTimestamp(item.uploadedAt)}`);
 
   const firstVideo = item.firstVideoName ?? 'No video';
   const videoLine = item.videoCount > 1 ? `${firstVideo} +${item.videoCount - 1} more` : firstVideo;
@@ -153,7 +154,7 @@ export function IncidentCard({
                         data-testid="library-official-marker"
                       >
                         <StarIcon className="size-3 fill-current" />
-                        Official v{item.revisionNo} · {item.kind === 'human' ? 'Human' : 'AI'}
+                        Official · {item.kind === 'human' ? 'Human' : 'AI'}
                       </span>
                     </TooltipTrigger>
                     {item.officialSince && <TooltipContent>Made official {formatTimestamp(item.officialSince)}</TooltipContent>}

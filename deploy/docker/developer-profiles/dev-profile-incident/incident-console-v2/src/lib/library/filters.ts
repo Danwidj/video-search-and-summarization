@@ -121,6 +121,19 @@ export function filterParams(filters: IncidentFilters): URLSearchParams {
   return p;
 }
 
+export type LibraryTab = 'incidents' | 'evidence' | 'matches';
+
+/** The tab named by `?tab=`; anything else is the first tab. */
+export function parseTab(value: string | null): LibraryTab {
+  return value === 'evidence' || value === 'matches' ? value : 'incidents';
+}
+
+/** The library URL for a tab and the filters in force; the first tab and default filters leave the query empty. */
+export function libraryUrl(tab: LibraryTab, filters: IncidentFilters): string {
+  const params = new URLSearchParams([...(tab === 'incidents' ? [] : [['tab', tab]]), ...filterParams(filters)]);
+  return params.size ? `/library?${params}` : '/library';
+}
+
 export interface ActiveFilter {
   key: string;
   label: string;
