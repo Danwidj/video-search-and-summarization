@@ -3,6 +3,8 @@
 export interface ServiceConfiguration {
   analysisMode: 'gateway' | 'agent';
   agentUrl?: string;
+  /** Where the VST API is reached from the server (HAProxy /vst); the agent URL when unset. */
+  vstUrl?: string;
   gatewayUrl?: string;
   vlmModel: string;
   supabaseUrl?: string;
@@ -27,6 +29,7 @@ export function getServiceConfiguration(): ServiceConfiguration {
   return {
     analysisMode,
     agentUrl: optionalEnvironmentValue('INCIDENT_AGENT_BASE_URL'),
+    vstUrl: optionalEnvironmentValue('INCIDENT_VST_BASE_URL'),
     gatewayUrl: optionalEnvironmentValue('VLM_GATEWAY_URL'),
     vlmModel: optionalEnvironmentValue('VLM_MODEL') || 'nvidia/cosmos-3-nano-reasoner',
     supabaseUrl: optionalEnvironmentValue('INCIDENT_SUPABASE_URL'),

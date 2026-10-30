@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Deleting a video also deletes its VST camera, after the objects and before the row
+- **Decision:** `deleteVideoObjectsAndRow` deletes the video's R2 objects and evidence, then its VST sensor (`DELETE /vst/api/v1/sensor/<videos.source>` with a `streamId: <sensorId>` header, which VST requires; a 404 counts as done), then the row. A row without `source` resolves the sensor by exact name (file name without extension), skipping `removed` placeholders, and only when exactly one sensor has it. The server reaches VST through `INCIDENT_VST_BASE_URL` (`start.sh` exports `http://localhost:7777`; the agent URL is the fallback).
+- **Why:** VST keeps one camera per upload and holds 100, so cameras of deleted test videos filled it and uploads failed. The row is the only holder of the sensor id, so it goes last; any VST failure throws first and a repeat finishes the job.
+- **Rejected:** the agent's `DELETE /api/v1/videos/<id>`: it answers `partial` for a camera already gone, so a repeat after a later failure could never succeed. VST storage files are not deleted (the sensor delete only frees the slot).
+- **Links:** [`../incident-console-v2/src/modules/videos/infrastructure/vst/sensor.ts`](../incident-console-v2/src/modules/videos/infrastructure/vst/sensor.ts).
+
 ### 2026-10-30: Phase 7 fix plan: the captain's answers to the nine open decisions
 - **Decision:** Decisions 1 to 6 took the plan's recommended option; 7 to 9 are recorded as built.
   1. *No showable camera (item 6):* the page keeps Merge and Regenerate and disables Re-analyse and Remove video with a reason (https://github.com/Danwidj/video-search-and-summarization/pull/343).
