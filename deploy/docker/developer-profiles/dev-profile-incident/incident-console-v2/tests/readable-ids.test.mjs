@@ -10,13 +10,17 @@ const read = (path) => readFileSync(join(src, path), 'utf8');
 
 test('compactId and its hashing module are gone', () => {
   assert.equal(existsSync(join(src, 'lib', 'ids.ts')), false);
-  for (const path of ['app/api/analysis/route.ts', 'modules/analysis/application/run-contract-analysis.ts']) {
+  for (const path of [
+    'app/api/analysis/route.ts',
+    'modules/analysis/application/analyse-video.ts',
+    'modules/analysis/application/run-contract-analysis.ts',
+  ]) {
     assert.doesNotMatch(read(path), /compactId|lib\/ids/, path);
   }
 });
 
 test('the analysis route keys the video by its real upload file name', () => {
-  assert.match(read('app/api/analysis/route.ts'), /videoId: input\.filename,/);
+  assert.match(read('app/api/analysis/route.ts'), /videoName: body\.filename as string,/);
 });
 
 test('model-run ids read <video name>@<UTC timestamp>', () => {
