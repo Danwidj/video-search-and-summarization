@@ -27,6 +27,7 @@ function fromAgentHit(raw: unknown): RevisionSearchHit {
   return {
     revisionId: num(hit.revision_id),
     videoId: text(hit.video_id),
+    incidentId: numOrNull(hit.incident_id),
     revisionNo: num(hit.revision_no, 1),
     kind: hit.kind === 'human' ? 'human' : 'ai',
     modelRunId: textOrNull(hit.model_run_id),

@@ -6,7 +6,8 @@ import { AgentRevisionSearchRepository } from '@/lib/adapters/agent/revision-sea
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import type { IncidentRepository, ReportList, ReportListQuery, ReportSort } from '@/modules/reports/domain/IncidentRepository';
+import type { ReportListQuery, ReportSort } from '@/modules/reports/domain/IncidentRepository';
+import type { IncidentReportRepository, IncidentSummaryList } from '@/modules/reports/domain/IncidentReportRepository';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import { isValidTimeZone } from '@/lib/time';
@@ -53,18 +54,19 @@ function evidenceFilters(params: URLSearchParams, key: string): string[] | null 
 }
 
 /**
- * The videos whose saved revisions the agent ranks for the text. Null when the
- * agent is not configured, fails or finds nothing, so the caller keeps the
- * ILIKE text filter (the store's own search).
+ * The incidents whose saved revisions the agent ranks for the text. Null when the
+ * agent is not configured, fails, finds nothing or answers without incident ids,
+ * so the caller keeps the ILIKE text filter (the store's own search).
  */
-async function videosMatchingText(config: ServiceConfiguration, text: string): Promise<Set<string> | null> {
+async function incidentsMatchingText(config: ServiceConfiguration, text: string): Promise<Set<number> | null> {
   if (!config.agentUrl) return null;
   try {
     const hits = await new AgentRevisionSearchRepository(config.agentUrl, AbortSignal.timeout(REVISION_SEARCH_TIMEOUT_MS)).search({
       query: text,
       topK: REVISION_TOP_K,
     });
-    return hits.length ? new Set(hits.map((hit) => hit.videoId)) : null;
+    const ids = hits.flatMap((hit) => (typeof hit.incidentId === 'number' ? [hit.incidentId] : []));
+    return ids.length ? new Set(ids) : null;
   } catch {
     return null;
   }
@@ -72,21 +74,21 @@ async function videosMatchingText(config: ServiceConfiguration, text: string): P
 
 /** The incidents the other filters allow, narrowed to the ones the agent matched; the sort is kept. */
 async function listMatchingIncidents(
-  incidents: IncidentRepository,
+  incidentReports: IncidentReportRepository,
   query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>,
-  incidentIds: Set<string>,
+  incidentIds: Set<number>,
   page: number,
   pageSize: number,
-): Promise<ReportList> {
-  const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
-  const matched = all.items.filter((item) => incidentIds.has(item.videoId));
+): Promise<IncidentSummaryList> {
+  const all = await incidentReports.listIncidents({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
+  const matched = all.items.filter((item) => incidentIds.has(item.incidentId));
   return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
 }
 
 export async function GET(request: Request) {
   try {
     const config = getServiceConfiguration();
-    const { incidents } = getDbAdapters(config);
+    const { incidentReports } = getDbAdapters(config);
 
     const params = new URL(request.url).searchParams;
     const requestedPage = Number.parseInt(params.get('page') || '1', 10);
@@ -138,14 +140,14 @@ export async function GET(request: Request) {
       evidenceMatch: match,
       timezone,
     };
-    const incidentIds = search === null ? null : await videosMatchingText(config, search);
+    const incidentIds = search === null ? null : await incidentsMatchingText(config, search);
     const {
       items: summaries,
       totalItems,
       incidentTypes,
     } = incidentIds
-      ? await listMatchingIncidents(incidents, filters, incidentIds, page, pageSize)
-      : await incidents.listReports({ ...filters, search, page, pageSize });
+      ? await listMatchingIncidents(incidentReports, filters, incidentIds, page, pageSize)
+      : await incidentReports.listIncidents({ ...filters, search, page, pageSize });
     const sign = async (key: string) => {
       try {
         return await createR2PlaybackUrl(config, key);
@@ -158,13 +160,14 @@ export async function GET(request: Request) {
         ? summaries
         : await Promise.all(
             summaries.map(async (report) => {
-              // Only the video's screenshot is signed: a card shows MVP1's skeleton when it is missing, never an evidence crop.
-              const thumbnailUrl = isValidR2Key(report.r2Key) ? await sign(thumbnailKeyForVideo(report.r2Key)) : undefined;
+              // Only the first video's screenshot is signed: a card shows MVP1's skeleton when it is missing, never an evidence crop.
+              const thumbnailUrl = isValidR2Key(report.firstVideoKey) ? await sign(thumbnailKeyForVideo(report.firstVideoKey)) : undefined;
               return { ...report, ...(thumbnailUrl ? { thumbnailUrl } : {}) };
             }),
           );
 
     return NextResponse.json({
+      /** One entry per incident. */
       reports,
       incidentTypes,
       /** With text: 'semantic' when the agent ranked it, 'text' for the store's ILIKE filter. */

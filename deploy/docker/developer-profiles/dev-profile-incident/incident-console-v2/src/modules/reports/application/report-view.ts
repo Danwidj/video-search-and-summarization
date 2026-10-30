@@ -5,7 +5,12 @@
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/modules/contract/domain/validate';
+import { type Camera, coverageNote, coverageVerdict } from '@/modules/reports/domain/envelope';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
+import type { IncidentRecord, IncidentRevisionRecord, IncidentRevisionSummary } from '@/modules/reports/domain/IncidentReportRepository';
+import { structuredFromPayload } from '@/modules/reports/domain/payload-view';
+import { evidenceFolder, type EvidenceEntry } from '@/modules/reports/domain/revision';
+import type { CoverageView } from '@/modules/reports/application/types';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/modules/reports/domain/report-view';
 
@@ -201,4 +206,68 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     official: { officialRevisionId: record.video.officialRevisionId, isOfficial: record.revision.isOfficial },
     differences,
   };
+}
+
+/** A revision's coverage verdict and note against the videos the incident holds now. */
+export function coverageView(
+  revision: Pick<IncidentRevisionSummary, 'videoNames'>,
+  incident: Pick<IncidentRecord, 'videos'>,
+): CoverageView {
+  const verdict = coverageVerdict(
+    revision.videoNames,
+    incident.videos.map((video) => video.videoId),
+  );
+  return { verdict, note: coverageNote(verdict) };
+}
+
+/**
+ * The evidence entries of one camera. An entry names its camera with `video` (or `video_id`); one that does not is
+ * placed by its image key, which sits in the camera's video evidence folder (evidence/<video key>/...). In a revision
+ * with a single camera every untagged entry is that camera's.
+ */
+export function cameraEvidence(evidence: EvidenceEntry[], camera: string, videoKey: string | null, cameraCount: number): EvidenceEntry[] {
+  return evidence.filter((entry) => {
+    const tag = typeof entry.video === 'string' ? entry.video : typeof entry.video_id === 'string' ? entry.video_id : null;
+    if (tag !== null) return tag === camera;
+    if (entry.image && videoKey) return entry.image.startsWith(evidenceFolder(videoKey));
+    return cameraCount === 1;
+  });
+}
+
+/**
+ * The chosen camera of a revision as the existing report view: the camera's own contract report with its evidence and
+ * the revision's run. `playbackUrl` is empty when the camera's video is no longer in the incident.
+ */
+export function toCameraReportView(
+  record: IncidentRevisionRecord,
+  camera: Camera,
+  incident: Pick<IncidentRecord, 'videos' | 'officialRevisionId'>,
+  playbackUrl: string,
+): ReportView {
+  const { revision } = record;
+  const video = incident.videos.find((candidate) => candidate.videoId === camera.video);
+  const evidence = cameraEvidence(record.evidence, camera.video, video?.storageKey ?? null, record.envelope.cameras.length);
+  return toReportView(
+    {
+      revision: {
+        revisionId: revision.revisionId,
+        videoId: camera.video,
+        revisionNo: revision.revisionNo,
+        kind: revision.kind,
+        createdBy: revision.createdBy,
+        createdAt: revision.createdAt,
+        note: revision.note,
+        parentId: revision.parentId,
+        modelRunId: revision.modelRunId,
+        model: revision.model,
+        isOfficial: revision.isOfficial,
+      },
+      payload: camera.report,
+      evidence,
+      video: { storageKey: video?.storageKey ?? null, filename: camera.video, officialRevisionId: incident.officialRevisionId },
+      modelRun: record.modelRun,
+      ...structuredFromPayload(camera.report, evidence),
+    },
+    playbackUrl,
+  );
 }

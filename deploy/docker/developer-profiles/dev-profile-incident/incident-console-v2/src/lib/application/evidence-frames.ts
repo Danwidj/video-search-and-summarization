@@ -8,7 +8,6 @@
 
 import { assertWithinVideo, FrameRequestError, parseRegion, parseSeconds } from '@/lib/evidence/frame-request';
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
-import type { VideoRepository } from '@/modules/videos/domain/VideoRepository';
 import { isValidR2Key } from '@/lib/r2/key';
 
 /** Reads a video's length in seconds (null when it cannot be read) and one JPEG frame, optionally cropped. */
@@ -18,7 +17,8 @@ export interface FrameSource {
 }
 
 export interface EvidenceFrameDeps {
-  videos: Pick<VideoRepository, 'getVideo'>;
+  /** Finds a video by its id (the real file name); only the stored object key is read. */
+  videos: { getVideo(videoId: string): Promise<{ storageKey: string | null } | null> };
   source: FrameSource;
 }
 

@@ -7,9 +7,12 @@ import { NextResponse } from 'next/server';
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
-import { putR2Video, r2ObjectExists, verifyR2Video } from '@/lib/r2/config';
+import { createR2PlaybackUrl, putR2Video, r2ObjectExists, verifyR2Video } from '@/lib/r2/config';
 import { isValidR2Key } from '@/lib/r2/key';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
 import { uploadedEvidenceKey } from '@/modules/reports/domain/revision';
+
+export const dynamic = 'force-dynamic';
 
 export const maxDuration = 30;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -49,5 +52,29 @@ export async function POST(request: Request, context: { params: Promise<{ incide
     return NextResponse.json({ image: key });
   } catch (error) {
     return errorResponse(error, 'Could not upload the evidence image');
+  }
+}
+
+/**
+ * A short-lived URL for one evidence image: ?video=<file name of the covering video>&image=<R2 key>. The image must be
+ * one the video's stored records can still show (a revision's evidence or a crop of that video), so a key cannot be
+ * signed through another video or incident. 404 when the incident, the video or the image is not found.
+ */
+export async function GET(request: Request, context: { params: Promise<{ incidentId: string }> }) {
+  try {
+    const incidentId = parseIncidentId((await context.params).incidentId);
+    if (incidentId === null) return NextResponse.json({ error: 'The incident id must be a positive whole number' }, { status: 400 });
+    const params = new URL(request.url).searchParams;
+    const video = params.get('video')?.trim();
+    const image = params.get('image');
+    if (!video || !image) return NextResponse.json({ error: 'video and image are required' }, { status: 400 });
+
+    const config = getServiceConfiguration();
+    if (!isR2Configured(config)) throw new Error('R2 is not configured');
+    const referenced = await getDbAdapters(config).incidentReports.listReferencedEvidenceImages(incidentId, video);
+    if (!referenced?.includes(image)) return NextResponse.json({ error: 'Evidence image not found' }, { status: 404 });
+    return NextResponse.json({ url: await createR2PlaybackUrl(config, image) });
+  } catch (error) {
+    return errorResponse(error, 'Could not read the evidence image');
   }
 }

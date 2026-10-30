@@ -87,7 +87,19 @@ beforeEach(() => {
     R2_BUCKET: 'd',
   });
   globalThis.fetch = fakePostgrest({
-    videos: [{ id: 'v1', filepath: 'videos/v1.mp4', uploaded_datetime: null, source: null, official_revision_id: null }],
+    incidents: [{ id: 1, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' }],
+    report_revisions: [],
+    model_runs: [],
+    videos: [
+      {
+        id: 'v1',
+        incident_id: 1,
+        filepath: 'videos/v1.mp4',
+        uploaded_datetime: '2026-10-01T01:00:00',
+        source: null,
+        official_revision_id: null,
+      },
+    ],
   }).fetch;
 });
 afterEach(() => {
@@ -96,7 +108,7 @@ afterEach(() => {
 });
 
 const params = (videoId) => ({ params: Promise.resolve({ incidentId: videoId }) });
-const get = (query, videoId = 'v1') => GET(new Request(`http://localhost/api/reports/${videoId}/frame${query}`), params(videoId));
+const get = (query, incidentId = '1') => GET(new Request(`http://localhost/api/reports/${incidentId}/frame${query}`), params(incidentId));
 const post = (body, videoId = 'v1') =>
   POST(
     new Request('http://localhost/x', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }),
@@ -105,23 +117,26 @@ const post = (body, videoId = 'v1') =>
 const crop = { timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
 
 test('the frame route answers a JPEG decoded from the signed video URL', async () => {
-  const response = await get('?t=0');
+  const response = await get('?video=v1&t=0');
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'image/jpeg');
   assert.equal(await response.text(), 'JPEGBYTES');
+  assert.equal((await get('?t=0')).status, 200, 'the only video of the incident is the default');
   assert.match(spawned[0].args[spawned[0].args.indexOf('-i') + 1], /^https:\/\/signed\.r2\.test\/videos\/v1\.mp4$/);
 });
 
 test('the frame route refuses a bad t, an unknown video and a missing ffmpeg', async () => {
-  assert.equal((await get('')).status, 400);
-  assert.equal((await get('?t=-2')).status, 400);
-  assert.equal((await get('?t=1', 'nope')).status, 404);
+  assert.equal((await get('?video=v1')).status, 400);
+  assert.equal((await get('?video=v1&t=-2')).status, 400);
+  assert.equal((await get('?video=v1&t=1', '2')).status, 404, 'an unknown incident');
+  assert.equal((await get('?video=other&t=1')).status, 404, 'a video that is not in the incident');
+  assert.equal((await get('?video=v1&t=1', 'nope')).status, 400, 'a bad incident id');
   ffmpegBehaviour = 'missing';
-  const missing = await get('?t=0');
+  const missing = await get('?video=v1&t=0');
   assert.equal(missing.status, 503);
   assert.match((await missing.json()).error, /ffmpeg is not installed/);
   ffmpegBehaviour = 'empty';
-  assert.equal((await get('?t=0')).status, 422);
+  assert.equal((await get('?video=v1&t=0')).status, 422);
 });
 
 test('a crop is answered as JPEG bytes, and nothing is written to R2', async () => {

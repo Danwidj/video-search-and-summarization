@@ -13,14 +13,13 @@ register('../../../../tests/support/alias-loader.mjs', import.meta.url);
 const { InMemoryIncidentRepository } = await import('../../../../src/modules/reports/infrastructure/memory/incidents.ts');
 const { InMemoryVideoRepository } = await import('../../../../src/modules/videos/infrastructure/memory/videos.ts');
 const { StoreRejection } = await import('../../../../src/modules/shared/domain/common.ts');
-const { getReport } = await import('@/modules/reports/application/get-report');
-const { listRevisions } = await import('@/modules/reports/application/list-revisions');
 const { saveHumanEdit, SearchableStepError } = await import('@/modules/reports/application/save-human-edit');
 const { setOfficialRevision } = await import('@/modules/reports/application/set-official-revision');
 const { storeSearchableCrops } = await import('@/modules/reports/application/store-searchable-crops');
 const { aiRunReport } = await import('../../../../tests/support/report-view.mjs');
 
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
+const listRevisions = (incidents, videoId) => incidents.listRevisions(videoId);
 const V = smoke.videoId;
 const K = smoke.video.filepath;
 const withImage = (image) => {
@@ -54,35 +53,6 @@ function editOf(record) {
     assets: [{ asset_id: 'A1', name: 'white van', description: 'A van.', ...details('A1') }],
   };
 }
-
-test('getReport signs the stored video key and the item images, and refuses a revision without a video object', async () => {
-  const incidents = new InMemoryIncidentRepository([withImage('evidence/v/u/E1.jpg')]);
-  const signed = [];
-  const view = await getReport(incidents, V, null, async (key) => {
-    signed.push(key);
-    return `https://signed/${key}`;
-  });
-  assert.deepEqual(signed.sort(), ['evidence/v/u/E1.jpg', smoke.video.filepath].sort());
-  assert.equal(view.run.playbackUrl, `https://signed/${smoke.video.filepath}`);
-  assert.equal(view.structured.entities[0].evidence.imageUrl, 'https://signed/evidence/v/u/E1.jpg');
-  assert.equal(await getReport(incidents, V, 99, async () => 'unused'), null);
-  assert.equal(await getReport(incidents, 'v-none', null, async () => 'unused'), null);
-
-  const noVideo = new InMemoryIncidentRepository([aiRunReport({ ...smoke, video: { ...smoke.video, filepath: '' } })]);
-  await assert.rejects(
-    getReport(noVideo, V, null, async () => 'unused'),
-    /The report has no linked R2 video/,
-  );
-});
-
-test('an image that cannot be signed is shown as missing, not as an error', async () => {
-  const incidents = new InMemoryIncidentRepository([withImage('evidence/v/u/E1.jpg')]);
-  const view = await getReport(incidents, V, 1, async (key) => {
-    if (key.startsWith('evidence/')) throw new Error('gone');
-    return 'https://signed/video';
-  });
-  assert.equal(view.structured.entities[0].evidence.imageUrl, null);
-});
 
 test('saving an edit appends a human revision whose parent is the opened one; the History lists both', async () => {
   const record = withImage('evidence/v/u/E1.jpg');

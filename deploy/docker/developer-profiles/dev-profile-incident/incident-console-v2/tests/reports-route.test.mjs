@@ -56,20 +56,20 @@ test('report library requests one filtered six-item summary page without video U
       JSON.stringify({
         reports: [
           {
-            reportId: 'r1',
-            videoId: 'v1',
+            incidentId: 1,
+            revisionId: 11,
             modelRunId: 'm1',
             title: 'Road Accident report',
-            r2Key: 'uploads/sensor-1/video.mp4',
+            firstVideoKey: 'uploads/sensor-1/video.mp4',
             outcome: 'valid_after_structural_repair',
             isOfficial: true,
           },
           {
-            reportId: 'r2',
-            videoId: 'v2',
+            incidentId: 2,
+            revisionId: 21,
             modelRunId: 'm2',
             title: 'Older report',
-            r2Key: 'uploads/sensor-2/video.mp4',
+            firstVideoKey: 'uploads/sensor-2/video.mp4',
             outcome: 'legacy',
             isOfficial: false,
           },
