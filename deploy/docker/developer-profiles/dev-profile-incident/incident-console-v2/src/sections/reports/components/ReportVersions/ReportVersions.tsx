@@ -164,11 +164,11 @@ export function ReportVersions({
                           </Badge>
                         )}
                       </span>
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground">
                         <Badge className="px-1.5 text-[10.5px] font-semibold" variant="secondary">
                           {revision.kind === 'human' ? 'Human' : 'AI'}
                         </Badge>
-                        <span className="truncate">
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
                           {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : (revision.note ?? '')}
                         </span>
                       </span>
@@ -180,7 +180,7 @@ export function ReportVersions({
                           aria-label={starLabel}
                           aria-busy={busy}
                           aria-pressed={official}
-                          className="h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
+                          className="h-7 w-7 shrink-0 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
                           data-testid={official ? 'clear-official' : 'make-official'}
                           disabled={busyId !== null}
                           onClick={() => void toggleOfficial(revision)}
@@ -197,7 +197,7 @@ export function ReportVersions({
                       <Button
                         aria-label={`Compare v${revision.revisionNo} as A`}
                         aria-pressed={comparing}
-                        className="h-6 self-center px-2 text-[10.5px] font-bold"
+                        className="h-6 shrink-0 self-center px-2 text-[10.5px] font-bold"
                         onClick={() => onCompare?.(revision.revisionId)}
                         size="sm"
                         type="button"
@@ -206,12 +206,12 @@ export function ReportVersions({
                         A
                       </Button>
                     ) : current ? (
-                      <Badge className="self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
+                      <Badge className="shrink-0 self-center px-2 py-0.5 text-[10.5px] font-bold" variant="default">
                         Viewing
                       </Badge>
                     ) : (
                       <Button
-                        className="h-6 self-center px-2 text-[10.5px] font-semibold"
+                        className="h-6 shrink-0 self-center px-2 text-[10.5px] font-semibold"
                         onClick={() => onOpen(revision.revisionId)}
                         size="sm"
                         type="button"
