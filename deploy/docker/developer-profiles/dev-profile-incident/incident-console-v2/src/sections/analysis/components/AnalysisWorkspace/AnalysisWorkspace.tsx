@@ -200,7 +200,7 @@ export function AnalysisWorkspace() {
             ))}
           </ul>
 
-          {summary.deciding > 0 && (
+          {waiting > 0 && (
             <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-900" data-testid="batch-suggestions">
               <AlertDescription>
                 <strong className="font-semibold">

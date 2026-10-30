@@ -17,6 +17,7 @@ const statusLabel = {
   queued: 'Waiting',
   running: 'In progress',
   waiting: 'Waiting for the batch',
+  checked: 'Checked, waiting to build',
   deciding: 'Awaiting your decision',
   failed: 'Failed',
   done: 'Report ready',
@@ -28,6 +29,7 @@ function announcement(item: BatchItem): string {
   if (item.status === 'done') return `${item.name}: report ready.`;
   if (item.status === 'queued') return `${item.name}: waiting to start.`;
   if (item.status === 'waiting') return `${item.name}: analysed, waiting for the rest of the batch.`;
+  if (item.status === 'checked') return `${item.name}: matches checked, report is built next.`;
   if (item.status === 'deciding') return `${item.name}: matches checked, report waits for your decision.`;
   return `${item.name}: ${label}${item.stage === 'upload' && item.uploadProgress > 0 ? ` (${item.uploadProgress}%)` : ''}.`;
 }
@@ -141,7 +143,7 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
         </Alert>
       )}
 
-      {(item.status === 'done' || item.status === 'deciding') && item.analysed && (
+      {(item.status === 'done' || item.status === 'checked' || item.status === 'deciding') && item.analysed && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-muted-foreground">
             {item.autoJoined
