@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cameraOptions, currentCameraCount, versionCoverageLabel } from '../src/lib/reports/cameras.ts';
+import { cameraOptions, currentCameraCount, repeatsOverviewSummary, versionCoverageLabel } from '../src/lib/reports/cameras.ts';
 
 const cameras = [
   { video: 'front-door.mp4', current: true, inVersion: true, valid: true },
@@ -41,4 +41,12 @@ test('the covered count only counts current videos the version holds', () => {
 test('the overview badge reads "N of M videos in vK"', () => {
   assert.equal(versionCoverageLabel(2, 3, 3), '2 of 3 videos in v3');
   assert.equal(versionCoverageLabel(1, 1, 1), '1 of 1 video in v1');
+});
+
+test('a single-camera incident does not repeat the overview summary in the camera report', () => {
+  assert.equal(repeatsOverviewSummary(cameras.slice(0, 1), 'A man enters.', 'A man enters. '), true);
+  assert.equal(repeatsOverviewSummary(cameras, 'A man enters.', 'A man enters.'), false);
+  assert.equal(repeatsOverviewSummary(cameras.slice(0, 1), 'A man enters.', 'A man leaves.'), false);
+  assert.equal(repeatsOverviewSummary(cameras.slice(0, 1), null, 'A man enters.'), false);
+  assert.equal(repeatsOverviewSummary(cameras.slice(0, 1), 'A man enters.', null), false);
 });
