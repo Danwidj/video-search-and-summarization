@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { DecisionButtons, ReasonList, ScoreReadout, SideLink } from '@/sections/suggestions/components/Shared';
+import { DecisionButtons, ReasonDetails, ReasonList, ScoreReadout, SideLink } from '@/sections/suggestions/components/Shared';
 import { useSuggestionCards } from '@/sections/suggestions/use-suggestion-cards';
 
 /**
@@ -44,7 +44,7 @@ export function SuggestionBanner({ incidentId, onMerged }: { incidentId: number;
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                     <SideLink className="lg:w-[19rem] lg:shrink-0" side={other} />
                     <div className="min-w-0 flex-1">
-                      <ReasonList reasons={card.reasons} />
+                      <ReasonList layout="chips" reasons={card.reasons} structuredReasons={card.structuredReasons} />
                     </div>
                     <div className="flex items-center justify-between gap-3 lg:justify-end">
                       <ScoreReadout compact score={card.score} />
@@ -58,6 +58,7 @@ export function SuggestionBanner({ incidentId, onMerged }: { incidentId: number;
                       />
                     </div>
                   </div>
+                  <ReasonDetails className="mt-2.5" structuredReasons={card.structuredReasons} />
                 </li>
               );
             })}

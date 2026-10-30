@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { StoreRejection } from '@/modules/shared/domain/common';
+import { readStoredReasons, storedReasons } from '@/modules/matching/domain/matching';
 import type {
   MatchShortlist,
   MatchSuggestion,
   RecordedSuggestion,
   ShortlistedIncident,
+  StructuredReason,
   SuggestionStatus,
   SuggestionStore,
 } from '@/modules/matching/domain/matching';
@@ -32,12 +34,14 @@ function suggestionRefusal(error: unknown): never {
 }
 
 function suggestionOf(row: Row): MatchSuggestion {
+  const { reasons, structuredReasons } = readStoredReasons(row.reasons);
   return {
     id: Number(row.id),
     incidentAId: Number(row.incident_a_id),
     incidentBId: Number(row.incident_b_id),
     score: Number(row.score),
-    reasons: Array.isArray(row.reasons) ? row.reasons.map(String) : [],
+    reasons,
+    structuredReasons,
     status: STATUSES.includes(row.status as SuggestionStatus) ? (row.status as SuggestionStatus) : 'pending',
     createdAt: text(row.created_at),
     decidedAt: text(row.decided_at),
@@ -74,7 +78,13 @@ export class SupabaseSuggestionAdapter implements SuggestionStore {
     this.db = db;
   }
 
-  async record(incidentAId: number, incidentBId: number, score: number, reasons: string[]): Promise<RecordedSuggestion> {
+  async record(
+    incidentAId: number,
+    incidentBId: number,
+    score: number,
+    reasons: string[],
+    structuredReasons: StructuredReason[] = [],
+  ): Promise<RecordedSuggestion> {
     let result: Row;
     try {
       result = asRow(
@@ -82,7 +92,7 @@ export class SupabaseSuggestionAdapter implements SuggestionStore {
           p_incident_a_id: incidentAId,
           p_incident_b_id: incidentBId,
           p_score: score,
-          p_reasons: reasons,
+          p_reasons: storedReasons(reasons, structuredReasons),
         }),
       );
     } catch (error) {

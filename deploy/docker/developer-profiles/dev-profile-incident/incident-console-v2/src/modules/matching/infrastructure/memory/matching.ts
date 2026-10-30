@@ -6,11 +6,13 @@
 // best video by cosine similarity of the latest analysis embeddings.
 
 import { StoreRejection } from '@/modules/shared/domain/common';
+import { readStoredReasons, storedReasons } from '@/modules/matching/domain/matching';
 import type {
   MatchShortlist,
   MatchSuggestion,
   RecordedSuggestion,
   ShortlistedIncident,
+  StructuredReason,
   SuggestionStore,
 } from '@/modules/matching/domain/matching';
 
@@ -19,17 +21,26 @@ export class InMemorySuggestionStore implements SuggestionStore {
 
   private nextId = 1;
 
-  async record(incidentAId: number, incidentBId: number, score: number, reasons: string[]): Promise<RecordedSuggestion> {
+  async record(
+    incidentAId: number,
+    incidentBId: number,
+    score: number,
+    reasons: string[],
+    structuredReasons: StructuredReason[] = [],
+  ): Promise<RecordedSuggestion> {
     if (incidentAId === incidentBId) throw new StoreRejection('invalid', 'an incident cannot be suggested against itself');
     if (!(score >= 0 && score <= 1)) throw new StoreRejection('invalid', 'score must be between 0 and 1');
     const existing = this.find(incidentAId, incidentBId);
     if (existing) return { suggestionId: existing.id, status: existing.status, created: false };
+    // Stored and read back like the database column: with chips, the chips are the reasons.
+    const kept = readStoredReasons(storedReasons(reasons, structuredReasons));
     const suggestion: MatchSuggestion = {
       id: this.nextId++,
       incidentAId,
       incidentBId,
       score,
-      reasons: [...reasons],
+      reasons: kept.reasons,
+      structuredReasons: kept.structuredReasons,
       status: 'pending',
       createdAt: new Date().toISOString(),
       decidedAt: null,
@@ -41,7 +52,7 @@ export class InMemorySuggestionStore implements SuggestionStore {
   async listPending(incidentId?: number): Promise<MatchSuggestion[]> {
     return this.suggestions
       .filter((s) => s.status === 'pending' && (incidentId === undefined || s.incidentAId === incidentId || s.incidentBId === incidentId))
-      .map((s) => ({ ...s, reasons: [...s.reasons] }))
+      .map((s) => ({ ...s, reasons: [...s.reasons], structuredReasons: s.structuredReasons.map((reason) => ({ ...reason })) }))
       .sort((a, b) => b.score - a.score || a.id - b.id);
   }
 

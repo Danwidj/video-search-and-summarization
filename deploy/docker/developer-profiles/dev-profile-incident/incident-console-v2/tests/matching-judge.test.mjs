@@ -44,7 +44,7 @@ function stubFetch(status, body) {
 }
 
 describe('HttpMatchJudge', () => {
-  test("accepts the agent's structured_reasons field and ignores it", async () => {
+  test("returns the agent's structured_reasons beside the text ones", async () => {
     stubFetch(200, {
       judgements: [
         {
@@ -56,7 +56,37 @@ describe('HttpMatchJudge', () => {
       ],
     });
     const result = await new HttpMatchJudge('http://agent:8000').judge(REQUEST, signal);
-    assert.deepEqual(result, { kind: 'judged', judgements: [{ incidentId: 7, score: 0.85, reasons: ['event types match'] }] });
+    assert.deepEqual(result, {
+      kind: 'judged',
+      judgements: [
+        {
+          incidentId: 7,
+          score: 0.85,
+          reasons: ['event types match'],
+          structuredReasons: [{ kind: 'same_event_type', label: 'Same event type', detail: 'assault' }],
+        },
+      ],
+    });
+  });
+
+  test('a judgement without structured_reasons (the agent before I23) has no structuredReasons key', async () => {
+    stubFetch(200, { judgements: [{ incident_id: 7, score: 0.85, reasons: ['event types match'] }] });
+    const result = await new HttpMatchJudge('http://agent:8000').judge(REQUEST, signal);
+    assert.deepEqual(result.judgements, [{ incidentId: 7, score: 0.85, reasons: ['event types match'] }]);
+    assert.equal('structuredReasons' in result.judgements[0], false);
+  });
+
+  test('a malformed or empty structured_reasons falls back to the text reasons instead of failing the judgement', async () => {
+    for (const structured_reasons of [
+      [],
+      'same place',
+      [{ kind: 'same_place' }],
+      [{ kind: 'same_place', label: 'Same place', detail: 'x' }, 3],
+    ]) {
+      stubFetch(200, { judgements: [{ incident_id: 7, score: 0.85, reasons: ['r'], structured_reasons }] });
+      const result = await new HttpMatchJudge('http://agent:8000').judge(REQUEST, signal);
+      assert.deepEqual(result.judgements, [{ incidentId: 7, score: 0.85, reasons: ['r'] }]);
+    }
   });
 
   test('posts the analysis and candidates as snake_case and returns the judgements', async () => {
@@ -184,5 +214,27 @@ describe('FakeMatchJudge', () => {
     assert.deepEqual(await judge.judge(REQUEST, signal), failure);
     await assert.rejects(judge.judge(REQUEST, signal), /boom/);
     await assert.rejects(judge.judge(REQUEST, signal), /boom/);
+  });
+});
+
+describe('FakeMatchJudge structured mode', () => {
+  test('returns chips beside the text reasons, matching the agent kinds', async () => {
+    const judge = new FakeMatchJudge([], { structured: true });
+    const result = await judge.judge(REQUEST, signal);
+    assert.deepEqual(
+      result.judgements.map((j) => [j.incidentId, j.structuredReasons.map((r) => r.kind)]),
+      [
+        [7, ['same_event_type', 'same_place', 'time_overlap']],
+        [8, ['different_event_type']],
+      ],
+    );
+  });
+
+  test('plain mode leaves the field out', async () => {
+    const result = await new FakeMatchJudge().judge(REQUEST, signal);
+    assert.equal(
+      result.judgements.some((j) => 'structuredReasons' in j),
+      false,
+    );
   });
 });

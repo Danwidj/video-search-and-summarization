@@ -2,12 +2,13 @@
 'use client';
 
 import Link from 'next/link';
-import { CheckIcon, VideoIcon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, ClockIcon, MapPinIcon, TagIcon, VideoIcon, XIcon } from 'lucide-react';
 import { cn } from 'cn';
 
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import type { SuggestionCard, SuggestionSide } from '@/sections/suggestions/types';
+import { type ReasonGroup, reasonChipStyle } from '@/sections/suggestions/reason-chips';
+import type { StructuredReason, SuggestionCard, SuggestionSide } from '@/sections/suggestions/types';
 
 /** From 0.75 a match is strong; below that it is only possible. */
 export function matchBand(score: number): { label: string; className: string } {
@@ -66,13 +67,92 @@ export function ScoreReadout({ score, compact = false }: { score: number; compac
   );
 }
 
-export function ReasonList({ reasons, className }: { reasons: string[]; className?: string }) {
+const CHIP_ICONS: Record<ReasonGroup, typeof CircleIcon> = { place: MapPinIcon, type: TagIcon, time: ClockIcon, other: CircleIcon };
+
+/** One reason as a chip: place and event type are solid, time and differences are dashed hints. The detail is its tooltip. */
+function ReasonChip({ reason }: { reason: StructuredReason }) {
+  const { group, strong } = reasonChipStyle(reason.kind);
+  const Icon = CHIP_ICONS[group];
+  return (
+    <span
+      className={cn(
+        'inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium [&>svg]:size-3',
+        strong ? 'border-moss/20 bg-moss/10 font-semibold text-moss' : 'border-dashed border-ink/30 bg-white text-ink/60',
+      )}
+      data-kind={reason.kind}
+      data-testid="suggestion-reason-chip"
+      title={reason.detail || undefined}
+    >
+      <Icon aria-hidden />
+      {reason.label}
+    </span>
+  );
+}
+
+/**
+ * Why a pair matched. With the agent's structured reasons: chips, each with what was compared beside it
+ * (`rows`) or in a list below (`chips`, for the banner, where the detail lines are `ReasonDetails`).
+ * Without them (an older agent or an older stored row): the text reasons as plain lines.
+ */
+export function ReasonList({
+  reasons,
+  structuredReasons = [],
+  layout = 'rows',
+  className,
+}: {
+  reasons: string[];
+  structuredReasons?: StructuredReason[];
+  layout?: 'rows' | 'chips';
+  className?: string;
+}) {
+  if (structuredReasons.length > 0) {
+    if (layout === 'chips') {
+      return (
+        <ul aria-label="Reasons" className={cn('flex flex-wrap gap-1.5', className)} data-testid="suggestion-reasons">
+          {structuredReasons.map((reason) => (
+            <li key={reason.kind}>
+              <ReasonChip reason={reason} />
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    return (
+      <ul className={cn('space-y-2', className)} data-testid="suggestion-reasons">
+        {structuredReasons.map((reason) => (
+          <li className="flex min-w-0 flex-col items-start gap-1 text-sm xl:flex-row xl:gap-2" key={reason.kind}>
+            <span className="mt-0.5">
+              <ReasonChip reason={reason} />
+            </span>
+            <span className={cn('pt-px text-[13px] leading-5', reasonChipStyle(reason.kind).strong ? 'text-ink/80' : 'text-ink/55')}>
+              {reason.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   if (reasons.length === 0) return <p className={cn('text-sm text-muted-foreground', className)}>No reason was recorded.</p>;
   return (
     <ul className={cn('space-y-1.5', className)} data-testid="suggestion-reasons">
       {reasons.map((reason) => (
         <li className="text-[13px] leading-5 text-ink/80" key={reason}>
           {reason}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The banner's detail lines under the chips: "Same place: what was compared". Nothing without structured reasons. */
+export function ReasonDetails({ structuredReasons, className }: { structuredReasons: StructuredReason[]; className?: string }) {
+  if (structuredReasons.length === 0) return null;
+  return (
+    <ul className={cn('space-y-1 border-t border-ink/10 pt-2.5', className)} data-testid="suggestion-reason-details">
+      {structuredReasons.map((reason) => (
+        <li className={cn('text-xs leading-5', reasonChipStyle(reason.kind).strong ? 'text-ink/75' : 'text-ink/50')} key={reason.kind}>
+          <b className="font-semibold">{reason.label}</b>
+          {reason.detail ? `: ${reason.detail}` : ''}
         </li>
       ))}
     </ul>

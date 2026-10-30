@@ -220,7 +220,7 @@ Suggested joins between two incidents. The system only suggests; the reviewer de
 | `incident_a_id` | `BIGINT` | NOT NULL; FK → `incidents.id` ON DELETE CASCADE | One incident of the pair |
 | `incident_b_id` | `BIGINT` | NOT NULL; FK → `incidents.id` ON DELETE CASCADE; CHECK `incident_a_id <> incident_b_id` | The other incident |
 | `score` | `DOUBLE PRECISION` | NOT NULL; CHECK `0 <= score <= 1` | Match score from the judge |
-| `reasons` | `JSONB` | NOT NULL, DEFAULT `'[]'` | Plain-language reasons |
+| `reasons` | `JSONB` | NOT NULL, DEFAULT `'[]'` | Plain-language reasons: a JSON array of strings (older rows, or an agent without `structured_reasons`) or of `{kind, label, detail}` objects (the agent's chips, stored instead of the text). No migration: the column is JSONB. The console reads either and shows chips for objects |
 | `status` | `VARCHAR(16)` | NOT NULL, DEFAULT `'pending'`; CHECK `IN ('pending','accepted','rejected')` | Decision state |
 | `created_at` | `TIMESTAMP` | NOT NULL, DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC creation time |
 | `decided_at` | `TIMESTAMP` | NULLABLE | Naive UTC time of the decision |

@@ -86,6 +86,32 @@ async function world({ judge = new FakeMatchJudge(), withRevisions = [1, 2, 3, 4
   return { reports, analyses, suggestions, judge, matching: { shortlist, suggestions, judge } };
 }
 
+describe('evaluateIncident structured reasons', () => {
+  test('records the agent chips with the suggestion and returns them', async () => {
+    const w = await world({ judge: new FakeMatchJudge([], { structured: true }) });
+    const result = await evaluateIncident(w, 1, signal);
+    assert.deepEqual(
+      result.suggestions[0].structuredReasons.map((r) => r.kind),
+      ['same_event_type', 'same_place', 'time_overlap'],
+    );
+    const [pending] = await listPendingSuggestions(w.suggestions);
+    assert.deepEqual(
+      pending.structuredReasons.map((r) => r.label),
+      ['Same event type', 'Same place', 'Time overlap'],
+    );
+    assert.ok(pending.reasons.length > 0);
+  });
+
+  test('without chips from the agent the suggestion keeps only the text reasons', async () => {
+    const w = await world();
+    const result = await evaluateIncident(w, 1, signal);
+    assert.deepEqual(result.suggestions[0].structuredReasons, []);
+    const [pending] = await listPendingSuggestions(w.suggestions);
+    assert.deepEqual(pending.structuredReasons, []);
+    assert.ok(pending.reasons.length > 0);
+  });
+});
+
 describe('evaluateIncident', () => {
   test('records a pending suggestion for each judged match above the threshold, with reasons and score', async () => {
     const w = await world();
