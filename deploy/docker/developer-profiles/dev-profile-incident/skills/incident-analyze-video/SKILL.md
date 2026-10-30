@@ -1,84 +1,107 @@
 ---
 name: incident-analyze-video
-description: Use to upload a video clip and generate, re-run, edit, version or mark official a structured incident report (type, severity, confidence, entities, instruments, assets, timeline) through incident-console-v2, in gateway (mock) or agent (vm) mode. Not for batch scoring against ground truth - use incident-run-eval.
+description: Use to upload a video clip, analyse it, group videos into incidents (suggestions, merge, remove) and build, edit, version or mark official an incident's combined report through incident-console-v2 against the VM agent (mvp3). Not for batch scoring against ground truth - use incident-run-eval.
 license: Apache-2.0
 metadata:
-  version: "0.1.4"
+  version: "0.2.0"
   profile: "dev-profile-incident"
-  tags: "incident analysis vlm report review"
+  tags: "incident analysis vlm report review merge"
 ---
 # Incident Analyze Video
 
-**Identity rule: a report is a revision.** Every analysis creates a new `model_run_id` and appends a `report_revisions` row (`kind='ai'`) for the video; earlier revisions are kept, and re-generation never carries edits across.
+**Identity rules (mvp3).** A video belongs to exactly one incident. Analysing a video stores an analysis and creates **no** report version. A version is built only by Regenerate, from the latest analysis of each current video, and versions are append-only. Merge and remove never rebuild a version.
 
 Canonical facts:
-- Flows: [`.docs/architecture.md` §4](../../.docs/architecture.md#4-runtime-interaction-sequences), sequences A (gateway) and B (agent)
-- Report fields and translation: [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md)
-- Tables: [`.docs/data.md`](../../.docs/data.md)
+- Flow, deployment and the console API table: [`.docs/architecture.md` §5](../../.docs/architecture.md#5-mvp3-incidents-with-several-videos)
+- Agent endpoints: [`.docs/vm-api-contracts.md`](../../.docs/vm-api-contracts.md)
+- Report fields: [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md)
+- Tables and database functions: [`.docs/data.md`](../../.docs/data.md)
+- Why: [`.docs/decisions.md`](../../.docs/decisions.md) (entries dated 2026-10-30)
 
 ## Prerequisites
 
-The stack is running via [`incident-start`](../incident-start/SKILL.md), and `curl -s localhost:3200/api/health` is ready. Prefer short clips, because inference is synchronous.
+The stack is running via [`incident-start`](../incident-start/SKILL.md) in `--mode vm` (the mvp3 agent on `localhost:8001`), and `curl -s localhost:3200/api/health` is ready. Analysis is **agent mode only**; there is no gateway path for `POST /api/analysis`. Keep clips short: analyse must finish inside 360 s.
 
-## Mode routing
+Check the synthesise route first, because Regenerate needs it:
 
-| `ANALYSIS_MODE` | Set by | Inference | Who writes Supabase |
-|---|---|---|---|
-| `gateway` | `start.sh --mode mock` | console -> `vlm-gateway` :8600 -> Brev, with the model chosen in the UI from `contracts/inference.json` (default `VLM_MODEL`), on `incident-contract-v4` | Console writes `videos`, `model_runs` and the AI revision (gateway analysis does not crop, so its evidence entries have no image) |
-| `agent` | `start.sh --mode vm` | console -> `vss-agent` `POST /api/v1/incidents/{id}/analyze` -> Brev. P1 only, on the agent's `VLM_NAME` (the console sends `skip_rp1: true`, matching gateway mode). The console validates the agent's raw P1 output under `core-scored-v1` exactly as in gateway mode. | The console writes `videos` and the `model_runs` record. The agent crops evidence to R2 and appends the AI `report_revisions` row itself (inserting a placeholder `model_runs` row only if the console has not yet). The request also takes `model` and `reviewer_prompt` (max 1000 chars, this run only); the console's reviewer-prompt field is sent as `reviewer_prompt`, while model choice stays gateway-only. |
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8001/api/v1/incidents/synthesize -H 'Content-Type: application/json' -d '{}'
+```
+
+`422` means it is mounted. `404` means the agent predates PR #320 (not merged when this was written); Regenerate then fails with 502.
 
 ## Instructions
 
-### Preferred: through the UI
+The Phase 6 UI is not merged yet, so the screens still show the pre-mvp3 layout. Use the console API below (what the new UI will call).
 
-Open `http://localhost:3200`, choose the model, then select the clip. Upload, analysis and persistence run in one go. The UI then redirects to `/reports/<video-id>?revision=<revision-id>`. To analyse an already-uploaded video again (any model, optional reviewer prompt), open `/videos/<video-id>` or the report page's re-analysis button in the top bar. Every attempt is a new run and a new AI revision, failed attempts appear in the history only, and choosing the official revision is a separate explicit action.
+### 1. Upload
 
-### Scripted: console API (same path the UI uses)
+1. `POST /api/uploads/check` with `{"filename"}` (name collision check; a video name is its real, sanitised file name).
+2. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL; chunked upload to it (the browser does this in `modules/videos/infrastructure/vst/chunked-upload.ts`).
+3. `POST /api/uploads/r2` puts the file in R2 (VST returns no R2 key). With `R2_KEY_PREFIX=mvp3/` the console adds the prefix itself.
+4. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
 
-1. `POST /api/uploads` with `{"filename": "<name>.mp4"}` returns the VST upload URL.
-2. Chunked upload to that URL. The browser does this in `modules/videos/infrastructure/vst/chunked-upload.ts` using `nvstreamer-*` headers. **Real VST returns no R2 key**, so the console `PUT`s the file to R2 via `POST /api/uploads/r2`. Before it, the upload page calls `POST /api/uploads/check` with `{"filename"}` (returns `name`, `unsafeChars`, `truncated`, `exists`) and warns when the name is already stored (the file would be saved as `name-2.ext`; nothing is overwritten) or has unsafe characters (replaced with `_`); the user confirms with **Continue as <name>**. Direct upload success includes an R2 `HeadObject` check against the original byte length.
-3. `POST /api/uploads/complete` with `{"sensorId", "filename"}`.
-4. `POST /api/analysis` with `{"sensorId", "filepath": "<R2 key>", "filename", "model"?}` (gateway; `reasoning`/`promptOverride` apply to agent mode only). Before inference the route verifies that the R2 object exists and is nonempty. A 200 response means it also read back `videos`, `model_runs` and the AI `report_revisions` row and confirmed that `videos.filepath` equals the submitted R2 key. A missing object, row, or mismatched key returns an operation-specific 500 instead of a false success.
+### 2. Analyse
 
-Steps 1-2 are awkward from a shell. For scripted re-analysis of an already-uploaded video use `POST /api/videos/<video-id>/runs` with `{"model", "additionalInstruction"?}`: it never touches the video row. Responses: 200 `{run: {..., outcome}}` (`valid_first_pass` or `valid_after_structural_repair`), 422 `contract_failed` with `codes`, 502/504 `request_failed` with `code`; failures are recorded in `GET /api/videos/<video-id>/runs`.
+`POST /api/analysis`:
 
-### Direct agent call (vm mode, for debugging the agent)
+- New upload: `{"sensorId", "filepath": "<R2 key>", "filename", "model"?, "additionalInstruction"?}`. This creates the incident and the video.
+- Re-analysis of a stored video: `{"videoName", "model"?, "additionalInstruction"?}`. It adds an analysis; earlier ones are kept and the latest wins.
+
+Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. The model run id reads `<video name>@<UTC timestamp>`. If a new upload fails, the video and incident rows are removed again and the R2 object stays, so retry without re-uploading. No version exists yet.
+
+### 3. Group videos (optional)
+
+- `POST /api/suggestions/evaluate` with `{"incidentId"}` compares every video of the incident with similar incidents (shortlist of 5, similarity at least 0.3, score at least 0.5; decided pairs are skipped). Needs the agent's `match-judge`. Time is only a hint.
+- `GET /api/suggestions?incidentId=<id>` lists pending suggestions, best first.
+- `POST /api/suggestions/<id>/accept` (body `{"incidentId"?}`) merges; the kept incident defaults to the lower id. `POST /api/suggestions/<id>/reject` is remembered for good.
+- `POST /api/reports/<targetId>/merge` with `{"sourceIncidentId"}` merges directly. The source incident, its versions and its official choice are deleted; no files move.
+- `POST /api/videos/<name>/remove` with `{"choice": "delete" | "move"}`. `move` makes the video a new incident (then build its first report); it is refused for the last video of an incident.
+
+### 4. Build a version (Regenerate)
+
+`POST /api/reports/<incidentId>/build` with `{"note"?}` returns `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. Statuses: `422` no videos, `409 {videos}` some video has no analysis yet, `503` agent not configured, `502` or `504` agent failed. The synthesis run is `incident-<id>@<UTC timestamp>`.
+
+The version's `video_names` is its coverage and never changes. After a merge or a removal the coverage note says "Does not include: ..." or "Includes a removed video: ..." until you regenerate.
+
+### Direct agent calls (debugging the agent)
 
 ```bash
-curl -s -X POST localhost:8000/api/v1/incidents/<incident_id>/analyze \
+curl -s -X POST localhost:8001/api/v1/incidents/<video_name>/analyze \
   -H 'Content-Type: application/json' \
-  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<=20 chars, optional>", "skip_rp1": false}'
+  -d '{"video_url": "<signed R2 URL>", "model_run_id": "<video_name>@2026-10-30T06:00:00Z", "skip_rp1": true}'
 ```
 
-The `videos` row must already exist (`incidents` references it); the agent does not write `videos`. Without `model_run_id` the agent creates its own run; with one, the caller owns the `model_runs` row and the agent only inserts a placeholder if it is absent. In both cases, when the database is configured, the agent appends the AI revision and returns its `revision_id` (`null` if the best-effort write failed). `skip_rp1` (default `false`) runs P1 only, leaving `report_text` null; otherwise RP1 runs on the model hardcoded in `incident_contract.rp1_request()`. It returns `{report, report_text, report_text_error, model, contract_version, raw_output, finish_reason, revision_id, evidence}`, where `report` is the contract shape with the derived `incident.duration`, after `core-scored-v1` validation and any `id-normalization-v1` repair. Never send `experiment_prompt_id` or `skip_crops` for a real analysis: they are eval-experiment settings, refused unless the agent runs with `INCIDENT_EXPERIMENTS_ENABLED=1`, and their runs are never saved as revisions; experimental crops go to a temporary in-memory store, never R2 ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)).
+The `videos` row must already exist; the agent does not write `videos`. The response carries `analysis_id`, `model_run_id` and `outcome` (`stored` or `not_stored`) and no `revision_id`. Request fields and error table: [`vm-api-contracts.md`](../../.docs/vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze). Synthesise and match-judge are stateless, so they are safe to call by hand with a body copied from the contract.
 
 | Status | Meaning |
 |---|---|
-| 422 | P1 output failed `core-scored-v1` (a schema or core cross-field violation that `id-normalization-v1` cannot repair), or P1 hit `max_tokens` with no content. The agent persists nothing; `detail` carries `message`, `raw_output`, `finish_reason`, `model` and `contract_version`, and the console records a `contract_failed` (or `request_failed`) attempt in `model_runs.notes`. Timeline-only violations are not a 422. |
+| 422 | P1 output failed `core-scored-v1`. Nothing is stored; `detail` carries `message`, `raw_output`, `finish_reason`, `model`, `contract_version`. |
 | 504 | Analysis timed out |
-| 501 | `incident_report_gen` is not configured. The agent is on the wrong config: it must be the dev-profile-base config. |
-| 500 | Any other failure. Check `./.scripts/logs.sh vss-agent` on the VM. |
+| 501 | `incident_report_gen` is not configured on this agent. |
+| 500 | Any other failure. See `./.scripts/logs.sh vss-agent` on the VM. |
 
-## Revision lifecycle
+## Version lifecycle
 
-There is no verify step and no review status. A report is its list of revisions; the report page's versions graph (`GET /api/reports/<videoId>/revisions`) lists them newest first.
+There is no verify step and no review status. A report is its list of versions; `GET /api/reports/<incidentId>/revisions` lists them newest first, each with its coverage verdict.
 
-- **Page and edit controls:** On desktop in both View and Edit, two vertical separators resize video, timeline and version-history widths, and the bottom horizontal separator resizes their shared height; the layout survives mode switching for the current page session. In Edit, **Undo** restores the preceding in-browser draft and **Revert all** restores the opened revision. None writes data. `PATCH /api/reports/<videoId>/edit` with `{"parentId", "editedBy", "edit", "note"?}` validates the structured edit, then appends a `human` revision whose parent is the revision that was opened (`save_human_revision_with_crops`). On a video with no official revision it first has the agent embed the new evidence and stores the crops in the same call; if the embedding fails it answers 502 and saves nothing. Every edited item keeps the id of the item it came from, so its evidence and image follow it; the AI revision and `model_runs.notes` are never changed.
-- **Evidence image** (`POST /api/reports/<videoId>/evidence-image`, multipart `file` and `itemId`) uploads a replacement to a new R2 key (`evidence/<video key>/edit-<N>/<itemId>.jpg`) and returns `{image}`; Save calls it for each held crop before it writes the revision. No existing object is overwritten. A save that fails after its upload leaves an unreferenced image; `POST /api/reports/<videoId>/evidence-sweep` lists those (dry run by default) and with `{"dryRun": false}` removes only the ones no revision or `evidence_crops` row names and that are older than `minAgeHours` (default 24). Do not run it against the live finals bucket without the user's say-so.
-- **Frame and crop** (`GET /api/reports/<videoId>/frame?t=<seconds>` returns a JPEG; `POST /api/reports/<videoId>/evidence-crop` with `{"timestampSeconds", "region": {"x","y","w","h"}}`, fractions 0-1 of the frame, returns the crop as a JPEG and writes nothing to R2). In the picker, press and hold at one corner, drag, and release at the opposite corner; release retains the completed rectangle while the pointer moves to **Use this crop**. A timestamp past the video's end or a rectangle outside the frame is 422; 503 means `ffmpeg` is missing on the console host.
-- **Official** (`PUT`/`DELETE /api/videos/<videoId>/official`) sets or clears `videos.official_revision_id`. Marking asks the agent for the revision's evidence embeddings and rebuilds `evidence_crops`; if the agent is unreachable the mark fails and nothing changes.
-- **Re-generation** always makes a new AI revision and copies no earlier edits ([`.docs/analysis-schema.md`](../../.docs/analysis-schema.md#report-revisions-ai-and-human)).
+- **Read:** `GET /api/reports/<incidentId>?revision=<id>&camera=<video>` returns the version (given, else official, else newest), its overview and cameras, and that camera's report.
+- **Edit:** `PATCH /api/reports/<incidentId>/edit` with `{parentId, editedBy, note?, camera?, edit?}`, or an overview edit (title, type, severity_level, description, location), writes a new human version. Re-generation copies no edits.
+- **Evidence images:** `POST /api/reports/<incidentId>/evidence-image` (multipart `file`, `itemId`, `video`; JPEG, PNG or WebP, up to 5 MB) uploads to a new key `evidence/<video key>/edit-<n>/<itemId>.jpg` and never overwrites. `GET .../frame?t=<s>&video=<name>` returns a JPEG (needs `ffmpeg`). `POST .../evidence-crop` with `{video, timestampSeconds, region}` returns a crop and writes nothing. `POST .../evidence-sweep` with `{video, dryRun?, minAgeHours?}` removes unreferenced images (dry run by default).
+- **Official:** `PUT`/`DELETE /api/videos/<incidentId>/official` with `{"revisionId"}` (the old path name takes an incident id). Only the incident's own versions are accepted.
+- **Delete:** `DELETE /api/reports/<incidentId>/delete` removes every video's objects, then the rows.
 
 ## Verify
 
-Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#7-end-to-end-verification-checklist). Minimum checks after one analysis:
+Minimum checks after one analyse and one build, in the finals-free mvp3 database:
 
-- The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
-- `videos.filepath` is a classification-neutral **R2 key** (`uploads/<original file name>` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (see [`.docs/decisions.md`](../../.docs/decisions.md) 2026-10-16).
-- There is a new `model_runs` row and a new AI revision in History, and the previous runs still appear in the run picker.
-- The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
+- `POST /api/analysis` returned 200 with `outcome: "stored"`, and `video_analyses` has a row for the video.
+- No `report_revisions` row exists until `build` runs; after it, the new version's `video_names` lists the incident's videos.
+- Objects in R2 sit under `R2_KEY_PREFIX`, and database keys have no prefix.
+- The model run ids are readable (`<video name>@<timestamp>`).
 
 ## Known quirks
 
-- Both gateway and agent modes use `incident-contract-v4` (with required `timestamp_seconds` and `label` grounding, plus `first_seen_seconds` and `last_seen_seconds` per entity, the same request as eval) and record every attempt immutably in `model_runs.notes` with its outcome under validation policy `core-scored-v1`. See [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
-- `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not determine or change the uploaded object's key.
+- `GET /api/videos`, `POST /api/videos/<id>/runs` and `ANALYSIS_MODE` still exist in the console from before mvp3 and use the old video-keyed run code. They do not match the mvp3 schema; do not use them.
+- Every attempt, valid or not, is recorded in `model_runs.notes` with its outcome under validation policy `core-scored-v1`; see [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
+- `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not change the uploaded object's key.

@@ -18,7 +18,7 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 | Never | Why | Instead |
 |---|---|---|
 | `deploy/docker/scripts/dev-profile.sh down` (or `up`) for this profile | `down` runs `docker compose down -v` and wipes `VSS_DATA_DIR`, including about 35 GB of cached model weights. `dev-profile.sh` does not know the `incident` profile. | `./.scripts/down.sh` or plain `docker compose -p mdx stop` (or `docker compose -p mdx down --remove-orphans` for a clean slate, still never `-v`) |
-| Start the `vss-agent` Docker container | The native agent already owns `:8000` ("no double agent") | `./.scripts/native-services.sh restart vss-agent` |
+| Start the `vss-agent` Docker container | The native agent already owns `:8001` ("no double agent") | `./.scripts/native-services.sh restart vss-agent` |
 | `uv sync` in `services/agent` on the VM | `nvdataset` resolves only from NVIDIA's internal artifactory | The reinstall procedure below |
 | `_type: nim` for remote models, or a `*_BASE_URL` ending in `/v1` | `nim_langchain` leaks `verify_ssl` into the request body (HTTP 400), and clients append `/v1` themselves | `_type: openai`, bare host URL |
 | Set `INCIDENT_EXPERIMENTS_ENABLED=1` on the shared VM agent | It enables the eval-experiment `/analyze` settings (`experiment_prompt_id`, `skip_crops`) for every caller | Run prompt experiments on a separate local agent with no Supabase or R2 settings ([vm-api-contracts.md](../../.docs/vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b)) |
@@ -29,29 +29,29 @@ Canonical facts: [`.docs/incident-profile-operations.md`](../../.docs/incident-p
 
 | Kind | Services | Manage with |
 |---|---|---|
-| Native (fast restart, about 2 s) | `vss-agent` :8000; optional `video-analytics-api` :8081 and `behavior-analytics` (`ENABLE_ANALYTICS=true`). `status` lists only expected services (analytics excluded unless `ENABLE_ANALYTICS=true`). Concurrency-safe across multi-user VM starts via `flock` and `umask 002`. | `.scripts/native-services.sh start\|stop\|restart\|status\|logs <svc\|all\|analytics>` |
+| Native (fast restart, about 2 s) | `vss-agent` :8001; optional `video-analytics-api` :8081 and `behavior-analytics` (`ENABLE_ANALYTICS=true`). `status` lists only expected services (analytics excluded unless `ENABLE_ANALYTICS=true`). Concurrency-safe across multi-user VM starts via `flock` and `umask 002`. | `.scripts/native-services.sh start\|stop\|restart\|status\|logs <svc\|all\|analytics>` |
 | Docker appliances | VIOS (`vss-vios-*`), `vss-haproxy-ingress` :7777, `redis`, `phoenix`, `kafka`; optional `elasticsearch` | `docker compose -p mdx ...` with `generated.env.remote` |
 
 Full port and rationale table: [operations §2](../../.docs/incident-profile-operations.md#2-native-vs-docker-service-split).
 
 ## Instructions
 
-Paths on the VM: repo `/srv/rise-up/vss`, scripts `/srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts`.
+Paths on the VM: repo `/srv/rise-up/vss-mvp3`, scripts `/srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/.scripts`.
 
 ### 1. Inspect before acting
 
 ```bash
 ssh kwanz-ws
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
+cd /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./status.sh                       # docker compose -p mdx ps + native status + GPU status
-./health.sh                       # agent :8000/health
+./health.sh                       # agent :8001/health
 ```
 
 ### 2. Common operations
 
 | Goal | Command |
 |---|---|
-| Pick up agent code changes (`services/agent/src`) | `git pull` in `/srv/rise-up/vss`, then `./native-services.sh restart vss-agent`. The incident contract (`vss_agents/incident_contract/`) is vendored from `contracts/` and synchronised via `contracts/sync.py`. It is package data in the editable install, so a restart picks it up; it adds no dependencies. |
+| Pick up agent code changes (`services/agent/src`) | `git pull` in `/srv/rise-up/vss-mvp3`, then `./native-services.sh restart vss-agent`. The incident contract (`vss_agents/incident_contract/`) is vendored from `contracts/` and synchronised via `contracts/sync.py`. It is package data in the editable install, so a restart picks it up; it adds no dependencies. |
 | Pick up `generated.env.remote` changes | `./native-services.sh restart vss-agent`. Env is captured at process start; check it in `/proc/<pid>/environ`. |
 | Tail logs | `./logs.sh vss-agent` (native) or `./logs.sh <container>` (Docker) |
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
@@ -67,10 +67,10 @@ A full deploy from nothing is easiest from the laptop: `./start.sh --mode vm` de
 Needed when `vss_agents` is not an editable install, so code changes don't take effect:
 
 ```bash
-cd /srv/rise-up/vss/services/agent
+cd /srv/rise-up/vss-mvp3/services/agent
 uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/simple -e .
 uv pip install --python .venv/bin/python supabase opencv-python-headless setuptools
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
+cd /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
 ```
 
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` has `"editable": true`.
@@ -90,7 +90,7 @@ The file is untracked and lives on the VM only. Rules (why for each: [operations
 - `VSS_AGENT_HOST` defaults to `127.0.0.1` (loopback only: the agent has no auth and holds the DB admin key). An old `VSS_AGENT_HOST=0.0.0.0` must be removed or set to `127.0.0.1`.
 - `INCIDENT_SUPABASE_URL` and `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` name the **finals** Supabase project, never the frozen midterm one. The native `vss-agent` (search, chat, standalone persistence), the evidence loader and `native-services.sh` read them. To switch: back up the file, set the two values, `./native-services.sh restart vss-agent`, then check the host (never the key) in `/proc/<pid>/environ` and that a search adds a row to finals `queries` (the agent only warns when it cannot record one). The schema and copy procedure are in [`supabase/README.md`](../../supabase/README.md#building-finals), and the key compatibility check is in [`incident-manage-database`](../incident-manage-database/SKILL.md#finals-keys-sb_secret_). Finals uses an `sb_secret_...` server key, which is not a JWT, and the agent connects through `supabase-py`, whose version on the VM is not pinned (`pyproject.toml` requires only `supabase~=2.0`; `uv.lock` has no entry). Older 2.x releases reject non-JWT keys with `Invalid API key`. **Before switching**, run the one-row connection test in the agent's own environment ([VM key check](../incident-manage-database/SKILL.md#finals-keys-sb_secret_), below):
   ```bash
-  cd /srv/rise-up/vss
+  cd /srv/rise-up/vss-mvp3
   read -rp 'finals URL: ' FINALS_URL; read -rsp 'finals sb_secret key: ' FINALS_KEY; echo; export FINALS_URL FINALS_KEY
   services/agent/.venv/bin/python -c "import os, importlib.metadata as m, supabase; c = supabase.create_client(os.environ['FINALS_URL'], os.environ['FINALS_KEY']); print('supabase', m.version('supabase'), 'ok, rows', len(c.table('videos').select('id').limit(1).execute().data))"
   unset FINALS_KEY
