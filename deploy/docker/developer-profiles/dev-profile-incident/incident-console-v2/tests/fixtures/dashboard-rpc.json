@@ -1,6 +1,7 @@
 {
   "total": 3,
-  "videos": { "uploaded": 5, "withOfficial": 3, "awaitingSelection": 1, "withoutReport": 1 },
+  "incidents": { "total": 5, "withOfficial": 3, "awaitingSelection": 1, "withoutReport": 1 },
+  "videos": { "uploaded": 7 },
   "previous": { "total": 2, "human": 1, "ai": 1, "high": 0 },
   "averageConfidence": 0.8166666666666667,
   "confidenceNotProvided": 0,

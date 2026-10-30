@@ -134,9 +134,9 @@ test('the report page has a mark-official star, no Restore, and keeps the layout
 
 test('a search hit links to its report at the hit second, and the page reads that second back', async () => {
   const { reportHref, parseStartSeconds } = await import('../src/lib/library/search.ts');
-  const hit = { resultId: 'q1', item: { timestampSeconds: 42.7 }, incident: { videoId: 'Assault 007' } };
-  assert.equal(reportHref(hit), '/reports/Assault%20007?t=42');
-  assert.equal(reportHref(hit, { revisionId: 9, revisionNo: 2, isOfficial: true }), '/reports/Assault%20007?revision=9&t=42');
+  const hit = { resultId: 'q1', item: { timestampSeconds: 42.7, videoName: 'front door.mp4' }, incident: { incidentId: '7' } };
+  assert.equal(reportHref(hit), '/reports/7?video=front+door.mp4&t=42');
+  assert.equal(reportHref(hit, { revisionId: 9, revisionNo: 2, isOfficial: true }), '/reports/7?revision=9&video=front+door.mp4&t=42');
   assert.equal(parseStartSeconds('42'), 42);
   assert.equal(parseStartSeconds('0'), 0);
   assert.equal(parseStartSeconds('3.5'), 3.5);

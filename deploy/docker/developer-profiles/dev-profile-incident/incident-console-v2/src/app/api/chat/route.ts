@@ -12,12 +12,14 @@ export async function POST(request: Request) {
     const input = (await request.json()) as {
       messages?: ChatMessage[];
       sessionId?: string;
-      incidentId?: string;
+      incidentId?: string | number;
       evidenceCropIds?: string[];
       versionId?: number;
       draftReport?: Record<string, unknown>;
     };
     if (!input.messages?.length) return NextResponse.json({ error: 'At least one message is required' }, { status: 400 });
+    if (input.incidentId != null && !/^[1-9]\d{0,17}$/.test(String(input.incidentId)))
+      return NextResponse.json({ error: 'incidentId must be a positive integer' }, { status: 400 });
     if (input.versionId != null && !(Number.isInteger(input.versionId) && input.versionId >= 1))
       return NextResponse.json({ error: 'versionId must be a positive integer' }, { status: 400 });
     if (input.draftReport != null && input.versionId == null)
@@ -29,11 +31,11 @@ export async function POST(request: Request) {
       {
         messages: input.messages,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-        ...(input.incidentId
+        ...(input.incidentId != null
           ? {
               context: {
                 scope: 'incident' as const,
-                incidentId: input.incidentId,
+                incidentId: String(input.incidentId),
                 ...(input.evidenceCropIds?.length ? { evidenceCropIds: input.evidenceCropIds } : {}),
               },
             }

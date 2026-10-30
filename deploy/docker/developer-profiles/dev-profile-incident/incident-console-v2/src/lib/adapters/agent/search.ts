@@ -19,7 +19,8 @@ export function toAgentSearchBody(request: EvidenceSearchRequest): Record<string
         ...(filters.minSeverity != null ? { min_severity: filters.minSeverity } : {}),
         ...(filters.maxSeverity != null ? { max_severity: filters.maxSeverity } : {}),
         ...(filters.itemTypes?.length ? { item_types: filters.itemTypes } : {}),
-        ...(filters.videoId ? { video_id: filters.videoId } : {}),
+        ...(filters.incidentId ? { incident_id: Number(filters.incidentId) } : {}),
+        ...(filters.videoName ? { video_id: filters.videoName } : {}),
       }
     : {};
   return {
@@ -36,6 +37,10 @@ const row = (value: unknown): Row => (value && typeof value === 'object' && !Arr
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 const numOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+/** The agent's incident id is a number; the console keeps it as the text of its route segment. */
+const incidentIdText = (value: unknown): string =>
+  typeof value === 'number' && Number.isInteger(value) ? String(value) : typeof value === 'string' ? value : '';
 
 function fromAgentHit(raw: unknown): EvidenceSearchHit {
   const hit = row(raw);
@@ -54,6 +59,7 @@ function fromAgentHit(raw: unknown): EvidenceSearchHit {
     item: {
       itemType: item.item_type as EvidenceSearchHit['item']['itemType'],
       itemId: text(item.item_id),
+      videoName: text(item.video_id),
       name: text(item.name),
       label: text(item.label),
       description: text(item.description),
@@ -64,7 +70,7 @@ function fromAgentHit(raw: unknown): EvidenceSearchHit {
       boundingBox: box,
     },
     incident: {
-      videoId: text(incident.incident_id),
+      incidentId: incidentIdText(incident.incident_id),
       modelRunId: text(incident.model_run_id),
       incidentType: text(incident.incident_type),
       severityLevel: num(incident.severity_level, 1),

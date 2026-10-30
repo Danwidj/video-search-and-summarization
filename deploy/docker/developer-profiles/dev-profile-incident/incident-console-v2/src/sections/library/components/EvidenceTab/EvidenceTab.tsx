@@ -83,7 +83,7 @@ export function EvidenceTab({
       onView={() => setViewing(hit)}
       relationship={relationshipOf(hit, hits)}
       showMatch={showMatch}
-      version={versions[hit.incident.videoId]}
+      version={versions[hit.incident.incidentId]}
     />
   );
 
@@ -212,10 +212,10 @@ export function EvidenceTab({
           {grouped ? (
             <div className="mt-4 space-y-8">
               {groupByIncident(shown).map((group) => (
-                <section key={group.videoId}>
+                <section key={group.incidentId}>
                   <h2 className="text-lg font-semibold">
                     {group.incident.title || group.incident.incidentType}{' '}
-                    <span className="font-mono text-xs font-normal text-ink-caption">{group.videoId}</span>
+                    <span className="font-mono text-xs font-normal text-ink-caption">incident {group.incidentId}</span>
                   </h2>
                   <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{group.hits.map(card)}</div>
                 </section>
