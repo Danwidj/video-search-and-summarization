@@ -32,7 +32,8 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
 /**
  * One revision of the incident (revisionId null: the official revision, else the newest) and one of its cameras
  * (camera null: the first contract-valid camera still in the incident, else the first valid one). Null when the
- * incident or revision is missing. Throws StoreRejection 'not-found' for a camera the revision does not hold. The view
+ * incident or revision is missing. A camera that is an incident video but not in the revision falls back to the first valid camera (its chip stays
+ * disabled as "not in this version"). Throws StoreRejection 'not-found' for a camera the incident does not have. The view
  * also lists the incident's videos, so the page counts the incident rather than the open version.
  * A camera whose video was removed shows its report without a player; one whose report is not contract-valid
  * is listed but never shown.
@@ -68,8 +69,9 @@ export async function getReport(
   ];
   let chosen: string | null;
   if (camera !== null) {
-    if (!inVersion.has(camera)) throw new StoreRejection('not-found', `The revision has no camera for ${camera}`);
-    chosen = cameraReport(envelope, camera) === null ? null : camera;
+    if (!inVersion.has(camera) && !current.has(camera)) throw new StoreRejection('not-found', `The revision has no camera for ${camera}`);
+    if (inVersion.has(camera)) chosen = cameraReport(envelope, camera) === null ? null : camera;
+    else chosen = firstValidCamera(envelope, [...current]) ?? firstValidCamera(envelope);
   } else chosen = firstValidCamera(envelope, [...current]) ?? firstValidCamera(envelope);
 
   let report: ReportView | null = null;
@@ -86,7 +88,7 @@ export async function getReport(
     coverage: coverageView(record.revision, incident),
     cameras,
     incidentVideos: incident.videos.map((video) => video.videoId),
-    camera: camera ?? entry?.video ?? null,
+    camera: camera !== null && inVersion.has(camera) ? camera : (entry?.video ?? null),
     report,
     officialRevisionId: incident.officialRevisionId,
     officialSince: incident.officialSince,
