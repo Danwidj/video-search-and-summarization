@@ -5,7 +5,7 @@
 > - **Matching:** τ = 0.40 (methodology v1.2) is **AI-calibrated, not human-validated**. Eight calibration pairs still await human review.
 > - **Held-out set:** the 55 test clips were held out from Stage 2 prompt selection but are **not unseen** (D15, §11).
 > - **Production:** the production prompt and `incident-contract-v4` are unchanged. V1 is **not adopted**; adopting it would be a separate decision with a contract bump.
-> - **Not yet run:** the cropping-on end-to-end VSS profile (plan §F.2). It is prepared and merged ([plan and proposed budget](e2e-profile-plan.md)) and waits for the owner's budget approval. The optional other-model transfer check and the Stage 1 recovery were not run.
+> - **End-to-end profile (plan §F.2):** ran 2026-10-30 under the owner-approved budget ([results](e2e-profile-results.md), §7). The optional other-model transfer check and the Stage 1 recovery were not run.
 > - **Plan audit:** every plan requirement, deviation and omission is in the [plan audit and deviation record](plan-audit.md). Two offline checks were added on 2026-10-30 with no model, embedding, judge or cropping call: a perceptual-hash near-duplicate check (none found, §11) and secondary metrics from the saved Stage 3 results (§6.6). Neither changes D9 v2, a primary metric or a conclusion.
 >
 > Stage reports: [Stage 0 pilot](stage0-pilot.md) · [Stage 1 baselines](stage1-baselines.md) · [Stage 2 plan](stage2-plan.md) · [Stage 2 prompts](stage2-prompts.md) · [Stage 2a](stage2a-results.md) · [Stage 2b and selection](stage2b-results.md) · [Severity (v1.3)](severity-v1.3.md) · [Failures and recovery](infrastructure-and-recovery.md) · [Stage 3 plan](stage3-plan.md) · [Stage 3 results](stage3-results.md) · [decision record D9-D15](../../../.docs/mvp2/experiment-decision-record.md)
@@ -208,7 +208,19 @@ These are the plan's §B.2 secondary metrics, computed from the saved recovery-a
 
 **VSS overhead** (`/analyze` end-to-end minus the agent's own P1 time), crops, RP1 and persistence off: about 0.1 s (Stage 0), 0.2 s (Stage 1), **0.01 s p50 / ≤ 0.05 s p95 (Stage 3)**. Prompt length has no measurable latency effect (V8 is +16% prompt tokens).
 
-**End-to-end pipeline latency with cropping on** has **not been measured**. The plan's separate profile (C2 and C3 with crops on, 15 test clips) is prepared ([plan](e2e-profile-plan.md)) but waits for the owner's budget approval; its figures will be reported in a separate table and never mixed with the inference figures above.
+**End-to-end pipeline latency with cropping on** (the separate profile, 2026-10-30: C2 and C3, 15 test clips, 1 repeat, crops capped at 40 grounding calls per request; [results](e2e-profile-results.md)). These are not comparable with the inference-only table above: cropping is on, and the gateway load differed.
+
+| Seconds, runs with output (13 per config) | C2 p50 / p95 | C3 p50 / p95 |
+|---|---|---|
+| End to end (`/analyze`) | 28.2 / 40.1 | 28.9 / 75.2 |
+| Model inference (P1) | 19.1 / 28.1 | 20.4 / 44.0 |
+| Cropping stage | 9.6 / 12.0 | 8.5 / 31.2 |
+| Other overhead | 0.02 / 0.04 | 0.02 / 0.03 |
+
+- **Cropping cost:** about a third of a typical request's time (median share 33-34%), about 1.7-1.8 s per grounding call at concurrency 4, so it grows with the number of predicted items.
+- **Slowest request:** C3 Explosion014 (101 items) reached the 40-call cap and took 193 s; 61 items were left without an image.
+- **C2 vs C3 (12 shared clips):** medians are close (28.0 vs 30.3 s); C3's tail comes from two clips where V1 listed many more items. This is descriptive only, with no prompt or pipeline effect claimed.
+- **Lower bound for production:** local agent, crops held in memory, no R2 upload or database write.
 
 ## 8. Reliability
 
@@ -219,6 +231,7 @@ These are the plan's §B.2 secondary metrics, computed from the saved recovery-a
 | Stage 2a | 400 | 7 | 3 | 7 of 7 | 524, DNS outage, expired signed URL after a suspend |
 | Stage 2b | 100 | 1 | 1 | 1 of 1 | 524 |
 | Stage 3 | 220 | 6 (3 per arm) | 2 (Burglary020, C2 and C4) | 4 of 6 | 524 only |
+| End-to-end profile | 30 | 4 (2 per config, one outage) | 0 | – (not planned) | 429 and 524 in one 36-minute outage; paused, resumed once. Images: C2 94%, C3 66% (61 cap-truncated items, 4 grounding timeouts) |
 
 - **No arm effect:** in Stage 3 the six timeouts split three and three between the arms; the two invalid outputs fell on one clip under different prompts and arms.
 - **The gateway's about 100 s ceiling** (Cloudflare 524) is the main failure cause. Stage 3's two unrecovered clips (Assault019, Burglary009, both about 85 s against a 42 s median) timed out in both arms and on all three recovery attempts.
@@ -234,6 +247,7 @@ These are the plan's §B.2 secondary metrics, computed from the saved recovery-a
 | Stage 2a | 451 + 11 recovery (1,200) | 3,633,327 + 52,944 | 1,603 + 26 | 612,276 + 10,624 |
 | Stage 2b | 105 + 1 recovery (300) | 955,177 | 418 (3,420) | 158,272 |
 | Stage 3 | 247 + 12 recovery (660 + 180) | 1,979,469 + 31,015 (23.1 M + 6.3 M) | 845 + 20 (6,720 + 2,740) | 335,143 + 6,999 |
+| End-to-end profile | 40 (90) | 249,882 metered (3.15 M); grounding: 185 calls (1,440; max 40 per request) and 61,303 tokens (8.64 M) | 0 (0) | – |
 
 - **No stage reached a cap**, and no stop rule fired except the planned session limits and the owner's laptop-close stops (all at a checkpoint).
 - **Unrecorded usage (disclosed):** on 2026-10-29 at 13:04 UTC a judge `ReadTimeout` ended a Stage 3 session before C4 Assault012 was checkpointed. Its P1 call (about 9 k tokens) and the judge calls already made for it (fewer than 10) were discarded without a cost-log line; the run was redone. It does not change any cap outcome.
@@ -290,7 +304,13 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 
 - **Ground truth:** AI-assisted adjudication frozen on dataset-level approval; **not human-validated**. The plan's human review steps (100% of high-impact changes, a blind review of unchanged incidents, a second reviewer with Cohen's κ) were replaced by owner-authorised AI-assisted adjudication, so no inter-rater agreement exists ([R1](plan-audit.md#2-deviations-decision-record)).
 - **Matching:** τ = 0.40 is AI-calibrated on dev (AI-labelled, AI-audited), **not human-validated**; 8 pairs await human review. It replaced the plan's τ = 0.75 ([R2](plan-audit.md#2-deviations-decision-record)). Item scores depend steeply on it (§6.6), and dev also served for selection.
-- **Not done from the plan's methodology:** a description-cosine check for judge drift (the judge is pinned and logged, but drift is not measured), matching sensitivity below τ, and a written quarantine attestation for the Stage 2 prompt authors. Few-shot prompting (plan E6) was replaced and is untested. See [O1-O4 and R4](plan-audit.md#2-deviations-decision-record).
+- **Omitted, accepted by the owner (2026-10-30):**
+  - the description-cosine check for judge drift (O1): the judge is pinned and logged, but drift is not measured;
+  - matching sensitivity below τ (O2);
+  - an annotator review of the guidelines (O4): the owner approved them, which is **not equivalent to an annotator review**.
+
+  Few-shot prompting (plan E6) was replaced and is untested (R4).
+- **Stage 2 quarantine (O3), partial:** the session transcripts show that the AI author read no per-video test result while drafting V1-V7. They did know aggregate 2026-10-02 benchmark figures and the test ground-truth labels, and no prompt contains clip-specific text. The owner, who adjusted V1-V7, has not given an attestation ([attestation](stage2-quarantine-attestation.md)). See [the deviation record](plan-audit.md#2-deviations-decision-record).
 - **Power:** 25 dev clips × 2 repeats and 55 test clips × 1 repeat. ΔI intervals are about ±0.035 on test, so effects below about 0.03-0.04 are not detectable; instruments rest on 10-15 paired clips.
 - **Multiplicity:** about 40 per-score intervals per stage; a few excluding zero are expected by chance. Only ΔI was pre-registered.
 - **Non-determinism:** temperature-0 outputs vary between calls, and one test repeat cannot separate this from pipeline effects.
@@ -303,5 +323,5 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 - **Selected on dev:** V1 `p1-v4-e01-severity` (SHA-256 `004746ea7d19…`), by the pre-registered D9 v2 rule: the highest ΔI (+0.051 [+0.013, +0.089]) and the only version whose interval excluded zero, with every guardrail passing. Owner-approved on 2026-10-29.
 - **Held-out check:** not confirmed as a clear gain (§6).
 - **Not adopted:** the production prompt and contract are unchanged. Nothing was revised, rerun or re-selected in response to the test results; Stage 3 ran once.
-- **Plan completion:** every mandatory requirement is done or replaced by an owner decision, except the end-to-end profile (prepared, waiting for budget approval) and the owner's acceptance of the open omissions O1-O4 ([checklist](plan-audit.md#1-checklist)).
-- **For the FYP presentation:** the defensible claims are (1) a pre-registered, auditable prompt-engineering process with all versions and negative results reported; (2) VSS parity with direct VLM calls in accuracy, reliability and latency under identical requests; (3) a severity-rubric prompt that helped on dev but did not clearly generalise. Not defensible: "VSS extracts better than a direct VLM", "prompt engineering improved held-out accuracy", or any claim about unseen footage.
+- **Plan completion:** every mandatory requirement is done or replaced by an owner decision. The end-to-end profile ran on 2026-10-30. O1, O2 and O4 were accepted by the owner. O3 is partial: the AI author's quarantine is verified, the owner's own attestation was not obtained ([checklist](plan-audit.md#1-checklist), [attestation](stage2-quarantine-attestation.md)).
+- **For the FYP presentation:** the defensible claims are (1) a pre-registered, auditable prompt-engineering process with all versions and negative results reported; (2) VSS parity with direct VLM calls in accuracy, reliability and latency under identical requests, and with cropping on a measured pipeline cost of about a third of request time; (3) a severity-rubric prompt that helped on dev but did not clearly generalise. Not defensible: "VSS extracts better than a direct VLM", "prompt engineering improved held-out accuracy", or any claim about unseen footage.

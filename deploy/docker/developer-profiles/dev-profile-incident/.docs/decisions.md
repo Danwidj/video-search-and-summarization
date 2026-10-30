@@ -2,6 +2,23 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: End-to-end profile executed; O1, O2 and O4 accepted; O3 attested only for the AI author
+- **Decision (owner, 2026-10-30):**
+  - **O1, O2 and O4:** the judge-drift check, matching sensitivity below τ and an annotator review of the guidelines are **accepted as omitted**. Owner approval of the guidelines is disclosed as **not equivalent to an annotator review**.
+  - **O3:** a retrospective quarantine attestation, recording only what can be verified ([attestation](../eval/docs/experiments/stage2-quarantine-attestation.md)).
+    - **AI author, from the session transcripts:** no per-video test result was read while V1-V7 were drafted. Aggregate 2026-10-02 benchmark figures and test ground-truth labels were in context, and no prompt contains clip-specific text.
+    - **Owner, who adjusted V1-V7:** not obtained, and not written on the owner's behalf.
+  - **End-to-end profile:** approved and run once under the prepared design and caps ([results](../eval/docs/experiments/e2e-profile-results.md)).
+    - **Runs:** 30 video-runs. One gateway outage paused the stage, which resumed once from its checkpoint after 15 minutes; 26 runs produced output.
+    - **Usage:** 40 of 90 P1 attempts, 0.25 M of 3.15 M tokens, 185 of 1,440 grounding calls (at most 40 per request), 61 k of 8.64 M grounding tokens, 0 judge calls.
+- **Findings:**
+  - cropping took about a third of a typical request: median end to end 28-29 s, of which inference 19-20 s and cropping 8.5-9.6 s;
+  - the cap truncated one C3 report (61 of 101 items).
+- **Accounting notes (disclosed; no cap affected; code left as it ran, to match the pinned manifest):**
+  - the runner's crop bound over-counts timed-out attempts that got an agent response;
+  - the agent's token telemetry does not count grounding calls that raised. Upper bound: C2 ≤ 48,448 tokens.
+- **Links:** [profile results](../eval/docs/experiments/e2e-profile-results.md), [plan audit](../eval/docs/experiments/plan-audit.md), [final report](../eval/docs/experiments/final-report.md).
+
 ### 2026-10-30: Evaluation plan audit: deviations recorded; ground truth and matching calibration are AI-assisted, not human-validated
 - **Decision:** the original plan's requirements, and how each was met, replaced, omitted or deferred, are recorded in one place ([plan audit and deviation record](../eval/docs/experiments/plan-audit.md)).
   - **Replaced, by earlier owner decisions (R1-R7):**
