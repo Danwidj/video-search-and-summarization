@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { parseIncidentId } from '@/lib/incident-route';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
 import { fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { SearchableStepError } from '@/modules/reports/application/save-human-edit';
 import { saveIncidentHumanEdit, type IncidentEditTarget } from '@/modules/reports/application/save-human-edit/incident';

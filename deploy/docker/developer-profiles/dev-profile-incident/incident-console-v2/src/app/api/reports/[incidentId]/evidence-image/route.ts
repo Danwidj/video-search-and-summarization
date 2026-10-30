@@ -4,8 +4,7 @@ import { Readable } from 'node:stream';
 
 import { NextResponse } from 'next/server';
 
-import { getIncidentVideos } from '@/lib/container';
-import { parseIncidentId } from '@/lib/incident-route';
+import { getDbAdapters, getIncidentVideos } from '@/lib/container';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl, putR2Video, r2ObjectExists, verifyR2Video } from '@/lib/r2/config';

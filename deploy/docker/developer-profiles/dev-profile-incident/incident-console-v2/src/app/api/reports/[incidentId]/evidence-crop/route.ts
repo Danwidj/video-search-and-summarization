@@ -3,7 +3,8 @@
 import { NextResponse } from 'next/server';
 
 import { getIncidentVideos } from '@/lib/container';
-import { incidentVideoLookup, parseIncidentId } from '@/lib/incident-route';
+import { incidentVideoLookup } from '@/lib/incident-route';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
 import { cropEvidenceFrame } from '@/lib/application/evidence-frames';
 import { FrameRequestError } from '@/lib/evidence/frame-request';
 import { errorResponse } from '@/lib/http';

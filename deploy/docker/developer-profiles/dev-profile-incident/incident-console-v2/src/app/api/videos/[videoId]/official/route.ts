@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { parseIncidentId } from '@/lib/incident-route';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
 import { clearIncidentOfficialRevision, setIncidentOfficialRevision } from '@/modules/reports/application/set-official-revision/incident';
 import { AgentUnreachableError, fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';

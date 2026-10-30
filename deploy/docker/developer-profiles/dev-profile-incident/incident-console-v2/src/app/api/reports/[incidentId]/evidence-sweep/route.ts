@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { getDbAdapters } from '@/lib/container';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
-import { parseIncidentId } from '@/lib/incident-route';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
 import { sweepIncidentOrphanEvidence } from '@/modules/reports/application/sweep-orphan-evidence/incident';
 import { R2EvidenceObjectStore } from '@/modules/reports/infrastructure/r2/evidence-object-store';
 
