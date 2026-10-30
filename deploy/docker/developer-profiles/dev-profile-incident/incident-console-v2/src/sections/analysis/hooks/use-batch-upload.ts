@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { incidentNotices, incidentScope } from '@/lib/reports/incident-notices';
+
 import {
   type BatchDeps,
   type BatchCheckResult,
@@ -36,6 +38,8 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 
 async function buildReport(incidentId: number): Promise<void> {
   await post(`/api/reports/${incidentId}/build`, {});
+  // A notice about the report before this build (a merge, a removal) is out of date.
+  incidentNotices.clear(incidentScope(incidentId));
 }
 
 /** Incidents named by a pending suggestion; null when the list could not be read, so nothing is built on a guess. */

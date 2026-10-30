@@ -52,3 +52,6 @@ export function regeneratedMessage(version: RegeneratedVersion): string {
   const count = version.videoNames.length;
   return `v${version.revisionNo} created from ${count} video${count === 1 ? '' : 's'} and selected.`;
 }
+
+/** The open version leaves out a current video or includes a removed one, so a new version should be built. */
+export const needsRegenerate = (coverage: { note: string | null }): boolean => coverage.note !== null;

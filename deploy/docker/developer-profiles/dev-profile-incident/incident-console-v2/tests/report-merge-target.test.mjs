@@ -44,5 +44,5 @@ test('merging posts the source to the target incident and surfaces the route err
   assert.deepEqual(calls, [['/api/reports/9/merge', 'POST', { sourceIncidentId: 12 }]]);
 
   globalThis.fetch = async () => Response.json({ error: 'Incident not found' }, { status: 404 });
-  await assert.rejects(mergeIncidentInto(12, 99), /Incident not found/);
+  await assert.rejects(mergeIncidentInto(12, 99), /no longer exists, so nothing was merged/);
 });

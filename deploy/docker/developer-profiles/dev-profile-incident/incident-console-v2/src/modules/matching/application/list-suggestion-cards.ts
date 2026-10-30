@@ -12,6 +12,8 @@ export interface SuggestionSide {
   /** The overview title of the incident's shown version; null when it has no version yet. */
   title: string | null;
   videoNames: string[];
+  /** Whether the incident has an official version. */
+  hasOfficial: boolean;
   /** The signed upload-time screenshot of the first video; absent when there is none. */
   thumbnailUrl?: string;
 }
@@ -57,6 +59,7 @@ export async function listSuggestionCards(
         incidentId: id,
         title: side.title,
         videoNames: side.videoNames,
+        hasOfficial: side.hasOfficial,
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
       };
     })();

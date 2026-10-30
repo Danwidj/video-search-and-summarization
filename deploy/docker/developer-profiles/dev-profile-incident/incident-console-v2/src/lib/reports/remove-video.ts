@@ -2,6 +2,8 @@
 
 // Client side of "remove a video from its incident": what the dialog offers, and the two calls it makes.
 
+import type { IncidentNotice } from '@/lib/reports/incident-notices';
+
 export type RemoveChoice = 'delete' | 'move';
 
 /** What POST /api/videos/<name>/remove answers (the parts the dialog uses). */
@@ -59,3 +61,15 @@ export async function buildFirstReport(incidentId: number, fetcher: typeof fetch
 
 /** The page of an incident, for the link shown once its first report exists. */
 export const incidentHref = (incidentId: number): string => `/reports/${encodeURIComponent(String(incidentId))}`;
+
+/** The line that tells the reviewer the incident's report still includes the video that left it. */
+export const staleReportNote = (incidentId: number | string): string =>
+  `Incident #${incidentId}'s report still includes this video. Press Regenerate there to rebuild it from the videos that remain.`;
+
+/** The notice left on the incident a video was deleted from or moved out of; the report is not rebuilt by either. */
+export function removedNotice(video: string, choice: RemoveChoice, incidentId: number, newIncidentId?: number): IncidentNotice {
+  return {
+    title: choice === 'move' ? `${video} moved to Incident #${newIncidentId}` : `${video} deleted`,
+    detail: staleReportNote(incidentId),
+  };
+}

@@ -100,6 +100,7 @@ export function incidentSideSummaryFromRows(incident: Row, videos: Row[], revisi
     title: revision ? text(revision.title) : null,
     videoNames: ordered.map((video) => video.videoId),
     firstVideoKey: ordered[0]?.storageKey ?? null,
+    hasOfficial: typeof incident.official_revision_id === 'number',
   };
 }
 

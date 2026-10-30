@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
-import Link from 'next/link';
 import { MergeIcon } from 'lucide-react';
+import { useState } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { LIBRARY_SCOPE } from '@/lib/reports/incident-notices';
+import { IncidentNotice } from '@/sections/reports/components/IncidentNotice';
+import { AcceptMatchDialog } from '@/sections/suggestions/components/AcceptMatchDialog';
 import { DecisionButtons, ReasonList, ScoreReadout, SideLink } from '@/sections/suggestions/components/Shared';
 import { matchesSortNote } from '@/lib/library/view';
 import type { SuggestionCards } from '@/sections/suggestions/use-suggestion-cards';
@@ -57,7 +60,8 @@ function SuggestionRow({
 
 /** The library's Matches tab: every pending suggestion, highest score first, to accept or reject. */
 export function SuggestionsTab({ state }: { state: SuggestionCards }) {
-  const { cards, loading, error, busyId, notice, accept, reject, reload } = state;
+  const { cards, loading, error, busyId, accept, reject, reload } = state;
+  const [confirming, setConfirming] = useState<SuggestionCard | null>(null);
   return (
     <div data-testid="suggestions-tab">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -70,22 +74,7 @@ export function SuggestionsTab({ state }: { state: SuggestionCards }) {
         </div>
         {matchesSortNote(cards.length) && <p className="text-xs text-muted-foreground">{matchesSortNote(cards.length)}</p>}
       </div>
-      {notice && (
-        <Alert className="mt-4" data-testid="suggestion-notice">
-          <AlertTitle>{notice.title}</AlertTitle>
-          <AlertDescription>
-            {notice.detail}
-            {notice.keptIncidentId ? (
-              <>
-                {' '}
-                <Link className="font-semibold text-primary hover:underline" href={`/reports/${notice.keptIncidentId}`}>
-                  Open incident {notice.keptIncidentId}
-                </Link>
-              </>
-            ) : null}
-          </AlertDescription>
-        </Alert>
-      )}
+      <IncidentNotice className="mt-4" scope={LIBRARY_SCOPE} />
       {error && (
         <Alert className="mt-4" data-testid="suggestion-error" variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-3">
@@ -106,12 +95,12 @@ export function SuggestionsTab({ state }: { state: SuggestionCards }) {
         <>
           <ul aria-label="Pending suggestions" className="mt-4 flex flex-col gap-4">
             {cards.map((card) => (
-              <SuggestionRow busy={busyId === card.id} card={card} key={card.id} onAccept={accept} onReject={reject} />
+              <SuggestionRow busy={busyId === card.id} card={card} key={card.id} onAccept={setConfirming} onReject={reject} />
             ))}
           </ul>
           <p className="mt-4 text-xs text-muted-foreground">
-            Accept merges the two incidents into one; the report is regenerated only when you ask. Reject is remembered: the pair is not
-            suggested again.
+            Accept asks you to confirm, then merges the two incidents into one and rebuilds its report. Reject is remembered: the pair is
+            not suggested again.
           </p>
         </>
       ) : (
@@ -124,6 +113,7 @@ export function SuggestionsTab({ state }: { state: SuggestionCards }) {
           </div>
         )
       )}
+      <AcceptMatchDialog card={confirming} onAccept={accept} onClose={() => setConfirming(null)} />
     </div>
   );
 }

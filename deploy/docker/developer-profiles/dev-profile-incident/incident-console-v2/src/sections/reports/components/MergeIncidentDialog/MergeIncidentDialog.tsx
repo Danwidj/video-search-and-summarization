@@ -4,35 +4,23 @@
 import { GitMergeIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
 
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { mergeIncidentInto } from '@/lib/reports/merge-client';
-import {
-  type MergeCandidate,
-  type MergeCandidateSource,
-  mergeCandidates,
-  mergedVideoCount,
-  pluralVideos,
-} from '@/lib/reports/merge-target';
+import { incidentNotices, incidentScope } from '@/lib/reports/incident-notices';
+import { requestReportBuild, fetchIncidentVideos, type IncidentVideos, mergeIncidentInto } from '@/lib/reports/merge-client';
+import { mergedNotice, mergeThenRebuild } from '@/lib/reports/merge-flow';
+import { type MergeCandidate, type MergeCandidateSource, mergeCandidates, pluralVideos } from '@/lib/reports/merge-target';
+import { MergeConfirmDialog } from '@/sections/reports/components/MergeConfirmDialog';
 
 type Step = 'closed' | 'pick' | 'confirm';
 
 /**
  * Merges this incident into another one the reviewer picks, after a confirmation. The picked incident is kept and
- * this one is deleted, so on success the page moves to the kept incident.
+ * this one is deleted, so on success its report is rebuilt and the page moves to the kept incident, which shows the result.
  */
 export function MergeIncidentDialog({ incidentId, videoNames }: { incidentId: number; videoNames: readonly string[] }) {
   const router = useRouter();
@@ -40,7 +28,8 @@ export function MergeIncidentDialog({ incidentId, videoNames }: { incidentId: nu
   const [candidates, setCandidates] = useState<MergeCandidate[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string>('');
-  const [merging, setMerging] = useState(false);
+  const [targetVideos, setTargetVideos] = useState<IncidentVideos | null>(null);
+  const [targetError, setTargetError] = useState<string | null>(null);
 
   useEffect(() => {
     if (step !== 'pick' || candidates) return;
@@ -59,25 +48,38 @@ export function MergeIncidentDialog({ incidentId, videoNames }: { incidentId: nu
   }, [step, candidates, incidentId]);
 
   const target = candidates?.find((candidate) => String(candidate.incidentId) === targetId) ?? null;
+  const targetIncidentId = target?.incidentId ?? null;
+
+  useEffect(() => {
+    setTargetVideos(null);
+    setTargetError(null);
+    if (targetIncidentId === null) return;
+    const controller = new AbortController();
+    fetchIncidentVideos(targetIncidentId, controller.signal)
+      .then(setTargetVideos)
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setTargetError(cause instanceof Error ? cause.message : 'Could not read the incident');
+      });
+    return () => controller.abort();
+  }, [targetIncidentId]);
+
   const close = () => {
     setStep('closed');
     setTargetId('');
   };
 
   async function merge() {
-    if (!target) return;
-    setMerging(true);
-    try {
-      await mergeIncidentInto(incidentId, target.incidentId);
-      toast.success(`Incident ${incidentId} merged into Incident ${target.incidentId}`);
-      close();
-      router.push(`/reports/${target.incidentId}`);
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : 'Could not merge the incidents');
-      setStep('pick');
-    } finally {
-      setMerging(false);
-    }
+    if (!target || !targetVideos) return;
+    const rebuilt = await mergeThenRebuild(
+      { merge: () => mergeIncidentInto(incidentId, target.incidentId), build: requestReportBuild },
+      target.incidentId,
+    );
+    incidentNotices.set(
+      incidentScope(target.incidentId),
+      mergedNotice({ keptIncidentId: target.incidentId, videoCount: targetVideos.videoNames.length + videoNames.length, rebuilt }),
+    );
+    close();
+    router.push(`/reports/${target.incidentId}`);
   }
 
   return (
@@ -131,16 +133,25 @@ export function MergeIncidentDialog({ incidentId, videoNames }: { incidentId: nu
                 </p>
               ) : null}
             </div>
-            {target ? (
+            {target && targetError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {targetError}
+              </p>
+            ) : target ? (
               <div className="rounded-lg border bg-muted/40 p-3" data-testid="merge-summary">
                 <p className="text-xs font-bold">
-                  Incident {target.incidentId} after the merge · {pluralVideos(mergedVideoCount(target, videoNames.length))}
+                  Incident {target.incidentId} after the merge ·{' '}
+                  {targetVideos ? pluralVideos(targetVideos.videoNames.length + videoNames.length) : 'loading videos...'}
                 </p>
                 <ul className="mt-2 grid gap-1.5 font-mono text-xs">
-                  <li className="flex items-center justify-between gap-2">
-                    <span>{pluralVideos(target.videoCount)}</span>
-                    <Badge variant="secondary">already here</Badge>
-                  </li>
+                  {(targetVideos?.videoNames ?? []).map((name) => (
+                    <li className="flex items-center justify-between gap-2" key={name}>
+                      <span className="min-w-0 break-all">{name}</span>
+                      <Badge className="shrink-0" variant="secondary">
+                        already here
+                      </Badge>
+                    </li>
+                  ))}
                   {videoNames.map((name) => (
                     <li className="flex items-center justify-between gap-2" key={name}>
                       <span className="min-w-0 break-all">{name}</span>
@@ -157,54 +168,24 @@ export function MergeIncidentDialog({ incidentId, videoNames }: { incidentId: nu
             <Button onClick={close} type="button" variant="outline">
               Cancel
             </Button>
-            <Button data-testid="merge-review" disabled={!target} onClick={() => setStep('confirm')} type="button">
+            <Button data-testid="merge-review" disabled={!targetVideos} onClick={() => setStep('confirm')} type="button">
               Review merge
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog onOpenChange={(open) => !open && !merging && setStep('pick')} open={step === 'confirm'}>
-        <AlertDialogContent data-testid="merge-confirm">
-          <AlertDialogHeader>
-            <div className="flex items-start gap-3">
-              <div className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-primary">
-                <GitMergeIcon className="size-4" />
-              </div>
-              <div className="grid gap-1.5 text-left">
-                <AlertDialogTitle>
-                  Merge Incident {incidentId} into Incident {target?.incidentId}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  The {pluralVideos(videoNames.length)} move to Incident {target?.incidentId}, which then holds{' '}
-                  <strong className="text-foreground">
-                    {pluralVideos(target ? mergedVideoCount(target, videoNames.length) : videoNames.length)}
-                  </strong>
-                  . Incident {incidentId} is deleted.
-                </AlertDialogDescription>
-              </div>
-            </div>
-          </AlertDialogHeader>
-          <ul className="grid list-disc gap-2 pl-5 text-sm leading-5 text-muted-foreground">
-            <li>Incident {incidentId}&apos;s versions, edits and official choice are not carried over, and its link stops working.</li>
-            <li>Incident {target?.incidentId} keeps its versions and its official version.</li>
-            <li>
-              The report is not regenerated. Incident {target?.incidentId}&apos;s latest version will say{' '}
-              <em className="font-semibold not-italic text-foreground">Does not include: {videoNames.join(', ')}</em> until you press
-              Regenerate.
-            </li>
-            <li>No video files move. This cannot be undone.</li>
-          </ul>
-          <AlertDialogFooter>
-            <Button disabled={merging} onClick={() => setStep('pick')} type="button" variant="outline">
-              Back
-            </Button>
-            <Button data-testid="merge-confirm-button" disabled={merging} onClick={() => void merge()} type="button">
-              {merging ? 'Merging...' : 'Merge incidents'}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {target && targetVideos && (
+        <MergeConfirmDialog
+          onBack={() => setStep('pick')}
+          onCancel={close}
+          onConfirm={merge}
+          open={step === 'confirm'}
+          source={{ incidentId, videoNames }}
+          target={{ incidentId: target.incidentId, videoNames: targetVideos.videoNames }}
+          targetHasOfficial={targetVideos.hasOfficial}
+        />
+      )}
     </>
   );
 }

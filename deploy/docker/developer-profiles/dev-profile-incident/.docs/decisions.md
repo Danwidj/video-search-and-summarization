@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: A manual merge or a reviewer's Accept rebuilds the kept incident's report once
+- **Decision:** After a confirmed manual merge or Accept, the console calls `POST /api/reports/<kept>/build` once (stored analyses, no VLM re-run) and lands on the kept incident with a notice naming the incident, its video count and the rebuild. Both go through one confirm dialog that lists both sides' video names and warns when the kept incident has an official version. The official version is never moved, so its "Does not include" note stays true. The rebuild is client-side, so the server-side automatic join builds only through the batch upload flow, once.
+- **Why:** After a merge the kept incident's only version covered the old videos, and the fix was a small outline Regenerate button; the captain asked for merging to rebuild the report itself.
+- **Alternatives rejected:**
+  - *Build inside `merge_incidents` or `acceptSuggestion`:* Rejected because the automatic join would then build twice.
+  - *A toast for the result:* Rejected because no toaster is mounted and a toast does not survive the redirect; an inline notice does.
+  - *Move the official version to the new build:* Rejected because the reviewer chose that version.
+- **Supersedes:** "no automatic regeneration after merge" in the Phase 7 fix plan, for merge and Accept only. Remove video still needs Regenerate.
+- **Links:** [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md), [data](data.md).
+
 ### 2026-10-30: The system joins a match of 0.5 or more by itself; each join is recorded on the video
 - **Decision:** After matching, the highest-scoring pending candidate at or above `AUTO_JOIN_MIN_SCORE` (0.5, beside `DEFAULT_MIN_SCORE` in `evaluate-incident.ts`) is joined through `acceptSuggestion`, the use case Accept uses, so there is one merge path. A rejected pair is never joined; a tie goes to the older incident. A batch checks one file at a time and follows each merge (`followJoin`), so batch-mates and existing incidents end in one incident and each incident's report is built once. The join is recorded on the moved videos (`videos.auto_joined_score`, `auto_joined_reasons`, `auto_joined_at`, set by `auto_merge_incidents`, cleared by `remove_video` 'move', which already records the pair rejected). The report page shows which video was joined, its score and reasons, and points at Remove video then Move to its own incident. Below 0.5 stays separate; the Matches tab and Accept or Reject keep working for pending suggestions. A single upload is a batch of one.
 - **Why:** The captain wants the system to classify videos into incidents without a review click per clip. A merge deletes the source incident and its suggestion rows, so the accepted suggestion cannot hold the record; per-video columns survive the merge and are the only place the "why" can live.

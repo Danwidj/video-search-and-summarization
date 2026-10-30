@@ -239,6 +239,7 @@ export class InMemoryIncidentReportRepository implements IncidentReportRepositor
       title: shown?.envelope.overview.title ?? null,
       videoNames: incident.videos.map((video) => video.videoId),
       firstVideoKey: incident.videos[0]?.storageKey ?? null,
+      hasOfficial: incident.officialRevisionId !== null,
     };
   }
 

@@ -3,15 +3,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { buildAfterApart, buildAfterJoin, type BuildAfterDecisionDeps } from '@/sections/suggestions/build-after-decision';
+import { incidentNotices, incidentScope, LIBRARY_SCOPE } from '@/lib/reports/incident-notices';
+import { acceptSuggestionRequest, requestReportBuild } from '@/lib/reports/merge-client';
+import { mergedNotice, mergeThenRebuild } from '@/lib/reports/merge-flow';
+import { buildAfterApart, type BuildAfterDecisionDeps } from '@/sections/suggestions/build-after-decision';
 import type { SuggestionCard } from '@/sections/suggestions/types';
-
-export interface SuggestionNotice {
-  title: string;
-  detail: string;
-  /** The incident that kept its id after an accept. */
-  keptIncidentId?: number;
-}
 
 async function send<T = unknown>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -25,16 +21,6 @@ async function send<T = unknown>(path: string, body?: unknown): Promise<T> {
   return (await response.json().catch(() => ({}))) as T;
 }
 
-/** Builds the incident's report from its stored analyses; false when the build failed. */
-async function buildReport(incidentId: number): Promise<boolean> {
-  try {
-    await send(`/api/reports/${incidentId}/build`, {});
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Whether any pending suggestion still names the incident; a failed read counts as yes, so nothing is built on a guess. */
 async function hasPending(incidentId: number): Promise<boolean> {
   try {
@@ -46,15 +32,18 @@ async function hasPending(incidentId: number): Promise<boolean> {
   }
 }
 
-const afterDecision: BuildAfterDecisionDeps = { hasPending, build: buildReport };
+const afterDecision: BuildAfterDecisionDeps = { hasPending, build: requestReportBuild };
 
-/** The pending suggestions (those naming `incidentId` when given) and the accept and reject actions. */
+/**
+ * The pending suggestions (those naming `incidentId` when given) and the accept and reject actions. Their notices go to
+ * the inline notice of the incident page, or of the library's Matches tab when no incident is given.
+ */
 export function useSuggestionCards(incidentId?: number) {
   const [cards, setCards] = useState<SuggestionCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [notice, setNotice] = useState<SuggestionNotice | null>(null);
+  const noticeScope = incidentId === undefined ? LIBRARY_SCOPE : incidentScope(incidentId);
   const sequence = useRef(0);
 
   const reload = useCallback(async (): Promise<SuggestionCard[] | null> => {
@@ -83,11 +72,11 @@ export function useSuggestionCards(incidentId?: number) {
   }, [reload]);
 
   /** True when the decision was saved. */
-  async function decide(card: SuggestionCard, run: () => Promise<SuggestionNotice>): Promise<boolean> {
+  async function decide(card: SuggestionCard, run: () => Promise<{ title: string; detail: string }>): Promise<boolean> {
     setBusyId(card.id);
-    setNotice(null);
+    incidentNotices.clear(noticeScope);
     try {
-      setNotice(await run());
+      incidentNotices.set(noticeScope, await run());
       await reload();
       return true;
     } catch (cause) {
@@ -98,22 +87,26 @@ export function useSuggestionCards(incidentId?: number) {
     }
   }
 
-  /** Merges the pair; the older incident keeps its id (the server's default). */
-  const accept = (card: SuggestionCard) =>
-    decide(card, async () => {
-      await send(`/api/suggestions/${card.id}/accept`, { incidentId: card.kept.incidentId });
-      const built = await buildAfterJoin(afterDecision, card.kept.incidentId);
-      return {
-        title: `Merged into incident ${card.kept.incidentId}`,
-        detail:
-          built === true
-            ? `One report now covers ${[...card.kept.videoNames, ...card.joining.videoNames].join(', ')}.`
-            : built === false
-              ? `The merge is saved, but the report could not be built. Regenerate it to include ${card.joining.videoNames.join(', ')}.`
-              : `The report is built once the other matches for this incident are decided.`,
-        keptIncidentId: card.kept.incidentId,
-      };
-    });
+  /**
+   * Merges the pair (the older incident keeps its id), builds the kept incident's report once and leaves the result as a
+   * notice on that incident. Throws an Error worded for the reviewer when the merge was refused; nothing is built then.
+   */
+  async function accept(card: SuggestionCard): Promise<void> {
+    const keptIncidentId = card.kept.incidentId;
+    const rebuilt = await mergeThenRebuild(
+      { merge: () => acceptSuggestionRequest(card.id, keptIncidentId), build: requestReportBuild },
+      keptIncidentId,
+    );
+    incidentNotices.set(
+      incidentId === undefined ? LIBRARY_SCOPE : incidentScope(keptIncidentId),
+      mergedNotice({
+        keptIncidentId,
+        videoCount: card.kept.videoNames.length + card.joining.videoNames.length,
+        rebuilt,
+      }),
+    );
+    void reload();
+  }
 
   const reject = (card: SuggestionCard) =>
     decide(card, async () => {
@@ -130,7 +123,7 @@ export function useSuggestionCards(incidentId?: number) {
       };
     });
 
-  return { cards, loading, error, busyId, notice, dismissNotice: () => setNotice(null), accept, reject, reload };
+  return { cards, loading, error, busyId, accept, reject, reload };
 }
 
 export type SuggestionCards = ReturnType<typeof useSuggestionCards>;
