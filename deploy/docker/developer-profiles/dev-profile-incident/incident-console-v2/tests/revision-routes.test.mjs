@@ -49,15 +49,15 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/x' } });
 
-const { GET: history } = await import('../src/app/api/reports/[videoId]/revisions/route.ts');
-const { POST: uploadImage } = await import('../src/app/api/reports/[videoId]/evidence-image/route.ts');
+const { GET: history } = await import('../src/app/api/reports/[incidentId]/revisions/route.ts');
+const { POST: uploadImage } = await import('../src/app/api/reports/[incidentId]/evidence-image/route.ts');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
 
 const repaired = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-repaired-run.json'), 'utf8'));
 const V = repaired.videoId;
-const params = { params: Promise.resolve({ videoId: V }) };
+const params = { params: Promise.resolve({ incidentId: V }) };
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 

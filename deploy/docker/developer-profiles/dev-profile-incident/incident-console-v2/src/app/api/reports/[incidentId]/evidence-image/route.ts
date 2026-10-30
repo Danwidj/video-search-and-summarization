@@ -23,9 +23,9 @@ const ITEM_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * nothing deletes one here: any revision may still reference it. Only the evidence-sweep route removes an image, and only one no revision names. The key is saved
  * into the next human revision's evidence by Save.
  */
-export async function POST(request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const form = await request.formData();
     const file = form.get('file');
     const itemId = form.get('itemId');
@@ -38,7 +38,7 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
 
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
-    const video = await getDbAdapters(config).videos.getVideo(videoId);
+    const video = await getDbAdapters(config).videos.getVideo(incidentId);
     if (!isValidR2Key(video?.storageKey)) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     let editNumber = 1;
     while (await r2ObjectExists(config, uploadedEvidenceKey(video.storageKey, editNumber, itemId))) editNumber += 1;

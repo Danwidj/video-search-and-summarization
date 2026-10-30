@@ -53,7 +53,7 @@ export function ReportEditPane({
   baseRevisionNo,
   draft,
   title,
-  videoId,
+  incidentId,
   videoSrc,
   onChange,
   onSeek,
@@ -63,7 +63,7 @@ export function ReportEditPane({
   baseRevisionNo: number;
   draft: EditDraft;
   title: string;
-  videoId: string;
+  incidentId: string;
   videoSrc: string;
   onChange: (draft: EditDraft) => void;
   onSeek: (seconds: number) => void;
@@ -361,7 +361,7 @@ export function ReportEditPane({
               ? { first: picking.firstSeenSeconds, last: picking.lastSeenSeconds ?? picking.firstSeenSeconds }
               : null
           }
-          videoId={videoId}
+          incidentId={incidentId}
           videoSrc={videoSrc}
         />
       )}

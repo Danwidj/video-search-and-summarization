@@ -25,9 +25,9 @@ const requestSchema = z
   })
   .strict();
 
-export async function PATCH(request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function PATCH(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const parsed = requestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: 'The request must contain parentId, editedBy, edit and optionally note only' }, { status: 400 });
@@ -49,7 +49,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ video
     // With no official revision the new revision is the searched one: its crops are embedded and written with it.
     const revision = await saveHumanEdit(
       getDbAdapters(config),
-      { videoId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
+      { videoId: incidentId, parentId: parsed.data.parentId, edit, createdBy: parsed.data.editedBy, note: parsed.data.note },
       (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
     );
     return NextResponse.json({ saved: true, revision });

@@ -77,7 +77,7 @@ test('the frame slider reads the usable range, so a 0 to 0 range does not pin it
 test('the picker is a dialog that crops through the evidence-crop route and hands back the frame second and box', async () => {
   const picker = await readFile(new URL('evidence/components/EvidenceFramePicker/EvidenceFramePicker.tsx', components), 'utf8');
   assert.match(picker, /role="dialog"/);
-  assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-crop/);
+  assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(incidentId\)\}\/evidence-crop/);
   assert.match(picker, /body: JSON\.stringify\(\{ timestampSeconds: seconds, region \}\)/);
   assert.match(picker, /const blob = await response\.blob\(\);/, 'the crop is held as a blob in the browser');
   assert.match(

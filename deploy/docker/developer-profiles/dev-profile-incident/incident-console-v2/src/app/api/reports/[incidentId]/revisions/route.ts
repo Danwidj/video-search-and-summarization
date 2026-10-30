@@ -9,10 +9,10 @@ import { errorResponse } from '@/lib/http';
 export const dynamic = 'force-dynamic';
 
 /** The incident's History: every revision, newest first. */
-export async function GET(_request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function GET(_request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
-    const revisions = await listRevisions(getDbAdapters().incidents, videoId);
+    const { incidentId } = await context.params;
+    const revisions = await listRevisions(getDbAdapters().incidents, incidentId);
     return NextResponse.json({ revisions });
   } catch (error) {
     return errorResponse(error, 'Could not load the revision history');

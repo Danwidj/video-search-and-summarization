@@ -3,8 +3,8 @@
 // Browser-side calls to the official-revision route. Both throw an Error whose
 // message is the route's own, such as the agent being unreachable.
 
-async function send(videoId: string, method: 'PUT' | 'DELETE', revisionId?: number): Promise<void> {
-  const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/official`, {
+async function send(incidentId: string, method: 'PUT' | 'DELETE', revisionId?: number): Promise<void> {
+  const response = await fetch(`/api/videos/${encodeURIComponent(incidentId)}/official`, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: revisionId === undefined ? undefined : JSON.stringify({ revisionId }),
@@ -13,5 +13,5 @@ async function send(videoId: string, method: 'PUT' | 'DELETE', revisionId?: numb
   if (!response.ok) throw new Error(payload.error || 'Update failed');
 }
 
-export const markOfficial = (videoId: string, revisionId: number) => send(videoId, 'PUT', revisionId);
-export const clearOfficial = (videoId: string) => send(videoId, 'DELETE');
+export const markOfficial = (incidentId: string, revisionId: number) => send(incidentId, 'PUT', revisionId);
+export const clearOfficial = (incidentId: string) => send(incidentId, 'DELETE');

@@ -20,9 +20,9 @@ const SCOPED_TOP_K = 50;
 
 async function searchedVersions(
   config: ReturnType<typeof getServiceConfiguration>,
-  videoIds: Set<string>,
+  incidentIds: Set<string>,
 ): Promise<Record<string, SearchedVersion>> {
-  if (!videoIds.size) return {};
+  if (!incidentIds.size) return {};
   try {
     const { items } = await getDbAdapters(config).incidents.listReports({
       page: 1,
@@ -45,7 +45,7 @@ async function searchedVersions(
       evidenceMatch: 'contains',
       timezone: 'UTC',
     });
-    const wanted = items.filter((item: ReportLibraryItem) => videoIds.has(item.videoId));
+    const wanted = items.filter((item: ReportLibraryItem) => incidentIds.has(item.videoId));
     const sign = async (key: string) => {
       try {
         return await createR2PlaybackUrl(config, key);

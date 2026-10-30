@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// GET /api/reports/[videoId]?revision=...: the view of one revision with a signed playback URL.
+// GET /api/reports/[incidentId]?revision=...: the view of one revision with a signed playback URL.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -41,7 +41,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/video.mp4' } });
 
-const { GET } = await import('../src/app/api/reports/[videoId]/route.ts');
+const { GET } = await import('../src/app/api/reports/[incidentId]/route.ts');
 const { aiRevisionRow, buildReportView } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const smoke = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contract-v2-smoke-run.json'), 'utf8'));
@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 const call = (query) =>
-  GET(new Request(`http://localhost/api/reports/${smoke.videoId}${query}`), { params: Promise.resolve({ videoId: smoke.videoId }) });
+  GET(new Request(`http://localhost/api/reports/${smoke.videoId}${query}`), { params: Promise.resolve({ incidentId: smoke.videoId }) });
 
 /** The smoke video with an AI revision (1) and a later human one (2); revision `official` is marked official. */
 function database({ official = null, video = smoke.video, modelRuns = [smoke.modelRun] } = {}) {
