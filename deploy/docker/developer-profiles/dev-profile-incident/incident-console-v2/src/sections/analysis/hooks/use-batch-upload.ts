@@ -12,6 +12,7 @@ import {
   summariseBatch,
 } from '@/sections/analysis/batch-upload';
 import { useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
+import { requestAnalysis } from '@/lib/analysis/analyse-client';
 
 /** Files that upload and analyse at once; the VLM is the slow step, so a small pool is enough. */
 const CONCURRENCY = 2;
@@ -59,7 +60,7 @@ export function useBatchUpload() {
       analyse: async ({ uploaded, model: chosen }) => {
         const common = { ...(chosen ? { model: chosen } : {}) };
         try {
-          return await post<{ incidentId: number }>('/api/analysis', {
+          return await requestAnalysis({
             ...common,
             sensorId: uploaded.sensorId,
             filepath: uploaded.filePath,
@@ -68,7 +69,7 @@ export function useBatchUpload() {
         } catch (error) {
           // A retry after a failed analysis finds the video already stored: analyse it again instead.
           if (!isAlreadyStored(error)) throw error;
-          return post<{ incidentId: number }>('/api/analysis', { ...common, videoName: uploaded.filename });
+          return requestAnalysis({ ...common, videoName: uploaded.filename });
         }
       },
       build: async (incidentId) => {

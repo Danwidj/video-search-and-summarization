@@ -12,24 +12,27 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { describeCode } from '@/modules/videos/domain/run-labels';
+import { reanalyseVideo, reanalysisFailureLines, reportHref } from '@/lib/analysis/analyse-client';
 
 const MAX_PROMPT = 1000;
+
+type ReanalysisStage = 'analyse' | 'build';
 
 interface ModelOption {
   id: string;
   label: string;
 }
 
-export function useReanalysis({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
+export function useReanalysis({ videoName, onAttempted }: { videoName: string; onAttempted?: () => void }) {
   const router = useRouter();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<ReanalysisStage | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<{ tone: 'error' | 'ok'; lines: string[] } | null>(null);
   const timer = useRef<number | null>(null);
+  const controller = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -44,53 +47,36 @@ export function useReanalysis({ videoId, onAttempted }: { videoId: string; onAtt
     return () => {
       active = false;
       if (timer.current) window.clearInterval(timer.current);
+      controller.current?.abort();
     };
   }, []);
 
+  const busy = stage !== null;
+
+  /** Analyses the stored video again, builds the incident a new version and opens it with this camera selected. */
   async function run(onSuccess?: () => void) {
     if (busy || !model) return;
-    setBusy(true);
     setResult(null);
     setElapsed(0);
     const started = Date.now();
     timer.current = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    controller.current = new AbortController();
     try {
-      const response = await fetch(`/api/videos/${encodeURIComponent(videoId)}/runs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, ...(prompt.trim() ? { additionalInstruction: prompt } : {}) }),
-      });
-      const payload = (await response.json()) as {
-        run?: { videoId: string; revisionId: number };
-        error?: string;
-        outcome?: string;
-        code?: string;
-        codes?: string[];
-      };
-      if (response.ok && payload.run) {
-        onSuccess?.();
-        router.push(`/reports/${encodeURIComponent(payload.run.videoId)}?revision=${payload.run.revisionId}`);
-        return;
-      }
-      const lines =
-        payload.outcome === 'contract_failed'
-          ? [
-              'The model answered, but the answer broke the incident contract, so no report was created. The attempt is recorded in the history.',
-              ...(payload.codes || []).map(describeCode),
-            ]
-          : payload.outcome === 'request_failed'
-            ? [
-                'The model request did not produce a usable answer. The attempt is recorded in the history.',
-                describeCode(payload.code || ''),
-              ]
-            : [payload.error || `Re-analysis failed (HTTP ${response.status})`];
-      setResult({ tone: 'error', lines });
+      const reanalysed = await reanalyseVideo(
+        { videoName, model, additionalInstruction: prompt },
+        { signal: controller.current.signal, onStage: setStage },
+      );
+      onSuccess?.();
       onAttempted?.();
+      router.push(reportHref(reanalysed.incidentId, reanalysed.version.revisionId, reanalysed.videoName));
+      return;
     } catch (cause) {
-      setResult({ tone: 'error', lines: [cause instanceof Error ? cause.message : 'Re-analysis failed'] });
+      if (cause instanceof DOMException && cause.name === 'AbortError') return;
+      setResult({ tone: 'error', lines: reanalysisFailureLines(cause) });
+      onAttempted?.();
     } finally {
       if (timer.current) window.clearInterval(timer.current);
-      setBusy(false);
+      setStage(null);
     }
   }
 
@@ -101,7 +87,8 @@ export function useReanalysis({ videoId, onAttempted }: { videoId: string; onAtt
     prompt,
     setPrompt,
     busy,
-    elapsed,
+    /** What the button says while a run is going. */
+    busyLabel: stage === 'build' ? 'Building report…' : `Analysing… ${elapsed}s`,
     result,
     setResult,
     run,
@@ -109,20 +96,21 @@ export function useReanalysis({ videoId, onAttempted }: { videoId: string; onAtt
 }
 
 /**
- * Analyse the already-stored video again (a new AI version) with one of the
- * approved models and an optional reviewer prompt typed here. Every attempt is
- * a new run; earlier versions and the reviewer's edits are not changed or
- * carried across, and the new version is not made official.
+ * Analyse the already-stored video again with one of the approved models and an
+ * optional reviewer prompt typed here, then build the incident a new AI version
+ * from its stored analyses. Every attempt is a new run; earlier versions and the
+ * reviewer's edits are not changed or carried across, and the new version is not
+ * made official.
  */
-export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
-  const { models, model, setModel, prompt, setPrompt, busy, elapsed, result, run } = useReanalysis({ videoId, onAttempted });
+export function ReanalysisCard({ videoName, onAttempted }: { videoName: string; onAttempted?: () => void }) {
+  const { models, model, setModel, prompt, setPrompt, busy, busyLabel, result, run } = useReanalysis({ videoName, onAttempted });
 
   return (
     <Card data-testid="reanalysis-card" className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardDescription className="text-xs text-muted-foreground">
-          Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by the
-          new run; the new version is not made official automatically.
+          Analyses this camera's video again and builds the incident a new AI version. Earlier versions and reviewer edits are kept as they
+          are and are not used by the new run; the new version is not made official automatically.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
@@ -167,7 +155,7 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
         </div>
         <div>
           <Button size="sm" className="rounded-full" disabled={busy || !model} onClick={() => void run()} type="button">
-            {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
+            {busy ? busyLabel : 'Generate new version'}
           </Button>
         </div>
         {result && (
@@ -187,10 +175,10 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
 /**
  * Compact dialog-based action for the report sticky top bar.
  */
-export function ReanalysisDialog({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
+export function ReanalysisDialog({ videoName, onAttempted }: { videoName: string; onAttempted?: () => void }) {
   const [open, setOpen] = useState(false);
-  const { models, model, setModel, prompt, setPrompt, busy, elapsed, result, setResult, run } = useReanalysis({
-    videoId,
+  const { models, model, setModel, prompt, setPrompt, busy, busyLabel, result, setResult, run } = useReanalysis({
+    videoName,
     onAttempted,
   });
 
@@ -219,8 +207,8 @@ export function ReanalysisDialog({ videoId, onAttempted }: { videoId: string; on
         <DialogHeader>
           <DialogTitle>Re-analyse incident</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by
-            the new run; the new version is not made official automatically.
+            Analyses this camera's video again and builds the incident a new AI version. Earlier versions and reviewer edits are kept as
+            they are and are not used by the new run; the new version is not made official automatically.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-1">
@@ -278,7 +266,7 @@ export function ReanalysisDialog({ videoId, onAttempted }: { videoId: string; on
             Cancel
           </Button>
           <Button disabled={busy || !model} onClick={() => void run(() => setOpen(false))} type="button">
-            {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
+            {busy ? busyLabel : 'Generate new version'}
           </Button>
         </DialogFooter>
       </DialogContent>

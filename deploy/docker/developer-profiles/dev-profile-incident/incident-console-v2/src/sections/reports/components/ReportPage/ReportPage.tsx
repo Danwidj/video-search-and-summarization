@@ -532,7 +532,7 @@ export function ReportPage({
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
-            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={report.run.filename} />
+            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoName={report.run.filename} />
             <MergeIncidentDialog
               incidentId={Number(incidentId)}
               videoNames={view.cameras.filter((camera) => camera.current).map((camera) => camera.video)}
