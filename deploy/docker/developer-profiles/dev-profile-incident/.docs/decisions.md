@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Data hygiene: empty incidents, leftover runs and forgotten rejections
+- **Decision:** (1) An incident with no videos is shown, its page says it has no videos and offers Delete incident (the delete route removes the bare row), and it is not a merge target. (2) Deleting a video also deletes its `model_runs` that no revision uses, found by notes naming the video or by an id starting `<video id>@`, after the `remove_video` RPC so every delete path gets it; existing orphans are left to a separate data clear. (3) A rejected pair is forgotten when either incident is deleted: the FK cascade stays.
+- **Why:** (1) Hiding the incident would leave unreachable data. (2) The old cleanup only matched notes naming the video, and agent runs have empty notes, and nothing called it on the RPC path. (3) Ids are never reused, so a lost rejection matters only if the same video is uploaded again, which makes a new incident anyway.
+- **Alternatives rejected:**
+  - *Hide empty incidents:* Rejected because they would be unreachable.
+  - *Rejections by video id without a foreign key:* Rejected because it needs a second table and cleanup rules for little gain.
+- **Links:** [`data.md`](data.md), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
 ### 2026-10-30: Suggestions come before reports; a decision builds the report
 - **Decision:** A batch uploads and analyses every file, then checks matches for all of them, and only then builds. A file with no pending suggestion is built at once; an incident with a pending suggestion waits, and the Accept or Reject on the Matches tab or report banner builds the report of each incident it leaves (one report for an accepted merge). The build step takes an incident id and does not know who decided the join, so an automatic rule (score threshold) can call it later. Nothing merges without Accept. An incident with no version shows as waiting in the library and on its report page, with its videos, the pending suggestions and "Build report now".
 - **Why:** Building a report per file first made three clips of one event become three reports, and the merge left a stale or missing combined report. Deciding first gives one report from all the videos.

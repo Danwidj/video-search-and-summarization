@@ -112,6 +112,14 @@ export class PostgrestClient {
     return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
   }
 
+  /** Rows whose text column starts with `prefix` (PostgREST like, wildcards in the prefix escaped). */
+  async selectStartingWith(table: string, column: string, prefix: string, select = '*'): Promise<Array<Record<string, unknown>>> {
+    const escaped = prefix.replace(/[\\*%_]/g, (character) => `\\${character}`);
+    const query = new URLSearchParams({ select, [column]: `like.${escaped}*` });
+    const result = await this.request(`/${table}?${query}`);
+    return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+  }
+
   async deleteWhere(table: string, filters: Record<string, string>): Promise<void> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(filters)) {

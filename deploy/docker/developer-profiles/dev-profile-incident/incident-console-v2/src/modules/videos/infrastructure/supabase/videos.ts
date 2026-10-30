@@ -11,7 +11,7 @@ import type {
 } from '@/modules/videos/domain/VideoRepository';
 import type { OfficialCrop } from '@/modules/reports/domain/revision';
 import type { PostgrestClient } from '@/lib/postgrest/client';
-import { explicitVideoId } from '@/modules/reports/domain/run-notes';
+import { deleteUnusedVideoRuns } from '@/modules/videos/infrastructure/supabase/video-model-runs';
 
 type Row = Record<string, unknown>;
 
@@ -129,14 +129,7 @@ export class SupabaseVideoAdapter implements VideoRepository {
 
   async deleteVideo(videoId: string): Promise<void> {
     await this.db.deleteWhere('videos', { id: videoId });
-    // revisions, evidence crops and query results cascade from the video. Then remove the run
-    // records whose parsed notes name exactly this video and that no revision uses any more; the
-    // notes text match is only a pre-filter.
-    const candidates = await this.db.selectContaining('model_runs', 'notes', `"videoId":"${videoId}"`, 'id,notes');
-    for (const candidate of candidates) {
-      if (typeof candidate.id !== 'string' || explicitVideoId(candidate.notes) !== videoId) continue;
-      if (await this.db.selectOne('report_revisions', { model_run_id: candidate.id }, 'id')) continue;
-      await this.db.deleteWhere('model_runs', { id: candidate.id });
-    }
+    // revisions, evidence crops and query results cascade from the video; its unused run records do not.
+    await deleteUnusedVideoRuns(this.db, videoId);
   }
 }

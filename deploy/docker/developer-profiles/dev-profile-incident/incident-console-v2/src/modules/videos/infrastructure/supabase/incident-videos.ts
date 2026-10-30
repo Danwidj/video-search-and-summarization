@@ -9,6 +9,7 @@ import type {
   VideoRemoval,
 } from '@/modules/videos/domain/IncidentVideoRepository';
 import type { PostgrestClient } from '@/lib/postgrest/client';
+import { deleteUnusedVideoRuns } from '@/modules/videos/infrastructure/supabase/video-model-runs';
 
 type Row = Record<string, unknown>;
 
@@ -89,6 +90,9 @@ export class SupabaseIncidentVideoAdapter implements IncidentVideoRepository {
 
   async removeVideo(videoId: string): Promise<VideoRemoval> {
     const result = asRow(await this.db.rpc('remove_video', { p_video_id: videoId, p_mode: 'delete' }).catch(removalRefusal));
+    // The RPC deletes the video row only; its run records are left to this call. They are harmless
+    // if this fails (nothing reads an unused run), so a failure must not hide that the video is gone.
+    await deleteUnusedVideoRuns(this.db, videoId).catch(() => undefined);
     const images = result.deleted_crop_images;
     return {
       videoId,
@@ -97,6 +101,14 @@ export class SupabaseIncidentVideoAdapter implements IncidentVideoRepository {
       storageKey: text(result.deleted_video_key),
       cropImages: Array.isArray(images) ? images.filter((image): image is string => typeof image === 'string') : [],
     };
+  }
+
+  async deleteEmptyIncident(incidentId: number): Promise<void> {
+    const id = String(incidentId);
+    if (!(await this.db.selectOne('incidents', { id }, 'id'))) throw new StoreRejection('not-found', `Incident not found: ${incidentId}`);
+    if (await this.db.selectOne('videos', { incident_id: id }, 'id'))
+      throw new StoreRejection('invalid', `Incident ${incidentId} still has videos; delete them first`);
+    await this.db.deleteWhere('incidents', { id });
   }
 
   async moveVideoToNewIncident(videoId: string): Promise<VideoMove> {

@@ -186,6 +186,20 @@ test('a delete that fails on a later video can be repeated, and an unknown incid
   );
 });
 
+test('an incident with no videos is deleted without touching storage; an unknown one is not-found', async () => {
+  const videos = new InMemoryIncidentVideoRepository([video('c.mp4', 2)]);
+  videos.addEmptyIncident(1);
+  const removedVideos = [];
+  const result = await deleteIncident(ports(videos, evidenceStore([], videos), removedVideos), 1);
+  assert.deepEqual(result, { incidentId: 1, deletedVideoIds: [] });
+  assert.deepEqual(removedVideos, []);
+  assert.equal((await videos.listVideos(2)).length, 1);
+  await assert.rejects(
+    deleteIncident(ports(videos, evidenceStore([], videos)), 1),
+    (error) => error instanceof StoreRejection && error.reason === 'not-found',
+  );
+});
+
 test('merging moves the source videos into the target, deletes the source and moves no file', async () => {
   const reports = new InMemoryIncidentReportRepository({
     incidents: [1, 2].map((incidentId) => ({ incidentId, officialRevisionId: null, officialSince: null, createdAt: null })),
