@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-31: Agent hygiene: a clear 502 for a null VLM body, a redacting URL type, one retry for runaway P1 output, and no `nvdataset` in the fork
+- **Decision:** A P1 response of HTTP 200 whose body is not a dict or has no `choices` raises `VlmNoAnswerError`, which `/analyze` maps to 502 with a plain message. `IncidentReportGenInput.video_url` is a `SignedUrl` (`str` whose `repr` drops query and credentials). A P1 output cut off by length (`finish_reason=length`) or over 30,000 characters is retried once with the identical request; `p1_attempts` lists every call in the 200 and in the 422 detail. `nvdataset`, its index and its source entry are removed from `services/agent/pyproject.toml` and the lock is regenerated, so `uv lock --check` and `uv sync --group dev` pass off NVIDIA's network. Ported from mvp3 (#326, #346) into main's one-video-one-incident shape; the route, `report_revisions`, crop budget and experiment settings are unchanged.
+- **Why:** The video host answers HTTP 200 with a null body for a video it cannot decode (10-bit H.264), which used to surface as an obscure 500. NAT logs a failed tool call's input as the kwargs dict, so only the value's own `repr` keeps a signed URL out of the log. A runaway output is rare and a second attempt costs one P1 call. Nothing imports `nvdataset` in this repo.
+- **Alternatives rejected:**
+  - *Repair or truncate the runaway output:* a repair step that changes semantic content breaks the strict-contract rule.
+  - *Add a repetition penalty or change `max_tokens`:* the P1 request in `inference.json` is shared with eval and the console, and eval pins it in tests. The cap is already 16384 tokens.
+  - *Relock against NVIDIA's index:* not possible from outside the NVIDIA network; the package is unused here.
+- **Open:** at temperature 0 the retry may repeat the same output; this is unmeasured. The console does not read `p1_attempts` yet, so a retried first attempt is in the agent log only until it does.
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsincident_idanalyze).
+
 ### 2026-10-30: Planning documents and spreadsheets are local only, never in Git; O3 closed as a documented limitation
 - **Decision (owner, 2026-10-30):**
   - **Removed from Git tracking** (`git rm --cached`; local files kept unchanged; merged history not rewritten):

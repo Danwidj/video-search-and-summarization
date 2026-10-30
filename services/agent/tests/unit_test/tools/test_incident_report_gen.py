@@ -30,6 +30,7 @@ import pytest
 
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
+from vss_agents.tools.incident_report_gen import MAX_P1_OUTPUT_CHARS
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
 from vss_agents.tools.incident_report_gen import REVIEWER_PROMPT_PREAMBLE
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
@@ -630,3 +631,65 @@ class TestVideoBounds:
     async def test_resolve_rejects_an_invalid_length_passed_directly(self):
         with pytest.raises(ValueError, match="finite number above 0"):
             await resolve_video_length(VIDEO_URL, math.nan)
+
+
+def _runaway(finish_reason: str | None = "length", chars: int = 10) -> IncidentExtractionError:
+    return IncidentExtractionError(
+        "content is not a single JSON document",
+        raw_output="x" * chars,
+        finish_reason=finish_reason,
+        model="nvidia/cosmos-3-nano-reasoner",
+    )
+
+
+def _flaky_p1(monkeypatch: pytest.MonkeyPatch, failures: list[Exception]) -> list[int]:
+    calls: list[int] = []
+
+    async def fake_run_p1(client, config, video_url, **kwargs):
+        calls.append(1)
+        if failures:
+            raise failures.pop(0)
+        return incident_contract.parse_report(json.dumps(MODEL_OUTPUT)), json.dumps(MODEL_OUTPUT), "stop"
+
+    monkeypatch.setattr("vss_agents.tools.incident_report_gen.run_p1", fake_run_p1)
+    return calls
+
+
+class TestP1Retry:
+    """A runaway P1 output (cut off by length, or over the size limit) is retried once with the identical request."""
+
+    INPUT = IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, video_duration_seconds=30, skip_rp1=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", [_runaway("length"), _runaway("stop", MAX_P1_OUTPUT_CHARS + 1)])
+    async def test_a_runaway_p1_output_is_retried_once_and_both_attempts_are_listed(self, monkeypatch, failure):
+        calls = _flaky_p1(monkeypatch, [failure])
+        result, _ = await TestEndToEnd()._run(lambda _request: _completion(""), tool_input=self.INPUT)
+        assert len(calls) == 2
+        assert [(a["attempt"], a["outcome"]) for a in result.p1_attempts] == [(1, "retried"), (2, "valid")]
+        assert result.p1_attempts[1]["finish_reason"] == "stop"
+        assert result.report["incident"]["duration"] == 5
+
+    @pytest.mark.asyncio
+    async def test_a_valid_first_output_lists_one_attempt(self, monkeypatch):
+        calls = _flaky_p1(monkeypatch, [])
+        result, _ = await TestEndToEnd()._run(lambda _request: _completion(""), tool_input=self.INPUT)
+        assert len(calls) == 1
+        assert [(a["attempt"], a["outcome"]) for a in result.p1_attempts] == [(1, "valid")]
+
+    @pytest.mark.asyncio
+    async def test_a_second_runaway_output_raises_with_both_attempts(self, monkeypatch):
+        calls = _flaky_p1(monkeypatch, [_runaway(), _runaway()])
+        with pytest.raises(IncidentExtractionError) as caught:
+            await TestEndToEnd()._run(lambda _request: _completion(""), tool_input=self.INPUT)
+        assert len(calls) == 2
+        assert [a["outcome"] for a in caught.value.attempts] == ["retried", "failed"]
+        assert caught.value.raw_output == "x" * 10  # the last rejected output, never repaired
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_contract_violation_is_not_retried(self, monkeypatch):
+        calls = _flaky_p1(monkeypatch, [_runaway("stop", 500)])
+        with pytest.raises(IncidentExtractionError) as caught:
+            await TestEndToEnd()._run(lambda _request: _completion(""), tool_input=self.INPUT)
+        assert len(calls) == 1
+        assert [a["outcome"] for a in caught.value.attempts] == ["failed"]

@@ -31,6 +31,7 @@ from vss_agents.tools import incident_experiments
 from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
 from vss_agents.tools.incident_report_gen import ExperimentRefusedError
 from vss_agents.tools.incident_report_gen import IncidentReportGenOutput
+from vss_agents.tools.incident_report_gen import VlmNoAnswerError
 
 VIDEO_URL = "https://r2.example/uploads/cam/clip.mp4?X-Amz-Signature=abc"
 OUTPUT = IncidentReportGenOutput(
@@ -141,6 +142,15 @@ def test_contract_violation_is_422_with_the_raw_output():
     assert detail["contract_version"] == incident_contract.contract_version()
 
 
+def test_the_video_model_returning_no_answer_is_502_not_500():
+    client, _ = _client(
+        side_effect=VlmNoAnswerError("no completion in response body: None. The video model returned no answer")
+    )
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
+    assert response.status_code == 502
+    assert "returned no answer" in response.json()["detail"]
+
+
 def test_timeout_is_504():
     client, _ = _client(side_effect=TimeoutError("slow"))
     assert client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).status_code == 504
@@ -228,6 +238,7 @@ PRODUCTION_KEYS = {
     "contract_version",
     "raw_output",
     "finish_reason",
+    "p1_attempts",
     "revision_id",
     "evidence",
     "video_duration_seconds",
@@ -349,4 +360,4 @@ def test_a_rejected_experimental_output_names_its_prompt_in_the_422(monkeypatch)
 def test_a_production_422_keeps_its_documented_detail():
     client, _ = _client(side_effect=IncidentExtractionError("bad", raw_output="{bad", model="m"))
     detail = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL}).json()["detail"]
-    assert set(detail) == {"message", "raw_output", "finish_reason", "model", "contract_version"}
+    assert set(detail) == {"message", "raw_output", "finish_reason", "model", "p1_attempts", "contract_version"}
