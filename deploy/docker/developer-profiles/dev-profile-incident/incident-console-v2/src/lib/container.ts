@@ -15,6 +15,7 @@ import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import type { HealthRepository } from '@/modules/health/domain/HealthRepository';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
+import { SupabaseIncidentReportAdapter } from '@/modules/reports/infrastructure/supabase/incident-reports';
 import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';
 import type { AnalysisPorts } from '@/modules/analysis/application/run-contract-analysis';
 import { SupabaseAnalysisRunAdapter } from '@/modules/analysis/infrastructure/supabase/analysis-runs';
@@ -42,6 +43,7 @@ export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
   return {
     dashboard: new SupabaseDashboardAdapter(db),
     incidents: new SupabaseIncidentAdapter(db),
+    incidentReports: new SupabaseIncidentReportAdapter(db),
     videos: new SupabaseVideoAdapter(db),
   };
 }
