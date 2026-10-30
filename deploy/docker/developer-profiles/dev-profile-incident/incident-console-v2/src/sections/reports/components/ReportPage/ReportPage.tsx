@@ -44,15 +44,22 @@ import {
   withUploadedImages,
   type EditDraft,
 } from '@/modules/reports/domain/edit-draft';
+import { cameraOptions, showCameraSwitcher } from '@/lib/reports/cameras';
+import type { IncidentReportView } from '@/modules/reports/application/types';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
+import { CameraSwitcher } from '@/sections/reports/components/CameraSwitcher';
+import { IncidentOverview } from '@/sections/reports/components/IncidentOverview';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
-type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; report: ReportView };
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; view: IncidentReportView; report: ReportView | null };
 
 type Mode = 'view' | 'edit';
 interface EditBase {
@@ -66,14 +73,28 @@ const SAVE_AUTHOR = 'Reviewer';
 
 const DEFAULT_VIDEO_ASPECT = 16 / 9;
 
-/** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
+/** Query string for the report API and page links: the version and the camera, each only when chosen. */
+const reportQuery = (revisionId: number | null, camera: string | null) => {
+  const params = new URLSearchParams();
+  if (revisionId !== null) params.set('revision', String(revisionId));
+  if (camera) params.set('camera', camera);
+  const text = params.toString();
+  return text ? `?${text}` : '';
+};
+
+/**
+ * revisionId null opens the incident's official version, else its newest. camera null opens the first camera that can be
+ * shown. startSeconds, when set, is where the player seeks once it has loaded.
+ */
 export function ReportPage({
   incidentId,
   revisionId,
+  camera = null,
   startSeconds = null,
 }: {
   incidentId: string;
   revisionId: number | null;
+  camera?: string | null;
   startSeconds?: number | null;
 }) {
   const router = useRouter();
@@ -112,21 +133,21 @@ export function ReportPage({
   useEffect(() => {
     const controller = new AbortController();
     setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
-    fetch(`/api/reports/${encodeURIComponent(incidentId)}${revisionId === null ? '' : `?revision=${revisionId}`}`, {
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}${reportQuery(revisionId, camera)}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as { report?: ReportView; error?: string };
+        const payload = (await response.json()) as { report?: IncidentReportView; error?: string };
         if (!response.ok || !payload.report) throw new Error(payload.error || `Report request failed with HTTP ${response.status}`);
-        setState({ status: 'ready', report: payload.report });
+        setState({ status: 'ready', view: payload.report, report: payload.report.report });
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setState({ status: 'error', message: error instanceof Error ? error.message : 'Could not load the report' });
       });
     return () => controller.abort();
-  }, [attempt, revisionId, incidentId]);
+  }, [attempt, revisionId, camera, incidentId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
@@ -155,11 +176,15 @@ export function ReportPage({
     }
     const controller = new AbortController();
     setCompareError(null);
-    fetch(`/api/reports/${encodeURIComponent(incidentId)}?revision=${compareRevisionId}`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}${reportQuery(compareRevisionId, editBase.report.run.filename)}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
       .then(async (response) => {
-        const payload = (await response.json()) as { report?: ReportView; error?: string };
-        if (!response.ok || !payload.report) throw new Error(payload.error || `Version request failed with HTTP ${response.status}`);
-        setCompareReport(payload.report);
+        const payload = (await response.json()) as { report?: IncidentReportView; error?: string };
+        if (!response.ok || !payload.report?.report)
+          throw new Error(payload.error || `Version request failed with HTTP ${response.status}`);
+        setCompareReport(payload.report.report);
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -222,7 +247,12 @@ export function ReportPage({
     setUndoStack([]);
     setEditBase(null);
     setSaveOpen(false);
-    router.push(`/reports/${encodeURIComponent(incidentId)}?revision=${id}`);
+    router.push(`/reports/${encodeURIComponent(incidentId)}${reportQuery(id, camera)}`);
+  };
+
+  const openCamera = (video: string) => {
+    if (mode === 'edit') return;
+    router.replace(`/reports/${encodeURIComponent(incidentId)}${reportQuery(revisionId, video)}`, { scroll: false });
   };
 
   if (state.status === 'loading') {
@@ -269,10 +299,36 @@ export function ReportPage({
     );
   }
 
-  const { report } = state;
+  const { report, view } = state;
+  const options = cameraOptions(view.cameras);
+  const videoCount = view.cameras.filter((entry) => entry.current).length;
+  const switcher = showCameraSwitcher(view.cameras) ? <CameraSwitcher onChange={openCamera} options={options} value={view.camera} /> : null;
+
+  if (!report) {
+    return (
+      <div className="pb-16">
+        <article className="report-sheet overflow-clip border-y border-border bg-card shadow-panel" data-testid="report-page">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-5 py-3 text-sm sm:px-8">
+            <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
+              ← Library
+            </Link>
+            <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">Incident #{incidentId}</h1>
+          </div>
+          {switcher}
+          <div className="px-5 pb-16 sm:px-8">
+            <IncidentOverview view={view} />
+            <Alert className="mt-4" data-testid="no-camera" variant="destructive">
+              <AlertDescription>No camera of this version can be shown. Open another version or regenerate the report.</AlertDescription>
+            </Alert>
+          </div>
+        </article>
+      </div>
+    );
+  }
+
   const officialRevision = (revisions ?? []).find((revision) => revision.isOfficial);
-  const heading = reportHeading(mode === 'edit' && editBase ? editBase.report : report);
-  const filename = (mode === 'edit' && editBase ? editBase.report : report).run.filename;
+  const heading = view.overview.title ?? reportHeading(mode === 'edit' && editBase ? editBase.report : report);
+  const filename = `Incident #${incidentId} · ${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`;
   const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
   const problems = draft ? draftProblems(draft) : [];
   const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
@@ -322,6 +378,7 @@ export function ReportPage({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const shownReport: ReportView = report;
   function switchMode(next: Mode) {
     if (next === 'view') {
       setMode('view');
@@ -329,7 +386,7 @@ export function ReportPage({
       return;
     }
     if (draft && editBase) setMode('edit');
-    else startEdit(report);
+    else startEdit(shownReport);
   }
 
   async function save() {
@@ -401,7 +458,7 @@ export function ReportPage({
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
-            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={incidentId} />
+            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={report.run.filename} />
             <Button
               aria-expanded={chatOpen}
               className="text-xs font-semibold"
@@ -424,6 +481,8 @@ export function ReportPage({
               </TabsList>
             </Tabs>
           </div>
+
+          {switcher}
 
           <div
             className="relative border-b border-border bg-card lg:h-(--report-band-height)"
@@ -545,6 +604,12 @@ export function ReportPage({
           >
             <AlertDescription>Could not load the A version: {compareError}</AlertDescription>
           </Alert>
+        )}
+
+        {mode === 'view' && (
+          <div className="px-5 sm:px-8">
+            <IncidentOverview view={view} />
+          </div>
         )}
 
         {mode === 'view' ? (
