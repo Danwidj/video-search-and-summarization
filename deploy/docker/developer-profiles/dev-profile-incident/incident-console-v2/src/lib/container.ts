@@ -17,6 +17,8 @@ import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
 import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { SupabaseIncidentReportAdapter } from '@/modules/reports/infrastructure/supabase/incident-reports';
 import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';
+import type { AnalyseVideoPorts } from '@/modules/analysis/application/analyse-video';
+import { HttpVideoAnalyzer } from '@/modules/analysis/infrastructure/agent/video-analyzer';
 import type { AnalysisPorts } from '@/modules/analysis/application/run-contract-analysis';
 import { SupabaseAnalysisRunAdapter } from '@/modules/analysis/infrastructure/supabase/analysis-runs';
 import { SupabaseModelRunAdapter } from '@/modules/analysis/infrastructure/supabase/model-runs';
@@ -73,6 +75,18 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     agent: config.agentUrl ? new HttpIncidentAgent(config.agentUrl) : null,
     catalog: defaultContractCatalog,
     randomUUID,
+  };
+}
+
+/** The ports of one video analysis (agent mode only). Throws like getDbAdapters when the database or the agent is not configured. */
+export function getAnalyseVideoPorts(config: ServiceConfiguration = getServiceConfiguration()): AnalyseVideoPorts {
+  if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
+  return {
+    videos: getIncidentVideos(config),
+    objects: new R2VideoObjectStore(config),
+    analyzer: new HttpVideoAnalyzer(config.agentUrl),
+    catalog: defaultContractCatalog,
+    now: () => new Date(),
   };
 }
 

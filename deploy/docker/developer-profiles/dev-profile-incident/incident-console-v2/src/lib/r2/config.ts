@@ -4,7 +4,7 @@ import type { Readable } from 'node:stream';
 
 import type { ServiceConfiguration } from '@/lib/env';
 import { isValidR2Key, r2PhysicalKey } from '@/lib/r2/key';
-import { mp4DurationSeconds } from '@/lib/video/mp4-duration';
+import { mp4DurationSeconds, mp4RecordedAt, type ReadRange } from '@/lib/video/mp4-duration';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -140,12 +140,8 @@ export async function deleteR2Video(config: ServiceConfiguration, key: string): 
   await client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: physicalKey }));
 }
 
-/**
- * The video's length in seconds from its MP4 header, read with ranged GETs
- * (lib/video/mp4-duration.ts). null when it cannot be read: validation then
- * records the video-length rule as not checked, never as passed.
- */
-export async function readR2VideoDurationSeconds(config: ServiceConfiguration, key: string, contentLength: number): Promise<number | null> {
+/** Ranged reads of the stored video's bytes; null when R2 or the key is unusable. */
+function r2RangeReader(config: ServiceConfiguration, key: string, contentLength: number): ReadRange | null {
   const r2 = createR2Configuration(config);
   if (!r2 || !isValidR2Key(key)) return null;
   const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
@@ -154,14 +150,35 @@ export async function readR2VideoDurationSeconds(config: ServiceConfiguration, k
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
-  const readRange = async (offset: number, length: number): Promise<Uint8Array> => {
+  return async (offset: number, length: number): Promise<Uint8Array> => {
     const end = Math.min(offset + length, contentLength) - 1;
     if (end < offset) return new Uint8Array(0);
     const result = await client.send(new GetObjectCommand({ Bucket: r2.bucket, Key: physicalKey, Range: `bytes=${offset}-${end}` }));
     return result.Body ? await result.Body.transformToByteArray() : new Uint8Array(0);
   };
+}
+
+/**
+ * The video's length in seconds from its MP4 header, read with ranged GETs
+ * (lib/video/mp4-duration.ts). null when it cannot be read: validation then
+ * records the video-length rule as not checked, never as passed.
+ */
+export async function readR2VideoDurationSeconds(config: ServiceConfiguration, key: string, contentLength: number): Promise<number | null> {
+  const readRange = r2RangeReader(config, key, contentLength);
+  if (!readRange) return null;
   try {
     return await mp4DurationSeconds(readRange, contentLength);
+  } catch {
+    return null;
+  }
+}
+
+/** When the MP4 header says the video was recorded (ISO 8601 UTC); null when it carries no usable time. */
+export async function readR2VideoRecordedAt(config: ServiceConfiguration, key: string, contentLength: number): Promise<string | null> {
+  const readRange = r2RangeReader(config, key, contentLength);
+  if (!readRange) return null;
+  try {
+    return await mp4RecordedAt(readRange, contentLength);
   } catch {
     return null;
   }
