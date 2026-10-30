@@ -10,6 +10,7 @@
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import type { IncidentId, IncidentReportRepository, IncidentVideo } from '@/modules/reports/domain/IncidentReportRepository';
+import { normaliseOverview } from '@/modules/reports/domain/envelope';
 import { acceptSuggestion } from '@/modules/matching/application/decide-suggestion';
 import type { JudgeCandidate, MatchingPorts, StructuredReason, SuggestionStatus } from '@/modules/matching/domain/matching';
 
@@ -145,9 +146,13 @@ export async function evaluateIncident(
     if (!other) return null;
     const span = recordedSpan(other.videos);
     const revision = await reports.getRevision(candidateId, null);
+    // A batch-mate is checked before its report is built, so it has no revision yet: describe it by the latest
+    // analysis of its first video, as the judge would otherwise score it 0.0 for want of an overview.
+    const firstAnalysis = revision || other.videos.length === 0 ? null : await analyses.latestAnalysis(other.videos[0].videoId);
+    const incidentBlock = firstAnalysis?.payload.incident;
     const candidate: JudgeCandidate = {
       incidentId: candidateId,
-      overview: revision ? { ...revision.envelope.overview } : null,
+      overview: revision ? { ...revision.envelope.overview } : incidentBlock ? { ...normaliseOverview(incidentBlock) } : null,
       videoNames: other.videos.map((video) => video.videoId),
       recordedAtStart: span.start,
       recordedAtEnd: span.end,
