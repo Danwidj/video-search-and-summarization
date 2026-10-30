@@ -56,6 +56,7 @@ import re
 import time
 from typing import Any
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx
 from nat.builder.builder import Builder
@@ -95,6 +96,19 @@ REVIEWER_PROMPT_PREAMBLE = "\n".join(
     ]
 )
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+class VlmNoAnswerError(ValueError):
+    """The video model answered HTTP 200 with a null body or no choices (``/analyze`` returns 502)."""
+
+
+def redact_url(url: str) -> str:
+    """``url`` without credentials, query or fragment, so a signed URL never reaches a log (the path keeps the object key)."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return f"{parts.scheme}://{host}{parts.path}" if parts.scheme and host else "<redacted url>"
 
 
 class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
@@ -154,6 +168,11 @@ class IncidentReportGenInput(BaseModel):
         default=False,
         description="Experimental: skip post-P1 evidence cropping (needs INCIDENT_EXPERIMENTS_ENABLED=1).",
     )
+
+    def __repr_args__(self) -> Any:
+        # NAT logs the whole input when the tool fails; the signed video_url must not reach that log.
+        for name, value in super().__repr_args__():
+            yield name, redact_url(value) if name == "video_url" and isinstance(value, str) else value
 
 
 class ExperimentRefusedError(RuntimeError):
@@ -316,7 +335,13 @@ async def run_p1(
     if response.status_code >= 400:
         raise RuntimeError(f"P1 call returned HTTP {response.status_code}: {response.text[:500]}")
     body = response.json()
-    if telemetry is not None and isinstance(body, dict):
+    if not isinstance(body, dict) or not body.get("choices"):
+        # HTTP 200 with a null body is how the video host answers a video it cannot decode.
+        raise VlmNoAnswerError(
+            f"no completion in response body: {str(body)[:300]}. The video model returned no answer; the video is "
+            "probably in an unsupported format (for example 10-bit H.264) or unreadable."
+        )
+    if telemetry is not None:
         telemetry["usage"] = body.get("usage") or {}
     content, finish_reason = _message_content(body)
     try:

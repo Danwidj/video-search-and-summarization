@@ -63,6 +63,7 @@ from vss_agents.tools import incident_experiments
 from vss_agents.tools.incident_report_gen import EXPERIMENT_OUTPUT_FIELDS
 from vss_agents.tools.incident_report_gen import MAX_REVIEWER_PROMPT_LENGTH
 from vss_agents.tools.incident_report_gen import ExperimentRefusedError
+from vss_agents.tools.incident_report_gen import VlmNoAnswerError
 
 if TYPE_CHECKING:
     from nat.builder.workflow_builder import WorkflowBuilder
@@ -208,6 +209,9 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ExperimentRefusedError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except VlmNoAnswerError as exc:
+            logger.error("/analyze: the video model returned no answer for video_name=%s: %s", video_name, exc)
+            raise HTTPException(status_code=502, detail=f"Video model returned no answer: {exc}") from exc
         except TimeoutError as exc:
             logger.error("/analyze timed out for video_name=%s: %s", video_name, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc
