@@ -585,8 +585,8 @@ export function ReportPage({
   return (
     <div className="pb-16">
       <article className="report-sheet overflow-clip border-y border-border bg-card shadow-panel" data-testid="report-page">
-        {/* One sticky unit from lg: the back bar, the video and the versions stay together. Below lg only the back bar sticks (`contents` lets it stick to the article), because the stacked band is too tall to pin. */}
-        <div className="contents lg:sticky lg:top-0 lg:z-20 lg:block" data-testid="report-sticky">
+        {/* One sticky unit from lg: the back bar, the video and the versions stay together. Below lg only the back bar sticks (`contents` lets it stick to the article), because the stacked band is too tall to pin. The opaque `lg:bg-card` sits under the translucent camera bar so the Edit alert and the Editing row never show through it. */}
+        <div className="contents lg:sticky lg:top-0 lg:z-20 lg:block lg:bg-card" data-testid="report-sticky">
           <div className="z-30 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-card px-5 py-3 text-sm max-lg:sticky max-lg:top-0 sm:px-8">
             <Link className="font-semibold text-primary hover:underline" href="/library" id="back-to-library">
               ← Library

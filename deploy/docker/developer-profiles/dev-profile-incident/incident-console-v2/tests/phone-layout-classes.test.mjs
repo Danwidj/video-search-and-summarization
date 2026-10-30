@@ -53,3 +53,10 @@ test('version rows wrap their pills and only the star, badge and buttons keep th
     assert.match(versions, new RegExp(marker));
   }
 });
+
+test('the sticky report band is opaque from lg so scrolled Edit content cannot show through the camera bar', () => {
+  const page = source('sections/reports/components/ReportPage/ReportPage.tsx');
+  const band = page.match(/<div className="([^"]*)" data-testid="report-sticky"/)?.[1] ?? '';
+  assert.match(band, /\blg:sticky\b/);
+  assert.match(band, /\blg:bg-card\b/);
+});
