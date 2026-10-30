@@ -141,11 +141,8 @@ function RepairDetails({ run }: { run: ReportView['run'] }) {
     return JSON.stringify(operation);
   };
   return (
-    <Alert
-      className="mt-6 rounded-xl border border-amber-300 bg-amber-50/70 p-4 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
-      data-testid="repair-details"
-    >
-      <AlertTitle className="text-xs font-bold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">
+    <Alert className="mt-6 rounded-xl border border-amber-300 bg-amber-50/70 p-4 text-xs text-amber-950" data-testid="repair-details">
+      <AlertTitle className="text-xs font-bold uppercase tracking-[0.12em] text-amber-800">
         Contract repair applied (IDs only) · {String(repair.ruleSet ?? '')}
       </AlertTitle>
       <AlertDescription>

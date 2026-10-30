@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Dark theme removed from the console
+- **Decision:** Remove the `.dark` token block and `dark` custom variant from `src/app/styles.css`, all `dark:` utilities from `src/components` and `src/sections`, and the `next-themes` dependency. The console is light only.
+- **Why:** Nothing in the UI could switch to dark mode, so the code was dead weight that every shadcn component add would grow.
+- **Alternatives rejected:** *Wiring a theme toggle:* large change touching most files, and no requirement for it.
+- **Links:** `src/app/styles.css`, `src/components/ui/sonner.tsx`, `src/components/ui/chart.tsx`.
+
 ### 2026-10-29: Videos tab and screen removed in favour of focused incident workflow
 - **Decision:** Remove the Videos tab (`/videos`) from the primary navigation header and mobile dropdown, delete the `/videos` page route (`src/app/videos/page.tsx`) and the `VideosScreen` section component (`src/sections/videos/components/VideosScreen/`). Dashboard overview metrics ("Uploaded videos", "Awaiting official report", "Without a report") render as static summary cards without links to the removed route. The individual video history route (`/videos/[videoId]`) is retained for history inspection and re-runs.
 - **Why:** The dedicated `/videos` inventory table duplicated video discovery already served by the Incident Library (`/library`) and added navigational clutter. Removing the tab streamlines the console into three core areas: Analyze (upload orchestration), Library (incident exploration and evidence search), and Dashboard (analytics).

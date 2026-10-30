@@ -37,7 +37,7 @@ npx shadcn@latest add <component>     # e.g. popover; writes src/components/ui/<
 npx shadcn@latest docs <component>    # usage and examples
 ```
 
-- **Theme tokens:** CSS variables in `src/app/styles.css`. Light values are in `:root`, dark values in `.dark` (toggled by a `dark` class on an ancestor, not wired up yet). `@theme inline` maps them to Tailwind colours (`bg-primary`, `text-muted-foreground`, ...). The console's own colours (`ink`, `canvas`, `signal`, `moss`, `clay`), fonts and `shadow-panel` are in the `@theme` block of the same file; there is no `tailwind.config.js`.
+- **Theme tokens:** CSS variables in `src/app/styles.css`. Light only, in `:root`; there is no dark theme. `@theme inline` maps them to Tailwind colours (`bg-primary`, `text-muted-foreground`, ...). The console's own colours (`ink`, `canvas`, `signal`, `moss`, `clay`), fonts and `shadow-panel` are in the `@theme` block of the same file; there is no `tailwind.config.js`.
 - **Radius and font:** the shadcn radius override is left out, so `rounded-*` keeps Tailwind's stock scale, and the font stays Arial. Changing either restyles every existing screen.
 - **Provider and toaster:** `Tooltip` needs `TooltipProvider` and `sonner` needs `<Toaster />` mounted in `src/app/layout.tsx`. Neither is mounted yet.
 - **Agent tooling:** the shadcn skill is in `deploy/docker/developer-profiles/dev-profile-incident/skills/shadcn` (with symlinks at `.claude/skills/shadcn` and `.agents/skills/shadcn`, pinned in `skills-lock.json`) and the shadcn MCP server is in `.mcp.json` at the repo root. Restart Claude Code and run `/mcp` to see it connect.
