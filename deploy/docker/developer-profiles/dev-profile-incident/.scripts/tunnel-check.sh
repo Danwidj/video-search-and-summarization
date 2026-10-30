@@ -8,16 +8,16 @@
 
 VSS_VM_IP="${VSS_VM_IP:-the VM}"
 
-if curl -sf --max-time 15 http://localhost:8000/health | grep -q isAlive; then
-  echo "agent ok (localhost:8000 -> VM loopback :8000)"
+if curl -sf --max-time 15 http://localhost:8001/health | grep -q isAlive; then
+  echo "agent ok (localhost:8001 -> VM loopback :8001)"
 else
   echo "agent unreachable - is the tunnel running? (tunnel.sh or start.sh)" >&2
   exit 1
 fi
 
-search_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST http://localhost:8000/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"healthcheck","top_k":1}' || echo 000)"
+search_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST http://localhost:8001/api/v1/incidents/search -H "Content-Type: application/json" -d '{"query":"healthcheck","top_k":1}' || echo 000)"
 if [ "$search_code" = "200" ]; then
-  echo "search route ok (localhost:8000/api/v1/incidents/search -> VM loopback :8000)"
+  echo "search route ok (localhost:8001/api/v1/incidents/search -> VM loopback :8001)"
 else
   echo "search route returned HTTP ${search_code} (expected 200)"
 fi

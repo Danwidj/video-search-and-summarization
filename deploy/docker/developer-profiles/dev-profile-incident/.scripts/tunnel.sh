@@ -5,7 +5,7 @@
 # behavior, standalone script).
 #
 # The laptop-local incident-console-v2 reaches the real kwanz-ws backend (agent
-# :8000, ingress :7777) through this SSH tunnel instead of the mock
+# :8001, ingress :7777) through this SSH tunnel instead of the mock
 # (see deploy/docker/developer-profiles/dev-profile-incident/dotfiles/README.md). Phase 4 design: the console never deploys
 # to the VM; the VM runs only the backend stack. Unlike every other script
 # in this directory, this one runs on YOUR LAPTOP, not on the VM: it
@@ -17,9 +17,9 @@
 # `ssh -N -L 7777:10.131.1.5:7777 daniel@kwanz-ws`.
 #
 # Forwarded ports mirror the backend's real ports one-to-one
-# (dev-profile-base/.env: VSS_AGENT_PORT=8000; dev-profile-incident/.env:
-# HAPROXY_PORT=7777), so the usual laptop-side URLs keep working unchanged
-# through the tunnel: http://localhost:8000/health for the agent health check
+# (dev-profile-incident/.env: VSS_AGENT_PORT=8001; HAPROXY_PORT=7777), so the
+# usual laptop-side URLs keep working unchanged through the tunnel:
+# http://localhost:8001/health for the agent health check
 # (see dev-profile-incident/.env INCIDENT_AGENT_BASE_URL) and http://localhost:7777
 # for the ingress proxy. The VM address is detected over SSH (default-route source
 # address); set VSS_VM_IP / VSS_SSH_TARGET only to force a different address or login.
@@ -46,6 +46,6 @@ vm_preflight_ssh || exit 1
 VSS_VM_IP="$(vm_detect_ip)"
 
 ssh -N \
-  -L 8000:127.0.0.1:8000 \
+  -L 8001:127.0.0.1:8001 \
   -L 7777:"$VSS_VM_IP":7777 \
   "$VSS_SSH_TARGET"

@@ -9,7 +9,7 @@
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
 #           tunnel). Exports ANALYSIS_MODE=agent so v2 calls the agent's
 #           /analyze endpoint directly. No local vlm-gateway. The search route
-#           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
+#           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8001)
 #           with an always-on VLM critic and persisted ranking/verdicts.
 #   mock  — fully local, no VM/SSH. Starts mock-backend (127.0.0.1:7777)
 #           and vlm-gateway (127.0.0.1:8600) locally. Exports
@@ -84,7 +84,7 @@
 #   VSS_VM_IP                VM address for the tunnel forwards. If unset, detected
 #                            from the VM over SSH (its default-route source address),
 #                            falling back to 10.131.1.5 if detection fails.
-#   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
+#   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss-mvp3)
 #   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
 #                            clone's `origin`)
 #   VSS_LOCK_FILE            VM lock file for active runs (default:
@@ -238,7 +238,7 @@ cleanup() {
     if [ -n "${VSS_SSH_TARGET:-}" ]; then
       echo "start.sh: checking active sessions on $VSS_SSH_TARGET..."
       stop_rc=0
-      remote_cmd="bash -s -- $(printf '%q ' "$VSS_LOCK_FILE" "$VSS_REPO_ROOT" "${INCIDENT_DOCKER_SERVICES:-}" "${INCIDENT_NATIVE_SERVICES:-}")"
+      remote_cmd="bash -s -- $(printf '%q ' "$VSS_LOCK_FILE" "$VSS_REPO_ROOT" "" "${INCIDENT_NATIVE_SERVICES:-}")"
       # shellcheck disable=SC2029
       ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" "$remote_cmd" < "${SCRIPT_DIR}/.scripts/vm-stop-backend.sh" || stop_rc=$?
       if [ "$stop_rc" -ne 0 ]; then
@@ -250,7 +250,7 @@ cleanup() {
 trap cleanup EXIT INT TERM HUP
 
 if [ "$VSS_START_MODE" = "vm" ]; then
-  VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
+  VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss-mvp3}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
   # Base Docker infrastructure (appliances)
@@ -457,7 +457,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-  for port in 8000 7777; do
+  for port in 8001 7777; do
     if holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
       echo "start.sh: laptop port $port is already in use by $holder, so the tunnel cannot forward it." >&2
       echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
@@ -466,16 +466,16 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   done
   TUNNEL_LOG="$(mktemp)"
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
-    -L 8000:127.0.0.1:8000 \
+    -L 8001:127.0.0.1:8001 \
     -L 7777:"$VSS_VM_IP":7777 \
     "$VSS_SSH_TARGET" 2>"$TUNNEL_LOG" &
   TUNNEL_PID=$!
 
-  echo "  tunnel pid $TUNNEL_PID; waiting for the tunneled agent health check (localhost:8000/health)..."
+  echo "  tunnel pid $TUNNEL_PID; waiting for the tunneled agent health check (localhost:8001/health)..."
   tunnel_ok=""
   tunnel_deadline=$((SECONDS + 60))
   while [ "$SECONDS" -lt "$tunnel_deadline" ]; do
-    if curl -sf --max-time 5 http://localhost:8000/health | grep -q isAlive; then
+    if curl -sf --max-time 5 http://localhost:8001/health | grep -q isAlive; then
       tunnel_ok=1
       break
     fi
@@ -485,11 +485,11 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     sleep 2
   done
   if [ -z "$tunnel_ok" ]; then
-    echo "start.sh: the tunneled agent never came up on localhost:8000." >&2
+    echo "start.sh: the tunneled agent never came up on localhost:8001." >&2
     # The SSH log repeats one line per failed connection; show each distinct line once.
     tunnel_err="$(sed 's/^channel [0-9]*: //' "$TUNNEL_LOG" | sort -u | head -n 3 | tr '\n' ';')"
-    if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf --max-time 5 http://localhost:8000/health' 2>/dev/null | grep -q isAlive; then
-      echo "  The agent is healthy ON the VM, but the tunnel cannot reach it at the VM loopback :8000${tunnel_err:+ (${tunnel_err})}." >&2
+    if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf --max-time 5 http://localhost:8001/health' 2>/dev/null | grep -q isAlive; then
+      echo "  The agent is healthy ON the VM, but the tunnel cannot reach it at the VM loopback :8001${tunnel_err:+ (${tunnel_err})}." >&2
       echo "  Fix: the SSH connection or forward is blocked; check the SSH target. If VSS_AGENT_HOST on the VM is set to a LAN address instead of 127.0.0.1, unset it and restart the agent." >&2
     else
       [ -n "$tunnel_err" ] && echo "  SSH tunnel said: ${tunnel_err}" >&2
@@ -499,8 +499,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     cleanup
     exit 1
   fi
-  echo "  agent ok (localhost:8000 -> VM loopback :8000)"
-  echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
+  echo "  agent ok (localhost:8001 -> VM loopback :8001)"
+  echo "  search route ready (POST http://localhost:8001/api/v1/incidents/search, always-on critic)"
 
   echo "  waiting for the tunneled proxy health check (localhost:7777)..."
   proxy_ok=""
@@ -532,7 +532,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
   echo "  proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
 
-  export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
+  export INCIDENT_AGENT_BASE_URL="http://localhost:8001"
   export ANALYSIS_MODE="agent"
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
