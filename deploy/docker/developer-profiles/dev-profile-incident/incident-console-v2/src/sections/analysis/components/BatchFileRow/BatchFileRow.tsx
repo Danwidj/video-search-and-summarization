@@ -12,13 +12,22 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { BATCH_STAGES, type BatchItem, batchStageLabels, itemProgress } from '@/sections/analysis/batch-upload';
 
-const statusLabel = { queued: 'Waiting', running: 'In progress', failed: 'Failed', done: 'Report ready' } as const;
+const statusLabel = {
+  queued: 'Waiting',
+  running: 'In progress',
+  waiting: 'Waiting for the batch',
+  deciding: 'Awaiting your decision',
+  failed: 'Failed',
+  done: 'Report ready',
+} as const;
 
 function announcement(item: BatchItem): string {
   const label = batchStageLabels[item.stage];
   if (item.status === 'failed') return `${item.name} stopped at ${label}: ${item.error ?? 'the step failed'}.`;
   if (item.status === 'done') return `${item.name}: report ready.`;
   if (item.status === 'queued') return `${item.name}: waiting to start.`;
+  if (item.status === 'waiting') return `${item.name}: analysed, waiting for the rest of the batch.`;
+  if (item.status === 'deciding') return `${item.name}: matches checked, report waits for your decision.`;
   return `${item.name}: ${label}${item.stage === 'upload' && item.uploadProgress > 0 ? ` (${item.uploadProgress}%)` : ''}.`;
 }
 
@@ -112,12 +121,12 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
         </Alert>
       )}
 
-      {item.status === 'done' && item.analysed && (
+      {(item.status === 'done' || item.status === 'deciding') && item.analysed && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-muted-foreground">
             {item.matches
-              ? `${item.matches} suggested ${item.matches === 1 ? 'match' : 'matches'} to review.`
-              : 'No match yet. Videos that finish later are compared with this one.'}
+              ? `${item.matches} suggested ${item.matches === 1 ? 'match' : 'matches'} found for this video.`
+              : 'No match found in this batch or your other incidents.'}
           </span>
           <Link className="font-semibold text-primary hover:underline" href={`/reports/${item.analysed.incidentId}`}>
             Open incident {item.analysed.incidentId} →

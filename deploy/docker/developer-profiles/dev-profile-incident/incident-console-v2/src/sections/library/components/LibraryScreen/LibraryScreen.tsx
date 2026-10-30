@@ -465,6 +465,9 @@ export function Library() {
                     <IncidentCard
                       busy={busy === String(item.incidentId)}
                       item={item}
+                      waitingForDecision={suggestions.cards.some(
+                        (card) => card.kept.incidentId === item.incidentId || card.joining.incidentId === item.incidentId,
+                      )}
                       key={item.incidentId}
                       onDelete={deleteReport}
                       onOpen={rememberPosition}
