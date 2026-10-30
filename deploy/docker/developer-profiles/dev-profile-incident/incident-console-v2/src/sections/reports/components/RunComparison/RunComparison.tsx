@@ -15,23 +15,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatTimestamp } from '@/lib/time';
 import { formatClock } from '@/modules/reports/domain/normalize';
-import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
-import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import { reportHeading } from '@/modules/reports/domain/report-view';
+import type { IncidentReportView } from '@/modules/reports/application/types';
+import { CoverageNote } from '@/sections/reports/components/CoverageNote';
+import type { VersionRow } from '@/sections/reports/components/ReportVersions';
 
-const versionLabel = (revision: RevisionSummary) =>
+/** One side of the comparison: the version as the report route returns it, or why it cannot be shown. */
+type Side = { view: IncidentReportView } | { problem: string } | null;
+
+const versionLabel = (revision: VersionRow) =>
   `v${revision.revisionNo} · ${revision.kind === 'human' ? 'Human' : 'AI'}${revision.isOfficial ? ' · ★ official' : ''}`;
 
-export function RunComparison({ incidentId, left, right }: { incidentId: string; left: string; right: string }) {
+export function RunComparison({
+  incidentId,
+  left,
+  right,
+  camera = '',
+}: {
+  incidentId: string;
+  left: string;
+  right: string;
+  camera?: string;
+}) {
   const router = useRouter();
-  const [reports, setReports] = useState<Array<ReportView | null>>([null, null]);
+  const [sides, setSides] = useState<Side[]>([null, null]);
   const [error, setError] = useState('');
-  const [revisions, setRevisions] = useState<RevisionSummary[] | null>(null);
+  const [revisions, setRevisions] = useState<VersionRow[] | null>(null);
   const hasBoth = left !== '' && right !== '';
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/reports/${encodeURIComponent(incidentId)}/revisions`, { cache: 'no-store', signal: controller.signal })
-      .then((response) => (response.ok ? (response.json() as Promise<{ revisions?: RevisionSummary[] }>) : { revisions: undefined }))
+      .then((response) => (response.ok ? (response.json() as Promise<{ revisions?: VersionRow[] }>) : { revisions: undefined }))
       .then((payload) => setRevisions(payload.revisions ?? []))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRevisions([]);
@@ -40,36 +55,49 @@ export function RunComparison({ incidentId, left, right }: { incidentId: string;
   }, [incidentId]);
 
   useEffect(() => {
-    setReports([null, null]);
+    setSides([null, null]);
     setError('');
     // Without both versions there is nothing to fetch; the picker below asks for them.
     if (!hasBoth) return;
     const controller = new AbortController();
     Promise.all(
-      [left, right].map((revision) =>
-        fetch(`/api/reports/${encodeURIComponent(incidentId)}?revision=${encodeURIComponent(revision)}`, {
-          signal: controller.signal,
-        }).then((response) => {
-          if (!response.ok) throw new Error('Could not load a selected version');
-          return response.json() as Promise<{ report: ReportView }>;
-        }),
-      ),
+      [left, right].map(async (revision): Promise<Side> => {
+        const cameraQuery = camera ? `&camera=${encodeURIComponent(camera)}` : '';
+        const response = await fetch(
+          `/api/reports/${encodeURIComponent(incidentId)}?revision=${encodeURIComponent(revision)}${cameraQuery}`,
+          {
+            signal: controller.signal,
+          },
+        );
+        const payload = (await response.json().catch(() => ({}))) as { report?: IncidentReportView; error?: string };
+        if (payload.report) return { view: payload.report };
+        // A version that lacks the chosen camera is shown as such; any other failure is the page's error.
+        if (camera && response.status === 404) return { problem: payload.error || `This version has no camera for ${camera}.` };
+        throw new Error('Could not load a selected version');
+      }),
     )
-      .then((values) => setReports(values.map((value) => value.report)))
+      .then(setSides)
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setError(cause instanceof Error ? cause.message : 'Could not load a selected version');
       });
     return () => controller.abort();
-  }, [incidentId, left, right, hasBoth]);
+  }, [incidentId, left, right, camera, hasBoth]);
 
-  const pick = (side: 'left' | 'right', value: string) => {
-    const next = { left, right, [side]: value };
+  const pick = (side: 'left' | 'right' | 'camera', value: string) => {
+    const next = { left, right, camera, [side]: value };
     const params = new URLSearchParams();
     if (next.left) params.set('left', next.left);
     if (next.right) params.set('right', next.right);
+    if (next.camera) params.set('camera', next.camera);
     router.replace(`/reports/${encodeURIComponent(incidentId)}/compare?${params.toString()}`);
   };
+
+  const cameraNames = [
+    ...new Set(
+      sides.flatMap((side) => (side && 'view' in side ? side.view.cameras.filter((entry) => entry.valid).map((entry) => entry.video) : [])),
+    ),
+  ];
 
   return (
     <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
@@ -83,12 +111,33 @@ export function RunComparison({ incidentId, left, right }: { incidentId: string;
         <VersionPicker label="Version A" onChange={(value) => pick('left', value)} revisions={revisions} taken={right} value={left} />
         <VersionPicker label="Version B" onChange={(value) => pick('right', value)} revisions={revisions} taken={left} value={right} />
       </div>
+      {cameraNames.length > 1 && (
+        <div className="mt-3 grid max-w-2xl gap-3 sm:grid-cols-2" data-testid="compare-camera">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold" htmlFor="compare-camera">
+              Camera
+            </Label>
+            <Select onValueChange={(value) => pick('camera', value)} value={camera || undefined}>
+              <SelectTrigger className="w-full bg-white" id="compare-camera">
+                <SelectValue placeholder="First camera of each version" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {cameraNames.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
       {!hasBoth && (
         <Card className="mt-8 rounded-3xl border border-ink/10 bg-white p-6" data-testid="compare-empty">
           <h2 className="text-lg font-semibold">Choose two versions to compare</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {revisions !== null && revisions.length < 2
-              ? 'This video has only one version, so there is nothing to compare yet.'
+              ? 'This incident has only one version, so there is nothing to compare yet.'
               : 'Pick a Version A and a Version B above to see them side by side.'}
           </p>
         </Card>
@@ -100,9 +149,9 @@ export function RunComparison({ incidentId, left, right }: { incidentId: string;
       )}
       {hasBoth && !error && (
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
-          {reports.map((report, index) =>
-            report ? (
-              <RunCard index={index} key={report.revisionId} report={report} />
+          {sides.map((side, index) =>
+            side ? (
+              <RunCard index={index} key={'view' in side ? side.view.revision.revisionId : `problem-${index}`} side={side} />
             ) : (
               <Card className="space-y-4 rounded-3xl border border-ink/10 bg-white p-6" key={index === 0 ? 'loading-a' : 'loading-b'}>
                 <div className="flex items-center justify-between">
@@ -138,7 +187,7 @@ function VersionPicker({
   value: string;
   /** The version already chosen on the other side: comparing a version with itself shows nothing. */
   taken: string;
-  revisions: RevisionSummary[] | null;
+  revisions: VersionRow[] | null;
   onChange: (value: string) => void;
 }) {
   const id = `compare-${label.replace(/\s/g, '-').toLowerCase()}`;
@@ -163,22 +212,49 @@ function VersionPicker({
   );
 }
 
-function RunCard({ report, index }: { report: ReportView; index: number }) {
-  const { incident, entities, instruments, assets } = report.structured;
-  const model = report.modelOutput;
-  return (
-    <Card className="rounded-3xl border border-ink/10 bg-white p-6 shadow-xs">
+function RunCard({ side, index }: { side: NonNullable<Side>; index: number }) {
+  if ('problem' in side) {
+    return (
+      <Card className="rounded-3xl border border-ink/10 bg-white p-6 shadow-xs" data-testid="compare-card">
+        <Badge className="border-moss/20 font-mono text-xs uppercase tracking-wider text-moss" variant="outline">
+          {index === 0 ? 'Version A' : 'Version B'}
+        </Badge>
+        <p className="mt-3 text-sm text-muted-foreground">{side.problem}</p>
+      </Card>
+    );
+  }
+  const { view } = side;
+  const { report, revision, overview } = view;
+  const head = (
+    <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Badge className="border-moss/20 font-mono text-xs uppercase tracking-wider text-moss" variant="outline">
           {index === 0 ? 'Version A' : 'Version B'}
         </Badge>
         <p className="font-mono text-xs text-ink-caption">
-          v{report.revision.revisionNo} {report.revision.kind === 'human' ? `human (${report.revision.createdBy ?? 'unknown'})` : 'AI'} ·{' '}
-          {formatTimestamp(report.revision.createdAt, '')}
+          v{revision.revisionNo} {revision.kind === 'human' ? `human (${revision.createdBy ?? 'unknown'})` : 'AI'} ·{' '}
+          {formatTimestamp(revision.createdAt, '')}
         </p>
       </div>
-      <h2 className="mt-3 text-2xl font-semibold">{reportHeading(report)}</h2>
+      <CoverageNote className="mt-3" coverage={view.coverage} />
+      <h2 className="mt-3 text-2xl font-semibold">{overview.title || (report ? reportHeading(report) : 'Incident report')}</h2>
+    </>
+  );
+  if (!report) {
+    return (
+      <Card className="rounded-3xl border border-ink/10 bg-white p-6 shadow-xs" data-testid="compare-card">
+        {head}
+        <p className="mt-3 text-sm text-muted-foreground">No camera of this version can be shown.</p>
+      </Card>
+    );
+  }
+  const { incident, entities, instruments, assets } = report.structured;
+  const model = report.modelOutput;
+  return (
+    <Card className="rounded-3xl border border-ink/10 bg-white p-6 shadow-xs" data-testid="compare-card">
+      {head}
       <p className="mt-1 text-xs text-ink-caption">
+        {view.camera ? `${view.camera} · ` : ''}
         {report.run.model} · {report.run.promptVersion || 'legacy prompt'}
       </p>
       <dl className="mt-5 grid grid-cols-2 gap-3">
