@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Get report: one revision's view for the report page, with its video and
-// evidence images signed for the browser.
+// Get report: one revision of an incident for the report page. It carries the
+// overview, the coverage verdict, the cameras and the chosen camera's report
+// (in the shape the report panes read) with its video and evidence images
+// signed for the browser.
 
-import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
+import { cameraReport, firstValidCamera } from '@/modules/reports/domain/envelope';
+import type { IncidentId, IncidentReportRepository } from '@/modules/reports/domain/IncidentReportRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
-import { toReportView } from '@/modules/reports/application/report-view';
-import type { SignStorageKey } from '@/modules/reports/application/types';
+import { coverageView, toCameraReportView } from '@/modules/reports/application/report-view';
+import type { IncidentReportView, SignStorageKey } from '@/modules/reports/application/types';
+import { StoreRejection } from '@/modules/shared/domain/common';
 
 /** Signs each item's image so the browser can show it; an image that cannot be signed is shown as missing. */
 async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<ReportView> {
@@ -25,15 +29,54 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
   return view;
 }
 
-/** One revision's report view (revisionId null: the official revision, else the newest); null when the video or revision is missing. */
+/**
+ * One revision of the incident (revisionId null: the official revision, else the newest) and one of its cameras
+ * (camera null: the first contract-valid camera still in the incident, else the first valid one). Null when the
+ * incident or revision is missing. Throws StoreRejection 'not-found' for a camera the revision does not hold.
+ * A camera whose video was removed shows its report without a player; one whose report is not contract-valid
+ * is listed but never shown.
+ */
 export async function getReport(
-  incidents: IncidentRepository,
-  videoId: string,
+  incidentReports: IncidentReportRepository,
+  incidentId: IncidentId,
   revisionId: number | null,
+  camera: string | null,
   sign: SignStorageKey,
-): Promise<ReportView | null> {
-  const record = await incidents.getRevision(videoId, revisionId);
+): Promise<IncidentReportView | null> {
+  const incident = await incidentReports.getIncident(incidentId);
+  if (!incident) return null;
+  const record = await incidentReports.getRevision(incidentId, revisionId);
   if (!record) return null;
-  if (!record.video.storageKey) throw new Error('The report has no linked R2 video');
-  return withImageUrls(toReportView(record, await sign(record.video.storageKey)), sign);
+
+  const { envelope } = record;
+  const current = new Set(incident.videos.map((video) => video.videoId));
+  const cameras = envelope.cameras.map((entry) => ({
+    video: entry.video,
+    current: current.has(entry.video),
+    valid: cameraReport(envelope, entry.video) !== null,
+  }));
+  let chosen: string | null;
+  if (camera !== null) {
+    if (!cameras.some((entry) => entry.video === camera)) throw new StoreRejection('not-found', `The revision has no camera for ${camera}`);
+    chosen = cameraReport(envelope, camera) === null ? null : camera;
+  } else chosen = firstValidCamera(envelope, [...current]) ?? firstValidCamera(envelope);
+
+  let report: ReportView | null = null;
+  const entry = envelope.cameras.find((candidate) => candidate.video === chosen);
+  if (entry) {
+    const key = incident.videos.find((video) => video.videoId === entry.video)?.storageKey;
+    const playbackUrl = key ? await sign(key) : '';
+    report = await withImageUrls(toCameraReportView(record, entry, incident, playbackUrl), sign);
+  }
+  return {
+    incidentId,
+    revision: record.revision,
+    overview: envelope.overview,
+    coverage: coverageView(record.revision, incident),
+    cameras,
+    camera: camera ?? entry?.video ?? null,
+    report,
+    officialRevisionId: incident.officialRevisionId,
+    officialSince: incident.officialSince,
+  };
 }

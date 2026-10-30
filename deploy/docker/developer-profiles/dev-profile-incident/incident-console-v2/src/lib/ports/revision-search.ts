@@ -18,6 +18,8 @@ export interface RevisionSearchRequest {
 export interface RevisionSearchHit {
   revisionId: number;
   videoId: string;
+  /** The hit's incident, once the agent answers by incident; null from an agent that does not. */
+  incidentId?: number | null;
   revisionNo: number;
   kind: 'ai' | 'human';
   modelRunId: string | null;

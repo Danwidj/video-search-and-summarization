@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Characterisation test for GET /api/reports' response, written against the
-// pre-refactor route: list_incident_report_summaries' result, in the shape its
-// SQL builds (supabase/functions-final.sql), reaches
-// the browser unchanged apart from the signed thumbnail of an R2 video.
+// GET /api/reports' response: one entry per incident, as list_incident_report_summaries returns it, reaches the
+// browser with the signed screenshot of the incident's first video added.
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
-import { join } from 'node:path';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
@@ -33,7 +29,44 @@ mock.module('@aws-sdk/s3-request-presigner', {
 
 const { GET } = await import('../src/app/api/reports/route.ts');
 
-const summaries = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'report-summaries-rpc.json'), 'utf8'));
+const row = (incidentId, overrides = {}) => ({
+  incidentId,
+  revisionId: incidentId * 10,
+  revisionNo: 2,
+  modelRunId: `m-run-${incidentId}`,
+  kind: 'human',
+  createdBy: 'Lead',
+  note: null,
+  title: `Incident ${incidentId}`,
+  incident_type: 'assault',
+  description: 'A person brandishes a blade at another person.',
+  severity: 4,
+  confidence: 0.9,
+  generatedAt: '2026-09-29T23:10:00.123',
+  uploadedAt: '2026-09-29T23:00:00',
+  model: 'qwen/qwen3-vl-8b-instruct',
+  outcome: 'valid_first_pass',
+  isOfficial: true,
+  officialSince: '2026-09-30T01:00:00.5',
+  versionCount: 2,
+  videoCount: 2,
+  firstVideoName: `assault-${incidentId}.mp4`,
+  firstVideoKey: `uploads/sensor-1/assault-${incidentId}.mp4`,
+  thumbnail: null,
+  sensorId: 'sensor-1',
+  coverage: [`assault-${incidentId}.mp4`],
+  missingVideos: ['second.mp4'],
+  removedVideos: [],
+  ...overrides,
+});
+const rpc = {
+  reports: [row(1), row(2, { firstVideoKey: null, firstVideoName: null }), row(3, { firstVideoKey: 'not a valid key/../' })],
+  totalItems: 13,
+  incidentTypes: ['assault', 'road accident'],
+};
+// The mapped entry of an RPC row: the RPC's incident_type is the entry's incidentType.
+const entry = ({ incident_type, ...rest }) => ({ ...rest, incidentType: incident_type });
+const summaries = { reports: rpc.reports.map(entry), incidentTypes: rpc.incidentTypes };
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
@@ -87,7 +120,7 @@ const DEFAULT_ARGS = {
 };
 
 test('every summary field reaches the browser as the RPC returns it, plus a signed thumbnail for an R2 video', async () => {
-  const bodies = serve(summaries);
+  const bodies = serve(rpc);
   const response = await GET(new Request('http://localhost/api/reports?page=3&timezone=Asia%2FSingapore'));
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
@@ -96,7 +129,7 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
         ...summaries.reports[0],
         thumbnailUrl: 'https://signed.r2.test/thumbnails/uploads/sensor-1/assault-1.mp4.webp',
       },
-      // The evidence images (thumbnail keys) are never signed for the card (MVP1 parity, known issue 4).
+      // An incident without a usable first video has no screenshot.
       summaries.reports[1],
       summaries.reports[2],
     ],
@@ -107,7 +140,7 @@ test('every summary field reaches the browser as the RPC returns it, plus a sign
 });
 
 test('the full export (all=true) asks for up to 1000 reports and signs no thumbnails', async () => {
-  const bodies = serve(summaries);
+  const bodies = serve(rpc);
   const response = await GET(
     new Request('http://localhost/api/reports?all=true&page=0&search=%20blade%20&kind=human&type=all&severity=all&sort=oldest'),
   );
@@ -123,14 +156,14 @@ test('the full export (all=true) asks for up to 1000 reports and signs no thumbn
 
 test('a thumbnail that cannot be signed is left out and its report is still listed', async () => {
   delete process.env.R2_BUCKET;
-  serve(summaries);
+  serve(rpc);
   const response = await GET(new Request('http://localhost/api/reports'));
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).reports, summaries.reports);
 });
 
 test('an unknown revision kind is a 400 and nothing is asked of the database', async () => {
-  const bodies = serve(summaries);
+  const bodies = serve(rpc);
   const response = await GET(new Request('http://localhost/api/reports?kind=verified'));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'Invalid revision kind' });
