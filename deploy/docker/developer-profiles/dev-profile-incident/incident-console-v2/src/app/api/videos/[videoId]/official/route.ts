@@ -4,26 +4,33 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getDbAdapters } from '@/lib/container';
-import { setOfficialRevision } from '@/modules/reports/application/set-official-revision';
-import { AgentUnreachableError, fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
+import { parseIncidentId } from '@/modules/reports/domain/incident-id';
+import { clearIncidentOfficialRevision, setIncidentOfficialRevision } from '@/modules/reports/application/set-official-revision/incident';
+import { AgentUnreachableError, fetchEvidenceItemEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
 import { getServiceConfiguration } from '@/lib/env';
 import { errorResponse, rejectionResponse } from '@/lib/http';
 
-// Marks one revision of the incident official, or clears it. Only a reviewer
-// action does either; analysis and saving never do. Marking rebuilds the
-// incident's evidence_crops from the revision, with the agent's embeddings;
-// clearing removes them. There is no record of who or when.
+// Marks one revision of the incident official, or clears it. The path segment is the incident id (the folder keeps
+// its old name so the client URL is unchanged). Only a reviewer action does either; analysis and saving never do.
+// Marking rebuilds the incident's evidence_crops from the revision, with the agent's embeddings; clearing rebuilds
+// them from the newest revision. There is no record of who or when.
 
 const selectSchema = z.object({ revisionId: z.number().int().positive() }).strict();
 
+const badId = () => NextResponse.json({ error: 'The incident id must be a positive integer' }, { status: 400 });
+
 export async function PUT(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
-    const { videoId: incidentId } = await context.params;
+    const incidentId = parseIncidentId((await context.params).videoId);
+    if (incidentId === null) return badId();
     const parsed = selectSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'revisionId is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), incidentId, parsed.data.revisionId, (revisionId) =>
-      fetchEvidenceEmbeddings(config, revisionId),
+    const result = await setIncidentOfficialRevision(
+      getDbAdapters(config).incidentReports,
+      incidentId,
+      parsed.data.revisionId,
+      (evidence) => fetchEvidenceItemEmbeddings(config, evidence),
     );
     return NextResponse.json({ official: result });
   } catch (error) {
@@ -39,10 +46,11 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
 
 export async function DELETE(_request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
-    const { videoId: incidentId } = await context.params;
+    const incidentId = parseIncidentId((await context.params).videoId);
+    if (incidentId === null) return badId();
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), incidentId, null, (revisionId) =>
-      fetchEvidenceEmbeddings(config, revisionId),
+    const result = await clearIncidentOfficialRevision(getDbAdapters(config).incidentReports, incidentId, (evidence) =>
+      fetchEvidenceItemEmbeddings(config, evidence),
     );
     return NextResponse.json({ official: result });
   } catch (error) {
