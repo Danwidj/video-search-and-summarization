@@ -470,7 +470,15 @@ async def collect_evidence(
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
         reason = f"evidence cropping failed: {type(exc).__name__}: {exc}"
         return [
-            {**item, "bounding_box": None, "image": None, "image_gap": reason}
+            {
+                **item,
+                "bounding_box": None,
+                "image": None,
+                "frame": None,
+                "located": None,
+                "box_seconds": None,
+                "image_gap": reason,
+            }
             for item in crop_evidence.evidence_items(report)
         ]
 
@@ -636,7 +644,15 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
 
         if tool_input.skip_crops:
             evidence = [
-                {**item, "bounding_box": None, "image": None, "image_gap": "evidence cropping skipped (skip_crops)"}
+                {
+                    **item,
+                    "bounding_box": None,
+                    "image": None,
+                    "frame": None,
+                    "located": None,
+                    "box_seconds": None,
+                    "image_gap": "evidence cropping skipped (skip_crops)",
+                }
                 for item in crop_evidence.evidence_items(report)
             ]
         elif experiment is not None:

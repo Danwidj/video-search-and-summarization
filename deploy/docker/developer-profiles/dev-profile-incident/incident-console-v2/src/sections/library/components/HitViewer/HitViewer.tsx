@@ -10,6 +10,7 @@ import { RelationshipLine } from '@/sections/library/components/HitCard';
 import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { hitDisplay } from '@/lib/evidence/evidence-view';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -33,13 +34,13 @@ export function HitViewer({
   useEffect(() => setSelectedKey(hitKey(hit)), [hit]);
 
   // The frame is cut from the video on demand; when it cannot be (no ffmpeg, no video), the enlarged crop stands in.
-  const frameSrc = `/api/reports/${encodeURIComponent(hit.incident.videoId)}/frame?t=${hit.item.timestampSeconds}`;
+  const frameSrc = hitDisplay(hit.item, hit.incident.videoId).frameSrc;
   const [frameReady, setFrameReady] = useState(false);
   useEffect(() => {
     setFrameReady(false);
     const probe = new Image();
     probe.onload = () => setFrameReady(true);
-    probe.src = frameSrc;
+    if (frameSrc) probe.src = frameSrc;
     return () => {
       probe.onload = null;
     };
@@ -48,6 +49,7 @@ export function HitViewer({
   const inFrame = hitsInFrame(hit, hits);
   const selected = inFrame.find((other) => hitKey(other) === selectedKey) ?? hit;
   const { item } = selected;
+  const shown = hitDisplay(item, selected.incident.videoId);
   const relationship = relationshipOf(selected, hits);
   const version = versions[selected.incident.videoId];
 
@@ -71,13 +73,13 @@ export function HitViewer({
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
           <div className="min-w-0 min-h-0">
             <div className="flex min-w-0 min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black">
-              {frameReady ? (
+              {frameReady && frameSrc ? (
                 <FrameViewer
                   boxes={inFrame.map((other) => ({
                     id: hitKey(other),
                     label: other.item.name || other.item.itemId,
                     kind: other.item.itemType,
-                    box: other.item.boundingBox,
+                    box: hitDisplay(other.item, other.incident.videoId).box,
                   }))}
                   onSelect={setSelectedKey}
                   selectedId={hitKey(selected)}
@@ -86,12 +88,13 @@ export function HitViewer({
                 />
               ) : (
                 <EvidenceFrame
-                  aspect={4 / 3}
-                  box={item.boundingBox}
+                  aspect={16 / 9}
+                  box={shown.box}
                   kind={item.itemType}
                   label={item.name || item.itemId}
+                  notLocated={shown.notLocated}
                   seconds={item.timestampSeconds}
-                  src={item.cropImageUrl}
+                  src={shown.src}
                 />
               )}
             </div>

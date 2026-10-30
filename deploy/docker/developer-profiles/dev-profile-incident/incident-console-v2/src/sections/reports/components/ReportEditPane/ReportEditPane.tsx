@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { FramePick } from '@/lib/evidence/frame-picker';
 import {
   deleteDraftItem,
@@ -308,6 +309,7 @@ export function ReportEditPane({
                 {unit.entity && (
                   <PairRowView
                     aRevisionNo={aRevisionNo}
+                    videoId={videoId}
                     draft={draft}
                     draftHolder={draftHolder}
                     holderOptions={holderOptions}
@@ -328,6 +330,7 @@ export function ReportEditPane({
                     <div className="mb-1 hidden font-mono text-[10px] uppercase tracking-wider text-ink/35 sm:block">holds ↳</div>
                     <PairRowView
                       aRevisionNo={aRevisionNo}
+                      videoId={videoId}
                       draft={draft}
                       draftHolder={draftHolder}
                       holderOptions={holderOptions}
@@ -385,6 +388,7 @@ type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => 
 
 function PairRowView({
   aRevisionNo,
+  videoId,
   draft,
   row,
   inherited,
@@ -400,6 +404,7 @@ function PairRowView({
   patchAsset,
 }: {
   aRevisionNo: number;
+  videoId: string;
   draft: EditDraft;
   row: PairRow;
   inherited: string;
@@ -424,7 +429,7 @@ function PairRowView({
       <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-ink-caption">{row.kind}</span>
       <div className="min-w-0" data-side="A">
         {row.a ? (
-          <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} />
+          <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} videoId={videoId} />
         ) : (
           <div
             className="flex items-center gap-2 rounded-2xl border border-dashed border-moss/40 bg-moss/5 p-4 text-xs font-semibold text-moss"
@@ -440,6 +445,8 @@ function PairRowView({
         {row.b ? (
           <EditCard
             draftHolder={draftHolder}
+            videoId={videoId}
+            saved={row.a?.evidence ?? null}
             holderOptions={holderOptions}
             item={row.b}
             onRemove={() => onRemove(row)}
@@ -482,14 +489,25 @@ function ReadCard({
   inherited,
   savedHolder,
   onSeek,
+  videoId,
 }: {
   item: NonNullable<PairRow['a']>;
   inherited: string;
   savedHolder: (instrument: PairRow['a']) => string;
   onSeek: (seconds: number) => void;
+  videoId: string;
 }) {
+  const shown = evidenceDisplay(item.evidence, videoId);
   return (
-    <CardFrame imageUrl={item.evidence?.imageUrl ?? null} name={savedItemName(item)} onSeek={onSeek} seconds={item.timestampSeconds}>
+    <CardFrame
+      box={shown.box}
+      frameSrc={shown.frameSrc}
+      imageUrl={shown.src}
+      name={savedItemName(item)}
+      notLocated={shown.notLocated}
+      onSeek={onSeek}
+      seconds={item.timestampSeconds}
+    >
       <p className="text-sm font-semibold">{savedItemName(item)}</p>
       <p className="text-ink/60">{item.description}</p>
       {isSavedInstrument(item) && (
@@ -518,6 +536,8 @@ function ReadCard({
 
 function EditCard({
   item,
+  videoId,
+  saved,
   holderOptions,
   draftHolder,
   onRemove,
@@ -529,6 +549,9 @@ function EditCard({
   patchAsset,
 }: {
   item: NonNullable<PairRow['b']>;
+  videoId: string;
+  /** The saved item's evidence, whose frame and box the draft keeps showing until the reviewer replaces the image. */
+  saved: NonNullable<PairRow['a']>['evidence'] | null;
   holderOptions: Array<{ key: string; label: string }>;
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   onRemove: () => void;
@@ -539,8 +562,20 @@ function EditCard({
   patchInstrument: PatchInstrument;
   patchAsset: PatchAsset;
 }) {
+  // A frame the reviewer picked is shown as the frame and the box they drew (the crop is only what Save stores for search);
+  // until then the draft shows the saved item's frame and box, as View does.
+  const picked = item.imageBox && item.imageTimestampSeconds !== null;
+  const inherited = !picked && saved && saved.image === item.image ? evidenceDisplay(saved, videoId) : null;
   return (
-    <CardFrame imageUrl={item.imageUrl} name={draftItemName(item)} onSeek={onSeek} seconds={item.timestampSeconds}>
+    <CardFrame
+      box={picked ? item.imageBox : (inherited?.box ?? null)}
+      frameSrc={picked ? videoFrameUrl(videoId, item.imageTimestampSeconds ?? 0) : (inherited?.frameSrc ?? null)}
+      imageUrl={item.imageUrl}
+      name={draftItemName(item)}
+      notLocated={inherited?.notLocated ?? false}
+      onSeek={onSeek}
+      seconds={item.timestampSeconds}
+    >
       {isDraftEntity(item) ? (
         <>
           <Input
@@ -670,14 +705,21 @@ function EditCard({
 }
 
 function CardFrame({
+  box = null,
+  frameSrc = null,
   imageUrl,
   name,
+  notLocated = false,
   seconds,
   onSeek,
   children,
 }: {
+  box?: readonly number[] | null;
+  /** The whole video frame to draw the box on; the image is shown whole when there is none. */
+  frameSrc?: string | null;
   imageUrl: string | null;
   name: string;
+  notLocated?: boolean;
   seconds: number | null;
   onSeek: (seconds: number) => void;
   children: React.ReactNode;
@@ -691,7 +733,17 @@ function CardFrame({
         onClick={() => seconds !== null && onSeek(seconds)}
         type="button"
       >
-        <EvidenceFrame aspect={2} className="rounded-none!" label={name || 'Evidence'} seconds={seconds} src={imageUrl} />
+        <EvidenceFrame
+          aspect={16 / 9}
+          box={box}
+          className="rounded-none!"
+          frameSrc={frameSrc}
+          fullFrame
+          label={name || 'Evidence'}
+          notLocated={notLocated}
+          seconds={seconds}
+          src={imageUrl}
+        />
       </button>
       <div className="space-y-1 p-3">{children}</div>
     </Card>

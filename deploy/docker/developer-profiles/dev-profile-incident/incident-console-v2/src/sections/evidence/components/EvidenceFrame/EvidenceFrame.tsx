@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { boxRegion, cropImageStyle, cropRegion, evidenceFrameState } from '@/lib/evidence/frame-geometry';
+import { boxRegion, boxStyle, containFrame, cropImageStyle, cropRegion, evidenceFrameState } from '@/lib/evidence/frame-geometry';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
@@ -31,10 +31,14 @@ export interface EvidenceFrameProps {
   aspect?: number;
   /** Cut the tile from frameSrc around the box and draw the box on it; the stored image stands in when the frame cannot load. */
   drawBox?: boolean;
+  /** Show the whole frame, none of it cut, with the box drawn on it (no box when the object was not located). */
+  fullFrame?: boolean;
+  /** The detector did not find the object: the frame is shown as it is, with a note instead of a box. */
+  notLocated?: boolean;
   className?: string;
 }
 
-/** One evidence tile: the stored image, else a crop of the frame, else a pending or missing placeholder. */
+/** One evidence tile: the whole frame with its box, else the stored image whole, else a crop of the frame, else a pending or missing placeholder. */
 export function EvidenceFrame({
   src,
   frameSrc,
@@ -47,6 +51,8 @@ export function EvidenceFrame({
   selected,
   aspect = 4 / 3,
   drawBox = false,
+  fullFrame = false,
+  notLocated = false,
   className = '',
 }: EvidenceFrameProps) {
   const [failed, setFailed] = useState(false);
@@ -58,19 +64,25 @@ export function EvidenceFrame({
   // A drawn-box tile has a size its container sets, so crop to the aspect it actually has.
   useEffect(() => {
     const tile = ref.current;
-    if (!drawBox || !tile) return;
+    if (!(drawBox || fullFrame) || !tile) return;
     const measure = () => tile.clientWidth && tile.clientHeight && setTileAspect(tile.clientWidth / tile.clientHeight);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(tile);
     return () => observer.disconnect();
-  }, [drawBox]);
+  }, [drawBox, fullFrame]);
   const framed = drawBox && !!frameSrc && !!boxRegion(box) && !frameFailed;
-  const state = framed ? 'frame-crop' : evidenceFrameState({ src, frameSrc: drawBox ? null : frameSrc, box, pending, failed });
+  const whole = fullFrame && !!frameSrc && !frameFailed;
+  const state = whole
+    ? 'full-frame'
+    : framed
+      ? 'frame-crop'
+      : evidenceFrameState({ src, frameSrc: drawBox || fullFrame ? null : frameSrc, box, pending, failed });
+  const fit = containFrame(loadedAspect ?? frameAspect, tileAspect);
   const region =
     state === 'frame-crop' ? cropRegion(box, framed && loadedAspect ? loadedAspect : frameAspect, framed ? tileAspect : aspect) : null;
   const boxed = framed && region ? boxRegion(box) : null;
-  const onError = () => (framed ? setFrameFailed(true) : setFailed(true));
+  const onError = () => (framed || whole ? setFrameFailed(true) : setFailed(true));
   const pct = (n: number) => `${+(n * 100).toFixed(3)}%`;
   return (
     <div
@@ -84,7 +96,7 @@ export function EvidenceFrame({
     >
       {state === 'image' && (
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
-        <img alt="" className="h-full w-full object-cover" onError={onError} src={src ?? undefined} />
+        <img alt="" className="h-full w-full object-contain" onError={onError} src={src ?? undefined} />
       )}
       {state === 'frame-crop' && region && (
         // biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server
@@ -99,6 +111,36 @@ export function EvidenceFrame({
           src={frameSrc ?? undefined}
           style={cropImageStyle(region)}
         />
+      )}
+      {state === 'full-frame' && (
+        <div
+          className="absolute"
+          style={{
+            left: pct((1 - fit.w) / 2),
+            top: pct((1 - fit.h) / 2),
+            width: pct(fit.w),
+            height: pct(fit.h),
+          }}
+        >
+          {/* biome-ignore lint/performance/noImgElement: a presigned R2 URL that next/image would proxy and re-encode through the console server */}
+          <img
+            alt=""
+            className="h-full w-full"
+            onError={onError}
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget;
+              if (naturalWidth && naturalHeight) setLoadedAspect(naturalWidth / naturalHeight);
+            }}
+            src={frameSrc ?? undefined}
+          />
+          {boxStyle(box) && (
+            <span
+              className="pointer-events-none absolute rounded-sm border-2 border-solid border-signal"
+              data-testid="evidence-frame-box"
+              style={boxStyle(box) ?? undefined}
+            />
+          )}
+        </div>
       )}
       {boxed && region && (
         <span
@@ -125,6 +167,15 @@ export function EvidenceFrame({
             {failed ? 'The image failed to load.' : 'No stored image or frame for this item.'}
           </span>
         </div>
+      )}
+      {notLocated && state !== 'pending' && state !== 'missing' && (
+        <Badge
+          variant="outline"
+          className="absolute bottom-1.5 left-1.5 border-transparent bg-black/60 px-1.5 py-0.5 text-[10.5px] text-white backdrop-blur-xs"
+          data-testid="evidence-not-located"
+        >
+          Object not located
+        </Badge>
       )}
       {kind && (
         <Badge

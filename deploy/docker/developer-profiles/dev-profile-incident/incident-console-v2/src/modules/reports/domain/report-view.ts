@@ -27,10 +27,22 @@ export interface StructuredIncident {
   confidenceScore: number | null;
 }
 
-/** An item's evidence in this revision: the image key, its signed URL (null when none or unsigned) and crop details. */
+/**
+ * An item's evidence in this revision: the whole video frame (key and signed URL) the box is drawn on, the crop (key and signed
+ * URL; what evidence search embeds), and the box details. Items analysed before frames were stored have no frame.
+ */
 export interface ItemEvidence {
   image: string | null;
   imageUrl: string | null;
+  /** R2 key of the whole frame at native size; null for an item analysed before frames were stored. */
+  frame: string | null;
+  frameUrl: string | null;
+  /** False when the detector found nothing (the frame has no box); null when the entry predates the flag. */
+  located: boolean | null;
+  /** The second the frame was read at (a retry second when the requested one found nothing); null when not recorded. */
+  boxSeconds: number | null;
+  /** Why the item has no image or box, when the agent said. */
+  imageGap: string | null;
   boundingBox: number[] | null;
   timestampSeconds: number | null;
   /** True for an image a reviewer uploaded (no bounding box in the video frame). */

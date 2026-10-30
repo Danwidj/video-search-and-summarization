@@ -302,6 +302,11 @@ export function draftToStructured(draft: EditDraft): Structured {
   const evidence = (image: string | null, imageUrl: string | null, seconds: number | null) => ({
     image,
     imageUrl,
+    frame: null,
+    frameUrl: null,
+    located: null,
+    boxSeconds: null,
+    imageGap: null,
     boundingBox: null,
     timestampSeconds: seconds,
     uploaded: false,

@@ -69,16 +69,28 @@ export function cropImageStyle(region: FrameRegion): { width: string; height: st
   return { width: pct(1 / region.w), height: pct(1 / region.h), left: pct(-region.x / region.w), top: pct(-region.y / region.h) };
 }
 
-export type EvidenceFrameState = 'image' | 'frame-crop' | 'pending' | 'missing';
+/**
+ * The part of a tile a whole frame fills when it is shown without cutting any of it (object-contain): the frame's width and
+ * height as fractions of the tile, so that a box drawn in percentages of the frame lines up on the picture.
+ */
+export function containFrame(frameAspect: number, tileAspect: number): { w: number; h: number } {
+  if (!(frameAspect > 0) || !(tileAspect > 0)) return { w: 1, h: 1 };
+  return frameAspect >= tileAspect ? { w: 1, h: tileAspect / frameAspect } : { w: frameAspect / tileAspect, h: 1 };
+}
 
-/** What an evidence tile can show: its stored image first, else a crop of the frame, else a placeholder. */
+export type EvidenceFrameState = 'image' | 'frame-crop' | 'full-frame' | 'pending' | 'missing';
+
+/** What an evidence tile can show: the whole frame when asked for, else its stored image, else a crop of the frame, else a placeholder. */
 export function evidenceFrameState(input: {
   src?: string | null;
   frameSrc?: string | null;
   box?: readonly number[] | null;
   pending?: boolean;
   failed?: boolean;
+  /** Show the whole frame (with the box when there is one) instead of cutting it. */
+  fullFrame?: boolean;
 }): EvidenceFrameState {
+  if (input.fullFrame && input.frameSrc && !input.failed) return 'full-frame';
   if (input.src && !input.failed) return 'image';
   if (input.frameSrc && boxRegion(input.box) && !input.failed) return 'frame-crop';
   return input.pending ? 'pending' : 'missing';
