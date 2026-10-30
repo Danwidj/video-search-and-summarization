@@ -2,7 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
-### 2026-10-29: Stage 3 design: C1-C4 on the 55 test clips, 1 repeat, run once (prepared, not approved to run)
+### 2026-10-30: Stage 3 executed once under the frozen design, by an automated supervisor
+- **Decision:** the owner approved Stage 3 execution on 2026-10-29 under the frozen plan and caps, with end-to-end automation. `eval_stage3.py supervise` (`eval/stage3_automation.py`) ran it: preflight before every session, checkpointed 4-hour sessions, a progress log, then recovery-v1, both report views and an integrity audit. The 220 video-runs ran once (stage `20261029T124321Z-0953f2d3`); the audit passed.
+- **Outcome:** no ΔI comparison excludes zero. V1 minus base is +0.019 [-0.015, +0.055] in VSS and -0.011 [-0.045, +0.024] direct; VSS minus direct is -0.007 [-0.036, +0.024] (base) and +0.023 [-0.003, +0.050] (V1). Usage: 247 + 12 recovery P1 attempts, 2.01 M tokens, 865 judge calls, far within the caps. One attempt discarded after a judge `ReadTimeout` is not in the cost log and is disclosed ([results](../eval/docs/experiments/stage3-results.md)).
+- **Why:** unattended execution needed resume, integrity checks and fixed stop rules so that no run is duplicated and nothing frozen changes; the supervisor only applies the approved mechanical steps.
+- **Not done in response to results:** no prompt revision, rerun, new experiment or methodology change. Adopting V1 in production would be a separate decision with a contract bump.
+- **Alternatives rejected:** a manual run (laptop closures needed checkpointed stops and resumes); rerunning to narrow the intervals (run-once design).
+- **Links:** [Stage 3 results](../eval/docs/experiments/stage3-results.md), [plan](../eval/docs/experiments/stage3-plan.md).
+
+### 2026-10-29: Stage 3 design: C1-C4 on the 55 test clips, 1 repeat, run once (approved 2026-10-29; executed, see above)
 - **Decision (owner's design, 2026-10-29):**
   - **Configurations:** C1 direct + `p1-v4-base`, C2 VSS + base, C3 VSS + V1, C4 direct + V1.
   - **Runs:** the 55 `split-v2` test clips, **1 repeat** (this replaces D10's 2 for Stage 3), interleaved by the D10 order, so 220 video-runs.
@@ -11,7 +19,7 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - **Preflight:** `eval_stage3.py preflight` refuses any drift and checks C1/C2 and C3/C4 request parity. The only difference is `stream: false`, which the agent sends.
   - **Run once:** each config is `final` and `frozen_baseline`.
   - **Caps:** 660 P1 attempts, 23.1 M reserved tokens and 6,720 judge calls, plus recovery at most 180 / 6.3 M / 2,740.
-- **Status:** configs, manifest, preflight and report tooling are committed. **No Stage 3 request has been sent; execution needs the owner's approval** ([plan](../eval/docs/experiments/stage3-plan.md)).
+- **Status:** approved by the owner on 2026-10-29 and executed 2026-10-29/30 ([plan](../eval/docs/experiments/stage3-plan.md), [results](../eval/docs/experiments/stage3-results.md)).
 - **Why:**
   - All four configurations run on the same clips under the same conditions, so every comparison is paired by video. The prompt effect is measured in both arms, and the VSS-minus-direct effect at each prompt.
   - One repeat keeps the test run single and within one or two sessions.

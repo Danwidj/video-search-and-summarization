@@ -54,7 +54,7 @@ Results are written to `eval_data/results/experiments/<id>/<UTC time>/` as `resu
 | `direct-vlm-baseline` | 1 | C1 on dev, frozen after its first complete run |
 | `vss-baseline` | 1 | C2 on dev, local agent per D14 (b) |
 
-`videos` (optional) narrows a config to a subset of its split half and refuses clips outside it. `repeats` and budgets follow plan D10/D11 and are **placeholders until those decisions and each stage's budget are approved**. C3/C4 configs are written only after the Stage 2 selection is recorded in decisions.md. Stage 3 configs: `configs/s3-*.json` (final, test, 1 repeat, run once), pinned by `stage3/manifest.json`; check them with `scripts/eval_stage3.py preflight` and report with `scripts/eval_stage3.py report` ([plan](../docs/experiments/stage3-plan.md)).
+`videos` (optional) narrows a config to a subset of its split half and refuses clips outside it. `repeats` and budgets follow plan D10/D11 and are **placeholders until those decisions and each stage's budget are approved**. C3/C4 configs are written only after the Stage 2 selection is recorded in decisions.md. Stage 3 configs: `configs/s3-*.json` (final, test, 1 repeat, run once), pinned by `stage3/manifest.json`; check them with `scripts/eval_stage3.py preflight` and report with `scripts/eval_stage3.py report`; run, recover, report and audit with `scripts/eval_stage3.py supervise` ([plan](../docs/experiments/stage3-plan.md), [results](../docs/experiments/stage3-results.md)). Stage 3 is done and must not be rerun.
 
 ## Retries, recovery and host availability (approved 2026-10-28)
 
