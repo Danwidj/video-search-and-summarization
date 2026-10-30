@@ -257,14 +257,14 @@ export function Library() {
 
       <div className="mt-3">
         <Tabs onValueChange={(val) => chooseTab(val as Tab)} value={tab}>
-          <TabsList className="h-auto w-full justify-start rounded-none border-b border-ink/10 p-0" variant="line">
-            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="incidents">
+          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-none border-b border-ink/10 p-0" variant="line">
+            <TabsTrigger className="h-auto flex-none rounded-none px-3 py-2.5 sm:px-4 font-semibold after:bottom-0" value="incidents">
               Find incidents
             </TabsTrigger>
-            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="evidence">
+            <TabsTrigger className="h-auto flex-none rounded-none px-3 py-2.5 sm:px-4 font-semibold after:bottom-0" value="evidence">
               Find evidence
             </TabsTrigger>
-            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="matches">
+            <TabsTrigger className="h-auto flex-none rounded-none px-3 py-2.5 sm:px-4 font-semibold after:bottom-0" value="matches">
               Matches
               {suggestions.cards.length > 0 && (
                 <Badge
