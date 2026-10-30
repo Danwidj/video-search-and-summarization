@@ -12,16 +12,15 @@ const items = [
   { incidentId: 5, title: '', incidentType: '', videoCount: 0, firstVideoName: null },
 ];
 
-test('the chooser lists every other incident, newest first, with its video names', () => {
+test('the chooser lists every other incident that holds videos, newest first, with its video names', () => {
   const list = mergeCandidates(items, 12);
   assert.deepEqual(
     list.map((entry) => entry.incidentId),
-    [9, 5, 3],
+    [9, 3],
   );
   assert.equal(list[0].label, 'Incident 9 · entry');
   assert.equal(list[0].detail, 'gate-cam.mp4 +1 more · 2 videos');
-  assert.equal(list[1].label, 'Incident 5');
-  assert.equal(list[2].detail, 'loading-bay.mp4 · 1 video');
+  assert.equal(list[1].detail, 'loading-bay.mp4 · 1 video');
 });
 
 test('the merged count adds the moving videos to the target', () => {

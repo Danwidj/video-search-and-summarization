@@ -39,7 +39,7 @@ The Phase 6 UI is merged ([screens](../../.docs/architecture.md#screens-phase-6)
 - **Upload a batch:** on `/` pick or drop several clips. Each file runs Upload and Analyse (two at a time); once all are analysed, Check matches runs for every file, then Build report. A file with a pending suggestion waits ("Awaiting your decision") and the page links to the Matches tab. Each file shows its own bar and error; "Retry this video" resumes at the stage that failed.
 - **Review matches:** the report page shows an amber banner per pending match; the library's **Matches** tab (`/library?tab=matches`) lists them all. Accept merges (the lower incident id is kept) and builds one report covering the merged videos; Reject is remembered and builds the report of each side that has no other pending match. An incident still waiting shows "Waiting for match decision" in the library, and its page offers the suggestion or "Build report now".
 - **Report page** (`/reports/<incidentId>?revision=&camera=`): the overview card, then the camera bar (removed, invalid and not-in-this-version cameras are disabled; Remove video sits at its end; counts and the Remove dialog follow the incident's videos, not the open version), then the usual panes for that camera. **Regenerate** (above the version list) builds a new version from the stored analyses and selects it; **Remove video** offers "Move to its own incident" or "Delete entirely" (only delete for the last video); **Merge into another incident** picks a target and confirms; **Edit from vN** edits the selected camera or the overview.
-- **Library:** one card per incident with a video-count chip; "Delete incident..." names what goes.
+- **Library:** one card per incident with a video-count chip; "Delete incident..." names what goes. An incident with no videos opens a "has no videos" page with the same Delete action and is not offered as a merge target.
 
 ### 1. Upload
 
@@ -97,7 +97,7 @@ There is no verify step and no review status. A report is its list of versions; 
 - **Edit:** `PATCH /api/reports/<incidentId>/edit` with `{parentId, editedBy, note?, camera?, edit?}`, or an overview edit (title, type, severity_level, description, location), writes a new human version. Re-generation copies no edits.
 - **Evidence images:** `POST /api/reports/<incidentId>/evidence-image` (multipart `file`, `itemId`, `video`; JPEG, PNG or WebP, up to 5 MB) uploads to a new key `evidence/<video key>/edit-<n>/<itemId>.jpg` and never overwrites. `GET .../frame?t=<s>&video=<name>` returns a JPEG (needs `ffmpeg`). `POST .../evidence-crop` with `{video, timestampSeconds, region}` returns a crop and writes nothing. `POST .../evidence-sweep` with `{video, dryRun?, minAgeHours?}` removes unreferenced images (dry run by default).
 - **Official:** `PUT`/`DELETE /api/videos/<incidentId>/official` with `{"revisionId"}` (the old path name takes an incident id). Only the incident's own versions are accepted.
-- **Delete:** `DELETE /api/reports/<incidentId>/delete` removes every video's objects, then the rows.
+- **Delete:** `DELETE /api/reports/<incidentId>/delete` removes every video's objects, then the rows, and the videos' unused `model_runs`; an incident with no videos is deleted by its row alone.
 
 ## Verify
 

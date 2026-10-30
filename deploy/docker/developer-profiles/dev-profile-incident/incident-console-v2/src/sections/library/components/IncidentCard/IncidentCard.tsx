@@ -212,7 +212,7 @@ export function IncidentCard({
         </div>
       </Card>
 
-      <DeleteIncidentDialog busy={busy} item={item} onConfirm={onDelete} onOpenChange={setDeleteOpen} open={deleteOpen} />
+      <DeleteIncidentDialog busy={busy} item={item} onConfirm={() => onDelete(item)} onOpenChange={setDeleteOpen} open={deleteOpen} />
     </>
   );
 }

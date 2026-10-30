@@ -84,6 +84,19 @@ export class InMemoryIncidentVideoRepository implements IncidentVideoRepository 
     return { videoId, incidentId: video.incidentId, incidentDeleted, storageKey: video.storageKey, cropImages: [] };
   }
 
+  /** Seeds an incident that holds no videos (a state the app never creates, but older data may hold). */
+  addEmptyIncident(incidentId: number): void {
+    this.incidents.add(incidentId);
+    this.nextIncidentId = Math.max(this.nextIncidentId, incidentId + 1);
+  }
+
+  async deleteEmptyIncident(incidentId: number): Promise<void> {
+    if (!this.incidents.has(incidentId)) throw new StoreRejection('not-found', `Incident not found: ${incidentId}`);
+    if (this.inIncident(incidentId).length > 0)
+      throw new StoreRejection('invalid', `Incident ${incidentId} still has videos; delete them first`);
+    this.incidents.delete(incidentId);
+  }
+
   async moveVideoToNewIncident(videoId: string): Promise<VideoMove> {
     const video = this.videos.get(videoId);
     if (!video) throw new StoreRejection('not-found', `Video not found: ${videoId}`);

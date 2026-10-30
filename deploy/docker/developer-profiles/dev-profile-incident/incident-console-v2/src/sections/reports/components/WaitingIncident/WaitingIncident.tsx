@@ -3,6 +3,7 @@
 
 import Link from 'next/link';
 
+import { EmptyIncident } from '@/sections/reports/components/EmptyIncident';
 import { RegenerateReport } from '@/sections/reports/components/RegenerateReport';
 import { SuggestionBanner } from '@/sections/suggestions/components/SuggestionBanner';
 
@@ -14,8 +15,10 @@ export interface WaitingVideo {
 /**
  * The page of an incident that has videos but no version yet: it is waiting for a match decision or a build. It shows
  * the videos, the pending suggestions to decide (accepting one builds the report) and a way to build the report now.
+ * With no videos at all there is nothing to wait for, so it is the empty incident's page instead.
  */
 export function WaitingIncident({ incidentId, videos, onBuilt }: { incidentId: string; videos: WaitingVideo[]; onBuilt: () => void }) {
+  if (videos.length === 0) return <EmptyIncident incidentId={incidentId} />;
   return (
     <div className="pb-16" data-testid="waiting-incident">
       <div className="overflow-hidden border-y border-border bg-card shadow-panel">

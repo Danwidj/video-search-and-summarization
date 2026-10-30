@@ -260,11 +260,15 @@ There is **no foreign key to `evidence_crops`**: changing the official revision 
 | Delete | What goes with it |
 |---|---|
 | An incident | Its videos, their analyses and crops, its revisions (and the crops and `query_results` that name them), and every suggestion that names it |
-| A video | Its analyses and crops. Its revisions stay and keep the name in `video_names`; `query_results` stay |
+| A video | Its analyses and crops. Its revisions stay and keep the name in `video_names`; `query_results` stay. The console then deletes its `model_runs` rows that no revision or analysis uses (see below) |
 | A revision, directly | Refused by the append-only trigger |
 | A `model_runs` row | Refused while a revision or an analysis references it |
 
-`model_runs` and `queries` rows are never deleted by a cascade.
+`model_runs` and `queries` rows are never deleted by a cascade. The console clears a deleted video's runs itself (`deleteUnusedVideoRuns`, after the `remove_video` RPC, which covers delete-incident, remove-video and the analysis rollback): runs whose notes name exactly that video, and the agent's, which have empty notes and an id starting `<video id>@` (LIKE wildcards in the id are escaped), unless a revision uses them. A failure there is swallowed, since an unused run is harmless. Runs left by earlier deletes are not purged by the app.
+
+**Rejected pairs follow their incidents.** An `incident_match_suggestions` row, a rejected one included, is deleted with either incident (FK cascade). Deleting an incident forgets that it was rejected against another; ids are never reused, and re-uploading a video creates a new incident, so the pair is only lost for a re-upload ([decision](decisions.md#2026-10-30-data-hygiene-empty-incidents-leftover-runs-and-forgotten-rejections)).
+
+**An incident with no videos** (older data; the app never creates one) shows on the library and opens a "has no videos" page with Delete incident. `DELETE /api/reports/<id>/delete` deletes it (`deleteEmptyIncident`), and the merge target list leaves it out.
 
 ---
 

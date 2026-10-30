@@ -58,10 +58,16 @@ export interface IncidentVideoRepository {
   /** The incident's videos by recording time (unknown last), then name. */
   listVideos(incidentId: number): Promise<IncidentVideo[]>;
   /**
-   * Deletes the video with its analyses and crops; the incident's revisions stay as history. The
+   * Deletes the video with its analyses and crops, and its run records that no revision uses; the incident's revisions stay as history. The
    * incident's last video takes the incident with it. Throws StoreRejection: 'not-found'.
    */
   removeVideo(videoId: string): Promise<VideoRemoval>;
+  /**
+   * Deletes an incident that holds no videos, with whatever hangs off it (revisions, suggestions).
+   * Throws StoreRejection: 'not-found' for an incident that does not exist, 'invalid' for one that
+   * still has videos (delete those with removeVideo).
+   */
+  deleteEmptyIncident(incidentId: number): Promise<void>;
   /**
    * Moves the video to a new incident of its own, analyses and crops following it. Throws
    * StoreRejection: 'not-found', or 'invalid' for the incident's last video (delete it instead).

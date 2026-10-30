@@ -2,7 +2,6 @@
 
 // Delete an incident: every video it holds, with its stored objects, and then the incident itself.
 
-import { StoreRejection } from '@/modules/shared/domain/common';
 import type { IncidentId } from '@/modules/reports/domain/IncidentReportRepository';
 import { deleteVideoObjectsAndRow, type RemoveVideoPorts } from '@/modules/reports/application/remove-video';
 
@@ -15,12 +14,16 @@ export interface DeleteIncidentResult {
 /**
  * Deletes each video of the incident like a remove-entirely (objects first, then the row); the last
  * video's removal deletes the incident row, and with it the revisions and crops. A failure throws
- * with the videos not yet reached still in place, so the delete can be repeated. Throws StoreRejection
- * 'not-found' for an incident with no videos.
+ * with the videos not yet reached still in place, so the delete can be repeated. An incident with no
+ * videos has nothing in storage, so only its row goes. Throws StoreRejection 'not-found' for an
+ * incident that does not exist.
  */
 export async function deleteIncident(ports: RemoveVideoPorts, incidentId: IncidentId): Promise<DeleteIncidentResult> {
   const videos = await ports.videos.listVideos(incidentId);
-  if (videos.length === 0) throw new StoreRejection('not-found', `Incident not found: ${incidentId}`);
+  if (videos.length === 0) {
+    await ports.videos.deleteEmptyIncident(incidentId);
+    return { incidentId, deletedVideoIds: [] };
+  }
   const deletedVideoIds: string[] = [];
   for (const { videoId } of videos) {
     await deleteVideoObjectsAndRow(ports, videoId);

@@ -62,6 +62,7 @@ const REVISIONS = [
     ],
   },
   { id: 2, video_id: 'v2', revision_no: 1, kind: 'ai', model_run_id: 'm-other', evidence: [] },
+  { id: 3, video_id: 'v2', revision_no: 2, kind: 'ai', model_run_id: 'v1@used', evidence: [] },
 ];
 
 const implementations = {
@@ -78,6 +79,9 @@ const implementations = {
           attempt('m-failed', 'v1', 'contract_failed'),
           attempt('m-other', 'v2', 'contract_failed'),
           attempt('m1', 'v1', 'valid_first_pass'),
+          { id: 'v1@2026-10-01T00:00:00Z', model_name: 'agent', notes: '' },
+          { id: 'v1@used', model_name: 'agent', notes: '' },
+          { id: 'vx@other', model_name: 'agent', notes: '' },
         ],
       },
       { rpc: revisionRpcs },
@@ -179,10 +183,21 @@ describe('SupabaseVideoAdapter', () => {
     const { repo, store } = implementations.supabase();
     await repo.deleteVideo('v1');
     // m1 is still used by revision 1 in this fake, which does not cascade; m-failed is not.
-    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other', 'm1']);
+    // The agent's runs have empty notes and an id "<video>@<time>": the unused one goes, the one a revision uses stays.
+    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other', 'm1', 'v1@used', 'vx@other']);
     store.report_revisions = [];
     await repo.deleteVideo('v1');
-    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other']);
+    assert.deepEqual(store.model_runs.map((row) => row.id).sort(), ['m-other', 'vx@other']);
+  });
+
+  test('LIKE wildcards in a video id match nothing but themselves', async () => {
+    const { repo, store } = implementations.supabase();
+    await repo.deleteVideo('v_');
+    assert.ok(
+      store.model_runs.some((row) => row.id === 'v1@used'),
+      'v_ must not match v1@',
+    );
+    assert.ok(store.model_runs.some((row) => row.id === 'vx@other'));
   });
 
   test('other PostgREST failures are not turned into rejections', async () => {
