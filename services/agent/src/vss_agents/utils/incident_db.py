@@ -15,18 +15,19 @@
 
 """Async Supabase PostgREST helper for the agent's reads and writes against the incident schema.
 
-The finals schema is owned by ``deploy/docker/developer-profiles/dev-profile-incident/supabase/``
-(see ``.docs/data.md``); this helper assumes it exists and only reads/writes rows. The agent
-touches ``videos`` (read only in production; the console owns that row), ``model_runs`` and the
-append-only ``report_revisions`` snapshots. Search reads ``evidence_crops`` and writes ``queries``
-and ``query_results`` through its own store (``api/incident_search.py``), using this client.
+The mvp3 schema is owned by ``deploy/docker/developer-profiles/dev-profile-incident/supabase/``
+(see ``.docs/data.md``); this helper assumes it exists and only reads/writes rows. A video belongs to
+one incident (``videos.incident_id``) and each analysis run of a video is one ``video_analyses`` row,
+the latest row per video winning. The agent writes only ``model_runs`` and ``video_analyses`` (the
+console owns incidents, videos, report revisions, the official pointer and ``evidence_crops``
+writes); it reads videos, incidents and revisions. Search reads ``evidence_crops`` and writes
+``queries`` and ``query_results`` through its own store (``api/incident_search.py``), using this client.
 
-Every report is a ``report_revisions`` row: ``payload`` holds the full contract report,
-``evidence`` the evidence items and their R2 image keys, and the plain facet columns
-(``incident_type``, ``severity_level``, ``start_seconds``, ``end_seconds``) are filled by the writer
-from the payload. The table rejects UPDATE and DELETE, so this helper only ever inserts revisions.
-Human revisions, the official pointer (``videos.official_revision_id``) and the ``evidence_crops``
-rows belong to the console.
+A model run id is readable text, ``<subject>@<UTC timestamp>`` (:func:`model_run_id`); the subject is
+a video name, or ``incident-<id>`` for a synthesis run. ``video_analyses.payload`` holds the full
+contract report of one video, ``evidence`` its evidence items and R2 image keys, and the plain facet
+columns (``incident_type``, ``severity_level``, ``start_seconds``, ``end_seconds``) are filled by the
+writer from the payload (:func:`revision_facets`).
 
 Configuration is via two environment variables:
 - ``INCIDENT_SUPABASE_URL`` — e.g. ``https://<project_ref>.supabase.co``
@@ -41,9 +42,7 @@ optional feature and degrade gracefully, matching the console's own
 This module uses ``supabase-py``'s async client (``acreate_client``) rather than
 ``asyncpg``. The PostgREST layer does not support client-held transactions or
 ``SELECT ... FOR UPDATE`` row locking; see ``.docs/data.md``'s "Client Access Models
-& PostgREST/Direct-Postgres Split" section for why. :meth:`IncidentDB.insert_ai_revision`
-therefore reads ``max(revision_no)`` and inserts as two calls, and relies on the
-``(video_id, revision_no)`` unique key plus a retry when a concurrent writer takes the same number.
+& PostgREST/Direct-Postgres Split" section for why.
 """
 
 from __future__ import annotations
@@ -54,11 +53,9 @@ import datetime as _dt
 import logging
 import math
 import os
-import random
 from typing import TYPE_CHECKING
 from typing import Any
 
-from postgrest import APIError
 from supabase import AsyncClient
 from supabase import acreate_client
 
@@ -69,8 +66,6 @@ logger = logging.getLogger(__name__)
 
 _SUPABASE_URL_ENV_VAR = "INCIDENT_SUPABASE_URL"
 _SUPABASE_KEY_ENV_VAR = "INCIDENT_SUPABASE_SERVICE_ROLE_KEY"
-_UNIQUE_VIOLATION = "23505"
-_REVISION_INSERT_ATTEMPTS = 5
 
 
 def _url_from_env() -> str:
@@ -89,7 +84,17 @@ def is_configured() -> bool:
 def _utcnow() -> _dt.datetime:
     # The console schema uses PostgreSQL ``timestamp without time zone``.
     # Supabase/PostgREST also expects naive UTC for timestamptz-less columns.
-    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+    return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+
+
+def model_run_id(subject: str, when: _dt.datetime | None = None) -> str:
+    """Readable model run id ``<subject>@<UTC timestamp>``, e.g. ``clip.mp4@2026-10-30T09:15:00.000Z``.
+
+    Same shape the console writes (``new Date().toISOString()``); ``subject`` is a video name, or
+    ``incident-<id>`` for a synthesis run.
+    """
+    moment = when or _utcnow()
+    return f"{subject}@{moment.isoformat(timespec='milliseconds')}Z"
 
 
 def _row_to_dict(row: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -153,26 +158,10 @@ class IncidentDB:
         except Exception as exc:
             return False, str(exc)
 
-    # -- videos -------------------------------------------------------------#
-    async def upsert_video(
-        self,
-        video_id: str,
-        *,
-        filepath: str | None = None,
-        duration: int | None = None,
-        source: str | None = None,
-    ) -> str:
-        """Insert or update the ``videos`` row for this id (the natural key)."""
-        data = {
-            "id": video_id,
-            "filepath": filepath,
-            "duration": duration,
-            "source": source,
-            "uploaded_datetime": _utcnow().isoformat(),
-        }
-        # PostgREST upsert via on_conflict
-        await self.client.table("videos").upsert(data, on_conflict="id").execute()
-        return video_id
+    # -- incidents and videos (read only; the console owns them) -----------#
+    async def get_incident(self, incident_id: int) -> dict[str, Any] | None:
+        result = await self.client.table("incidents").select("*").eq("id", incident_id).maybe_single().execute()
+        return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
 
     async def get_video(self, video_id: str, *, for_update: bool = False) -> dict[str, Any] | None:
         if for_update:
@@ -183,16 +172,13 @@ class IncidentDB:
         result = await self.client.table("videos").select("*").eq("id", video_id).maybe_single().execute()
         return _row_to_dict(result.data)  # type: ignore[arg-type, union-attr]
 
-    async def update_video(self, video_id: str, *, filepath: str | None) -> None:
-        """Point an existing video row at its durable R2 object key."""
-        await self.client.table("videos").update({"filepath": filepath}).eq("id", video_id).execute()
-
-    async def list_videos(self) -> list[dict[str, Any]]:
-        result = await self.client.table("videos").select("*").order("id").execute()
+    async def list_videos(self, incident_id: int | None = None) -> list[dict[str, Any]]:
+        """Every video by name, or only the videos of one incident."""
+        query = self.client.table("videos").select("*")
+        if incident_id is not None:
+            query = query.eq("incident_id", incident_id)
+        result = await query.order("id").execute()
         return result.data or []  # type: ignore[return-value]
-
-    async def delete_video(self, video_id: str) -> None:
-        await self.client.table("videos").delete().eq("id", video_id).execute()
 
     # -- model_runs -----------------------------------------------------#
     async def insert_model_run(
@@ -250,75 +236,74 @@ class IncidentDB:
         await self.client.table("model_runs").upsert(data, on_conflict="id", ignore_duplicates=True).execute()
         return model_run_id
 
-    # -- report_revisions (append-only report snapshots) -----------------#
-    async def next_revision_no(self, video_id: str) -> int:
-        """``max(revision_no) + 1`` for this video (1 for its first revision)."""
-        result = await (
-            self.client.table("report_revisions")
-            .select("revision_no")
-            .eq("video_id", video_id)
-            .order("revision_no", desc=True)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return int(rows[0]["revision_no"]) + 1 if rows else 1  # type: ignore[index, arg-type, call-overload]
-
-    async def insert_ai_revision(
+    # -- video_analyses (one row per analysis run; the latest row per video wins) ---#
+    async def insert_video_analysis(
         self,
         video_id: str,
         *,
         model_run_id: str,
         payload: dict[str, Any],
         evidence: list[dict[str, Any]],
-        note: str | None = None,
         embedding: list[float] | None = None,
     ) -> dict[str, Any]:
-        """Append a new ``kind='ai'`` revision and return the inserted row (with its ``id``).
+        """Append an analysis of ``video_id`` and return the inserted row (with its ``id``).
 
-        A re-generation is a new branch (``parent_id`` NULL) and copies nothing from earlier
-        revisions. The facet columns are filled from ``payload`` (:func:`revision_facets`).
-        ``embedding`` is the summary vector (:func:`revision_summary_text`), written in the same
-        insert because the table rejects UPDATE; ``None`` stores NULL, which search skips.
-        ``revision_no`` is ``max + 1``; a concurrent writer taking the same number makes the
-        unique key reject the insert, which is retried with the next number.
+        The facet columns are filled from ``payload`` (:func:`revision_facets`). ``embedding`` is the
+        summary vector (:func:`revision_summary_text`); ``None`` stores NULL. The video and the run
+        rows must exist first (foreign keys). Rows are never updated: a re-analysis is a new row.
         """
-        last_exc: Exception | None = None
-        for attempt in range(_REVISION_INSERT_ATTEMPTS):
-            row = {
-                "video_id": video_id,
-                "revision_no": await self.next_revision_no(video_id),
-                "kind": "ai",
-                "model_run_id": model_run_id,
-                "parent_id": None,
-                "payload": payload,
-                "evidence": evidence,
-                **revision_facets(payload),
-                "embedding": embedding,
-                "created_by": None,
-                "created_at": _utcnow().isoformat(),
-                "note": note,
-            }
-            try:
-                result = await self.client.table("report_revisions").insert(row).execute()
-            except APIError as exc:
-                if exc.code != _UNIQUE_VIOLATION:
-                    raise
-                last_exc = exc
-                if attempt < _REVISION_INSERT_ATTEMPTS - 1:
-                    await asyncio.sleep(0.1 * (attempt + 1) + 0.05 * random.random())
-                continue
-            inserted = (result.data or [row])[0]
-            return dict(inserted)  # type: ignore[arg-type]
-        raise RuntimeError(f"could not allocate a revision_no for video {video_id}") from last_exc
+        row = {
+            "video_id": video_id,
+            "model_run_id": model_run_id,
+            "payload": payload,
+            "evidence": evidence,
+            **revision_facets(payload),
+            "embedding": embedding,
+            "created_at": _utcnow().isoformat(),
+        }
+        result = await self.client.table("video_analyses").insert(row).execute()
+        inserted = (result.data or [row])[0]
+        return dict(inserted)  # type: ignore[arg-type]
 
+    async def get_latest_analysis(self, video_id: str) -> dict[str, Any] | None:
+        """The newest analysis of a video (``created_at`` then ``id`` descending), or ``None``."""
+        result = await (
+            self.client.table("video_analyses")
+            .select("*")
+            .eq("video_id", video_id)
+            .order("created_at", desc=True)
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return dict(rows[0]) if rows else None  # type: ignore[arg-type]
+
+    async def list_analyses(self, video_id: str) -> list[dict[str, Any]]:
+        """Every analysis of a video, oldest first."""
+        result = await (
+            self.client.table("video_analyses")
+            .select("*")
+            .eq("video_id", video_id)
+            .order("created_at")
+            .order("id")
+            .execute()
+        )
+        return result.data or []  # type: ignore[return-value]
+
+    # -- report_revisions (read only; the console appends them) ----------#
     async def get_revision(self, revision_id: int) -> dict[str, Any] | None:
         result = await self.client.table("report_revisions").select("*").eq("id", revision_id).maybe_single().execute()
         return _row_to_dict(result.data if result is not None else None)  # type: ignore[arg-type]
 
-    async def list_revisions(self, video_id: str) -> list[dict[str, Any]]:
+    async def list_revisions(self, incident_id: int) -> list[dict[str, Any]]:
+        """An incident's revisions in version order; each row carries ``video_names`` (its coverage)."""
         result = await (
-            self.client.table("report_revisions").select("*").eq("video_id", video_id).order("revision_no").execute()
+            self.client.table("report_revisions")
+            .select("*")
+            .eq("incident_id", incident_id)
+            .order("revision_no")
+            .execute()
         )
         return result.data or []  # type: ignore[return-value]
 
@@ -345,7 +330,7 @@ def _whole_seconds(value: Any) -> int | None:
 
 
 def revision_summary_text(payload: dict[str, Any]) -> str:
-    """The text embedded for a revision: ``incident.title`` then ``incident.description``.
+    """The text embedded for an analysis: ``incident.title`` then ``incident.description``.
 
     Missing parts are left out; an empty string means there is nothing to embed.
     """
@@ -357,7 +342,7 @@ def revision_summary_text(payload: dict[str, Any]) -> str:
 
 
 def revision_facets(payload: dict[str, Any]) -> dict[str, Any]:
-    """The plain facet columns of a ``report_revisions`` row, read from its contract ``payload``.
+    """The plain facet columns of a ``video_analyses`` row, read from its contract ``payload``.
 
     ``incident_type`` and ``severity_level`` copy ``incident.type`` and ``incident.severity_level``;
     ``start_seconds`` and ``end_seconds`` are ``incident.start_timestamp`` and ``end_timestamp``
