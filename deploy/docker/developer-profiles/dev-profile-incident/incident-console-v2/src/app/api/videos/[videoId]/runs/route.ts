@@ -8,11 +8,7 @@ import { storeSearchableCrops } from '@/modules/reports/application/store-search
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
 import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
-import { errorResponse } from '@/lib/http';
-import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key } from '@/lib/r2/key';
-import { buildRunHistory } from '@/modules/videos/application/run-history';
-import type { VideoRunHistory } from '@/modules/videos/domain/run-types';
 
 export const dynamic = 'force-dynamic';
 // The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
@@ -22,48 +18,6 @@ function database(): ServiceConfiguration {
   const config = getServiceConfiguration();
   if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
   return config;
-}
-
-/** The video's analysis history: every attempt, successful or failed, newest first. */
-export async function GET(_request: Request, context: { params: Promise<{ videoId: string }> }) {
-  try {
-    const { videoId } = await context.params;
-    const config = database();
-    const records = await getDbAdapters(config).videos.listRunHistory(videoId);
-    if (!records) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
-    const { video } = records;
-    const { runs, counts } = buildRunHistory({
-      videoId,
-      revisions: records.revisions,
-      attempts: records.attempts,
-      sharedRunIds: records.sharedRunIds,
-    });
-    const filepath = video.storageKey ?? '';
-    let playbackUrl: string | null = null;
-    if (isValidR2Key(filepath)) {
-      try {
-        playbackUrl = await createR2PlaybackUrl(config, filepath);
-      } catch {
-        playbackUrl = null;
-      }
-    }
-    const officialRevisionId = video.officialRevisionId;
-    const history: VideoRunHistory = {
-      video: {
-        videoId,
-        filename: filepath.split('/').pop() || videoId,
-        uploadedAt: video.uploadedAt,
-        source: video.source,
-        playbackUrl,
-      },
-      runs: runs.map((run) => ({ ...run, isOfficial: run.revision !== null && run.revision.revisionId === officialRevisionId })),
-      counts,
-      officialRevisionId,
-    };
-    return NextResponse.json(history);
-  } catch (error) {
-    return errorResponse(error, 'Could not load the analysis history');
-  }
 }
 
 /**
