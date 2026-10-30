@@ -44,7 +44,7 @@ function stubFetch(status, body) {
 }
 
 describe('HttpMatchJudge', () => {
-  test('accepts the agent\'s structured_reasons field and ignores it', async () => {
+  test("accepts the agent's structured_reasons field and ignores it", async () => {
     stubFetch(200, {
       judgements: [
         {

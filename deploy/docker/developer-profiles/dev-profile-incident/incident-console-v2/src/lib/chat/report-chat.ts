@@ -84,6 +84,18 @@ export function citationTitle(citation: { itemId: string; itemType: string; vide
   return `${citation.itemId} · ${citation.itemType}${citation.videoName ? ` · ${citation.videoName}` : ''}`;
 }
 
+/**
+ * What Jump to does for a citation: the camera to open first (null when the citation's camera is the open one, or the
+ * agent named none) and the time to seek to once that camera's player is showing.
+ */
+export function seekPlan(
+  openCamera: string | null,
+  citation: { videoName: string | null; timestampSeconds: number },
+): { switchTo: string | null; seconds: number } {
+  const switchTo = citation.videoName && citation.videoName !== openCamera ? citation.videoName : null;
+  return { switchTo, seconds: citation.timestampSeconds };
+}
+
 /** The body of POST /api/chat for one question. */
 export function chatRequestBody({
   messages,

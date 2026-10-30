@@ -38,7 +38,15 @@ type ChatMessage = {
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
  * from, and its citations jump the video to the cited moment.
  */
-export function ReportChat({ incidentId, target, onSeek }: { incidentId: string; target: ChatTarget; onSeek: (seconds: number) => void }) {
+export function ReportChat({
+  incidentId,
+  target,
+  onSeek,
+}: {
+  incidentId: string;
+  target: ChatTarget;
+  onSeek: (citation: { videoName: string | null; timestampSeconds: number }) => void;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [question, setQuestion] = useState('');
@@ -173,7 +181,7 @@ export function ReportChat({ incidentId, target, onSeek }: { incidentId: string;
                                 <button
                                   aria-label={`Jump to ${citationTitle(citation)} at ${formatClock(citation.timestampSeconds)}`}
                                   className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-border bg-card p-1 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                  onClick={() => onSeek(citation.timestampSeconds)}
+                                  onClick={() => onSeek(citation)}
                                   type="button"
                                 >
                                   {/* eslint-disable-next-line @next/next/no-img-element -- the agent's signed crop URL, used as given */}
