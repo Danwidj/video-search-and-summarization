@@ -9,7 +9,6 @@ import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl } from '@/lib/r2/config';
 import { isValidR2Key, thumbnailKeyForVideo } from '@/lib/r2/key';
 import type { SearchedVersion } from '@/lib/library/search';
-import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
@@ -26,7 +25,7 @@ async function searchedVersions(
 ): Promise<Record<string, SearchedVersion>> {
   if (!incidentIds.size) return {};
   try {
-    const { items } = await getDbAdapters(config).incidents.listReports({
+    const { items } = await getDbAdapters(config).incidentReports.listIncidents({
       page: 1,
       pageSize: 1000,
       search: null,
@@ -47,7 +46,7 @@ async function searchedVersions(
       evidenceMatch: 'contains',
       timezone: 'UTC',
     });
-    const wanted = items.filter((item: ReportLibraryItem) => incidentIds.has(item.videoId));
+    const wanted = items.filter((item) => incidentIds.has(String(item.incidentId)) && item.revisionId !== null && item.revisionNo !== null);
     const sign = async (key: string) => {
       try {
         return await createR2PlaybackUrl(config, key);
@@ -57,12 +56,12 @@ async function searchedVersions(
     };
     const entries = await Promise.all(
       wanted.map(async (item) => {
-        const thumbnailUrl = isValidR2Key(item.r2Key) ? await sign(thumbnailKeyForVideo(item.r2Key)) : undefined;
+        const thumbnailUrl = isValidR2Key(item.firstVideoKey) ? await sign(thumbnailKeyForVideo(item.firstVideoKey)) : undefined;
         return [
-          item.videoId,
+          String(item.incidentId),
           {
-            revisionId: item.revisionId,
-            revisionNo: item.revisionNo,
+            revisionId: item.revisionId as number,
+            revisionNo: item.revisionNo as number,
             isOfficial: item.isOfficial === true,
             ...(item.title ? { title: item.title } : {}),
             ...(thumbnailUrl ? { thumbnailUrl } : {}),

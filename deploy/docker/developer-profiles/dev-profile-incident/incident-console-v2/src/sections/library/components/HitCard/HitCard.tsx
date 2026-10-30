@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { EditIcon, EyeIcon, HistoryIcon, MoreHorizontalIcon } from 'lucide-react';
+import { EditIcon, EyeIcon, HistoryIcon, MoreHorizontalIcon, VideoIcon } from 'lucide-react';
 
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -171,6 +171,12 @@ export function HitCard({
         </TooltipProvider>
 
         <p className="truncate text-[13px] leading-5 text-ink/60">{item.description}</p>
+        {item.videoName && (
+          <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-ink/70" data-testid="hit-camera">
+            <VideoIcon aria-hidden className="size-3.5 shrink-0 text-ink/45" />
+            <span className="truncate">{item.videoName}</span>
+          </p>
+        )}
         <RelationshipLine relationship={relationship} />
 
         <div className="mt-auto flex items-center gap-2 border-t border-ink/8 pt-2 text-xs" data-no-card-nav>
