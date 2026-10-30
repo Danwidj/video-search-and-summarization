@@ -108,7 +108,10 @@ class SearchFilters(BaseModel):
     min_severity: int | None = Field(default=None, ge=1, le=5)
     max_severity: int | None = Field(default=None, ge=1, le=5)
     item_types: list[Literal["entity", "instrument", "asset"]] | None = None
-    video_id: str | None = Field(default=None, min_length=1, max_length=64)
+    incident_id: int | None = Field(default=None, ge=1, description="Keep one incident's evidence (every camera).")
+    video_id: str | None = Field(
+        default=None, min_length=1, max_length=255, description="Keep one source video's evidence."
+    )
 
 
 class SearchRequest(BaseModel):
@@ -116,7 +119,11 @@ class SearchRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    query: str = Field(default="", max_length=500, description="Empty only with filters.video_id: lists that incident.")
+    query: str = Field(
+        default="",
+        max_length=500,
+        description="Empty only with filters.incident_id or filters.video_id: lists that scope.",
+    )
     top_k: int = Field(default=10, ge=1, le=50)
     min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
     hide_rejected: bool = True
@@ -124,8 +131,11 @@ class SearchRequest(BaseModel):
 
     @model_validator(mode="after")
     def _query_required_unless_scoped(self) -> SearchRequest:
-        if not self.query.strip() and not (self.filters and self.filters.video_id):
-            raise ValueError("query must not be empty unless filters.video_id names the incident to list")
+        scoped = self.filters is not None and (self.filters.incident_id is not None or self.filters.video_id)
+        if not self.query.strip() and not scoped:
+            raise ValueError(
+                "query must not be empty unless filters.incident_id or filters.video_id names a scope to list"
+            )
         return self
 
 
@@ -148,6 +158,7 @@ class ItemHit(BaseModel):
 
     item_type: Literal["entity", "instrument", "asset"]
     item_id: str
+    video_id: str = Field(..., description="Name of the source video (camera) the item was seen in.")
     name: str
     label: str
     description: str
@@ -170,7 +181,7 @@ class IncidentHit(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    incident_id: str
+    incident_id: int
     model_run_id: str
     incident_type: str
     severity_level: int = Field(..., ge=1, le=5)
@@ -213,13 +224,15 @@ class SearchResponse(BaseModel):
 class EvidenceCandidate(BaseModel):
     """Evidence candidate row returned from search_evidence_items RPC or candidate store.
 
-    ``incident_id`` is the video id; ``revision_id`` is the official ``report_revisions`` row the
-    ``evidence_crops`` item belongs to, and is what ``query_results`` stores.
+    ``incident_id`` is the incident and ``video_id`` the source video (camera) of the item;
+    ``revision_id`` is the searchable ``report_revisions`` row the ``evidence_crops`` item belongs to,
+    and is what ``query_results`` stores. ``playback_url`` is the source video.
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    incident_id: str
+    incident_id: int
+    video_id: str
     revision_id: int
     model_run_id: str = ""
     playback_url: str
@@ -244,7 +257,8 @@ class EvidenceCandidate(BaseModel):
 # Canned candidate data matching mock-backend/base_profile_mock for local / fallback execution
 _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
     {
-        "incident_id": "Assault007_x264",
+        "incident_id": 1,
+        "video_id": "Assault007_x264.mp4",
         "model_run_id": "m86a5c319e26659804b0",
         "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
@@ -270,7 +284,8 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
         "similarity_score": 0.89,
     },
     {
-        "incident_id": "Assault007_x264",
+        "incident_id": 1,
+        "video_id": "Assault007_x264.mp4",
         "model_run_id": "m86a5c319e26659804b0",
         "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
@@ -294,7 +309,8 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
         "similarity_score": 0.81,
     },
     {
-        "incident_id": "Burglary004_x264",
+        "incident_id": 2,
+        "video_id": "Burglary004_x264.mp4",
         "model_run_id": "m71b9c240a15549703f1",
         "revision_id": 2,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/burglary/Burglary004_x264.mp4",
@@ -318,7 +334,8 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
         "similarity_score": 0.78,
     },
     {
-        "incident_id": "RoadAccidents010_x264",
+        "incident_id": 3,
+        "video_id": "RoadAccidents010_x264.mp4",
         "model_run_id": "m42c8d119e34418602a8",
         "revision_id": 3,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/road_accidents/RoadAccidents010_x264.mp4",
@@ -340,7 +357,8 @@ _DEFAULT_CANDIDATES: list[dict[str, Any]] = [
         "similarity_score": 0.74,
     },
     {
-        "incident_id": "Assault007_x264",
+        "incident_id": 1,
+        "video_id": "Assault007_x264.mp4",
         "model_run_id": "m86a5c319e26659804b0",
         "revision_id": 1,
         "playback_url": "https://pub-r2.example.com/videos/anomaly/assault/Assault007_x264.mp4",
@@ -387,11 +405,12 @@ class SearchStore(ABC):
         min_severity: int | None = None,
         max_severity: int | None = None,
         video_id: str | None = None,
+        incident_id: int | None = None,
     ) -> list[EvidenceCandidate]:
-        """Execute pgvector search over the searchable revision's evidence crops with metadata filters.
+        """Execute pgvector search over each incident's searchable revision's evidence crops with metadata filters.
 
-        ``video_id`` keeps one incident's crops. A ``None`` embedding ranks nothing: with ``video_id`` it lists that
-        incident's crops by video time, each with similarity 0.0.
+        ``incident_id`` keeps one incident's crops (every camera), ``video_id`` one source video's. A ``None``
+        embedding ranks nothing: with a scope it lists the scoped crops by video time, each with similarity 0.0.
         """
         pass
 
@@ -427,13 +446,16 @@ class InMemorySearchStore(SearchStore):
         min_severity: int | None = None,
         max_severity: int | None = None,
         video_id: str | None = None,
+        incident_id: int | None = None,
     ) -> list[EvidenceCandidate]:
         matched: list[EvidenceCandidate] = []
         item_types_set = set(item_types) if item_types else None
         incident_types_set = set(incident_types) if incident_types else None
 
         for cand in self.candidates:
-            if video_id is not None and cand.incident_id != video_id:
+            if video_id is not None and cand.video_id != video_id:
+                continue
+            if incident_id is not None and cand.incident_id != incident_id:
                 continue
             if query_embedding is not None and cand.similarity_score < min_similarity:
                 continue
@@ -519,10 +541,11 @@ class SupabaseSearchStore(SearchStore):
         min_severity: int | None = None,
         max_severity: int | None = None,
         video_id: str | None = None,
+        incident_id: int | None = None,
     ) -> list[EvidenceCandidate]:
         if query_embedding is not None and not query_embedding:
             return []
-        if query_embedding is None and video_id is None:
+        if query_embedding is None and video_id is None and incident_id is None:
             return []
 
         client = await self._get_client()
@@ -537,8 +560,9 @@ class SupabaseSearchStore(SearchStore):
             "p_max_severity": max_severity,
         }
         if video_id is not None:
-            # Sent only when scoped, so an agent ahead of the p_video_id migration still serves unscoped searches.
             params["p_video_id"] = video_id
+        if incident_id is not None:
+            params["p_incident_id"] = incident_id
 
         resp = await client.rpc("search_evidence_items", params).execute()
         rows = resp.data or []
@@ -566,7 +590,8 @@ class SupabaseSearchStore(SearchStore):
                 item_type = "entity"
 
             cand = EvidenceCandidate(
-                incident_id=str(row.get("video_id") or row.get("incident_id") or ""),
+                incident_id=int(row["incident_id"]),
+                video_id=str(row.get("video_id") or ""),
                 revision_id=int(row["revision_id"]),
                 model_run_id=str(row.get("model_run_id") or ""),
                 playback_url=playback_url,
@@ -939,6 +964,7 @@ def create_incident_search_router(
                 min_severity=filters.min_severity if filters else None,
                 max_severity=filters.max_severity if filters else None,
                 video_id=filters.video_id if filters else None,
+                incident_id=filters.incident_id if filters else None,
             )
 
         candidates = await semantic_search(req.query, embedder=query_embedder, retrieve=retrieve)
@@ -981,6 +1007,7 @@ def create_incident_search_router(
             item = ItemHit(
                 item_type=cand.item_type,
                 item_id=cand.item_id,
+                video_id=cand.video_id,
                 name=cand.item_name,
                 label=cand.item_label,
                 description=cand.item_description,

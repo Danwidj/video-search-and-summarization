@@ -15,11 +15,11 @@
 
 """``POST /api/v1/incidents/revisions/search`` - incident-level search over saved report revisions.
 
-Each saved report revision carries one summary embedding (``incident.title`` and
-``incident.description``, written by ``incident_report_gen`` when the AI revision is inserted). The
-route embeds the query with the same model and returns the nearest revisions by cosine similarity,
-through the ``search_report_revisions`` RPC. Human revisions and AI revisions saved without an
-embedding are not returned.
+Each saved report revision carries one summary embedding (the overview's title and description,
+stored with the revision). The route embeds the query with the same model and returns the nearest
+incidents by cosine similarity, through the ``search_report_revisions`` RPC, which ranks one revision
+per incident (its official revision, else its newest). Each hit names the incident and the real
+names of the videos the revision covers. Revisions saved without an embedding are not returned.
 
 Status codes: 503 when the incident database or the query embedding is not available, 502 when the
 embedding endpoint fails.
@@ -53,10 +53,11 @@ class RevisionSearchRequest(BaseModel):
 
 
 class RevisionSearchHit(BaseModel):
-    """One matching report revision."""
+    """One matching incident, through its searchable report revision."""
 
+    incident_id: int
     revision_id: int
-    video_id: str
+    video_names: list[str]
     revision_no: int
     kind: str
     model_run_id: str | None
