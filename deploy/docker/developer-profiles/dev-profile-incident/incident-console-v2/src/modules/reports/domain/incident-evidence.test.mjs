@@ -65,3 +65,16 @@ test('cameraEvidenceItems carries what each kind shows: held instruments, holder
   assert.equal(byId.I1.threatLevel, 4);
   assert.equal(byId.I2.holder, null);
 });
+
+test('an asset shows who last handled it and when; an asset without a handler shows nothing', () => {
+  const withHandler = {
+    ...structured,
+    assets: [
+      { assetId: 'A1', name: 'Bag', description: 'd', timestampSeconds: 3, lastHandledBy: { entityId: 'E1', seconds: 7 }, evidence: null },
+      { assetId: 'A2', name: 'Box', description: 'd', timestampSeconds: 5, evidence: null },
+    ],
+  };
+  const items = cameraEvidenceItems('v.mp4', true, withHandler).filter((item) => item.kind === 'asset');
+  assert.deepEqual(items[0].lastHandledBy, { who: 'E1 (Man in red)', seconds: 7 });
+  assert.equal(items[1].lastHandledBy, null);
+});

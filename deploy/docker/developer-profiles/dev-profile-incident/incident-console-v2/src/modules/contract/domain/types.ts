@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TypeScript view of contracts/incident_report.schema.json (incident-contract-v4).
+// TypeScript view of contracts/incident_report.schema.json (incident-contract-v5).
 // The JSON Schema file is the source of truth; tests/contract-validate.test.mjs
 // checks that these keys match it.
 
@@ -42,12 +42,20 @@ export interface ContractInstrument {
   label: string;
 }
 
+/** The entity last seen touching or moving an asset, and when: observable interaction, never ownership. */
+export interface ContractLastHandledBy {
+  entity_id: string;
+  timestamp_seconds: number;
+}
+
 export interface ContractAsset {
   asset_id: string;
   name: string;
   description: string;
   timestamp_seconds: number;
   label: string;
+  /** Optional: reports stored before incident-contract-v5 have no such key. */
+  last_handled_by?: ContractLastHandledBy | null;
 }
 
 export interface ContractTimelineEvent {

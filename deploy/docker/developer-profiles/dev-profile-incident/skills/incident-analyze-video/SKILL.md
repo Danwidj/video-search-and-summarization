@@ -112,7 +112,7 @@ Minimum checks after one analyse and one build, in the finals-free mvp3 database
 ## Known quirks
 
 - The report page's **Re-analyse** dialog still posts to the stale `POST /api/videos/<id>/runs` route and does not work on mvp3. Re-analyse with `POST /api/analysis` and `{"videoName"}`.
-- The agent's analysis payload carries a derived `incident.duration` that `incident-contract-v4` forbids, so the report API can mark a freshly analysed camera invalid and the page shows "No camera of this version can be shown". Synthesise (Regenerate) accepts the shape. The console fix had not merged when this was written; check [`architecture §5`](../../.docs/architecture.md#known-leftovers-on-originmvp3).
+- The agent's analysis payload carries a derived `incident.duration` that `incident-contract-v5` forbids, so the report API can mark a freshly analysed camera invalid and the page shows "No camera of this version can be shown". Synthesise (Regenerate) accepts the shape. The console fix had not merged when this was written; check [`architecture §5`](../../.docs/architecture.md#known-leftovers-on-originmvp3).
 - A model can run away into invalid JSON for one clip (422 for that file only); retry or change the model.
 - `GET /api/videos`, `POST /api/videos/<id>/runs` and `ANALYSIS_MODE` still exist in the console from before mvp3 and use the old video-keyed run code. They do not match the mvp3 schema; do not use them.
 - Every attempt, valid or not, is recorded in `model_runs.notes` with its outcome under validation policy `core-scored-v1`; see [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).

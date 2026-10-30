@@ -143,7 +143,7 @@ class TestGate:
         monkeypatch.delenv(incident_experiments.REGISTRY_ENV, raising=False)
         if not incident_experiments.DEFAULT_REGISTRY.exists():
             pytest.skip("not a full checkout")
-        text, digest = incident_experiments.resolve_prompt("p1-v4-base")
+        text, digest = incident_experiments.resolve_prompt("p1-v5-base")
         assert text == incident_contract.extraction_prompt()
         assert digest == incident_experiments.production_prompt_sha256()
 

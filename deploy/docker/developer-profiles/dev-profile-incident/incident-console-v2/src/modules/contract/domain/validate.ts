@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Strict validator for incident-contract-v4, equivalent to eval/contract.py:
+// Strict validator for incident-contract-v5, equivalent to eval/contract.py:
 // JSON.parse of the raw content (no fence stripping, brace extraction, alias
 // mapping or default filling), JSON Schema validation against the shared
 // schema file, then the cross-field rules the schema cannot express. Derived
@@ -30,6 +30,7 @@ export type ContractViolationCode =
   | 'ID_NOT_SEQUENTIAL_INSTRUMENT'
   | 'ID_NOT_SEQUENTIAL_ASSET'
   | 'INSTRUMENT_HOLDER_UNKNOWN'
+  | 'ASSET_HANDLER_UNKNOWN'
   | 'TIMELINE_START_OUTSIDE_WINDOW'
   | 'TIMELINE_END_OUTSIDE_WINDOW'
   | 'TIMELINE_NOT_CHRONOLOGICAL'
@@ -154,7 +155,7 @@ function olderSchema(omitted: string[], catalog?: ContractCatalog): Record<strin
 
 const compiledValidators = new Map<string, ValidateFunction>();
 
-export function validator(version = 'incident-contract-v4', catalog?: ContractCatalog): ValidateFunction {
+export function validator(version = 'incident-contract-v5', catalog?: ContractCatalog): ValidateFunction {
   const cat = catalog ?? getContractCatalog();
   const cacheKey = `${cat.contractVersion()}:${version}`;
   let v = compiledValidators.get(cacheKey);
@@ -216,6 +217,17 @@ export function crossFieldViolations(report: IncidentContractReport): ContractVi
     }
   });
 
+  report.assets.forEach((asset, index) => {
+    const handler = asset.last_handled_by;
+    if (handler && !entityIds.has(handler.entity_id)) {
+      add(
+        'ASSET_HANDLER_UNKNOWN',
+        `assets/${index}/last_handled_by/entity_id`,
+        `${asset.asset_id} references unknown last_handled_by entity_id ${handler.entity_id}`,
+      );
+    }
+  });
+
   let previousStart: number | null = null;
   report.timeline.forEach((event, index) => {
     const { start_seconds: eventStart, end_seconds: eventEnd } = event;
@@ -271,7 +283,7 @@ export function crossFieldErrors(report: IncidentContractReport): string[] {
 }
 
 /** Validate an already-decoded report; throws ContractError listing every violation. */
-export function validateReport(report: unknown, version = 'incident-contract-v4', catalog?: ContractCatalog): IncidentContractReport {
+export function validateReport(report: unknown, version = 'incident-contract-v5', catalog?: ContractCatalog): IncidentContractReport {
   const validate = validator(version, catalog);
   if (!validate(report)) {
     const violations = [...(validate.errors ?? [])].sort((a, b) => a.instancePath.localeCompare(b.instancePath)).map(schemaViolation);
@@ -354,5 +366,5 @@ export function decodeContent(content: string | null | undefined): unknown {
 
 /** Strictly decode and validate a model's message content, then add derived fields. */
 export function parseReport(content: string | null | undefined, catalog?: ContractCatalog): DerivedContractReport {
-  return withDerivedFields(validateReport(decodeContent(content), 'incident-contract-v4', catalog));
+  return withDerivedFields(validateReport(decodeContent(content), 'incident-contract-v5', catalog));
 }

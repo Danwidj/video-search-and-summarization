@@ -21,7 +21,7 @@ export type AttemptRepair =
   | { eligible: false; ruleSet: string; reason: RepairIneligibility; blockingCodes: ContractViolationCode[]; detail: string }
   | { eligible: true; ruleSet: string; operations: RepairOperation[]; revalidation: ContractViolation[] };
 
-/** Everything recorded for one incident-contract-v4 analysis attempt, whatever its outcome. */
+/** Everything recorded for one incident-contract-v5 analysis attempt, whatever its outcome. */
 export interface AnalysisAttemptRecord {
   status: AttemptStatus;
   stage: AttemptStage | null;

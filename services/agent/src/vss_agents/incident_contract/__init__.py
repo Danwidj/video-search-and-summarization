@@ -114,6 +114,15 @@ class ContractInstrument(BaseModel):
     label: str
 
 
+class ContractLastHandled(BaseModel):
+    """The entity last seen touching or moving an asset, and when (observable interaction, never ownership)."""
+
+    model_config = _STRICT
+
+    entity_id: str
+    timestamp_seconds: int = Field(ge=0)
+
+
 class ContractAsset(BaseModel):
     model_config = _STRICT
 
@@ -122,6 +131,8 @@ class ContractAsset(BaseModel):
     description: str
     timestamp_seconds: int = Field(ge=0)
     label: str
+    # Optional in the schema: a report stored before incident-contract-v5 has no such key.
+    last_handled_by: ContractLastHandled | None = None
 
 
 class ContractTimelineEvent(BaseModel):
@@ -213,6 +224,7 @@ REPAIRABLE_CODES = frozenset(
         "ID_NOT_SEQUENTIAL_INSTRUMENT",
         "ID_NOT_SEQUENTIAL_ASSET",
         "INSTRUMENT_HOLDER_UNKNOWN",
+        "ASSET_HANDLER_UNKNOWN",
     }
 )
 _ID_COLLECTIONS = (
@@ -277,6 +289,16 @@ def cross_field_violations(report: ContractReport) -> list[tuple[str, str]]:
                 (
                     "INSTRUMENT_HOLDER_UNKNOWN",
                     f"{instrument.instrument_id} references unknown entity_id {instrument.entity_id}",
+                )
+            )
+
+    for asset in report.assets:
+        handler = asset.last_handled_by
+        if handler is not None and handler.entity_id not in entity_ids:
+            violations.append(
+                (
+                    "ASSET_HANDLER_UNKNOWN",
+                    f"{asset.asset_id} references unknown last_handled_by entity_id {handler.entity_id}",
                 )
             )
 
@@ -346,7 +368,22 @@ def _semantic_projection(report: ContractReport) -> str:
         item["holder"] = {"type": entity.type, "description": entity.description} if entity is not None else holder
         instruments_proj.append(item)
     instruments = _sorted(instruments_proj)
-    assets = _sorted([asset.model_dump(mode="json", exclude={"asset_id"}) for asset in report.assets])
+    assets_proj: list[dict[str, Any]] = []
+    for asset in report.assets:
+        asset_item = asset.model_dump(mode="json", exclude={"asset_id", "last_handled_by"})
+        handler = asset.last_handled_by
+        handler_entity = entity_by_id.get(handler.entity_id) if handler is not None else None
+        if handler is None:
+            asset_item["last_handled_by"] = None
+        else:
+            asset_item["last_handled_by"] = {
+                "holder": {"type": handler_entity.type, "description": handler_entity.description}
+                if handler_entity is not None
+                else handler.entity_id,
+                "timestamp_seconds": handler.timestamp_seconds,
+            }
+        assets_proj.append(asset_item)
+    assets = _sorted(assets_proj)
 
     projection = {
         "incident": report.incident.model_dump(mode="json"),
@@ -360,7 +397,7 @@ def _semantic_projection(report: ContractReport) -> str:
 
 
 def normalize_ids(report: ContractReport, violations: list[tuple[str, str]]) -> ContractReport | None:
-    """id-normalization-v1: renumber E/I/A ids, remap instrument holders and reorder; ``None`` when ineligible.
+    """id-normalization-v1: renumber E/I/A ids, remap instrument holders and asset handlers and reorder; ``None`` when ineligible.
 
     Eligible only when every core violation is an ID sequence one or conditionally eligible holder reference,
     no list has duplicate ids, no renamed or target id appears in free text, and semantic invariance holds.
@@ -394,6 +431,13 @@ def normalize_ids(report: ContractReport, violations: list[tuple[str, str]]) -> 
             if target is None:
                 return None
             instrument["entity_id"] = target
+    for asset in data["assets"]:
+        handler = asset.get("last_handled_by")
+        if handler is not None:
+            target = entity_mapping.get(handler["entity_id"])
+            if target is None:
+                return None
+            handler["entity_id"] = target
     try:
         repaired = ContractReport.model_validate(data)
     except ValidationError:

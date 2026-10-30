@@ -36,7 +36,14 @@ export interface StructuredEdit {
   instruments: Array<
     { instrument_id: string; entity_id: string | null; name: string; description: string; threat_level: number } & EditItemDetails
   >;
-  assets: Array<{ asset_id: string; name: string; description: string } & EditItemDetails>;
+  assets: Array<
+    {
+      asset_id: string;
+      name: string;
+      description: string;
+      last_handled_by?: { entity_id: string; timestamp_seconds: number } | null;
+    } & EditItemDetails
+  >;
 }
 
 /**
@@ -76,7 +83,8 @@ export interface EditDraft {
     } & DraftItemDetails
   >;
   instruments: Array<{ holderKey: string | null; name: string; description: string; threat_level: number | null } & DraftItemDetails>;
-  assets: Array<{ name: string; description: string } & DraftItemDetails>;
+  /** handler: who was last seen handling the asset (an entity key, so renumbering keeps it right) and when; null when nobody. */
+  assets: Array<{ name: string; description: string; handler: { holderKey: string; seconds: number } | null } & DraftItemDetails>;
 }
 
 let keySequence = 0;
@@ -186,8 +194,18 @@ export function draftFromView(view: ReportView): EditDraft {
       ...details(`asset-${index}`, asset.assetId, asset),
       name: asset.name,
       description: asset.description,
+      handler: assetHandlerDraft(asset.lastHandledBy, entityKeys),
     })),
   };
+}
+
+/** The draft handler of a saved asset: kept only when it points at one of the revision's entities. */
+export function assetHandlerDraft(
+  handler: { entityId: string; seconds: number | null } | null | undefined,
+  entityKeys: ReadonlyMap<string, string>,
+): { holderKey: string; seconds: number } | null {
+  const holderKey = handler ? entityKeys.get(handler.entityId) : undefined;
+  return handler && holderKey ? { holderKey, seconds: handler.seconds ?? 0 } : null;
 }
 
 /** The crops in the draft that Save must upload first, by item key. */
@@ -271,6 +289,9 @@ export function editFromDraft(draft: EditDraft): StructuredEdit {
       asset_id: `A${index + 1}`,
       name: asset.name,
       description: asset.description,
+      ...(asset.handler && entityIdByKey.has(asset.handler.holderKey)
+        ? { last_handled_by: { entity_id: entityIdByKey.get(asset.handler.holderKey) as string, timestamp_seconds: asset.handler.seconds } }
+        : {}),
       ...sent(asset),
     })),
   };

@@ -70,6 +70,12 @@ function Detail({
             Held by <b>{item.holder}</b>
           </p>
         )}
+        {item.lastHandledBy && (
+          <p data-testid="evidence-last-handled-by">
+            Last handled by <b>{item.lastHandledBy.who}</b>
+            {item.lastHandledBy.seconds !== null && ` at ${formatClock(item.lastHandledBy.seconds)}`}
+          </p>
+        )}
         {item.kind === 'instrument' && (
           <p className="text-muted-foreground">
             Threat {item.threatLevel ?? 'unrated'}

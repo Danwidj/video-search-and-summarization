@@ -119,15 +119,15 @@ assert.ok(assetProps.timestamp_seconds.minimum === 0, 'timestamp_seconds min mus
 for (const key of ['entities', 'instruments', 'assets']) {
   const bbKey = 'bounding_box';
   assert.ok(!(bbKey in incidentSchema.properties[key].items.properties), (
-    `${key} must NOT have bounding_box in incident-contract-v4`
+    `${key} must NOT have bounding_box in incident-contract-v5`
   ));
 }
-console.log('  PASS: incident-contract-v4 schema has required fields, no bounding_box');
+console.log('  PASS: incident-contract-v5 schema has required fields, no bounding_box');
 
 // VERSION file
 console.log('=== VERSION file ===');
 const version = fs.readFileSync(path.join(contractsDir, 'VERSION'), 'utf8').trim();
-assert.strictEqual(version, 'incident-contract-v4', 'VERSION must be incident-contract-v4');
-console.log('  PASS: VERSION = incident-contract-v4');
+assert.strictEqual(version, 'incident-contract-v5', 'VERSION must be incident-contract-v5');
+console.log('  PASS: VERSION = incident-contract-v5');
 
 console.log('\n=== ALL TESTS PASSED ===');

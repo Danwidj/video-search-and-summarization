@@ -134,12 +134,18 @@ def _objects(schema: dict, model: type) -> list[tuple[dict, type]]:
     return pairs
 
 
+# Properties added after incident-contract-v4 stay optional so stored v4 reports remain valid.
+OPTIONAL_PROPERTIES = {"ContractAsset": {"last_handled_by"}}
+
+
 def test_pydantic_models_mirror_the_schema():
     pairs = _objects(incident_contract.load_schema(), ContractReport)
     assert len(pairs) == 6
     for schema_object, model in pairs:
         assert set(model.model_fields) == set(schema_object["properties"]), model.__name__
-        assert set(schema_object["required"]) == set(schema_object["properties"])
+        assert set(schema_object["required"]) == set(schema_object["properties"]) - OPTIONAL_PROPERTIES.get(
+            model.__name__, set()
+        )
         assert schema_object["additionalProperties"] is False
         assert model.model_config.get("extra") == "forbid" and model.model_config.get("strict") is True
     incident = incident_contract.load_schema()["properties"]["incident"]["properties"]
@@ -178,6 +184,10 @@ def test_no_extraction_heuristics(content):
         (lambda r: r["incident"].update(end_timestamp=2), "before start_timestamp"),
         (lambda r: r["entities"][1].update(entity_id="E3"), "not sequential"),
         (lambda r: r["instruments"][0].update(entity_id="E9"), "unknown entity_id"),
+        (lambda r: r["assets"][0].update(last_handled_by={"entity_id": "E9", "timestamp_seconds": 4}), "E9"),
+        (lambda r: r["assets"][0].update(last_handled_by={"entity_id": "E1"}), "schema violation"),
+        (lambda r: r["assets"][0].update(last_handled_by={"entity_id": "E1", "timestamp_seconds": -1}), "schema"),
+        (lambda r: r["assets"][0].update(last_handled_by="E1"), "schema violation"),
     ],
 )
 def test_contract_violations(mutate, message):
@@ -387,3 +397,35 @@ def test_id_normalization_invariance_check_preserves_semantics(monkeypatch):
         lambda r: orig_proj(r) if r is model_report else orig_proj(r) + "mutation",
     )
     assert incident_contract.normalize_ids(model_report, violations) is None
+
+
+def test_asset_last_handled_by_is_optional_and_null_is_valid():
+    """Reports stored before incident-contract-v5 have no key; a model may also return null."""
+    absent = _valid()
+    assert "last_handled_by" not in absent["assets"][0]
+    assert incident_contract.validate_report(absent)["assets"][0]["last_handled_by"] is None
+    null = _valid()
+    null["assets"][0]["last_handled_by"] = None
+    assert incident_contract.validate_report(null)["assets"][0]["last_handled_by"] is None
+    handled = _valid()
+    handled["assets"][0]["last_handled_by"] = {"entity_id": "E2", "timestamp_seconds": 4}
+    assert incident_contract.validate_report(handled)["assets"][0]["last_handled_by"] == {
+        "entity_id": "E2",
+        "timestamp_seconds": 4,
+    }
+
+
+def test_id_normalization_remaps_asset_last_handled_by():
+    report = _valid()
+    for entity, text in zip(report["entities"], ("Attacker.", "Victim."), strict=True):
+        entity["description"] = text
+    report["incident"]["description"] = "The attacker strikes the victim with a bottle."
+    report["timeline"][1]["description"] = "The attacker strikes the victim."
+    report["timeline"][0]["description"] = "The attacker approaches."
+    report["uncertainties"] = []
+    report["assets"][0]["description"] = "Shop counter."
+    report["entities"][0]["entity_id"], report["entities"][1]["entity_id"] = "E7", "E5"
+    report["instruments"][0]["entity_id"] = "E5"
+    report["assets"][0]["last_handled_by"] = {"entity_id": "E5", "timestamp_seconds": 4}
+    repaired = incident_contract.validate_report(report)
+    assert repaired["assets"][0]["last_handled_by"] == {"entity_id": "E2", "timestamp_seconds": 4}

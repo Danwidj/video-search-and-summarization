@@ -1,4 +1,4 @@
-UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v4)
+UNIFIED VLM INCIDENT EXTRACTION PROMPT - P1 (incident-contract-v5)
 
 You are analysing a surveillance video for structured incident extraction.
 
@@ -419,11 +419,25 @@ ASSET_ID
 NAME
 - Concise name for the object.
 - Use a lowercase noun where possible.
+- Do not identify an object more specifically than the visual evidence
+  supports. When unsure, prefer a generic name such as "bag", "box" or
+  "object" over a specific one.
 
 DESCRIPTION
 - Provide a short, objective description explaining the object's
   observable characteristics and/or relevance to the incident.
+- Describe only what is visible; do not name the object more specifically
+  than the visual evidence supports.
 - Do not speculate about ownership or other unsupported attributes.
+
+LAST_HANDLED_BY
+- Optional. The ENTITY_ID of the entity last seen touching, carrying,
+  moving or picking up the asset, and TIMESTAMP_SECONDS, the second in
+  which that interaction was last seen.
+- This is observable interaction only, never ownership. Seeing an entity
+  near an object, or guessing who it belongs to, is not enough.
+- This must reference an entity in the Entities array.
+- Return null when no entity is seen handling the asset.
 
 TIMESTAMP_SECONDS
 - Integer number of seconds from the beginning of the video at which

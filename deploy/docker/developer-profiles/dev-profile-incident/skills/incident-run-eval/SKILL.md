@@ -25,7 +25,7 @@ Canonical facts:
 
 ## What a run sends
 
-P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v4`):
+P1 uses the shared [incident contract](../../contracts/README.md) (`incident-contract-v5`):
 - a signed R2 URL, then the contract prompt, with the schema enforced via `response_format`;
 - no few-shot examples;
 - a fixed `max_tokens 16384` and `num_frames 64` (the same request for every model, but `cosmos-3-super-reasoner` samples about 24 frames whatever is requested; never call the visual input identical);
