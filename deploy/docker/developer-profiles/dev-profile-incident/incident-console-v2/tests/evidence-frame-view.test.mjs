@@ -8,7 +8,7 @@ register('./support/alias-loader.mjs', import.meta.url);
 
 const { containFrame, evidenceFrameState } = await import('../src/lib/evidence/frame-geometry.ts');
 const { coversWholeFrame, evidenceDisplay, hitDisplay, videoFrameUrl } = await import('../src/lib/evidence/evidence-view.ts');
-const { humanRevisionContent } = await import('../src/modules/reports/domain/revision.ts');
+const { humanRevisionContent, officialCrops } = await import('../src/modules/reports/domain/revision.ts');
 const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
 
 const evidence = (over = {}) => ({
@@ -160,4 +160,24 @@ test("a search hit shows its video's frame with the box, or a not-located note f
   assert.equal(whole.box, null);
   assert.equal(whole.notLocated, true);
   assert.equal(hitDisplay(hit, '').frameSrc, null);
+});
+
+test('a searchable crop row takes the second the box was found at, else the item second', () => {
+  const vector = new Array(1024).fill(0);
+  const embeddings = [
+    { itemType: 'asset', itemId: 'A1', embedding: vector },
+    { itemType: 'entity', itemId: 'E1', embedding: vector },
+  ];
+  const evidence = [
+    { item_type: 'asset', item_id: 'A1', image: 'a.jpg', bounding_box: [1, 1, 5, 5], timestamp_seconds: 8, box_seconds: 9 },
+    { item_type: 'entity', item_id: 'E1', image: 'e.jpg', bounding_box: [1, 1, 5, 5], timestamp_seconds: 23 },
+  ];
+  const rows = officialCrops({ entities: [], instruments: [], assets: [] }, evidence, embeddings);
+  assert.deepEqual(
+    rows.map((row) => [row.item_id, row.timestamp_seconds]),
+    [
+      ['A1', 9],
+      ['E1', 23],
+    ],
+  );
 });

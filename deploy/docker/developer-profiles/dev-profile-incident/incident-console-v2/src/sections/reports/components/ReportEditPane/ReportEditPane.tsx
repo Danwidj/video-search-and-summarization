@@ -446,6 +446,7 @@ function PairRowView({
           <EditCard
             draftHolder={draftHolder}
             videoId={videoId}
+            saved={row.a?.evidence ?? null}
             holderOptions={holderOptions}
             item={row.b}
             onRemove={() => onRemove(row)}
@@ -536,6 +537,7 @@ function ReadCard({
 function EditCard({
   item,
   videoId,
+  saved,
   holderOptions,
   draftHolder,
   onRemove,
@@ -548,6 +550,8 @@ function EditCard({
 }: {
   item: NonNullable<PairRow['b']>;
   videoId: string;
+  /** The saved item's evidence, whose frame and box the draft keeps showing until the reviewer replaces the image. */
+  saved: NonNullable<PairRow['a']>['evidence'] | null;
   holderOptions: Array<{ key: string; label: string }>;
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   onRemove: () => void;
@@ -558,14 +562,17 @@ function EditCard({
   patchInstrument: PatchInstrument;
   patchAsset: PatchAsset;
 }) {
-  // A frame the reviewer picked is shown as the frame and the box they drew (the crop is only what Save stores for search).
+  // A frame the reviewer picked is shown as the frame and the box they drew (the crop is only what Save stores for search);
+  // until then the draft shows the saved item's frame and box, as View does.
   const picked = item.imageBox && item.imageTimestampSeconds !== null;
+  const inherited = !picked && saved && saved.image === item.image ? evidenceDisplay(saved, videoId) : null;
   return (
     <CardFrame
-      box={picked ? item.imageBox : null}
-      frameSrc={picked ? videoFrameUrl(videoId, item.imageTimestampSeconds ?? 0) : null}
+      box={picked ? item.imageBox : (inherited?.box ?? null)}
+      frameSrc={picked ? videoFrameUrl(videoId, item.imageTimestampSeconds ?? 0) : (inherited?.frameSrc ?? null)}
       imageUrl={item.imageUrl}
       name={draftItemName(item)}
+      notLocated={inherited?.notLocated ?? false}
       onSeek={onSeek}
       seconds={item.timestampSeconds}
     >

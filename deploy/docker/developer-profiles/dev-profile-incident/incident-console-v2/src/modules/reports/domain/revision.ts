@@ -280,7 +280,9 @@ function payloadDetails(
  * The p_crops of an official revision: one row per evidence item that has an
  * image and an embedding, with the item details the agent stored on the entry
  * (or, for a gateway-mode placeholder, from the payload). An item with no
- * image or no vector is not searchable and is left out.
+ * image or no vector is not searchable and is left out. The row's second is the
+ * one the box was found at (box_seconds, a retry second when the item's own
+ * second found nothing), so a search hit cuts the frame the box belongs to.
  */
 export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[], embeddings: EvidenceEmbedding[]): OfficialCrop[] {
   const details = payloadDetails(payload);
@@ -296,7 +298,7 @@ export function officialCrops(payload: ReportPayload, evidence: EvidenceEntry[],
         item_id: entry.item_id,
         image: entry.image,
         bounding_box: entry.bounding_box,
-        timestamp_seconds: entry.timestamp_seconds ?? 0,
+        timestamp_seconds: integerOrNull(entry.box_seconds) ?? entry.timestamp_seconds ?? 0,
         item_name:
           typeof entry.item_name === 'string' && entry.item_name.trim() ? entry.item_name : (fallback?.item_name ?? entry.item_type),
         description: typeof entry.description === 'string' ? entry.description : (fallback?.description ?? ''),
