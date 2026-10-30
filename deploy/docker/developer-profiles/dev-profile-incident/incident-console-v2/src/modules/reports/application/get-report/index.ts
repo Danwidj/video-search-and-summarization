@@ -24,7 +24,10 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
   const items = [...view.structured.entities, ...view.structured.instruments, ...view.structured.assets];
   await Promise.all(
     items.map(async (item) => {
-      if (item.evidence) item.evidence = { ...item.evidence, imageUrl: await urlOf(item.evidence.image) };
+      if (item.evidence) {
+        const [imageUrl, frameUrl] = await Promise.all([urlOf(item.evidence.image), urlOf(item.evidence.frame)]);
+        item.evidence = { ...item.evidence, imageUrl, frameUrl };
+      }
     }),
   );
   return view;

@@ -492,7 +492,8 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # evidence images: agent crops and reviewer replacements
-    └── <video-key>/run-<N>/<itemId>.jpg    # AI crops, one run-<N> per analysis
+    └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
+        <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
         <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
@@ -501,7 +502,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
-> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
+> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`. Each entry holds `frame` (the whole frame, `<itemId>-frame.jpg`), `image` (the crop), `bounding_box` (the padded crop box in that frame), `box_seconds` (the second the frame was read at: the requested second, or +-1 or +-2 s when the detector found nothing there) and `located`. An object not found at any of those seconds has `located: false`, a `frame` but no `image` and no `bounding_box` (never `[0,0,1000,1000]`), and an `image_gap` reason; with no frame at all, `frame` is null and `image_gap` says why. Entries from before this change have neither `frame` nor `located`; the console cuts their frame from the stored video and reads a box covering the whole frame as not located;
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
