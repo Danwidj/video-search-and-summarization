@@ -1,13 +1,14 @@
 # Experiment decision record: D9, D10, D11, D15 and Stage 0
 
-> **Status (2026-10-27):**
+> **Status (2026-10-30):**
 > - **D9 v2: pre-registered** ([decisions.md](../decisions.md#2026-10-27-stage-2-prompt-selection-rule-d9-v2-pre-registered)).
 > - **D10 and D15:** approved as implemented.
 > - **D11:** caps enforced and retry-proof; the judge output is capped at 1,500 tokens ([methodology v1.1](../../eval/methodology/evaluation-methodology-v1.1.md)). The dollar limits are provisional.
 > - **Stage 1:** **ran 2026-10-28** on the frozen `ground-truth-v1.0` (AI-assisted, approved at the dataset level, not individually human-verified). Results: [`stage1-baselines.md`](../../eval/docs/experiments/stage1-baselines.md).
 > - **Stage 2:** done 2026-10-29 ([2a](../../eval/docs/experiments/stage2a-results.md), [2b](../../eval/docs/experiments/stage2b-results.md)). D9 v2 selects V1 `p1-v4-e01-severity` (owner-approved); V8 qualified but was not selected. **Stage 3** done 2026-10-30 ([plan](../../eval/docs/experiments/stage3-plan.md), [results](../../eval/docs/experiments/stage3-results.md)): V1 minus base Delta I +0.019 [-0.015, +0.055] in VSS and -0.011 [-0.045, +0.024] direct; VSS minus direct -0.007 [-0.036, +0.024] (base) and +0.023 [-0.003, +0.050] (V1); audit passed.
 > - **Stage 0:** **ran 2026-10-27** on the sponsor-provided gateway (configured $0 per token; infrastructure cost unknown). Results: [`stage0-pilot.md`](../../eval/docs/experiments/stage0-pilot.md).
-> - **Cropping:** option (a) chosen; the work is a separate follow-up. Plan: [`ground-truth-and-prompt-experiments-plan.md`](ground-truth-and-prompt-experiments-plan.md) §F and §H.
+> - **Cropping:** option (a) chosen (a per-request in-memory store). The end-to-end profile (plan §F.2: C2 and C3, cropping on, 15 test clips) is **prepared, not run**: the agent enforces a per-request crop-call cap (`max_crop_calls`, 40) and the runner a separate crop budget; the proposed budget waits for the owner ([profile plan](../../eval/docs/experiments/e2e-profile-plan.md)).
+> - **Consolidated report:** [`final-report.md`](../../eval/docs/experiments/final-report.md) (Stages 0-3).
 
 ## D9 v2: prompt-selection rule (pre-registered)
 

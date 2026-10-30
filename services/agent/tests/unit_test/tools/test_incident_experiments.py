@@ -136,8 +136,23 @@ class TestGate:
     def test_cropping_that_would_upload_to_r2_is_refused(self, enabled: None, registry: Path):
         with patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=True):
             with pytest.raises(ExperimentRefusedError, match="R2"):
-                experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID), None)
+                experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, max_crop_calls=10), None)
             assert experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID, skip_crops=True), None)
+
+    def test_experimental_cropping_needs_a_crop_call_cap(self, enabled: None, registry: Path):
+        with patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=False):
+            with pytest.raises(ValueError, match="max_crop_calls"):
+                experiment_settings(_input(experiment_prompt_id=EXPERIMENT_ID), None)
+            with pytest.raises(ValueError, match="skip_crops"):
+                experiment_settings(_input(skip_crops=True, max_crop_calls=10), None)
+            # the cap alone makes a base-prompt crops-on request experimental (the end-to-end profile's C2)
+            settings = experiment_settings(_input(max_crop_calls=10), None)
+        assert settings is not None and settings["prompt_id"] is None and settings["max_crop_calls"] == 10
+
+    def test_a_crop_call_cap_is_refused_without_the_flag(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv(incident_experiments.EXPERIMENTS_FLAG, raising=False)
+        with pytest.raises(incident_experiments.ExperimentsDisabledError):
+            experiment_settings(_input(max_crop_calls=10), None)
 
     def test_the_committed_registry_baseline_is_the_vendored_production_prompt(self, enabled: None, monkeypatch):
         monkeypatch.delenv(incident_experiments.REGISTRY_ENV, raising=False)
@@ -197,6 +212,7 @@ class TestToolRuns:
             "prompt_id": EXPERIMENT_ID,
             "prompt_sha256": hashlib.sha256(EXPERIMENT_TEXT.encode()).hexdigest(),
             "skip_crops": True,
+            "max_crop_calls": None,
             "persisted": False,
         }
         assert result.p1_elapsed_ms is not None and result.usage == {"prompt_tokens": 100, "completion_tokens": 50}
@@ -213,7 +229,11 @@ class TestToolRuns:
                 result, _ = await self._run(
                     _handler([]),
                     tool_input=_input(
-                        experiment_prompt_id=EXPERIMENT_ID, skip_crops=skip, skip_rp1=True, video_duration_seconds=30.0
+                        experiment_prompt_id=EXPERIMENT_ID,
+                        skip_crops=skip,
+                        max_crop_calls=None if skip else 10,
+                        skip_rp1=True,
+                        video_duration_seconds=30.0,
                     ),
                 )
             outputs.append(result)
@@ -248,6 +268,7 @@ class _RecordingService:
 
     def __init__(self) -> None:
         self.stores: list = []
+        self.detector = MagicMock()
 
     async def process_incident_report(self, *, video_ref, video_id, report, store=None, **_kwargs):
         self.stores.append(store)
@@ -297,7 +318,9 @@ class TestTemporaryEvidenceStore:
         for _ in range(2):
             result, persist = await _run_with_service(
                 _handler([]),
-                _input(experiment_prompt_id=EXPERIMENT_ID, skip_rp1=True, video_duration_seconds=30.0),
+                _input(
+                    experiment_prompt_id=EXPERIMENT_ID, max_crop_calls=10, skip_rp1=True, video_duration_seconds=30.0
+                ),
                 service,
             )
             assert result.experiment["evidence_store"] == EXPERIMENT_EVIDENCE_STORE
@@ -337,3 +360,45 @@ class TestTemporaryEvidenceStore:
             entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=report, store=store)
         assert len(store.images) == len(entries) == 3 and all(e["image"] in store.images for e in entries)
         r2.put_image.assert_not_awaited()
+
+
+class TestCropCallCap:
+    """The end-to-end profile's per-request crop-call cap: enforced before each grounding attempt, and reported."""
+
+    @pytest.mark.asyncio
+    async def test_a_crops_on_experiment_reports_its_crop_stage_and_stops_at_the_cap(
+        self, enabled: None, registry: Path
+    ):
+        import numpy as np
+
+        from vss_agents.utils import crop_evidence
+
+        calls: list[str] = []
+
+        class Detector:
+            def is_available(self) -> bool:
+                return True
+
+            def detect(self, frame, query):
+                calls.append(query)
+                return [crop_evidence.Detection(box=[0, 0, 500, 500], score=0.9, label=query)]
+
+        class Service(crop_evidence.CropEvidenceService):
+            def crop_item(self, video_ref, timestamp_seconds, label, detector=None):
+                frame = np.zeros((40, 40, 3), dtype=np.uint8)  # no video read: the frame is synthetic
+                return crop_evidence.crop_evidence_item(frame, timestamp_seconds, label, detector)
+
+        service = Service(detector=Detector())
+        result, persist = await _run_with_service(
+            _handler([]),
+            _input(max_crop_calls=2, skip_rp1=True, video_duration_seconds=30.0),
+            service,
+        )
+        crop = result.experiment["crop"]
+        assert len(calls) == 2  # three items, but only two grounding calls were allowed
+        assert crop["cap"] == 2 and crop["calls"] == 2 and crop["refused_by_cap"] == 1 and crop["cap_reached"]
+        assert crop["items"] == 3 and crop["images"] == 2 and crop["gaps"] == {"crop-call cap reached": 1}
+        assert crop["elapsed_ms"] >= 0 and result.experiment["prompt_id"] is None
+        assert result.revision_id is None
+        persist.assert_not_awaited()
+        assert service.detector.__class__ is Detector  # the shared detector is never wrapped in place
