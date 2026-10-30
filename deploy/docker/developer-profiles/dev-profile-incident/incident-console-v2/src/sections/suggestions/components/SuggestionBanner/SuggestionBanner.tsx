@@ -80,7 +80,7 @@ export function SuggestionBanner({
           <p className="mt-2 text-xs text-amber-900/80" data-testid="match-banner-hint">
             {disabled
               ? 'Save or discard your edit to decide these matches.'
-              : 'Nothing is merged until you accept and confirm. A rejected match is not suggested again.'}
+              : 'Matches scoring 0.5 or more join automatically; these lower scores merge only when you accept and confirm. A rejected match is not suggested again.'}
           </p>
         </>
       )}
