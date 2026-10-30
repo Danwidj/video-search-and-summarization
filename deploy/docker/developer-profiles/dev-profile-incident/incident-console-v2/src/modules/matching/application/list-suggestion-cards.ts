@@ -28,7 +28,7 @@ export interface SuggestionCard {
 
 export interface SuggestionCardPorts {
   suggestions: Pick<SuggestionStore, 'listPending'>;
-  reports: Pick<IncidentReportRepository, 'getIncident' | 'getRevision'>;
+  reports: Pick<IncidentReportRepository, 'getSideSummary'>;
 }
 
 /** Pending suggestions, highest score first, each with both incidents described; only those naming `incidentId` when given. */
@@ -42,10 +42,9 @@ export async function listSuggestionCards(
     const known = sides.get(id);
     if (known) return known;
     const loaded = (async (): Promise<SuggestionSide | null> => {
-      const incident = await reports.getIncident(id);
-      if (!incident) return null;
-      const title = (await reports.getRevision(id, null))?.envelope.overview.title ?? null;
-      const first = incident.videos[0]?.storageKey;
+      const side = await reports.getSideSummary(id);
+      if (!side) return null;
+      const first = side.firstVideoKey;
       let thumbnailUrl: string | undefined;
       try {
         thumbnailUrl = isValidR2Key(first) ? await sign(thumbnailKeyForVideo(first)) : undefined;
@@ -54,8 +53,8 @@ export async function listSuggestionCards(
       }
       return {
         incidentId: id,
-        title,
-        videoNames: incident.videos.map((video) => video.videoId),
+        title: side.title,
+        videoNames: side.videoNames,
         ...(thumbnailUrl ? { thumbnailUrl } : {}),
       };
     })();
@@ -63,13 +62,14 @@ export async function listSuggestionCards(
     return loaded;
   };
 
-  const cards: SuggestionCard[] = [];
-  for (const suggestion of await suggestions.listPending(incidentId)) {
-    const [kept, joining] = await Promise.all([
-      sideOf(Math.min(suggestion.incidentAId, suggestion.incidentBId)),
-      sideOf(Math.max(suggestion.incidentAId, suggestion.incidentBId)),
-    ]);
-    if (kept && joining) cards.push({ id: suggestion.id, score: suggestion.score, reasons: suggestion.reasons, joining, kept });
-  }
-  return cards;
+  const cards = await Promise.all(
+    (await suggestions.listPending(incidentId)).map(async (suggestion): Promise<SuggestionCard | null> => {
+      const [kept, joining] = await Promise.all([
+        sideOf(Math.min(suggestion.incidentAId, suggestion.incidentBId)),
+        sideOf(Math.max(suggestion.incidentAId, suggestion.incidentBId)),
+      ]);
+      return kept && joining ? { id: suggestion.id, score: suggestion.score, reasons: suggestion.reasons, joining, kept } : null;
+    }),
+  );
+  return cards.filter((card): card is SuggestionCard => card !== null);
 }

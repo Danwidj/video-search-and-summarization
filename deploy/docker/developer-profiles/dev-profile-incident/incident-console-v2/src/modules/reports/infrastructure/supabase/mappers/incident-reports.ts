@@ -9,6 +9,7 @@ import type {
   CreatedAiRevision,
   IncidentOfficialChange,
   IncidentRecord,
+  IncidentSideSummary,
   IncidentRevisionRecord,
   IncidentRevisionSummary,
   IncidentSummary,
@@ -75,6 +76,20 @@ export function incidentRecordFromRows(incident: Row, videos: Row[], revisions: 
     revisions: revisions.map((row) =>
       incidentRevisionSummaryFromRow(row, officialRevisionId, models.get(String(row.model_run_id)) ?? null),
     ),
+  };
+}
+
+/** The columns of a revision read for its title alone; `title` is the overview title pulled out of the payload by PostgREST. */
+export const REVISION_TITLE_COLUMNS = 'id,title:payload->overview->>title';
+export const SIDE_VIDEO_COLUMNS = 'id,filepath,uploaded_datetime';
+
+export function incidentSideSummaryFromRows(incident: Row, videos: Row[], revision: Row | null): IncidentSideSummary {
+  const ordered = videos.map(incidentVideoFromRow).sort(byUpload);
+  return {
+    incidentId: Number(incident.id),
+    title: revision ? text(revision.title) : null,
+    videoNames: ordered.map((video) => video.videoId),
+    firstVideoKey: ordered[0]?.storageKey ?? null,
   };
 }
 

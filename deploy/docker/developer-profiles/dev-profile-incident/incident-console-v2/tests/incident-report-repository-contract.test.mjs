@@ -220,6 +220,17 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.equal((await repo.getRevision(1, null)).revision.revisionId, 1, 'the official one, not the newest');
     });
 
+    test('a side summary is the title of the shown revision with the video names, and null for an unknown incident', async () => {
+      const { repo } = make();
+      assert.equal(await repo.getSideSummary(99), null);
+      assert.deepEqual(await repo.getSideSummary(1), { incidentId: 1, title: 'Two vans', videoNames: [A, B], firstVideoKey: A });
+      const saved = await repo.saveHumanRevision(humanInput());
+      assert.equal((await repo.getSideSummary(1)).title, 'Edited', 'the newest when none is official');
+      await repo.setOfficialRevision(1, 1);
+      assert.equal((await repo.getSideSummary(1)).title, 'Two vans', 'the official one, not the newest');
+      assert.ok(saved.revisionId > 1);
+    });
+
     test('marking and clearing the official revision', async () => {
       const { repo } = make();
       const marked = await repo.setOfficialRevision(1, 1);

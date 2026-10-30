@@ -24,6 +24,7 @@ import type {
   IncidentReportRepository,
   IncidentRevisionRecord,
   IncidentRevisionSummary,
+  IncidentSideSummary,
   IncidentSummary,
   IncidentSummaryList,
   IncidentVideo,
@@ -224,6 +225,18 @@ export class InMemoryIncidentReportRepository implements IncidentReportRepositor
       revisions: this.ofIncident(incidentId)
         .sort((a, b) => b.revision.revisionNo - a.revision.revisionNo)
         .map((row) => this.summary(row, incident.officialRevisionId)),
+    };
+  }
+
+  async getSideSummary(incidentId: IncidentId): Promise<IncidentSideSummary | null> {
+    const incident = await this.getIncident(incidentId);
+    if (!incident) return null;
+    const shown = await this.getRevision(incidentId, null);
+    return {
+      incidentId,
+      title: shown?.envelope.overview.title ?? null,
+      videoNames: incident.videos.map((video) => video.videoId),
+      firstVideoKey: incident.videos[0]?.storageKey ?? null,
     };
   }
 

@@ -13,8 +13,7 @@ type OfficialPort = Pick<IncidentReportRepository, 'getIncident' | 'getRevision'
 
 /** Rebuilds the incident's crops from the revision that is searchable now (official, else newest). */
 async function rebuildCrops(incidentReports: OfficialPort, incidentId: IncidentId, embed: EmbedEvidence): Promise<number | null> {
-  const incident = await incidentReports.getIncident(incidentId);
-  const record = await incidentReports.getRevision(incidentId, null);
+  const [incident, record] = await Promise.all([incidentReports.getIncident(incidentId), incidentReports.getRevision(incidentId, null)]);
   if (!incident || !record) return null;
   const crops = await incidentCrops(record.envelope, record.evidence, record.revision.videoNames, incident.videos, embed);
   return incidentReports.setRevisionCrops(incidentId, record.revision.revisionId, crops);
@@ -31,9 +30,11 @@ export async function setIncidentOfficialRevision(
   revisionId: number,
   embed: EmbedEvidence,
 ): Promise<IncidentOfficialChange> {
-  const incident = await incidentReports.getIncident(incidentId);
+  const [incident, record] = await Promise.all([
+    incidentReports.getIncident(incidentId),
+    incidentReports.getRevision(incidentId, revisionId),
+  ]);
   if (!incident) throw new StoreRejection('not-found', `Incident not found: ${incidentId}`);
-  const record = await incidentReports.getRevision(incidentId, revisionId);
   if (!record || record.revision.revisionId !== revisionId) {
     throw new StoreRejection('not-found', `Revision not found for this incident: ${revisionId}`);
   }

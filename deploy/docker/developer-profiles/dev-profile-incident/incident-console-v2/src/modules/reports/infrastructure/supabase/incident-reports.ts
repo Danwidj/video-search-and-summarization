@@ -13,6 +13,7 @@ import type {
   IncidentReportRepository,
   IncidentRevisionRecord,
   IncidentRevisionSummary,
+  IncidentSideSummary,
   IncidentSummaryList,
   MergeResult,
 } from '@/modules/reports/domain/IncidentReportRepository';
@@ -25,9 +26,12 @@ import {
   incidentRecordFromRows,
   incidentRefusal,
   incidentRevisionRecordFromRows,
+  incidentSideSummaryFromRows,
   incidentSummaryListFromRpc,
   mergeResultFromRpc,
   officialChangeFromRpc,
+  REVISION_TITLE_COLUMNS,
+  SIDE_VIDEO_COLUMNS,
   savedIncidentRevisionFromRpc,
 } from '@/modules/reports/infrastructure/supabase/mappers/incident-reports';
 
@@ -83,6 +87,27 @@ export class SupabaseIncidentReportAdapter implements IncidentReportRepository {
     const runs = runIds.length ? await this.db.selectIn('model_runs', 'id', runIds, 'id,model_name') : [];
     const models = new Map(runs.map((run) => [String(run.id), typeof run.model_name === 'string' ? run.model_name : null]));
     return incidentRecordFromRows(incident, videos, revisions, models);
+  }
+
+  /** Two round trips at most: the incident, its videos and its newest title together, then the official title when that is another revision. */
+  async getSideSummary(incidentId: IncidentId): Promise<IncidentSideSummary | null> {
+    const [incident, videos, [newest = null]] = await Promise.all([
+      this.db.selectOne('incidents', { id: id(incidentId) }, 'id,official_revision_id'),
+      this.db.selectMany('videos', { filters: { incident_id: id(incidentId) }, select: SIDE_VIDEO_COLUMNS }),
+      this.db.selectMany('report_revisions', {
+        filters: { incident_id: id(incidentId) },
+        select: REVISION_TITLE_COLUMNS,
+        order: 'revision_no.desc',
+        limit: 1,
+      }),
+    ]);
+    if (!incident) return null;
+    const officialId = typeof incident.official_revision_id === 'number' ? incident.official_revision_id : null;
+    const shown =
+      officialId === null || officialId === Number(newest?.id)
+        ? newest
+        : await this.db.selectOne('report_revisions', { incident_id: id(incidentId), id: id(officialId) }, REVISION_TITLE_COLUMNS);
+    return incidentSideSummaryFromRows(incident, videos, shown);
   }
 
   async getRevision(incidentId: IncidentId, revisionId: number | null): Promise<IncidentRevisionRecord | null> {
