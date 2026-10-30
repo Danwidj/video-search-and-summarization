@@ -533,6 +533,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   echo "  proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
+  export INCIDENT_VST_BASE_URL="http://localhost:7777"
   export ANALYSIS_MODE="agent"
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
@@ -586,6 +587,9 @@ elif [ "$VSS_START_MODE" = "mock" ]; then
 fi
 
 echo "  INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL}"
+if [ -n "${INCIDENT_VST_BASE_URL:-}" ]; then
+  echo "  INCIDENT_VST_BASE_URL=${INCIDENT_VST_BASE_URL}"
+fi
 if [ -n "${VLM_GATEWAY_URL:-}" ]; then
   echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
 fi

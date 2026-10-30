@@ -2,6 +2,12 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-31: Deleting a video also deletes its VST camera, before the objects and the row
+- **Decision:** `deleteVideoAndReports` deletes the video's VST sensor first (`DELETE /vst/api/v1/sensor/<videos.source>` with a `streamId: <sensorId>` header, which VST requires; a 404 counts as done), then its R2 objects and evidence, then the row. A row without `source` resolves the sensor by exact name (file name without extension), skipping `removed` placeholders, and only when exactly one sensor has it. The server reaches VST through `INCIDENT_VST_BASE_URL` (`start.sh --mode vm` exports `http://localhost:7777`; the agent URL is the fallback), and the route takes the port from `lib/container.ts`.
+- **Why:** VST keeps one camera per upload and holds 100, shared by every console on the VM, so cameras of deleted videos filled it and uploads failed until someone pruned by hand. The camera goes first so a VST failure stops the delete before anything is gone; the row is the only holder of the sensor id, so it goes last, and a repeat finishes the job.
+- **Rejected:** the agent's `DELETE /api/v1/videos/<id>`: it answers `partial` for a camera already gone, so a repeat after a later failure could never succeed. VST storage files are not deleted (the sensor delete only frees the slot). Ported from mvp3 (https://github.com/Danwidj/video-search-and-summarization/pull/367) without its multi-video incident code.
+- **Links:** [`../incident-console-v2/src/modules/videos/infrastructure/vst/sensor.ts`](../incident-console-v2/src/modules/videos/infrastructure/vst/sensor.ts), [vm-api-contracts.md](vm-api-contracts.md#vst-sensor-api-7777-vstapiv1sensor).
+
 ### 2026-10-30: Planning documents and spreadsheets are local only, never in Git; O3 closed as a documented limitation
 - **Decision (owner, 2026-10-30):**
   - **Removed from Git tracking** (`git rm --cached`; local files kept unchanged; merged history not rewritten):
