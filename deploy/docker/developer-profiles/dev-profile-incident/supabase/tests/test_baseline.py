@@ -115,12 +115,12 @@ with tempfile.TemporaryDirectory() as tmp:
         "SELECT p.oid::regprocedure::TEXT FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'public' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') ORDER BY 1").fetchall()]
 
-    @test("schema: 7 tables (incidents added), no views, no legacy report tables or functions")
+    @test("schema: 9 tables (incidents, video_analyses, incident_match_suggestions added), no views, no legacy report tables or functions")
     def _():
         kinds = dict(conn.execute("SELECT relkind::TEXT, count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                   "WHERE n.nspname = 'public' AND relkind IN ('r','v') GROUP BY 1").fetchall())
-        assert kinds == {"r": 7}, kinds
-        assert sorted(tables) == ["evidence_crops", "incidents", "model_runs", "queries", "query_results", "report_revisions", "videos"], tables
+        assert kinds == {"r": 9}, kinds
+        assert sorted(tables) == ["evidence_crops", "incident_match_suggestions", "incidents", "model_runs", "queries", "query_results", "report_revisions", "video_analyses", "videos"], tables
         names = " ".join(tables + functions)
         for gone in ("reports", "entities", "instruments", "assets", "human_reports", "review_status",
                      "gt_incidents", "severity_eval_log", "insert_incident", "save_human_report_edit",

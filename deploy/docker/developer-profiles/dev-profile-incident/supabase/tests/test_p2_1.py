@@ -184,9 +184,10 @@ def _():
         ai_revision(conn, inc, 2, parent_id=rev)
         conn.execute("UPDATE public.incidents SET official_revision_id = %s, official_since = now() WHERE id = %s",
                      (rev, inc))
-        conn.execute("""INSERT INTO public.evidence_crops (revision_id, item_type, item_id, item_name, description,
+        conn.execute("INSERT INTO public.videos (id, incident_id) VALUES ('crop.mp4', %s)", (inc,))
+        conn.execute("""INSERT INTO public.evidence_crops (revision_id, video_id, item_type, item_id, item_name, description,
                             timestamp_seconds, bounding_box, image)
-                        VALUES (%s, 'entity', 'E1', 'Man', 'in red', 1, '{0,0,1,1}', 'crops/e1.jpg')""", (rev,))
+                        VALUES (%s, 'crop.mp4', 'entity', 'E1', 'Man', 'in red', 1, '{0,0,1,1}', 'crops/e1.jpg')""", (rev,))
         conn.execute("DELETE FROM public.incidents WHERE id = %s", (inc,))
         assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE incident_id = %s", (inc,))[0] == 0
         assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (rev,))[0] == 0
