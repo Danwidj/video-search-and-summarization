@@ -16,6 +16,10 @@ import type { DbAdapters } from '@/modules/shared/domain/adapters';
 import { SupabaseIncidentAdapter } from '@/modules/reports/infrastructure/supabase/incidents';
 import type { AnalysisPorts } from '@/modules/analysis/application/run-contract-analysis';
 import { SupabaseAnalysisRunAdapter } from '@/modules/analysis/infrastructure/supabase/analysis-runs';
+import { SupabaseModelRunAdapter } from '@/modules/analysis/infrastructure/supabase/model-runs';
+import { SupabaseVideoAnalysisAdapter } from '@/modules/analysis/infrastructure/supabase/video-analyses';
+import type { ModelRunRepository } from '@/modules/analysis/domain/ModelRunRepository';
+import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import { GatewayClient } from '@/modules/analysis/infrastructure/gateway/client';
 import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incident-agent';
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
@@ -57,4 +61,13 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     catalog: defaultContractCatalog,
     randomUUID,
   };
+}
+
+/** Model runs and per-video analyses. Throws like getDbAdapters when the database is not configured. */
+export function getAnalysisStore(config?: ServiceConfiguration): {
+  modelRuns: ModelRunRepository;
+  analyses: VideoAnalysisRepository;
+} {
+  const db = createPostgrestClient(config);
+  return { modelRuns: new SupabaseModelRunAdapter(db), analyses: new SupabaseVideoAnalysisAdapter(db) };
 }
