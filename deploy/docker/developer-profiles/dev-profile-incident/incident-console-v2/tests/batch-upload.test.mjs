@@ -17,6 +17,7 @@ import {
   runBatchItem,
   runPool,
   summariseBatch,
+  UPLOAD_REFUSED_MESSAGE,
 } from '../src/sections/analysis/batch-upload.ts';
 
 const file = (name) => ({ name, size: 2 * 1024 * 1024 });
@@ -109,6 +110,21 @@ test('a failure is recorded at its stage and does not throw', async () => {
   assert.equal(item.stage, 'analyse');
   assert.equal(item.error, 'Analysis request timed out');
   assert.ok(item.uploaded, 'the upload is kept for the retry');
+});
+
+test('a refused upload with no message says the file was not accepted as a video', async () => {
+  for (const message of ['', '  ']) {
+    const { deps } = harness({ upload: async () => Promise.reject(new Error(message)) });
+    const item = await run(file('notvideo.mp4'), deps);
+    assert.equal(item.status, 'failed');
+    assert.equal(item.stage, 'upload');
+    assert.equal(item.error, UPLOAD_REFUSED_MESSAGE);
+    assert.equal(item.error, 'The file was not accepted as a video');
+  }
+  const { deps } = harness({ upload: async () => Promise.reject(new Error('Upload was cancelled')) });
+  assert.equal((await run(file('a.mp4'), deps)).error, 'Upload was cancelled', 'a message of its own is kept');
+  const later = harness({ analyse: async () => Promise.reject(new Error('')) });
+  assert.equal((await run(file('a.mp4'), later.deps)).error, 'The step failed', 'only the upload step has the video fallback');
 });
 
 test('a retry resumes at the stage that failed and does not upload again', async () => {
