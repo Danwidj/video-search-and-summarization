@@ -58,11 +58,13 @@ The mvp3 database holds nine tables: `incidents`, `videos`, `queries`, `model_ru
 ```json
 {
   "overview": { "title": "...", "type": "...", "severity_level": 3, "description": "...", "location": "...", "confidence_score": 0.8 },
-  "cameras": [ { "video": "front-door.mp4", "report": { "...": "incident-contract-v5 payload" } } ]
+  "cameras": [ { "video": "front-door.mp4", "report": { "...": "incident-contract-v5 payload" } } ],
+  "evidence_groups": [ { "id": "G1", "kind": "entity", "label": "man in blue shirt", "members": [ { "video": "front-door.mp4", "itemId": "E1" }, { "video": "lobby.mp4", "itemId": "E2" } ], "source": "ai", "reason": "..." } ]
 }
 ```
 
 - `overview` uses the fields of the contract's `incident` block. Library cards, search and the dashboard read `overview.title`, `overview.description` and `overview.confidence_score`; the filter columns (`incident_type`, `severity_level`) are copied from it by the writer.
+- `evidence_groups` is **optional** (no migration: the payload is JSONB). It lists the items that are the same person or object seen by different cameras, each member named by video and the camera's own id, since `E1` repeats in every video. `id` is `G1, G2 ...` per version; `kind` is `entity`, `instrument` or `asset`; `source` is `ai` (the agent's `link-evidence`, [vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentslink-evidence)) or `human`; `reason` is optional. Each `(video, itemId)` is in at most one group, a group has two or more members and at most one per video. The field is absent on versions built before the linker, from one video, when linking failed or found nothing; readers must treat absence as "no groups". The per-camera reports stay unchanged and their ids are never renumbered. The console keeps the field when a reviewer edits (a human revision copies it from its parent).
 - Entities, instruments and assets are read from every camera's `report` (`cameras[].report.entities`, `.instruments`, `.assets`) for the library filters and the dashboard.
 - `save_human_revision` requires `payload.overview` to be an object and `payload.cameras` to be an array; it does not validate the contract (the console does, per camera). `create_ai_revision` only requires a non-null payload.
 
