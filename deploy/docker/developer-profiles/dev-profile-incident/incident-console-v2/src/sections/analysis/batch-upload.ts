@@ -130,7 +130,11 @@ export function formatElapsed(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-const failureMessage = (error: unknown): string => (error instanceof Error && error.message ? error.message : 'The step failed');
+/** Shown when the upload step fails with no message of its own, as when VST refuses a file that is not a video. */
+export const UPLOAD_REFUSED_MESSAGE = 'The file was not accepted as a video';
+
+const failureMessage = (error: unknown, fallback = 'The step failed'): string =>
+  error instanceof Error && error.message.trim() ? error.message : fallback;
 
 /** Whether an analysis refusal means the upload's video row already exists (an earlier attempt got that far). */
 export const isAlreadyStored = (error: unknown): boolean => /already exists/i.test(failureMessage(error));
@@ -169,7 +173,7 @@ export async function runBatchItem(
     }
     set({ status: 'waiting', stage: 'matches' });
   } catch (error) {
-    update({ status: 'failed', stage, error: failureMessage(error) });
+    update({ status: 'failed', stage, error: failureMessage(error, stage === 'upload' ? UPLOAD_REFUSED_MESSAGE : undefined) });
   }
 }
 
