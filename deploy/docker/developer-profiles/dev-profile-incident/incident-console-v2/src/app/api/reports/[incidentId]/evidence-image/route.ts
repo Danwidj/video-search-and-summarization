@@ -4,7 +4,8 @@ import { Readable } from 'node:stream';
 
 import { NextResponse } from 'next/server';
 
-import { getDbAdapters } from '@/lib/container';
+import { getIncidentVideos } from '@/lib/container';
+import { parseIncidentId } from '@/lib/incident-route';
 import { getServiceConfiguration, isR2Configured } from '@/lib/env';
 import { errorResponse } from '@/lib/http';
 import { createR2PlaybackUrl, putR2Video, r2ObjectExists, verifyR2Video } from '@/lib/r2/config';
@@ -22,18 +23,26 @@ const ITEM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Stores a replacement evidence image under a new R2 key
- * (evidence/<video key>/edit-<n>/<itemId>.jpg, the first n whose key is free). It never overwrites an object, and
+ * (evidence/<video key>/edit-<n>/<itemId>.jpg for the camera `video` of the incident, the first n whose key is free). It never overwrites an object, and
  * nothing deletes one here: any revision may still reference it. Only the evidence-sweep route removes an image, and only one no revision names. The key is saved
  * into the next human revision's evidence by Save.
  */
 export async function POST(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { incidentId } = await context.params;
+    const incidentId = parseIncidentId((await context.params).incidentId);
+    if (incidentId === null) return NextResponse.json({ error: 'The incident id must be a positive integer' }, { status: 400 });
     const form = await request.formData();
     const file = form.get('file');
     const itemId = form.get('itemId');
-    if (!(file instanceof Blob) || typeof itemId !== 'string' || !ITEM_ID.test(itemId)) {
-      return NextResponse.json({ error: 'file and a valid itemId are required' }, { status: 400 });
+    const videoName = form.get('video');
+    if (
+      !(file instanceof Blob) ||
+      typeof itemId !== 'string' ||
+      !ITEM_ID.test(itemId) ||
+      typeof videoName !== 'string' ||
+      !videoName.trim()
+    ) {
+      return NextResponse.json({ error: 'file, a valid itemId and video are required' }, { status: 400 });
     }
     if (!IMAGE_TYPES.has(file.type)) return NextResponse.json({ error: 'The image must be JPEG, PNG or WebP' }, { status: 415 });
     if (file.size <= 0 || file.size > MAX_IMAGE_BYTES)
@@ -41,8 +50,9 @@ export async function POST(request: Request, context: { params: Promise<{ incide
 
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
-    const video = await getDbAdapters(config).videos.getVideo(incidentId);
-    if (!isValidR2Key(video?.storageKey)) return NextResponse.json({ error: 'Video not found' }, { status: 404 });
+    const video = await getIncidentVideos(config).getVideo(videoName.trim());
+    if (video?.incidentId !== incidentId || !isValidR2Key(video.storageKey))
+      return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     let editNumber = 1;
     while (await r2ObjectExists(config, uploadedEvidenceKey(video.storageKey, editNumber, itemId))) editNumber += 1;
     const key = uploadedEvidenceKey(video.storageKey, editNumber, itemId);

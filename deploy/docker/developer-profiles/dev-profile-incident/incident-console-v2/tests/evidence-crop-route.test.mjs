@@ -87,7 +87,10 @@ beforeEach(() => {
     R2_BUCKET: 'd',
   });
   globalThis.fetch = fakePostgrest({
-    incidents: [{ id: 1, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' }],
+    incidents: [
+      { id: 1, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' },
+      { id: 2, official_revision_id: null, official_since: null, created_at: '2026-10-01T00:00:00' },
+    ],
     report_revisions: [],
     model_runs: [],
     videos: [
@@ -95,6 +98,14 @@ beforeEach(() => {
         id: 'v1',
         incident_id: 1,
         filepath: 'videos/v1.mp4',
+        uploaded_datetime: '2026-10-01T01:00:00',
+        source: null,
+        official_revision_id: null,
+      },
+      {
+        id: 'v2',
+        incident_id: 2,
+        filepath: 'videos/v2.mp4',
         uploaded_datetime: '2026-10-01T01:00:00',
         source: null,
         official_revision_id: null,
@@ -109,12 +120,13 @@ afterEach(() => {
 
 const params = (videoId) => ({ params: Promise.resolve({ incidentId: videoId }) });
 const get = (query, incidentId = '1') => GET(new Request(`http://localhost/api/reports/${incidentId}/frame${query}`), params(incidentId));
-const post = (body, videoId = 'v1') =>
+// The crop route's path segment is the incident; the body names which of its videos to cut.
+const post = (body, incidentId = '1') =>
   POST(
     new Request('http://localhost/x', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }),
-    params(videoId),
+    params(incidentId),
   );
-const crop = { timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
+const crop = { video: 'v1', timestampSeconds: 0, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } };
 
 test('the frame route answers a JPEG decoded from the signed video URL', async () => {
   const response = await get('?video=v1&t=0');
@@ -157,6 +169,9 @@ test('a bad crop request is refused before anything is uploaded', async () => {
   const outside = await post({ ...crop, region: { x: 0.9, y: 0, w: 0.5, h: 0.5 } });
   assert.equal(outside.status, 422);
   assert.match((await outside.json()).error, /inside the frame/);
-  assert.equal((await post(crop, 'nope')).status, 404);
+  assert.equal((await post({ ...crop, video: 'nope' })).status, 404);
+  assert.equal((await post({ ...crop, video: 'v2' })).status, 404, 'a video of another incident is not found');
+  assert.equal((await post({ timestampSeconds: 0, region: crop.region })).status, 400, 'the video is required');
+  assert.equal((await post(crop, 'abc')).status, 400, 'the incident id must be a number');
   assert.equal(spawned.length, 0, 'no frame is cut for a refused request');
 });
