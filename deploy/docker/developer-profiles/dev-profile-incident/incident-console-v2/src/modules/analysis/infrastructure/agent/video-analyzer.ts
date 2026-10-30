@@ -79,6 +79,7 @@ export class HttpVideoAnalyzer implements VideoAnalyzer {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          video_url: request.videoUrl,
           video_key: request.videoKey,
           model_run_id: request.modelRunId,
           model: request.model,
