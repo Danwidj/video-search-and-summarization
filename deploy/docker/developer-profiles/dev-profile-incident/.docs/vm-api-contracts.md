@@ -167,7 +167,7 @@ Stateless. Turns the stored analyses of one incident's videos into the incident 
 
 Request: `{"videos": [{"video_name": <string>, "payload": <the video's stored analysis report, incident-contract-v4>}, ...]}`. Response `200`: `{"overview": {title, type, severity_level, description, location}, "embedding": [<1024 floats>]}`. The embedding is the summary vector of the revision (title and description), the same model as revision search.
 
-**Status on origin/mvp3:** the route is defined (`api/incident_synthesize.py`) but `register_incident_synthesize_routes` is not called in `custom_fastapi_worker.py`, so the VM agent answers `404` and Regenerate fails with `502` until open PR #320 ("mount POST /api/v1/incidents/synthesize in the worker") merges. Re-check before relying on it.
+**Mounting:** the worker registers the route since PR #320. An agent process started from an earlier checkout answers `404` (Regenerate then fails with `502`); restart it after `git pull` (`incident-operate-vm`).
 
 ## `POST /api/v1/incidents/match-judge`
 

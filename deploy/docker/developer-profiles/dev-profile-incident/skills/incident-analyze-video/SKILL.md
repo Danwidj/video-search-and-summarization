@@ -28,7 +28,7 @@ Check the synthesise route first, because Regenerate needs it:
 curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8001/api/v1/incidents/synthesize -H 'Content-Type: application/json' -d '{}'
 ```
 
-`422` means it is mounted. `404` means the agent predates PR #320 (not merged when this was written); Regenerate then fails with 502.
+`422` means it is mounted. `404` means the agent was started before PR #320 (which mounts it); restart it, or Regenerate fails with 502.
 
 ## Instructions
 

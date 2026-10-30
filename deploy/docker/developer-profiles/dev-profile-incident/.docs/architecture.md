@@ -492,4 +492,4 @@ The upload helper routes (`/api/uploads`, `/uploads/check`, `/uploads/r2`, `/upl
 ### Known leftovers on `origin/mvp3`
 
 - `GET /api/videos`, `POST /api/videos/[videoId]/runs`, `ANALYSIS_MODE` and the gateway client are still in the console and still use the pre-mvp3 video-keyed run code. They are stale against the mvp3 schema; do not use them.
-- The agent route `POST /api/v1/incidents/synthesize` is defined but not mounted in `custom_fastapi_worker.py`, so Regenerate fails until PR #320 lands ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize)).
+- The agent route `POST /api/v1/incidents/synthesize` was not mounted in the worker until PR #320 (merged). An agent started before that change answers `404` and Regenerate then fails with 502; restart it ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize)).
