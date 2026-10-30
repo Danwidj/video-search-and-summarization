@@ -206,7 +206,7 @@ export function AnalysisWorkspace() {
                 <strong className="font-semibold">
                   {waiting} suggested {waiting === 1 ? 'match is' : 'matches are'} waiting for your decision.
                 </strong>{' '}
-                Nothing is merged until you accept it. Reports for these videos are built when you decide.{' '}
+                These scored below 0.5, so they join only when you accept them. Reports for these videos are built when you decide.{' '}
                 <Link className="font-semibold underline" href="/library?tab=matches">
                   Review the matches
                 </Link>
