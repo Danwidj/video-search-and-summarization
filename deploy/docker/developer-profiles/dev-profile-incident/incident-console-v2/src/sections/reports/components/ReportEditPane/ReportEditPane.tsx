@@ -33,6 +33,10 @@ import { EDITABLE_ENTITY_TYPES, EDITABLE_INCIDENT_TYPES, type EditDraft } from '
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { EvidenceFramePicker } from '@/sections/evidence/components/EvidenceFramePicker';
+import { EditTargetSwitch, type EditTarget } from './EditTargetSwitch';
+import { OverviewEdit } from './OverviewEdit';
+import type { Overview } from '@/modules/reports/domain/envelope';
+import type { OverviewDraft } from '@/modules/reports/domain/overview-draft';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 const clock = (seconds: number | null) => (seconds === null ? '—' : formatClock(seconds));
@@ -46,6 +50,9 @@ const rowKey = (row: PairRow) => `${row.kind}-${row.b?.key ?? (row.a ? savedItem
  * Replace image picks a frame from the video and a rectangle on it; the crop
  * and its frame second go into the draft item. Add evidence is not part of
  * this pane yet.
+ *
+ * It edits one thing at a time: the selected camera's report (the sections
+ * above) or the incident overview, chosen with the switch under the header.
  */
 export function ReportEditPane({
   a,
@@ -57,6 +64,13 @@ export function ReportEditPane({
   videoSrc,
   onChange,
   onSeek,
+  cameraName,
+  target,
+  targetLocked,
+  onTargetChange,
+  overviewA,
+  overviewDraft,
+  onOverviewChange,
 }: {
   a: Structured | null;
   aRevisionNo: number;
@@ -67,6 +81,13 @@ export function ReportEditPane({
   videoSrc: string;
   onChange: (draft: EditDraft) => void;
   onSeek: (seconds: number) => void;
+  cameraName: string;
+  target: EditTarget;
+  targetLocked: boolean;
+  onTargetChange: (target: EditTarget) => void;
+  overviewA: Overview;
+  overviewDraft: OverviewDraft;
+  onOverviewChange: (draft: OverviewDraft) => void;
 }) {
   const [picking, setPicking] = useState<PairRow['b'] | null>(null);
   const pairing = pairReport(a, draft);
@@ -125,32 +146,44 @@ export function ReportEditPane({
     return names.length ? `Holds ${names.join(', ')}` : 'Holds nothing visible';
   };
 
+  const header = (
+    <div
+      className="mt-4 grid gap-2 rounded-2xl border border-ink/10 bg-white/95 px-3 py-2 text-xs sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4"
+      data-testid="compare-header"
+    >
+      <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Compare</span>
+      <div className="min-w-0 rounded-xl bg-[#fdf0ea] px-3 py-2" data-side="A">
+        <Badge
+          className="border-[#9b3518]/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-[#9b3518]"
+          variant="outline"
+        >
+          A
+        </Badge>{' '}
+        <b>v{aRevisionNo}</b> <span className="text-ink/50">read-only</span>
+      </div>
+      <div className="min-w-0 rounded-xl bg-[#eef5e6] px-3 py-2" data-side="B">
+        <Badge className="border-moss/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-moss" variant="outline">
+          B
+        </Badge>{' '}
+        <b>Draft</b> <span className="text-ink/50">from v{baseRevisionNo} · editable</span>
+      </div>
+    </div>
+  );
+
+  if (target === 'overview') {
+    return (
+      <div className="px-5 pb-6 sm:px-8" data-testid="report-edit-pane">
+        {header}
+        <EditTargetSwitch cameraName={cameraName} locked={targetLocked} onChange={onTargetChange} target={target} />
+        <OverviewEdit a={overviewA} draft={overviewDraft} onChange={onOverviewChange} />
+      </div>
+    );
+  }
+
   return (
     <div className="px-5 pb-6 sm:px-8" data-testid="report-edit-pane">
-      <div
-        className="mt-4 grid gap-2 rounded-2xl border border-ink/10 bg-white/95 px-3 py-2 text-xs sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] sm:gap-4"
-        data-testid="compare-header"
-      >
-        <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Compare</span>
-        <div className="min-w-0 rounded-xl bg-[#fdf0ea] px-3 py-2" data-side="A">
-          <Badge
-            className="border-[#9b3518]/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-[#9b3518]"
-            variant="outline"
-          >
-            A
-          </Badge>{' '}
-          <b>v{aRevisionNo}</b> <span className="text-ink/50">read-only</span>
-        </div>
-        <div className="min-w-0 rounded-xl bg-[#eef5e6] px-3 py-2" data-side="B">
-          <Badge
-            className="border-moss/20 bg-white/80 font-mono text-[10.5px] font-bold uppercase tracking-wide text-moss"
-            variant="outline"
-          >
-            B
-          </Badge>{' '}
-          <b>Draft</b> <span className="text-ink/50">from v{baseRevisionNo} · editable</span>
-        </div>
-      </div>
+      {header}
+      <EditTargetSwitch cameraName={cameraName} locked={targetLocked} onChange={onTargetChange} target={target} />
 
       <section className="mt-5" data-testid="report-fields-compare">
         <h3 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-ink-caption">Report fields</h3>
