@@ -1,6 +1,6 @@
 # Evaluation plan audit and deviation record
 
-> **Status (2026-10-30).** This page audits the [original plan](../../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) (PRs 0-7, decisions D1-D15) against what was built and run. It records every requirement that was replaced, omitted or deferred, and the two offline checks added on 2026-10-30.
+> **Status (2026-10-30, updated after the end-to-end profile and the owner's acceptance of O1, O2 and O4).** This page audits the [original plan](../../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) (PRs 0-7, decisions D1-D15) against what was built and run. It records every requirement that was replaced, omitted or deferred, and the two offline checks added on 2026-10-30.
 > - **Explicit acknowledgement:** the ground truth (`ground-truth-v1.0`) and the item-matching calibration (τ = 0.40) are **AI-assisted, not human-validated**. The plan's human review and agreement steps were not carried out. Every reported accuracy is accuracy against an AI-assisted reference that the owner approved at the dataset level.
 > - **Read-only:** nothing on this page changed the frozen ground truth, split, methodology, D9 v2, prompts or any Stage 0-3 result. The offline checks sent no model, embedding, judge or cropping request.
 
@@ -14,14 +14,14 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 | A | A.2 gap 4 (holder rate), gap 8 (ground-truth defects) | Done | Holder rate in the [secondary metrics](#3-offline-checks-added-2026-10-30); PRs 3-4 |
 | A | A.2 gap 9 (5 broken finals `videos.filepath`) | Not done (out of scope by the plan) | Supabase; separate decision |
 | PR 0 | Stash recovery, offline scoring, no finals table creation | Done | #214 |
-| PR 1A | Annotation guidelines v1.0 | Done (owner-approved 2026-10-27; no record of an annotator review) | #216 |
+| PR 1A | Annotation guidelines v1.0 | Done (owner-approved 2026-10-27). Annotator review omitted (O4, accepted); owner approval is **not** an annotator review | #216 |
 | PR 1B | Methodology v1.0: pinned judge, failure classes, bootstrap, metadata, fixtures | Done | #218, then v1.1 #227, v1.2 #240/#256, v1.3 #258 |
 | PR 1B | Severity within ±1, bias, confusion | Done | v1.3 (#258), reporting only |
 | PR 1B | τ = 0.75 kept (D4) | **Done (replaced)**: τ = 0.40 | §2 R2 |
 | PR 1B | Threshold sensitivity at 0.65 and 0.85 | Done (2026-10-30, offline, lower bounds) | §3.2 |
 | PR 1B | Macro (category-mean) accuracy; per-video-mean item F1 | Done (2026-10-30, offline) | §3.2 |
 | PR 1B | Holder accuracy with counts; threat level on matched instruments | Done (2026-10-30, offline) | §3.2 |
-| PR 1B | MiniLM description cosine as a judge-drift check | **Not done (deferred)** | §2 O1 |
+| PR 1B | MiniLM description cosine as a judge-drift check | **Omitted (O1, accepted by the owner)** | §2 O1 |
 | PR 2 | 80 clips fetched and verified; manifest; `_demo`; split keys; `*.xlsx` ignored | Done | #215 |
 | §E | Perceptual-hash near-duplicate check across splits | Done (2026-10-30, offline) | §3.1 |
 | PR 3 | Workbook audit and review workbook | Done | #217 |
@@ -39,17 +39,17 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 | Stage 2 | E1-E7 on dev through VSS, combined candidate, pre-registered selection | Done (executed) | #240-#275; [2a](stage2a-results.md), [2b](stage2b-results.md) |
 | Stage 2 | E6 few-shot examples | **Done (replaced)** by V6 incident boundaries | §2 R4 |
 | Stage 2 | D9 (c) selection rule | **Done (replaced)** by D9 v2 | §2 R3 |
-| Stage 2 | Quarantine attestation by the prompt authors | **Not done** | §2 O3 |
+| Stage 2 | Quarantine attestation by the prompt authors | **Partial**: AI author verified retrospectively; owner attestation not obtained | §2 O3; [attestation](stage2-quarantine-attestation.md) |
 | Stage 3 | C1-C4 on 55 test clips, run once, four comparisons plus C3−C1 | Done (executed) | #276, #339; [results](stage3-results.md) |
 | Stage 3 | N = 2 on test (D10) | **Done (replaced)**: N = 1 | §2 R5 |
 | Stage 3 | D15 sensitivity on the 52 clips | Done | Stage 3 §3 |
 | Stage 3 | Optional transfer models (Nano, Omni on C1, C4) | Optional, not run (owner: not to run) | – |
-| Profile | End-to-end profile: C2, C3 crops on, 15 test clips | **Prepared, not executed** (waits for budget approval) | #359; [plan](e2e-profile-plan.md) |
+| Profile | End-to-end profile: C2, C3 crops on, 15 test clips | **Done (executed 2026-10-30)**: 30 video-runs, 26 with output, within every cap | #359; [plan](e2e-profile-plan.md), [results](e2e-profile-results.md) |
 | Recovery | recovery-v1 for infrastructure failures | Done for Stages 2a, 2b, 3 (7/7, 1/1, 4/6) | [failures and recovery](infrastructure-and-recovery.md) |
 | D11 | Per-stage budget approval before each stage | Done | decisions.md, Stages 0-3 |
 | D11 | Dollar limits from confirmed pricing | Partial: $0 per token recorded, provisional; infrastructure cost unknown | `experiments/pricing.json` |
 | Report | Per-stage reports | Done | stage docs |
-| Report | Final report (14 sections) | Done; §7 end-to-end latency pending the profile | [final-report.md](final-report.md) |
+| Report | Final report (14 sections) | Done, including §7 end-to-end latency | [final-report.md](final-report.md) |
 | Repro | Results immutable, `verify`, test run once with guard log | Done | `results.sha256`, run-once guard, Stage 3 audit |
 | Repro | Scoring reproducible from saved results | Done for Stage 3 (full audit); Stages 0-2 by `verify` and hashes | `audit-20261030T071810Z.json` |
 | Optional | Judge calibration set (about 20 human-scored pairs); threat ±1 as a metric; RP1 cost | Optional. Threat ±1 done offline (§3.2); the others not done | – |
@@ -74,10 +74,10 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 |---|---|---|---|---|
 | **D1** | Recovery of Stage 1's 34 failed runs | Deferred by the owner | Stage 1 informed setup only; no selection uses it | None needed to complete Stages 2-3. Stage 1 tables include the failures |
 | **D2** | Copy of the ground-truth workbooks in R2 (D7 c) | Deferred (an R2 write; never approved) | Ask-first shared-storage write | Durability is one machine. Owner decision |
-| **O1** | MiniLM description cosine as a secondary judge-drift check | Not done | Not implemented in methodology v1.0-v1.3. Computing it now needs new embedding calls on the descriptions | Recorded, owner acceptance requested. The judge is pinned (model, prompt version, temperature 0, output cap) and its tokens and calls are logged, which limits drift but does not measure it |
-| **O2** | Matching sensitivity at thresholds *below* the frozen τ | Not done | The saved results keep similarities only for matched pairs, so a looser threshold needs new embedding calls | Recorded, owner acceptance requested. Stricter thresholds are covered offline (§3.2) |
-| **O3** | Written quarantine attestation by the Stage 2 prompt authors | Not done | The runner read no test results during Stage 2, and the exposure is disclosed (D15), but no attestation was recorded | Recorded, owner acceptance requested. An attestation now would be retrospective |
-| **O4** | Annotators' review of the guidelines (PR 1A acceptance) | Not recorded | The owner approved them (D1, D2) | Recorded, owner acceptance requested |
+| **O1** | MiniLM description cosine as a secondary judge-drift check | Not done | Not implemented in methodology v1.0-v1.3. Computing it now needs new embedding calls on the descriptions | **Accepted by the owner (2026-10-30).** The judge is pinned (model, prompt version, temperature 0, output cap) and its tokens and calls are logged, which limits drift but does not measure it |
+| **O2** | Matching sensitivity at thresholds *below* the frozen τ | Not done | The saved results keep similarities only for matched pairs, so a looser threshold needs new embedding calls | **Accepted by the owner (2026-10-30).** Stricter thresholds are covered offline (§3.2) |
+| **O3** | Written quarantine attestation by the Stage 2 prompt authors | **Partial** (2026-10-30, retrospective) | None was recorded at the time; the owner asked for a retrospective one, recording only what can be verified | **AI author:** verified from the session transcripts that no per-video test result was read while V1-V7 were drafted. They had aggregate test benchmark figures and test ground-truth labels in context, and no prompt contains clip-specific text. **Owner (who adjusted V1-V7):** not obtained; it cannot be given on the owner's behalf ([attestation](stage2-quarantine-attestation.md)) |
+| **O4** | Annotators' review of the guidelines (PR 1A acceptance) | Omitted | The owner approved them (D1, D2) | **Accepted by the owner (2026-10-30)**, with the disclosure that the owner's approval is **not equivalent to an annotator review** |
 | **O5** | D11 dollar limits from confirmed pricing | Partial | The gateway reports $0 per token; the sponsor's infrastructure cost is not visible to the project | Recorded; every report states it |
 | **O6** | Optional: judge calibration set, RP1 cost, transfer models | Optional, not done | Optional in the plan; transfer models excluded by the owner | None for completion |
 
@@ -133,7 +133,8 @@ Status: **Done** (built and, where it is an experiment, executed), **Done (repla
 
 ## 4. What remains to complete the original plan
 
-1. **Run the end-to-end profile** after the owner approves its budget ([plan](e2e-profile-plan.md)); then report it and fill in final-report §7.
-2. **Owner acceptance of the open deviations** O1-O4 above (R1-R7, D1 and D2 are already owner decisions).
+1. ~~Run the end-to-end profile~~: **done 2026-10-30** ([results](e2e-profile-results.md)).
+2. ~~Owner acceptance of O1, O2 and O4~~: **accepted 2026-10-30**.
+3. **O3, the owner's part of the quarantine attestation:** open. The AI author's part is verified ([attestation](stage2-quarantine-attestation.md)); the owner's own statement can be added verbatim if they choose to give one.
 
-Nothing else in the plan is outstanding as mandatory work. The human validation that R1 and R2 replaced stays a disclosed limitation unless the owner commissions a human review, which would start a new ground-truth or calibration version and a re-score.
+Apart from item 3, nothing in the plan is outstanding as mandatory work. The human validation that R1 and R2 replaced stays a disclosed limitation unless the owner commissions a human review, which would start a new ground-truth or calibration version and a re-score.
