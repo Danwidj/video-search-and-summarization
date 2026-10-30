@@ -125,10 +125,10 @@ with tempfile.TemporaryDirectory() as tmp:
         for gone in ("reports", "entities", "instruments", "assets", "human_reports", "review_status",
                      "gt_incidents", "severity_eval_log", "insert_incident", "save_human_report_edit",
                      "select_official_report", "set_review_status", "effective_incidents",
-                     "search_evidence_items", "apply_r2_rename", "search_report_revisions"):
+                     "apply_r2_rename"):
             assert gone not in names, gone
         for present in ("report_revisions_append_only", "evidence_image", "searchable_revision_id", "replace_video_crops",
-                        "set_revision_crops"):
+                        "set_revision_crops", "search_evidence_items", "search_report_revisions"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
         vid_cols = [r[0] for r in conn.execute(
