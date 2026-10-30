@@ -2,6 +2,15 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Suggestions come before reports; a decision builds the report
+- **Decision:** A batch uploads and analyses every file, then checks matches for all of them, and only then builds. A file with no pending suggestion is built at once; an incident with a pending suggestion waits, and the Accept or Reject on the Matches tab or report banner builds the report of each incident it leaves (one report for an accepted merge). The build step takes an incident id and does not know who decided the join, so an automatic rule (score threshold) can call it later. Nothing merges without Accept. An incident with no version shows as waiting in the library and on its report page, with its videos, the pending suggestions and "Build report now".
+- **Why:** Building a report per file first made three clips of one event become three reports, and the merge left a stale or missing combined report. Deciding first gives one report from all the videos.
+- **Alternatives rejected:**
+  - *Build first, merge, then Regenerate:* Rejected because it wastes a build per clip and the reviewer sees reports that are about to disappear.
+  - *Auto-join above a score:* Not yet; the rule is undecided. The shared build step keeps it a small change.
+- **Supersedes:** the build-before-match order and "Merge never regenerates" in the batch upload and Regenerate entries.
+- **Links:** [architecture §5](architecture.md#5-mvp3-incidents-with-several-videos), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
 ### 2026-10-30: Chat Jump to opens the citation's camera before seeking
 - **Decision:** A chat citation carries the camera it came from, and Jump to switches to that camera (`openCamera`), then seeks when its player has loaded (`seekPlan` in `lib/chat/report-chat.ts`). A citation with no camera seeks the open video. In Edit mode a jump into another camera does nothing.
 - **Why:** `onSeek(seconds)` always set `currentTime` on the open video, so a citation from another camera landed on the wrong footage. The agent already returns `video_id`, so no agent change.

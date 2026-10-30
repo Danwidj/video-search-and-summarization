@@ -68,11 +68,13 @@ import type { EditTarget } from '@/sections/reports/components/ReportEditPane/Ed
 import { RemoveVideoDialog } from '@/sections/reports/components/RemoveVideoDialog';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { RegenerateReport } from '@/sections/reports/components/RegenerateReport';
+import { WaitingIncident, type WaitingVideo } from '@/sections/reports/components/WaitingIncident';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
+  | { status: 'waiting'; videos: WaitingVideo[] }
   | { status: 'ready'; view: IncidentReportView; report: ReportView | null };
 
 type Mode = 'view' | 'edit';
@@ -159,7 +161,11 @@ export function ReportPage({
       signal: controller.signal,
     })
       .then(async (response) => {
-        const payload = (await response.json()) as { report?: IncidentReportView; error?: string };
+        const payload = (await response.json()) as { report?: IncidentReportView; error?: string; waiting?: { videos: WaitingVideo[] } };
+        if (payload.waiting) {
+          setState({ status: 'waiting', videos: payload.waiting.videos });
+          return;
+        }
         if (!response.ok || !payload.report) throw new Error(payload.error || `Report request failed with HTTP ${response.status}`);
         setState({ status: 'ready', view: payload.report, report: payload.report.report });
       })
@@ -325,6 +331,10 @@ export function ReportPage({
         </div>
       </div>
     );
+  }
+
+  if (state.status === 'waiting') {
+    return <WaitingIncident incidentId={incidentId} onBuilt={() => setAttempt((value) => value + 1)} videos={state.videos} />;
   }
 
   if (state.status === 'error') {

@@ -24,12 +24,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 export function IncidentCard({
   item,
   busy,
+  waitingForDecision = false,
   onDelete,
   onOpen,
   onSearchEvidence,
 }: {
   item: LibraryIncident;
   busy: boolean;
+  /** A pending match suggestion names this incident. */
+  waitingForDecision?: boolean;
   onDelete: (item: LibraryIncident) => void;
   onOpen: (item: LibraryIncident) => void;
   onSearchEvidence: (item: LibraryIncident) => void;
@@ -39,7 +42,9 @@ export function IncidentCard({
 
   const href = `/reports/${encodeURIComponent(item.incidentId)}${item.revisionId === null ? '' : `?revision=${item.revisionId}`}`;
   const versions = item.versionCount ?? 0;
-  const displayTitle = cardTitle(item, `${item.incidentType} · ${formatTimestamp(item.uploadedAt)}`);
+  const noReport = item.revisionId === null;
+  const waitingLabel = waitingForDecision ? 'Waiting for match decision' : 'No report yet';
+  const displayTitle = noReport ? waitingLabel : cardTitle(item, `${item.incidentType} · ${formatTimestamp(item.uploadedAt)}`);
 
   const firstVideo = item.firstVideoName ?? 'No video';
   const videoLine = item.videoCount > 1 ? `${firstVideo} +${item.videoCount - 1} more` : firstVideo;
@@ -56,7 +61,7 @@ export function IncidentCard({
         data-card={item.incidentId}
         role="link"
         tabIndex={0}
-        aria-label={`Open report: ${displayTitle}`}
+        aria-label={`Open ${noReport ? 'incident' : 'report'}: ${displayTitle}`}
         className="group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
         id={`report-${item.incidentId}`}
         onClick={(event) => {
@@ -129,7 +134,7 @@ export function IncidentCard({
             >
               <TagIcon aria-hidden className="size-3 shrink-0" />
               <span className="sr-only">Incident type: </span>
-              <span className="truncate">{item.incidentType}</span>
+              <span className="truncate">{noReport ? 'Waiting' : item.incidentType}</span>
             </p>
             <div className="flex shrink-0 items-center gap-1" data-no-card-nav>
               <TooltipProvider>
@@ -159,7 +164,7 @@ export function IncidentCard({
                     </TooltipTrigger>
                     {item.officialSince && <TooltipContent>Made official {formatTimestamp(item.officialSince)}</TooltipContent>}
                   </Tooltip>
-                ) : (
+                ) : noReport ? null : (
                   <span
                     className="inline-flex items-center rounded-full border border-dashed border-ink/30 bg-muted px-2 py-0.5 text-[11px] font-bold text-ink/60"
                     data-testid="library-no-official-marker"
@@ -180,7 +185,13 @@ export function IncidentCard({
             </Tooltip>
           </TooltipProvider>
 
-          <p className="truncate text-[13px] leading-5 text-ink/60">{item.description}</p>
+          <p className="truncate text-[13px] leading-5 text-ink/60">
+            {noReport
+              ? waitingForDecision
+                ? 'Decide the suggested match in the Matches tab; the report is built after.'
+                : 'Open it to build the report.'
+              : item.description}
+          </p>
 
           <TooltipProvider>
             <Tooltip>
@@ -195,8 +206,8 @@ export function IncidentCard({
           </TooltipProvider>
 
           <p className="truncate text-xs text-ink/50">
-            {item.videoCount} {item.videoCount === 1 ? 'video' : 'videos'} · {versions} {versions === 1 ? 'version' : 'versions'} · Added{' '}
-            {formatTimestamp(item.uploadedAt)}
+            {item.videoCount} {item.videoCount === 1 ? 'video' : 'videos'} ·{' '}
+            {noReport ? 'no report' : `${versions} ${versions === 1 ? 'version' : 'versions'}`} · Added {formatTimestamp(item.uploadedAt)}
           </p>
         </div>
       </Card>

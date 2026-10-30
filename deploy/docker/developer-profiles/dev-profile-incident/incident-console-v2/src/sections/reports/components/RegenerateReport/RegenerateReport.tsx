@@ -24,8 +24,12 @@ export function RegenerateReport({
   incidentId,
   videoCount,
   disabled = false,
+  caption = 'Build a new version from the stored analyses',
+  label = 'Regenerate',
   onDone,
 }: {
+  caption?: string;
+  label?: string;
   incidentId: string;
   videoCount: number;
   disabled?: boolean;
@@ -66,7 +70,7 @@ export function RegenerateReport({
   return (
     <div className="border-b border-border" data-testid="regenerate">
       <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <span className="text-[11px] text-muted-foreground">Build a new version from the stored analyses</span>
+        <span className="text-[11px] text-muted-foreground">{caption}</span>
         <Button
           className="shrink-0 font-semibold"
           data-testid="regenerate-button"
@@ -77,7 +81,7 @@ export function RegenerateReport({
           variant="outline"
         >
           <RefreshCwIcon aria-hidden="true" className={running ? 'animate-spin' : undefined} />
-          {running ? 'Regenerating…' : 'Regenerate'}
+          {running ? 'Building…' : label}
         </Button>
       </div>
       {running && (
