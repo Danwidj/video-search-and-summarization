@@ -32,7 +32,14 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8001/api/v1/incidents
 
 ## Instructions
 
-The Phase 6 UI is not merged yet, so the screens still show the pre-mvp3 layout. Use the console API below (what the new UI will call).
+The Phase 6 UI is merged ([screens](../../.docs/architecture.md#screens-phase-6)); the same steps are available through the console API below, which the screens call.
+
+### 0. In the UI
+
+- **Upload a batch:** on `/` pick or drop several clips. Each file runs Upload, Analyse, Build report and Check matches (two at a time) and shows its own bar and error; "Retry this video" resumes at the stage that failed. Open the result from "Go to library".
+- **Review matches:** the report page shows an amber banner per pending match; the library's **Matches** tab (`/library?tab=matches`) lists them all. Accept merges (the lower incident id is kept) and does not regenerate; Reject is remembered.
+- **Report page** (`/reports/<incidentId>?revision=&camera=`): the overview card, then the camera switcher (shown with more than one camera; removed or invalid cameras are disabled), then the usual panes for that camera. **Regenerate** (above the version list) builds a new version from the stored analyses and selects it; **Remove video** offers "Move to its own incident" or "Delete entirely" (only delete for the last video); **Merge into another incident** picks a target and confirms; **Edit from vN** edits the selected camera or the overview.
+- **Library:** one card per incident with a video-count chip; "Delete incident..." names what goes.
 
 ### 1. Upload
 
@@ -79,6 +86,7 @@ The `videos` row must already exist; the agent does not write `videos`. The resp
 | 422 | P1 output failed `core-scored-v1`. Nothing is stored; `detail` carries `message`, `raw_output`, `finish_reason`, `model`, `contract_version`. |
 | 504 | Analysis timed out |
 | 501 | `incident_report_gen` is not configured on this agent. |
+| 502 | The video model returned no answer. The video is probably in an unsupported format (10-bit H.264) or unreadable; nothing is stored. In a batch only that file fails. |
 | 500 | Any other failure. See `./.scripts/logs.sh vss-agent` on the VM. |
 
 ## Version lifecycle
@@ -102,6 +110,9 @@ Minimum checks after one analyse and one build, in the finals-free mvp3 database
 
 ## Known quirks
 
+- The report page's **Re-analyse** dialog still posts to the stale `POST /api/videos/<id>/runs` route and does not work on mvp3. Re-analyse with `POST /api/analysis` and `{"videoName"}`.
+- The agent's analysis payload carries a derived `incident.duration` that `incident-contract-v4` forbids, so the report API can mark a freshly analysed camera invalid and the page shows "No camera of this version can be shown". Synthesise (Regenerate) accepts the shape. The console fix had not merged when this was written; check [`architecture §5`](../../.docs/architecture.md#known-leftovers-on-originmvp3).
+- A model can run away into invalid JSON for one clip (422 for that file only); retry or change the model.
 - `GET /api/videos`, `POST /api/videos/<id>/runs` and `ANALYSIS_MODE` still exist in the console from before mvp3 and use the old video-keyed run code. They do not match the mvp3 schema; do not use them.
 - Every attempt, valid or not, is recorded in `model_runs.notes` with its outcome under validation policy `core-scored-v1`; see [`.docs/analysis-schema.md`](../../.docs/analysis-schema.md).
 - `anomaly/<category>` is reserved for classified seed/evaluation media. VLM output such as `incident_type: none` does not change the uploaded object's key.
