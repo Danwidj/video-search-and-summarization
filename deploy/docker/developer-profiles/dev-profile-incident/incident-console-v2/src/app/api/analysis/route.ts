@@ -8,7 +8,6 @@ import { storeSearchableCrops, type SearchableCropsResult } from '@/modules/repo
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
 import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
-import { compactId } from '@/lib/ids';
 
 // The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
 export const maxDuration = 360;
@@ -69,7 +68,7 @@ export async function POST(request: Request) {
 
     const { run, revisionId } = await runContractAnalysis(
       {
-        videoId: compactId('v', input.sensorId),
+        videoId: input.filename,
         r2Key: input.filepath,
         model: input.model ?? config.vlmModel,
         additionalInstruction: input.additionalInstruction,

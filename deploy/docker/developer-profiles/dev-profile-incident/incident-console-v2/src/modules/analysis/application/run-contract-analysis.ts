@@ -44,7 +44,6 @@ import {
   type ValidationContext,
   type ViolationScope,
 } from '@/modules/contract/domain/validate';
-import { compactId } from '@/lib/ids';
 import { evidenceEntries } from '@/modules/reports/domain/revision';
 
 /** A request the caller must fix, or an attempt whose outcome is a recorded failure. */
@@ -264,7 +263,8 @@ export async function runContractAnalysis(
     const videoDurationSeconds = await ports.videos.durationSeconds(input.r2Key, contentLength);
 
     const attemptedAt = new Date().toISOString();
-    const modelRunId = compactId('m', `${input.videoId}:${attemptedAt}:${ports.randomUUID()}`);
+    // Readable and unique per attempt: <video name>@<UTC timestamp>.
+    const modelRunId = `${input.videoId}@${attemptedAt}`;
     const base: Omit<AnalysisAttemptRecord, 'status' | 'stage' | 'failure' | 'response' | 'validation' | 'repair'> = {
       contractVersion: ports.catalog.contractVersion(),
       videoId: input.videoId,
