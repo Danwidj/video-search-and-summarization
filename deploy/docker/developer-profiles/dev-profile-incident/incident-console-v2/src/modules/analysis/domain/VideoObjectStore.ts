@@ -10,4 +10,6 @@ export interface VideoObjectStore {
   playbackUrl(key: string): Promise<string>;
   /** The video's length from its MP4 header; null when it cannot be read. */
   durationSeconds(key: string, contentLength: number): Promise<number | null>;
+  /** When the file says it was recorded (ISO 8601 UTC); null when it carries no usable time. */
+  recordedAt(key: string, contentLength: number): Promise<string | null>;
 }

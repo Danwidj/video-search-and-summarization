@@ -2,60 +2,55 @@
 
 import { NextResponse } from 'next/server';
 
-import { getAnalysisPorts, getDbAdapters } from '@/lib/container';
-import { fetchEvidenceEmbeddings } from '@/modules/reports/infrastructure/agent/evidence-embeddings';
-import { storeSearchableCrops, type SearchableCropsResult } from '@/modules/reports/application/store-searchable-crops';
+import { getAnalyseVideoPorts } from '@/lib/container';
 import { analysisErrorResponse } from '@/lib/http/analysis-responses';
-import { runContractAnalysis } from '@/modules/analysis/application/run-contract-analysis';
 import { getServiceConfiguration, isSupabaseConfigured, type ServiceConfiguration } from '@/lib/env';
+import { analyseVideo, type AnalyseVideoInput } from '@/modules/analysis/application/analyse-video';
 
-// The slowest allowlisted model's timeout (contracts/inference.json) plus persistence.
+export const dynamic = 'force-dynamic';
+// The slowest allowlisted model's timeout (contracts/inference.json) plus persistence;
+// ANALYSIS_DEADLINE_MS in analyse-video.ts keeps the agent call inside it.
 export const maxDuration = 360;
 
 interface AnalysisRequest {
+  /** Present for a new upload; the video's id is then `filename`. */
   sensorId?: string;
   filepath?: string;
   filename?: string;
+  /** Present, with no filepath, to analyse a video that is already stored again. */
+  videoName?: string;
   model?: string;
   additionalInstruction?: string;
 }
 
-function requireAnalysisConfiguration(config: ServiceConfiguration = getServiceConfiguration()): ServiceConfiguration {
-  if (config.analysisMode === 'agent') {
-    if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
-  } else {
-    if (!config.gatewayUrl) throw new Error('VLM_GATEWAY_URL is not configured');
-  }
+function requireAnalysisConfiguration(): ServiceConfiguration {
+  const config = getServiceConfiguration();
+  if (!config.agentUrl) throw new Error('INCIDENT_AGENT_BASE_URL is not configured');
   if (!isSupabaseConfigured(config)) throw new Error('Supabase PostgREST is not configured');
   return config;
 }
 
-/** What the upload flow needs to open the new run's report page. */
-interface AnalysisRunSummary {
-  videoId: string;
-  modelRunId: string;
-  /** The new AI revision. */
-  revisionId: number;
-  model: string;
-  promptVersion: string;
-  /** valid_first_pass or valid_after_structural_repair; failures are returned as errors. */
-  outcome: string;
-  /** Evidence crops stored so the video is searchable before it has an official revision. */
-  searchable: SearchableCropsResult;
-}
-
+/**
+ * Analyses one video with the agent and stores the analysis; nothing else. A new upload
+ * ({ sensorId, filepath, filename }) creates its incident and video first; { videoName } adds
+ * an analysis to a video already stored. Answers { incidentId, videoName, analysisId, ... }.
+ */
 export async function POST(request: Request) {
   try {
-    let input: AnalysisRequest;
+    let body: AnalysisRequest;
     try {
-      input = (await request.json()) as AnalysisRequest;
+      body = (await request.json()) as AnalysisRequest;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(`reading the analysis request failed: ${detail}`);
     }
 
-    if (!input.sensorId || !input.filepath || !input.filename) {
-      return NextResponse.json({ error: 'sensorId, filepath, and filename are required' }, { status: 400 });
+    const upload = Boolean(body.filepath);
+    if (upload ? !body.sensorId || !body.filename : !body.videoName) {
+      return NextResponse.json(
+        { error: 'sensorId, filepath, and filename are required for an upload; videoName alone re-analyses a stored video' },
+        { status: 400 },
+      );
     }
 
     let config: ServiceConfiguration;
@@ -66,32 +61,19 @@ export async function POST(request: Request) {
       throw new Error(`validating service configuration failed: ${detail}`);
     }
 
-    const { run, revisionId } = await runContractAnalysis(
-      {
-        videoId: input.filename,
-        r2Key: input.filepath,
-        model: input.model ?? config.vlmModel,
-        additionalInstruction: input.additionalInstruction,
-        newVideo: { sensorId: input.sensorId, uploadedAt: new Date().toISOString() },
-      },
-      getAnalysisPorts(config),
-      config.analysisMode,
-    );
+    const common = { model: body.model ?? config.vlmModel, additionalInstruction: body.additionalInstruction };
+    const input: AnalyseVideoInput = upload
+      ? {
+          ...common,
+          kind: 'upload',
+          videoName: body.filename as string,
+          storageKey: body.filepath as string,
+          sensorId: body.sensorId as string,
+        }
+      : { ...common, kind: 'reanalysis', videoName: body.videoName as string };
 
-    const searchable = await storeSearchableCrops(getDbAdapters(config), run.videoId, revisionId, (id) =>
-      fetchEvidenceEmbeddings(config, id),
-    );
-    const report: AnalysisRunSummary = {
-      videoId: run.videoId,
-      modelRunId: run.modelRunId,
-      revisionId,
-      model: run.request.model,
-      promptVersion: run.contractVersion,
-      outcome: run.status,
-      searchable,
-    };
-
-    return NextResponse.json({ report });
+    const result = await analyseVideo(input, getAnalyseVideoPorts(config));
+    return NextResponse.json(result);
   } catch (error) {
     return analysisErrorResponse(error, 'Video analysis failed');
   }

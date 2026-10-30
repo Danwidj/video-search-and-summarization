@@ -29,8 +29,8 @@ function uint64(data: DataView, offset: number): number {
   return data.getUint32(offset) * 2 ** 32 + data.getUint32(offset + 4);
 }
 
-/** Duration from the mvhd box among moov's children. */
-function mvhdSeconds(moov: Uint8Array): number | null {
+/** The mvhd box body among moov's children: the version, then the fields after it. */
+function mvhdBody(moov: Uint8Array): { data: DataView; body: number; end: number } | null {
   const data = view(moov);
   let offset = 0;
   while (offset + 8 <= moov.length) {
@@ -47,29 +47,55 @@ function mvhdSeconds(moov: Uint8Array): number | null {
     if (boxType(moov, offset + 4) === 'mvhd') {
       const body = offset + header;
       const end = offset + size;
-      if (body >= end) return null;
-      const version = moov[body];
-      let timescale: number;
-      let duration: number;
-      if (version === 1 && end - body >= 4 + 16 + 12) {
-        timescale = data.getUint32(body + 4 + 16);
-        duration = uint64(data, body + 4 + 16 + 4);
-      } else if (version === 0 && end - body >= 4 + 8 + 8) {
-        timescale = data.getUint32(body + 4 + 8);
-        duration = data.getUint32(body + 4 + 8 + 4);
-      } else {
-        return null;
-      }
-      if (timescale === 0 || duration === 0 || duration === 0xffffffff || duration >= 2 ** 64 - 1) return null;
-      return duration / timescale;
+      return body >= end ? null : { data, body, end };
     }
     offset += size;
   }
   return null;
 }
 
-/** Video length in seconds from an MP4's mvhd, or null when it cannot be read. */
-export async function mp4DurationSeconds(readRange: ReadRange, fileSize: number): Promise<number | null> {
+/** Duration from the mvhd box among moov's children. */
+function mvhdSeconds(moov: Uint8Array): number | null {
+  const box = mvhdBody(moov);
+  if (!box) return null;
+  const { data, body, end } = box;
+  const version = moov[body];
+  let timescale: number;
+  let duration: number;
+  if (version === 1 && end - body >= 4 + 16 + 12) {
+    timescale = data.getUint32(body + 4 + 16);
+    duration = uint64(data, body + 4 + 16 + 4);
+  } else if (version === 0 && end - body >= 4 + 8 + 8) {
+    timescale = data.getUint32(body + 4 + 8);
+    duration = data.getUint32(body + 4 + 8 + 4);
+  } else {
+    return null;
+  }
+  if (timescale === 0 || duration === 0 || duration === 0xffffffff || duration >= 2 ** 64 - 1) return null;
+  return duration / timescale;
+}
+
+// MP4 counts seconds from 1904-01-01 UTC; the Unix epoch is this many seconds later.
+const MP4_EPOCH_OFFSET_SECONDS = 2_082_844_800;
+
+/** The mvhd creation time as an ISO instant; null when unset (0) or not a plausible past instant. */
+function mvhdCreatedAt(moov: Uint8Array, now: Date): string | null {
+  const box = mvhdBody(moov);
+  if (!box) return null;
+  const { data, body, end } = box;
+  const version = moov[body];
+  let seconds: number;
+  if (version === 1 && end - body >= 4 + 8) seconds = uint64(data, body + 4);
+  else if (version === 0 && end - body >= 4 + 4) seconds = data.getUint32(body + 4);
+  else return null;
+  if (seconds === 0) return null;
+  const unixMs = (seconds - MP4_EPOCH_OFFSET_SECONDS) * 1000;
+  if (!Number.isFinite(unixMs) || unixMs <= 0 || unixMs > now.getTime()) return null;
+  return new Date(unixMs).toISOString();
+}
+
+/** Reads moov and hands it to `read`; null when the file has no readable moov. */
+async function withMoov<T>(readRange: ReadRange, fileSize: number, read: (moov: Uint8Array) => T | null): Promise<T | null> {
   try {
     let offset = 0;
     for (let index = 0; index < MAX_TOP_LEVEL_BOXES; index += 1) {
@@ -91,7 +117,7 @@ export async function mp4DurationSeconds(readRange: ReadRange, fileSize: number)
         if (size > MAX_MOOV_BYTES) return null;
         const moov = await readRange(offset + header, size - header);
         if (moov.length !== size - header) return null;
-        return mvhdSeconds(moov);
+        return read(moov);
       }
       offset += size;
     }
@@ -99,4 +125,14 @@ export async function mp4DurationSeconds(readRange: ReadRange, fileSize: number)
   } catch {
     return null;
   }
+}
+
+/** Video length in seconds from an MP4's mvhd, or null when it cannot be read. */
+export function mp4DurationSeconds(readRange: ReadRange, fileSize: number): Promise<number | null> {
+  return withMoov(readRange, fileSize, mvhdSeconds);
+}
+
+/** When the file says it was recorded (mvhd creation time, ISO 8601 UTC), or null when it carries none. */
+export function mp4RecordedAt(readRange: ReadRange, fileSize: number, now: Date = new Date()): Promise<string | null> {
+  return withMoov(readRange, fileSize, (moov) => mvhdCreatedAt(moov, now));
 }
