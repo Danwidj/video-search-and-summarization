@@ -1,8 +1,14 @@
 # Stage 2 quarantine: retrospective attestation (O3)
 
-> **Status (2026-10-30): partial.** The plan (§F.5) asked Stage 2 prompt authors not to open per-video test results and to record that they complied. No attestation was recorded at the time. This page records, retrospectively, **only what can be verified**, and states what cannot.
-> - **AI author (the Claude Code sessions that drafted V1–V8): verified from the session transcripts, with the limits in §3.**
-> - **Human author (the owner, who reviewed and adjusted V1–V7 before registration): not obtained.** It cannot be produced on the owner's behalf; §4 records what is known.
+> **Status (2026-10-30): factual quarantine audit; full quarantine not established.** The plan (§F.5) asked Stage 2 prompt authors not to open per-video test results and to record that they complied. No attestation was recorded at the time. This page is a retrospective audit of **only what can be verified**. It is **not an attestation on the owner's behalf** (owner instruction, 2026-10-30).
+>
+> **Recorded (owner instruction, 2026-10-30):**
+> 1. **Drafting window:** the AI drafting sessions for V1–V7 did not read per-video test results during the verified drafting window (2026-10-27 02:21 UTC to the V1–V7 registration on 2026-10-28 14:25 UTC; §2).
+> 2. **Disclosed exposure:** earlier aggregate benchmark exposure (the 2026-10-02 benchmark's aggregate figures) and access to test-set ground-truth labels (the AI-assisted correction and adjudication) are disclosed (§2, findings 2–4).
+> 3. **Not established:** full test-set quarantine cannot be established from the available evidence (§3, §4).
+> 4. **Owner's attestation:** the owner's personal attestation remains unprovided unless the owner explicitly supplies one.
+>
+> This limitation does not require rerunning the frozen experiments (§5).
 
 ## 1. Who wrote the Stage 2 prompts
 
@@ -48,13 +54,13 @@ V8 adds no new text, so the drafting window that matters is from the start of th
 
 ## 4. Human author (owner)
 
-**Not obtained.** The owner reviewed and adjusted V1–V7, so the plan's attestation applies to them too. This page does not attest on the owner's behalf.
+**Unprovided.** The owner reviewed and adjusted V1–V7, so the plan's attestation applies to them too. The owner has not supplied one, and this page does not attest on the owner's behalf. It remains unprovided unless the owner explicitly supplies one.
 
 What is verifiable:
 - the 2026-10-02 benchmark, including its per-video export, was produced in a session the owner started, for the midterm slides, so it was available to the owner before Stage 2;
 - the owner's adjustments recorded on 2026-10-28 concern rubric emphasis (V1) and the existing instrument definition (V3), not any clip.
 
-If the owner wants the attestation completed, it is their own statement of whether they consulted per-video test results while adjusting V1–V7. It would be added here verbatim, with its date.
+If the owner supplies one, it is their own statement of whether they consulted per-video test results while adjusting V1–V7. It would be added here verbatim, with its date.
 
 ## 5. Consequence for the results
 

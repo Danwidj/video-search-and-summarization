@@ -127,7 +127,7 @@ uv run python scripts/gt_candidate_build.py --prior "ground_truth/review/Ground 
 
 ## AI-assisted adjudication (2026-10-28)
 
-The owner authorised AI-assisted adjudication of the 98 Pending entries (`.docs/mvp2/resolve-ground-truth-proposals.md`):
+The owner authorised AI-assisted adjudication of the 98 Pending entries (`.docs/mvp2/resolve-ground-truth-proposals.md`, a local document not tracked in Git):
 - **Instructions:** [`gt-adjudication-v1.0`](../correction_prompts/gt-adjudication-v1.0.md).
 - **Close-up tool:** `scripts/gt_frame_detail.py`, for any time range at any frame rate, enlarged.
 - **Records:** `ai-adjudication-v0.3.jsonl` (local, gitignored).

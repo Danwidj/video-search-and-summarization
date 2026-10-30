@@ -310,7 +310,11 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
   - an annotator review of the guidelines (O4): the owner approved them, which is **not equivalent to an annotator review**.
 
   Few-shot prompting (plan E6) was replaced and is untested (R4).
-- **Stage 2 quarantine (O3), partial:** the session transcripts show that the AI author read no per-video test result while drafting V1-V7. They did know aggregate 2026-10-02 benchmark figures and the test ground-truth labels, and no prompt contains clip-specific text. The owner, who adjusted V1-V7, has not given an attestation ([attestation](stage2-quarantine-attestation.md)). See [the deviation record](plan-audit.md#2-deviations-decision-record).
+- **Stage 2 quarantine (O3), a documented limitation:**
+  - The AI drafting sessions for V1-V7 read no per-video test result during the verified drafting window.
+  - Earlier aggregate benchmark exposure and access to the test ground-truth labels are disclosed, and no prompt contains clip-specific text.
+  - **Full test-set quarantine cannot be established from the available evidence.**
+  - The owner's personal attestation remains unprovided ([quarantine audit](stage2-quarantine-attestation.md)). This does not require rerunning any frozen experiment. See [the deviation record](plan-audit.md#2-deviations-decision-record).
 - **Power:** 25 dev clips × 2 repeats and 55 test clips × 1 repeat. ΔI intervals are about ±0.035 on test, so effects below about 0.03-0.04 are not detectable; instruments rest on 10-15 paired clips.
 - **Multiplicity:** about 40 per-score intervals per stage; a few excluding zero are expected by chance. Only ΔI was pre-registered.
 - **Non-determinism:** temperature-0 outputs vary between calls, and one test repeat cannot separate this from pipeline effects.
@@ -323,5 +327,5 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 - **Selected on dev:** V1 `p1-v4-e01-severity` (SHA-256 `004746ea7d19…`), by the pre-registered D9 v2 rule: the highest ΔI (+0.051 [+0.013, +0.089]) and the only version whose interval excluded zero, with every guardrail passing. Owner-approved on 2026-10-29.
 - **Held-out check:** not confirmed as a clear gain (§6).
 - **Not adopted:** the production prompt and contract are unchanged. Nothing was revised, rerun or re-selected in response to the test results; Stage 3 ran once.
-- **Plan completion:** every mandatory requirement is done or replaced by an owner decision. The end-to-end profile ran on 2026-10-30. O1, O2 and O4 were accepted by the owner. O3 is partial: the AI author's quarantine is verified, the owner's own attestation was not obtained ([checklist](plan-audit.md#1-checklist), [attestation](stage2-quarantine-attestation.md)).
+- **Plan completion:** every mandatory requirement is done or replaced by an owner decision. The end-to-end profile ran on 2026-10-30. O1, O2 and O4 were accepted by the owner. O3 is closed as a documented limitation: full quarantine cannot be established, and the owner's attestation is unprovided ([checklist](plan-audit.md#1-checklist), [quarantine audit](stage2-quarantine-attestation.md)).
 - **For the FYP presentation:** the defensible claims are (1) a pre-registered, auditable prompt-engineering process with all versions and negative results reported; (2) VSS parity with direct VLM calls in accuracy, reliability and latency under identical requests, and with cropping on a measured pipeline cost of about a third of request time; (3) a severity-rubric prompt that helped on dev but did not clearly generalise. Not defensible: "VSS extracts better than a direct VLM", "prompt engineering improved held-out accuracy", or any claim about unseen footage.

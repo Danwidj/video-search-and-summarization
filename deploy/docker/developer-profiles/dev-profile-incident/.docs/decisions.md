@@ -2,6 +2,23 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Planning documents and spreadsheets are local only, never in Git; O3 closed as a documented limitation
+- **Decision (owner, 2026-10-30):**
+  - **Removed from Git tracking** (`git rm --cached`; local files kept unchanged; merged history not rewritten):
+    - `.docs/mvp2/ground-truth-and-prompt-experiments-plan.md`;
+    - `.docs/mvp2/ground-truth-planning-instructions.md`;
+    - `.docs/mvp2/resolve-ground-truth-proposals.md`.
+  - **Ignore rules:** the root `.gitignore` now ignores those names and every spreadsheet (`*.xlsx`, `*.xls`, `*.xlsm`, `*.xlsb`, `*.xltx`, `*.xltm`). **One exception:** NVIDIA's upstream `services/vios/test/vios_dev_sanity.xlsx` stays tracked, because `services/vios`'s `vios-dev-sanity` agent reads it (owner's choice).
+  - **Links:** living docs now name the plan as a local document. The approved annotation guidelines, methodology v1.0, the adjudication prompt and earlier decision entries are unchanged, so their references point to a file that exists only locally.
+  - **O3:** closed as a documented limitation.
+    - The AI drafting sessions for V1-V7 read no per-video test results in the verified drafting window.
+    - Earlier aggregate benchmark exposure and access to test ground-truth labels are disclosed.
+    - **Full test-set quarantine cannot be established from the available evidence.**
+    - The owner's personal attestation remains unprovided unless the owner supplies one.
+    - No rerun is required ([quarantine audit](../eval/docs/experiments/stage2-quarantine-attestation.md)).
+- **Why:** the owner keeps planning material and workbooks out of the repository.
+- **Links:** [plan audit](../eval/docs/experiments/plan-audit.md).
+
 ### 2026-10-30: End-to-end profile executed; O1, O2 and O4 accepted; O3 attested only for the AI author
 - **Decision (owner, 2026-10-30):**
   - **O1, O2 and O4:** the judge-drift check, matching sensitivity below τ and an annotator review of the guidelines are **accepted as omitted**. Owner approval of the guidelines is disclosed as **not equivalent to an annotator review**.

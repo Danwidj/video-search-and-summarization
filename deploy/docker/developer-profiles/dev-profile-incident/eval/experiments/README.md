@@ -1,6 +1,6 @@
 # Prompt experiments (PR 6A runner)
 
-`experiment_runner.py` and `scripts/eval_experiment.py` run one **configuration** per config file in `configs/`. A configuration is an arm (`direct-vlm` or `vss`), a registry prompt, a model, a split half (`dev` or `test` of `split-v2`), the frozen ground truth, repeats and a P1 call budget. Plan: [`.docs/mvp2/ground-truth-and-prompt-experiments-plan.md`](../../.docs/mvp2/ground-truth-and-prompt-experiments-plan.md) §F.
+`experiment_runner.py` and `scripts/eval_experiment.py` run one **configuration** per config file in `configs/`. A configuration is an arm (`direct-vlm` or `vss`), a registry prompt, a model, a split half (`dev` or `test` of `split-v2`), the frozen ground truth, repeats and a P1 call budget. Plan: the local planning document `.docs/mvp2/ground-truth-and-prompt-experiments-plan.md`, not tracked in Git §F.
 
 ```bash
 uv run python scripts/eval_experiment.py plan configs/…json            # the plan and every guard; no calls
