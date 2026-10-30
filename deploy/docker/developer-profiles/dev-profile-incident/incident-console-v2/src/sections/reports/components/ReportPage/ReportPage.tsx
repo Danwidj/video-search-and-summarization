@@ -66,6 +66,7 @@ import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import type { EditTarget } from '@/sections/reports/components/ReportEditPane/EditTargetSwitch';
 import { RemoveVideoDialog } from '@/sections/reports/components/RemoveVideoDialog';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
+import { RegenerateReport } from '@/sections/reports/components/RegenerateReport';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
 type LoadState =
@@ -639,17 +640,28 @@ export function ReportPage({
                 maxSize="85%"
                 minSize="15%"
               >
-                <ReportVersions
-                  compareRevisionId={mode === 'edit' ? compareRevisionId : null}
-                  currentRevisionId={report.revisionId}
-                  error={revisionsError}
-                  mode={mode}
-                  onCompare={(id) => setCompareRevisionId(id)}
-                  onOfficialChanged={() => setAttempt((value) => value + 1)}
-                  onOpen={openVersion}
-                  revisions={revisions}
-                  incidentId={incidentId}
-                />
+                <div className="flex h-full min-h-0 flex-col">
+                  <RegenerateReport
+                    disabled={mode === 'edit'}
+                    incidentId={incidentId}
+                    onDone={(version) => {
+                      setAttempt((value) => value + 1);
+                      openVersion(version.revisionId);
+                    }}
+                    videoCount={videoCount}
+                  />
+                  <ReportVersions
+                    compareRevisionId={mode === 'edit' ? compareRevisionId : null}
+                    currentRevisionId={report.revisionId}
+                    error={revisionsError}
+                    mode={mode}
+                    onCompare={(id) => setCompareRevisionId(id)}
+                    onOfficialChanged={() => setAttempt((value) => value + 1)}
+                    onOpen={openVersion}
+                    revisions={revisions}
+                    incidentId={incidentId}
+                  />
+                </div>
               </ResizablePanel>
             </ResizablePanelGroup>
             <ReportBandHeightHandle
