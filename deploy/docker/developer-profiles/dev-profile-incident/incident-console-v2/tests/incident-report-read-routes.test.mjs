@@ -185,6 +185,15 @@ test('a bad id, revision, an unknown incident, revision or camera are refused', 
   assert.equal((await getReport('1', '?camera=nope.mp4')).status, 404);
 });
 
+test('an incident with no videos and no version answers 404 with an empty waiting list, which the page shows as the no-videos page', async () => {
+  database();
+  const response = await getReport('2');
+  assert.equal(response.status, 404);
+  assert.deepEqual((await response.json()).waiting, { videos: [] });
+  const waiting = readFileSync(join(process.cwd(), 'src/sections/reports/components/WaitingIncident/WaitingIncident.tsx'), 'utf8');
+  assert.match(waiting, /videos\.length === 0\) return <EmptyIncident/);
+});
+
 test('the versions are listed newest first, each with its coverage verdict', async () => {
   database();
   const response = await versions(new Request('http://localhost/api/reports/1/revisions'), on('1'));

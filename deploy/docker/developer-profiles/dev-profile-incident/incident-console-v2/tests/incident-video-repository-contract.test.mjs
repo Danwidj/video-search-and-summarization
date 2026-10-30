@@ -64,7 +64,10 @@ function removeVideo({ p_video_id: videoId, p_mode: mode }, store) {
 const implementations = {
   memory: () => ({ repo: new InMemoryIncidentVideoRepository() }),
   'supabase (fake PostgREST)': () => {
-    const db = fakePostgrest({ incidents: [], videos: [] }, { rpc: { remove_video: removeVideo }, identity: { incidents: 'id' } });
+    const db = fakePostgrest(
+      { incidents: [], videos: [], model_runs: [], report_revisions: [] },
+      { rpc: { remove_video: removeVideo }, identity: { incidents: 'id' } },
+    );
     globalThis.fetch = db.fetch;
     return { repo: new SupabaseIncidentVideoAdapter(new PostgrestClient('https://supabase.test', 'k')), db };
   },
@@ -279,6 +282,43 @@ describe('SupabaseIncidentVideoAdapter', () => {
         { p_video_id: 'b.mp4', p_mode: 'move' },
         { p_video_id: 'a.mp4', p_mode: 'delete' },
       ],
+    );
+  });
+
+  test('removing a video deletes the run records that name it and that no revision uses', async () => {
+    const { repo, db } = implementations['supabase (fake PostgREST)']();
+    db.store.model_runs.push(
+      { id: 'a.mp4@t1', notes: '' },
+      { id: 'a.mp4@used', notes: '' },
+      { id: 'ab.mp4@t1', notes: '' },
+      { id: 'a_mp4@t1', notes: '' },
+    );
+    db.store.report_revisions.push({ id: 1, model_run_id: 'a.mp4@used' });
+    await repo.createVideo({ videoId: 'a.mp4', incidentId: null, storageKey: null });
+    await repo.removeVideo('a.mp4');
+    assert.deepEqual(db.store.model_runs.map((row) => row.id).sort(), ['a.mp4@used', 'a_mp4@t1', 'ab.mp4@t1']);
+  });
+
+  test('a failure while clearing run records does not hide that the video is gone', async () => {
+    const { repo, db } = implementations['supabase (fake PostgREST)']();
+    await repo.createVideo({ videoId: 'a.mp4', incidentId: null, storageKey: 'k/a' });
+    const fetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) =>
+      String(url).includes('/model_runs') ? new Response('{"message":"down"}', { status: 500 }) : fetch(url, init);
+    assert.equal((await repo.removeVideo('a.mp4')).storageKey, 'k/a');
+    assert.deepEqual(db.store.videos, []);
+  });
+
+  test('an incident without videos is deleted, with its not-found and still-has-videos refusals', async () => {
+    const { repo, db } = implementations['supabase (fake PostgREST)']();
+    const held = await repo.createVideo({ videoId: 'a.mp4', incidentId: null, storageKey: null });
+    db.store.incidents.push({ id: 60 });
+    await assert.rejects(repo.deleteEmptyIncident(held.incidentId), rejection('invalid', /still has videos/));
+    await assert.rejects(repo.deleteEmptyIncident(99), rejection('not-found', /Incident not found/));
+    await repo.deleteEmptyIncident(60);
+    assert.deepEqual(
+      db.store.incidents.map((row) => row.id),
+      [held.incidentId],
     );
   });
 

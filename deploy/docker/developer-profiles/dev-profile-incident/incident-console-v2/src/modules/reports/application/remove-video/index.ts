@@ -12,7 +12,7 @@ export type RemoveChoice = 'delete' | 'move';
 export type RemoveVideoResult = ({ choice: 'delete' } & VideoRemoval) | ({ choice: 'move' } & VideoMove);
 
 export interface RemoveVideoPorts {
-  videos: Pick<IncidentVideoRepository, 'getVideo' | 'listVideos' | 'removeVideo' | 'moveVideoToNewIncident'>;
+  videos: Pick<IncidentVideoRepository, 'getVideo' | 'listVideos' | 'removeVideo' | 'moveVideoToNewIncident' | 'deleteEmptyIncident'>;
   evidence: EvidenceObjectStore;
   removeStoredVideo: RemoveStoredVideo;
 }

@@ -16,10 +16,10 @@ export interface MergeCandidate {
 
 const videosText = (count: number) => `${count} ${count === 1 ? 'video' : 'videos'}`;
 
-/** Every incident except the one being merged away, newest ids first, labelled for the chooser. */
+/** Every incident except the one being merged away and any that holds no videos, newest ids first, labelled for the chooser. */
 export function mergeCandidates(items: readonly MergeCandidateSource[], sourceIncidentId: number): MergeCandidate[] {
   return items
-    .filter((item) => item.incidentId !== sourceIncidentId)
+    .filter((item) => item.incidentId !== sourceIncidentId && item.videoCount > 0)
     .sort((a, b) => b.incidentId - a.incidentId)
     .map((item) => {
       const name = item.title || item.incidentType;

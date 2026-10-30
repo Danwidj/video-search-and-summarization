@@ -10,6 +10,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import type { LibraryIncident } from '@/sections/library/types';
 
+/** The part of an incident the confirmation names. */
+export type DeleteTarget = Pick<
+  LibraryIncident,
+  'title' | 'incidentType' | 'videoCount' | 'firstVideoName' | 'versionCount' | 'isOfficial'
+>;
+
 export function DeleteIncidentDialog({
   item,
   open,
@@ -17,10 +23,10 @@ export function DeleteIncidentDialog({
   onConfirm,
   busy,
 }: {
-  item: LibraryIncident;
+  item: DeleteTarget;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (item: LibraryIncident) => void;
+  onConfirm: () => void;
   busy: boolean;
 }) {
   const [confirmed, setConfirmed] = useState(false);
@@ -62,8 +68,14 @@ export function DeleteIncidentDialog({
           </div>
           <DialogDescription className="mt-2 text-sm leading-5 text-ink/70">
             This permanently deletes{' '}
-            <strong className="text-ink">{item.videoCount === 1 ? 'its video' : `all ${item.videoCount} of its videos`}</strong> from
-            storage, every analysis of them, and all{' '}
+            {item.videoCount === 0 ? (
+              'the incident, which has no videos, and all '
+            ) : (
+              <>
+                <strong className="text-ink">{item.videoCount === 1 ? 'its video' : `all ${item.videoCount} of its videos`}</strong> from
+                storage, every analysis of them, and all{' '}
+              </>
+            )}
             <strong className="text-ink">
               {versions} {versions === 1 ? 'version' : 'versions'}
             </strong>
@@ -91,7 +103,7 @@ export function DeleteIncidentDialog({
             variant="destructive"
             disabled={!confirmed || busy}
             onClick={() => {
-              onConfirm(item);
+              onConfirm();
               onOpenChange(false);
             }}
             type="button"
