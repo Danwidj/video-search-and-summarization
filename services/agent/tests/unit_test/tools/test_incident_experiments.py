@@ -87,7 +87,7 @@ def enabled(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _input(**overrides: object) -> IncidentReportGenInput:
-    return IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", **overrides)
+    return IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL, model_run_id="run1", **overrides)
 
 
 class TestGate:
@@ -200,7 +200,7 @@ class TestToolRuns:
             "persisted": False,
         }
         assert result.p1_elapsed_ms is not None and result.usage == {"prompt_tokens": 100, "completion_tokens": 50}
-        assert result.revision_id is None
+        assert result.analysis_id is None
         persist.assert_not_awaited()
         crops.assert_not_awaited()
         assert all(entry["image"] is None and "skip_crops" in entry["image_gap"] for entry in result.evidence)
@@ -227,7 +227,7 @@ class TestToolRuns:
         )
         assert requests[0] == p1_request_body("nvidia/cosmos-3-nano-reasoner", VIDEO_URL) | {"stream": False}
         assert result.experiment is None and result.p1_elapsed_ms is None and result.usage is None
-        assert result.revision_id == 7
+        assert result.analysis_id == 7
         persist.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -275,7 +275,7 @@ async def _run_with_service(handler, tool_input, service):
         patch("vss_agents.tools.incident_report_gen.httpx.AsyncClient", side_effect=client_factory),
         patch.object(crop_evidence, "get_crop_evidence_service", return_value=service),
         patch(
-            "vss_agents.tools.incident_report_gen.persist_revision", new_callable=AsyncMock, return_value=7
+            "vss_agents.tools.incident_report_gen.persist_analysis", new_callable=AsyncMock, return_value=7
         ) as persist,
         patch("vss_agents.tools.incident_report_gen.is_r2_configured", return_value=False),
         patch.dict("os.environ", {"OPENAI_API_KEY": "secret"}),
@@ -301,7 +301,7 @@ class TestTemporaryEvidenceStore:
                 service,
             )
             assert result.experiment["evidence_store"] == EXPERIMENT_EVIDENCE_STORE
-            assert result.revision_id is None
+            assert result.analysis_id is None
             persist.assert_not_awaited()
         assert all(isinstance(store, InMemoryEvidenceStore) for store in service.stores)
         assert service.stores[0] is not service.stores[1]  # isolated: never shared between requests
@@ -313,7 +313,7 @@ class TestTemporaryEvidenceStore:
             _handler([]), _input(skip_rp1=True, video_duration_seconds=30.0), service
         )
         assert service.stores == [None]  # the service's own store (R2 in production), as before
-        assert result.experiment is None and result.revision_id == 7
+        assert result.experiment is None and result.analysis_id == 7
 
     @pytest.mark.asyncio
     async def test_the_temporary_store_receives_the_crops_and_r2_is_never_touched(self):
@@ -334,6 +334,6 @@ class TestTemporaryEvidenceStore:
         store = crop_evidence.InMemoryEvidenceStore()
         report = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
         with patch.object(crop_evidence, "get_crop_evidence_service", return_value=service):
-            entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=report, store=store)
+            entries = await collect_evidence(video_url=VIDEO_URL, video_name="v1", report=report, store=store)
         assert len(store.images) == len(entries) == 3 and all(e["image"] in store.images for e in entries)
         r2.put_image.assert_not_awaited()
