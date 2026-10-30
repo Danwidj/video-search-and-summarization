@@ -312,7 +312,29 @@ describe('accept and reject', () => {
 });
 
 describe('automatic join', () => {
-  const join = (w, incidentId, options = {}) => evaluateAndJoin({ ...w, reports: w.reports }, incidentId, signal, options);
+  /**
+   * What merge_incidents does besides moving videos: the pair's suggestion becomes accepted, every other row naming the
+   * source goes with it, and the shortlist then sees the moved videos under the kept incident. Applied once per world.
+   */
+  const join = (w, incidentId, options = {}) => {
+    if (!w.mirrored) {
+      w.mirrored = true;
+      const merge = w.reports.mergeIncidents.bind(w.reports);
+      w.reports.mergeIncidents = async (target, source, autoJoin) => {
+        const result = await merge(target, source, autoJoin);
+        const rows = w.suggestions.suggestions;
+        for (const row of [...rows]) {
+          const names = (id) => row.incidentAId === id || row.incidentBId === id;
+          if (names(source) && names(target)) {
+            if (row.status === 'pending') w.suggestions.markAccepted(row.id);
+          } else if (names(source)) rows.splice(rows.indexOf(row), 1);
+        }
+        for (const video of w.matching.shortlist.videos) if (result.movedVideoIds.includes(video.videoId)) video.incidentId = target;
+        return result;
+      };
+    }
+    return evaluateAndJoin(w, incidentId, signal, options);
+  };
   const candidate = (incidentId, score, status = 'pending') => ({ incidentId, score, status });
 
   test('the threshold is the 0.5 suggestion minimum, and 0.5 itself joins', () => {
@@ -343,10 +365,43 @@ describe('automatic join', () => {
     assert.equal((await w.reports.getIncident(1)).videos.find((v) => v.videoId === 'a.mp4').autoJoin, null);
   });
 
-  test('the merged incident leaves no suggestions to show; its other candidates are matched when they are checked', async () => {
+  test('after a join the kept incident is checked again, so the other match comes back as one pending suggestion', async () => {
     const w = await world();
     const result = await join(w, 2);
-    assert.deepEqual(result.suggestions, []);
+    assert.equal(result.joined.keptIncidentId, 1);
+    // Incident 3 also scores at or above 0.5 against the new video; the join deleted its row with incident 2.
+    assert.deepEqual(
+      result.suggestions.map((s) => s.incidentId),
+      [3],
+    );
+    const pending = await listPendingSuggestions(w.suggestions, 1);
+    assert.deepEqual(
+      pending.map((s) => [s.incidentAId, s.incidentBId]),
+      [[1, 3]],
+    );
+    assert.equal((await listPendingSuggestions(w.suggestions, 2)).length, 0);
+  });
+
+  test('the re-check never suggests the kept incident to itself or a pair twice, and it joins nothing', async () => {
+    const w = await world();
+    await join(w, 2);
+    const again = await join(w, 2).catch((error) => error);
+    assert.ok(again instanceof StoreRejection);
+    const kept = await join(w, 1, { autoJoin: false });
+    assert.equal(kept.joined, null);
+    assert.deepEqual(kept.suggestions, []);
+    assert.equal((await listPendingSuggestions(w.suggestions, 1)).filter((s) => s.incidentAId === s.incidentBId).length, 0);
+    assert.equal((await listPendingSuggestions(w.suggestions, 1)).length, 1);
+    assert.ok(await w.reports.getIncident(3));
+  });
+
+  test('the suggestion that came back can still be accepted', async () => {
+    const w = await world();
+    await join(w, 2);
+    const [pending] = await listPendingSuggestions(w.suggestions, 1);
+    const { merge } = await acceptSuggestion({ suggestions: w.suggestions, reports: w.reports }, pending.id);
+    assert.equal(merge.incidentId, 1);
+    assert.deepEqual((await w.reports.getIncident(1)).videos.map((v) => v.videoId).sort(), ['a.mp4', 'b.mp4', 'c.mp4']);
   });
 
   test('a rejected pair is not joined, even above the threshold', async () => {
