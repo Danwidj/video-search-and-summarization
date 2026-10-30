@@ -42,7 +42,7 @@ describe('analyse sends the signed video URL', () => {
     const calls = [];
     globalThis.fetch = async (_url, init) => {
       calls.push(JSON.parse(init.body));
-      return new Response(JSON.stringify({ analysis_id: 1, model_run_id: 'r', outcome: 'stored', payload: {} }), { status: 200 });
+      return new Response(JSON.stringify({ analysis_id: 1, model_run_id: 'r', outcome: 'stored', report: {} }), { status: 200 });
     };
     await new HttpVideoAnalyzer('http://agent').analyze(
       {

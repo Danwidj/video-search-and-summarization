@@ -39,7 +39,7 @@ function stubFetch(status, body) {
 
 describe('HttpVideoAnalyzer', () => {
   test('posts the contract inputs addressed by the encoded video name', async () => {
-    const calls = stubFetch(200, { analysis_id: 7, model_run_id: REQUEST.modelRunId, outcome: 'stored', payload: PAYLOAD });
+    const calls = stubFetch(200, { analysis_id: 7, model_run_id: REQUEST.modelRunId, outcome: 'stored', report: PAYLOAD });
     const result = await new HttpVideoAnalyzer('http://agent:8001/').analyze({ ...REQUEST, reviewerPrompt: 'focus on the door' }, signal);
     assert.equal(calls[0].url, 'http://agent:8001/api/v1/incidents/front%20door%202.mp4/analyze');
     assert.deepEqual(calls[0].body, {
@@ -55,7 +55,7 @@ describe('HttpVideoAnalyzer', () => {
 
   test('omits the reviewer prompt and an unusable duration', async () => {
     for (const duration of [null, 0, Number.NaN]) {
-      const calls = stubFetch(200, { analysis_id: 1, model_run_id: 'r', outcome: 'stored', payload: PAYLOAD });
+      const calls = stubFetch(200, { analysis_id: 1, model_run_id: 'r', outcome: 'stored', report: PAYLOAD });
       await new HttpVideoAnalyzer('http://agent').analyze({ ...REQUEST, videoDurationSeconds: duration }, signal);
       assert.equal('reviewer_prompt' in calls[0].body, false);
       assert.equal('video_duration_seconds' in calls[0].body, false);
@@ -95,7 +95,7 @@ describe('HttpVideoAnalyzer', () => {
   });
 
   test('a success body that breaks the contract table is a 502 failure', async () => {
-    const good = { analysis_id: 1, model_run_id: 'r', outcome: 'stored', payload: PAYLOAD };
+    const good = { analysis_id: 1, model_run_id: 'r', outcome: 'stored', report: PAYLOAD };
     const broken = [
       '<html>',
       '[]',
@@ -103,7 +103,7 @@ describe('HttpVideoAnalyzer', () => {
       { ...good, analysis_id: 1.5 },
       { ...good, model_run_id: '' },
       { ...good, outcome: undefined },
-      { ...good, payload: [] },
+      { ...good, report: [] },
     ];
     for (const body of broken) {
       stubFetch(200, body);
