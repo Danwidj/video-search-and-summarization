@@ -8,7 +8,7 @@ import { MoreHorizontalIcon, SearchIcon, StarIcon, TagIcon, Trash2Icon, VideoIco
 import { Card } from '@/components/ui/card';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import { DeleteIncidentDialog } from '@/sections/library/components/IncidentCard/DeleteIncidentDialog';
-import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import type { LibraryIncident } from '@/sections/library/types';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,19 +27,22 @@ export function IncidentCard({
   onOpen,
   onSearchEvidence,
 }: {
-  item: ReportLibraryItem;
+  item: LibraryIncident;
   busy: boolean;
-  onDelete: (item: ReportLibraryItem) => void;
-  onOpen: (item: ReportLibraryItem) => void;
-  onSearchEvidence: (item: ReportLibraryItem) => void;
+  onDelete: (item: LibraryIncident) => void;
+  onOpen: (item: LibraryIncident) => void;
+  onSearchEvidence: (item: LibraryIncident) => void;
 }) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const href = `/reports/${encodeURIComponent(item.videoId)}?revision=${item.revisionId}`;
+  const href = `/reports/${encodeURIComponent(item.incidentId)}${item.revisionId === null ? '' : `?revision=${item.revisionId}`}`;
   const versions = item.versionCount ?? 0;
-  const evidence = item.evidenceCount ?? 0;
-  const displayTitle = item.title || `${item.incident_type} · ${formatTimestamp(item.uploadedAt)}`;
+  const displayTitle = item.title || `${item.incidentType} · ${formatTimestamp(item.uploadedAt)}`;
+
+  const firstVideo = item.firstVideoName ?? 'No video';
+  const videoLine = item.videoCount > 1 ? `${firstVideo} +${item.videoCount - 1} more` : firstVideo;
+  const videoNames = item.videoCount > 1 ? `${firstVideo} and ${item.videoCount - 1} more` : firstVideo;
 
   function navigateToReport() {
     onOpen(item);
@@ -49,12 +52,12 @@ export function IncidentCard({
   return (
     <>
       <Card
-        data-card={item.revisionId}
+        data-card={item.incidentId}
         role="link"
         tabIndex={0}
         aria-label={`Open report: ${displayTitle}`}
         className="group relative flex cursor-pointer flex-col lg:h-full lg:max-h-[40vh] lg:min-h-0 gap-0 py-0 overflow-hidden rounded-xl border border-ink/10 bg-white p-0 shadow-xs transition hover:border-ink/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss"
-        id={`report-${item.revisionId}`}
+        id={`report-${item.incidentId}`}
         onClick={(event) => {
           if (!event.currentTarget.contains(event.target as Node)) return;
           if ((event.target as HTMLElement).closest('[data-no-card-nav]')) return;
@@ -69,9 +72,10 @@ export function IncidentCard({
       >
         <ReportThumbnail
           alt={`Video screenshot for ${displayTitle}`}
-          kind={item.kind}
+          kind={item.kind ?? 'ai'}
           severity={item.severity}
           thumbnailUrl={item.thumbnailUrl}
+          videoCount={item.videoCount}
         >
           <div className="absolute right-2 top-2 z-10" data-no-card-nav>
             <TooltipProvider>
@@ -97,14 +101,9 @@ export function IncidentCard({
                   onClick={(event) => event.stopPropagation()}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
-                  <DropdownMenuItem
-                    className="flex cursor-pointer items-center gap-2"
-                    disabled={evidence === 0}
-                    onClick={() => onSearchEvidence(item)}
-                  >
+                  <DropdownMenuItem className="flex cursor-pointer items-center gap-2" onClick={() => onSearchEvidence(item)}>
                     <SearchIcon className="size-4" />
                     <span>See evidence</span>
-                    <span className="ml-auto text-xs text-ink/45">{evidence}</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -113,7 +112,7 @@ export function IncidentCard({
                     variant="destructive"
                   >
                     <Trash2Icon className="size-4" />
-                    <span>Delete…</span>
+                    <span>Delete incident…</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -129,7 +128,7 @@ export function IncidentCard({
             >
               <TagIcon aria-hidden className="size-3 shrink-0" />
               <span className="sr-only">Incident type: </span>
-              <span className="truncate">{item.incident_type}</span>
+              <span className="truncate">{item.incidentType}</span>
             </p>
             <div className="flex shrink-0 items-center gap-1" data-no-card-nav>
               <TooltipProvider>
@@ -187,15 +186,16 @@ export function IncidentCard({
               <TooltipTrigger asChild>
                 <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs font-medium text-ink/70" data-testid="video-name">
                   <VideoIcon className="size-3.5 shrink-0 text-ink/45" />
-                  <span className="truncate">{item.filename}</span>
+                  <span className="truncate">{videoLine}</span>
                 </p>
               </TooltipTrigger>
-              <TooltipContent>{item.filename}</TooltipContent>
+              <TooltipContent>{videoNames}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
           <p className="truncate text-xs text-ink/50">
-            {evidence} evidence · {versions} {versions === 1 ? 'version' : 'versions'} · Added {formatTimestamp(item.uploadedAt)}
+            {item.videoCount} {item.videoCount === 1 ? 'video' : 'videos'} · {versions} {versions === 1 ? 'version' : 'versions'} · Added{' '}
+            {formatTimestamp(item.uploadedAt)}
           </p>
         </div>
       </Card>

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import type { LibraryIncident } from '@/sections/library/types';
 
 export function DeleteIncidentDialog({
   item,
@@ -17,17 +17,16 @@ export function DeleteIncidentDialog({
   onConfirm,
   busy,
 }: {
-  item: ReportLibraryItem;
+  item: LibraryIncident;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (item: ReportLibraryItem) => void;
+  onConfirm: (item: LibraryIncident) => void;
   busy: boolean;
 }) {
   const [confirmed, setConfirmed] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const versions = item.versionCount ?? 0;
-  const evidence = item.evidenceCount ?? 0;
-  const title = item.title || item.incident_type;
+  const title = item.title || item.incidentType;
 
   return (
     <Dialog
@@ -54,17 +53,21 @@ export function DeleteIncidentDialog({
               <div className="mt-1 text-sm text-ink/70">
                 <strong className="font-semibold text-ink">{title}</strong>
                 <br />
-                <span className="break-all font-mono text-xs">{item.filename}</span>
+                <span className="break-all font-mono text-xs">
+                  {item.videoCount} {item.videoCount === 1 ? 'video' : 'videos'}
+                  {item.firstVideoName ? `: ${item.firstVideoName}${item.videoCount > 1 ? ` +${item.videoCount - 1} more` : ''}` : ''}
+                </span>
               </div>
             </div>
           </div>
           <DialogDescription className="mt-2 text-sm leading-5 text-ink/70">
-            This permanently deletes the video from storage and all{' '}
+            This permanently deletes{' '}
+            <strong className="text-ink">{item.videoCount === 1 ? 'its video' : `all ${item.videoCount} of its videos`}</strong> from
+            storage, every analysis of them, and all{' '}
             <strong className="text-ink">
               {versions} {versions === 1 ? 'version' : 'versions'}
             </strong>
-            {item.isOfficial ? ', including the official one' : ''}, with their {evidence} evidence {evidence === 1 ? 'image' : 'images'}.
-            It cannot be undone.
+            {item.isOfficial ? ', including the official one' : ''}, with their evidence images. It cannot be undone.
           </DialogDescription>
         </DialogHeader>
 
