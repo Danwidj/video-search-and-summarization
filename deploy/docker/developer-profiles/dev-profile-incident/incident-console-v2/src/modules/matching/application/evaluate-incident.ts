@@ -5,7 +5,9 @@
 // other whichever order they finish in. Decided pairs (accepted or rejected) are skipped by the
 // shortlist and pairs already pending are not judged again; the suggestion store keeps one row per pair.
 // A match scoring at or above AUTO_JOIN_MIN_SCORE is then joined without a reviewer, through the same
-// use case Accept runs; the rest stay pending for the Matches tab.
+// use case Accept runs; the rest stay pending for the Matches tab. A merge deletes its source incident with
+// that incident's pending suggestions, so after a join the kept incident is checked again (suggestions only):
+// its other matches, which now include the merged videos' own, come back as pending rows for the reviewer.
 
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
@@ -135,9 +137,10 @@ export async function evaluateIncident(
   const incident = await reports.getIncident(incidentId);
   if (!incident) throw new StoreRejection('not-found', `Incident not found: ${incidentId}`);
 
-  const alreadyPending = new Set(
-    (await matching.suggestions.listPending(incidentId)).map((s) => (s.incidentAId === incidentId ? s.incidentBId : s.incidentAId)),
-  );
+  const pendingRows = await matching.suggestions.listPending(incidentId);
+  const otherOf = (row: { incidentAId: IncidentId; incidentBId: IncidentId }) =>
+    row.incidentAId === incidentId ? row.incidentBId : row.incidentAId;
+  const alreadyPending = new Set(pendingRows.map(otherOf));
   const candidates = new Map<IncidentId, JudgeCandidate>();
   const candidateOf = async (candidateId: IncidentId): Promise<JudgeCandidate | null> => {
     const known = candidates.get(candidateId);
@@ -209,7 +212,21 @@ export async function evaluateIncident(
 
   let joined: AutoJoin | null = null;
   let joinError: string | null = null;
-  const winner = autoJoin ? pickAutoJoin(recordedSuggestions, autoJoinMinScore) : null;
+  // A pair left pending by an earlier check (the re-check after a join) is not judged again but still joins here, so
+  // batch-mates join whichever order they are checked in.
+  const joinPool: (EvaluatedSuggestion & { status: SuggestionStatus })[] = [
+    ...recordedSuggestions,
+    ...pendingRows.map((row) => ({
+      suggestionId: row.id,
+      incidentId: otherOf(row),
+      score: row.score,
+      reasons: row.reasons,
+      structuredReasons: row.structuredReasons,
+      created: false,
+      status: row.status,
+    })),
+  ];
+  const winner = autoJoin ? pickAutoJoin(joinPool, autoJoinMinScore) : null;
   if (winner) {
     try {
       const { merge } = await acceptSuggestion({ suggestions: matching.suggestions, reports }, winner.suggestionId, undefined, {
@@ -230,8 +247,20 @@ export async function evaluateIncident(
   }
   // A merge deletes its source with that incident's suggestions: if this incident was the source none are left,
   // if it was kept the other pending matches remain for the reviewer.
-  const suggestions = recordedSuggestions
+  let suggestions = recordedSuggestions
     .filter((s) => !joined || (joined.keptIncidentId === incidentId && s.suggestionId !== joined.suggestionId))
     .map(({ status: _status, ...suggestion }) => suggestion);
+  if (joined) {
+    // Check the kept incident again so the matches the merge deleted come back as pending suggestions. It only
+    // suggests (no second join), skips pairs already pending or decided, and never pairs the kept incident with itself.
+    try {
+      const again = await evaluateIncident({ reports, analyses, matching }, joined.keptIncidentId, signal, { ...options, autoJoin: false });
+      judged += again.judged;
+      const seen = new Set(suggestions.map((s) => s.incidentId));
+      suggestions = [...suggestions, ...again.suggestions.filter((s) => !seen.has(s.incidentId))];
+    } catch {
+      // The join already happened; a failed re-check leaves those matches to the next check.
+    }
+  }
   return { incidentId, judged, suggestions, joined, joinError };
 }
