@@ -95,8 +95,15 @@ class VideoAnalysisInput(BaseModel):
     @field_validator("payload")
     @classmethod
     def _validate_payload(cls, v: dict[str, Any]) -> dict[str, Any]:
+        # /analyze adds fields computed by code (incident.duration) that the contract model forbids as input,
+        # so validate a copy without them; the stored payload itself is returned unchanged.
+        candidate = (
+            {**v, "incident": {k: val for k, val in v["incident"].items() if k != "duration"}}
+            if isinstance(v.get("incident"), dict)
+            else v
+        )
         try:
-            incident_contract.validate_report(v)
+            incident_contract.validate_report(candidate)
         except incident_contract.IncidentExtractionError as exc:
             raise ValueError(f"payload is not contract-valid: {exc}") from exc
         return v
