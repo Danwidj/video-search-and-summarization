@@ -62,11 +62,11 @@ export function AnalysisWorkspace() {
   }
 
   const empty = items.length === 0;
-  const matches = items.reduce((sum, item) => sum + (item.matches ?? 0), 0);
+  const waiting = items.reduce((sum, item) => sum + (item.status === 'deciding' ? (item.matches ?? 0) : 0), 0);
   const noun = summary.total === 1 ? 'video' : 'videos';
   const announcement = empty
     ? ''
-    : `Batch of ${summary.total} ${noun}: ${summary.done} ready, ${summary.running} running, ${summary.failed} failed.`;
+    : `Batch of ${summary.total} ${noun}: ${summary.done} ready, ${summary.running} running, ${summary.deciding} awaiting your decision, ${summary.failed} failed.`;
 
   return (
     <Card
@@ -173,6 +173,7 @@ export function AnalysisWorkspace() {
               <span className="font-medium text-foreground">
                 Batch of {summary.total} {noun}: {summary.done} ready
                 {summary.running > 0 ? `, ${summary.running} running` : ''}
+                {summary.deciding > 0 ? `, ${summary.deciding} awaiting your decision` : ''}
                 {summary.failed > 0 ? `, ${summary.failed} failed` : ''}
               </span>
               <span className="font-mono font-semibold text-foreground">{summary.percent}%</span>
@@ -195,13 +196,16 @@ export function AnalysisWorkspace() {
             ))}
           </ul>
 
-          {summary.settled && matches > 0 && (
-            <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-900">
+          {summary.deciding > 0 && (
+            <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-900" data-testid="batch-suggestions">
               <AlertDescription>
                 <strong className="font-semibold">
-                  {matches} suggested {matches === 1 ? 'match is' : 'matches are'} waiting for your review.
+                  {waiting} suggested {waiting === 1 ? 'match is' : 'matches are'} waiting for your decision.
                 </strong>{' '}
-                Nothing is merged until you accept it.
+                Nothing is merged until you accept it. Reports for these videos are built when you decide.{' '}
+                <Link className="font-semibold underline" href="/library?tab=matches">
+                  Review the matches
+                </Link>
               </AlertDescription>
             </Alert>
           )}
@@ -209,7 +213,9 @@ export function AnalysisWorkspace() {
           <div className="flex flex-wrap gap-3">
             {summary.settled ? (
               <Button asChild className="h-11 flex-1 rounded-full text-sm font-semibold" size="lg">
-                <Link href="/library">Go to library</Link>
+                <Link href={summary.deciding > 0 ? '/library?tab=matches' : '/library'}>
+                  {summary.deciding > 0 ? 'Review matches in the library' : 'Go to library'}
+                </Link>
               </Button>
             ) : (
               <>

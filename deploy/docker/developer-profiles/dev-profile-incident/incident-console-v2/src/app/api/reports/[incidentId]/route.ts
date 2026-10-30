@@ -33,7 +33,21 @@ export async function GET(request: Request, context: { params: Promise<{ inciden
     const report = await getReport(incidentReports, incidentId, revisionId, camera, (storageKey) =>
       createR2PlaybackUrl(config, storageKey),
     );
-    if (!report) return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    if (!report) {
+      // An incident that has videos but no version yet (waiting for a match decision or a build) is not "not found":
+      // the page shows its videos and what it is waiting for.
+      const incident = await incidentReports.getIncident(incidentId);
+      if (incident && incident.revisions.length === 0) {
+        const videos = await Promise.all(
+          incident.videos.map(async (video) => ({
+            name: video.videoId,
+            playbackUrl: video.storageKey ? await createR2PlaybackUrl(config, video.storageKey).catch(() => null) : null,
+          })),
+        );
+        return NextResponse.json({ error: 'This incident has no report yet', waiting: { videos } }, { status: 404 });
+      }
+      return NextResponse.json({ error: 'Report not found' }, { status: 404 });
+    }
     return NextResponse.json({ report });
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not load the report');
