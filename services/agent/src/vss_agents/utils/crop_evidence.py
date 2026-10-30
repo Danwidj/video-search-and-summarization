@@ -15,11 +15,13 @@
 
 """Evidence crop service for natural-language search (MVP2 VM Step 3).
 
-Produces tightly framed object crops from video frames at VLM timestamp_seconds
-using an open-vocabulary detector port, applying 5% margin padding clamped to the
-frame, and encoding JPEG quality 85 evidence images persisted via EvidenceStore (R2 in production).
-The crops become the evidence entries of the AI revision the analysis run writes; the console builds
-the searchable ``evidence_crops`` rows from a revision's evidence when it is made official.
+Finds each object in the video frame at VLM timestamp_seconds with an open-vocabulary detector port
+(retrying one and two seconds either side when it finds nothing; each second tried is one budgeted detector
+call), and stores two images per item through EvidenceStore (R2 in production): the whole frame at the video's
+native size, which the console shows with the box drawn on it, and the object crop (5% margin padding clamped to
+the frame, JPEG quality 85), which only evidence search embeds. When the object is not found the frame is stored
+alone and the entry says so. The entries become the evidence of the AI revision the analysis run writes; the
+console builds the searchable ``evidence_crops`` rows from a revision's evidence when it is made official.
 """
 
 from abc import ABC
@@ -69,12 +71,24 @@ class Detection:
 
 @dataclass(frozen=True)
 class CropResult:
-    """Cropped evidence image and spatial grounding metadata."""
+    """One evidence item's frame and crop with the spatial grounding metadata.
 
-    image_bytes: bytes
-    normalized_box: list[int]  # [ymin, xmin, ymax, xmax] normalized 0-1000
+    ``located`` is False when the detector found nothing at any second tried: the frame is kept, ``image_bytes``
+    and ``normalized_box`` are None (never a whole-frame box), and ``box_seconds`` is the requested second.
+    """
+
+    image_bytes: bytes | None  # the object crop (evidence search embeds it); None when not located
+    normalized_box: list[int] | None  # [ymin, xmin, ymax, xmax] normalized 0-1000; None when not located
     score: float
     frame_size: tuple[int, int]  # (width, height)
+    frame_bytes: bytes | None = None  # the whole frame the box was found in, at the video's native size
+    box_seconds: float | None = None  # the second the frame was read at (the requested one unless a retry hit)
+    located: bool = True
+
+
+# Seconds tried, in order, around the requested one when the detector finds nothing there.
+LOCATE_RETRY_OFFSETS: tuple[int, ...] = (1, -1, 2, -2)
+FRAME_JPEG_QUALITY = 90
 
 
 def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
@@ -86,6 +100,11 @@ def evidence_key(video_key: str, batch_id: str, item_id: str) -> str:
     (``E1``, ``I1``, ``A1``) are unique across the three collections, so no collection folder is needed.
     """
     return f"evidence/{video_key}/{batch_id}/{item_id}.jpg"
+
+
+def evidence_frame_key(video_key: str, batch_id: str, item_id: str) -> str:
+    """Return the R2 key for one evidence item's whole frame: ``evidence/<video key>/<batchId>/<itemId>-frame.jpg``."""
+    return f"evidence/{video_key}/{batch_id}/{item_id}-frame.jpg"
 
 
 _BATCH_PATTERN = re.compile(r"^run-(\d+)$")
@@ -445,74 +464,29 @@ class FakeDetector:
         return self.detections
 
 
-def _whole_frame_result(frame: np.ndarray) -> CropResult | None:
-    """Whole-frame crop (box [0, 0, 1000, 1000], score 0.0 marking low confidence)."""
+def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult | None:
+    """The frame alone: no crop and no box, so nothing downstream mistakes it for a located object."""
     frame_h, frame_w = frame.shape[:2]
-    jpeg_bytes = encode_jpeg(frame, quality=85)
-    if not jpeg_bytes:
+    frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
+    if not frame_bytes:
         return None
     return CropResult(
-        image_bytes=jpeg_bytes, normalized_box=[0, 0, 1000, 1000], score=0.0, frame_size=(frame_w, frame_h)
+        image_bytes=None,
+        normalized_box=None,
+        score=0.0,
+        frame_size=(frame_w, frame_h),
+        frame_bytes=frame_bytes,
+        box_seconds=seconds,
+        located=False,
     )
 
 
-def crop_evidence_item(
-    video_ref: str | Path | np.ndarray,
-    timestamp_seconds: int | float,
-    label: str,
-    detector: Any | None = None,
-    min_score: float = 0.0,
-    whole_frame_fallback: bool = False,
+def _locate_in_frame(
+    frame: np.ndarray, seconds: int | float, raw_detections: Any, label: str, min_score: float
 ) -> CropResult | None:
-    """Crop an evidence object from a video at the specified timestamp using a detector.
-
-    Args:
-        video_ref: Video file path, URL, or pre-extracted BGR numpy frame.
-        timestamp_seconds: Seconds from video start where item is prominently visible.
-        label: Short search query/label for the detector (e.g. 'crowbar', 'person in hoodie').
-        detector: Detector port implementing detect(frame, query) or callable.
-        min_score: Minimum confidence score threshold (default 0.0).
-        whole_frame_fallback: When the detector yields no usable box, return the whole frame
-            (box [0, 0, 1000, 1000], score 0.0) instead of None. A missing frame still returns None.
-
-    Returns:
-        CropResult or None when nothing is found or detector is unavailable.
-    """
-    if detector is None:
-        return None
-
-    if hasattr(detector, "is_available") and not detector.is_available():
-        return None
-
-    frame: np.ndarray | None = (
-        video_ref if isinstance(video_ref, np.ndarray) else extract_frame(video_ref, timestamp_seconds)
-    )
-
-    if frame is None or frame.size == 0:
-        return None
-
-    frame_h, frame_w = frame.shape[:2]
-    if frame_h <= 0 or frame_w <= 0:
-        return None
-
-    try:
-        if hasattr(detector, "detect"):
-            raw_detections = detector.detect(frame, label)
-        elif callable(detector):
-            raw_detections = detector(frame, label)
-        else:
-            return None
-    except CropCallCapReachedError:
-        raise
-    except Exception as exc:
-        logger.warning("Detector execution failed for query '%s': %s", label, exc)
-        return None
-
-    if not raw_detections:
-        return _whole_frame_result(frame) if whole_frame_fallback else None
-
+    """The crop of the best usable detection of one frame, or None when the detector found no usable box."""
     parsed_detections: list[Detection] = []
-    for d in raw_detections:
+    for d in raw_detections or []:
         if isinstance(d, Detection):
             parsed_detections.append(d)
         elif isinstance(d, dict):
@@ -522,40 +496,99 @@ def crop_evidence_item(
             parsed_detections.append(Detection(box=list(box), score=score, label=lbl))
         elif hasattr(d, "box") and hasattr(d, "score"):
             parsed_detections.append(Detection(box=list(d.box), score=float(d.score), label=getattr(d, "label", label)))
-
-    fallback = _whole_frame_result(frame) if whole_frame_fallback else None
-
     if not parsed_detections:
-        return fallback
+        return None
 
     best = max(parsed_detections, key=lambda d: d.score)
-    if best.score < min_score:
-        return fallback
-
-    box = best.box
-    if len(box) != 4:
-        return fallback
-
-    ymin, xmin, ymax, xmax = box
+    if best.score < min_score or len(best.box) != 4:
+        return None
+    ymin, xmin, ymax, xmax = best.box
     if ymin >= ymax or xmin >= xmax:
-        return fallback
+        return None
 
-    c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(box, frame_w, frame_h, padding_fraction=0.05)
+    frame_h, frame_w = frame.shape[:2]
+    c_ymin, c_xmin, c_ymax, c_xmax = apply_box_padding(best.box, frame_w, frame_h, padding_fraction=0.05)
     if c_ymin >= c_ymax or c_xmin >= c_xmax:
-        return fallback
-
-    crop = frame[c_ymin:c_ymax, c_xmin:c_xmax]
-    jpeg_bytes = encode_jpeg(crop, quality=85)
-    if not jpeg_bytes:
-        return fallback
-
-    norm_box = normalize_box(c_ymin, c_xmin, c_ymax, c_xmax, frame_w, frame_h)
+        return None
+    jpeg_bytes = encode_jpeg(frame[c_ymin:c_ymax, c_xmin:c_xmax], quality=85)
+    frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
+    if not jpeg_bytes or not frame_bytes:
+        return None
     return CropResult(
         image_bytes=jpeg_bytes,
-        normalized_box=norm_box,
+        normalized_box=normalize_box(c_ymin, c_xmin, c_ymax, c_xmax, frame_w, frame_h),
         score=best.score,
         frame_size=(frame_w, frame_h),
+        frame_bytes=frame_bytes,
+        box_seconds=seconds,
     )
+
+
+def crop_evidence_item(
+    video_ref: str | Path | np.ndarray,
+    timestamp_seconds: int | float,
+    label: str,
+    detector: Any | None = None,
+    min_score: float = 0.0,
+    not_located_fallback: bool = False,
+    retry_offsets: Sequence[int] = (),
+) -> CropResult | None:
+    """Locate an evidence object in a video at the specified timestamp using a detector.
+
+    Args:
+        video_ref: Video file path, URL, or pre-extracted BGR numpy frame (a frame is never retried at other seconds).
+        timestamp_seconds: Seconds from video start where item is prominently visible.
+        label: Short search query/label for the detector (e.g. 'crowbar', 'person in hoodie').
+        detector: Detector port implementing detect(frame, query) or callable.
+        min_score: Minimum confidence score threshold (default 0.0).
+        not_located_fallback: When no second yields a usable box, return the requested second's frame alone
+            (``located`` False, no crop, no box) instead of None. A missing frame still returns None.
+        retry_offsets: Seconds added to ``timestamp_seconds`` and tried in order when the detector finds
+            nothing there; the first hit wins and ``box_seconds`` records the second it was found at. Every
+            second tried is one detector call against the request's crop-call budget.
+
+    Returns:
+        CropResult or None when nothing is found or detector is unavailable.
+
+    Raises:
+        CropCallCapReachedError: when the budgeted detector has no calls left (propagated, never swallowed).
+    """
+    if detector is None:
+        return None
+
+    if hasattr(detector, "is_available") and not detector.is_available():
+        return None
+
+    attempts = [0, *([] if isinstance(video_ref, np.ndarray) else retry_offsets)]
+    first_frame: np.ndarray | None = None
+    for offset in attempts:
+        seconds = timestamp_seconds + offset
+        if seconds < 0:
+            continue
+        frame: np.ndarray | None = video_ref if isinstance(video_ref, np.ndarray) else extract_frame(video_ref, seconds)
+        if frame is None or frame.size == 0 or min(frame.shape[:2]) <= 0:
+            continue
+        if first_frame is None:
+            first_frame = frame
+        try:
+            if hasattr(detector, "detect"):
+                raw_detections = detector.detect(frame, label)
+            elif callable(detector):
+                raw_detections = detector(frame, label)
+            else:
+                return None
+        except CropCallCapReachedError:
+            raise
+        except Exception as exc:
+            logger.warning("Detector execution failed for query '%s': %s", label, exc)
+            return None
+        found = _locate_in_frame(frame, seconds, raw_detections, label, min_score)
+        if found is not None:
+            return found
+
+    if not_located_fallback and first_frame is not None:
+        return _not_located_result(first_frame, timestamp_seconds)
+    return None
 
 
 class EvidenceStore(ABC):
@@ -731,9 +764,16 @@ class CropEvidenceService:
         label: str,
         detector: Any | None = None,
     ) -> CropResult | None:
-        """Crop an evidence item using the configured detector (whole frame when no box is found)."""
+        """Locate an evidence item with the configured detector, retrying nearby seconds (the frame alone when not found)."""
         active_detector = detector if detector is not None else self.detector
-        return crop_evidence_item(video_ref, timestamp_seconds, label, active_detector, whole_frame_fallback=True)
+        return crop_evidence_item(
+            video_ref,
+            timestamp_seconds,
+            label,
+            active_detector,
+            not_located_fallback=True,
+            retry_offsets=LOCATE_RETRY_OFFSETS,
+        )
 
     async def process_incident_report(
         self,
@@ -746,13 +786,16 @@ class CropEvidenceService:
         detector: Any | None = None,
         store: EvidenceStore | None = None,
     ) -> list[dict[str, Any]]:
-        """Crop every entity, instrument and asset of a report and upload each image.
+        """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
         Returns one evidence entry per item (see :func:`evidence_items`) for the revision's
-        ``evidence`` JSONB. ``image`` is the R2 key ``evidence/<video key>/run-<n>/<itemId>.jpg`` (``video_key`` is the video's
-        R2 key; callers without one, such as the prompt experiments, fall back to ``video_id``)
-        and ``bounding_box`` the normalised crop box; when no image could be produced ``image`` and
-        ``bounding_box`` are null and ``image_gap`` says why. Never raises for a single item.
+        ``evidence`` JSONB. ``frame`` is the R2 key ``evidence/<video key>/run-<n>/<itemId>-frame.jpg`` of the whole video frame
+        (``video_key`` is the video's R2 key; callers without one, such as the prompt experiments, fall back to ``video_id``),
+        ``image`` the key of the object crop beside it (``<itemId>.jpg``, what evidence search embeds), ``bounding_box`` the normalised
+        crop box in that frame and ``box_seconds`` the second the frame was read at (a retry second when the requested one found
+        nothing). ``located`` is true when the detector found the object; when it did not, only ``frame`` is stored, ``image``
+        and ``bounding_box`` are null, ``located`` is false and ``image_gap`` says so. When no frame could be produced, ``frame``
+        is null as well and ``image_gap`` says why. Never raises for a single item.
         """
         active_detector = detector if detector is not None else self.detector
         active_store = store if store is not None else self.store
@@ -785,22 +828,44 @@ class CropEvidenceService:
                     logger.warning("Evidence crop failed for %s %s: %s", video_id, entry["item_id"], exc)
                     entry["image_gap"] = f"crop failed: {type(exc).__name__}: {exc}"
                     return
-                if crop is None:
+                if crop is None or crop.frame_bytes is None:
                     entry["image_gap"] = (
-                        f"no crop produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
+                        f"no frame produced at {entry['timestamp_seconds']}s (frame unreadable or detector failed)"
                     )
                     return
+                frame_key = evidence_frame_key(folder, batch, entry["item_id"])
                 key = evidence_key(folder, batch, entry["item_id"])
                 try:
-                    await active_store.put_image(key, crop.image_bytes)
+                    await active_store.put_image(frame_key, crop.frame_bytes)
+                    if crop.image_bytes is not None:
+                        await active_store.put_image(key, crop.image_bytes)
                 except Exception as exc:
                     logger.warning("Evidence image upload failed for %s: %s", key, exc)
                     entry["image_gap"] = f"image upload failed: {type(exc).__name__}: {exc}"
                     return
-                entry["image"] = key
-                entry["bounding_box"] = crop.normalized_box
+                entry["frame"] = frame_key
+                entry["box_seconds"] = crop.box_seconds
+                entry["located"] = crop.located
+                if crop.located and crop.image_bytes is not None:
+                    entry["image"] = key
+                    entry["bounding_box"] = crop.normalized_box
+                else:
+                    entry["image_gap"] = (
+                        f"object not located at {entry['timestamp_seconds']}s or within {max(LOCATE_RETRY_OFFSETS)}s either side"
+                    )
 
-        entries = [{**item, "bounding_box": None, "image": None, "image_gap": None} for item in items]
+        entries = [
+            {
+                **item,
+                "bounding_box": None,
+                "image": None,
+                "frame": None,
+                "box_seconds": None,
+                "located": None,
+                "image_gap": None,
+            }
+            for item in items
+        ]
         await asyncio.gather(*(_crop_and_upload(entry) for entry in entries))
         return entries
 
