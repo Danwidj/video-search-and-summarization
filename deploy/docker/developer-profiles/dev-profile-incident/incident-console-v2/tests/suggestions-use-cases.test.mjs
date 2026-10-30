@@ -199,10 +199,20 @@ describe('evaluateIncident', () => {
     );
   });
 
-  test('a candidate without a report is judged with a null overview', async () => {
+  test('a candidate without a report is judged with the overview of its first video analysis', async () => {
     const w = await world({ withRevisions: [] });
     await evaluateIncident(w, 1, signal);
-    assert.equal(w.judge.calls[0].candidates[0].overview, null);
+    const overview = w.judge.calls[0].candidates[0].overview;
+    assert.equal(overview.type, 'fire');
+    assert.equal(overview.location, 'Warehouse 3');
+  });
+
+  test('a candidate with neither a report nor an analysis is judged with a null overview', async () => {
+    const w = await world({ withRevisions: [] });
+    const latest = w.analyses.latestAnalysis.bind(w.analyses);
+    w.analyses.latestAnalysis = async (video) => (video === 'a.mp4' ? latest(video) : null);
+    await evaluateIncident(w, 1, signal);
+    assert.equal(w.judge.calls[0]?.candidates[0].overview ?? null, null);
   });
 
   test('a score below the threshold is not suggested', async () => {
