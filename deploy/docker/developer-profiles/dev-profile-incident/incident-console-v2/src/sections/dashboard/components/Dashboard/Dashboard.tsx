@@ -493,9 +493,9 @@ function Heatmap({
   return (
     <TooltipProvider delayDuration={100}>
       <div className="overflow-x-auto">
-        <div className="min-w-[520px]">
+        <div className="w-full min-w-0 sm:min-w-[520px]">
           {DAYS.map((name, d) => (
-            <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-1" key={name}>
+            <div className="mt-1 grid grid-cols-[32px_repeat(24,1fr)] gap-px sm:gap-1" key={name}>
               <span className="text-[10px]">{name}</span>
               {HOURS_OF_DAY.map((h) => {
                 const count = map.get(`${d}-${h}`) || 0;
@@ -505,7 +505,7 @@ function Heatmap({
                       <button
                         aria-label={`${name} ${h}:00 ${timeZone}: ${count}`}
                         className={cn(
-                          'aspect-square rounded-xs transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'aspect-square min-w-0 rounded-xs p-0 transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           selected === `${d}-${h}` ? 'ring-2 ring-ink' : '',
                         )}
                         onClick={() => onSelect(d, h)}

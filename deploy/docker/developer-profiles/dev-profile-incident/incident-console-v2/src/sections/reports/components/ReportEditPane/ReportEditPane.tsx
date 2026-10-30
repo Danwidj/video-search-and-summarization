@@ -62,6 +62,7 @@ export function ReportEditPane({
   title,
   incidentId,
   videoSrc,
+  videoLength,
   onChange,
   onSeek,
   cameraName,
@@ -79,6 +80,8 @@ export function ReportEditPane({
   title: string;
   incidentId: string;
   videoSrc: string;
+  /** Length of the open video in seconds, or null until the player has loaded it. */
+  videoLength: number | null;
   onChange: (draft: EditDraft) => void;
   onSeek: (seconds: number) => void;
   cameraName: string;
@@ -268,6 +271,7 @@ export function ReportEditPane({
                   aria-label="Draft incident start in seconds"
                   className="h-8 w-20 text-xs"
                   inputMode="numeric"
+                  max={videoLength === null ? undefined : Math.floor(videoLength)}
                   min={0}
                   onChange={(event) =>
                     patchIncident({
@@ -283,6 +287,7 @@ export function ReportEditPane({
                   aria-label="Draft incident end in seconds"
                   className="h-8 w-20 text-xs"
                   inputMode="numeric"
+                  max={videoLength === null ? undefined : Math.floor(videoLength)}
                   min={0}
                   onChange={(event) =>
                     patchIncident({ end_timestamp: event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))) })

@@ -789,6 +789,7 @@ export function ReportPage({
             title={reportHeading(editBase.report)}
             incidentId={incidentId}
             videoSrc={report.run.playbackUrl}
+            videoLength={playerDuration}
             cameraName={editBase.camera}
             target={editTarget}
             targetLocked={changes > 0}
