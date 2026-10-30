@@ -101,8 +101,9 @@ export function Dashboard() {
           <p className="font-mono text-xs uppercase tracking-[.2em] text-moss">Official incidents</p>
           <h1 className="mt-2 text-4xl font-semibold sm:text-5xl">Operations dashboard</h1>
           <p className="mt-3 max-w-3xl text-sm text-ink/50">
-            Incident statistics count each video once, through its explicitly selected official report. Videos without an official report
-            are counted separately and never assigned to a category. Every number opens the matching reports.
+            Incident statistics count each incident once, through its explicitly selected official report, however many videos it holds.
+            Incidents without an official report are counted separately and never assigned to a category. Every number opens the matching
+            reports.
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -161,8 +162,8 @@ export function Dashboard() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="video-metrics">
-        <Metric label="Uploaded videos" note="all time" value={data.videos.uploaded} />
+      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="incident-metrics">
+        <Metric label="Uploaded videos" note="all time, across all incidents" value={data.videos.uploaded} />
         <Metric
           change={delta(data.total, previous?.total)}
           href={link()}
@@ -170,8 +171,8 @@ export function Dashboard() {
           note="in the selected period"
           value={data.total}
         />
-        <Metric label="Awaiting official report" note="have reports, none selected" value={data.incidents.awaitingSelection} />
-        <Metric label="Without a report" note="no successful analysis yet" value={data.incidents.withoutReport} />
+        <Metric label="Incidents awaiting official report" note="have reports, none selected" value={data.incidents.awaitingSelection} />
+        <Metric label="Incidents without a report" note="no successful analysis yet" value={data.incidents.withoutReport} />
       </section>
       <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric

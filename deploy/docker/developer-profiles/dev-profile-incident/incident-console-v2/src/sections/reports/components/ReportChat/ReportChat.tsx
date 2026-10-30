@@ -17,7 +17,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
-import { chatRequestBody, type ChatTarget } from '@/lib/chat/report-chat';
+import { chatRequestBody, citationTitle, type ChatTarget } from '@/lib/chat/report-chat';
 import type { ChatCitation, ChatResponse } from '@/modules/chat/domain/chat';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
@@ -133,8 +133,8 @@ export function ReportChat({ incidentId, target, onSeek }: { incidentId: string;
               {!messages.length && (
                 <>
                   <p className="max-w-[92%] self-start rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-[13px] leading-snug text-muted-foreground">
-                    Ask about the people, objects and events in this incident. Answers come from the version you have open, and link to the
-                    moment in the video.
+                    Ask about the people, objects and events in this incident, across all of its cameras. Answers come from the version you
+                    have open, and link to the moment in the video.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {SUGGESTIONS.map((suggestion) => (
@@ -171,7 +171,7 @@ export function ReportChat({ incidentId, target, onSeek }: { incidentId: string;
                             {message.citations.map((citation) => (
                               <li key={`${citation.itemId}-${citation.timestampSeconds}`}>
                                 <button
-                                  aria-label={`Jump to ${citation.itemId} at ${formatClock(citation.timestampSeconds)}`}
+                                  aria-label={`Jump to ${citationTitle(citation)} at ${formatClock(citation.timestampSeconds)}`}
                                   className="grid w-full grid-cols-[52px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-border bg-card p-1 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   onClick={() => onSeek(citation.timestampSeconds)}
                                   type="button"
@@ -180,9 +180,7 @@ export function ReportChat({ incidentId, target, onSeek }: { incidentId: string;
                                   {/* biome-ignore lint/performance/noImgElement: the agent's signed crop URL, used as given */}
                                   <img alt="" className="h-9 w-[52px] rounded-md bg-muted object-cover" src={citation.cropImageUrl} />
                                   <span className="min-w-0">
-                                    <b className="block truncate text-xs">
-                                      {citation.itemId} · {citation.itemType}
-                                    </b>
+                                    <b className="block truncate text-xs">{citationTitle(citation)}</b>
                                     <span className="text-[11px] text-muted-foreground">
                                       jump to {formatClock(citation.timestampSeconds)}
                                     </span>

@@ -79,6 +79,11 @@ export function draftReport(draft: EditDraft): Record<string, unknown> {
   };
 }
 
+/** A citation's title: the item, and the camera it was seen in when the agent said which. */
+export function citationTitle(citation: { itemId: string; itemType: string; videoName: string | null }): string {
+  return `${citation.itemId} · ${citation.itemType}${citation.videoName ? ` · ${citation.videoName}` : ''}`;
+}
+
 /** The body of POST /api/chat for one question. */
 export function chatRequestBody({
   messages,
