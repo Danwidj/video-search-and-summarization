@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BatchFileRow } from '@/sections/analysis/components/BatchFileRow';
+import { libraryHref } from '@/sections/analysis/batch-upload';
 import { useBatchUpload } from '@/sections/analysis/hooks/use-batch-upload';
 import { getStageAnnouncement, getStageProgress, type StageKey, stageLabels, stageOrder } from '@/sections/analysis/stage-progress';
 
@@ -94,7 +95,10 @@ export function AnalysisWorkspace() {
           >
             <span className="whitespace-nowrap">Vision-language model</span>
             <Select onValueChange={(value) => setModel(value)} value={model}>
-              <SelectTrigger className="normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" id="analysis-model">
+              <SelectTrigger
+                className="normal-case tracking-normal text-foreground sm:w-auto sm:min-w-[19rem] sm:shrink-0"
+                id="analysis-model"
+              >
                 <SelectValue placeholder="Choose model" />
               </SelectTrigger>
               <SelectContent>
@@ -213,24 +217,24 @@ export function AnalysisWorkspace() {
           <div className="flex flex-wrap gap-3">
             {summary.settled ? (
               <Button asChild className="h-11 flex-1 rounded-full text-sm font-semibold" size="lg">
-                <Link href={summary.deciding > 0 ? '/library?tab=matches' : '/library'}>
-                  {summary.deciding > 0 ? 'Review matches in the library' : 'Go to library'}
-                </Link>
+                <Link href={libraryHref(summary)}>{summary.deciding > 0 ? 'Review matches in the library' : 'Go to library'}</Link>
               </Button>
             ) : (
               <>
                 <Button className="h-11 flex-1 rounded-full text-sm font-semibold" disabled size="lg" type="button">
                   Working on {summary.running} {summary.running === 1 ? 'video' : 'videos'}…
                 </Button>
-                <Button
-                  className="h-11 rounded-full text-sm font-semibold"
-                  onClick={cancelUploads}
-                  size="lg"
-                  type="button"
-                  variant="outline"
-                >
-                  Cancel unfinished uploads
-                </Button>
+                {summary.uploading > 0 && (
+                  <Button
+                    className="h-11 rounded-full text-sm font-semibold"
+                    onClick={cancelUploads}
+                    size="lg"
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancel unfinished uploads
+                  </Button>
+                )}
               </>
             )}
             <Button

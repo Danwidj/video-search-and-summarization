@@ -7,8 +7,10 @@ import {
   buildBatchIncident,
   checkBatchItem,
   followJoin,
+  formatElapsed,
   isAlreadyStored,
   itemProgress,
+  libraryHref,
   newBatchItem,
   planBatch,
   retryChange,
@@ -225,7 +227,16 @@ test('summary counts files and settles only when none is queued or running', () 
     { ...base, key: 'b', status: 'failed' },
     { ...base, key: 'c', status: 'running' },
   ];
-  assert.deepEqual(summariseBatch(items), { total: 3, done: 1, failed: 1, deciding: 0, running: 1, percent: 33, settled: false });
+  assert.deepEqual(summariseBatch(items), {
+    total: 3,
+    done: 1,
+    failed: 1,
+    deciding: 0,
+    running: 1,
+    uploading: 1,
+    percent: 38,
+    settled: false,
+  });
   assert.equal(
     summariseBatch([...items.slice(0, 2), { ...base, key: 'd', status: 'deciding' }]).settled,
     true,
@@ -269,4 +280,41 @@ test('after a join every file in the merged incident follows it, so the batch bu
       [9, ['d']],
     ],
   );
+});
+
+test("the batch percent moves with each file's own progress, not only with finished files", () => {
+  const base = newBatchItem(file('a.mp4'), 'a');
+  const uploading = (key, uploadProgress) => ({ ...base, key, status: 'running', stage: 'upload', uploadProgress });
+  assert.equal(summariseBatch([uploading('a', 0), uploading('b', 0)]).percent, 2);
+  assert.equal(summariseBatch([uploading('a', 100), uploading('b', 100)]).percent, 25);
+  const analysing = { ...base, key: 'c', status: 'running', stage: 'analyse' };
+  assert.equal(summariseBatch([{ ...base, status: 'done' }, analysing]).percent, 69);
+  assert.equal(
+    summariseBatch([{ ...base, status: 'deciding', stage: 'report' }]).percent,
+    100,
+    'a file handed to the reviewer counts as finished',
+  );
+});
+
+test('only files whose upload is in flight can be cancelled', () => {
+  const base = newBatchItem(file('a.mp4'), 'a');
+  const items = [
+    { ...base, status: 'running', stage: 'upload' },
+    { ...base, key: 'b', status: 'running', stage: 'analyse' },
+    { ...base, key: 'c', status: 'queued' },
+  ];
+  assert.equal(summariseBatch(items).uploading, 1);
+  assert.equal(summariseBatch(items.slice(1)).uploading, 0);
+});
+
+test('the final button leads to Matches while a suggestion awaits a decision, the library otherwise', () => {
+  assert.equal(libraryHref({ deciding: 2 }), '/library?tab=matches');
+  assert.equal(libraryHref({ deciding: 0 }), '/library');
+});
+
+test('elapsed seconds read as m:ss', () => {
+  assert.equal(formatElapsed(0), '0:00');
+  assert.equal(formatElapsed(7.9), '0:07');
+  assert.equal(formatElapsed(65), '1:05');
+  assert.equal(formatElapsed(-3), '0:00');
 });
