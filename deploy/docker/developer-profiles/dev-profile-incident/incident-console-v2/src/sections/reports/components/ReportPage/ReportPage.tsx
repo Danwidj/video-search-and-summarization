@@ -46,6 +46,14 @@ import {
 } from '@/modules/reports/domain/edit-draft';
 import { cameraOptions, showCameraSwitcher } from '@/lib/reports/cameras';
 import type { IncidentReportView } from '@/modules/reports/application/types';
+import type { Overview } from '@/modules/reports/domain/envelope';
+import {
+  overviewChangeCount,
+  overviewDraftFrom,
+  overviewFromDraft,
+  overviewProblems,
+  type OverviewDraft,
+} from '@/modules/reports/domain/overview-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
@@ -53,6 +61,7 @@ import { CameraSwitcher } from '@/sections/reports/components/CameraSwitcher';
 import { IncidentOverview } from '@/sections/reports/components/IncidentOverview';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
+import type { EditTarget } from '@/sections/reports/components/ReportEditPane/EditTargetSwitch';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
 
@@ -66,6 +75,8 @@ interface EditBase {
   revisionId: number;
   revisionNo: number;
   report: ReportView;
+  overview: Overview;
+  camera: string;
 }
 
 // Human revisions still record who saved them; the mockup removed names from the UI, so the console sends a neutral one.
@@ -116,6 +127,11 @@ export function ReportPage({
   const [chatOpen, setChatOpen] = useState(false);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [undoStack, setUndoStack] = useState<EditDraft[]>([]);
+  // Edit mode edits the selected camera or the overview; each has its own draft and undo history.
+  const [editTarget, setEditTarget] = useState<EditTarget>('camera');
+  const [overviewDraft, setOverviewDraft] = useState<OverviewDraft | null>(null);
+  const [overviewUndo, setOverviewUndo] = useState<OverviewDraft[]>([]);
+  const [compareOverview, setCompareOverview] = useState<Overview | null>(null);
   const [editBase, setEditBase] = useState<EditBase | null>(null);
   const [compareRevisionId, setCompareRevisionId] = useState<number | null>(null);
   const [compareReport, setCompareReport] = useState<ReportView | null>(null);
@@ -171,12 +187,13 @@ export function ReportPage({
     if (mode !== 'edit' || !editBase || compareRevisionId === null) return;
     if (compareRevisionId === editBase.revisionId) {
       setCompareReport(editBase.report);
+      setCompareOverview(editBase.overview);
       setCompareError(null);
       return;
     }
     const controller = new AbortController();
     setCompareError(null);
-    fetch(`/api/reports/${encodeURIComponent(incidentId)}${reportQuery(compareRevisionId, editBase.report.run.filename)}`, {
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}${reportQuery(compareRevisionId, editBase.camera)}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -185,11 +202,13 @@ export function ReportPage({
         if (!response.ok || !payload.report?.report)
           throw new Error(payload.error || `Version request failed with HTTP ${response.status}`);
         setCompareReport(payload.report.report);
+        setCompareOverview(payload.report.overview);
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setCompareError(cause instanceof Error ? cause.message : 'Could not load the comparison version');
         setCompareReport(null);
+        setCompareOverview(null);
       });
     return () => controller.abort();
   }, [compareRevisionId, editBase, mode, incidentId]);
@@ -228,12 +247,16 @@ export function ReportPage({
     void video.play().catch(() => undefined);
   }, []);
 
-  const startEdit = useCallback((base: ReportView) => {
+  const startEdit = useCallback((base: ReportView, overview: Overview, camera: string) => {
     setDraft(draftFromView(base));
     setUndoStack([]);
-    setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base });
+    setOverviewDraft(overviewDraftFrom(overview));
+    setOverviewUndo([]);
+    setEditTarget('camera');
+    setEditBase({ revisionId: base.revisionId, revisionNo: base.revision.revisionNo, report: base, overview, camera });
     setCompareRevisionId(base.revisionId);
     setCompareReport(base);
+    setCompareOverview(overview);
     setCompareError(null);
     setMode('edit');
     setSaveOpen(false);
@@ -245,6 +268,8 @@ export function ReportPage({
     setMode('view');
     setDraft(null);
     setUndoStack([]);
+    setOverviewDraft(null);
+    setOverviewUndo([]);
     setEditBase(null);
     setSaveOpen(false);
     router.push(`/reports/${encodeURIComponent(incidentId)}${reportQuery(id, camera)}`);
@@ -326,11 +351,15 @@ export function ReportPage({
     );
   }
 
+  const cameraName = view.camera ?? report.run.filename;
   const officialRevision = (revisions ?? []).find((revision) => revision.isOfficial);
   const heading = view.overview.title ?? reportHeading(mode === 'edit' && editBase ? editBase.report : report);
   const filename = `Incident #${incidentId} · ${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`;
-  const changes = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
-  const problems = draft ? draftProblems(draft) : [];
+  const editingOverview = editTarget === 'overview';
+  const cameraChanges = draft && editBase ? draftChangeCount(editBase.report.structured, draft) : 0;
+  const overviewChanges = overviewDraft && editBase ? overviewChangeCount(editBase.overview, overviewDraft) : 0;
+  const changes = editingOverview ? overviewChanges : cameraChanges;
+  const problems = editingOverview ? (overviewDraft ? overviewProblems(overviewDraft) : []) : draft ? draftProblems(draft) : [];
   const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
   const compareHref = otherAiRevision
     ? `/reports/${encodeURIComponent(incidentId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
@@ -342,7 +371,20 @@ export function ReportPage({
     setDraft(next);
   };
 
+  const changeOverview = (next: OverviewDraft) => {
+    if (overviewDraft) setOverviewUndo((stack) => [...stack.slice(-49), overviewDraft]);
+    setOverviewDraft(next);
+  };
+
   const undoDraft = () => {
+    if (editingOverview) {
+      const previousOverview = overviewUndo.at(-1);
+      if (!previousOverview) return;
+      setOverviewDraft(previousOverview);
+      setOverviewUndo((stack) => stack.slice(0, -1));
+      setSaveProblems([]);
+      return;
+    }
     const previous = undoStack.at(-1);
     if (!previous) return;
     setDraft(previous);
@@ -352,8 +394,13 @@ export function ReportPage({
 
   const revertDraft = () => {
     if (!editBase) return;
-    setDraft(draftFromView(editBase.report));
-    setUndoStack([]);
+    if (editingOverview) {
+      setOverviewDraft(overviewDraftFrom(editBase.overview));
+      setOverviewUndo([]);
+    } else {
+      setDraft(draftFromView(editBase.report));
+      setUndoStack([]);
+    }
     setSaveProblems([]);
   };
 
@@ -386,11 +433,11 @@ export function ReportPage({
       return;
     }
     if (draft && editBase) setMode('edit');
-    else startEdit(shownReport);
+    else startEdit(shownReport, view.overview, cameraName);
   }
 
   async function save() {
-    if (!draft || !editBase || saving) return;
+    if (!draft || !overviewDraft || !editBase || saving) return;
     const trimmed = note.trim();
     if (!trimmed) {
       setSaveProblems(['Add a note for the new version.']);
@@ -405,7 +452,9 @@ export function ReportPage({
     try {
       // Crops held in the browser reach R2 only now, before the revision that references them is written.
       const keys = new Map<string, string>();
-      for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(incidentId, itemId, blob));
+      if (!editingOverview) {
+        for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(incidentId, itemId, blob));
+      }
       const response = await fetch(`/api/reports/${encodeURIComponent(incidentId)}/edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -413,7 +462,9 @@ export function ReportPage({
           parentId: editBase.revisionId,
           editedBy: SAVE_AUTHOR,
           note: trimmed,
-          edit: editFromDraft(withUploadedImages(draft, keys)),
+          ...(editingOverview
+            ? { overview: overviewFromDraft(overviewDraft) }
+            : { camera: editBase.camera, edit: editFromDraft(withUploadedImages(draft, keys)) }),
         }),
       });
       const payload = (await response.json()) as {
@@ -430,8 +481,11 @@ export function ReportPage({
       const savedId = payload.revision.revisionId;
       setDraft(null);
       setUndoStack([]);
+      setOverviewDraft(null);
+      setOverviewUndo([]);
       setEditBase(null);
       setCompareReport(null);
+      setCompareOverview(null);
       setCompareRevisionId(null);
       setMode('view');
       setSaveOpen(false);
@@ -620,7 +674,7 @@ export function ReportPage({
             playerDuration={playerDuration}
             report={report}
           />
-        ) : draft && editBase ? (
+        ) : draft && overviewDraft && editBase ? (
           <ReportEditPane
             a={compareReport?.structured ?? null}
             aRevisionNo={compareReport?.revision.revisionNo ?? editBase.revisionNo}
@@ -631,6 +685,13 @@ export function ReportPage({
             title={reportHeading(editBase.report)}
             incidentId={incidentId}
             videoSrc={report.run.playbackUrl}
+            cameraName={editBase.camera}
+            target={editTarget}
+            targetLocked={changes > 0}
+            onTargetChange={setEditTarget}
+            overviewA={compareOverview ?? editBase.overview}
+            overviewDraft={overviewDraft}
+            onOverviewChange={changeOverview}
           />
         ) : null}
 
@@ -641,7 +702,7 @@ export function ReportPage({
                 <b>v{report.revision.revisionNo}</b>{' '}
                 {report.official.isOfficial ? 'is the official version' : 'is not the official version'}
               </span>
-              <Button onClick={() => startEdit(report)} type="button">
+              <Button onClick={() => startEdit(report, view.overview, cameraName)} type="button">
                 Edit from v{report.revision.revisionNo}
               </Button>
             </>
@@ -663,7 +724,13 @@ export function ReportPage({
                 )}
               </span>
               <div className="flex flex-wrap items-center gap-2">
-                <Button disabled={undoStack.length === 0 || saving} onClick={undoDraft} size="sm" type="button" variant="outline">
+                <Button
+                  disabled={(editingOverview ? overviewUndo : undoStack).length === 0 || saving}
+                  onClick={undoDraft}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
                   Undo
                 </Button>
                 <Button
