@@ -44,24 +44,29 @@ test('getStageAnnouncement generates clear accessible announcements for screen r
   assert.equal(getStageAnnouncement('error', 0, 'Gateway timed out'), 'Analysis failed: Gateway timed out');
 });
 
-test('AnalysisWorkspace component uses shadcn Progress and accessible ARIA attributes', async () => {
-  const filePath = new URL('../src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', import.meta.url);
-  const source = await readFile(filePath, 'utf8');
+test('the batch workspace uses shadcn Progress and accessible ARIA attributes', async () => {
+  const workspace = await readFile(
+    new URL('../src/sections/analysis/components/AnalysisWorkspace/AnalysisWorkspace.tsx', import.meta.url),
+    'utf8',
+  );
+  const row = await readFile(new URL('../src/sections/analysis/components/BatchFileRow/BatchFileRow.tsx', import.meta.url), 'utf8');
 
-  // Verify shadcn Progress import and usage
-  assert.match(source, /import\s+\{\s*Progress\s*\}\s+from\s+'@\/components\/ui\/progress'/);
-  assert.match(source, /<Progress\b/);
-  assert.match(source, /aria-label="Analysis progress"/);
-  assert.match(source, /aria-valuenow=\{progressValue\}/);
-  assert.match(source, /aria-valuetext=\{announcement\}/);
+  // Verify shadcn Progress import and usage for the batch and for each file
+  assert.match(workspace, /import\s+\{\s*Progress\s*\}\s+from\s+'@\/components\/ui\/progress'/);
+  assert.match(workspace, /<Progress\b/);
+  assert.match(workspace, /aria-label="Batch progress"/);
+  assert.match(workspace, /aria-valuetext=\{announcement\}/);
+  assert.match(row, /import\s+\{\s*Progress\s*\}\s+from\s+'@\/components\/ui\/progress'/);
+  assert.match(row, /aria-label=\{`Progress for \$\{item\.name\}`\}/);
 
   // Verify screen reader live region announcement
-  assert.match(source, /role="status"/);
-  assert.match(source, /aria-live="polite"/);
+  assert.match(workspace, /role="status"/);
+  assert.match(workspace, /aria-live="polite"/);
 
-  // Verify stage list beneath the progress bar
-  assert.match(source, /aria-label="Analysis stages"/);
-  assert.match(source, /aria-current=\{active \? 'step' : undefined\}/);
-  assert.match(source, /\(completed\)/);
-  assert.match(source, /\(current step\)/);
+  // Verify each file's stage list beneath its progress bar
+  assert.match(row, /aria-label=\{`Stages for \$\{item\.name\}`\}/);
+  assert.match(row, /aria-current=\{active \? 'step' : undefined\}/);
+  assert.match(row, /\(completed\)/);
+  assert.match(row, /\(current step\)/);
+  assert.match(row, /\(failed\)/);
 });
