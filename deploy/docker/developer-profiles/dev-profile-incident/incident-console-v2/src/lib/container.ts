@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto';
 import { SupabaseDashboardAdapter } from '@/modules/dashboard/infrastructure/supabase/dashboard';
 import { SupabaseHealthAdapter } from '@/modules/health/infrastructure/supabase/health';
 import { SupabaseVideoAdapter } from '@/modules/videos/infrastructure/supabase/videos';
+import { SupabaseIncidentVideoAdapter } from '@/modules/videos/infrastructure/supabase/incident-videos';
+import type { IncidentVideoRepository } from '@/modules/videos/domain/IncidentVideoRepository';
 import { getServiceConfiguration, type ServiceConfiguration } from '@/lib/env';
 import type { HealthRepository } from '@/modules/health/domain/HealthRepository';
 import { createPostgrestClient } from '@/lib/postgrest/supabase-client';
@@ -39,6 +41,11 @@ export function getDbAdapters(config?: ServiceConfiguration): DbAdapters {
     incidents: new SupabaseIncidentAdapter(db),
     videos: new SupabaseVideoAdapter(db),
   };
+}
+
+/** The videos of an incident, by real name. Throws like getDbAdapters when the database is not configured. */
+export function getIncidentVideos(config?: ServiceConfiguration): IncidentVideoRepository {
+  return new SupabaseIncidentVideoAdapter(createPostgrestClient(config));
 }
 
 /** Never throws: /api/health must answer when the database is not configured. */
