@@ -1,11 +1,12 @@
 # Prompt engineering and direct VLM vs VSS: consolidated evaluation report
 
-> **Status (2026-10-30): final for Stages 0-3.** This report consolidates results that already exist. It made **no new inference or judge call**, and every figure is taken from the stage reports linked below.
+> **Status (2026-10-30, updated after the plan audit): final for Stages 0-3.** This report consolidates results that already exist. It made **no new inference or judge call**, and every figure is taken from the stage reports linked below.
 > - **Ground truth:** `ground-truth-v1.0` comes from AI-assisted adjudication. It was frozen on the owner's **dataset-level** approval and is **not individually human-verified** ([freeze README](../../ground_truth/freeze/README.md#ground-truth-v10-as-frozen-limitation)). Every accuracy figure is accuracy against that reference.
 > - **Matching:** τ = 0.40 (methodology v1.2) is **AI-calibrated, not human-validated**. Eight calibration pairs still await human review.
 > - **Held-out set:** the 55 test clips were held out from Stage 2 prompt selection but are **not unseen** (D15, §11).
 > - **Production:** the production prompt and `incident-contract-v4` are unchanged. V1 is **not adopted**; adopting it would be a separate decision with a contract bump.
-> - **Not yet run:** the cropping-on end-to-end VSS profile (plan §F.2). It is prepared ([plan and proposed budget](e2e-profile-plan.md)) and waits for the owner's budget approval. The optional other-model transfer check and the Stage 1 recovery were not run.
+> - **Not yet run:** the cropping-on end-to-end VSS profile (plan §F.2). It is prepared and merged ([plan and proposed budget](e2e-profile-plan.md)) and waits for the owner's budget approval. The optional other-model transfer check and the Stage 1 recovery were not run.
+> - **Plan audit:** every plan requirement, deviation and omission is in the [plan audit and deviation record](plan-audit.md). Two offline checks were added on 2026-10-30 with no model, embedding, judge or cropping call: a perceptual-hash near-duplicate check (none found, §11) and secondary metrics from the saved Stage 3 results (§6.6). Neither changes D9 v2, a primary metric or a conclusion.
 >
 > Stage reports: [Stage 0 pilot](stage0-pilot.md) · [Stage 1 baselines](stage1-baselines.md) · [Stage 2 plan](stage2-plan.md) · [Stage 2 prompts](stage2-prompts.md) · [Stage 2a](stage2a-results.md) · [Stage 2b and selection](stage2b-results.md) · [Severity (v1.3)](severity-v1.3.md) · [Failures and recovery](infrastructure-and-recovery.md) · [Stage 3 plan](stage3-plan.md) · [Stage 3 results](stage3-results.md) · [decision record D9-D15](../../../.docs/mvp2/experiment-decision-record.md)
 
@@ -175,6 +176,25 @@ The dev pattern holds: entities and assets are over-listed (low precision, moder
 
 V1's gains concentrate in Burglary on both dev (+0.079) and test (+0.059 in VSS); Assault, a dev gain for V1 (+0.085), is flat or negative on test.
 
+### 6.6 Secondary metrics (offline, reporting only; added 2026-10-30)
+
+These are the plan's §B.2 secondary metrics, computed from the saved recovery-adjusted Stage 3 results without any call ([details](plan-audit.md#32-secondary-metrics-from-saved-stage-3-results-reporting-only)). The pooled figures reproduce §6.4 exactly.
+
+| | C1 | C2 | C3 | C4 |
+|---|---|---|---|---|
+| Severity exact, micro / macro (category mean) | 0.255 / 0.248 | 0.278 / 0.268 | 0.273 / 0.260 | 0.315 / 0.310 |
+| Description, micro / macro | 0.364 / 0.368 | 0.333 / 0.344 | 0.327 / 0.328 | 0.222 / 0.227 |
+| Entity F1, pooled / per-video mean | 0.482 / 0.549 | 0.490 / 0.563 | 0.456 / 0.544 | 0.416 / 0.517 |
+| Asset F1, pooled / per-video mean | 0.285 / 0.345 | 0.219 / 0.332 | 0.294 / 0.364 | 0.283 / 0.355 |
+| Matched instruments; threat exact / within ±1 | 1; 0.00 / 1.00 | 2; 0.00 / 0.50 | 3; 0.00 / 0.67 | 4; 0.25 / 0.75 |
+| Holder correct / incorrect / unresolved | 1 / 0 / 0 | 1 / 0 / 1 | 1 / 1 / 1 | 0 / 2 / 2 |
+| Entity F1 at τ' = 0.50 / 0.65 / 0.75 (lower bounds) | 0.289 / 0.084 / 0.000 | 0.294 / 0.098 / 0.007 | 0.248 / 0.072 / 0.007 | 0.222 / 0.040 / 0.000 |
+
+- **Macro and micro agree** within 0.02 on every incident field, with the same ordering of C1-C4. The category mix does not drive any result.
+- **Per-video mean F1** is higher than pooled: false positives concentrate in a few over-listed clips.
+- **Instrument attributes** rest on 1-4 matched instruments per configuration: descriptive only.
+- **Threshold dependence:** item F1 falls steeply as τ rises and reaches the floor at the plan's original 0.75, as in Stage 1. Item results are therefore conditional on the AI-calibrated τ = 0.40. The entity ordering at 0.50 matches that at 0.40. A threshold below 0.40 would need new embedding calls and was not computed.
+
 ## 7. Latency
 
 **Inference latency (P1 only, seconds, p50 / p95)** — the shared gateway's load varies between runs, so compare within a stage only:
@@ -252,6 +272,7 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 
 - **Bias direction:** any bias favours the base prompt, so prompt gains on test are conservative (possibly understated), not inflated. Equal-prompt pipeline comparisons share the same exposure on both sides.
 - **Sensitivity:** excluding the three pilot clips (52 clips, still not unseen) changes no conclusion (§6.1).
+- **Near-duplicates (plan §E; offline 2026-10-30):** a 64-bit perceptual-hash comparison of all 80 clips (1 frame per second, 4,095 frames) found **no overlapping clips**, within or across the dev and test halves. The one flagged pair (Explosion004 and RoadAccidents030, both test) and the next closest were checked visually: they are different scenes, matched only through their black letterbox borders. No dev-test pair shared more than 5% of frames. Leakage through duplicated footage is therefore not a concern; the exposure above is about prior use, not shared footage.
 - **Absolute accuracy** may be optimistic for the base prompt and is not comparable with the 2026-10-02 figures.
 
 ## 12. Negative findings
@@ -267,8 +288,9 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 
 ## 13. Limitations
 
-- **Ground truth:** AI-assisted adjudication frozen on dataset-level approval; not individually human-verified. The plan's human review steps (blind review of unchanged incidents, a second reviewer with κ) were replaced by owner-authorised AI-assisted adjudication.
-- **Matching:** τ = 0.40 is AI-calibrated on dev, not human-validated; item scores depend on it, and dev also served for selection.
+- **Ground truth:** AI-assisted adjudication frozen on dataset-level approval; **not human-validated**. The plan's human review steps (100% of high-impact changes, a blind review of unchanged incidents, a second reviewer with Cohen's κ) were replaced by owner-authorised AI-assisted adjudication, so no inter-rater agreement exists ([R1](plan-audit.md#2-deviations-decision-record)).
+- **Matching:** τ = 0.40 is AI-calibrated on dev (AI-labelled, AI-audited), **not human-validated**; 8 pairs await human review. It replaced the plan's τ = 0.75 ([R2](plan-audit.md#2-deviations-decision-record)). Item scores depend steeply on it (§6.6), and dev also served for selection.
+- **Not done from the plan's methodology:** a description-cosine check for judge drift (the judge is pinned and logged, but drift is not measured), matching sensitivity below τ, and a written quarantine attestation for the Stage 2 prompt authors. Few-shot prompting (plan E6) was replaced and is untested. See [O1-O4 and R4](plan-audit.md#2-deviations-decision-record).
 - **Power:** 25 dev clips × 2 repeats and 55 test clips × 1 repeat. ΔI intervals are about ±0.035 on test, so effects below about 0.03-0.04 are not detectable; instruments rest on 10-15 paired clips.
 - **Multiplicity:** about 40 per-score intervals per stage; a few excluding zero are expected by chance. Only ΔI was pre-registered.
 - **Non-determinism:** temperature-0 outputs vary between calls, and one test repeat cannot separate this from pipeline effects.
@@ -281,4 +303,5 @@ Per-clip swings of ±0.3 under identical requests (C2−C1) are as large as the 
 - **Selected on dev:** V1 `p1-v4-e01-severity` (SHA-256 `004746ea7d19…`), by the pre-registered D9 v2 rule: the highest ΔI (+0.051 [+0.013, +0.089]) and the only version whose interval excluded zero, with every guardrail passing. Owner-approved on 2026-10-29.
 - **Held-out check:** not confirmed as a clear gain (§6).
 - **Not adopted:** the production prompt and contract are unchanged. Nothing was revised, rerun or re-selected in response to the test results; Stage 3 ran once.
+- **Plan completion:** every mandatory requirement is done or replaced by an owner decision, except the end-to-end profile (prepared, waiting for budget approval) and the owner's acceptance of the open omissions O1-O4 ([checklist](plan-audit.md#1-checklist)).
 - **For the FYP presentation:** the defensible claims are (1) a pre-registered, auditable prompt-engineering process with all versions and negative results reported; (2) VSS parity with direct VLM calls in accuracy, reliability and latency under identical requests; (3) a severity-rubric prompt that helped on dev but did not clearly generalise. Not defensible: "VSS extracts better than a direct VLM", "prompt engineering improved held-out accuracy", or any claim about unseen footage.
