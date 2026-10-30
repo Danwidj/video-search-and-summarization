@@ -68,8 +68,8 @@ export function SuggestionsTab({ state }: { state: SuggestionCards }) {
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Suggested matches</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            New videos are compared with your incidents. Suggestions are never applied automatically. Place and event type decide the score;
-            time overlap is only a hint.
+            New videos are compared with your incidents. A match scoring 0.5 or more joins automatically; lower scores wait for your
+            decision. Place and event type decide the score; time overlap is only a hint.
           </p>
         </div>
         {matchesSortNote(cards.length) && <p className="text-xs text-muted-foreground">{matchesSortNote(cards.length)}</p>}
