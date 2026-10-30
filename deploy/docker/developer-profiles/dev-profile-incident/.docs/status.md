@@ -64,7 +64,6 @@ Deliberate behaviour that can look like an issue (the Cosmos timeline, chat abou
 All open. Finished items move to the [archive](#7-archive).
 
 1. **Open: merging `shadcn` into main still waits for the captain.** All shadcn migration PRs (#247, #249, #250, #252-#255), UI polish fixes (#259-#264, #266, #268), component swaps (#270, #271, #272), skill move (#267) and docs syncs (#251, #269) have landed and verified on `origin/shadcn`. Merging the branch into `main` awaits the captain's review and approval.
-2. **Open: dark mode is not wired (deferred by the captain).** The CSS variables in `src/app/styles.css` define theme tokens for light and dark palettes, but dark mode switching and class toggling are deferred.
 3. **Resolved: Videos tab and screen removed.** The `/videos` tab, route and `VideosScreen` component were deleted per captain intent; video overview metrics on the dashboard render as static cards without broken links.
 4. **Open: a second browser check of all screens after the UI fixes is not yet done.** While individual PRs verified specific screens and interactions, a comprehensive second browser check across all screens (Analyse, Library, Reports, Dashboard) after all UI fixes landed has not yet been conducted.
 5. **Open: remove the report timeline across contract, agent and eval fixtures.** PR 253 dropped `ReportTimeline` and the timeline lanes from the report page in the console. However, `incident-contract-v4` still carries `timeline`, and the agent validator and eval fixtures still reference it; dropping it entirely requires bumping the contract version and updating agent and eval fixtures together ([decision](decisions.md#2026-10-28-the-report-timeline-is-being-removed)).
@@ -106,6 +105,7 @@ Finished items, newest first within each group, each with its outcome. Known iss
 
 ### Action items
 
+- **Done (2026-10-30): dark theme removed from `incident-console-v2` (action item 2).** Deleted the `.dark` CSS block and `dark` custom variant, every `dark:` utility class and the `next-themes` dependency; the console is light only ([decision](decisions.md#2026-10-30-dark-theme-removed-from-the-console)).
 - **Done (2026-10-29): removed analysis history section from report page.** Removed orphaned `AdvancedReportTools` and bottom run history list from the report page; re-analysis is housed in the top bar.
 - **Done (2026-10-28, PR 272): AnalysisWorkspace upload target replaced with composed shadcn dropzone.** Replaced hand-written drag-and-drop button with accessible shadcn `Card`, `Button`, `Badge` and Lucide `Upload` dropzone over native file input.
 - **Done (2026-10-28, PR 271): panel resize handles swapped for shadcn Resizable.** Replaced hand-written `<hr>` horizontal separator in `ReportPage` with shadcn `ResizablePanelGroup` and `ResizableHandle`; retained vertical band height handle.

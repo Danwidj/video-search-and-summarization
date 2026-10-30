@@ -19,7 +19,7 @@ const OUTCOME_CONFIG: Record<RunOutcome, { variant: 'default' | 'secondary' | 'd
   },
   valid_after_structural_repair: {
     variant: 'outline',
-    className: 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 font-bold',
+    className: 'border-amber-500/40 bg-amber-500/10 text-amber-800 font-bold',
   },
   contract_failed: {
     variant: 'destructive',
@@ -157,7 +157,7 @@ function RunRow({
         </p>
       )}
       {run.repair && (
-        <p className="mt-2 text-amber-800 dark:text-amber-200">
+        <p className="mt-2 text-amber-800">
           Contract repair applied (IDs only) · {run.repair.ruleSet}:{' '}
           {run.repair.operations.map((operation) => String(operation.op)).join(', ')}
         </p>

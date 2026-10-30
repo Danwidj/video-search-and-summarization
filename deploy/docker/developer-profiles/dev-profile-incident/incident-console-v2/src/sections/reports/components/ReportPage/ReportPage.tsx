@@ -530,7 +530,7 @@ export function ReportPage({
 
         {mode === 'edit' && !officialRevision && revisions && (
           <Alert
-            className="rounded-none border-x-0 border-t-0 border-b border-amber-300 bg-amber-50/80 px-5 py-2 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200"
+            className="rounded-none border-x-0 border-t-0 border-b border-amber-300 bg-amber-50/80 px-5 py-2 text-xs text-amber-950"
             data-testid="official-status"
           >
             <AlertDescription>No official version has been selected for this video. Star a version to make it official.</AlertDescription>
