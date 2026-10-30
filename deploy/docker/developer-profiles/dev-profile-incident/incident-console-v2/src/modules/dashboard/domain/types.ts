@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// get_incident_dashboard (supabase/functions-final.sql): incident statistics come only from
-// each video's official revision (D6); videos are counted separately; model
-// coverage counts analysis attempts by outcome.
+// get_incident_dashboard (supabase/migrations/20261030130000_incident_summaries.sql): incident
+// statistics come only from each incident's official revision (D6); incidents and videos are counted
+// separately (an incident holds one or more videos); model coverage counts analysis attempts by outcome.
 
 export interface RankedValue {
   label: string;
@@ -37,10 +37,12 @@ export interface ModelCoverage {
 }
 
 export interface DashboardAnalytics {
-  /** Official incidents in the period (one per video with an official report). */
+  /** Official incidents in the period (one per incident with an official report). */
   total: number;
-  /** All-time video counts; they match the /videos lists they link to. */
-  videos: { uploaded: number; withOfficial: number; awaitingSelection: number; withoutReport: number };
+  /** All-time incident counts, by the state of their reports. */
+  incidents: { total: number; withOfficial: number; awaitingSelection: number; withoutReport: number };
+  /** All-time count of uploaded videos, across every incident. */
+  videos: { uploaded: number };
   previous: { total: number; human: number; ai: number; high: number } | null;
   /** Mean of the confidences the models provided; null when none did. */
   averageConfidence: number | null;

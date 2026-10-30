@@ -18,7 +18,7 @@ export interface ChatMessage {
 export interface ChatContext {
   /** Default global. */
   scope?: 'global' | 'incident';
-  /** The incident to focus on when scope is incident. */
+  /** The incident to focus on when scope is incident (incidents.id as text); the answer uses every camera of it. */
   incidentId?: string | null;
   evidenceCropIds?: string[] | null;
 }
@@ -37,6 +37,8 @@ export interface ChatRequest {
 
 export interface ChatCitation {
   incidentId: string;
+  /** The camera (video name) the cited item was seen in; null when the agent could not tell. */
+  videoName: string | null;
   itemId: string;
   itemType: EvidenceItemType;
   /** 0 or more, for jump-to-clip. */

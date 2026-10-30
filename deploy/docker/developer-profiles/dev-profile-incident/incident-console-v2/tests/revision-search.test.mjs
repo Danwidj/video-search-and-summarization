@@ -34,7 +34,7 @@ const originalFetch = globalThis.fetch;
 const AGENT_HIT = {
   incident_id: 2,
   revision_id: 41,
-  video_id: 'v2',
+  video_names: ['front.mp4', 'rear.mp4'],
   revision_no: 3,
   kind: 'ai',
   model_run_id: 'm2',
@@ -120,9 +120,9 @@ test('a revision search becomes the agent body with only what was set, and its h
   });
   const [hit] = fromAgentRevisionSearchResponse([AGENT_HIT]);
   assert.deepEqual(hit, {
-    incidentId: 2,
     revisionId: 41,
-    videoId: 'v2',
+    incidentId: 2,
+    videoNames: ['front.mp4', 'rear.mp4'],
     revisionNo: 3,
     kind: 'ai',
     modelRunId: 'm2',

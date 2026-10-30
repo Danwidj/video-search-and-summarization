@@ -96,7 +96,8 @@ describe('get_incident_dashboard mapping', () => {
   test('a malformed result still has every section the dashboard reads', () => {
     const mapped = dashboardFromRpc({ total: 4, types: [{ type: 'assault' }], heatmap: [{ count: 2 }] });
     assert.equal(mapped.total, 4);
-    assert.deepEqual(mapped.videos, { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 });
+    assert.deepEqual(mapped.incidents, { total: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 });
+    assert.deepEqual(mapped.videos, { uploaded: 0 });
     assert.equal(mapped.previous, null);
     assert.deepEqual(mapped.revisions, { ai: 0, human: 0 });
     assert.deepEqual(mapped.types, [

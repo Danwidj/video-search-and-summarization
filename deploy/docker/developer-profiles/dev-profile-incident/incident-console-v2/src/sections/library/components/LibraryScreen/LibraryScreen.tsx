@@ -174,7 +174,7 @@ export function Library() {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed, ...(incidentId ? { videoId: incidentId } : {}) }),
+        body: JSON.stringify({ query: trimmed, ...(incidentId ? { incidentId } : {}) }),
       });
       const payload = (await response.json()) as LibrarySearchResponse & { error?: string };
       if (!response.ok || !Array.isArray(payload.hits)) throw new Error(payload.error || 'Evidence search failed');

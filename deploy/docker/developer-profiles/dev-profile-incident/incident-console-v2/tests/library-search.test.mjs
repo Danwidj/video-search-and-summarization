@@ -41,19 +41,19 @@ test('a request becomes the agent body with only what was set', () => {
       topK: 20,
       minSimilarity: 0,
       hideRejected: false,
-      filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3, videoId: 'v1' },
+      filters: { incidentTypes: ['assault'], itemTypes: ['instrument'], minSeverity: 3, incidentId: '12', videoName: 'v1' },
     }),
     {
       query: 'knife',
       top_k: 20,
       min_similarity: 0,
       hide_rejected: false,
-      filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'], video_id: 'v1' },
+      filters: { incident_types: ['assault'], min_severity: 3, item_types: ['instrument'], incident_id: 12, video_id: 'v1' },
     },
   );
 });
 
-test('the contract fixture maps to camelCase hits keyed by video and run', () => {
+test('the contract fixture maps to camelCase hits keyed by incident and run', () => {
   const result = fromAgentSearchResponse(full);
   assert.equal(result.queryId, 'q-search-9921');
   assert.equal(result.totalHits, 2);
@@ -61,7 +61,7 @@ test('the contract fixture maps to camelCase hits keyed by video and run', () =>
   assert.equal(first.similarityScore, 0.89);
   assert.deepEqual(first.item.boundingBox, [320, 450, 510, 600]);
   assert.equal(first.item.holderEntityId, 'E1');
-  assert.equal(first.incident.videoId, 'Assault007_x264');
+  assert.equal(first.incident.incidentId, 'Assault007_x264');
   assert.equal(first.incident.modelRunId, 'm86a5c319e26659804b0');
   assert.deepEqual(first.incident.incidentWindow, [10, 28]);
   assert.equal(first.critic.verdict, 'confirmed');
@@ -132,7 +132,7 @@ test("/api/search asks the agent for every ranked hit and adds each video's sear
   assert.equal(version.isOfficial, summaries.reports[0].isOfficial);
 });
 
-test('/api/search with a videoId asks the agent for that incident only, and allows an empty query', async () => {
+test('/api/search with an incidentId asks the agent for that incident only, and allows an empty query', async () => {
   const agentBodies = [];
   globalThis.fetch = async (url, init) => {
     if (String(url) === 'http://agent.test/api/v1/incidents/search') {
@@ -141,13 +141,18 @@ test('/api/search with a videoId asks the agent for that incident only, and allo
     }
     return new Response(JSON.stringify({ reports: [], total: 0 }), { status: 200 });
   };
-  assert.equal((await post({ query: '', videoId: 'Assault007_x264' })).status, 200);
-  assert.equal((await post({ query: ' knife ', videoId: 'Assault007_x264' })).status, 200);
+  assert.equal((await post({ query: '', incidentId: '12' })).status, 200);
+  assert.equal((await post({ query: ' knife ', incidentId: '12', videoName: 'front.mp4' })).status, 200);
+  assert.equal((await post({ query: '', videoName: 'front.mp4' })).status, 200);
   assert.deepEqual(agentBodies, [
-    { query: '', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
-    { query: 'knife', top_k: 50, min_similarity: 0, filters: { video_id: 'Assault007_x264' } },
+    { query: '', top_k: 50, min_similarity: 0, filters: { incident_id: 12 } },
+    { query: 'knife', top_k: 50, min_similarity: 0, filters: { incident_id: 12, video_id: 'front.mp4' } },
+    { query: '', top_k: 50, min_similarity: 0, filters: { video_id: 'front.mp4' } },
   ]);
-  assert.equal((await post({ query: 'x', videoId: 'v'.repeat(65) })).status, 400);
+  for (const incidentId of ['Assault007_x264', '0', '-3', '1.5']) {
+    assert.equal((await post({ query: 'x', incidentId })).status, 400, incidentId);
+  }
+  assert.equal((await post({ query: 'x', videoName: 'v'.repeat(256) })).status, 400);
 });
 
 test('/api/search refuses empty text and a missing agent, and reports an agent failure', async () => {
@@ -165,7 +170,7 @@ test('/api/search refuses empty text and a missing agent, and reports an agent f
 
 test('the viewer cuts its frame through the report frame route and falls back to the crop', () => {
   const viewer = readFileSync(join(process.cwd(), 'src', 'sections', 'library', 'components', 'HitViewer', 'HitViewer.tsx'), 'utf8');
-  assert.match(viewer, /\/api\/reports\/\$\{encodeURIComponent\(hit\.incident\.videoId\)\}\/frame\?t=/);
+  assert.match(viewer, /\/api\/reports\/\$\{encodeURIComponent\(hit\.incident\.incidentId\)\}\/frame\?t=/);
   assert.match(viewer, /<FrameViewer/);
   assert.match(viewer, /<EvidenceFrame/);
 });

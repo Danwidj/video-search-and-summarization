@@ -9,7 +9,8 @@ import type { DashboardQuery, DashboardRepository } from '@/modules/dashboard/do
 
 const NO_INCIDENTS: DashboardAnalytics = {
   total: 0,
-  videos: { uploaded: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
+  incidents: { total: 0, withOfficial: 0, awaitingSelection: 0, withoutReport: 0 },
+  videos: { uploaded: 0 },
   previous: { total: 0, human: 0, ai: 0, high: 0 },
   averageConfidence: null,
   confidenceNotProvided: 0,

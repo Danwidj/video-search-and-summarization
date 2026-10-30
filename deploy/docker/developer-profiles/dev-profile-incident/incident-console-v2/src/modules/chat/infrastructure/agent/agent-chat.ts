@@ -15,7 +15,7 @@ export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
       ? {
           context: {
             ...(context.scope ? { scope: context.scope } : {}),
-            ...(context.incidentId != null ? { incident_id: context.incidentId } : {}),
+            ...(context.incidentId != null ? { incident_id: agentIncidentId(context.incidentId) } : {}),
             ...(context.evidenceCropIds != null ? { evidence_crop_ids: context.evidenceCropIds } : {}),
           },
         }
@@ -25,8 +25,15 @@ export function toAgentChatBody(request: ChatRequest): Record<string, unknown> {
   };
 }
 
+/** The agent takes the incident id as an integer; the console carries it as the text of a route segment. */
+function agentIncidentId(incidentId: string): number {
+  if (!/^[1-9]\d{0,17}$/.test(incidentId)) throw new RangeError('incidentId must be a positive integer');
+  return Number(incidentId);
+}
+
 type AgentCitation = {
-  incident_id: string;
+  incident_id: number | string;
+  video_id?: string | null;
   item_id: string;
   item_type: ChatCitation['itemType'];
   timestamp_seconds: number;
@@ -45,7 +52,8 @@ export function fromAgentChatResponse(payload: unknown): ChatResponse {
       role: 'assistant',
       content: message.content,
       citations: message.citations.map((c) => ({
-        incidentId: c.incident_id,
+        incidentId: String(c.incident_id),
+        videoName: typeof c.video_id === 'string' && c.video_id ? c.video_id : null,
         itemId: c.item_id,
         itemType: c.item_type,
         timestampSeconds: c.timestamp_seconds,

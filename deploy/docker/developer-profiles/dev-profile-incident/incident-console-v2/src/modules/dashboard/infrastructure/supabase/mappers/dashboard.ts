@@ -2,7 +2,7 @@
 
 // get_incident_dashboard: DashboardQuery -> RPC arguments, and its JSON ->
 // DashboardAnalytics field by field. For every result its SQL can build
-// (supabase/functions-final.sql) the output equals
+// (supabase/migrations/20261030130000_incident_summaries.sql) the output equals
 // the input; the defaults only apply to a malformed result.
 
 import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/modules/dashboard/domain/types';
@@ -39,18 +39,20 @@ export function dashboardRpcArgs(query: DashboardQuery): Row {
 
 export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   const result = asRow(value);
+  const incidents = asRow(result.incidents);
   const videos = asRow(result.videos);
   const revisions = asRow(result.revisions);
   // NULL for an all-time period, else one row of counts.
   const previous = result.previous && typeof result.previous === 'object' ? asRow(result.previous) : null;
   return {
     total: count(result.total),
-    videos: {
-      uploaded: count(videos.uploaded),
-      withOfficial: count(videos.withOfficial),
-      awaitingSelection: count(videos.awaitingSelection),
-      withoutReport: count(videos.withoutReport),
+    incidents: {
+      total: count(incidents.total),
+      withOfficial: count(incidents.withOfficial),
+      awaitingSelection: count(incidents.awaitingSelection),
+      withoutReport: count(incidents.withoutReport),
     },
+    videos: { uploaded: count(videos.uploaded) },
     previous: previous
       ? { total: count(previous.total), human: count(previous.human), ai: count(previous.ai), high: count(previous.high) }
       : null,

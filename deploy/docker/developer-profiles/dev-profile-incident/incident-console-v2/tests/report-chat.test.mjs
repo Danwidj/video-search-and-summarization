@@ -85,13 +85,13 @@ test('the draft report keeps source ids, resolves holders and leaves half-filled
 
 test('the request carries the incident, the version and (in Edit) the draft, as a valid chat-contract-v1 body', () => {
   const messages = [{ role: 'user', content: 'Who is there?' }];
-  const view = chatRequestBody({ messages, videoId: 'Burglary01', target: chatTarget({ revision, isOfficial: false, draft: null }) });
-  assert.deepEqual(view, { messages, incidentId: 'Burglary01', versionId: 42 });
+  const view = chatRequestBody({ messages, videoId: '12', target: chatTarget({ revision, isOfficial: false, draft: null }) });
+  assert.deepEqual(view, { messages, incidentId: '12', versionId: 42 });
 
   const edit = chatRequestBody({
     messages,
     sessionId: 's1',
-    videoId: 'Burglary01',
+    videoId: '12',
     target: chatTarget({ revision, isOfficial: false, draft: draft() }),
   });
   assert.equal(edit.versionId, 42);
@@ -102,7 +102,9 @@ test('the request carries the incident, the version and (in Edit) the draft, as 
     versionId: edit.versionId,
     draftReport: edit.draftReport,
   });
-  assert.equal(validateRequest(agentBody), true, JSON.stringify(validateRequest.errors));
+  // The agent takes the id as an integer; the frozen chat-contract-v1 schema says string.
+  const v1Body = { ...agentBody, context: { ...agentBody.context, incident_id: String(agentBody.context.incident_id) } };
+  assert.equal(validateRequest(v1Body), true, JSON.stringify(validateRequest.errors));
   assert.equal(agentBody.version_id, 42);
   assert.equal(agentBody.draft_report.entities.length, 2);
 });

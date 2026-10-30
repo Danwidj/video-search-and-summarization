@@ -17,7 +17,6 @@ export function toAgentRevisionSearchBody(request: RevisionSearchRequest): Recor
 
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {});
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 const num = (value: unknown, fallback = 0): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
 const numOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -26,8 +25,8 @@ function fromAgentHit(raw: unknown): RevisionSearchHit {
   const hit = row(raw);
   return {
     revisionId: num(hit.revision_id),
-    videoId: text(hit.video_id),
     incidentId: numOrNull(hit.incident_id),
+    videoNames: Array.isArray(hit.video_names) ? hit.video_names.filter((name): name is string => typeof name === 'string') : [],
     revisionNo: num(hit.revision_no, 1),
     kind: hit.kind === 'human' ? 'human' : 'ai',
     modelRunId: textOrNull(hit.model_run_id),

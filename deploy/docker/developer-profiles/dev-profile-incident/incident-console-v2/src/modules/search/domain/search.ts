@@ -3,9 +3,10 @@
 // EvidenceSearchRepository (MVP2): natural-language search over evidence crops.
 // Adapter: lib/adapters/agent/search.ts, over the vss-agent's POST
 // /api/v1/incidents/search (search-contract-v1, .docs/vm-api-contracts.md). The
-// agent embeds the query, ranks each video's searchable revision's evidence_crops
-// (the official one, else the newest) with search_evidence_items and records the
-// query and its hits itself. The VLM critic is dormant (off unless the agent sets
+// agent embeds the query, ranks each incident's searchable revision's evidence_crops
+// (the official one, else the newest; every camera's) with search_evidence_items and
+// records the query and its hits itself. A hit names its incident and, on the item, the camera
+// (the source video's name). The VLM critic is dormant (off unless the agent sets
 // INCIDENT_SEARCH_CRITIC), so every hit's critic verdict is 'unverified'. These types are that
 // contract (services/agent/src/vss_agents/api/incident_search.py SearchRequest /
 // SearchResponse) in camelCase.
@@ -20,13 +21,15 @@ export interface EvidenceSearchFilters {
   maxSeverity?: number;
   /** All three when absent. */
   itemTypes?: EvidenceItemType[];
-  /** Searches only this video (videos.id). With it, the query may be empty: the video's evidence in video time order. */
-  videoId?: string;
+  /** Searches only this incident, every camera. With it, the query may be empty: the incident's evidence in video time order. */
+  incidentId?: string;
+  /** Searches only this camera (videos.id, the video's name). Also lets the query be empty. */
+  videoName?: string;
 }
 
 /** An absent field takes the agent's default. */
 export interface EvidenceSearchRequest {
-  /** 1 to 500 characters; empty only with filters.videoId. */
+  /** 1 to 500 characters; empty only with filters.incidentId or filters.videoName. */
   query: string;
   /** 1 to 50; default 10. */
   topK?: number;
@@ -47,6 +50,8 @@ export interface EvidenceSearchHit {
   item: {
     itemType: EvidenceItemType;
     itemId: string;
+    /** The camera: the name of the video the item was seen in. Item ids repeat across cameras. */
+    videoName: string;
     name: string;
     /** Short detector label. */
     label: string;
@@ -59,10 +64,10 @@ export interface EvidenceSearchHit {
     /** [ymin, xmin, ymax, xmax] normalised to 0-1000, detector-produced; null when there is none. */
     boundingBox: [number, number, number, number] | null;
   };
-  /** The incident (video) the evidence comes from, as its searchable revision describes it. */
+  /** The incident the evidence comes from, as its searchable revision describes it. */
   incident: {
-    /** videos.id. */
-    videoId: string;
+    /** incidents.id, as a string (the route segment of its report page). */
+    incidentId: string;
     /** The run the searched revision derives from. */
     modelRunId: string;
     incidentType: string;
