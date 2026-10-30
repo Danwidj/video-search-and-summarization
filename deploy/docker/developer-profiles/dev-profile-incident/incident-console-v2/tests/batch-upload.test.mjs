@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   buildBatchIncident,
   checkBatchItem,
+  followJoin,
   isAlreadyStored,
   itemProgress,
   newBatchItem,
@@ -34,7 +35,7 @@ function harness(overrides = {}) {
     build: async () => calls.push('build'),
     evaluate: async () => {
       calls.push('evaluate');
-      return { suggestions: 2 };
+      return { suggestions: 2, joined: null };
     },
     ...overrides,
   };
@@ -237,4 +238,35 @@ test('summary counts files and settles only when none is queued or running', () 
 test('already-stored refusals are recognised so a retry re-analyses the stored video', () => {
   assert.equal(isAlreadyStored(new Error('A video named a.mp4 already exists')), true);
   assert.equal(isAlreadyStored(new Error('timed out')), false);
+});
+
+test('a check that joins the file automatically records where it went', async () => {
+  const { deps } = harness({ evaluate: async () => ({ suggestions: 0, joined: { keptIncidentId: 3, mergedIncidentId: 7, score: 0.8 } }) });
+  const item = await check(analysed('a', 7), deps);
+  assert.deepEqual(item.autoJoined, { incidentId: 3, score: 0.8 });
+  assert.equal(item.matches, 0);
+});
+
+test('after a join every file in the merged incident follows it, so the batch builds one report for the incident', () => {
+  const items = [
+    analysed('a', 3, { status: 'deciding', stage: 'report', checked: true }),
+    analysed('b', 7, { status: 'deciding', stage: 'report', checked: true }),
+    analysed('c', 7, { status: 'deciding', stage: 'report', checked: true }),
+    analysed('d', 9, { status: 'deciding', stage: 'report', checked: true }),
+  ];
+  const followed = followJoin(items, { keptIncidentId: 3, mergedIncidentId: 7, score: 0.8 });
+  assert.deepEqual(
+    followed.map((i) => i.analysed.incidentId),
+    [3, 3, 3, 9],
+  );
+  assert.equal(followed[0].autoJoined, null);
+  assert.deepEqual(followed[1].autoJoined, { incidentId: 3, score: 0.8 });
+  const plan = planBatch(followed, new Set());
+  assert.deepEqual(
+    plan.build.map((b) => [b.incidentId, b.keys]),
+    [
+      [3, ['a', 'b', 'c']],
+      [9, ['d']],
+    ],
+  );
 });

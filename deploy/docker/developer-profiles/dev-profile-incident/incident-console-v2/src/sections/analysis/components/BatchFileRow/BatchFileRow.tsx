@@ -124,9 +124,11 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
       {(item.status === 'done' || item.status === 'deciding') && item.analysed && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-muted-foreground">
-            {item.matches
-              ? `${item.matches} suggested ${item.matches === 1 ? 'match' : 'matches'} found for this video.`
-              : 'No match found in this batch or your other incidents.'}
+            {item.autoJoined
+              ? `Joined incident ${item.autoJoined.incidentId} automatically (match score ${item.autoJoined.score.toFixed(2)}).${item.matches ? ` ${item.matches} other ${item.matches === 1 ? 'match is' : 'matches are'} left to decide.` : ''}`
+              : item.matches
+                ? `${item.matches} suggested ${item.matches === 1 ? 'match' : 'matches'} found for this video.`
+                : 'No match found in this batch or your other incidents.'}
           </span>
           <Link className="font-semibold text-primary hover:underline" href={`/reports/${item.analysed.incidentId}`}>
             Open incident {item.analysed.incidentId} →

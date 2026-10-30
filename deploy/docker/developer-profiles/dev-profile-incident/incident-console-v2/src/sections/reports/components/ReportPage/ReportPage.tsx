@@ -65,6 +65,7 @@ import { IncidentOverview } from '@/sections/reports/components/IncidentOverview
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import type { EditTarget } from '@/sections/reports/components/ReportEditPane/EditTargetSwitch';
+import { AutoJoinNote } from '@/sections/reports/components/AutoJoinNote';
 import { RemoveVideoDialog } from '@/sections/reports/components/RemoveVideoDialog';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { RegenerateReport } from '@/sections/reports/components/RegenerateReport';
@@ -363,6 +364,7 @@ export function ReportPage({
   const videoCount = view.incidentVideos.length;
   const actions = topBarActions(view);
   const hasOfficial = view.officialRevisionId !== null;
+  const selectedAutoJoin = view.cameras.find((camera) => camera.video === view.camera)?.autoJoin ?? null;
 
   if (!report) {
     return (
@@ -630,6 +632,7 @@ export function ReportPage({
             options={options}
             value={view.camera}
           />
+          {selectedAutoJoin && view.camera && <AutoJoinNote autoJoin={selectedAutoJoin} video={view.camera} />}
 
           <div
             className="relative border-b border-border bg-card lg:h-(--report-band-height)"

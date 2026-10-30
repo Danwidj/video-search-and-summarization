@@ -5,7 +5,7 @@
 // case imports an adapter.
 
 import type { CoverageVerdict, Overview } from '@/modules/reports/domain/envelope';
-import type { IncidentId, IncidentRevisionSummary } from '@/modules/reports/domain/IncidentReportRepository';
+import type { AutoJoinRecord, IncidentId, IncidentRevisionSummary } from '@/modules/reports/domain/IncidentReportRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import type { EvidenceEmbedding, EvidenceEntry } from '@/modules/reports/domain/revision';
 
@@ -51,6 +51,8 @@ export interface CameraView {
   inVersion: boolean;
   /** The camera's report passes incident-contract-v4 validation, so the report panes can show it. */
   valid: boolean;
+  /** Why the rule joined this video to the incident; null when a reviewer did or it was never joined. */
+  autoJoin: AutoJoinRecord | null;
 }
 
 /** One revision of an incident: the overview, the coverage verdict, the cameras and the chosen camera's report. */

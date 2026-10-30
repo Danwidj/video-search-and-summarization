@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: The system joins a match of 0.5 or more by itself; each join is recorded on the video
+- **Decision:** After matching, the highest-scoring pending candidate at or above `AUTO_JOIN_MIN_SCORE` (0.5, beside `DEFAULT_MIN_SCORE` in `evaluate-incident.ts`) is joined through `acceptSuggestion`, the use case Accept uses, so there is one merge path. A rejected pair is never joined; a tie goes to the older incident. A batch checks one file at a time and follows each merge (`followJoin`), so batch-mates and existing incidents end in one incident and each incident's report is built once. The join is recorded on the moved videos (`videos.auto_joined_score`, `auto_joined_reasons`, `auto_joined_at`, set by `auto_merge_incidents`, cleared by `remove_video` 'move', which already records the pair rejected). The report page shows which video was joined, its score and reasons, and points at Remove video then Move to its own incident. Below 0.5 stays separate; the Matches tab and Accept or Reject keep working for pending suggestions. A single upload is a batch of one.
+- **Why:** The captain wants the system to classify videos into incidents without a review click per clip. A merge deletes the source incident and its suggestion rows, so the accepted suggestion cannot hold the record; per-video columns survive the merge and are the only place the "why" can live.
+- **Alternatives rejected:**
+  - *Keep suggest-only (the mvp3 plan):* Reversed on the captain's request.
+  - *Record in `incident_match_suggestions`:* Rejected because the merge cascade deletes the row.
+  - *Parallel checks:* Rejected because a join deletes an incident id another check may be using.
+- **Supersedes:** "Nothing merges without Accept" in the entry below and the "Matching only suggests" rule in architecture §5.
+- **Links:** [architecture §5](architecture.md#5-mvp3-incidents-with-several-videos), [data](data.md), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
 ### 2026-10-30: Data hygiene: empty incidents, leftover runs and forgotten rejections
 - **Decision:** (1) An incident with no videos is shown, its page says it has no videos and offers Delete incident (the delete route removes the bare row), and it is not a merge target. (2) Deleting a video also deletes its `model_runs` that no revision uses, found by notes naming the video or by an id starting `<video id>@`, after the `remove_video` RPC so every delete path gets it; existing orphans are left to a separate data clear. (3) A rejected pair is forgotten when either incident is deleted: the FK cascade stays.
 - **Why:** (1) Hiding the incident would leave unreachable data. (2) The old cleanup only matched notes naming the video, and agent runs have empty notes, and nothing called it on the RPC path. (3) Ids are never reused, so a lost rejection matters only if the same video is uploaded again, which makes a new incident anyway.
