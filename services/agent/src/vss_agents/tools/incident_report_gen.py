@@ -391,9 +391,8 @@ async def persist_revision(
     report: dict[str, Any],
     evidence: list[dict[str, Any]],
     caller_owns_run: bool,
-    note: str | None = None,
 ) -> int | None:
-    """Best-effort: write the AI revision and return its id. Never raises - a DB outage must not break analysis.
+    """Best-effort: store the video analysis and return its id. Never raises - a DB outage must not break analysis.
 
     ``caller_owns_run`` (console agent mode) only creates a placeholder ``model_runs`` row when
     none exists, so the console's own record is never overwritten; otherwise the run is
@@ -413,12 +412,11 @@ async def persist_revision(
             await db.insert_model_run(
                 model_run_id, model_name=model_name, prompt_version=incident_contract.contract_version()
             )
-        row = await db.insert_ai_revision(
+        row = await db.insert_video_analysis(
             incident_id,
             model_run_id=model_run_id,
             payload=report,
             evidence=evidence,
-            note=note,
             embedding=await revision_embedding(report),
         )
         return int(row["id"])
@@ -533,7 +531,6 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 report=report,
                 evidence=evidence,
                 caller_owns_run=tool_input.model_run_id is not None,
-                note=f"Reviewer prompt: {reviewer_prompt}" if reviewer_prompt else None,
             )
         )
 

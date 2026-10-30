@@ -273,26 +273,25 @@ class TestPersistRevision:
     @pytest.mark.asyncio
     async def test_registers_the_run_then_inserts_the_ai_revision(self):
         db = AsyncMock()
-        db.insert_ai_revision.return_value = {"id": 9}
-        assert await self._persist(db, note="Reviewer prompt: x") == 9
+        db.insert_video_analysis.return_value = {"id": 9}
+        assert await self._persist(db) == 9
         db.insert_model_run.assert_awaited_once_with(
             "run1", model_name="vlm", prompt_version=incident_contract.contract_version()
         )
         db.insert_model_run_if_absent.assert_not_called()
-        db.insert_ai_revision.assert_awaited_once_with(
+        db.insert_video_analysis.assert_awaited_once_with(
             "v1",
             model_run_id="run1",
             payload=self.REPORT,
             evidence=self.EVIDENCE,
-            note="Reviewer prompt: x",
             embedding=[0.5] * 3,
         )
-        db.upsert_video.assert_not_called()  # the console owns videos.filepath (the R2 key)
+        db.upsert_video.assert_not_called()  # the console owns videos
 
     @pytest.mark.asyncio
     async def test_caller_owned_run_is_only_created_when_absent(self):
         db = AsyncMock()
-        db.insert_ai_revision.return_value = {"id": 3}
+        db.insert_video_analysis.return_value = {"id": 3}
         assert await self._persist(db, caller_owns_run=True) == 3
         db.insert_model_run_if_absent.assert_awaited_once_with(
             "run1", model_name="vlm", prompt_version=incident_contract.contract_version()
@@ -302,7 +301,7 @@ class TestPersistRevision:
     @pytest.mark.asyncio
     async def test_db_failure_is_swallowed(self):
         db = AsyncMock()
-        db.insert_ai_revision.side_effect = RuntimeError("down")
+        db.insert_video_analysis.side_effect = RuntimeError("down")
         assert await self._persist(db) is None
 
     @pytest.mark.asyncio
@@ -409,7 +408,6 @@ class TestEndToEnd:
         assert result.evidence == [{"item_id": "E1", "image": "evidence/v1/b/E1.jpg", "image_gap": None}]
         kwargs = persist.await_args.kwargs
         assert kwargs["model_run_id"] == "run1" and kwargs["caller_owns_run"] is True
-        assert kwargs["note"] is None  # the caller passed model_run_id, so it owns the run's notes
 
     @pytest.mark.asyncio
     async def test_skip_rp1_makes_only_the_p1_call(self):
@@ -430,7 +428,7 @@ class TestEndToEnd:
         assert result.report["incident"]["duration"] == 5
 
     @pytest.mark.asyncio
-    async def test_reviewer_prompt_and_model_reach_p1_and_the_revision_note(self):
+    async def test_reviewer_prompt_and_model_reach_p1(self):
         requests = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -447,7 +445,6 @@ class TestEndToEnd:
         )
         assert requests[0]["model"] == model and result.model == model
         assert requests[0]["messages"][0]["content"][2]["text"].endswith("<<<\nlook at the door\n>>>")
-        assert persist.await_args.kwargs["note"] == "Reviewer prompt: look at the door"
         assert persist.await_args.kwargs["caller_owns_run"] is False
 
     @pytest.mark.asyncio

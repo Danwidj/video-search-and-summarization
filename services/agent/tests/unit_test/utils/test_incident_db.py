@@ -25,7 +25,6 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from postgrest import APIError
 import pytest
 import pytest_asyncio
 
@@ -165,7 +164,7 @@ async def test_transaction_yields_a_writer_for_sequential_calls():
     db = IncidentDB(mock_client)
     async with db.transaction() as tx:
         assert tx is db
-        await tx.update_video("vid-1", filepath="r2/key.mp4")
+        await tx.get_video("vid-1")
     mock_client.table.assert_called_with("videos")
 
 
@@ -187,25 +186,6 @@ async def test_healthcheck_failure_returns_message():
     ok, message = await db.healthcheck()
     assert ok is False
     assert "connection refused" in message
-
-
-@pytest.mark.asyncio
-async def test_upsert_video_calls_upsert():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    result = await db.upsert_video("vid-1", filepath="a.mp4", duration=30, source="upload")
-    assert result == "vid-1"
-    # Verify upsert was called with correct data
-    mock_client.table.assert_called_with("videos")
-    upsert_call = mock_client.table().upsert
-    upsert_call.assert_called_once()
-    args, kwargs = upsert_call.call_args
-    assert args[0]["id"] == "vid-1"
-    assert args[0]["filepath"] == "a.mp4"
-    assert args[0]["duration"] == 30
-    assert args[0]["source"] == "upload"
-    assert "uploaded_datetime" in args[0]
-    assert kwargs["on_conflict"] == "id"
 
 
 @pytest.mark.asyncio
@@ -247,28 +227,6 @@ async def test_list_videos_maps_all_rows():
 
 
 @pytest.mark.asyncio
-async def test_delete_video_calls_delete():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.delete_video("vid-1")
-    mock_client.table.assert_called_with("videos")
-    delete_call = mock_client.table().delete()
-    delete_call.eq.assert_called_with("id", "vid-1")
-    delete_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_update_video_calls_update():
-    mock_client = _make_mock_client()
-    db = IncidentDB(mock_client)
-    await db.update_video("vid-1", filepath="r2/key.mp4")
-    mock_client.table.assert_called_with("videos")
-    update_call = mock_client.table().update({"filepath": "r2/key.mp4"})
-    update_call.eq.assert_called_with("id", "vid-1")
-    update_call.execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_insert_model_run_upserts():
     mock_client = _make_mock_client()
     db = IncidentDB(mock_client)
@@ -303,25 +261,6 @@ async def test_insert_model_run_if_absent_never_overwrites_an_existing_row():
     assert kwargs == {"on_conflict": "id", "ignore_duplicates": True}
 
 
-def _revision_client(*, last_revision_nos, insert_results=None):
-    """Client whose ``report_revisions`` select returns one max ``revision_no`` per call, then insert results."""
-    client = MagicMock()
-    table = MagicMock()
-    select_chain = MagicMock()
-    select_chain.eq.return_value = select_chain
-    select_chain.order.return_value = select_chain
-    select_chain.limit.return_value = select_chain
-    select_chain.execute = AsyncMock(
-        side_effect=[MagicMock(data=[{"revision_no": n}] if n else []) for n in last_revision_nos]
-    )
-    table.select.return_value = select_chain
-    insert_chain = MagicMock()
-    insert_chain.execute = AsyncMock(side_effect=insert_results or [MagicMock(data=[{"id": 11}])])
-    table.insert.return_value = insert_chain
-    client.table.return_value = table
-    return client, table
-
-
 REPORT_PAYLOAD = {
     "incident": {
         "type": "burglary",
@@ -331,22 +270,6 @@ REPORT_PAYLOAD = {
     },
     "entities": [],
 }
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_stores_the_summary_embedding_in_the_same_insert():
-    client, table = _revision_client(last_revision_nos=[0])
-    await IncidentDB(client).insert_ai_revision(
-        "v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[], embedding=[0.25]
-    )
-    assert table.insert.call_args.args[0]["embedding"] == [0.25]
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_defaults_the_embedding_to_null():
-    client, table = _revision_client(last_revision_nos=[0])
-    await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
-    assert table.insert.call_args.args[0]["embedding"] is None
 
 
 @pytest.mark.asyncio
@@ -373,88 +296,6 @@ def test_revision_summary_text_joins_title_and_description_and_tolerates_gaps():
 
 
 @pytest.mark.asyncio
-async def test_insert_ai_revision_appends_the_next_revision_no_with_facets():
-    client, table = _revision_client(last_revision_nos=[2])
-    row = await IncidentDB(client).insert_ai_revision(
-        "v1", model_run_id="run-1", payload=REPORT_PAYLOAD, evidence=[{"item_id": "E1"}], note="n"
-    )
-    assert row == {"id": 11}
-    inserted = table.insert.call_args.args[0]
-    assert inserted["video_id"] == "v1" and inserted["revision_no"] == 3
-    assert inserted["kind"] == "ai" and inserted["model_run_id"] == "run-1"
-    assert inserted["parent_id"] is None and inserted["created_by"] is None and inserted["note"] == "n"
-    assert inserted["payload"] is REPORT_PAYLOAD and inserted["evidence"] == [{"item_id": "E1"}]
-    assert (inserted["incident_type"], inserted["severity_level"]) == ("burglary", 2)
-    assert (inserted["start_seconds"], inserted["end_seconds"]) == (1, 6)
-    assert "+" not in inserted["created_at"]  # naive UTC
-
-
-@pytest.mark.asyncio
-async def test_first_revision_of_a_video_is_number_one():
-    client, table = _revision_client(last_revision_nos=[0])
-    await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
-    assert table.insert.call_args.args[0]["revision_no"] == 1
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_retries_a_revision_no_taken_by_a_concurrent_writer():
-    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
-    client, table = _revision_client(
-        last_revision_nos=[2, 3], insert_results=[clash, MagicMock(data=[{"id": 12, "revision_no": 4}])]
-    )
-    row = await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
-    assert row["id"] == 12
-    assert [call.args[0]["revision_no"] for call in table.insert.call_args_list] == [3, 4]
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_three_concurrent_inserts_succeed_with_distinct_revision_nos():
-    """3+ concurrent inserts against unique (video_id, revision_no) all succeed with distinct numbers.
-
-    With 5 attempts and jittered backoff, concurrent writers retry on SQLSTATE 23505 and eventually
-    each gets a distinct revision_no instead of all aborting after 3 attempts.
-    """
-    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
-    client, _table = _revision_client(
-        last_revision_nos=[2, 3, 4, 5, 6, 7],
-        insert_results=[
-            clash,
-            MagicMock(data=[{"id": 1, "revision_no": 3}]),
-            clash,
-            MagicMock(data=[{"id": 2, "revision_no": 5}]),
-            clash,
-            MagicMock(data=[{"id": 3, "revision_no": 7}]),
-        ],
-    )
-    rows = await asyncio.gather(
-        IncidentDB(client).insert_ai_revision("v1", model_run_id="r1", payload=REPORT_PAYLOAD, evidence=[]),
-        IncidentDB(client).insert_ai_revision("v1", model_run_id="r2", payload=REPORT_PAYLOAD, evidence=[]),
-        IncidentDB(client).insert_ai_revision("v1", model_run_id="r3", payload=REPORT_PAYLOAD, evidence=[]),
-    )
-    assert len(rows) == 3
-    revision_nos = [row["revision_no"] for row in rows]
-    assert len(set(revision_nos)) == 3
-    assert set(revision_nos) == {3, 5, 7}
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_gives_up_after_repeated_clashes():
-    clash = APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
-    client, _ = _revision_client(last_revision_nos=[1, 2, 3, 4, 5], insert_results=[clash] * 5)
-    with pytest.raises(RuntimeError, match="revision_no"):
-        await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
-
-
-@pytest.mark.asyncio
-async def test_insert_ai_revision_does_not_retry_other_errors():
-    boom = APIError({"message": "violates foreign key", "code": "23503", "details": "", "hint": ""})
-    client, table = _revision_client(last_revision_nos=[1], insert_results=[boom])
-    with pytest.raises(APIError):
-        await IncidentDB(client).insert_ai_revision("v1", model_run_id="r", payload=REPORT_PAYLOAD, evidence=[])
-    assert table.insert.call_count == 1
-
-
-@pytest.mark.asyncio
 async def test_get_revision_returns_none_when_missing():
     mock_client = _make_mock_client()
     db = IncidentDB(mock_client)
@@ -473,7 +314,7 @@ async def test_get_revision_returns_the_row():
 async def test_list_revisions_orders_by_revision_no():
     mock_client = _make_mock_client()
     mock_client.table().select().execute = AsyncMock(return_value=MagicMock(data=[{"id": 1}, {"id": 2}]))
-    assert await IncidentDB(mock_client).list_revisions("v1") == [{"id": 1}, {"id": 2}]
+    assert await IncidentDB(mock_client).list_revisions(7) == [{"id": 1}, {"id": 2}]
     mock_client.table().select().order.assert_called_with("revision_no")
 
 
