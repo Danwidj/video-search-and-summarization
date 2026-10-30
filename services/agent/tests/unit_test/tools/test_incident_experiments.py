@@ -346,6 +346,9 @@ class TestTemporaryEvidenceStore:
         class Crop:
             image_bytes = b"jpeg"
             normalized_box = (0, 0, 500, 500)
+            frame_bytes = b"frame"
+            box_seconds = 0
+            located = True
 
         class Service(crop_evidence.CropEvidenceService):
             def crop_item(self, *args, **kwargs):
@@ -358,7 +361,7 @@ class TestTemporaryEvidenceStore:
         report = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
         with patch.object(crop_evidence, "get_crop_evidence_service", return_value=service):
             entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=report, store=store)
-        assert len(store.images) == len(entries) == 3 and all(e["image"] in store.images for e in entries)
+        assert len(store.images) == 2 * len(entries) == 6 and all(e["image"] in store.images for e in entries)
         r2.put_image.assert_not_awaited()
 
 

@@ -27,7 +27,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
 ### The report model
 
 - **An upload analysis appends one AI revision.** `kind='ai'`, a new `model_run_id`, the full
-  contract report as `payload` JSONB, the crop list as `evidence` JSONB, and `parent_id` NULL.
+  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`), and `parent_id` NULL.
   The agent writes it (`IncidentDB.insert_ai_revision`); the console never edits it.
 - **A human edit appends a human revision.** `save_human_revision` writes `kind='human'`,
   `parent_id` = the revision the reviewer opened, the full edited report as `payload`, and the
@@ -142,7 +142,7 @@ What moves the rows (the database cannot embed, so a writer always supplies them
 | `description` | `TEXT` | NOT NULL | Item visual description |
 | `threat_level` | `INTEGER` | NULLABLE | Threat rating (1-5; instruments only) |
 | `holder_entity_id` | `VARCHAR(20)` | NULLABLE | Identifier of the holding entity (instruments only) |
-| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
+| `timestamp_seconds` | `INTEGER` | NOT NULL | Whole-second offset from video start: the second the box was found at (the evidence entry's `box_seconds`, else its `timestamp_seconds`), so a search hit cuts the frame its box belongs to. An entity's first/last seen span (`incident-contract-v4`) is stored only in the revision payload and evidence, not here |
 | `bounding_box` | `INTEGER[4]` | NOT NULL | Normalised `[ymin, xmin, ymax, xmax]` (0-1000) |
 | `image` | `VARCHAR(1024)` | NOT NULL | R2 object key (`evidence/<video key>/run-<N>/<itemId>.jpg` or `.../edit-<N>/<itemId>.jpg`, where `<video key>` is `videos.filepath`) |
 | `embedding` | `extensions.vector(1024)` | NULLABLE | 1024-dimensional embedding for cosine retrieval |
@@ -410,7 +410,8 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
 ├── Report/                          # empty folder marker, unused by code
 └── evidence/                        # evidence images: agent crops and reviewer replacements
-    └── <video-key>/run-<N>/<itemId>.jpg    # AI crops, one run-<N> per analysis
+    └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
+        <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
         <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
