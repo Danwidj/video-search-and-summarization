@@ -7,7 +7,7 @@
 // new revision) and compute the coverage verdict from the revision's
 // video_names against the incident's current videos.
 
-import { validateReport } from '@/modules/contract/domain/validate';
+import { validateReport, withoutDerivedFields } from '@/modules/contract/domain/validate';
 import { canonicalIncidentType } from '@/modules/reports/domain/normalize';
 import type { ReportPayload } from '@/modules/reports/domain/revision';
 
@@ -85,13 +85,15 @@ export const cameraNames = (envelope: ReportEnvelope): string[] => envelope.came
 
 /**
  * One camera's report when it passes incident-contract-v4 validation; null when the camera is absent or its report is
- * not contract-valid (so a caller never feeds an invalid report to the report panes).
+ * not contract-valid (so a caller never feeds an invalid report to the report panes). A stored analysis carries the
+ * derived incident.duration the schema forbids from the model, so the copy validated is the model-shaped part; the
+ * report returned is the stored one, unchanged.
  */
 export function cameraReport(envelope: ReportEnvelope, video: string): ReportPayload | null {
   const camera = envelope.cameras.find((candidate) => candidate.video === video);
   if (!camera) return null;
   try {
-    validateReport(camera.report);
+    validateReport(withoutDerivedFields(camera.report));
     return camera.report;
   } catch {
     return null;

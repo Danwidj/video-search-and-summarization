@@ -326,6 +326,19 @@ export function withDerivedFields(report: IncidentContractReport): DerivedContra
   return { ...report, incident: { ...incident, duration: incident.end_timestamp - incident.start_timestamp } };
 }
 
+/**
+ * The model-shaped view of a stored report: a copy without the fields code derives (incident.duration), which the
+ * schema forbids as model output. Validate this copy when a stored analyse or report payload must pass the contract;
+ * the stored payload itself stays as it is. Anything that is not a report with an `incident` object is returned as is.
+ */
+export function withoutDerivedFields(report: unknown): unknown {
+  if (!report || typeof report !== 'object' || Array.isArray(report)) return report;
+  const { incident } = report as { incident?: unknown };
+  if (!incident || typeof incident !== 'object' || Array.isArray(incident)) return report;
+  const { duration: _duration, ...modelIncident } = incident as Record<string, unknown>;
+  return { ...report, incident: modelIncident };
+}
+
 /** Strict JSON decoding of a model's message content (no fence stripping or brace extraction). */
 export function decodeContent(content: string | null | undefined): unknown {
   if (!content)
