@@ -3,7 +3,7 @@
 import type { Readable } from 'node:stream';
 
 import type { ServiceConfiguration } from '@/lib/env';
-import { isValidR2Key } from '@/lib/r2/key';
+import { isValidR2Key, r2PhysicalKey } from '@/lib/r2/key';
 import { mp4DurationSeconds } from '@/lib/video/mp4-duration';
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -34,12 +34,13 @@ export async function createR2PlaybackUrl(config: ServiceConfiguration, key: str
   if (!r2) throw new Error('R2 is not configured');
   if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
 
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
-  return getSignedUrl(client, new GetObjectCommand({ Bucket: r2.bucket, Key: key, ResponseContentDisposition: 'inline' }), {
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: r2.bucket, Key: physicalKey, ResponseContentDisposition: 'inline' }), {
     expiresIn: 3600,
   });
 }
@@ -53,12 +54,13 @@ export async function verifyR2Video(
   if (!r2) throw new Error('R2 is not configured');
   if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
 
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
-  const result = await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: key }));
+  const result = await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: physicalKey }));
   const contentLength = result.ContentLength;
   if (typeof contentLength !== 'number' || contentLength <= 0) {
     throw new Error('R2 object is empty or has no content length');
@@ -74,13 +76,14 @@ export async function r2ObjectExists(config: ServiceConfiguration, key: string):
   const r2 = createR2Configuration(config);
   if (!r2) throw new Error('R2 is not configured');
   if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
   try {
-    await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: key }));
+    await client.send(new HeadObjectCommand({ Bucket: r2.bucket, Key: physicalKey }));
     return true;
   } catch (error) {
     const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
@@ -106,6 +109,7 @@ export async function putR2Video(
   if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
   if (contentLength > MAX_R2_PUT_BYTES) throw new Error('Video exceeds the R2 single-upload size limit');
 
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
@@ -114,7 +118,7 @@ export async function putR2Video(
   await client.send(
     new PutObjectCommand({
       Bucket: r2.bucket,
-      Key: key,
+      Key: physicalKey,
       Body: body,
       ContentType: contentType,
       ContentLength: contentLength,
@@ -127,12 +131,13 @@ export async function deleteR2Video(config: ServiceConfiguration, key: string): 
   const r2 = createR2Configuration(config);
   if (!r2) throw new Error('R2 is not configured');
   if (!isValidR2Key(key)) throw new Error('Invalid R2 object key');
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
     credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
   });
-  await client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: key }));
+  await client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: physicalKey }));
 }
 
 /**
@@ -143,6 +148,7 @@ export async function deleteR2Video(config: ServiceConfiguration, key: string): 
 export async function readR2VideoDurationSeconds(config: ServiceConfiguration, key: string, contentLength: number): Promise<number | null> {
   const r2 = createR2Configuration(config);
   if (!r2 || !isValidR2Key(key)) return null;
+  const physicalKey = r2PhysicalKey(config.r2KeyPrefix, key);
   const client = new S3Client({
     region: 'auto',
     endpoint: r2.endpoint,
@@ -151,7 +157,7 @@ export async function readR2VideoDurationSeconds(config: ServiceConfiguration, k
   const readRange = async (offset: number, length: number): Promise<Uint8Array> => {
     const end = Math.min(offset + length, contentLength) - 1;
     if (end < offset) return new Uint8Array(0);
-    const result = await client.send(new GetObjectCommand({ Bucket: r2.bucket, Key: key, Range: `bytes=${offset}-${end}` }));
+    const result = await client.send(new GetObjectCommand({ Bucket: r2.bucket, Key: physicalKey, Range: `bytes=${offset}-${end}` }));
     return result.Body ? await result.Body.transformToByteArray() : new Uint8Array(0);
   };
   try {
