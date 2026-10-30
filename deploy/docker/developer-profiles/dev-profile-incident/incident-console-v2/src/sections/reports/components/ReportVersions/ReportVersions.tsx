@@ -22,11 +22,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
 import { layoutVersions } from '@/lib/reports/version-graph';
 import { formatTimestamp } from '@/lib/time';
+import type { CoverageView } from '@/modules/reports/application/types';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import { CoverageNote } from '@/sections/reports/components/CoverageNote';
 
 const LANE_WIDTH = 16;
 
-/** The incident's versions as branches, newest first. A star marks a version official; the filled star clears it. A saved version is never changed. */
+/** A row of the incident's version list: the revisions route adds each version's coverage against the videos held now. */
+export type VersionRow = RevisionSummary & { coverage?: CoverageView };
+
+/** The incident's versions as branches, newest first, each with a note when it does not match the incident's videos now. A star marks a version official; the filled star clears it. A saved version is never changed. */
 export function ReportVersions({
   incidentId,
   revisions,
@@ -39,7 +44,7 @@ export function ReportVersions({
   onCompare,
 }: {
   incidentId: string;
-  revisions: RevisionSummary[] | null;
+  revisions: VersionRow[] | null;
   error: string | null;
   currentRevisionId: number;
   onOpen: (revisionId: number) => void;
@@ -51,10 +56,10 @@ export function ReportVersions({
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingRevision, setPendingRevision] = useState<RevisionSummary | null>(null);
+  const [pendingRevision, setPendingRevision] = useState<VersionRow | null>(null);
   const hasOfficial = (revisions ?? []).some((revision) => revision.isOfficial);
 
-  async function executeToggle(revision: RevisionSummary) {
+  async function executeToggle(revision: VersionRow) {
     setBusyId(revision.revisionId);
     setActionError(null);
     try {
@@ -67,7 +72,7 @@ export function ReportVersions({
     }
   }
 
-  function toggleOfficial(revision: RevisionSummary) {
+  function toggleOfficial(revision: VersionRow) {
     if (!revision.isOfficial && hasOfficial) {
       setPendingRevision(revision);
       return;
@@ -157,6 +162,7 @@ export function ReportVersions({
                           {revision.kind === 'ai' ? (revision.model ?? 'Unknown model') : (revision.note ?? '')}
                         </span>
                       </span>
+                      <CoverageNote className="mt-1" coverage={revision.coverage} />
                     </span>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -215,7 +221,7 @@ export function ReportVersions({
             <AlertDialogHeader>
               <AlertDialogTitle>Replace official report?</AlertDialogTitle>
               <AlertDialogDescription>
-                Another version is currently the official report for this video. Replace it with this one?
+                Another version is currently the official report for this incident. Replace it with this one?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

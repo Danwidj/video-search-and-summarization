@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
 
 /**
- * Explicit official-revision selection for a video. Nothing becomes official
+ * Explicit official-revision selection for an incident. Nothing becomes official
  * by itself; a reviewer marks one revision, which also embeds its evidence for
  * search, and can move or clear the mark. No name is recorded.
  */
@@ -105,7 +105,7 @@ export function OfficialControls({
           <AlertDialogHeader>
             <AlertDialogTitle>Replace official report?</AlertDialogTitle>
             <AlertDialogDescription>
-              Another version is currently the official report for this video. Replace it with this one?
+              Another version is currently the official report for this incident. Replace it with this one?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
