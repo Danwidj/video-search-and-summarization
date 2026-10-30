@@ -8,8 +8,9 @@
 //
 // The call never outlives the route: the agent gets whatever is left of the deadline (and never
 // more than the model's own timeout), so a slow VLM ends as a clear 504 instead of a killed
-// request. A new video whose analysis fails is removed again, so a retry under the same name
-// starts clean and no empty incident is left behind; the uploaded R2 object is kept.
+// request. A new video whose analysis fails is removed again, with its VST camera, so a retry
+// under the same name starts clean, no empty incident is left behind and VST's sensor limit is not
+// used up by failed uploads; the uploaded R2 object is kept.
 
 import { AgentRequestError } from '@/modules/analysis/domain/IncidentAgent';
 import { modelRunId } from '@/modules/analysis/domain/ModelRunRepository';
@@ -20,6 +21,7 @@ import { AnalysisRequestError, resolveAllowedModel } from '@/modules/analysis/ap
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { StoreRejection } from '@/modules/shared/domain/common';
 import type { IncidentVideoRepository } from '@/modules/videos/domain/IncidentVideoRepository';
+import type { RemoveVstSensor } from '@/modules/reports/application/types';
 import { isValidR2Key } from '@/lib/r2/key';
 
 /** The route's maxDuration, less the time left for rolling back and answering. */
@@ -29,6 +31,8 @@ export interface AnalyseVideoPorts {
   videos: IncidentVideoRepository;
   objects: VideoObjectStore;
   analyzer: VideoAnalyzer;
+  /** Deletes the camera VST made for a new upload when its first analysis fails. */
+  removeVstSensor: RemoveVstSensor;
   catalog: ContractCatalog;
   /** The clock for run ids and the deadline. */
   now: () => Date;
@@ -179,7 +183,11 @@ export async function analyseVideo(input: AnalyseVideoInput, ports: AnalyseVideo
       outcome: result.outcome,
     };
   } catch (error) {
-    if (created) await ports.videos.removeVideo(input.videoName).catch(() => undefined);
+    if (created && input.kind === 'upload') {
+      // Camera first, as when a video is deleted. A VST failure must not hide the analysis error.
+      await ports.removeVstSensor({ videoId: input.videoName, sensorId: input.sensorId }).catch(() => undefined);
+      await ports.videos.removeVideo(input.videoName).catch(() => undefined);
+    }
     if (error instanceof AnalysisRequestError) throw error;
     if (error instanceof AgentRequestError)
       throw new AnalysisRequestError(
