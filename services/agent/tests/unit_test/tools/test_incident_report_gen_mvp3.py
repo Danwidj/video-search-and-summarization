@@ -24,6 +24,7 @@ import httpx
 import pytest
 
 from vss_agents import incident_contract
+from vss_agents.tools.incident_report_gen import MAX_P1_OUTPUT_CHARS
 from vss_agents.tools.incident_report_gen import IncidentReportGenConfig
 from vss_agents.tools.incident_report_gen import IncidentReportGenInput
 from vss_agents.tools.incident_report_gen import collect_evidence
@@ -155,3 +156,59 @@ async def test_crops_land_under_the_r2_prefix_and_the_stored_key_stays_prefix_fr
         assert entry["image"].startswith(f"evidence/uploads/{VIDEO_NAME}/run-1/")
     keys = {call.kwargs["Key"] for call in client.put_object.call_args_list}
     assert keys and all(key.startswith(f"mvp3/evidence/uploads/{VIDEO_NAME}/run-1/") for key in keys)
+
+
+def _runaway(finish_reason: str | None = "length", chars: int = 10) -> incident_contract.IncidentExtractionError:
+    return incident_contract.IncidentExtractionError(
+        "content is not a single JSON document",
+        raw_output="x" * chars,
+        finish_reason=finish_reason,
+        model="nvidia/cosmos-3-nano-reasoner",
+    )
+
+
+def _flaky_p1(monkeypatch: pytest.MonkeyPatch, failures: list[Exception]) -> list[int]:
+    calls: list[int] = []
+
+    async def fake_run_p1(client, config, video_url, **kwargs):
+        calls.append(1)
+        if failures:
+            raise failures.pop(0)
+        return MODEL_OUTPUT, json.dumps(MODEL_OUTPUT), "stop"
+
+    monkeypatch.setattr("vss_agents.tools.incident_report_gen.run_p1", fake_run_p1)
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [_runaway("length"), _runaway("stop", MAX_P1_OUTPUT_CHARS + 1)])
+async def test_a_runaway_p1_output_is_retried_once_and_both_attempts_are_listed(monkeypatch, failure):
+    calls = _flaky_p1(monkeypatch, [failure])
+    result = await _call_tool(
+        IncidentReportGenInput(video_name=VIDEO_NAME, video_url=VIDEO_URL, video_duration_seconds=30), None
+    )
+    assert len(calls) == 2
+    assert [(a["attempt"], a["outcome"]) for a in result.p1_attempts] == [(1, "retried"), (2, "valid")]
+    assert result.report == MODEL_OUTPUT
+
+
+@pytest.mark.asyncio
+async def test_a_second_runaway_output_raises_with_both_attempts(monkeypatch):
+    calls = _flaky_p1(monkeypatch, [_runaway(), _runaway()])
+    with pytest.raises(incident_contract.IncidentExtractionError) as caught:
+        await _call_tool(
+            IncidentReportGenInput(video_name=VIDEO_NAME, video_url=VIDEO_URL, video_duration_seconds=30), None
+        )
+    assert len(calls) == 2
+    assert [a["outcome"] for a in caught.value.attempts] == ["retried", "failed"]
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_contract_violation_is_not_retried(monkeypatch):
+    calls = _flaky_p1(monkeypatch, [_runaway("stop", 500)])
+    with pytest.raises(incident_contract.IncidentExtractionError) as caught:
+        await _call_tool(
+            IncidentReportGenInput(video_name=VIDEO_NAME, video_url=VIDEO_URL, video_duration_seconds=30), None
+        )
+    assert len(calls) == 1
+    assert [a["outcome"] for a in caught.value.attempts] == ["failed"]

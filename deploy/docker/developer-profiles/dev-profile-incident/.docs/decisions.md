@@ -18,6 +18,16 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - *Redirect to another version, or pick another video, for a page with no showable camera:* new flows for no gain.
 - **Links:** [architecture §5 Screens](architecture.md#screens-phase-6), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
 
+### 2026-10-30: Agent hygiene: a redacting URL type, one retry for runaway P1 output, and no `nvdataset` in the fork
+- **Decision:** (36) `IncidentReportGenInput.video_url` is a `SignedUrl` (`str` whose `repr` drops query and credentials). (38) A P1 output cut off by length (`finish_reason=length`) or over 30,000 characters is retried once with the identical request; `p1_attempts` lists every call in the 200 and in the 422 detail. (37) `nvdataset`, its index and its source entry are removed from `services/agent/pyproject.toml` and the lock is regenerated, so `supabase` is locked and `uv lock --check` passes off NVIDIA's network.
+- **Why:** NAT logs the failed call's input as the kwargs dict, so the #326 model `__repr__` did not apply; the deployed agent still wrote signed URLs. A runaway output is rare (0 in about 13 runs) and a second attempt costs one P1 call. Nothing imports `nvdataset` in this repo.
+- **Alternatives rejected:**
+  - *Repair or truncate the runaway output:* Rejected: a repair step that changes semantic content breaks the strict-contract rule.
+  - *Add a repetition penalty or change `max_tokens`:* Rejected: the P1 request in `inference.json` is shared with eval and the console, and eval pins it in tests. The cap is already 16384 tokens.
+  - *Relock against NVIDIA's index:* Not possible from outside the NVIDIA network; the package is unused here.
+- **Open:** at temperature 0 the retry may repeat the same output; this is unmeasured. The agent returns `p1_attempts` for the console to record; the console does not read it yet (console change not made here, inferred from the unchanged console code), so a retried first attempt is in the agent log only until it does. Live verification waits for the next approved agent refresh.
+- **Links:** [vm-api-contracts](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze), [status known issue 6](status.md).
+
 ### 2026-10-30: Batch upload runs four stages per file, two files at a time, and isolates failures
 - **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once. A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
 - **Why:** One slow or unreadable clip (a 10-bit H.264 file, a model that returns invalid JSON) must not stop the rest, and re-uploading a large file to retry one later stage is waste. Every file builds its first report and checks matches itself, so batch members find each other whatever order they finish.
