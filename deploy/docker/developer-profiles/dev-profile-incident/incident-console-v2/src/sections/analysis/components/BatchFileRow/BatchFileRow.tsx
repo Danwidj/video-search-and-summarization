@@ -22,6 +22,9 @@ function announcement(item: BatchItem): string {
   return `${item.name}: ${label}${item.stage === 'upload' && item.uploadProgress > 0 ? ` (${item.uploadProgress}%)` : ''}.`;
 }
 
+/** The message as a sentence, so what follows it reads on. */
+const sentence = (text: string | null): string => (text && !/[.!?]$/.test(text) ? `${text}.` : (text ?? ''));
+
 export interface BatchFileRowProps {
   item: BatchItem;
   onRetry(key: string): void;
@@ -99,7 +102,8 @@ export function BatchFileRow({ item, onRetry }: BatchFileRowProps) {
       {item.status === 'failed' && (
         <Alert className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" variant="destructive">
           <AlertDescription>
-            <strong className="font-semibold">Stopped at {batchStageLabels[item.stage]}.</strong> {item.error} The other videos carry on.
+            <strong className="font-semibold">Stopped at {batchStageLabels[item.stage]}.</strong> {sentence(item.error)} The other videos
+            carry on.
           </AlertDescription>
           <Button className="shrink-0" onClick={() => onRetry(item.key)} size="sm" type="button" variant="outline">
             <RotateCcw data-icon="inline-start" />
