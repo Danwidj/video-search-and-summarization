@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { evidenceDisplay, videoFrameUrl } from '@/lib/evidence/evidence-view';
 import type { FramePick } from '@/lib/evidence/frame-picker';
 import {
   deleteDraftItem,
@@ -346,6 +347,8 @@ export function ReportEditPane({
                 {unit.entity && (
                   <PairRowView
                     aRevisionNo={aRevisionNo}
+                    incidentId={incidentId}
+                    video={cameraName}
                     draft={draft}
                     draftHolder={draftHolder}
                     holderOptions={holderOptions}
@@ -366,6 +369,8 @@ export function ReportEditPane({
                     <div className="mb-1 hidden font-mono text-[10px] uppercase tracking-wider text-ink/35 sm:block">holds ↳</div>
                     <PairRowView
                       aRevisionNo={aRevisionNo}
+                      incidentId={incidentId}
+                      video={cameraName}
                       draft={draft}
                       draftHolder={draftHolder}
                       holderOptions={holderOptions}
@@ -422,6 +427,8 @@ type PatchInstrument = (key: string, patch: Partial<EditDraft['instruments'][num
 type PatchAsset = (key: string, patch: Partial<EditDraft['assets'][number]>) => void;
 
 function PairRowView({
+  incidentId,
+  video,
   aRevisionNo,
   draft,
   row,
@@ -437,6 +444,8 @@ function PairRowView({
   patchInstrument,
   patchAsset,
 }: {
+  incidentId: string;
+  video: string;
   aRevisionNo: number;
   draft: EditDraft;
   row: PairRow;
@@ -462,7 +471,7 @@ function PairRowView({
       <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-ink-caption">{row.kind}</span>
       <div className="min-w-0" data-side="A">
         {row.a ? (
-          <ReadCard inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} />
+          <ReadCard incidentId={incidentId} inherited={inherited} item={row.a} onSeek={onSeek} savedHolder={savedHolder} video={video} />
         ) : (
           <div
             className="flex items-center gap-2 rounded-2xl border border-dashed border-moss/40 bg-moss/5 p-4 text-xs font-semibold text-moss"
@@ -478,6 +487,8 @@ function PairRowView({
         {row.b ? (
           <EditCard
             draftHolder={draftHolder}
+            incidentId={incidentId}
+            video={video}
             holderOptions={holderOptions}
             item={row.b}
             onRemove={() => onRemove(row)}
@@ -516,18 +527,31 @@ function PairRowView({
 }
 
 function ReadCard({
+  incidentId,
   item,
   inherited,
   savedHolder,
   onSeek,
+  video,
 }: {
+  incidentId: string;
   item: NonNullable<PairRow['a']>;
   inherited: string;
   savedHolder: (instrument: PairRow['a']) => string;
   onSeek: (seconds: number) => void;
+  video: string;
 }) {
+  const shown = evidenceDisplay(item.evidence, incidentId, video);
   return (
-    <CardFrame imageUrl={item.evidence?.imageUrl ?? null} name={savedItemName(item)} onSeek={onSeek} seconds={item.timestampSeconds}>
+    <CardFrame
+      box={shown.box}
+      frameSrc={shown.frameSrc}
+      imageUrl={shown.src}
+      name={savedItemName(item)}
+      notLocated={shown.notLocated}
+      onSeek={onSeek}
+      seconds={item.timestampSeconds}
+    >
       <p className="text-sm font-semibold">{savedItemName(item)}</p>
       <p className="text-ink/60">{item.description}</p>
       {isSavedInstrument(item) && (
@@ -555,7 +579,9 @@ function ReadCard({
 }
 
 function EditCard({
+  incidentId,
   item,
+  video,
   holderOptions,
   draftHolder,
   onRemove,
@@ -566,7 +592,9 @@ function EditCard({
   patchInstrument,
   patchAsset,
 }: {
+  incidentId: string;
   item: NonNullable<PairRow['b']>;
+  video: string;
   holderOptions: Array<{ key: string; label: string }>;
   draftHolder: (instrument: EditDraft['instruments'][number]) => string;
   onRemove: () => void;
@@ -577,8 +605,17 @@ function EditCard({
   patchInstrument: PatchInstrument;
   patchAsset: PatchAsset;
 }) {
+  // A frame the reviewer picked is shown as the frame and the box they drew (the crop is only what Save stores for search).
+  const picked = item.imageBox && item.imageTimestampSeconds !== null;
   return (
-    <CardFrame imageUrl={item.imageUrl} name={draftItemName(item)} onSeek={onSeek} seconds={item.timestampSeconds}>
+    <CardFrame
+      box={picked ? item.imageBox : null}
+      frameSrc={picked ? videoFrameUrl(incidentId, video, item.imageTimestampSeconds ?? 0) : null}
+      imageUrl={item.imageUrl}
+      name={draftItemName(item)}
+      onSeek={onSeek}
+      seconds={item.timestampSeconds}
+    >
       {isDraftEntity(item) ? (
         <>
           <Input
@@ -708,14 +745,21 @@ function EditCard({
 }
 
 function CardFrame({
+  box = null,
+  frameSrc = null,
   imageUrl,
   name,
+  notLocated = false,
   seconds,
   onSeek,
   children,
 }: {
+  box?: readonly number[] | null;
+  /** The whole video frame to draw the box on; the image is shown whole when there is none. */
+  frameSrc?: string | null;
   imageUrl: string | null;
   name: string;
+  notLocated?: boolean;
   seconds: number | null;
   onSeek: (seconds: number) => void;
   children: React.ReactNode;
@@ -729,7 +773,17 @@ function CardFrame({
         onClick={() => seconds !== null && onSeek(seconds)}
         type="button"
       >
-        <EvidenceFrame aspect={2} className="rounded-none!" label={name || 'Evidence'} seconds={seconds} src={imageUrl} />
+        <EvidenceFrame
+          aspect={16 / 9}
+          box={box}
+          className="rounded-none!"
+          frameSrc={frameSrc}
+          fullFrame
+          label={name || 'Evidence'}
+          notLocated={notLocated}
+          seconds={seconds}
+          src={imageUrl}
+        />
       </button>
       <div className="space-y-1 p-3">{children}</div>
     </Card>

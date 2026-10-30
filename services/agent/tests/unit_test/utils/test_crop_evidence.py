@@ -203,15 +203,61 @@ class TestCropEvidenceItem:
         assert len(result.normalized_box) == 4
         assert result.image_bytes[:2] == b"\xff\xd8"
 
-    def test_whole_frame_fallback_when_no_box(self, tiny_video_path: Path) -> None:
+    def test_not_located_fallback_keeps_the_frame_with_no_box(self, tiny_video_path: Path) -> None:
         detector = FakeDetector(detections=[])
         assert crop_evidence_item(tiny_video_path, 0, "weapon", detector=detector) is None
-        result = crop_evidence_item(tiny_video_path, 0, "weapon", detector=detector, whole_frame_fallback=True)
+        result = crop_evidence_item(tiny_video_path, 0, "weapon", detector=detector, not_located_fallback=True)
         assert result is not None
-        assert result.normalized_box == [0, 0, 1000, 1000]
-        assert result.score == 0.0
+        assert result.located is False
+        assert result.normalized_box is None and result.image_bytes is None
+        assert result.box_seconds == 0
         assert result.frame_size == (120, 80)
-        assert result.image_bytes[:2] == b"\xff\xd8"
+        assert result.frame_bytes is not None and result.frame_bytes[:2] == b"\xff\xd8"
+
+    def test_a_hit_carries_the_whole_frame_at_native_size(self, tiny_video_path: Path) -> None:
+        detector = FakeDetector(detections=[Detection(box=[250, 250, 750, 750], score=0.9, label="person")])
+        result = crop_evidence_item(tiny_video_path, 0, "person", detector=detector)
+        assert result is not None and result.located is True and result.box_seconds == 0
+        assert result.frame_bytes is not None
+        frame = cv2.imdecode(np.frombuffer(result.frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+        assert frame.shape[:2] == (80, 120)
+
+    def test_retries_nearby_seconds_and_records_the_second_that_hit(self, tiny_video_path: Path) -> None:
+        # The tiny video is blue at second 0 and green at second 1; the detector only sees the green frame.
+        class GreenOnly:
+            def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
+                return [Detection(box=[100, 100, 500, 500], score=0.9)] if frame[0, 0, 1] > 200 else []
+
+        assert crop_evidence_item(tiny_video_path, 0, "x", detector=GreenOnly()) is None
+        result = crop_evidence_item(tiny_video_path, 0, "x", detector=GreenOnly(), retry_offsets=(1, -1, 2, -2))
+        assert result is not None and result.located is True
+        assert result.box_seconds == 1
+
+    def test_retries_skip_seconds_before_the_start_and_try_the_requested_second_first(
+        self, tiny_video_path: Path
+    ) -> None:
+        seen: list[float] = []
+
+        def spy(frame: np.ndarray, query: str) -> list[Detection]:
+            seen.append(float(frame[0, 0, 1]))
+            return []
+
+        result = crop_evidence_item(
+            tiny_video_path, 0, "x", detector=spy, not_located_fallback=True, retry_offsets=(1, -1)
+        )
+        assert result is not None and result.located is False and result.box_seconds == 0
+        assert len(seen) == 2  # second 0, then +1; -1 is before the start
+
+    def test_a_supplied_frame_is_never_retried(self) -> None:
+        frame = np.zeros((40, 60, 3), dtype=np.uint8)
+        calls: list[int] = []
+
+        def spy(f: np.ndarray, query: str) -> list[Detection]:
+            calls.append(1)
+            return []
+
+        assert crop_evidence_item(frame, 5, "x", detector=spy, retry_offsets=(1, -1, 2, -2)) is None
+        assert len(calls) == 1
 
     def test_crop_picks_best_box(self, tiny_video_path: Path) -> None:
         detector = FakeDetector(
@@ -430,13 +476,32 @@ class TestCropEvidenceService:
         assert [r["item_id"] for r in results] == ["E1", "I1", "A1"]
         for entry in results:
             assert entry["image"] == f"evidence/uploads/Burglary001.mp4/run-1/{entry['item_id']}.jpg"
+            assert entry["frame"] == f"evidence/uploads/Burglary001.mp4/run-1/{entry['item_id']}-frame.jpg"
             assert entry["image_gap"] is None
+            assert entry["located"] is True and entry["box_seconds"] == entry["timestamp_seconds"]
             assert len(entry["bounding_box"]) == 4
             assert await store.get_image(entry["image"]) is not None
+            assert await store.get_image(entry["frame"]) is not None
+
+    @pytest.mark.asyncio
+    async def test_an_object_that_is_not_found_stores_its_frame_alone_and_says_so(self, tiny_video_path: Path) -> None:
+        store = InMemoryEvidenceStore()
+        service = CropEvidenceService(detector=FakeDetector(), store=store)
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", video_key="uploads/a.mp4", report=REPORT, batch_id="run-1"
+        )
+        for entry in results:
+            assert entry["located"] is False
+            assert entry["frame"] == f"evidence/uploads/a.mp4/run-1/{entry['item_id']}-frame.jpg"
+            assert entry["image"] is None and entry["bounding_box"] is None
+            assert "not located" in entry["image_gap"]
+            assert await store.get_image(entry["frame"]) is not None
+        assert len(store.images) == len(results)  # no crop was stored beside the frames
 
     @pytest.mark.asyncio
     async def test_each_run_gets_the_next_run_number_so_keys_are_never_overwritten(self, tiny_video_path: Path) -> None:
-        service = CropEvidenceService(detector=FakeDetector(), store=InMemoryEvidenceStore())
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
+        service = CropEvidenceService(detector=detector, store=InMemoryEvidenceStore())
         first = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
         second = await service.process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT)
         assert {e["image"] for e in first}.isdisjoint({e["image"] for e in second})
@@ -468,7 +533,8 @@ class TestCropEvidenceService:
             return key
 
         store.put_image = put_image
-        service = CropEvidenceService(detector=FakeDetector(), store=store)
+        detector = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
+        service = CropEvidenceService(detector=detector, store=store)
         results = await service.process_incident_report(
             video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b"
         )

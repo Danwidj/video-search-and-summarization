@@ -20,12 +20,14 @@ export type EvidenceItemType = 'entity' | 'instrument' | 'asset';
 export interface EvidenceEntry {
   item_type: EvidenceItemType;
   item_id: string;
-  /** R2 key of the crop or uploaded image; null when the item has none (e.g. a gateway-mode run). */
+  /** R2 key of the crop (what evidence search embeds) or uploaded image; null when the item has none (e.g. a gateway-mode run, or an object not located). */
   image: string | null;
   /** [ymin, xmin, ymax, xmax] normalised to 0-1000 in the video frame; null for an uploaded image. */
   bounding_box: number[] | null;
   /** The video second the crop was taken from; null for an uploaded image. */
   timestamp_seconds: number | null;
+  // An AI run also stores the whole video frame (frame: R2 key), the second the box was found at (box_seconds), and
+  // located: false for an object it did not find (no crop, no box). These ride along in the index signature.
   [key: string]: unknown;
 }
 
@@ -158,8 +160,12 @@ export function humanRevisionContent(
     image: string | null,
     crop: { box?: number[] | null; seconds?: number | null },
   ) => {
-    if (!image) return;
     const base = sourceId ? parent.evidence.find((entry) => entry.item_type === type && entry.item_id === sourceId) : undefined;
+    // An object the detector did not find has a frame but no crop: it follows its item while the reviewer leaves it be.
+    if (!image) {
+      if (base && !base.image && typeof base.frame === 'string') evidence.push({ ...base, item_id: itemId });
+      return;
+    }
     evidence.push(
       base && base.image === image
         ? { ...base, item_id: itemId }
