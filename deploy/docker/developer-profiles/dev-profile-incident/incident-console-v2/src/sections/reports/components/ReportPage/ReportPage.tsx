@@ -57,6 +57,7 @@ import {
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
+import { MergeIncidentDialog } from '@/sections/reports/components/MergeIncidentDialog';
 import { CameraSwitcher } from '@/sections/reports/components/CameraSwitcher';
 import { IncidentOverview } from '@/sections/reports/components/IncidentOverview';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
@@ -513,6 +514,10 @@ export function ReportPage({
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
             <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={report.run.filename} />
+            <MergeIncidentDialog
+              incidentId={Number(incidentId)}
+              videoNames={view.cameras.filter((camera) => camera.current).map((camera) => camera.video)}
+            />
             <Button
               aria-expanded={chatOpen}
               className="text-xs font-semibold"
