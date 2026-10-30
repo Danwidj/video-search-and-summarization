@@ -125,9 +125,8 @@ with tempfile.TemporaryDirectory() as tmp:
         for gone in ("reports", "entities", "instruments", "assets", "human_reports", "review_status",
                      "gt_incidents", "severity_eval_log", "insert_incident", "save_human_report_edit",
                      "select_official_report", "set_review_status", "effective_incidents",
-                     "set_official_revision", "search_evidence_items", "list_incident_report_summaries",
-                     "get_incident_dashboard", "save_human_revision_with_crops",
-                     "save_human_revision", "apply_r2_rename", "search_report_revisions"):
+                     "search_evidence_items", "list_incident_report_summaries",
+                     "get_incident_dashboard", "apply_r2_rename", "search_report_revisions"):
             assert gone not in names, gone
         for present in ("report_revisions_append_only", "evidence_image", "searchable_revision_id", "replace_video_crops",
                         "set_revision_crops"):
