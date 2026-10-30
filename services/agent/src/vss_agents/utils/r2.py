@@ -30,6 +30,17 @@ logger = logging.getLogger(__name__)
 _r2_client: Any = None
 
 
+def get_r2_key_prefix() -> str:
+    """Return the R2 key prefix from ``R2_KEY_PREFIX`` (empty string when unset).
+
+    The prefix is normalised: no leading slash, exactly one trailing slash when
+    non-empty.  DB keys are stored without the prefix; the prefix is applied
+    only at the R2 boundary so every read, write, list and sign lands under it.
+    """
+    raw = (os.getenv("R2_KEY_PREFIX") or "").strip().strip("/")
+    return f"{raw}/" if raw else ""
+
+
 def is_r2_configured() -> bool:
     """Return True if Cloudflare R2 credentials and bucket are configured."""
     return all(
@@ -76,12 +87,16 @@ def reset_r2_client() -> None:
 
 
 def get_r2_presigned_url(key: str, expires_in: int = 3600) -> str:
-    """Generate a presigned GET URL for an object in the configured R2 bucket."""
+    """Generate a presigned GET URL for an object in the configured R2 bucket.
+
+    ``key`` is the logical (prefix-free) DB key.  The ``R2_KEY_PREFIX`` is
+    prepended before the request so the signed URL points to the real object.
+    """
     bucket = (os.getenv("R2_BUCKET") or "").strip()
     if not bucket:
         raise ValueError("R2_BUCKET environment variable is not set")
     client = get_r2_client()
-    clean_key = key.lstrip("/")
+    clean_key = get_r2_key_prefix() + key.lstrip("/")
     return str(
         client.generate_presigned_url(
             "get_object",
@@ -117,12 +132,13 @@ def resolve_r2_url(key_or_url: str, expires_in: int = 3600) -> str:
 
     clean_key = ref.lstrip("/")
 
-    # Check for public base URL
+    # Check for public base URL (prefix applied so the URL reaches the real object)
     public_base = (os.getenv("INCIDENT_VIDEO_BASE_URL") or "").strip()
     if public_base:
-        return f"{public_base.rstrip('/')}/{clean_key}"
+        prefixed_key = get_r2_key_prefix() + clean_key
+        return f"{public_base.rstrip('/')}/{prefixed_key}"
 
-    # Generate presigned URL if R2 credentials exist
+    # Generate presigned URL if R2 credentials exist (prefix handled inside get_r2_presigned_url)
     if is_r2_configured():
         try:
             return get_r2_presigned_url(clean_key, expires_in=expires_in)
