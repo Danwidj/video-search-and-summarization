@@ -71,6 +71,7 @@ const fakeVst = (next) => async (input, init) => {
   vstCalls.push(`${method} ${url.slice('http://vst.test'.length)}`);
   if (method === 'GET') return Response.json(vstSensors);
   const sensorId = url.split('/').pop();
+  if (init?.headers?.streamId !== sensorId) return new Response('missing streamId', { status: 400 });
   const found = vstSensors.some((sensor) => sensor.sensorId === sensorId);
   vstSensors = vstSensors.filter((sensor) => sensor.sensorId !== sensorId);
   return new Response(found ? null : 'not found', { status: found ? 204 : 404 });

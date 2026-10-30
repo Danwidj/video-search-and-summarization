@@ -16,11 +16,13 @@ afterEach(() => {
 });
 
 /** A fake VST holding `sensors`; `deleteStatus` forces the answer to a sensor delete. */
+const headers = [];
 function fakeVst(sensors, { deleteStatus = null } = {}) {
   const calls = [];
   globalThis.fetch = async (input, init) => {
     const method = init?.method ?? 'GET';
     calls.push(`${method} ${String(input)}`);
+    if (method === 'DELETE') headers.push(init.headers?.streamId);
     if (method === 'GET') return Response.json(sensors);
     const id = String(input).split('/').pop();
     if (deleteStatus) return new Response('refused', { status: deleteStatus });
@@ -42,6 +44,13 @@ test('a stored sensor id is deleted directly, with no list and no name matching'
   const calls = fakeVst([{ sensorId: 's1', name: 'a' }]);
   await removeVstSensor(config, { videoId: 'a.mp4', sensorId: 's1' });
   assert.deepEqual(calls, ['DELETE http://vst.test/vst/api/v1/sensor/s1']);
+  assert.equal(headers.at(-1), 's1', 'VST needs the streamId header to delete');
+});
+
+test('a removed placeholder of the same name is not resolved', async () => {
+  const calls = fakeVst([{ sensorId: 's1', name: 'a', state: 'removed' }]);
+  await removeVstSensor(config, { videoId: 'a.mp4', sensorId: null });
+  assert.deepEqual(calls, ['GET http://vst.test/vst/api/v1/sensor/list']);
 });
 
 test('a missing sensor id is resolved by the exact name, then only that sensor is deleted', async () => {
