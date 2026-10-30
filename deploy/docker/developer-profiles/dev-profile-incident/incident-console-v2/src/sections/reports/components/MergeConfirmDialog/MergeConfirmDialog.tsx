@@ -81,8 +81,9 @@ export function MergeConfirmDialog({
                 Merge Incident {source.incidentId} into Incident {target.incidentId}?
               </AlertDialogTitle>
               <AlertDialogDescription>
-                The {pluralVideos(source.videoNames.length)} move to Incident {target.incidentId}, which then holds{' '}
-                <strong className="text-foreground">{pluralVideos(total)}</strong>. Incident {source.incidentId} is deleted.
+                {source.videoNames.length === 1 ? 'The video moves' : `The ${source.videoNames.length} videos move`} to Incident{' '}
+                {target.incidentId}, which then holds <strong className="text-foreground">{pluralVideos(total)}</strong>. Incident{' '}
+                {source.incidentId} is deleted.
               </AlertDialogDescription>
             </div>
           </div>
