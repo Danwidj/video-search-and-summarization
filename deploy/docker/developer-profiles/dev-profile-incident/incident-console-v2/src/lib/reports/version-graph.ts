@@ -14,13 +14,16 @@ export interface GraphSegment {
   toBelow: boolean;
 }
 
-export interface VersionGraphRow {
-  revision: RevisionSummary;
+/** What the layout reads of a version; the revisions route's rows carry more and keep it. */
+export type GraphRevision = Pick<RevisionSummary, 'revisionId' | 'revisionNo' | 'parentId'>;
+
+export interface VersionGraphRow<T extends GraphRevision = RevisionSummary> {
+  revision: T;
   lane: number;
   segments: GraphSegment[];
 }
 
-export function layoutVersions(revisions: RevisionSummary[]): { rows: VersionGraphRow[]; laneCount: number } {
+export function layoutVersions<T extends GraphRevision>(revisions: T[]): { rows: VersionGraphRow<T>[]; laneCount: number } {
   const laneOf = new Map<number, number>();
   let laneCount = 0;
   for (const revision of [...revisions].sort((a, b) => a.revisionNo - b.revisionNo)) {
