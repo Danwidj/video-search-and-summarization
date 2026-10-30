@@ -10,6 +10,7 @@
 // screens; the use cases move to this port in Phase 5 and the legacy port is
 // removed then.
 
+import type { StructuredReason } from '@/modules/matching/domain/matching';
 import type { ReportEnvelope } from '@/modules/reports/domain/envelope';
 import type { ReportList, ReportListQuery } from '@/modules/reports/domain/IncidentRepository';
 import type { EvidenceEntry, OfficialCrop, ReportPayload, RevisionKind } from '@/modules/reports/domain/revision';
@@ -56,6 +57,22 @@ export interface IncidentSummary {
 
 export type IncidentSummaryList = Omit<ReportList, 'items'> & { items: IncidentSummary[] };
 
+/** Why a video joined its incident without a reviewer: the match score and reasons the rule acted on. */
+export interface AutoJoinRecord {
+  score: number;
+  reasons: string[];
+  /** Empty for a join recorded from text reasons only. */
+  structuredReasons: StructuredReason[];
+  /** Naive UTC, as stored. */
+  joinedAt: string | null;
+}
+
+/** What an automatic merge records: the reasons as stored (chips when there are any, else text). */
+export interface AutoJoinInput {
+  score: number;
+  reasons: Array<string | StructuredReason>;
+}
+
 /** One video of an incident. */
 export interface IncidentVideo {
   /** The real file name. */
@@ -68,6 +85,8 @@ export interface IncidentVideo {
   recordedAt: string | null;
   durationSeconds: number | null;
   source: string | null;
+  /** Set while the video sits in its incident because the automatic rule joined it; null otherwise. Moving it out clears it. */
+  autoJoin: AutoJoinRecord | null;
 }
 
 /** One row of an incident's version list: a revision without its payload and evidence. */
@@ -235,5 +254,6 @@ export interface IncidentReportRepository {
    * note will say what they lack). Throws StoreRejection: 'invalid' for the same incident twice,
    * 'not-found' for an unknown incident.
    */
-  mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId): Promise<MergeResult>;
+  /** With `autoJoin`, the videos the merge moves also keep its score and reasons (a reviewer's merge passes none). */
+  mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId, autoJoin?: AutoJoinInput): Promise<MergeResult>;
 }

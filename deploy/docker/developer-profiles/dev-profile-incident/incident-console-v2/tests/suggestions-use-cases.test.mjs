@@ -9,7 +9,15 @@ import { describe, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { evaluateIncident, MatchJudgeError } = await import('../src/modules/matching/application/evaluate-incident.ts');
+const {
+  evaluateIncident: evaluateAndJoin,
+  MatchJudgeError,
+  pickAutoJoin,
+  AUTO_JOIN_MIN_SCORE,
+} = await import('../src/modules/matching/application/evaluate-incident.ts');
+// These tests are about suggestions, so the automatic join is off unless a test turns it on.
+const evaluateIncident = (ports, incidentId, signal, options = {}) =>
+  evaluateAndJoin(ports, incidentId, signal, { autoJoin: false, ...options });
 const { acceptSuggestion, listPendingSuggestions, rejectSuggestion } = await import(
   '../src/modules/matching/application/decide-suggestion.ts'
 );
@@ -210,7 +218,7 @@ describe('evaluateIncident', () => {
     const w = await world();
     w.analyses.latestAnalysis = async () => null;
     const result = await evaluateIncident(w, 1, signal);
-    assert.deepEqual(result, { incidentId: 1, judged: 0, suggestions: [] });
+    assert.deepEqual(result, { incidentId: 1, judged: 0, suggestions: [], joined: null, joinError: null });
     assert.equal(w.judge.calls.length, 0);
   });
 
@@ -290,5 +298,90 @@ describe('accept and reject', () => {
     await evaluateIncident(w, 1, signal);
     assert.equal((await listPendingSuggestions(w.suggestions, 3)).length, 1);
     assert.equal((await listPendingSuggestions(w.suggestions, 4)).length, 0);
+  });
+});
+
+describe('automatic join', () => {
+  const join = (w, incidentId, options = {}) => evaluateAndJoin({ ...w, reports: w.reports }, incidentId, signal, options);
+  const candidate = (incidentId, score, status = 'pending') => ({ incidentId, score, status });
+
+  test('the threshold is the 0.5 suggestion minimum, and 0.5 itself joins', () => {
+    assert.equal(AUTO_JOIN_MIN_SCORE, 0.5);
+    assert.equal(pickAutoJoin([candidate(2, 0.5)], 0.5)?.incidentId, 2);
+    assert.equal(pickAutoJoin([candidate(2, 0.4999)], 0.5), null);
+  });
+
+  test('the highest score wins, equal scores go to the older incident, rejected and decided pairs never join', () => {
+    assert.equal(pickAutoJoin([candidate(3, 0.65), candidate(2, 0.9), candidate(5, 0.7)], 0.5)?.incidentId, 2);
+    assert.equal(pickAutoJoin([candidate(5, 0.8), candidate(3, 0.8)], 0.5)?.incidentId, 3);
+    assert.equal(pickAutoJoin([candidate(2, 1, 'rejected'), candidate(3, 0.6)], 0.5)?.incidentId, 3);
+    assert.equal(pickAutoJoin([candidate(2, 1, 'rejected'), candidate(3, 0.9, 'accepted')], 0.5), null);
+    assert.equal(pickAutoJoin([], 0.5), null);
+  });
+
+  test('a new video joins its best match, with the score and reasons recorded on the video', async () => {
+    const w = await world();
+    const result = await join(w, 2);
+    assert.equal(result.joined.keptIncidentId, 1);
+    assert.equal(result.joined.mergedIncidentId, 2);
+    assert.equal(result.joined.score, 1);
+    assert.equal(await w.reports.getIncident(2), null);
+    const moved = (await w.reports.getIncident(1)).videos.find((v) => v.videoId === 'b.mp4');
+    assert.equal(moved.autoJoin.score, 1);
+    assert.ok(moved.autoJoin.reasons.length > 0);
+    assert.ok(moved.autoJoin.joinedAt);
+    assert.equal((await w.reports.getIncident(1)).videos.find((v) => v.videoId === 'a.mp4').autoJoin, null);
+  });
+
+  test('the merged incident leaves no suggestions to show; its other candidates are matched when they are checked', async () => {
+    const w = await world();
+    const result = await join(w, 2);
+    assert.deepEqual(result.suggestions, []);
+  });
+
+  test('a rejected pair is not joined, even above the threshold', async () => {
+    const w = await world();
+    const first = await evaluateIncident(w, 1, signal);
+    await rejectSuggestion(w.suggestions, first.suggestions.find((s) => s.incidentId === 2).suggestionId);
+    const result = await join(w, 2);
+    assert.equal(result.joined?.keptIncidentId === 1 && result.joined.mergedIncidentId === 2, false);
+    assert.ok(await w.reports.getIncident(2));
+  });
+
+  test('below the threshold stays separate and pending', async () => {
+    const w = await world();
+    const result = await join(w, 1, { autoJoinMinScore: 1.1 });
+    assert.equal(result.joined, null);
+    assert.equal(result.suggestions.length, 2);
+    assert.ok(await w.reports.getIncident(2));
+  });
+
+  test('autoJoin false only suggests', async () => {
+    const w = await world();
+    const result = await join(w, 1, { autoJoin: false });
+    assert.equal(result.joined, null);
+    assert.ok(await w.reports.getIncident(2));
+  });
+
+  test('batch-mates and an existing incident end up in one incident, whichever order they are checked', async () => {
+    const w = await world();
+    const first = await join(w, 2);
+    assert.equal(first.joined.keptIncidentId, 1);
+    const second = await join(w, 3);
+    assert.equal(second.joined.keptIncidentId, 1);
+    assert.equal(second.joined.mergedIncidentId, 3);
+    assert.deepEqual((await w.reports.getIncident(1)).videos.map((v) => v.videoId).sort(), ['a.mp4', 'b.mp4', 'c.mp4']);
+    assert.equal((await w.reports.getIncident(4)).videos.length, 1);
+  });
+
+  test('a failed merge keeps the match pending and says why', async () => {
+    const w = await world();
+    w.reports.mergeIncidents = async () => {
+      throw new Error('merge refused');
+    };
+    const result = await join(w, 2);
+    assert.equal(result.joined, null);
+    assert.equal(result.joinError, 'merge refused');
+    assert.equal(result.suggestions[0].incidentId, 1);
   });
 });

@@ -3,6 +3,7 @@
 import type { PostgrestClient } from '@/lib/postgrest/client';
 import type { ReportListQuery } from '@/modules/reports/domain/IncidentRepository';
 import type {
+  AutoJoinInput,
   AiIncidentRevisionInput,
   CreatedAiRevision,
   HumanIncidentRevisionInput,
@@ -213,10 +214,12 @@ export class SupabaseIncidentReportAdapter implements IncidentReportRepository {
     return [...keys].filter((key) => key.startsWith('evidence/'));
   }
 
-  async mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId): Promise<MergeResult> {
-    const result = await this.db
-      .rpc('merge_incidents', { p_target_incident_id: targetIncidentId, p_source_incident_id: sourceIncidentId })
-      .catch(incidentRefusal);
+  async mergeIncidents(targetIncidentId: IncidentId, sourceIncidentId: IncidentId, autoJoin?: AutoJoinInput): Promise<MergeResult> {
+    const ids = { p_target_incident_id: targetIncidentId, p_source_incident_id: sourceIncidentId };
+    const result = await (autoJoin
+      ? this.db.rpc('auto_merge_incidents', { ...ids, p_score: autoJoin.score, p_reasons: autoJoin.reasons })
+      : this.db.rpc('merge_incidents', ids)
+    ).catch(incidentRefusal);
     return mergeResultFromRpc(result);
   }
 }
