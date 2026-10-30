@@ -42,13 +42,13 @@ export function parseAnalysisResponse(status: number, ok: boolean, statusText: s
       return failed(502, 'The agent answered the analysis with a body that is not JSON');
     }
     if (!isRecord(parsed)) return failed(502, 'The agent answered the analysis with something other than an object');
-    const { analysis_id: analysisId, model_run_id: modelRunId, outcome, payload } = parsed;
+    const { analysis_id: analysisId, model_run_id: modelRunId, outcome, report } = parsed;
     if (typeof analysisId !== 'number' || !Number.isInteger(analysisId))
       return failed(502, 'The agent analysis has no integer analysis_id');
     if (typeof modelRunId !== 'string' || !modelRunId) return failed(502, 'The agent analysis has no model_run_id');
     if (typeof outcome !== 'string' || !outcome) return failed(502, 'The agent analysis has no outcome');
-    if (!isRecord(payload)) return failed(502, 'The agent analysis has no payload object');
-    return { kind: 'analysed', analysisId, modelRunId, outcome, payload };
+    if (!isRecord(report)) return failed(502, 'The agent analysis has no report object');
+    return { kind: 'analysed', analysisId, modelRunId, outcome, payload: report };
   }
   const detail = errorDetail(body);
   if (status === 422 && isRecord(detail) && typeof detail.raw_output === 'string') {

@@ -139,7 +139,7 @@ function stubFetch(agent) {
 
 const analysed = (body) =>
   new Response(
-    JSON.stringify({ analysis_id: 41, model_run_id: body.model_run_id, outcome: 'stored', payload: { incident: { type: 'assault' } } }),
+    JSON.stringify({ analysis_id: 41, model_run_id: body.model_run_id, outcome: 'stored', report: { incident: { type: 'assault' } } }),
     {
       status: 200,
     },
