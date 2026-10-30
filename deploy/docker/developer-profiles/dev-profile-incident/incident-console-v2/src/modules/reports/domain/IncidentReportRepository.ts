@@ -130,6 +130,8 @@ export interface IncidentSideSummary {
   videoNames: string[];
   /** videos.filepath of the first video (logical R2 key, no environment prefix); null when none is recorded. */
   firstVideoKey: string | null;
+  /** Whether the incident has an official version. */
+  hasOfficial: boolean;
 }
 
 /** One stored revision in full. */

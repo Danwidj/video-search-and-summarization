@@ -3,26 +3,39 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AcceptMatchDialog } from '@/sections/suggestions/components/AcceptMatchDialog';
 import { DecisionButtons, ReasonDetails, ReasonList, ScoreReadout, SideLink } from '@/sections/suggestions/components/Shared';
+import type { SuggestionCard } from '@/sections/suggestions/types';
 import { useSuggestionCards } from '@/sections/suggestions/use-suggestion-cards';
 
 /**
- * Pending match suggestions that name this incident, with the other incident, why it matched and the score.
- * Nothing shows without a pending suggestion. `onMerged` runs after an accept that kept this incident, so the page reloads.
+ * Pending match suggestions that name this incident, with the other incident, why it matched and the score. Accept asks
+ * for the same confirmation as a manual merge. Nothing shows without a pending suggestion. `onMerged` runs after an
+ * accept that kept this incident, so the page reloads. `disabled` holds the decisions back, for example with an unsaved edit.
  */
-export function SuggestionBanner({ incidentId, onMerged }: { incidentId: number; onMerged?: () => void }) {
+export function SuggestionBanner({
+  incidentId,
+  onMerged,
+  disabled = false,
+}: {
+  incidentId: number;
+  onMerged?: () => void;
+  disabled?: boolean;
+}) {
   const router = useRouter();
-  const { cards, error, busyId, notice, accept, reject } = useSuggestionCards(incidentId);
+  const { cards, error, busyId, accept, reject } = useSuggestionCards(incidentId);
+  const [confirming, setConfirming] = useState<SuggestionCard | null>(null);
 
-  async function acceptCard(card: (typeof cards)[number]) {
-    if (!(await accept(card))) return;
+  async function acceptCard(card: SuggestionCard) {
+    await accept(card);
     if (card.kept.incidentId === incidentId) onMerged?.();
     else router.push(`/reports/${card.kept.incidentId}`);
   }
 
-  if (cards.length === 0 && !error && !notice) return null;
+  if (cards.length === 0 && !error && !confirming) return null;
   const n = cards.length;
   return (
     <div className="border-b border-amber-300 bg-amber-50/80 px-5 py-3 text-amber-950 sm:px-8" data-testid="match-banner" role="status">
@@ -52,7 +65,8 @@ export function SuggestionBanner({ incidentId, onMerged }: { incidentId: number;
                         busy={busyId === card.id}
                         card={card}
                         className="shrink-0"
-                        onAccept={acceptCard}
+                        disabled={disabled}
+                        onAccept={setConfirming}
                         onReject={reject}
                         small
                       />
@@ -63,20 +77,19 @@ export function SuggestionBanner({ incidentId, onMerged }: { incidentId: number;
               );
             })}
           </ul>
-          <p className="mt-2 text-xs text-amber-900/80">Nothing is merged until you accept. A rejected match is not suggested again.</p>
+          <p className="mt-2 text-xs text-amber-900/80" data-testid="match-banner-hint">
+            {disabled
+              ? 'Save or discard your edit to decide these matches.'
+              : 'Nothing is merged until you accept and confirm. A rejected match is not suggested again.'}
+          </p>
         </>
-      )}
-      {notice && (
-        <Alert className="mt-2 border-amber-300 bg-white/70" data-testid="suggestion-notice">
-          <AlertTitle>{notice.title}</AlertTitle>
-          <AlertDescription>{notice.detail}</AlertDescription>
-        </Alert>
       )}
       {error && (
         <Alert className="mt-2" data-testid="suggestion-error" variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      <AcceptMatchDialog card={confirming} onAccept={acceptCard} onClose={() => setConfirming(null)} />
     </div>
   );
 }

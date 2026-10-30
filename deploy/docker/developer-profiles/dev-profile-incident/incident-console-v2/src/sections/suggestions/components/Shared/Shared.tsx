@@ -43,7 +43,7 @@ export function SideLink({ side, className }: { side: SuggestionSide; className?
         <span className="block truncate text-sm font-semibold group-hover/side:underline">
           {side.title ?? `Incident #${side.incidentId}`}
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
+        <span className="block break-all text-xs text-muted-foreground" title={side.videoNames.join('\n')}>
           Incident {side.incidentId} · {videoLine(side)} · {side.videoNames.length} {side.videoNames.length === 1 ? 'video' : 'videos'}
         </span>
       </span>
@@ -165,10 +165,13 @@ export function DecisionButtons({
   onAccept,
   onReject,
   small = false,
+  disabled = false,
   className,
 }: {
   card: SuggestionCard;
   busy: boolean;
+  /** True while the reviewer cannot decide, for example with an unsaved edit open. */
+  disabled?: boolean;
   onAccept: (card: SuggestionCard) => void;
   onReject: (card: SuggestionCard) => void;
   small?: boolean;
@@ -177,14 +180,21 @@ export function DecisionButtons({
   const size = small ? 'sm' : 'default';
   return (
     <div className={cn('flex gap-2', className)}>
-      <Button className="flex-1" data-testid="suggestion-accept" disabled={busy} onClick={() => onAccept(card)} size={size} type="button">
+      <Button
+        className="flex-1"
+        data-testid="suggestion-accept"
+        disabled={busy || disabled}
+        onClick={() => onAccept(card)}
+        size={size}
+        type="button"
+      >
         <CheckIcon className="size-4" />
         Accept
       </Button>
       <Button
         className="flex-1"
         data-testid="suggestion-reject"
-        disabled={busy}
+        disabled={busy || disabled}
         onClick={() => onReject(card)}
         size={size}
         type="button"
