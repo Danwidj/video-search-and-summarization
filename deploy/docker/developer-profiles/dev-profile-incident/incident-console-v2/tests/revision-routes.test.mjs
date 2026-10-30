@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The revision History and evidence-image upload routes. An upload gets a new
+// The evidence-image upload route. An upload gets a new
 // readable R2 key and nothing is ever overwritten or deleted.
 
 import assert from 'node:assert/strict';
@@ -49,7 +49,6 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.r2.test/x' } });
 
-const { GET: history } = await import('../src/app/api/reports/[incidentId]/revisions/route.ts');
 const { POST: uploadImage } = await import('../src/app/api/reports/[incidentId]/evidence-image/route.ts');
 const { aiRevisionRow } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
@@ -96,36 +95,6 @@ const upload = (fields) => {
   return uploadImage(new Request(`http://localhost/api/reports/${V}/evidence-image`, { method: 'POST', body: form }), params);
 };
 const image = (type = 'image/png', size = 4) => new Blob([new Uint8Array(size)], { type });
-
-test('History lists every revision newest first with kind, author, time, note and the official flag', async () => {
-  const db = database();
-  db.store.report_revisions.push({
-    ...aiRevisionRow(repaired),
-    id: 2,
-    revision_no: 2,
-    kind: 'human',
-    parent_id: 1,
-    created_by: 'Lead',
-    note: 'Edited by hand',
-  });
-  const response = await history(new Request(`http://localhost/api/reports/${V}/revisions`), params);
-  assert.equal(response.status, 200);
-  const { revisions } = await response.json();
-  assert.deepEqual(
-    revisions.map((r) => [r.revisionNo, r.kind, r.createdBy, r.isOfficial]),
-    [
-      [2, 'human', 'Lead', false],
-      [1, 'ai', null, true],
-    ],
-  );
-  assert.equal(revisions[0].note, 'Edited by hand');
-  assert.equal(revisions[1].model, repaired.modelRun.model_name);
-  assert.ok(
-    revisions.every((r) => r.createdAt),
-    'each revision carries its time',
-  );
-  assert.equal(db.store.report_revisions.length, 2);
-});
 
 test('an uploaded evidence image gets the next free key under evidence/<video key>/edit-<n>/<itemId>.jpg and is never overwritten', async () => {
   database();

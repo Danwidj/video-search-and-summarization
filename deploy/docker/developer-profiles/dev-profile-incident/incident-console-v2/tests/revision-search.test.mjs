@@ -32,6 +32,7 @@ const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 
 const AGENT_HIT = {
+  incident_id: 2,
   revision_id: 41,
   video_id: 'v2',
   revision_no: 3,
@@ -47,20 +48,18 @@ const AGENT_HIT = {
 };
 const RPC_ROWS = [
   {
-    reportId: 'r1',
-    videoId: 'v1',
+    incidentId: 1,
     modelRunId: 'm1',
     title: 'Road accident',
-    r2Key: 'uploads/sensor-1/video.mp4',
+    firstVideoKey: 'uploads/sensor-1/video.mp4',
     outcome: 'valid_after_structural_repair',
     isOfficial: true,
   },
   {
-    reportId: 'r2',
-    videoId: 'v2',
+    incidentId: 2,
     modelRunId: 'm2',
     title: 'Knife in a shop',
-    r2Key: 'uploads/sensor-2/video.mp4',
+    firstVideoKey: 'uploads/sensor-2/video.mp4',
     outcome: 'legacy',
     isOfficial: false,
   },
@@ -121,6 +120,7 @@ test('a revision search becomes the agent body with only what was set, and its h
   });
   const [hit] = fromAgentRevisionSearchResponse([AGENT_HIT]);
   assert.deepEqual(hit, {
+    incidentId: 2,
     revisionId: 41,
     videoId: 'v2',
     revisionNo: 3,
@@ -150,8 +150,8 @@ test('text search keeps the incidents the agent matched, under the other filters
   assert.equal(calls.rpc[0].p_type, 'assault');
   assert.equal(calls.rpc[0].p_sort, 'oldest');
   assert.deepEqual(
-    payload.reports.map((report) => report.videoId),
-    ['v2'],
+    payload.reports.map((report) => report.incidentId),
+    [2],
   );
   assert.deepEqual(payload.pagination, { page: 1, pageSize: 6, totalItems: 1, totalPages: 1 });
   assert.equal(payload.searchMode, 'semantic');
