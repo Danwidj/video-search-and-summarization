@@ -13,17 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""``POST /api/v1/incidents/{incident_id}/analyze`` - the incident-console AI trigger.
+"""``POST /api/v1/incidents/{video_name}/analyze`` - the incident-console AI trigger.
 
-``incident-console-v2`` (agent mode) calls this route with the console's ``videos.id`` as
-``incident_id`` and a signed R2 URL for the uploaded video. The route runs the
+``incident-console-v2`` calls this route with the video's name (``videos.id``, URL-encoded) as
+``video_name`` and a signed R2 URL for the uploaded video. The route runs the
 ``incident_report_gen`` tool - the shared incident contract's P1 -> RP1 calls - and returns
-the validated contract report plus the ``report_revisions`` id of the AI revision the agent
-inserted (``revision_id``). The video-bounds rules apply with the caller's
+the validated contract report plus the ``video_analyses`` id of the analysis the agent stored
+(``analysis_id``), its ``model_run_id`` and an ``outcome`` (``stored`` or ``not_stored``). The agent
+writes the analysis, the evidence crops (under ``R2_KEY_PREFIX``) and the model run; it creates no
+report revision, because the console builds incident reports from the stored analyses. The video-bounds rules apply with the caller's
 ``video_duration_seconds`` or, without one, the length the agent reads from the MP4 header; the
 response's ``video_bounds_checked`` and ``video_bounds_unchecked_reason`` say whether they did.
 Re-generation is the same call with an optional ``model`` and a
-human-typed ``reviewer_prompt``; it starts a new AI revision and copies nothing from earlier ones.
+human-typed ``reviewer_prompt``; it stores a new analysis and copies nothing from earlier ones.
 The agent needs no VST lookup: the console owns the ``videos`` row and signs the URL.
 
 Status codes: 422 for an invalid body (including a ``video_duration_seconds`` that is not a
@@ -36,7 +38,7 @@ so the caller can record the attempt), 400 for a ``model`` outside the contract 
 Experimental settings (dev-profile-incident prompt experiments): ``experiment_prompt_id`` and
 ``skip_crops`` are refused with 403 unless the agent runs with ``INCIDENT_EXPERIMENTS_ENABLED=1``;
 an unknown or edited registry prompt is 400, combining one with ``reviewer_prompt`` is 400, and
-cropping that would upload to R2 is 409. An experimental request never writes a report revision,
+cropping that would upload to R2 is 409. An experimental request never stores an analysis,
 and its response adds ``experiment`` (prompt id and SHA-256 used), ``p1_elapsed_ms`` and ``usage``.
 A request without them gets exactly the production response.
 """
@@ -69,7 +71,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalyzeIncidentRequest(BaseModel):
-    """Body for ``POST /api/v1/incidents/{incident_id}/analyze``."""
+    """Body for ``POST /api/v1/incidents/{video_name}/analyze``."""
 
     video_url: str = Field(..., min_length=1, description="Signed R2 URL of the uploaded video.")
     video_key: str | None = Field(
@@ -78,16 +80,16 @@ class AnalyzeIncidentRequest(BaseModel):
         max_length=900,
         description=(
             "The video's R2 key (incident-console-v2 sends it); evidence crops are stored under "
-            "evidence/<video_key>/run-<n>/. Without it the crops use the incident id as folder name."
+            "evidence/<video_key>/run-<n>/. Without it the crops use the video name as folder name."
         ),
     )
     model_run_id: str | None = Field(
         default=None,
         min_length=1,
-        max_length=20,
         description=(
-            "The caller's model_runs.id; when given, the caller owns the run's notes and the agent only "
-            "makes sure the row exists so the AI revision can reference it."
+            "The caller's model_runs.id (readable, any length); when given, the caller owns the run's notes and "
+            "the agent only makes sure the row exists so the analysis can reference it. Without it the agent "
+            "registers <video name>@<UTC timestamp>."
         ),
     )
     model: str | None = Field(
@@ -126,7 +128,7 @@ class AnalyzeIncidentRequest(BaseModel):
 
 
 def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> APIRouter:  # noqa: ARG001
-    """Build the ``POST /api/v1/incidents/{incident_id}/analyze`` router.
+    """Build the ``POST /api/v1/incidents/{video_name}/analyze`` router.
 
     ``builder`` is captured once at router-build time and used to resolve the
     ``incident_report_gen`` tool per request.
@@ -134,11 +136,11 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
     router = APIRouter()
 
     @router.post(
-        "/api/v1/incidents/{incident_id}/analyze",
+        "/api/v1/incidents/{video_name}/analyze",
         summary="Extract a contract incident report from an uploaded video (P1) and write a prose report (RP1)",
         tags=["Incident Analyze"],
     )
-    async def analyze_incident(incident_id: str, body: AnalyzeIncidentRequest) -> dict[str, Any]:
+    async def analyze_incident(video_name: str, body: AnalyzeIncidentRequest) -> dict[str, Any]:
         if body.is_experimental() and not incident_experiments.experiments_enabled():
             raise HTTPException(
                 status_code=403,
@@ -162,7 +164,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             ) from exc
 
         tool_input: dict[str, Any] = {
-            "incident_id": incident_id,
+            "video_name": video_name,
             "video_url": body.video_url,
             "skip_rp1": body.skip_rp1,
         }
@@ -184,7 +186,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
         except IncidentExtractionError as exc:
-            logger.error("/analyze contract violation for incident_id=%s: %s", incident_id, exc)
+            logger.error("/analyze contract violation for video_name=%s: %s", video_name, exc)
             detail: dict[str, Any] = {
                 "message": f"Incident contract violation: {exc}",
                 "raw_output": exc.raw_output,
@@ -207,10 +209,10 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         except ExperimentRefusedError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TimeoutError as exc:
-            logger.error("/analyze timed out for incident_id=%s: %s", incident_id, exc)
+            logger.error("/analyze timed out for video_name=%s: %s", video_name, exc)
             raise HTTPException(status_code=504, detail=f"Incident analysis timed out: {exc}") from exc
         except Exception as exc:
-            logger.error("/analyze failed for incident_id=%s: %s", incident_id, exc, exc_info=True)
+            logger.error("/analyze failed for video_name=%s: %s", video_name, exc, exc_info=True)
             raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
         response = result.model_dump() if hasattr(result, "model_dump") else dict(result)
         if not body.is_experimental():
@@ -222,7 +224,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
 
 
 def register_incident_analyze_routes(app: FastAPI, config: Any, builder: WorkflowBuilder) -> None:
-    """Register ``POST /api/v1/incidents/{incident_id}/analyze``.
+    """Register ``POST /api/v1/incidents/{video_name}/analyze``.
 
     The route is always mounted. Profiles that don't configure the
     ``incident_report_gen`` tool get a 501 at request time (the tool is
@@ -230,7 +232,7 @@ def register_incident_analyze_routes(app: FastAPI, config: Any, builder: Workflo
     """
     try:
         app.include_router(create_incident_analyze_router(config, builder))
-        logger.info("Registered POST /api/v1/incidents/{incident_id}/analyze")
+        logger.info("Registered POST /api/v1/incidents/{video_name}/analyze")
     except Exception as exc:
         logger.error("Failed to register incident analyze route: %s", exc, exc_info=True)
         raise
