@@ -6,6 +6,7 @@
 // signed for the browser.
 
 import { cameraReport, firstValidCamera } from '@/modules/reports/domain/envelope';
+import { cameraEvidenceItems, type IncidentEvidenceItem } from '@/modules/reports/domain/incident-evidence';
 import type { IncidentId, IncidentReportRepository } from '@/modules/reports/domain/IncidentReportRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import { coverageView, toCameraReportView } from '@/modules/reports/application/report-view';
@@ -36,7 +37,7 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
  * disabled as "not in this version"). Throws StoreRejection 'not-found' for a camera the incident does not have. The view
  * also lists the incident's videos, so the page counts the incident rather than the open version.
  * A camera whose video was removed shows its report without a player; one whose report is not contract-valid
- * is listed but never shown.
+ * is listed but never shown. `evidence` lists the items of every valid camera, whichever one is chosen.
  */
 export async function getReport(
   incidentReports: IncidentReportRepository,
@@ -81,6 +82,14 @@ export async function getReport(
     const playbackUrl = key ? await sign(key) : '';
     report = await withImageUrls(toCameraReportView(record, entry, incident, playbackUrl), sign);
   }
+  // Every valid camera's evidence, not just the chosen one's: the list reads the whole version.
+  const evidence: IncidentEvidenceItem[] = [];
+  for (const camera of envelope.cameras) {
+    if (cameraReport(envelope, camera.video) === null) continue;
+    const view =
+      camera.video === entry?.video && report ? report : await withImageUrls(toCameraReportView(record, camera, incident, ''), sign);
+    evidence.push(...cameraEvidenceItems(camera.video, current.has(camera.video), view.structured));
+  }
   return {
     incidentId,
     revision: record.revision,
@@ -90,6 +99,7 @@ export async function getReport(
     incidentVideos: incident.videos.map((video) => video.videoId),
     camera: camera !== null && inVersion.has(camera) ? camera : (entry?.video ?? null),
     report,
+    evidence,
     officialRevisionId: incident.officialRevisionId,
     officialSince: incident.officialSince,
   };

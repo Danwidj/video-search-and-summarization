@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -12,8 +12,10 @@ import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
 import { formatClock } from '@/modules/reports/domain/normalize';
-import { reportHeading, type ReportView, type StructuredEntity, type StructuredInstrument } from '@/modules/reports/domain/report-view';
+import type { IncidentEvidenceItem } from '@/modules/reports/domain/incident-evidence';
+import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
+import { EvidenceDetailDialog } from '@/sections/reports/components/EvidenceDetailDialog';
 import { RunDetailsPanel } from '@/sections/reports/components/ReportRunDetails';
 
 /** Evidence cards (entities, the instruments they hold, assets) share one grid that fills the pane: two columns from phone width, three from large screens. */
@@ -30,18 +32,24 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The scrolling part of View mode: the version, its report fields, its evidence grouped by holder, and the model's own output. */
+/** The scrolling part of View mode: the version, its report fields, the evidence of every camera of the version, and the model's own output. */
 export function ReportPane({
   report,
+  evidence,
   playerDuration,
   onSeek,
+  onPlayFrom,
   officialMissing = false,
   compareHref = null,
   hideSummary = false,
 }: {
   report: ReportView;
+  /** The evidence of every camera of the version, each item naming its video. */
+  evidence: IncidentEvidenceItem[];
   playerDuration: number | null;
   onSeek: (seconds: number) => void;
+  /** Opens a video (switching camera when it is not the open one) at a time. */
+  onPlayFrom: (video: string, seconds: number) => void;
   /** True once the versions have loaded and none of them is official. */
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */
@@ -53,13 +61,8 @@ export function ReportPane({
   const { incident } = structured;
   const windowEdited = differences.fields.includes('incident window');
   const original = modelOutput?.original;
-  const heldBy = (entityId: string) => structured.instruments.filter((instrument) => instrument.entityId === entityId);
-  const heldIds = new Set(structured.entities.flatMap((entity) => heldBy(entity.entityId).map((instrument) => instrument.instrumentId)));
-  const unheld = structured.instruments.filter((instrument) => !heldIds.has(instrument.instrumentId));
-  const holderTitle = new Map(
-    structured.entities.map((entity) => [entity.entityId, `${entity.entityId} · ${entity.label || entity.type}`]),
-  );
-  const itemCount = structured.entities.length + structured.instruments.length + structured.assets.length;
+  const [detail, setDetail] = useState<IncidentEvidenceItem | null>(null);
+  const itemCount = evidence.length;
 
   return (
     <div className="px-5 pb-16 sm:px-8">
@@ -191,37 +194,13 @@ export function ReportPane({
         </p>
       ) : (
         <div className={`mt-3 ${EVIDENCE_GRID}`} data-testid="evidence-grid">
-          {structured.entities.map((entity) => (
-            <Fragment key={entity.entityId}>
-              <EntityCard entity={entity} holds={heldBy(entity.entityId).map((instrument) => instrument.name)} onSeek={onSeek} />
-              {heldBy(entity.entityId).map((instrument) => (
-                <InstrumentCard
-                  holder={holderTitle.get(entity.entityId)}
-                  instrument={instrument}
-                  key={instrument.instrumentId}
-                  onSeek={onSeek}
-                />
-              ))}
-            </Fragment>
-          ))}
-          {unheld.map((instrument) => (
-            <InstrumentCard instrument={instrument} key={instrument.instrumentId} onSeek={onSeek} />
-          ))}
-          {structured.assets.map((asset) => (
-            <Card
-              evidence={asset.evidence}
-              id={asset.assetId}
-              key={asset.assetId}
-              kind="asset"
-              onSeek={onSeek}
-              seconds={asset.timestampSeconds}
-              title={asset.name}
-            >
-              <p className="text-muted-foreground">{asset.description}</p>
-            </Card>
+          {evidence.map((item) => (
+            <Card item={item} key={`${item.video}/${item.kind}/${item.id}`} onOpen={setDetail} />
           ))}
         </div>
       )}
+
+      <EvidenceDetailDialog item={detail} onClose={() => setDetail(null)} onPlayFrom={onPlayFrom} />
 
       <ModelSection title="Model event timeline" source={modelOutput?.source}>
         {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
@@ -354,102 +333,62 @@ function IdBadge({ id }: { id: string }) {
   );
 }
 
-function Card({
-  evidence,
-  id,
-  kind,
-  title,
-  seconds,
-  onSeek,
-  children,
-}: {
-  evidence: StructuredEntity['evidence'];
-  id: string;
-  kind: 'entity' | 'instrument' | 'asset';
-  title: string;
-  seconds: number | null;
-  onSeek: (seconds: number) => void;
-  children: ReactNode;
-}) {
-  const at = seconds ?? evidence?.timestampSeconds ?? null;
+/** One evidence item of any camera: its image opens the detail pop-up, and the card names the video it comes from. */
+function Card({ item, onOpen }: { item: IncidentEvidenceItem; onOpen: (item: IncidentEvidenceItem) => void }) {
+  const { seconds } = item;
   return (
     <UICard className="w-full min-w-0 overflow-hidden text-xs" data-testid="evidence-card">
       <button
-        aria-label={at === null ? `${title} image` : `Play video from ${formatClock(at)}: ${title}`}
-        className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-        disabled={at === null}
-        onClick={() => at !== null && onSeek(at)}
+        aria-label={`Show ${item.title} in detail`}
+        className="block w-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => onOpen(item)}
         type="button"
       >
-        <EvidenceFrame aspect={2} className="rounded-none!" kind={kind} label={title} seconds={at} src={evidence?.imageUrl} />
+        <EvidenceFrame
+          aspect={2}
+          className="rounded-none!"
+          kind={item.kind}
+          label={item.title}
+          seconds={seconds}
+          src={item.evidence?.imageUrl}
+        />
       </button>
       <CardContent className="space-y-1 p-3">
         <h4 className="flex items-center gap-2 text-sm font-semibold">
-          <IdBadge id={id} />
-          <span className="min-w-0">{title}</span>
+          <IdBadge id={item.id} />
+          <span className="min-w-0">{item.title}</span>
         </h4>
-        {children}
-        {at !== null && (
+        <p className="break-all font-mono text-[11px] text-muted-foreground" data-testid="evidence-video">
+          {item.video}
+        </p>
+        <p className="text-muted-foreground">{item.description}</p>
+        {item.holds.length > 0 && (
+          <p>
+            Holds <b>{item.holds.join(', ')}</b>
+          </p>
+        )}
+        {item.kind === 'instrument' && (
+          <>
+            <p className="text-muted-foreground">
+              Threat {item.threatLevel ?? 'unrated'}
+              {item.threatLevel !== null ? '/5' : ''}
+            </p>
+            <p>
+              Held by <b>{item.holder ?? 'unknown'}</b>
+            </p>
+          </>
+        )}
+        {item.onScreen && (
           <p className="text-muted-foreground">
-            Most visible at <b className="font-mono">{formatClock(at)}</b>
+            On screen {formatClock(item.onScreen.firstSeenSeconds)}–{formatClock(item.onScreen.lastSeenSeconds)}
+          </p>
+        )}
+        {seconds !== null && (
+          <p className="text-muted-foreground">
+            Most visible at <b className="font-mono">{formatClock(seconds)}</b>
           </p>
         )}
       </CardContent>
     </UICard>
-  );
-}
-
-function EntityCard({ entity, holds, onSeek }: { entity: StructuredEntity; holds: string[]; onSeek: (seconds: number) => void }) {
-  const span =
-    entity.firstSeenSeconds !== null && entity.lastSeenSeconds !== null
-      ? `${formatClock(entity.firstSeenSeconds)}–${formatClock(entity.lastSeenSeconds)}`
-      : null;
-  return (
-    <Card
-      evidence={entity.evidence}
-      id={entity.entityId}
-      kind="entity"
-      onSeek={onSeek}
-      seconds={entity.timestampSeconds}
-      title={entity.label || entity.type}
-    >
-      <p className="text-muted-foreground">{entity.description}</p>
-      {holds.length > 0 && (
-        <p>
-          Holds <b>{holds.join(', ')}</b>
-        </p>
-      )}
-      {span && <p className="text-muted-foreground">On screen {span}</p>}
-    </Card>
-  );
-}
-
-function InstrumentCard({
-  instrument,
-  holder,
-  onSeek,
-}: {
-  instrument: StructuredInstrument;
-  holder?: string;
-  onSeek: (seconds: number) => void;
-}) {
-  return (
-    <Card
-      evidence={instrument.evidence}
-      id={instrument.instrumentId}
-      kind="instrument"
-      onSeek={onSeek}
-      seconds={instrument.timestampSeconds}
-      title={instrument.name}
-    >
-      <p className="text-muted-foreground">{instrument.description}</p>
-      <p className="text-muted-foreground">
-        Threat {instrument.threatLevel ?? 'unrated'}
-        {instrument.threatLevel !== null ? '/5' : ''}
-      </p>
-      <p>
-        Held by <b>{holder ?? 'unknown'}</b>
-      </p>
-    </Card>
   );
 }

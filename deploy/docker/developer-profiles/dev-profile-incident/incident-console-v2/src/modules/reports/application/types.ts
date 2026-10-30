@@ -6,6 +6,7 @@
 
 import type { CoverageVerdict, Overview } from '@/modules/reports/domain/envelope';
 import type { AutoJoinRecord, IncidentId, IncidentRevisionSummary } from '@/modules/reports/domain/IncidentReportRepository';
+import type { IncidentEvidenceItem } from '@/modules/reports/domain/incident-evidence';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import type { EvidenceEmbedding, EvidenceEntry } from '@/modules/reports/domain/revision';
 
@@ -72,6 +73,8 @@ export interface IncidentReportView {
   camera: string | null;
   /** The chosen camera's report in the shape the report panes read; null when no camera is chosen. */
   report: ReportView | null;
+  /** The evidence of every valid camera of the version: camera by camera in the version's order, each by time. */
+  evidence: IncidentEvidenceItem[];
   /** The incident's one official revision; never inferred from recency. */
   officialRevisionId: number | null;
   officialSince: string | null;

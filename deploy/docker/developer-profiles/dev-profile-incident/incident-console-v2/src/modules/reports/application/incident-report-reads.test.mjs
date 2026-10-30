@@ -161,3 +161,31 @@ test('listRevisions is newest first with each coverage verdict, and empty for an
   );
   assert.deepEqual(await listRevisions(repository(), 9), []);
 });
+
+test('getReport lists the evidence of every valid camera of the version, whichever camera is chosen', async () => {
+  const items = (view) => view.evidence.map((item) => [item.video, item.id, item.playable]);
+  const first = await getReport(repository(), 1, 1, A, sign());
+  const second = await getReport(repository(), 1, 1, GONE, sign());
+  // B's report is invalid and never listed; the removed video's items are listed but cannot be played.
+  assert.deepEqual(new Set(first.evidence.map((item) => item.video)), new Set([A, GONE]));
+  assert.deepEqual(items(second), items(first));
+  assert.ok(first.evidence.filter((item) => item.video === GONE).every((item) => !item.playable));
+  assert.ok(first.evidence.filter((item) => item.video === A).every((item) => item.playable));
+  // Camera by camera in the version's order.
+  const order = first.evidence.map((item) => item.video);
+  assert.deepEqual(
+    order,
+    [...order].sort((a, b) => [A, GONE].indexOf(a) - [A, GONE].indexOf(b)),
+  );
+});
+
+test('getReport signs the images of the cameras that are not chosen and shows an unsignable one as missing', async () => {
+  const view = await getReport(repository(), 1, 1, GONE, sign());
+  const tagged = view.evidence.find((item) => item.video === A && item.evidence?.image === IMAGE);
+  assert.equal(tagged?.evidence?.imageUrl, `https://signed/${IMAGE}`);
+  const broken = await getReport(repository(), 1, 1, GONE, async (key) => {
+    if (key.startsWith('evidence/')) throw new Error('gone');
+    return 'https://signed/video';
+  });
+  assert.ok(broken.evidence.every((item) => !item.evidence || item.evidence.imageUrl === null));
+});
