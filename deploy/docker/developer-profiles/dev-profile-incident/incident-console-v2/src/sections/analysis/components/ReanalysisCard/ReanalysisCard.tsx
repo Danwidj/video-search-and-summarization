@@ -2,9 +2,16 @@
 
 'use client';
 
+import { RotateCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { describeCode } from '@/modules/videos/domain/run-labels';
 
 const MAX_PROMPT = 1000;
@@ -14,13 +21,7 @@ interface ModelOption {
   label: string;
 }
 
-/**
- * Analyse the already-stored video again (a new AI version) with one of the
- * approved models and an optional reviewer prompt typed here. Every attempt is
- * a new run; earlier versions and the reviewer's edits are not changed or
- * carried across, and the new version is not made official.
- */
-export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
+export function useReanalysis({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
   const router = useRouter();
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
@@ -31,19 +32,22 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
+    let active = true;
     void fetch('/api/models', { cache: 'no-store' })
       .then((response) => response.json() as Promise<{ models?: ModelOption[]; defaultModel?: string }>)
       .then((payload) => {
+        if (!active) return;
         setModels(payload.models || []);
         setModel(payload.defaultModel || payload.models?.[0]?.id || '');
       })
       .catch(() => undefined);
     return () => {
+      active = false;
       if (timer.current) window.clearInterval(timer.current);
     };
   }, []);
 
-  async function run() {
+  async function run(onSuccess?: () => void) {
     if (busy || !model) return;
     setBusy(true);
     setResult(null);
@@ -64,6 +68,7 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
         codes?: string[];
       };
       if (response.ok && payload.run) {
+        onSuccess?.();
         router.push(`/reports/${encodeURIComponent(payload.run.videoId)}?revision=${payload.run.revisionId}`);
         return;
       }
@@ -89,57 +94,194 @@ export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAt
     }
   }
 
+  return {
+    models,
+    model,
+    setModel,
+    prompt,
+    setPrompt,
+    busy,
+    elapsed,
+    result,
+    setResult,
+    run,
+  };
+}
+
+/**
+ * Analyse the already-stored video again (a new AI version) with one of the
+ * approved models and an optional reviewer prompt typed here. Every attempt is
+ * a new run; earlier versions and the reviewer's edits are not changed or
+ * carried across, and the new version is not made official.
+ */
+export function ReanalysisCard({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
+  const { models, model, setModel, prompt, setPrompt, busy, elapsed, result, run } = useReanalysis({ videoId, onAttempted });
+
   return (
-    <div data-testid="reanalysis-card">
-      <p className="text-xs text-ink/55">
-        Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by the
-        new run; the new version is not made official automatically.
-      </p>
-      <label className="mt-3 block text-xs font-bold">
-        Model
-        <select className="control mt-1" disabled={busy} onChange={(event) => setModel(event.target.value)} value={model}>
-          {models.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="mt-3 block text-xs font-bold">
-        Reviewer prompt (optional)
-        <textarea
-          className="control mt-1 min-h-[80px]"
-          disabled={busy}
-          maxLength={MAX_PROMPT}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder="e.g. Pay particular attention to the person entering from the left side of the frame."
-          value={prompt}
-        />
-      </label>
-      <p className="mt-1 flex justify-between text-[11px] text-ink/45">
-        <span>Adds context for this run; it can’t change the report format.</span>
-        <span>
-          {prompt.length}/{MAX_PROMPT}
-        </span>
-      </p>
-      <button
-        className="mt-3 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-        disabled={busy || !model}
-        onClick={() => void run()}
-        type="button"
-      >
-        {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
-      </button>
-      {result && (
-        <div
-          aria-live="polite"
-          className={`mt-3 rounded-xl p-3 text-xs ${result.tone === 'error' ? 'bg-[#fff6f2] text-[#8c3d25]' : 'bg-signal/10 text-moss'}`}
-        >
-          {result.lines.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
+    <Card data-testid="reanalysis-card" className="border-border bg-card">
+      <CardHeader className="pb-3">
+        <CardDescription className="text-xs text-muted-foreground">
+          Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by the
+          new run; the new version is not made official automatically.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-0">
+        <div>
+          <label className="block text-xs font-bold text-foreground" htmlFor="reanalysis-model">
+            Model
+          </label>
+          <div className="mt-1">
+            <Select disabled={busy} onValueChange={(val) => setModel(val)} value={model}>
+              <SelectTrigger id="reanalysis-model" className="w-full">
+                <SelectValue placeholder="Select model" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      )}
-    </div>
+        <div>
+          <label className="block text-xs font-bold text-foreground" htmlFor="reviewer-prompt">
+            Reviewer prompt (optional)
+          </label>
+          <Textarea
+            id="reviewer-prompt"
+            className="mt-1 min-h-[80px]"
+            disabled={busy}
+            maxLength={MAX_PROMPT}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder="e.g. Pay particular attention to the person entering from the left side of the frame."
+            value={prompt}
+          />
+          <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+            <span>Adds context for this run; it can’t change the report format.</span>
+            <span>
+              {prompt.length}/{MAX_PROMPT}
+            </span>
+          </div>
+        </div>
+        <div>
+          <Button size="sm" className="rounded-full" disabled={busy || !model} onClick={() => void run()} type="button">
+            {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
+          </Button>
+        </div>
+        {result && (
+          <Alert variant={result.tone === 'error' ? 'destructive' : 'default'} aria-live="polite" className="mt-3 text-xs">
+            <AlertDescription className="space-y-1">
+              {result.lines.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Compact dialog-based action for the report sticky top bar.
+ */
+export function ReanalysisDialog({ videoId, onAttempted }: { videoId: string; onAttempted?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { models, model, setModel, prompt, setPrompt, busy, elapsed, result, setResult, run } = useReanalysis({
+    videoId,
+    onAttempted,
+  });
+
+  function handleOpenChange(next: boolean) {
+    if (busy) return;
+    setOpen(next);
+    if (next) setResult(null);
+  }
+
+  return (
+    <Dialog onOpenChange={handleOpenChange} open={open}>
+      <DialogTrigger asChild>
+        <Button
+          aria-label="Re-analyse this incident"
+          className="text-xs font-semibold"
+          data-testid="reanalysis-trigger"
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <RotateCw aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="max-sm:sr-only sm:ml-1.5">Re-analyse</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg" data-testid="reanalysis-dialog">
+        <DialogHeader>
+          <DialogTitle>Re-analyse incident</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Runs the stored video again as a new AI version. Earlier versions and reviewer edits are kept as they are and are not used by
+            the new run; the new version is not made official automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-1">
+          <div>
+            <label className="block text-xs font-bold text-foreground" htmlFor="dialog-reanalysis-model">
+              Model
+            </label>
+            <div className="mt-1">
+              <Select disabled={busy} onValueChange={(val) => setModel(val)} value={model}>
+                <SelectTrigger id="dialog-reanalysis-model" className="w-full">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-foreground" htmlFor="dialog-reviewer-prompt">
+              Reviewer prompt (optional)
+            </label>
+            <Textarea
+              id="dialog-reviewer-prompt"
+              className="mt-1 min-h-[80px]"
+              disabled={busy}
+              maxLength={MAX_PROMPT}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder="e.g. Pay particular attention to the person entering from the left side of the frame."
+              value={prompt}
+            />
+            <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+              <span>Adds context for this run; it can’t change the report format.</span>
+              <span>
+                {prompt.length}/{MAX_PROMPT}
+              </span>
+            </div>
+          </div>
+          {result && (
+            <Alert variant={result.tone === 'error' ? 'destructive' : 'default'} aria-live="polite" className="text-xs">
+              <AlertDescription className="space-y-1">
+                {result.lines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button disabled={busy} onClick={() => setOpen(false)} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button disabled={busy || !model} onClick={() => void run(() => setOpen(false))} type="button">
+            {busy ? `Analysing… ${elapsed}s` : 'Generate new version'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
