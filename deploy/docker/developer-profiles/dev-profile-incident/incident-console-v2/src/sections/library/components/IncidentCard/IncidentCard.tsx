@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { ReportThumbnail } from '@/sections/library/components/ReportThumbnail';
 import { DeleteIncidentDialog } from '@/sections/library/components/IncidentCard/DeleteIncidentDialog';
 import type { ReportLibraryItem } from '@/modules/reports/domain/storage';
+import { cardTitle } from '@/lib/library/view';
 import { formatTimestamp } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,7 +41,7 @@ export function IncidentCard({
   const href = `/reports/${encodeURIComponent(item.videoId)}?revision=${item.revisionId}`;
   const versions = item.versionCount ?? 0;
   const evidence = item.evidenceCount ?? 0;
-  const displayTitle = item.title || `${item.incident_type} · ${formatTimestamp(item.uploadedAt)}`;
+  const displayTitle = cardTitle(item, `${item.incident_type} · ${formatTimestamp(item.uploadedAt)}`);
 
   function navigateToReport() {
     onOpen(item);
@@ -168,7 +169,7 @@ export function IncidentCard({
                         data-testid="library-official-marker"
                       >
                         <StarIcon className="size-3 fill-current" />
-                        Official v{item.revisionNo} · {item.kind === 'human' ? 'Human' : 'AI'}
+                        Official · {item.kind === 'human' ? 'Human' : 'AI'}
                       </span>
                     </TooltipTrigger>
                     {item.officialSince && <TooltipContent>Made official {formatTimestamp(item.officialSince)}</TooltipContent>}

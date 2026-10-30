@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const config = getServiceConfiguration();
   const agentConfigured = Boolean(config.agentUrl);
+  const gatewayInUse = config.analysisMode !== 'agent';
   const gatewayConfigured = Boolean(config.gatewayUrl);
   const r2Configured = isR2Configured(config);
 
@@ -20,19 +21,18 @@ export async function GET() {
           .then((response) => response.ok)
           .catch(() => false)
       : Promise.resolve(false),
-    config.gatewayUrl ? new GatewayClient(config.gatewayUrl).health() : Promise.resolve(false),
+    gatewayInUse && config.gatewayUrl ? new GatewayClient(config.gatewayUrl).health() : Promise.resolve(false),
     getDbHealth(config).checkHealth(),
   ]);
 
-  const gatewayReady = config.analysisMode === 'agent' ? true : gatewayReachable;
-  const ready = agentReachable && gatewayReady && database.reachable && r2Configured;
+  const ready = agentReachable && (!gatewayInUse || gatewayReachable) && database.reachable && r2Configured;
 
   return NextResponse.json(
     {
       status: ready ? 'ready' : 'degraded',
       services: {
         agent: { configured: agentConfigured, reachable: agentReachable },
-        gateway: { configured: gatewayConfigured, reachable: gatewayReachable },
+        ...(gatewayInUse ? { gateway: { configured: gatewayConfigured, reachable: gatewayReachable } } : {}),
         postgrest: database,
         r2: { configured: r2Configured },
       },

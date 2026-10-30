@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   AlertDialog,
@@ -21,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
+import { officialRevisionIdOf, shouldConfirmReplace } from '@/lib/reports/official-state';
 import { layoutVersions } from '@/lib/reports/version-graph';
 import { formatTimestamp } from '@/lib/time';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
@@ -53,13 +55,19 @@ export function ReportVersions({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRevision, setPendingRevision] = useState<RevisionSummary | null>(null);
-  const hasOfficial = (revisions ?? []).some((revision) => revision.isOfficial);
+  // The answer of the last successful mark or clear, until the refetched list carries it.
+  const [localOfficialId, setLocalOfficialId] = useState<number | null | undefined>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new list is the server's answer, which replaces the local one
+  useEffect(() => setLocalOfficialId(undefined), [revisions]);
+  const officialId = officialRevisionIdOf(revisions ?? [], localOfficialId);
 
   async function executeToggle(revision: RevisionSummary) {
     setBusyId(revision.revisionId);
     setActionError(null);
     try {
-      await (revision.isOfficial ? clearOfficial(videoId) : markOfficial(videoId, revision.revisionId));
+      const clearing = revision.revisionId === officialId;
+      await (clearing ? clearOfficial(videoId) : markOfficial(videoId, revision.revisionId));
+      setLocalOfficialId(clearing ? null : revision.revisionId);
       onOfficialChanged();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Update failed');
@@ -69,7 +77,7 @@ export function ReportVersions({
   }
 
   function toggleOfficial(revision: RevisionSummary) {
-    if (!revision.isOfficial && hasOfficial) {
+    if (shouldConfirmReplace(revisions ?? [], revision.revisionId, localOfficialId)) {
       setPendingRevision(revision);
       return;
     }
@@ -112,10 +120,12 @@ export function ReportVersions({
               {layout.rows.map(({ revision, lane, segments }) => {
                 const current = revision.revisionId === currentRevisionId;
                 const comparing = revision.revisionId === compareRevisionId;
-                const starLabel = revision.isOfficial
+                const official = revision.revisionId === officialId;
+                const busy = revision.revisionId === busyId;
+                const starLabel = official
                   ? `Clear v${revision.revisionNo} as the official version`
                   : `Mark v${revision.revisionNo} official`;
-                const starTitle = revision.isOfficial ? 'Official version: click to clear' : 'Mark official';
+                const starTitle = busy ? 'Saving' : official ? 'Official version: click to clear' : 'Mark official';
 
                 return (
                   <li
@@ -144,7 +154,7 @@ export function ReportVersions({
                       <span className="flex flex-wrap items-center gap-x-2">
                         <b>v{revision.revisionNo}</b>
                         <span className="text-muted-foreground">{formatTimestamp(revision.createdAt, 'time unknown')}</span>
-                        {revision.isOfficial && (
+                        {official && (
                           <Badge className="border-amber-400 bg-amber-50 text-[10.5px] font-bold text-amber-800" variant="outline">
                             ★ Official
                           </Badge>
@@ -163,16 +173,17 @@ export function ReportVersions({
                       <TooltipTrigger asChild>
                         <Button
                           aria-label={starLabel}
-                          aria-pressed={revision.isOfficial}
+                          aria-busy={busy}
+                          aria-pressed={official}
                           className="h-7 w-7 self-center p-0 text-base leading-none text-amber-600 hover:text-amber-700 disabled:opacity-40"
-                          data-testid={revision.isOfficial ? 'clear-official' : 'make-official'}
+                          data-testid={official ? 'clear-official' : 'make-official'}
                           disabled={busyId !== null}
                           onClick={() => void toggleOfficial(revision)}
                           title={starTitle}
                           type="button"
                           variant="ghost"
                         >
-                          {revision.isOfficial ? '★' : '☆'}
+                          {busy ? <Loader2 aria-hidden className="size-3.5 animate-spin" /> : official ? '★' : '☆'}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>{starTitle}</TooltipContent>
