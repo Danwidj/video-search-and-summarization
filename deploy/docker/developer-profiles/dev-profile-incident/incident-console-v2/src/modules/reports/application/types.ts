@@ -53,7 +53,7 @@ export interface CameraView {
   current: boolean;
   /** The open version holds a report for this video; false for an incident video added after the version was built. */
   inVersion: boolean;
-  /** The camera's report passes incident-contract-v4 validation, so the report panes can show it. */
+  /** The camera's report passes incident-contract-v5 validation, so the report panes can show it. */
   valid: boolean;
   /** Why the rule joined this video to the incident; null when a reviewer did or it was never joined. */
   autoJoin: AutoJoinRecord | null;

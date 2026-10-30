@@ -2,6 +2,13 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-31: incident-contract-v5 hedges asset names and adds an optional `last_handled_by`
+- **Decision:** v5 adds the instrument rule's hedge ("do not identify an object more specifically than the visual evidence supports", generic name when unsure) to the asset NAME and DESCRIPTION rules, and an optional `assets[].last_handled_by` `{entity_id, timestamp_seconds}` (null when nobody is seen). It is observable interaction, never ownership. The console shows "Last handled by E2 (person in white shirt) at m:ss" on asset cards and in the evidence pop-up, keeps it through human edits (held against the entity, so renumbering follows), and shows nothing when absent. `id-normalization-v1` remaps the entity id; a handler naming an unknown entity is `ASSET_HANDLER_UNKNOWN`. The experiments registry gains `p1-v5-base`; `p1-v4-base` stays as the older baseline.
+- **Why:** incident 189 called a bag "soccer ball". Optional, not required, because every other property is required, but a required field would make `missingItemFields` reject human edits of every stored v4 payload and force `last_handled_by: null` into all recorded fixtures.
+- **Rejected:** a required nullable field (breaks stored payloads and fixtures); an `owner` field (ownership is not observable).
+- **Known follow-up:** `eval/tests` still assert `incident-contract-v4` in places (`test_contract.py`, `test_eval_run_contract.py`, `test_offline_store.py`, `test_methodology.py`); `eval/` is not changed here.
+- **Links:** [`../contracts/incident_report.schema.json`](../contracts/incident_report.schema.json), [`../contracts/incident_extraction_prompt.txt`](../contracts/incident_extraction_prompt.txt).
+
 ### 2026-10-30: After an automatic join the kept incident is checked again (audit U7)
 - **Decision:** `evaluateIncident` re-runs itself for the kept incident after a join (`autoJoin: false`), so matches the merge deleted come back as pending suggestions. Console only: no agent change, no migration.
 - **Why:** `merge_incidents` deletes the source with its other pending rows and the new upload always has the higher id, so the Matches tab, Accept, Reject and "Awaiting your decision" were unreachable in normal use.

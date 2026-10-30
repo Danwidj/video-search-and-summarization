@@ -232,3 +232,14 @@ test('a valid report is not touched', () => {
   assert.equal(outcome.repair, null);
   assert.deepEqual(outcome.firstPass, []);
 });
+
+test('a renamed entity carries an asset last_handled_by reference with it', () => {
+  const report = withoutIdMentions(validReport());
+  report.entities[0].entity_id = 'e1';
+  report.instruments[0].entity_id = 'e1';
+  report.assets[0].last_handled_by = { entity_id: 'e1', timestamp_seconds: 2 };
+  const result = attemptIdNormalization(report, violationsOf(report));
+  assert.equal(result.eligible, true);
+  assert.deepEqual(result.repaired.assets[0].last_handled_by, { entity_id: 'E1', timestamp_seconds: 2 });
+  assert.doesNotThrow(() => validateReport(result.repaired));
+});

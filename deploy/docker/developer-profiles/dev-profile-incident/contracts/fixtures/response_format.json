@@ -4,7 +4,7 @@
     "name": "incident_report",
     "schema": {
       "title": "incident_report",
-      "description": "incident-contract-v4: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
+      "description": "incident-contract-v5: structured incident extraction (P1) shared by eval, incident-console-v2 and vss-agent. Field meanings are defined in incident_extraction_prompt.md. incident.duration is not requested from the model; consumers derive it as end_timestamp - start_timestamp after validation.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -221,6 +221,29 @@
               "label": {
                 "type": "string",
                 "description": "Short label for detector search (e.g. 'silver hatchback', 'display case')."
+              },
+              "last_handled_by": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "entity_id": {
+                    "type": "string",
+                    "description": "entity_id of the entity last seen touching or moving the asset."
+                  },
+                  "timestamp_seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Seconds from video start at which that interaction was last seen."
+                  }
+                },
+                "required": [
+                  "entity_id",
+                  "timestamp_seconds"
+                ],
+                "description": "Observable interaction only, never ownership. Optional: omitted or null when nobody is seen handling the asset. Reports stored before incident-contract-v5 have no such key and stay valid."
               }
             },
             "required": [

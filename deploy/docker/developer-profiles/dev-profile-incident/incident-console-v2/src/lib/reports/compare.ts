@@ -230,7 +230,7 @@ function instrumentFromSaved(item: StructuredInstrument, key: string, holderKey:
   };
 }
 
-function assetFromSaved(item: StructuredAsset, key: string): DraftAsset {
+function assetFromSaved(item: StructuredAsset, key: string, handlerKey: string | null): DraftAsset {
   return {
     key,
     sourceId: item.assetId,
@@ -243,6 +243,7 @@ function assetFromSaved(item: StructuredAsset, key: string): DraftAsset {
     imageBox: null,
     name: item.name,
     description: item.description,
+    handler: handlerKey ? { holderKey: handlerKey, seconds: item.lastHandledBy?.seconds ?? 0 } : null,
   };
 }
 
@@ -278,7 +279,11 @@ export function revertDraftItem(draft: EditDraft, a: Structured, row: PairRow): 
     return { ...draft, instruments };
   }
   const existing = draft.assets.find((candidate) => candidate.sourceId === (row.a as StructuredAsset).assetId);
-  const restored = assetFromSaved(row.a, existing?.key ?? newKey('asset'));
+  const restored = assetFromSaved(
+    row.a,
+    existing?.key ?? newKey('asset'),
+    draftEntityFor(draft, row.a.lastHandledBy?.entityId ?? null)?.key ?? null,
+  );
   const assets = existing
     ? draft.assets.map((candidate) => (candidate.key === existing.key ? restored : candidate))
     : [...draft.assets, restored];
@@ -333,6 +338,9 @@ export function draftToStructured(draft: EditDraft): Structured {
       assetId: asset.key,
       name: asset.name,
       description: asset.description,
+      lastHandledBy: asset.handler
+        ? { entityId: entityIdByKey.get(asset.handler.holderKey) ?? asset.handler.holderKey, seconds: asset.handler.seconds }
+        : null,
       timestampSeconds: asset.timestampSeconds,
       label: asset.label,
       evidence: evidence(asset.image, asset.imageUrl, asset.timestampSeconds),

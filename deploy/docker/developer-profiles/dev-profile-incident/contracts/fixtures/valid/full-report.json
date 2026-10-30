@@ -47,7 +47,11 @@
       "name": "counter",
       "description": "Shop counter E2 stands at.",
       "timestamp_seconds": 3,
-      "label": "shop counter"
+      "label": "shop counter",
+      "last_handled_by": {
+        "entity_id": "E2",
+        "timestamp_seconds": 4
+      }
     }
   ],
   "timeline": [
