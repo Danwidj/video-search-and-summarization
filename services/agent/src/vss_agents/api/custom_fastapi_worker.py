@@ -19,6 +19,7 @@ to support additional streaming endpoints and a lightweight health check.
 """
 
 import logging
+import os
 
 from fastapi import FastAPI
 from nat.builder.workflow_builder import WorkflowBuilder
@@ -31,6 +32,7 @@ from vss_agents.api.incident_evidence_embeddings import register_incident_eviden
 from vss_agents.api.incident_match_judge import register_incident_match_judge_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
+from vss_agents.api.incident_synthesize import register_incident_synthesize_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
 from vss_agents.api.rtsp_ingest import register_rtsp_ingest_routes
 from vss_agents.api.video_delete import register_video_delete_routes
@@ -104,6 +106,9 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         - ``POST /api/v1/incidents/evidence-embeddings`` — passage embeddings
           for a report revision's evidence, called by the console when a
           revision is made official.
+        - ``POST /api/v1/incidents/synthesize`` - one combined overview
+          from several videos' stored analyses (RP1 settings from
+          ``incident_report_gen``).
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -142,3 +147,13 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_chat_routes(app)
         register_incident_evidence_embeddings_routes(app)
         register_incident_match_judge_routes(app)
+        # RP1 endpoint and key come from the same incident_report_gen config as /analyze.
+        functions = getattr(self.config, "functions", None)
+        report_gen_cfg = functions.get("incident_report_gen") if isinstance(functions, dict) else None
+        rp1_base_url = getattr(report_gen_cfg, "rp1_base_url", None)
+        api_key_env = getattr(report_gen_cfg, "api_key_env", None)
+        register_incident_synthesize_routes(
+            app,
+            rp1_base_url=rp1_base_url if isinstance(rp1_base_url, str) else None,
+            api_key=os.environ.get(api_key_env) if isinstance(api_key_env, str) else None,
+        )
