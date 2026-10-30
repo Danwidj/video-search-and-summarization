@@ -28,6 +28,7 @@ from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontE
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
+from vss_agents.api.incident_match_judge import register_incident_match_judge_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
 from vss_agents.api.rtsp_delete import register_rtsp_delete_routes
@@ -140,3 +141,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_revision_search_routes(app)
         register_incident_chat_routes(app)
         register_incident_evidence_embeddings_routes(app)
+        register_incident_match_judge_routes(app)

@@ -14,18 +14,19 @@
 # limitations under the License.
 """Unit tests for the route dispatcher in CustomFastApiFrontEndWorker.
 
-The dispatcher registers nine sets of routes on every profile, with no
+The dispatcher registers ten sets of routes on every profile, with no
 per-profile capability flags:
 
-  * ``register_video_upload``               — POST /api/v1/videos
-  * ``register_video_upload_complete``      — POST /api/v1/videos/{sensor_id}/complete
-  * ``register_video_search_ingest_routes`` — PUT  /api/v1/videos-for-search/{filename} (deprecated)
-  * ``register_rtsp_ingest_routes``         — POST /api/v1/rtsp-streams/add
-  * ``register_rtsp_delete_routes``         — DELETE /api/v1/rtsp-streams/delete/{name}
-  * ``register_video_delete_routes``        — DELETE /api/v1/videos/{video_id}
-  * ``register_incident_analyze_routes``    — POST /api/v1/incidents/{incident_id}/analyze
-  * ``register_incident_search_routes``     — POST /api/v1/incidents/search
-  * ``register_incident_chat_routes``       — POST /api/v1/incidents/chat
+  * ``register_video_upload``                  — POST /api/v1/videos
+  * ``register_video_upload_complete``         — POST /api/v1/videos/{sensor_id}/complete
+  * ``register_video_search_ingest_routes``    — PUT  /api/v1/videos-for-search/{filename} (deprecated)
+  * ``register_rtsp_ingest_routes``            — POST /api/v1/rtsp-streams/add
+  * ``register_rtsp_delete_routes``            — DELETE /api/v1/rtsp-streams/delete/{name}
+  * ``register_video_delete_routes``           — DELETE /api/v1/videos/{video_id}
+  * ``register_incident_analyze_routes``       — POST /api/v1/incidents/{incident_id}/analyze
+  * ``register_incident_search_routes``        — POST /api/v1/incidents/search
+  * ``register_incident_chat_routes``          — POST /api/v1/incidents/chat
+  * ``register_incident_match_judge_routes``   — POST /api/v1/incidents/match-judge
 """
 
 from unittest.mock import MagicMock
@@ -59,10 +60,10 @@ def _make_worker(streaming_ingest):
 def patched_register_fns():
     """Patch every register fn the dispatcher delegates to.
 
-    Returns a 9-tuple in the order:
+    Returns a 10-tuple in the order:
         (video_upload, video_upload_complete, video_search_ingest,
          rtsp_ingest, rtsp_delete, video_delete, incident_analyze,
-         incident_search, incident_chat)
+         incident_search, incident_chat, incident_match_judge)
     """
     with (
         patch("vss_agents.api.custom_fastapi_worker.register_video_upload") as video_upload,
@@ -74,6 +75,7 @@ def patched_register_fns():
         patch("vss_agents.api.custom_fastapi_worker.register_incident_analyze_routes") as incident_analyze,
         patch("vss_agents.api.custom_fastapi_worker.register_incident_search_routes") as incident_search,
         patch("vss_agents.api.custom_fastapi_worker.register_incident_chat_routes") as incident_chat,
+        patch("vss_agents.api.custom_fastapi_worker.register_incident_match_judge_routes") as incident_match_judge,
     ):
         yield (
             video_upload,
@@ -85,6 +87,7 @@ def patched_register_fns():
             incident_analyze,
             incident_search,
             incident_chat,
+            incident_match_judge,
         )
 
 
@@ -105,6 +108,7 @@ class TestRegisterStreamingRoutesDispatcher:
             incident_analyze,
             incident_search,
             incident_chat,
+            incident_match_judge,
         ) = patched_register_fns
         worker = _make_worker(MagicMock())  # any non-None streaming_ingest
 
@@ -119,6 +123,7 @@ class TestRegisterStreamingRoutesDispatcher:
         incident_analyze.assert_called_once()
         incident_search.assert_called_once()
         incident_chat.assert_called_once()
+        incident_match_judge.assert_called_once()
 
     def test_missing_streaming_ingest_raises(self, patched_register_fns):
         """Every profile must declare streaming_ingest so a misconfigured
@@ -133,6 +138,7 @@ class TestRegisterStreamingRoutesDispatcher:
             incident_analyze,
             incident_search,
             incident_chat,
+            incident_match_judge,
         ) = patched_register_fns
         worker = _make_worker(_MISSING)
 
@@ -148,6 +154,7 @@ class TestRegisterStreamingRoutesDispatcher:
         incident_analyze.assert_not_called()
         incident_search.assert_not_called()
         incident_chat.assert_not_called()
+        incident_match_judge.assert_not_called()
 
     def test_legacy_stream_mode_in_yaml_raises(self, patched_register_fns):
         """A profile YAML that still carries the legacy ``stream_mode`` knob
@@ -162,6 +169,7 @@ class TestRegisterStreamingRoutesDispatcher:
             incident_analyze,
             incident_search,
             incident_chat,
+            incident_match_judge,
         ) = patched_register_fns
         cfg = StreamingIngestConfig(stream_mode="search")
         worker = _make_worker(cfg)
@@ -178,3 +186,4 @@ class TestRegisterStreamingRoutesDispatcher:
         incident_analyze.assert_not_called()
         incident_search.assert_not_called()
         incident_chat.assert_not_called()
+        incident_match_judge.assert_not_called()
