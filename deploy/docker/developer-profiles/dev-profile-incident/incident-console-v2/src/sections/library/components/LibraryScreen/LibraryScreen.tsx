@@ -9,6 +9,8 @@ import { PlusIcon } from 'lucide-react';
 import { EvidenceTab, type EvidenceScope } from '@/sections/library/components/EvidenceTab';
 import { IncidentCard } from '@/sections/library/components/IncidentCard';
 import { CardSkeleton, ErrorPanel, FilterChip, Select } from '@/sections/library/components/Shared';
+import { PendingStrip, SuggestionsTab } from '@/sections/suggestions/components/SuggestionsTab';
+import { useSuggestionCards } from '@/sections/suggestions/use-suggestion-cards';
 import {
   type DatePreset,
   EMPTY_FILTERS,
@@ -23,19 +25,23 @@ import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import type { LibrarySearchResponse } from '@/lib/library/search';
 import type { LibraryIncident } from '@/sections/library/types';
 import { getViewerTimeZone } from '@/lib/time';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
-type Tab = 'incidents' | 'evidence';
+type Tab = 'incidents' | 'evidence' | 'matches';
 const STATE_KEY = 'report-library-state';
 const PAGE_SIZE = 6;
 
 export function Library() {
   const query = useSearchParams();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>(query.get('tab') === 'evidence' ? 'evidence' : 'incidents');
+  const [tab, setTab] = useState<Tab>(
+    query.get('tab') === 'evidence' ? 'evidence' : query.get('tab') === 'matches' ? 'matches' : 'incidents',
+  );
+  const suggestions = useSuggestionCards();
   const [filters, setFilters] = useState<IncidentFilters>(EMPTY_FILTERS);
   const [searchText, setSearchText] = useState('');
   const [ready, setReady] = useState(false);
@@ -110,7 +116,7 @@ export function Library() {
       setSearchMode(payload.searchMode ?? null);
       if (activeFilters(filters).length === 0) setLibrary(payload.reports.length ? 'has-reports' : 'empty');
       else setLibrary((current) => (payload.reports?.length ? 'has-reports' : current));
-      router.replace(`/library?${new URLSearchParams([...(tab === 'evidence' ? [['tab', 'evidence']] : []), ...params])}`, {
+      router.replace(`/library?${new URLSearchParams([...(tab === 'incidents' ? [] : [['tab', tab]]), ...params])}`, {
         scroll: false,
       });
     } catch (cause) {
@@ -253,12 +259,25 @@ export function Library() {
             <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="evidence">
               Find evidence
             </TabsTrigger>
+            <TabsTrigger className="h-auto flex-none rounded-none px-4 py-2.5 font-semibold after:bottom-0" value="matches">
+              Matches
+              {suggestions.cards.length > 0 && (
+                <Badge
+                  className="h-5 min-w-5 bg-amber-100 px-1.5 font-bold text-amber-900 ring-1 ring-amber-300"
+                  data-testid="matches-count"
+                >
+                  {suggestions.cards.length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       <section className="mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-        {tab === 'evidence' ? (
+        {tab === 'matches' ? (
+          <SuggestionsTab state={suggestions} />
+        ) : tab === 'evidence' ? (
           <EvidenceTab
             error={searchError}
             loading={searching}
@@ -273,6 +292,7 @@ export function Library() {
           />
         ) : (
           <>
+            <PendingStrip count={suggestions.cards.length} onReview={() => setTab('matches')} />
             <form
               className="flex flex-col gap-3 sm:flex-row"
               onSubmit={(event) => {
