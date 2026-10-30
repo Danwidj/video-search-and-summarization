@@ -74,12 +74,12 @@ async function videosMatchingText(config: ServiceConfiguration, text: string): P
 async function listMatchingIncidents(
   incidents: IncidentRepository,
   query: Omit<ReportListQuery, 'page' | 'pageSize' | 'search'>,
-  videoIds: Set<string>,
+  incidentIds: Set<string>,
   page: number,
   pageSize: number,
 ): Promise<ReportList> {
   const all = await incidents.listReports({ ...query, search: null, page: 1, pageSize: MAX_LIST_SIZE });
-  const matched = all.items.filter((item) => videoIds.has(item.videoId));
+  const matched = all.items.filter((item) => incidentIds.has(item.videoId));
   return { items: matched.slice((page - 1) * pageSize, page * pageSize), totalItems: matched.length, incidentTypes: all.incidentTypes };
 }
 
@@ -138,13 +138,13 @@ export async function GET(request: Request) {
       evidenceMatch: match,
       timezone,
     };
-    const videoIds = search === null ? null : await videosMatchingText(config, search);
+    const incidentIds = search === null ? null : await videosMatchingText(config, search);
     const {
       items: summaries,
       totalItems,
       incidentTypes,
-    } = videoIds
-      ? await listMatchingIncidents(incidents, filters, videoIds, page, pageSize)
+    } = incidentIds
+      ? await listMatchingIncidents(incidents, filters, incidentIds, page, pageSize)
       : await incidents.listReports({ ...filters, search, page, pageSize });
     const sign = async (key: string) => {
       try {
@@ -168,7 +168,7 @@ export async function GET(request: Request) {
       reports,
       incidentTypes,
       /** With text: 'semantic' when the agent ranked it, 'text' for the store's ILIKE filter. */
-      ...(search === null ? {} : { searchMode: videoIds ? 'semantic' : 'text' }),
+      ...(search === null ? {} : { searchMode: incidentIds ? 'semantic' : 'text' }),
       pagination: {
         page,
         pageSize,

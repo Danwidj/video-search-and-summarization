@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// PATCH /api/reports/[videoId]/edit: Save appends a human revision; model_runs is never written.
+// PATCH /api/reports/[incidentId]/edit: Save appends a human revision; model_runs is never written.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { afterEach, beforeEach, test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { PATCH } = await import('../src/app/api/reports/[videoId]/edit/route.ts');
+const { PATCH } = await import('../src/app/api/reports/[incidentId]/edit/route.ts');
 const { aiRevisionRow, unchangedEdit } = await import('./support/report-view.mjs');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 const { revisionRpcs } = await import('./support/revisions-database.mjs');
@@ -36,7 +36,7 @@ const patch = (body, videoId = repaired.videoId) =>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
-    { params: Promise.resolve({ videoId }) },
+    { params: Promise.resolve({ incidentId: videoId }) },
   );
 const request = (edit, extra = {}) => ({ parentId: 1, editedBy: 'Rev', edit, ...extra });
 

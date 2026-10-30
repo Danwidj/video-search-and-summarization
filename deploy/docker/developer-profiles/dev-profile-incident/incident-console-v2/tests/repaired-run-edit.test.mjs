@@ -15,7 +15,7 @@ import { test } from 'node:test';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { PATCH } = await import('../src/app/api/reports/[videoId]/edit/route.ts');
+const { PATCH } = await import('../src/app/api/reports/[incidentId]/edit/route.ts');
 const { SupabaseIncidentAdapter } = await import('../src/modules/reports/infrastructure/supabase/incidents.ts');
 const { PostgrestClient } = await import('../src/lib/postgrest/client.ts');
 const { toReportView } = await import('../src/modules/reports/application/report-view.ts');
@@ -63,7 +63,7 @@ test('editing repaired run m811cf2b237f50ff9812 adds a human revision; the run n
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parentId: 1, editedBy: 'Reviewer A', edit }),
       }),
-      { params: Promise.resolve({ videoId: fixture.videoId }) },
+      { params: Promise.resolve({ incidentId: fixture.videoId }) },
     );
     assert.equal(response.status, 200);
   } finally {

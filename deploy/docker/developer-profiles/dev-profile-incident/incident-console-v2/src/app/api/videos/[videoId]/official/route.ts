@@ -18,11 +18,11 @@ const selectSchema = z.object({ revisionId: z.number().int().positive() }).stric
 
 export async function PUT(request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { videoId: incidentId } = await context.params;
     const parsed = selectSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'revisionId is required' }, { status: 400 });
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, parsed.data.revisionId, (revisionId) =>
+    const result = await setOfficialRevision(getDbAdapters(config), incidentId, parsed.data.revisionId, (revisionId) =>
       fetchEvidenceEmbeddings(config, revisionId),
     );
     return NextResponse.json({ official: result });
@@ -39,9 +39,9 @@ export async function PUT(request: Request, context: { params: Promise<{ videoId
 
 export async function DELETE(_request: Request, context: { params: Promise<{ videoId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { videoId: incidentId } = await context.params;
     const config = getServiceConfiguration();
-    const result = await setOfficialRevision(getDbAdapters(config), videoId, null, (revisionId) =>
+    const result = await setOfficialRevision(getDbAdapters(config), incidentId, null, (revisionId) =>
       fetchEvidenceEmbeddings(config, revisionId),
     );
     return NextResponse.json({ official: result });

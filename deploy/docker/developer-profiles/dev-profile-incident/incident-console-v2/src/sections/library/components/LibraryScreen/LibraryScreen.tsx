@@ -162,10 +162,10 @@ export function Library() {
     }
   }
 
-  /** One evidence search. With a videoId it covers only that incident, and an empty text lists the incident's evidence. */
-  async function searchEvidence(text: string, videoId: string | null = null) {
+  /** One evidence search. With an incidentId it covers only that incident, and an empty text lists the incident's evidence. */
+  async function searchEvidence(text: string, incidentId: string | null = null) {
     const trimmed = text.trim();
-    if (!trimmed && !videoId) return;
+    if (!trimmed && !incidentId) return;
     const sequence = ++searchSequence.current;
     setSearching(true);
     setSearchError('');
@@ -174,7 +174,7 @@ export function Library() {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: trimmed, ...(videoId ? { videoId } : {}) }),
+        body: JSON.stringify({ query: trimmed, ...(incidentId ? { videoId: incidentId } : {}) }),
       });
       const payload = (await response.json()) as LibrarySearchResponse & { error?: string };
       if (!response.ok || !Array.isArray(payload.hits)) throw new Error(payload.error || 'Evidence search failed');
@@ -208,7 +208,7 @@ export function Library() {
 
   /** "See evidence" on an incident card: that incident's evidence loads at once, and a typed query then searches only it. */
   function searchEvidenceIn(item: ReportLibraryItem) {
-    setScope({ videoId: item.videoId, title: item.title || item.incident_type, filename: item.filename });
+    setScope({ incidentId: item.videoId, title: item.title || item.incident_type, filename: item.filename });
     setEvidenceQuery('');
     setTab('evidence');
     void searchEvidence('', item.videoId);
@@ -265,7 +265,7 @@ export function Library() {
             onQuery={setEvidenceQuery}
             onScope={(next) => (next ? setScope(next) : clearScope())}
             onShowInIncidents={showIncidentInIncidents}
-            onSubmit={() => void searchEvidence(evidenceQuery, scope?.videoId ?? null)}
+            onSubmit={() => void searchEvidence(evidenceQuery, scope?.incidentId ?? null)}
             query={evidenceQuery}
             result={result}
             scope={scope}

@@ -16,13 +16,13 @@ export const maxDuration = 30;
  * missing or malformed t, 422 for a t past the end of the video, 404 for an
  * unknown video, 503 when ffmpeg is not installed on the console host.
  */
-export async function GET(request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const config = r2FrameConfiguration();
     const jpeg = await getVideoFrame(
       { videos: getDbAdapters(config).videos, source: r2FrameSource(config) },
-      videoId,
+      incidentId,
       new URL(request.url).searchParams.get('t'),
     );
     return new NextResponse(new Uint8Array(jpeg), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=300' } });

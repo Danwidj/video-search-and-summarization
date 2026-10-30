@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// POST /api/reports/[videoId]/evidence-sweep over a fake R2 (the S3 client is mocked) and a fake PostgREST.
+// POST /api/reports/[incidentId]/evidence-sweep over a fake R2 (the S3 client is mocked) and a fake PostgREST.
 
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
@@ -52,7 +52,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.test/x' } });
 
-const { POST } = await import('../src/app/api/reports/[videoId]/evidence-sweep/route.ts');
+const { POST } = await import('../src/app/api/reports/[incidentId]/evidence-sweep/route.ts');
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 const OLD = new Date(Date.now() - 48 * 3_600_000);
@@ -103,7 +103,7 @@ const call = (body, videoId = 'v-1') =>
       method: 'POST',
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-    { params: Promise.resolve({ videoId }) },
+    { params: Promise.resolve({ incidentId: videoId }) },
   );
 
 test('with no body it is a dry run: the orphan is reported and nothing is deleted', async () => {

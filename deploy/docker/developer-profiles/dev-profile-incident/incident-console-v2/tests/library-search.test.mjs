@@ -177,5 +177,5 @@ test('the evidence UI shows no critic verdict, and the incident card search load
   }
   const screen = readFileSync(join(dir, 'LibraryScreen', 'LibraryScreen.tsx'), 'utf8');
   assert.match(screen, /void searchEvidence\('', item\.videoId\)/);
-  assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.videoId \?\? null\)/);
+  assert.match(screen, /searchEvidence\(evidenceQuery, scope\?\.incidentId \?\? null\)/);
 });

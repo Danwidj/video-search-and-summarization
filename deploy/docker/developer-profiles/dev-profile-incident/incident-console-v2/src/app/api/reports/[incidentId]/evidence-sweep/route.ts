@@ -29,9 +29,9 @@ const requestSchema = z
  * video names and that are older than minAgeHours (default 24, at least 1).
  * A dry run, the default, only reports them. See sweepOrphanEvidence.
  */
-export async function POST(request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const text = (await request.text()).trim();
     const parsed = requestSchema.safeParse(
       text
@@ -52,7 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
     }
     const config = getServiceConfiguration();
     if (!isR2Configured(config)) throw new Error('R2 is not configured');
-    const report = await sweepOrphanEvidence(getDbAdapters(config), new R2EvidenceObjectStore(config), videoId, parsed.data);
+    const report = await sweepOrphanEvidence(getDbAdapters(config), new R2EvidenceObjectStore(config), incidentId, parsed.data);
     return NextResponse.json(report);
   } catch (error) {
     return rejectionResponse(error) ?? errorResponse(error, 'Could not sweep the evidence images');

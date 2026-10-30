@@ -38,7 +38,7 @@ type ChatMessage = {
  * screen in View, the unsaved draft in Edit. Each answer says which version it came
  * from, and its citations jump the video to the cited moment.
  */
-export function ReportChat({ videoId, target, onSeek }: { videoId: string; target: ChatTarget; onSeek: (seconds: number) => void }) {
+export function ReportChat({ incidentId, target, onSeek }: { incidentId: string; target: ChatTarget; onSeek: (seconds: number) => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [question, setQuestion] = useState('');
@@ -62,7 +62,7 @@ export function ReportChat({ videoId, target, onSeek }: { videoId: string; targe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          chatRequestBody({ messages: next.map(({ role, content }) => ({ role, content })), sessionId, videoId, target }),
+          chatRequestBody({ messages: next.map(({ role, content }) => ({ role, content })), sessionId, videoId: incidentId, target }),
         ),
       });
       const payload = (await response.json()) as Partial<ChatResponse> & { error?: string };

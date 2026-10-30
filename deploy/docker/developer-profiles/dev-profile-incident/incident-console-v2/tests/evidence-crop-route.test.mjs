@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// GET /api/reports/[videoId]/frame and POST .../evidence-crop, with fake PostgREST, R2 and ffmpeg.
+// GET /api/reports/[incidentId]/frame and POST .../evidence-crop, with fake PostgREST, R2 and ffmpeg.
 
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -68,8 +68,8 @@ mock.module('node:child_process', {
   },
 });
 
-const { GET } = await import('../src/app/api/reports/[videoId]/frame/route.ts');
-const { POST } = await import('../src/app/api/reports/[videoId]/evidence-crop/route.ts');
+const { GET } = await import('../src/app/api/reports/[incidentId]/frame/route.ts');
+const { POST } = await import('../src/app/api/reports/[incidentId]/evidence-crop/route.ts');
 const { fakePostgrest } = await import('./support/fake-postgrest.mjs');
 
 const originalFetch = globalThis.fetch;
@@ -95,7 +95,7 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-const params = (videoId) => ({ params: Promise.resolve({ videoId }) });
+const params = (videoId) => ({ params: Promise.resolve({ incidentId: videoId }) });
 const get = (query, videoId = 'v1') => GET(new Request(`http://localhost/api/reports/${videoId}/frame${query}`), params(videoId));
 const post = (body, videoId = 'v1') =>
   POST(

@@ -28,7 +28,7 @@ const LANE_WIDTH = 16;
 
 /** The incident's versions as branches, newest first. A star marks a version official; the filled star clears it. A saved version is never changed. */
 export function ReportVersions({
-  videoId,
+  incidentId,
   revisions,
   error,
   currentRevisionId,
@@ -38,7 +38,7 @@ export function ReportVersions({
   compareRevisionId = null,
   onCompare,
 }: {
-  videoId: string;
+  incidentId: string;
   revisions: RevisionSummary[] | null;
   error: string | null;
   currentRevisionId: number;
@@ -58,7 +58,7 @@ export function ReportVersions({
     setBusyId(revision.revisionId);
     setActionError(null);
     try {
-      await (revision.isOfficial ? clearOfficial(videoId) : markOfficial(videoId, revision.revisionId));
+      await (revision.isOfficial ? clearOfficial(incidentId) : markOfficial(incidentId, revision.revisionId));
       onOfficialChanged();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Update failed');

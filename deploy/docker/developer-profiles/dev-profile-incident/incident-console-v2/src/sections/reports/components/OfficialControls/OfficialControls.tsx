@@ -24,13 +24,13 @@ import { clearOfficial, markOfficial } from '@/lib/reports/official-client';
  * search, and can move or clear the mark. No name is recorded.
  */
 export function OfficialControls({
-  videoId,
+  incidentId,
   revisionId,
   isOfficial,
   hasOfficial,
   onChanged,
 }: {
-  videoId: string;
+  incidentId: string;
   revisionId: number;
   isOfficial: boolean;
   hasOfficial: boolean;
@@ -43,7 +43,7 @@ export function OfficialControls({
   async function execute(action: 'select' | 'clear') {
     setBusy(true);
     try {
-      await (action === 'select' ? markOfficial(videoId, revisionId) : clearOfficial(videoId));
+      await (action === 'select' ? markOfficial(incidentId, revisionId) : clearOfficial(incidentId));
       onChanged();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Update failed');

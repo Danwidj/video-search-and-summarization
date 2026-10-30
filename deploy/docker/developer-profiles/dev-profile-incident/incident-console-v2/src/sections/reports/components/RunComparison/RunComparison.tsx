@@ -21,7 +21,7 @@ import type { RevisionSummary } from '@/modules/reports/domain/revision';
 const versionLabel = (revision: RevisionSummary) =>
   `v${revision.revisionNo} · ${revision.kind === 'human' ? 'Human' : 'AI'}${revision.isOfficial ? ' · ★ official' : ''}`;
 
-export function RunComparison({ videoId, left, right }: { videoId: string; left: string; right: string }) {
+export function RunComparison({ incidentId, left, right }: { incidentId: string; left: string; right: string }) {
   const router = useRouter();
   const [reports, setReports] = useState<Array<ReportView | null>>([null, null]);
   const [error, setError] = useState('');
@@ -30,14 +30,14 @@ export function RunComparison({ videoId, left, right }: { videoId: string; left:
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/reports/${encodeURIComponent(videoId)}/revisions`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}/revisions`, { cache: 'no-store', signal: controller.signal })
       .then((response) => (response.ok ? (response.json() as Promise<{ revisions?: RevisionSummary[] }>) : { revisions: undefined }))
       .then((payload) => setRevisions(payload.revisions ?? []))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRevisions([]);
       });
     return () => controller.abort();
-  }, [videoId]);
+  }, [incidentId]);
 
   useEffect(() => {
     setReports([null, null]);
@@ -47,12 +47,12 @@ export function RunComparison({ videoId, left, right }: { videoId: string; left:
     const controller = new AbortController();
     Promise.all(
       [left, right].map((revision) =>
-        fetch(`/api/reports/${encodeURIComponent(videoId)}?revision=${encodeURIComponent(revision)}`, { signal: controller.signal }).then(
-          (response) => {
-            if (!response.ok) throw new Error('Could not load a selected version');
-            return response.json() as Promise<{ report: ReportView }>;
-          },
-        ),
+        fetch(`/api/reports/${encodeURIComponent(incidentId)}?revision=${encodeURIComponent(revision)}`, {
+          signal: controller.signal,
+        }).then((response) => {
+          if (!response.ok) throw new Error('Could not load a selected version');
+          return response.json() as Promise<{ report: ReportView }>;
+        }),
       ),
     )
       .then((values) => setReports(values.map((value) => value.report)))
@@ -61,20 +61,22 @@ export function RunComparison({ videoId, left, right }: { videoId: string; left:
         setError(cause instanceof Error ? cause.message : 'Could not load a selected version');
       });
     return () => controller.abort();
-  }, [videoId, left, right, hasBoth]);
+  }, [incidentId, left, right, hasBoth]);
 
   const pick = (side: 'left' | 'right', value: string) => {
     const next = { left, right, [side]: value };
     const params = new URLSearchParams();
     if (next.left) params.set('left', next.left);
     if (next.right) params.set('right', next.right);
-    router.replace(`/reports/${encodeURIComponent(videoId)}/compare?${params.toString()}`);
+    router.replace(`/reports/${encodeURIComponent(incidentId)}/compare?${params.toString()}`);
   };
 
   return (
     <div className="mx-auto max-w-[1500px] px-6 pb-20 pt-8 lg:px-12">
       <Button asChild className="-ml-2.5 text-moss hover:text-moss/80" size="sm" variant="ghost">
-        <Link href={`/reports/${encodeURIComponent(videoId)}${left ? `?revision=${encodeURIComponent(left)}` : ''}`}>← Back to report</Link>
+        <Link href={`/reports/${encodeURIComponent(incidentId)}${left ? `?revision=${encodeURIComponent(left)}` : ''}`}>
+          ← Back to report
+        </Link>
       </Button>
       <h1 className="mt-5 text-4xl font-semibold">Version comparison</h1>
       <div className="mt-5 grid max-w-2xl gap-3 sm:grid-cols-2" data-testid="compare-pickers">

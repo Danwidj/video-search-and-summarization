@@ -30,7 +30,7 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
  * written to R2 until the draft is saved.
  */
 export function EvidenceFramePicker({
-  videoId,
+  incidentId,
   videoSrc,
   label,
   initialSeconds,
@@ -38,7 +38,7 @@ export function EvidenceFramePicker({
   onPick,
   onClose,
 }: {
-  videoId: string;
+  incidentId: string;
   videoSrc: string;
   label: string;
   initialSeconds: number;
@@ -101,7 +101,7 @@ export function EvidenceFramePicker({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/evidence-crop`, {
+      const response = await fetch(`/api/reports/${encodeURIComponent(incidentId)}/evidence-crop`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ timestampSeconds: seconds, region }),
