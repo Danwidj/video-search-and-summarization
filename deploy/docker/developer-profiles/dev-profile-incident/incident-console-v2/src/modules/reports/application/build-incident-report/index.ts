@@ -11,7 +11,7 @@ import { AgentRequestError } from '@/modules/analysis/domain/IncidentAgent';
 import { incidentRunSubject, modelRunId, type ModelRunRepository } from '@/modules/analysis/domain/ModelRunRepository';
 import type { VideoAnalysis, VideoAnalysisRepository } from '@/modules/analysis/domain/VideoAnalysisRepository';
 import type { IncidentVideoRepository } from '@/modules/videos/domain/IncidentVideoRepository';
-import { envelopePayload, normaliseOverview } from '@/modules/reports/domain/envelope';
+import { envelopePayload, normaliseOverview, type EvidenceGroup } from '@/modules/reports/domain/envelope';
 import type { IncidentId, IncidentReportRepository } from '@/modules/reports/domain/IncidentReportRepository';
 import type { EvidenceEntry } from '@/modules/reports/domain/revision';
 import { StoreRejection } from '@/modules/shared/domain/common';
@@ -41,6 +41,13 @@ export interface IncidentSynthesizerPort {
   synthesize(videos: Array<{ videoName: string; payload: Record<string, unknown> }>, signal: AbortSignal): Promise<Synthesis>;
 }
 
+/** The agent's cross-video linker: the groups of items that are the same person or object in different videos. */
+export type EvidenceLink = { kind: 'linked'; groups: EvidenceGroup[] } | { kind: 'failed'; status: number; message: string };
+
+export interface EvidenceLinkerPort {
+  link(videos: Array<{ videoName: string; payload: Record<string, unknown> }>, signal: AbortSignal): Promise<EvidenceLink>;
+}
+
 export interface BuildReportPorts {
   incidents: IncidentReportRepository;
   videos: IncidentVideoRepository;
@@ -48,6 +55,8 @@ export interface BuildReportPorts {
   modelRuns: ModelRunRepository;
   /** Null when the agent is not configured. */
   synthesizer: IncidentSynthesizerPort | null;
+  /** Null when the agent is not configured. Linking is best effort: it never fails or blocks a build. */
+  linker?: EvidenceLinkerPort | null;
   now?: () => Date;
   /** Bounds the synthesis call. */
   signal?: () => AbortSignal;
@@ -65,6 +74,7 @@ export interface BuiltReport {
 }
 
 const SYNTHESIS_TIMEOUT_MS = 120_000;
+const LINK_TIMEOUT_MS = 90_000;
 
 const distinct = (values: Array<string | null | undefined>): string[] => [
   ...new Set(values.filter((value): value is string => Boolean(value))),
@@ -73,6 +83,20 @@ const distinct = (values: Array<string | null | undefined>): string[] => [
 /** Each entry names its camera, because item ids (E1, I1, ...) repeat across the videos' analyses. */
 function evidenceOf(analysis: VideoAnalysis): EvidenceEntry[] {
   return analysis.evidence.map((entry) => ({ ...entry, video: analysis.videoId }));
+}
+
+/** The cross-video groups for a version of two or more videos; none for one video, a failed call or no match. */
+async function linkEvidence(ports: BuildReportPorts, analyses: VideoAnalysis[]): Promise<EvidenceGroup[]> {
+  if (analyses.length < 2 || !ports.linker) return [];
+  try {
+    const result = await ports.linker.link(
+      analyses.map((analysis) => ({ videoName: analysis.videoId, payload: analysis.payload })),
+      AbortSignal.timeout(LINK_TIMEOUT_MS),
+    );
+    return result.kind === 'linked' ? result.groups : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function buildIncidentReport(
@@ -107,6 +131,8 @@ export async function buildIncidentReport(
   }
   if (synthesis.kind === 'failed') throw new BuildReportError(502, `The agent could not synthesise the incident: ${synthesis.message}`);
 
+  const evidenceGroups = await linkEvidence(ports, analyses);
+
   const runs = await Promise.all(analyses.map((analysis) => ports.modelRuns.getRun(analysis.modelRunId)));
   const at = (ports.now ?? (() => new Date()))();
   const run = {
@@ -132,6 +158,7 @@ export async function buildIncidentReport(
     payload: envelopePayload({
       overview: normaliseOverview(synthesis.overview),
       cameras: analyses.map((analysis) => ({ video: analysis.videoId, report: analysis.payload })),
+      evidenceGroups,
     }),
     evidence: analyses.flatMap(evidenceOf),
     videoNames: names,

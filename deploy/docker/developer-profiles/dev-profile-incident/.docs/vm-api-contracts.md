@@ -176,6 +176,17 @@ Request: `{"videos": [{"video_name": <string>, "payload": <the video's stored an
 
 **Mounting:** the worker registers the route since PR #320. An agent process started from an earlier checkout answers `404` (Regenerate then fails with `502`); restart it after `git pull` (`incident-operate-vm`).
 
+## `POST /api/v1/incidents/link-evidence`
+
+Stateless and text-only. Finds the items that are the same real-world person, instrument or asset across the videos of one report version, because each camera's analysis numbers its own items (`E1`, `I1`, `A1`) and nothing else links them. The console calls it from Regenerate after `synthesize` for a version of two or more videos and stores the answer as the optional `evidence_groups` field of the version payload ([data.md](data.md#revision-payload-envelope)). The agent writes nothing and never changes the per-video payloads or their ids.
+
+Request: the same as `synthesize`: `{"videos": [{"video_name": <string>, "payload": <the video's stored analysis report, incident-contract-v4>}, ...]}` (same validation, `422` otherwise). Response `200`: `{"evidence_groups": [{"id": "G1", "kind": "entity"|"instrument"|"asset", "label": <string>, "members": [{"video": <video name>, "itemId": <the camera's own id, e.g. "E1">}, ...], "source": "ai", "reason"?: <string>}, ...]}`.
+
+- One model call (RP1 model and settings from `inference.json`, temperature 0) over each camera's items as text. No frames are sent.
+- **Enforced in code, whatever the model says:** a group has two or more members, all of its `kind`, at most one per video; each `(video, itemId)` is in at most one group; members must exist in the request. A group that breaks a rule is dropped; ids are renumbered `G1, G2 ...`.
+- **Empty list, still `200`:** one video (or one distinct video name), an LLM transport or HTTP error, non-JSON or unusable output. `503` only when the agent has no RP1 URL or key. The console treats any failure as "no groups" and the build never fails because of it.
+- **Mounting:** like `synthesize`, an agent started before this route existed answers `404`; the console then stores no groups.
+
 ## `POST /api/v1/incidents/match-judge`
 
 Stateless. Scores how likely a newly analysed video belongs to each shortlisted incident. The database shortlists by vector similarity (`shortlist_similar_incidents`); this route judges only that shortlist. Time is a soft hint, never a filter.

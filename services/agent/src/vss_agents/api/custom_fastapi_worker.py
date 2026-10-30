@@ -29,6 +29,7 @@ from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontE
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
+from vss_agents.api.incident_link_evidence import register_incident_link_evidence_routes
 from vss_agents.api.incident_match_judge import register_incident_match_judge_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
 from vss_agents.api.incident_search import register_incident_search_routes
@@ -109,6 +110,9 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         - ``POST /api/v1/incidents/synthesize`` - one combined overview
           from several videos' stored analyses (RP1 settings from
           ``incident_report_gen``).
+        - ``POST /api/v1/incidents/link-evidence`` - groups of the same
+          entity, instrument or asset across the videos of one version
+          (text-only, same RP1 settings).
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -152,8 +156,7 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         report_gen_cfg = functions.get("incident_report_gen") if isinstance(functions, dict) else None
         rp1_base_url = getattr(report_gen_cfg, "rp1_base_url", None)
         api_key_env = getattr(report_gen_cfg, "api_key_env", None)
-        register_incident_synthesize_routes(
-            app,
-            rp1_base_url=rp1_base_url if isinstance(rp1_base_url, str) else None,
-            api_key=os.environ.get(api_key_env) if isinstance(api_key_env, str) else None,
-        )
+        rp1_url = rp1_base_url if isinstance(rp1_base_url, str) else None
+        rp1_key = os.environ.get(api_key_env) if isinstance(api_key_env, str) else None
+        register_incident_synthesize_routes(app, rp1_base_url=rp1_url, api_key=rp1_key)
+        register_incident_link_evidence_routes(app, rp1_base_url=rp1_url, api_key=rp1_key)
