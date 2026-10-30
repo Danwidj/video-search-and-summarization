@@ -355,6 +355,16 @@ export function ReportPage({
             <Alert className="mt-4" data-testid="no-camera" variant="destructive">
               <AlertDescription>No camera of this version can be shown. Open another version or regenerate the report.</AlertDescription>
             </Alert>
+            <div className="mt-3 max-w-md overflow-hidden rounded-lg border border-border">
+              <RegenerateReport
+                incidentId={incidentId}
+                onDone={(version) => {
+                  setAttempt((value) => value + 1);
+                  openVersion(version.revisionId);
+                }}
+                videoCount={videoCount}
+              />
+            </div>
           </div>
         </article>
       </div>
