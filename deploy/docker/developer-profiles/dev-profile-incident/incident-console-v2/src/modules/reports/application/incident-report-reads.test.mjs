@@ -128,11 +128,24 @@ test('getReport lists an incident video the open version does not cover as a cam
   assert.equal(view.camera, A);
 });
 
-test('getReport is null for an unknown incident or revision and rejects a camera the revision does not hold', async () => {
+test('getReport falls back to the first valid camera for an incident video the open version does not cover', async () => {
+  const view = await getReport(repository(), 1, 2, B, sign());
+  assert.equal(view.camera, A);
+  assert.equal(view.report?.video ?? view.cameras.find((c) => c.video === A)?.video, A);
+  assert.deepEqual(
+    view.cameras.map((camera) => [camera.video, camera.inVersion]),
+    [
+      [A, true],
+      [B, false],
+    ],
+  );
+});
+
+test('getReport is null for an unknown incident or revision and rejects a camera the incident does not have', async () => {
   assert.equal(await getReport(repository(), 9, null, null, sign()), null);
   assert.equal(await getReport(repository(), 1, 99, null, sign()), null);
   await assert.rejects(
-    getReport(repository(), 1, 2, B, sign()),
+    getReport(repository(), 1, 2, 'reads-unknown.mp4', sign()),
     (error) => error instanceof StoreRejection && error.reason === 'not-found',
   );
 });
