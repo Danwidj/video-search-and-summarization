@@ -9,7 +9,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 register('./support/alias-loader.mjs', import.meta.url);
 
-const { chatTarget, draftReport, chatRequestBody } = await import('../src/lib/chat/report-chat.ts');
+const { chatTarget, draftReport, chatRequestBody, seekPlan } = await import('../src/lib/chat/report-chat.ts');
 const { toAgentChatBody } = await import('../src/modules/chat/infrastructure/agent/agent-chat.ts');
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -107,4 +107,14 @@ test('the request carries the incident, the version and (in Edit) the draft, as 
   assert.equal(validateRequest(v1Body), true, JSON.stringify(validateRequest.errors));
   assert.equal(agentBody.version_id, 42);
   assert.equal(agentBody.draft_report.entities.length, 2);
+});
+
+test("Jump to opens the citation's camera first when another one is open", () => {
+  assert.deepEqual(seekPlan('a.mp4', { videoName: 'b.mp4', timestampSeconds: 12 }), { switchTo: 'b.mp4', seconds: 12 });
+});
+
+test('Jump to seeks the open video when the citation is from it or names no camera', () => {
+  assert.deepEqual(seekPlan('a.mp4', { videoName: 'a.mp4', timestampSeconds: 7 }), { switchTo: null, seconds: 7 });
+  assert.deepEqual(seekPlan('a.mp4', { videoName: null, timestampSeconds: 7 }), { switchTo: null, seconds: 7 });
+  assert.deepEqual(seekPlan(null, { videoName: 'a.mp4', timestampSeconds: 0 }), { switchTo: 'a.mp4', seconds: 0 });
 });

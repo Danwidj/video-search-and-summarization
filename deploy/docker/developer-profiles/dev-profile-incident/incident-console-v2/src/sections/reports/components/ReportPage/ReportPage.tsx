@@ -25,7 +25,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { chatTarget } from '@/lib/chat/report-chat';
+import { chatTarget, seekPlan } from '@/lib/chat/report-chat';
 import { uploadEvidenceImage } from '@/lib/evidence/evidence-image-upload';
 import { draftChangeCount } from '@/lib/reports/compare';
 import {
@@ -252,6 +252,9 @@ export function ReportPage({
     void video.play().catch(() => undefined);
   }, []);
 
+  // A chat Jump to into another camera: that camera opens first and the seek waits for its player to load.
+  const pendingSeek = useRef<{ camera: string; seconds: number } | null>(null);
+
   const startEdit = useCallback((base: ReportView, overview: Overview, camera: string) => {
     setDraft(draftFromView(base));
     setUndoStack([]);
@@ -283,6 +286,15 @@ export function ReportPage({
   const openCamera = (video: string) => {
     if (mode === 'edit') return;
     router.replace(`/reports/${encodeURIComponent(incidentId)}${reportQuery(revisionId, video)}`, { scroll: false });
+  };
+
+  const seekCitation = (citation: { videoName: string | null; timestampSeconds: number }) => {
+    const { switchTo, seconds } = seekPlan(state.status === 'ready' ? state.view.camera : null, citation);
+    if (!switchTo) return seek(seconds);
+    // Edit keeps the camera it is editing: a jump into another one has nowhere to go.
+    if (mode === 'edit') return;
+    pendingSeek.current = { camera: switchTo, seconds };
+    openCamera(switchTo);
   };
 
   // The video left this incident: drop the camera from the address and read the page again without it.
@@ -645,7 +657,12 @@ export function ReportPage({
                         const { duration: length, videoWidth, videoHeight } = event.currentTarget;
                         setPlayerDuration(Number.isFinite(length) && length > 0 ? length : null);
                         if (videoWidth > 0 && videoHeight > 0) setVideoAspect(videoWidth / videoHeight);
-                        if (startSeconds !== null && !startedAt.current) {
+                        const pending = pendingSeek.current;
+                        if (pending && pending.camera === view.camera) {
+                          pendingSeek.current = null;
+                          event.currentTarget.currentTime = pending.seconds;
+                          void event.currentTarget.play().catch(() => undefined);
+                        } else if (startSeconds !== null && !startedAt.current) {
                           startedAt.current = true;
                           event.currentTarget.currentTime = startSeconds;
                         }
@@ -919,7 +936,7 @@ export function ReportPage({
             <SheetDescription>Conversational questions and answers about this incident</SheetDescription>
           </SheetHeader>
           <ReportChat
-            onSeek={seek}
+            onSeek={seekCitation}
             target={chatTarget(
               mode === 'edit' && draft && editBase
                 ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
