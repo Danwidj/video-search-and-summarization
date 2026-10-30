@@ -220,6 +220,7 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
 | `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
 | `INCIDENT_AGENT_BASE_URL` | the agent or the mock (upload, chat, search, embeddings, and analysis in agent mode) |
+| `INCIDENT_VST_BASE_URL` | the VST API through HAProxy (`/vst/api/v1/sensor/...`), for deleting a video's camera; `start.sh --mode vm` exports `http://localhost:7777`, and the agent URL is used when unset (the mock) |
 | `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
 | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | PostgREST |
@@ -486,9 +487,9 @@ The mvp3 agent is a native process from `/srv/rise-up/vss-mvp3` on GPU 0, listen
 |---|---|---|
 | `POST /api/analysis` | upload: `{sensorId, filepath, filename, model?, additionalInstruction?}`; re-analysis: `{videoName, model?, additionalInstruction?}` | `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. A new video that fails is removed again (its R2 object stays). No version is created. The console signs the stored key (1 h, under `R2_KEY_PREFIX`) and sends it to the agent as `video_url` next to `video_key`, and reads the contract report from the agent's `report` field (PRs #332, #333). A video the model cannot read answers 502 with a clear message ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentsvideo_nameanalyze)). |
 | `POST /api/reports/[incidentId]/build` | `{note?}` | `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. 422 no videos, 409 `{videos}` still unanalysed, 503 agent not configured, 502 or 504 agent failure. The route file lives in a folder named `build`; the console `.gitignore` re-includes `src/**/build/` so a global `build/` ignore rule cannot hide it again (it did once, PR #319). |
-| `DELETE /api/reports/[incidentId]/delete` | none | `{deleted: true, ...}`. Objects are removed before rows. |
+| `DELETE /api/reports/[incidentId]/delete` | none | `{deleted: true, ...}`. Objects and each video's VST camera are removed before rows. |
 | `POST /api/reports/[incidentId]/merge` | `{sourceIncidentId}` | `{merged}`. The path incident is kept. Moves no files. |
-| `POST /api/videos/[videoId]/remove` | `{choice: 'delete' \| 'move'}` | `{removed}`. A move of the last video is refused. |
+| `POST /api/videos/[videoId]/remove` | `{choice: 'delete' \| 'move'}` | `{removed}`. A move of the last video is refused and removes no camera. A delete removes the video's VST camera too. |
 | `GET /api/suggestions` | `?incidentId=` | pending suggestions, highest score first |
 | `GET /api/suggestions/cards` | `?incidentId=` | the same pending suggestions as review cards: for each side the incident's overview title, its video names and a signed thumbnail of its first video (absent when signing fails). `kept` is the lower incident id, `joining` the higher. Read only; 400 unless `incidentId` is a positive integer. Each side is one narrow `getSideSummary` read (two round trips at most, no `model_runs`), all in parallel. |
 | `POST /api/suggestions/evaluate` | `{incidentId}` | compares every video of the incident with the shortlist; decided pairs are skipped; then joins the best pending match scoring at least 0.5 (`joined`, or `joinError` with the match left pending). The incident id may be merged away: use `joined.keptIncidentId`. 300 s limit. |

@@ -43,10 +43,11 @@ function evidenceStore(keys, videos, { failing = [], rowOf = null } = {}) {
   };
 }
 
-const ports = (videos, evidence, removedVideos = []) => ({
+const ports = (videos, evidence, removedVideos = [], removedSensors = []) => ({
   videos,
   evidence,
   removeStoredVideo: async (storageKey) => removedVideos.push(storageKey),
+  removeVstSensor: async (target) => removedSensors.push(target),
 });
 
 test('removing entirely deletes the video object and its evidence images before the row, and no other video', async () => {
@@ -89,7 +90,12 @@ test('moving a video to its own incident touches no file and keeps the video', a
     remove: async () => assert.fail('a move removes no file'),
   };
   const result = await removeVideoFromIncident(
-    { videos, evidence, removeStoredVideo: async () => assert.fail('a move removes no file') },
+    {
+      videos,
+      evidence,
+      removeStoredVideo: async () => assert.fail('a move removes no file'),
+      removeVstSensor: async () => assert.fail('a move removes no camera'),
+    },
     'b.mp4',
     'move',
   );
@@ -215,4 +221,38 @@ test('merging moves the source videos into the target, deletes the source and mo
   ]) {
     await assert.rejects(mergeIncidents(reports, source, target), (error) => error instanceof StoreRejection);
   }
+});
+
+test("a delete removes the video's VST camera after its objects and before its row, and a failure keeps the row", async () => {
+  const videos = new InMemoryIncidentVideoRepository([{ ...video('a.mp4', 1), source: 'sensor-a' }, video('b.mp4', 1)]);
+  const order = [];
+  const base = ports(videos, evidenceStore([], videos));
+  const withOrder = (fails) => ({
+    ...base,
+    removeStoredVideo: async () => order.push('objects'),
+    removeVstSensor: async (target) => {
+      order.push(`camera ${target.videoId} ${target.sensorId}`);
+      if (fails) throw new Error('VST is down');
+      assert.notEqual(await videos.getVideo('a.mp4'), null, 'the row, which holds the sensor id, is still stored');
+    },
+  });
+  await assert.rejects(removeVideoFromIncident(withOrder(true), 'a.mp4', 'delete'), /VST is down/);
+  assert.notEqual(await videos.getVideo('a.mp4'), null);
+  await removeVideoFromIncident(withOrder(false), 'a.mp4', 'delete');
+  assert.deepEqual(order, ['objects', 'camera a.mp4 sensor-a', 'objects', 'camera a.mp4 sensor-a']);
+  assert.equal(await videos.getVideo('a.mp4'), null);
+});
+
+test('deleting an incident removes the camera of each of its videos', async () => {
+  const videos = new InMemoryIncidentVideoRepository([
+    { ...video('a.mp4', 1), source: 'sensor-a' },
+    { ...video('b.mp4', 1), source: null },
+    { ...video('c.mp4', 2), source: 'sensor-c' },
+  ]);
+  const removedSensors = [];
+  await deleteIncident(ports(videos, evidenceStore([], videos), [], removedSensors), 1);
+  assert.deepEqual(removedSensors, [
+    { videoId: 'a.mp4', sensorId: 'sensor-a' },
+    { videoId: 'b.mp4', sensorId: null },
+  ]);
 });

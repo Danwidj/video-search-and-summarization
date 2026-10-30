@@ -10,6 +10,7 @@ import { deleteR2Video } from '@/lib/r2/config';
 import { thumbnailKeyForVideo } from '@/lib/r2/key';
 import { removeVideoFromIncident } from '@/modules/reports/application/remove-video';
 import { R2EvidenceObjectStore } from '@/modules/reports/infrastructure/r2/evidence-object-store';
+import { removeVstSensor } from '@/modules/videos/infrastructure/vst/sensor';
 
 export const maxDuration = 60;
 
@@ -30,6 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ videoI
         evidence: new R2EvidenceObjectStore(config),
         removeStoredVideo: (storageKey: string) =>
           Promise.all([deleteR2Video(config, storageKey), deleteR2Video(config, thumbnailKeyForVideo(storageKey))]),
+        removeVstSensor: (video) => removeVstSensor(config, video),
       },
       videoId,
       parsed.data.choice,

@@ -64,7 +64,7 @@ Returns `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, o
 - `GET /api/suggestions?incidentId=<id>` lists pending suggestions, best first.
 - `POST /api/suggestions/<id>/accept` (body `{"incidentId"?}`) merges; the kept incident defaults to the lower id. `POST /api/suggestions/<id>/reject` is remembered for good.
 - `POST /api/reports/<targetId>/merge` with `{"sourceIncidentId"}` merges directly. The source incident, its versions and its official choice are deleted; no files move. The console then calls `POST /api/reports/<targetId>/build` once; the official version is not moved. A refusal shows in the dialog (404: an incident no longer exists; 422: cannot be merged). `GET /api/reports/<id>/videos` returns `{videoNames, hasOfficial}` for the picker.
-- `POST /api/videos/<name>/remove` with `{"choice": "delete" | "move"}`. `move` makes the video a new incident (then build its first report); it is refused for the last video of an incident.
+- `POST /api/videos/<name>/remove` with `{"choice": "delete" | "move"}`. `delete` also removes the video's VST camera; `move` makes the video a new incident (then build its first report), removes nothing, and is refused for the last video of an incident.
 
 ### 4. Build a version (Regenerate)
 
@@ -98,7 +98,7 @@ There is no verify step and no review status. A report is its list of versions; 
 - **Edit:** `PATCH /api/reports/<incidentId>/edit` with `{parentId, editedBy, note?, camera?, edit?}`, or an overview edit (title, type, severity_level, description, location), writes a new human version. Re-generation copies no edits.
 - **Evidence images:** `POST /api/reports/<incidentId>/evidence-image` (multipart `file`, `itemId`, `video`; JPEG, PNG or WebP, up to 5 MB) uploads to a new key `evidence/<video key>/edit-<n>/<itemId>.jpg` and never overwrites. `GET .../frame?t=<s>&video=<name>` returns a JPEG (needs `ffmpeg`). `POST .../evidence-crop` with `{video, timestampSeconds, region}` returns a crop and writes nothing. `POST .../evidence-sweep` with `{video, dryRun?, minAgeHours?}` removes unreferenced images (dry run by default).
 - **Official:** `PUT`/`DELETE /api/videos/<incidentId>/official` with `{"revisionId"}` (the old path name takes an incident id). Only the incident's own versions are accepted.
-- **Delete:** `DELETE /api/reports/<incidentId>/delete` removes every video's objects, then the rows, and the videos' unused `model_runs`; an incident with no videos is deleted by its row alone.
+- **Delete:** `DELETE /api/reports/<incidentId>/delete` removes every video's objects and its VST camera (VST holds at most 100; an upload past that fails with "Maximum number of sensors limit reached"), then the rows, and the videos' unused `model_runs`; an incident with no videos is deleted by its row alone.
 
 ## Verify
 
