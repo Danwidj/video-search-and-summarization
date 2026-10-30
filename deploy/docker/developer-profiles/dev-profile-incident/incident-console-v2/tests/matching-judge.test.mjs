@@ -44,6 +44,21 @@ function stubFetch(status, body) {
 }
 
 describe('HttpMatchJudge', () => {
+  test('accepts the agent\'s structured_reasons field and ignores it', async () => {
+    stubFetch(200, {
+      judgements: [
+        {
+          incident_id: 7,
+          score: 0.85,
+          reasons: ['event types match'],
+          structured_reasons: [{ kind: 'same_event_type', label: 'Same event type', detail: 'assault' }],
+        },
+      ],
+    });
+    const result = await new HttpMatchJudge('http://agent:8000').judge(REQUEST, signal);
+    assert.deepEqual(result, { kind: 'judged', judgements: [{ incidentId: 7, score: 0.85, reasons: ['event types match'] }] });
+  });
+
   test('posts the analysis and candidates as snake_case and returns the judgements', async () => {
     const calls = stubFetch(200, {
       judgements: [
