@@ -2,6 +2,21 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Phase 7 fix plan: the captain's answers to the nine open decisions
+- **Decision:** Decisions 1 to 6 took the plan's recommended option; 7 to 9 are recorded as built.
+  1. *No showable camera (item 6):* the page keeps Merge and Regenerate and disables Re-analyse and Remove video with a reason (https://github.com/Danwidj/video-search-and-summarization/pull/343).
+  2. *Health check (item 13):* the gateway row is omitted in agent mode and the gateway config stays for mock mode (https://github.com/Danwidj/video-search-and-summarization/pull/345).
+  3. *Empty incident (item 14):* an empty-state page with Delete incident, and 0-video incidents are not merge targets (https://github.com/Danwidj/video-search-and-summarization/pull/353).
+  4. *Rejected pair (item 16):* the cascade stays, so deleting an incident forgets its rejections (https://github.com/Danwidj/video-search-and-summarization/pull/353).
+  5. *Card against page title (item 25):* the library card leads with "Official vN" and the page still opens the newest version (https://github.com/Danwidj/video-search-and-summarization/pull/348).
+  6. *Remove video (item 1):* it stays an action on the viewed camera until Regenerate, now beside the camera switcher (https://github.com/Danwidj/video-search-and-summarization/pull/343).
+  7. *Lock file (item 37):* https://github.com/Danwidj/video-search-and-summarization/pull/346 took the plan's fallback, not its first choice: the NVIDIA index was unreachable, so `nvdataset` was removed from the fork and the lock regenerated with `supabase`. Relocking against NVIDIA's index is not done. No PR added a `uv lock --check` step to CI.
+  8. *Orphan `model_runs` and incident 60 (data changes):* https://github.com/Danwidj/video-search-and-summarization/pull/353 only stops new orphans (a video's unused runs are deleted with it). No PR purged the existing orphans, so that stays open. Incident 60 was not removed by a PR: the delete route refused a 0-video incident, and it was deleted by an approved direct row delete on 2026-10-30 (SGT).
+  9. *Test infrastructure:* no DOM or Playwright layer and no new dependency. Layout items are proved by class-string assertions (`tests/phone-layout-classes.test.mjs`, https://github.com/Danwidj/video-search-and-summarization/pull/347 and https://github.com/Danwidj/video-search-and-summarization/pull/357) plus browser checks at 390px and 1440px.
+- **Why:** The plan's recommendations added no new flow or dependency; 7 followed from the network, 8 and 9 were data and tooling choices that needed no code beyond the above.
+- **Alternatives rejected:** The plan's other options for 1 to 6 (pick another video or redirect, delete the gateway config, hide empty incidents, store rejections without a foreign key, open the official version by default, a video picker in the Remove dialog) are listed in the entries named above.
+- **Links:** [status section 1a](status.md#1a-mvp3-phase-7-p77-found-and-fixed).
+
 ### 2026-10-30: A manual merge or a reviewer's Accept rebuilds the kept incident's report once
 - **Decision:** After a confirmed manual merge or Accept, the console calls `POST /api/reports/<kept>/build` once (stored analyses, no VLM re-run) and lands on the kept incident with a notice naming the incident, its video count and the rebuild. Both go through one confirm dialog that lists both sides' video names and warns when the kept incident has an official version. The official version is never moved, so its "Does not include" note stays true. The rebuild is client-side, so the server-side automatic join builds only through the batch upload flow, once.
 - **Why:** After a merge the kept incident's only version covered the old videos, and the fix was a small outline Regenerate button; the captain asked for merging to rebuild the report itself.
