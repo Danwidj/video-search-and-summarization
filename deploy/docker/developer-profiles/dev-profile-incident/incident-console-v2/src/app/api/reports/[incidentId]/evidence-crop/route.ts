@@ -16,14 +16,14 @@ export const maxDuration = 30;
  * the region as fractions (0-1) of the frame. Nothing is written to R2: the
  * browser holds the crop, and Save uploads it through /evidence-image.
  */
-export async function POST(request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object')
       return NextResponse.json({ error: 'A JSON body with timestampSeconds and region is required' }, { status: 400 });
     const config = r2FrameConfiguration();
-    const jpeg = await cropEvidenceFrame({ videos: getDbAdapters(config).videos, source: r2FrameSource(config) }, videoId, {
+    const jpeg = await cropEvidenceFrame({ videos: getDbAdapters(config).videos, source: r2FrameSource(config) }, incidentId, {
       timestampSeconds: body.timestampSeconds,
       region: body.region,
     });

@@ -57,7 +57,7 @@ mock.module('@aws-sdk/client-s3', {
 });
 mock.module('@aws-sdk/s3-request-presigner', { namedExports: { getSignedUrl: async () => 'https://signed.test/x' } });
 
-const { DELETE } = await import('../src/app/api/reports/[videoId]/delete/route.ts');
+const { DELETE } = await import('../src/app/api/reports/[incidentId]/delete/route.ts');
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 
@@ -98,7 +98,7 @@ const attempt = (id, videoId, status) => ({
 
 const call = () =>
   DELETE(new Request('http://localhost/api/reports/v-target/delete', { method: 'DELETE' }), {
-    params: Promise.resolve({ videoId: 'v-target' }),
+    params: Promise.resolve({ incidentId: 'v-target' }),
   });
 
 test('deleting a video removes its objects, the video row, and the run records that name only it and no revision uses', async () => {

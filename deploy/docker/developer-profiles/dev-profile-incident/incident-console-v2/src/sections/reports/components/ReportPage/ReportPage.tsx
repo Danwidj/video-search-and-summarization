@@ -68,11 +68,11 @@ const DEFAULT_VIDEO_ASPECT = 16 / 9;
 
 /** revisionId null opens the incident's official version, else its newest. startSeconds, when set, is where the player seeks once it has loaded. */
 export function ReportPage({
-  videoId,
+  incidentId,
   revisionId,
   startSeconds = null,
 }: {
-  videoId: string;
+  incidentId: string;
   revisionId: number | null;
   startSeconds?: number | null;
 }) {
@@ -112,7 +112,7 @@ export function ReportPage({
   useEffect(() => {
     const controller = new AbortController();
     setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
-    fetch(`/api/reports/${encodeURIComponent(videoId)}${revisionId === null ? '' : `?revision=${revisionId}`}`, {
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}${revisionId === null ? '' : `?revision=${revisionId}`}`, {
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -126,12 +126,12 @@ export function ReportPage({
         setState({ status: 'error', message: error instanceof Error ? error.message : 'Could not load the report' });
       });
     return () => controller.abort();
-  }, [attempt, revisionId, videoId]);
+  }, [attempt, revisionId, incidentId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is an explicit refetch trigger
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/reports/${encodeURIComponent(videoId)}/revisions`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}/revisions`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = (await response.json()) as { revisions?: RevisionSummary[]; error?: string };
         if (!response.ok || !payload.revisions) throw new Error(payload.error || `Versions request failed with HTTP ${response.status}`);
@@ -143,7 +143,7 @@ export function ReportPage({
         setRevisionsError(cause instanceof Error ? cause.message : 'Could not load the versions');
       });
     return () => controller.abort();
-  }, [videoId, attempt]);
+  }, [incidentId, attempt]);
 
   // A is any saved version; the draft's own version is already loaded, so it needs no request.
   useEffect(() => {
@@ -155,7 +155,7 @@ export function ReportPage({
     }
     const controller = new AbortController();
     setCompareError(null);
-    fetch(`/api/reports/${encodeURIComponent(videoId)}?revision=${compareRevisionId}`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/reports/${encodeURIComponent(incidentId)}?revision=${compareRevisionId}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = (await response.json()) as { report?: ReportView; error?: string };
         if (!response.ok || !payload.report) throw new Error(payload.error || `Version request failed with HTTP ${response.status}`);
@@ -167,7 +167,7 @@ export function ReportPage({
         setCompareReport(null);
       });
     return () => controller.abort();
-  }, [compareRevisionId, editBase, mode, videoId]);
+  }, [compareRevisionId, editBase, mode, incidentId]);
 
   // The browser's own Picture-in-Picture window floats over other tabs and apps, like YouTube's miniplayer.
   const ready = state.status === 'ready';
@@ -222,7 +222,7 @@ export function ReportPage({
     setUndoStack([]);
     setEditBase(null);
     setSaveOpen(false);
-    router.push(`/reports/${encodeURIComponent(videoId)}?revision=${id}`);
+    router.push(`/reports/${encodeURIComponent(incidentId)}?revision=${id}`);
   };
 
   if (state.status === 'loading') {
@@ -277,7 +277,7 @@ export function ReportPage({
   const problems = draft ? draftProblems(draft) : [];
   const otherAiRevision = (revisions ?? []).find((revision) => revision.kind === 'ai' && revision.revisionId !== report.revisionId);
   const compareHref = otherAiRevision
-    ? `/reports/${encodeURIComponent(videoId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
+    ? `/reports/${encodeURIComponent(incidentId)}/compare?left=${report.revisionId}&right=${otherAiRevision.revisionId}`
     : null;
   const officialLabel = officialRevision ? `v${officialRevision.revisionNo}` : 'none';
 
@@ -348,8 +348,8 @@ export function ReportPage({
     try {
       // Crops held in the browser reach R2 only now, before the revision that references them is written.
       const keys = new Map<string, string>();
-      for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(videoId, itemId, blob));
-      const response = await fetch(`/api/reports/${encodeURIComponent(videoId)}/edit`, {
+      for (const { itemId, blob } of pendingImages(draft)) keys.set(itemId, await uploadEvidenceImage(incidentId, itemId, blob));
+      const response = await fetch(`/api/reports/${encodeURIComponent(incidentId)}/edit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -380,7 +380,7 @@ export function ReportPage({
       setSaveOpen(false);
       setNote('');
       setAttempt((value) => value + 1);
-      router.push(`/reports/${encodeURIComponent(videoId)}?revision=${savedId}`);
+      router.push(`/reports/${encodeURIComponent(incidentId)}?revision=${savedId}`);
     } catch (cause) {
       setSaveProblems([cause instanceof Error ? cause.message : 'Save failed']);
     } finally {
@@ -401,7 +401,7 @@ export function ReportPage({
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
-            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
+            <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={incidentId} />
             <Button
               aria-expanded={chatOpen}
               className="text-xs font-semibold"
@@ -514,7 +514,7 @@ export function ReportPage({
                   onOfficialChanged={() => setAttempt((value) => value + 1)}
                   onOpen={openVersion}
                   revisions={revisions}
-                  videoId={videoId}
+                  incidentId={incidentId}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
@@ -564,7 +564,7 @@ export function ReportPage({
             onChange={changeDraft}
             onSeek={seek}
             title={reportHeading(editBase.report)}
-            videoId={videoId}
+            incidentId={incidentId}
             videoSrc={report.run.playbackUrl}
           />
         ) : null}
@@ -706,7 +706,7 @@ export function ReportPage({
                 ? { revision: editBase.report.revision, isOfficial: editBase.report.official.isOfficial, draft }
                 : { revision: report.revision, isOfficial: report.official.isOfficial, draft: null },
             )}
-            videoId={videoId}
+            incidentId={incidentId}
           />
         </SheetContent>
       </Sheet>

@@ -12,11 +12,11 @@ import { R2EvidenceObjectStore } from '@/modules/reports/infrastructure/r2/evide
 
 // Revisions are append-only, so the only delete is the whole video and every
 // revision of it, with its video, thumbnail and evidence images in R2.
-export async function DELETE(_request: Request, context: { params: Promise<{ videoId: string }> }) {
+export async function DELETE(_request: Request, context: { params: Promise<{ incidentId: string }> }) {
   try {
-    const { videoId } = await context.params;
+    const { incidentId } = await context.params;
     const config = getServiceConfiguration();
-    await deleteVideoAndReports(getDbAdapters(config).videos, new R2EvidenceObjectStore(config), videoId, (storageKey: string) =>
+    await deleteVideoAndReports(getDbAdapters(config).videos, new R2EvidenceObjectStore(config), incidentId, (storageKey: string) =>
       Promise.all([deleteR2Video(config, storageKey), deleteR2Video(config, thumbnailKeyForVideo(storageKey))]),
     );
     return NextResponse.json({ deleted: true });

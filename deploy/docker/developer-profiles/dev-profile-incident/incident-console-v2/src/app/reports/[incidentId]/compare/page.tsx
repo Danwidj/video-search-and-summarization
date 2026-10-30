@@ -5,14 +5,14 @@ export default async function ComparePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ videoId: string }>;
+  params: Promise<{ incidentId: string }>;
   searchParams: Promise<{ left?: string; right?: string }>;
 }) {
-  const [{ videoId }, query] = await Promise.all([params, searchParams]);
+  const [{ incidentId }, query] = await Promise.all([params, searchParams]);
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <AppHeader active="library" subtitle="Version comparison" />
-      <RunComparison left={query.left || ''} right={query.right || ''} videoId={videoId} />
+      <RunComparison left={query.left || ''} right={query.right || ''} incidentId={incidentId} />
     </main>
   );
 }

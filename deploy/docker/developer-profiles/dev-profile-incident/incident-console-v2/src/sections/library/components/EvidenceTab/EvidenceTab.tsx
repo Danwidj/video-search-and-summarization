@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Pagination, PaginationContent, PaginationItem } from '@/components/ui/pagination';
 
 export interface EvidenceScope {
-  videoId: string;
+  incidentId: string;
   title: string;
   filename?: string;
 }
