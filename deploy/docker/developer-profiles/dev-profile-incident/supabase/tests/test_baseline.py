@@ -24,7 +24,8 @@ from psycopg import errors
 
 HERE = Path(__file__).resolve().parent
 MIGRATIONS = sorted((HERE.parent / "migrations").glob("*.sql"))
-REVISION_MIGRATIONS = [path for path in MIGRATIONS if path.name >= "20261023"]
+# Migrations from the revision era that can be re-applied idempotently (before the mvp3 core migration).
+REVISION_MIGRATIONS = [path for path in MIGRATIONS if "20261023" <= path.name < "20261030"]
 PASSED: list[str] = []
 
 
@@ -114,47 +115,47 @@ with tempfile.TemporaryDirectory() as tmp:
         "SELECT p.oid::regprocedure::TEXT FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'public' AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e') ORDER BY 1").fetchall()]
 
-    @test("schema: 6 tables, no views, no legacy report tables or functions")
+    @test("schema: 7 tables (incidents added), no views, no legacy report tables or functions")
     def _():
         kinds = dict(conn.execute("SELECT relkind::TEXT, count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                   "WHERE n.nspname = 'public' AND relkind IN ('r','v') GROUP BY 1").fetchall())
-        assert kinds == {"r": 6}, kinds
-        assert sorted(tables) == ["evidence_crops", "model_runs", "queries", "query_results", "report_revisions", "videos"], tables
+        assert kinds == {"r": 7}, kinds
+        assert sorted(tables) == ["evidence_crops", "incidents", "model_runs", "queries", "query_results", "report_revisions", "videos"], tables
         names = " ".join(tables + functions)
-        for gone in ("incidents", "reports", "entities", "instruments", "assets", "human_reports", "review_status",
+        for gone in ("reports", "entities", "instruments", "assets", "human_reports", "review_status",
                      "gt_incidents", "severity_eval_log", "insert_incident", "save_human_report_edit",
-                     "select_official_report", "set_review_status", "effective_incidents"):
+                     "select_official_report", "set_review_status", "effective_incidents",
+                     "set_official_revision", "searchable_revision_id", "replace_video_crops",
+                     "set_revision_crops", "search_evidence_items", "list_incident_report_summaries",
+                     "get_incident_dashboard", "save_human_revision_with_crops"):
             assert gone not in names, gone
-        for present in ("save_human_revision", "set_official_revision", "search_evidence_items",
-                        "list_incident_report_summaries", "get_incident_dashboard", "report_revisions_append_only",
-                        "set_revision_crops", "searchable_revision_id"):
+        for present in ("save_human_revision", "report_revisions_append_only",
+                        "apply_r2_rename", "search_report_revisions", "evidence_image"):
             assert present in names, present
         assert one(conn, "SELECT extnamespace::regnamespace::TEXT FROM pg_extension WHERE extname = 'vector'")[0] == "extensions"
-        columns = [r[0] for r in conn.execute(
+        vid_cols = [r[0] for r in conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'videos'").fetchall()]
-        assert "official_revision_id" in columns and "selected_model_run_id" not in columns, columns
-        assert "official_since" in columns, columns
-
-    @test("migrations: the revision migrations can be applied again over the live shape")
-    def _():
-        with conn.transaction():
-            for migration in REVISION_MIGRATIONS:
-                conn.execute(migration.read_text())
-        assert one(conn, "SELECT count(*) FROM public.report_revisions")[0] == 0
+        assert "incident_id" in vid_cols and "recorded_at" in vid_cols, vid_cols
+        assert "official_revision_id" not in vid_cols and "official_since" not in vid_cols, vid_cols
+        assert "selected_model_run_id" not in vid_cols, vid_cols
+        vid_id_type = one(conn, "SELECT data_type FROM information_schema.columns "
+                          "WHERE table_schema='public' AND table_name='videos' AND column_name='id'")[0]
+        run_id_type = one(conn, "SELECT data_type FROM information_schema.columns "
+                          "WHERE table_schema='public' AND table_name='model_runs' AND column_name='id'")[0]
+        assert vid_id_type == "text", vid_id_type
+        assert run_id_type == "text", run_id_type
 
     @test("security: anon and authenticated cannot read any table or run any function")
     def _():
         for role in ("anon", "authenticated"):
-            conn.execute(f"SET ROLE {role}")
+            conn.execute("RESET ROLE")
             for table in tables:
-                refused(conn, f"SELECT 1 FROM {table} LIMIT 1", kind=errors.InsufficientPrivilege)
+                assert not one(conn, "SELECT has_table_privilege(%s, %s, 'SELECT')", (role, table))[0], (role, table)
             for fn in functions:
                 assert not one(conn, "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, fn))[0], (role, fn)
+            conn.execute(f"SET ROLE {role}")
             refused(conn, "SELECT public.save_human_revision('v', 1, 'x', NULL, '{}', '[]', 'assault', 3, 0, 1)",
                     kind=errors.InsufficientPrivilege)
-            refused(conn, "SELECT public.set_official_revision('v', NULL)", kind=errors.InsufficientPrivilege)
-            refused(conn, "SELECT public.list_incident_report_summaries()", kind=errors.InsufficientPrivilege)
-            refused(conn, "SELECT public.get_incident_dashboard()", kind=errors.InsufficientPrivilege)
             conn.execute("RESET ROLE")
 
     @test("security: objects created later in public are not exposed either (default privileges)")
@@ -176,8 +177,14 @@ with tempfile.TemporaryDirectory() as tmp:
         assert rows == [], rows
 
     conn.execute("SET ROLE service_role")
+    # Each video requires an incident (mvp3: official pointer lives on the incident).
+    # One shared incident covers the four baseline test videos.
+    (base_incident_id,) = conn.execute(
+        "INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
     for video in ("v1", "v2", "v3", "v4"):
-        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES (%s, %s, 'cam')", (video, f"uploads/{video}/clip.mp4"))
+        conn.execute(
+            "INSERT INTO public.videos (id, filepath, source, incident_id) VALUES (%s, %s, 'cam', %s)",
+            (video, f"uploads/{video}/clip.mp4", base_incident_id))
     conn.execute("INSERT INTO public.model_runs (id, model_name, notes) VALUES ('m1', 'model-a', %s), ('m2', 'model-b', NULL)",
                  (json.dumps({"incidentConsoleV2": {"contractVersion": "incident-contract-v3", "status": "valid_first_pass"}}),))
 
@@ -244,234 +251,10 @@ with tempfile.TemporaryDirectory() as tmp:
         refused(conn, "UPDATE public.report_revisions SET note = 'x' WHERE id = %s", (ai1,), contains="append-only")
         refused(conn, "DELETE FROM public.report_revisions WHERE id = %s", (ai1,), contains="append-only")
 
-    crops = [
-        crop("entity", "E1", "evidence/v1/u1/E1.jpg", vector(0), bounding_box=[1, 2, 300, 400],
-             timestamp_seconds=3, item_name="human", description="Man in a red jacket"),
-        crop("instrument", "I1", "evidence/v1/u2/I1.jpg", vector(1), item_name="bottle",
-             description="Glass bottle", threat_level=3, holder_entity_id="E1"),
-        crop("asset", "A1", None, vector(2), item_name="bench", description="Bus stop bench"),
-    ]
-
-    @test("set_official_revision stores the caller's crops and the pointer")
-    def _():
-        result = one(conn, "SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))[0]
-        assert result == {"videoId": "v1", "officialRevisionId": ai1, "crops": 2}, result
-        rows = conn.execute("""SELECT item_type, item_id, item_name, threat_level, holder_entity_id, timestamp_seconds,
-            bounding_box, image, embedding IS NOT NULL FROM public.evidence_crops ORDER BY item_type""").fetchall()
-        assert rows == [
-            ("entity", "E1", "human", None, None, 3, [1, 2, 300, 400], "evidence/v1/u1/E1.jpg", True),
-            ("instrument", "I1", "bottle", 3, "E1", 0, [0, 0, 1000, 1000], "evidence/v1/u2/I1.jpg", True),
-        ], rows
-        assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v1'")[0] == ai1
-
-    @test("search_evidence_items finds the official revision's embedded crops")
-    def _():
-        rows = conn.execute("""SELECT incident_id, revision_id, model_run_id, item_id, incident_type,
-            incident_start_timestamp FROM public.search_evidence_items(%s::extensions.vector, 5, 0.0)""",
-                            (vector_literal(0),)).fetchall()
-        assert rows == [("v1", ai1, "m1", "E1", "assault", "2"), ("v1", ai1, "m1", "I1", "assault", "2")], rows
-
-    @test("marking another revision official replaces the crops; NULL leaves the newest revision searchable")
-    def _():
-        one_crop = [crop("entity", "E1", "evidence/v1/u3/E1.jpg", vector(0), item_name="animal",
-                         description="Edited", timestamp_seconds=1)]
-        result = one(conn, "SELECT public.set_official_revision(%s, %s, %s)",
-                     ("v1", human["revisionId"], json.dumps(one_crop)))[0]
-        assert result["crops"] == 1, result
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (ai1,))[0] == 0
-        assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v1'")[0] == human["revisionId"]
-        cleared = one(conn, "SELECT public.set_official_revision('v1', NULL)")[0]
-        # the edited revision is also v1's newest, so it stays searchable and keeps its row
-        assert cleared == {"videoId": "v1", "officialRevisionId": None, "crops": 1}, cleared
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (human["revisionId"],))[0] == 1
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops")[0] == 1
-        assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v1'")[0] is None
-        refused(conn, "SELECT public.set_official_revision('v1', %s)", (ai2,), contains="Revision not found for this video")
-        refused(conn, "SELECT public.set_official_revision('nope', NULL)", None, contains="Video not found")
-        refused(conn, "SELECT public.set_official_revision('v1', %s, '{}')", (ai1,), contains="crops must be a list")
-
-    conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
-
-    def summaries(**kwargs):
-        named = ", ".join(f"{key} => %({key})s" for key in kwargs)
-        return one(conn, f"SELECT public.list_incident_report_summaries({named})", kwargs)[0]
-
-    @test("the library shows the official revision, else the newest, one card per incident")
-    def _():
-        result = summaries()
-        cards = {item["videoId"]: item for item in result["reports"]}
-        assert result["totalItems"] == 3 and set(cards) == {"v1", "v2", "v3"}, result
-        assert cards["v1"]["revisionId"] == ai1 and cards["v1"]["isOfficial"] and cards["v1"]["kind"] == "ai", cards["v1"]
-        assert cards["v1"]["title"] == "Fight at the bus stop" and cards["v1"]["model"] == "model-a"
-        assert cards["v1"]["outcome"] == "valid_first_pass", cards["v1"]
-        assert cards["v2"]["revisionId"] == ai2 and not cards["v2"]["isOfficial"] and cards["v2"]["outcome"] == "legacy", cards["v2"]
-        assert result["incidentTypes"] == ["assault", "burglary"], result["incidentTypes"]
-
-    @test("the library filters by scope, kind, type, evidence and search")
-    def _():
-        assert [r["videoId"] for r in summaries(p_scope="official")["reports"]] == ["v1"]
-        assert summaries(p_kind="human")["totalItems"] == 1  # only v3's newest card is human
-        assert [r["videoId"] for r in summaries(p_type="burglary")["reports"]] == ["v2"]
-        assert summaries(p_entities=["red jacket"])["totalItems"] == 3
-        assert [r["videoId"] for r in summaries(p_search="break-in")["reports"]] == ["v2"]
-        assert summaries(p_instruments=["Bottle"], p_evidence_match="exact")["totalItems"] == 3
-        assert [r["videoId"] for r in summaries(p_sort="severity-low", p_scope="official")["reports"]] == ["v1"]
-        conn.execute("SELECT public.set_official_revision('v1', NULL)")
-        cards = {item["videoId"]: item for item in summaries()["reports"]}
-        assert cards["v1"]["revisionId"] == human["revisionId"] and cards["v1"]["kind"] == "human", cards["v1"]
-        assert sorted(r["videoId"] for r in summaries(p_kind="human")["reports"]) == ["v1", "v3"]
-        conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
-
-    @test("the dashboard counts official revisions only")
-    def _():
-        dashboard = one(conn, "SELECT public.get_incident_dashboard()")[0]
-        assert dashboard["total"] == 1 and dashboard["revisions"] == {"ai": 1, "human": 0}, dashboard
-        assert dashboard["videos"] == {"uploaded": 4, "withOfficial": 1, "awaitingSelection": 2, "withoutReport": 1}, dashboard["videos"]
-        assert dashboard["types"][0]["type"] == "assault" and dashboard["topInstruments"] == [{"label": "bottle", "count": 1}], dashboard
-        assert dashboard["threatLevels"] == [{"level": 3, "count": 1}] and dashboard["averageConfidence"] == 0.8, dashboard
-        coverage = {row["model"]: row for row in dashboard["modelCoverage"]}
-        assert coverage["model-a"]["withReport"] == 2 and coverage["model-b"]["legacy"] == 1, coverage
-
-    def cards():
-        return {item["videoId"]: item for item in summaries()["reports"]}
-
-    @test("library cards carry officialSince, versionCount, evidenceCount and thumbnail")
-    def _():
-        found = cards()
-        assert found["v1"]["isOfficial"] and found["v1"]["officialSince"] is not None, found["v1"]
-        assert found["v1"]["versionCount"] == 2 and found["v1"]["evidenceCount"] == 2, found["v1"]
-        assert found["v1"]["thumbnail"] == "evidence/v1/u1/E1.jpg", found["v1"]
-        assert found["v2"]["officialSince"] is None and found["v2"]["versionCount"] == 1, found["v2"]
-        assert found["v2"]["evidenceCount"] == 0 and found["v2"]["thumbnail"] is None, found["v2"]
-        assert found["v3"]["versionCount"] == 3 and found["v3"]["officialSince"] is None, found["v3"]
-
-    @test("official_since is set when the pointer moves, kept on a repeat mark and cleared with it")
-    def _():
-        since = lambda: one(conn, "SELECT official_since FROM public.videos WHERE id = 'v1'")[0]
-        first = since()
-        conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
-        assert since() == first, (since(), first)
-        conn.execute("SELECT public.set_official_revision('v1', NULL)")
-        assert since() is None
-        conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
-        assert since() is not None and since() >= first
-
-    searchable = lambda video: one(conn, "SELECT public.searchable_revision_id(%s)", (video,))[0]
-    searched = lambda index: conn.execute(
-        "SELECT incident_id, revision_id, item_id FROM public.search_evidence_items(%s::extensions.vector, 5, 0.5)",
-        (vector_literal(index),)).fetchall()
-    crop_count = lambda video: one(
-        conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id IN (SELECT id FROM public.report_revisions WHERE video_id = %s)",
-        (video,))[0]
-    set_crops = lambda video, revision, rows: one(conn, "SELECT public.set_revision_crops(%s, %s, %s)", (video, revision, json.dumps(rows)))[0]
-
-    @test("the searchable revision is the official one, else the newest, else none")
-    def _():
-        assert searchable("v1") == ai1 and searchable("v2") == ai2 and searchable("v4") is None
-        assert searchable("v3") == one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v3'")[0]
-
-    @test("a video with no official revision becomes searchable through its newest revision")
-    def _():
-        assert searched(5) == []
-        result = set_crops("v2", ai2, [crop("entity", "E1", "evidence/v2/u1/E1.jpg", vector(5), item_name="human", description="Burglar")])
-        assert result == {"videoId": "v2", "revisionId": ai2, "crops": 1}, result
-        assert searched(5) == [("v2", ai2, "E1")], searched(5)
-        assert one(conn, "SELECT official_revision_id FROM public.videos WHERE id = 'v2'")[0] is None
-
-    @test("search_evidence_items scopes to one video, and lists it in video time order with no query")
-    def _():
-        scoped = lambda video, index, min_similarity: conn.execute(
-            """SELECT incident_id, item_id, similarity_score FROM public.search_evidence_items(
-                %s::extensions.vector, 20, %s, p_video_id => %s)""",
-            (vector_literal(index) if index is not None else None, min_similarity, video)).fetchall()
-        # the query matches v2's crop best, but a scoped search still returns only the scoped video's rows
-        assert {row[0] for row in scoped("v1", 5, -1.0)} == {"v1"}
-        assert {row[0] for row in scoped("v2", 5, -1.0)} == {"v2"}
-        assert scoped("nope", 5, -1.0) == []
-        # no embedding: every crop of the video, in video time, similarity 0, whatever p_min_similarity says
-        listed = scoped("v1", None, 0.9)
-        assert [row[1] for row in listed] == ["I1", "E1"] and {row[2] for row in listed} == {0.0}, listed
-        assert len(conn.execute(
-            "SELECT 1 FROM public.search_evidence_items(%s::extensions.vector, 20, -1.0)", (vector_literal(5),)).fetchall()) >= 3
-
-    @test("set_revision_crops refuses a revision that is not the searchable one, and bad input")
-    def _():
-        first_v3 = one(conn, "SELECT min(id) FROM public.report_revisions WHERE video_id = 'v3'")[0]
-        refused(conn, "SELECT public.set_revision_crops('v3', %s, '[]')", (first_v3,), contains="not the searchable revision")
-        refused(conn, "SELECT public.set_revision_crops('v1', %s, '[]')", (human["revisionId"],), contains="not the searchable revision")
-        refused(conn, "SELECT public.set_revision_crops('v4', NULL, '[]')", contains="not the searchable revision")
-        refused(conn, "SELECT public.set_revision_crops('nope', 1, '[]')", contains="Video not found")
-        refused(conn, "SELECT public.set_revision_crops('v2', %s, '{}')", (ai2,), contains="crops must be a list")
-
-    @test("saving a newer revision with no official one hides the old rows until the new ones are stored")
-    def _():
-        newer = save("v2", ai2, report(kind="burglary", severity=3, title="Shop break-in, edited"), [])
-        assert searchable("v2") == newer["revisionId"]
-        assert searched(5) == [] and crop_count("v2") == 1  # old row stays but is never returned
-        refused(conn, "SELECT public.set_revision_crops('v2', %s, '[]')", (ai2,), contains="not the searchable revision")
-        set_crops("v2", newer["revisionId"], [crop("entity", "E1", "evidence/v2/u2/E1.jpg", vector(5), item_name="human", description="Burglar")])
-        assert searched(5) == [("v2", newer["revisionId"], "E1")] and crop_count("v2") == 1
-        assert one(conn, "SELECT count(*) FROM public.evidence_crops WHERE revision_id = %s", (ai2,))[0] == 0
-
-    save_with_crops = lambda video, parent, rows: one(conn, """
-        SELECT public.save_human_revision_with_crops(%s, %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, %s)""",
-        (video, parent, json.dumps(report()), json.dumps(rows)))[0]
-
-    @test("save_human_revision_with_crops stores the revision and its crops together when the video has no official revision")
-    def _():
-        parent = ai_revision("v4", 1, "m1", report(), [])
-        rows = [crop("entity", "E1", "evidence/v4/u1/E1.jpg", vector(3), item_name="human", description="Man in a red jacket"),
-                crop("asset", "A1", None, vector(4), item_name="bench", description="Bus stop bench")]
-        stored = save_with_crops("v4", parent, rows)
-        assert stored["revisionNo"] == 2 and stored["parentId"] == parent and stored["crops"] == 1, stored
-        assert searchable("v4") == stored["revisionId"] and searched(3) == [("v4", stored["revisionId"], "E1")], searched(3)
-        refused(conn, "SELECT public.save_human_revision_with_crops('v4', %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, '{}')",
-                (parent, json.dumps(report())), contains="crops must be a list")
-
-    @test("save_human_revision_with_crops writes no revision when one of its crops cannot be stored")
-    def _():
-        parent = one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v4'")[0]
-        before = one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v4'")[0]
-        searchable_before = searchable("v4")
-        bad = [{"item_type": "entity", "item_id": "E9", "image": "evidence/v4/u9/E9.jpg", "embedding": [1.0, 2.0]}]
-        refused(conn, """SELECT public.save_human_revision_with_crops('v4', %s, 'Dana', NULL, %s, '[]', 'assault', 4, 2, 9, %s)""",
-                (parent, json.dumps(report()), json.dumps(bad)), contains="dimensions")
-        assert one(conn, "SELECT count(*) FROM public.report_revisions WHERE video_id = 'v4'")[0] == before
-        assert searchable("v4") == searchable_before, "the searchable revision is unchanged"
-
-    @test("save_human_revision_with_crops leaves an official revision's rows alone")
-    def _():
-        parent = one(conn, "SELECT max(id) FROM public.report_revisions WHERE video_id = 'v4'")[0]
-        assert one(conn, "SELECT public.set_official_revision('v4', %s)", (parent,))[0]["crops"] == 1
-        before = crop_count("v4")
-        saved = save_with_crops("v4", parent, [crop("entity", "E2", "evidence/v4/u2/E2.jpg", vector(5), item_name="other", description="Ignored")])
-        assert saved["crops"] == 0 and crop_count("v4") == before and searchable("v4") == parent, saved
-        assert one(conn, "SELECT public.set_official_revision('v4', NULL)")[0]["officialRevisionId"] is None
-
-    @test("marking the newest revision official keeps its rows; clearing it falls back to the newest")
-    def _():
-        newest = searchable("v2")
-        result = one(conn, "SELECT public.set_official_revision('v2', %s)", (newest,))[0]
-        assert result["crops"] == 1 and searched(5) == [("v2", newest, "E1")], result
-        assert one(conn, "SELECT official_since FROM public.videos WHERE id = 'v2'")[0] is not None
-        later = save("v2", newest, report(kind="burglary", severity=3), [])  # official stays; nothing moves
-        assert searchable("v2") == newest and searched(5) == [("v2", newest, "E1")]
-        refused(conn, "SELECT public.set_revision_crops('v2', %s, '[]')", (later["revisionId"],), contains="not the searchable revision")
-        cleared = one(conn, "SELECT public.set_official_revision('v2', NULL)")[0]
-        assert cleared == {"videoId": "v2", "officialRevisionId": None, "crops": 0}, cleared  # newest has no rows yet
-        assert searchable("v2") == later["revisionId"] and crop_count("v2") == 0 and searched(5) == []
-        assert one(conn, "SELECT official_since FROM public.videos WHERE id = 'v2'")[0] is None
-        set_crops("v2", later["revisionId"], [crop("asset", "A1", "evidence/v2/u3/A1.jpg", vector(5), item_name="bench", description="Bench")])
-        kept = one(conn, "SELECT public.set_official_revision('v2', NULL)")[0]
-        assert kept["crops"] == 1 and searched(5) == [("v2", later["revisionId"], "A1")], kept
-        assert set_crops("v2", later["revisionId"], [])["crops"] == 0 and crop_count("v2") == 0
-
-    @test("the revisions of other videos are never touched by a crop write")
-    def _():
-        assert crop_count("v1") == 2 and crop_count("v3") == 0 and crop_count("v4") == 0
     @test("apply_r2_rename points a video, its evidence and its crops at renamed keys and nothing else")
     def _():
-        conn.execute("INSERT INTO public.videos (id, filepath, source) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam')")
+        (r10_inc,) = conn.execute("INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
+        conn.execute("INSERT INTO public.videos (id, filepath, source, incident_id) VALUES ('v10', 'uploads/cam/0123.mp4', 'cam', %s)", (r10_inc,))
         evidence = [
             {"item_type": "entity", "item_id": "E1", "image": "evidence/old/E1.jpg"},
             {"item_type": "asset", "item_id": "A1", "image": None},
@@ -522,7 +305,8 @@ with tempfile.TemporaryDirectory() as tmp:
 
     @test("search_report_revisions ranks embedded revisions and skips NULL vectors")
     def _():
-        conn.execute("INSERT INTO public.videos (id) VALUES ('v8'), ('v9')")
+        (r89_inc,) = conn.execute("INSERT INTO public.incidents DEFAULT VALUES RETURNING id").fetchone()
+        conn.execute("INSERT INTO public.videos (id, incident_id) VALUES ('v8', %s), ('v9', %s)", (r89_inc, r89_inc))
         embedded = one(conn, """
             INSERT INTO public.report_revisions (video_id, revision_no, kind, model_run_id, payload, evidence,
                 incident_type, severity_level, start_seconds, end_seconds, embedding)
@@ -549,6 +333,21 @@ with tempfile.TemporaryDirectory() as tmp:
 
     conn.execute("RESET ROLE")
     conn.close()
+
+    # Discover and run every other test_*.py in this directory.
+    # Each sub-test connects via PGSERVER_URI and runs independently.
+    import os
+    import subprocess
+    server_uri = server.get_uri()
+    for test_file in sorted(HERE.glob("test_*.py")):
+        if test_file.name == Path(__file__).name:
+            continue
+        env = os.environ.copy()
+        env["PGSERVER_URI"] = server_uri
+        result = subprocess.run([sys.executable, str(test_file)], env=env)
+        if result.returncode != 0:
+            print(f"\nFAIL: {test_file.name}", file=sys.stderr)
+            sys.exit(result.returncode)
 
 print(f"\n{len(PASSED)} passed")
 sys.exit(0)
