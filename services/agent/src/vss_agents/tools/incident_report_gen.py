@@ -36,15 +36,17 @@ Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the `
 3. **Evidence** - each entity, instrument and asset is cropped from the video at its
    ``timestamp_seconds`` and uploaded to R2 under ``evidence/<video key>/run-<n>/<itemId>.jpg``
    (the video's own R2 key and the next unused run number) (``crop_evidence``). An item without an image keeps a plain ``image_gap`` reason.
-4. **Revision** - the validated report is appended best-effort as a new ``kind='ai'``
-   ``report_revisions`` row (``payload`` = report, ``evidence`` = step 3, facet columns,
-   ``parent_id`` NULL). A re-generation is a new branch and copies nothing from earlier revisions.
+4. **Analysis** - the validated report is appended best-effort as a new ``video_analyses`` row
+   (``payload`` = report, ``evidence`` = step 3, facet columns, summary vector). The latest row per
+   video wins, so a re-analysis is just another row. No ``report_revisions`` row is created: the
+   console builds the incident's report from the stored analyses.
 
-The revision needs its ``model_runs`` row (foreign key). With a caller ``model_run_id``
-(``incident-console-v2`` agent mode) the console owns that row and writes its ``notes`` record
-after this call returns, so the agent only creates a placeholder row when none exists yet. A
-standalone call (no ``model_run_id``) registers ``config.model_run_id`` itself. The ``videos`` row
-belongs to the console, which owns the durable R2 key, so this tool never writes it.
+The video is addressed by its name (``videos.id``, the real file name). The analysis needs its
+``model_runs`` row (foreign key). With a caller ``model_run_id`` (``incident-console-v2``) the console
+owns that row and writes its ``notes`` record after this call returns, so the agent only creates a
+placeholder row when none exists yet. Without one the agent registers a readable run id of its own,
+``<video name>@<UTC timestamp>``. Run ids have no length limit. The ``videos`` row belongs to the
+console, which owns the durable R2 key, so this tool never writes it.
 """
 
 from collections.abc import AsyncGenerator
@@ -109,14 +111,10 @@ class IncidentReportGenConfig(FunctionBaseConfig, name="incident_report_gen"):
         default="OPENAI_API_KEY", description="Environment variable holding the bearer key for both endpoints."
     )
     request_timeout_seconds: float = Field(default=DEFAULT_REQUEST_TIMEOUT_SECONDS, gt=0)
-    model_run_id: str = Field(
-        default="incident_report_gen",
-        description="model_runs.id a standalone call (no caller model_run_id) persists under.",
-    )
 
 
 class IncidentReportGenInput(BaseModel):
-    incident_id: str = Field(..., min_length=1, max_length=20, description="Console videos.id.")
+    video_name: str = Field(..., min_length=1, max_length=900, description="Console videos.id: the video's real name.")
     video_url: str = Field(
         ..., min_length=1, description="Signed R2 URL of the uploaded video, created by the console."
     )
@@ -124,13 +122,15 @@ class IncidentReportGenInput(BaseModel):
         default=None,
         min_length=1,
         max_length=900,
-        description="The video's R2 key; evidence crops go under evidence/<video_key>/. Falls back to incident_id.",
+        description="The video's R2 key; evidence crops go under evidence/<video_key>/. Falls back to video_name.",
     )
     model_run_id: str | None = Field(
         default=None,
         min_length=1,
-        max_length=20,
-        description="The caller's model_runs.id; when given, the caller owns the model_runs row and its notes.",
+        description=(
+            "The caller's model_runs.id (any length); when given, the caller owns the model_runs row and its "
+            "notes. Without one the agent registers <video_name>@<UTC timestamp>."
+        ),
     )
     skip_rp1: bool = Field(default=False, description="Run P1 only; report_text stays null.")
     model: str | None = Field(
@@ -166,7 +166,7 @@ EXPERIMENT_OUTPUT_FIELDS = ("experiment", "p1_elapsed_ms", "usage")
 
 
 class IncidentReportGenOutput(BaseModel):
-    """What ``POST /api/v1/incidents/{id}/analyze`` returns to the console."""
+    """What ``POST /api/v1/incidents/{video_name}/analyze`` returns to the console."""
 
     report: dict[str, Any] = Field(description="Validated contract report with derived fields (incident.duration).")
     report_text: str | None = None
@@ -175,11 +175,18 @@ class IncidentReportGenOutput(BaseModel):
     contract_version: str
     raw_output: str
     finish_reason: str | None = None
-    revision_id: int | None = Field(
-        default=None, description="report_revisions.id of the AI revision written, or null when none was written."
+    analysis_id: int | None = Field(
+        default=None, description="video_analyses.id of the analysis written, or null when none was written."
+    )
+    model_run_id: str | None = Field(
+        default=None, description="model_runs.id the analysis belongs to; null when nothing was written."
+    )
+    outcome: Literal["stored", "not_stored"] = Field(
+        default="not_stored",
+        description="stored when the analysis row was written; not_stored when the DB is off, failed or the request was experimental.",
     )
     evidence: list[dict[str, Any]] = Field(
-        default_factory=list, description="The revision's evidence entries (R2 image keys or image_gap reasons)."
+        default_factory=list, description="The analysis' evidence entries (R2 image keys or image_gap reasons)."
     )
     video_duration_seconds: float | None = Field(
         default=None, description="The video length the bounds rules used; null when it could not be read."
@@ -343,7 +350,7 @@ async def run_rp1(
 async def collect_evidence(
     *,
     video_url: str,
-    incident_id: str,
+    video_name: str,
     report: dict[str, Any],
     store: crop_evidence.EvidenceStore | None = None,
     video_key: str | None = None,
@@ -354,10 +361,10 @@ async def collect_evidence(
     """
     try:
         return await crop_evidence.get_crop_evidence_service().process_incident_report(
-            video_ref=video_url, video_id=incident_id, report=report, store=store, video_key=video_key
+            video_ref=video_url, video_id=video_name, report=report, store=store, video_key=video_key
         )
     except Exception as exc:
-        logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
+        logger.warning("incident_report_gen: evidence cropping failed for %s: %s", video_name, exc)
         reason = f"evidence cropping failed: {type(exc).__name__}: {exc}"
         return [
             {**item, "bounding_box": None, "image": None, "image_gap": reason}
@@ -366,10 +373,10 @@ async def collect_evidence(
 
 
 async def revision_embedding(report: dict[str, Any]) -> list[float] | None:
-    """The summary vector stored with the AI revision. Never raises: None means the row is saved without one.
+    """The summary vector stored with the analysis. Never raises: None means the row is saved without one.
 
-    Uses the passage embedder that the evidence embeddings use, so a revision and a search query share
-    one model. Unconfigured or failed embedding is logged and leaves the revision searchable only by
+    Uses the passage embedder that the evidence embeddings use, so an analysis and a search query share
+    one model. Unconfigured or failed embedding is logged and leaves the analysis searchable only by
     its other data, which is what a NULL vector gives.
     """
     try:
@@ -379,13 +386,13 @@ async def revision_embedding(report: dict[str, Any]) -> list[float] | None:
             return None
         return await embedder.embed_passage(text)
     except Exception as exc:
-        logger.warning("incident_report_gen: revision embedding failed, saving without a vector: %s", exc)
+        logger.warning("incident_report_gen: analysis embedding failed, saving without a vector: %s", exc)
         return None
 
 
-async def persist_revision(
+async def persist_analysis(
     *,
-    incident_id: str,
+    video_name: str,
     model_run_id: str,
     model_name: str,
     report: dict[str, Any],
@@ -394,7 +401,7 @@ async def persist_revision(
 ) -> int | None:
     """Best-effort: store the video analysis and return its id. Never raises - a DB outage must not break analysis.
 
-    ``caller_owns_run`` (console agent mode) only creates a placeholder ``model_runs`` row when
+    ``caller_owns_run`` (console) only creates a placeholder ``model_runs`` row when
     none exists, so the console's own record is never overwritten; otherwise the run is
     registered with :meth:`IncidentDB.insert_model_run` as before.
     """
@@ -413,7 +420,7 @@ async def persist_revision(
                 model_run_id, model_name=model_name, prompt_version=incident_contract.contract_version()
             )
         row = await db.insert_video_analysis(
-            incident_id,
+            video_name,
             model_run_id=model_run_id,
             payload=report,
             evidence=evidence,
@@ -421,7 +428,7 @@ async def persist_revision(
         )
         return int(row["id"])
     except Exception as exc:
-        logger.warning("incident_report_gen: failed to persist the AI revision for %s: %s", incident_id, exc)
+        logger.warning("incident_report_gen: failed to persist the analysis for %s: %s", video_name, exc)
         return None
 
 
@@ -455,7 +462,7 @@ def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str
 
 @register_function(config_type=IncidentReportGenConfig, framework_wrappers=[LLMFrameworkEnum.LANGCHAIN])
 async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder) -> AsyncGenerator[FunctionInfo]:  # noqa: ARG001
-    """Contract P1 -> RP1 over one uploaded video, then evidence crops and a new AI revision."""
+    """Contract P1 -> RP1 over one uploaded video, then evidence crops and a stored analysis."""
 
     async def _incident_report_gen(tool_input: IncidentReportGenInput) -> IncidentReportGenOutput:
         model_name = tool_input.model or config.vlm_model_name
@@ -469,7 +476,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         if video_length.seconds is None:
             logger.warning(
                 "incident_report_gen: video-bounds rules not applied for %s (%s)",
-                tool_input.incident_id,
+                tool_input.video_name,
                 video_length.unchecked_reason,
             )
         api_key = os.environ.get(config.api_key_env, "")
@@ -507,7 +514,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             # request, holding no production data, never written to disk or R2, and discarded on return.
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,
-                incident_id=tool_input.incident_id,
+                video_name=tool_input.video_name,
                 report=report,
                 store=crop_evidence.InMemoryEvidenceStore(),
                 video_key=tool_input.video_key,
@@ -516,17 +523,18 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         else:
             evidence = await collect_evidence(
                 video_url=tool_input.video_url,
-                incident_id=tool_input.incident_id,
+                video_name=tool_input.video_name,
                 report=report,
                 video_key=tool_input.video_key,
             )
-        # An experimental request never writes a report revision: its output is an experiment result.
-        revision_id = (
+        # An experimental request never stores an analysis: its output is an experiment result.
+        model_run_id = tool_input.model_run_id or incident_db.model_run_id(tool_input.video_name)
+        analysis_id = (
             None
             if experiment is not None
-            else await persist_revision(
-                incident_id=tool_input.incident_id,
-                model_run_id=tool_input.model_run_id or config.model_run_id,
+            else await persist_analysis(
+                video_name=tool_input.video_name,
+                model_run_id=model_run_id,
                 model_name=model_name,
                 report=report,
                 evidence=evidence,
@@ -542,7 +550,9 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             contract_version=incident_contract.contract_version(),
             raw_output=raw_output,
             finish_reason=finish_reason,
-            revision_id=revision_id,
+            analysis_id=analysis_id,
+            model_run_id=model_run_id if analysis_id is not None else None,
+            outcome="stored" if analysis_id is not None else "not_stored",
             evidence=evidence,
             video_duration_seconds=video_length.seconds,
             video_duration_source=video_length.source,
@@ -557,8 +567,8 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         single_fn=_incident_report_gen,
         description=(
             "Extract a structured incident report (incident-contract) from an uploaded video given its signed URL, "
-            "write a prose report, crop its evidence to R2 and append it as a new AI report revision when the "
-            "incident DB is configured (best-effort)."
+            "write a prose report, crop its evidence to R2 and store it as a new video analysis when the "
+            "incident DB is configured (best-effort). No report revision is created."
         ),
         input_schema=IncidentReportGenInput,
         single_output_schema=IncidentReportGenOutput,

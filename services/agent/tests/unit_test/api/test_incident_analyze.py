@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for ``POST /api/v1/incidents/{incident_id}/analyze`` on the incident contract."""
+"""Unit tests for ``POST /api/v1/incidents/{video_name}/analyze`` on the incident contract."""
 
 from __future__ import annotations
 
@@ -40,7 +40,9 @@ OUTPUT = IncidentReportGenOutput(
     model="nvidia/cosmos-3-nano-reasoner",
     contract_version=incident_contract.contract_version(),
     raw_output="{}",
-    revision_id=5,
+    analysis_id=5,
+    model_run_id="run1",
+    outcome="stored",
     evidence=[{"item_id": "E1", "image": None, "image_gap": "no store"}],
 )
 
@@ -64,18 +66,18 @@ def test_passes_the_video_key_to_the_tool_when_given():
     )
     assert response.status_code == 200
     tool.ainvoke.assert_awaited_once_with(
-        {"incident_id": "v1", "video_url": VIDEO_URL, "skip_rp1": False, "video_key": "uploads/clip.mp4"}
+        {"video_name": "v1", "video_url": VIDEO_URL, "skip_rp1": False, "video_key": "uploads/clip.mp4"}
     )
 
 
-def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
+def test_passes_video_name_video_url_and_model_run_id_to_the_tool():
     client, tool = _client(result=OUTPUT)
     response = client.post(
         "/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
     assert response.status_code == 200
     tool.ainvoke.assert_awaited_once_with(
-        {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
+        {"video_name": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
     assert response.json() == {k: v for k, v in OUTPUT.model_dump().items() if k not in EXPERIMENT_OUTPUT_FIELDS}
 
@@ -88,10 +90,10 @@ def test_re_generation_passes_model_and_reviewer_prompt_to_the_tool():
         json={"video_url": VIDEO_URL, "model": model, "reviewer_prompt": "check the door"},
     )
     assert response.status_code == 200
-    assert response.json()["revision_id"] == 5
+    assert response.json()["analysis_id"] == 5
     tool.ainvoke.assert_awaited_once_with(
         {
-            "incident_id": "v1",
+            "video_name": "v1",
             "video_url": VIDEO_URL,
             "skip_rp1": False,
             "model": model,
@@ -160,7 +162,7 @@ def test_omitted_model_and_reviewer_prompt_are_not_forwarded():
     client, tool = _client(result=OUTPUT)
     response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
     assert response.status_code == 200
-    tool.ainvoke.assert_awaited_once_with({"incident_id": "v1", "video_url": VIDEO_URL, "skip_rp1": False})
+    tool.ainvoke.assert_awaited_once_with({"video_name": "v1", "video_url": VIDEO_URL, "skip_rp1": False})
 
 
 def test_reported_model_is_the_model_the_tool_ran():
@@ -177,7 +179,7 @@ def test_the_callers_video_length_is_forwarded_to_the_tool():
     )
     assert response.status_code == 200
     tool.ainvoke.assert_awaited_once_with(
-        {"incident_id": "v1", "video_url": VIDEO_URL, "skip_rp1": True, "video_duration_seconds": 12.5}
+        {"video_name": "v1", "video_url": VIDEO_URL, "skip_rp1": True, "video_duration_seconds": 12.5}
     )
 
 
@@ -228,7 +230,9 @@ PRODUCTION_KEYS = {
     "contract_version",
     "raw_output",
     "finish_reason",
-    "revision_id",
+    "analysis_id",
+    "model_run_id",
+    "outcome",
     "evidence",
     "video_duration_seconds",
     "video_duration_source",
@@ -259,7 +263,7 @@ def test_experimental_fields_are_refused_without_the_flag(monkeypatch, extra):
 def test_an_experimental_response_carries_its_prompt_and_telemetry(monkeypatch):
     monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
     output = OUTPUT.model_copy(
-        update={"experiment": EXPERIMENT, "p1_elapsed_ms": 1234.5, "usage": {"total": 9}, "revision_id": None}
+        update={"experiment": EXPERIMENT, "p1_elapsed_ms": 1234.5, "usage": {"total": 9}, "analysis_id": None}
     )
     client, tool = _client(result=output)
     response = client.post(

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for incident_report_gen: the incident contract's P1 -> RP1 calls, evidence and the AI revision."""
+"""Unit tests for incident_report_gen: the incident contract's P1 -> RP1 calls, evidence and the analysis."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from vss_agents.tools.incident_report_gen import collect_evidence
 from vss_agents.tools.incident_report_gen import incident_report_gen
 from vss_agents.tools.incident_report_gen import normalize_reviewer_prompt
 from vss_agents.tools.incident_report_gen import p1_request_body
-from vss_agents.tools.incident_report_gen import persist_revision
+from vss_agents.tools.incident_report_gen import persist_analysis
 from vss_agents.tools.incident_report_gen import resolve_video_length
 from vss_agents.tools.incident_report_gen import revision_embedding
 from vss_agents.tools.incident_report_gen import rp1_request_body
@@ -239,20 +239,20 @@ class TestCollectEvidence:
         service.process_incident_report = AsyncMock(side_effect=RuntimeError("boom"))
         set_crop_evidence_service(service)
         try:
-            entries = await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report=self.REPORT)
+            entries = await collect_evidence(video_url=VIDEO_URL, video_name="v1", report=self.REPORT)
         finally:
             set_crop_evidence_service(None)
         assert [entry["item_id"] for entry in entries] == ["E1", "I1", "A1"]
         assert all(entry["image"] is None and "boom" in entry["image_gap"] for entry in entries)
 
 
-class TestPersistRevision:
+class TestPersistAnalysis:
     REPORT = incident_contract.parse_report(json.dumps(MODEL_OUTPUT))
     EVIDENCE: ClassVar[list[dict]] = [{"item_type": "entity", "item_id": "E1", "image": None, "image_gap": "no store"}]
 
     async def _persist(self, db, **overrides):
         kwargs = {
-            "incident_id": "v1",
+            "video_name": "v1",
             "model_run_id": "run1",
             "model_name": "vlm",
             "report": self.REPORT,
@@ -268,10 +268,10 @@ class TestPersistRevision:
                 return_value=[0.5] * 3,
             ),
         ):
-            return await persist_revision(**{**kwargs, **overrides})
+            return await persist_analysis(**{**kwargs, **overrides})
 
     @pytest.mark.asyncio
-    async def test_registers_the_run_then_inserts_the_ai_revision(self):
+    async def test_registers_the_run_then_inserts_the_analysis(self):
         db = AsyncMock()
         db.insert_video_analysis.return_value = {"id": 9}
         assert await self._persist(db) == 9
@@ -307,8 +307,8 @@ class TestPersistRevision:
     @pytest.mark.asyncio
     async def test_skips_when_db_not_configured(self):
         with patch("vss_agents.tools.incident_report_gen.incident_db.is_configured", return_value=False):
-            result = await persist_revision(
-                incident_id="v1",
+            result = await persist_analysis(
+                video_name="v1",
                 model_run_id="run1",
                 model_name="vlm",
                 report=self.REPORT,
@@ -319,7 +319,7 @@ class TestPersistRevision:
 
 
 class TestRevisionEmbedding:
-    """The summary vector saved with an AI revision; a failure leaves the row with NULL."""
+    """The summary vector saved with an analysis; a failure leaves the row with NULL."""
 
     REPORT: ClassVar[dict] = {"incident": {"title": "Fight", "description": "Two people fight."}}
 
@@ -376,18 +376,18 @@ class TestEndToEnd:
                 return_value=[{"item_id": "E1", "image": "evidence/v1/b/E1.jpg", "image_gap": None}],
             ),
             patch(
-                "vss_agents.tools.incident_report_gen.persist_revision", new_callable=AsyncMock, return_value=7
+                "vss_agents.tools.incident_report_gen.persist_analysis", new_callable=AsyncMock, return_value=7
             ) as persist,
             patch.dict("os.environ", {"OPENAI_API_KEY": "secret"}),
         ):
             async with incident_report_gen(_config(), MagicMock()) as function_info:
                 result = await function_info.single_fn(
-                    tool_input or IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, model_run_id="run1")
+                    tool_input or IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL, model_run_id="run1")
                 )
         return result, persist
 
     @pytest.mark.asyncio
-    async def test_p1_then_rp1_then_revision_for_a_caller_run_id(self):
+    async def test_p1_then_rp1_then_analysis_for_a_caller_run_id(self):
         requests = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -404,7 +404,7 @@ class TestEndToEnd:
         assert result.contract_version == incident_contract.contract_version()
         assert result.model == "nvidia/cosmos-3-nano-reasoner"
         assert result.finish_reason == "stop"
-        assert result.revision_id == 7
+        assert result.analysis_id == 7
         assert result.evidence == [{"item_id": "E1", "image": "evidence/v1/b/E1.jpg", "image_gap": None}]
         kwargs = persist.await_args.kwargs
         assert kwargs["model_run_id"] == "run1" and kwargs["caller_owns_run"] is True
@@ -419,9 +419,7 @@ class TestEndToEnd:
 
         result, _ = await self._run(
             handler,
-            tool_input=IncidentReportGenInput(
-                incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", skip_rp1=True
-            ),
+            tool_input=IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL, model_run_id="run1", skip_rp1=True),
         )
         assert len(requests) == 1 and "response_format" in requests[0]
         assert result.report_text is None and result.report_text_error is None
@@ -440,7 +438,7 @@ class TestEndToEnd:
         result, persist = await self._run(
             handler,
             tool_input=IncidentReportGenInput(
-                incident_id="v1", video_url=VIDEO_URL, model=model, reviewer_prompt=" look at the door "
+                video_name="v1", video_url=VIDEO_URL, model=model, reviewer_prompt=" look at the door "
             ),
         )
         assert requests[0]["model"] == model and result.model == model
@@ -457,19 +455,20 @@ class TestEndToEnd:
 
         with pytest.raises(ValueError, match="allowlist"):
             await self._run(
-                handler, tool_input=IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, model="not-a-model")
+                handler, tool_input=IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL, model="not-a-model")
             )
         assert requests == []
 
     @pytest.mark.asyncio
-    async def test_standalone_call_persists_under_the_configured_run_id(self):
+    async def test_call_without_a_run_id_registers_a_readable_one(self):
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
             return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
 
-        _, persist = await self._run(handler, tool_input=IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL))
+        _, persist = await self._run(handler, tool_input=IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL))
         persist.assert_awaited_once()
-        assert persist.await_args.kwargs["model_run_id"] == "incident_report_gen"
+        run_id = persist.await_args.kwargs["model_run_id"]
+        assert run_id.startswith("v1@") and run_id.endswith("Z")
         assert persist.await_args.kwargs["caller_owns_run"] is False
 
     @pytest.mark.asyncio
@@ -547,7 +546,7 @@ class TestVideoBounds:
             await self._run(
                 _model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(30.0), requests),
                 tool_input=IncidentReportGenInput(
-                    incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=4.0
+                    video_name="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=4.0
                 ),
             )
         assert [r.method for r in requests] == ["POST"]
@@ -573,7 +572,7 @@ class TestVideoBounds:
         result, _ = await self._run(
             _model_and_video_handler(json.dumps(MODEL_OUTPUT), mp4(4.0), requests),
             tool_input=IncidentReportGenInput(
-                incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=30
+                video_name="v1", video_url=VIDEO_URL, model_run_id="run1", video_duration_seconds=30
             ),
         )
         assert result.video_bounds_checked is True
@@ -621,7 +620,7 @@ class TestVideoBounds:
     @pytest.mark.parametrize("value", [0, -1.5, math.nan, math.inf, True, "10"])
     def test_an_invalid_caller_length_is_rejected(self, value):
         with pytest.raises(ValueError, match="video_duration_seconds"):
-            IncidentReportGenInput(incident_id="v1", video_url=VIDEO_URL, video_duration_seconds=value)
+            IncidentReportGenInput(video_name="v1", video_url=VIDEO_URL, video_duration_seconds=value)
 
     @pytest.mark.asyncio
     async def test_resolve_rejects_an_invalid_length_passed_directly(self):
