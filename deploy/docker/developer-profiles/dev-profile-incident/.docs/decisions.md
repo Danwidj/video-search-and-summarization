@@ -2,6 +2,14 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: Match judge returns structured reasons beside the text ones
+- **Decision:** Each judgement carries `structured_reasons` (`{kind, label, detail}`) next to the unchanged free-text `reasons`, built from the same comparison. Kinds: `same_event_type`, `different_event_type`, `same_place`, `similar_place`, `different_place`, `place_unknown`, `time_overlap`, `time_apart`. The score and its weights are unchanged. The console ignores the field until a later change renders it as chips.
+- **Why:** Suggestion reasons read like log lines with raw quoted location strings; the accepted mockup shows chips such as Same place, Same event type and Time overlap. Adding a field keeps the running console working, and unchanged scores keep automatic joining safe to build on.
+- **Alternatives rejected:**
+  - *Replace `reasons` with objects:* Rejected because stored `reasons` JSONB rows and the current console parse strings.
+  - *Derive chips from the text in the console:* Rejected because it parses prose and breaks when the wording changes.
+- **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentsmatch-judge); `services/agent/src/vss_agents/api/incident_match_judge.py`.
+
 ### 2026-10-30: Batch upload runs four stages per file, two files at a time, and isolates failures
 - **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once. A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
 - **Why:** One slow or unreadable clip (a 10-bit H.264 file, a model that returns invalid JSON) must not stop the rest, and re-uploading a large file to retry one later stage is waste. Every file builds its first report and checks matches itself, so batch members find each other whatever order they finish.

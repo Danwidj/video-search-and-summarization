@@ -238,3 +238,56 @@ def test_missing_analysis_returns_422():
     body = {"candidates": [{"incident_id": 1, "overview": {"type": "burglary"}}]}
     response = client.post("/api/v1/incidents/match-judge", json=body)
     assert response.status_code == 422
+
+
+# --- structured reasons ---
+
+
+def _kinds(result) -> list[str]:
+    return [r.kind for r in result.structured_reasons]
+
+
+def test_structured_reasons_for_matching_place_type_and_time():
+    result = judge_candidate(
+        "burglary", "Main Street parking lot", 100, 200, _candidate(recorded_at_start=150, recorded_at_end=250)
+    )
+    assert _kinds(result) == ["same_event_type", "same_place", "time_overlap"]
+    assert [r.label for r in result.structured_reasons] == ["Same event type", "Same place", "Time overlap"]
+    assert all(r.detail for r in result.structured_reasons)
+
+
+def test_structured_reasons_for_different_place_and_time_apart():
+    result = judge_candidate(
+        "burglary", "Harbour pier", 100, 200, _candidate(recorded_at_start=500, recorded_at_end=600)
+    )
+    assert _kinds(result) == ["same_event_type", "different_place", "time_apart"]
+
+
+def test_structured_reasons_for_unknown_place_and_no_times():
+    result = judge_candidate("burglary", None, None, None, _candidate())
+    assert _kinds(result) == ["same_event_type", "place_unknown"]
+
+
+def test_structured_reasons_for_type_mismatch():
+    result = judge_candidate("burglary", "Main Street", None, None, _candidate(incident_type="assault"))
+    assert _kinds(result) == ["different_event_type"]
+
+
+def test_structured_reasons_do_not_change_score_or_reasons():
+    result = judge_candidate("burglary", "Main Street parking lot", None, None, _candidate())
+    assert result.score == 0.85
+    assert len(result.reasons) == len(result.structured_reasons)
+
+
+def test_endpoint_returns_structured_reasons_alongside_reasons():
+    body = {
+        "analysis": {"incident": {"type": "burglary", "location": "Main Street parking lot"}},
+        "candidates": [{"incident_id": 1, "overview": {"type": "burglary", "location": "Main Street parking lot"}}],
+    }
+    judgement = _client().post("/api/v1/incidents/match-judge", json=body).json()["judgements"][0]
+    assert isinstance(judgement["reasons"][0], str)
+    assert judgement["structured_reasons"][0] == {
+        "kind": "same_event_type",
+        "label": "Same event type",
+        "detail": "burglary",
+    }
