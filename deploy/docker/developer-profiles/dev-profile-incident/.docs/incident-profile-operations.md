@@ -12,7 +12,7 @@ The team shares a remote GPU development workstation (`kwanz-ws`), accessible vi
 
 - **Host Hardware:** 2× NVIDIA RTX A6000 (48 GB VRAM each), AMD Threadripper PRO 5975WX (32 cores / 64 threads), 251 GiB RAM, 1.8 TB NVMe storage. VSS uses GPU 0 only ([GPU rule](#5-vm-deployment-configuration-principles-generatedenvremote), item 10).
 - **Tailscale Hostname:** `kwanz-ws.tailf3aa43.ts.net` (internal IP: `10.131.1.5`).
-- **VM Working Directory:** `/srv/rise-up/vss` (root checkout).
+- **VM Working Directory:** `/srv/rise-up/vss-mvp3` (root checkout).
 - **NGC Credentials on VM:** `/srv/rise-up/.ngc_env` (load via `set -a; source /srv/rise-up/.ngc_env; set +a` or `source .scripts/ngc-env.sh`; `VSS_NGC_ENV` overrides the file).
 - **Deploy Flags Used on VM:** `--host-ip 10.131.1.5 --external-ip localhost --hardware-profile OTHER`.
 - **Direct Base UI Tunnel (reference):** `ssh -N -L 7777:10.131.1.5:7777 <user>@kwanz-ws` -> browse `http://localhost:7777`.
@@ -30,8 +30,8 @@ The split, the policy behind it, the ports and the networking of every service a
 ### Managing Native Services (`.scripts/native-services.sh`)
 
 `.scripts/native-services.sh` is the VM-side lifecycle manager (`start`, `stop`, `restart`, `status`, `logs`).
-It daemonizes processes with `nohup`, stores PID files under `/srv/rise-up/vss/.run/<service>.pid` (`VSS_RUN_DIR` overrides the directory), redirects
-standard streams to `/srv/rise-up/vss/.run/<service>.log`, and polls health endpoints before reporting success.
+It daemonizes processes with `nohup`, stores PID files under `/srv/rise-up/vss-mvp3/.run/<service>.pid` (`VSS_RUN_DIR` overrides the directory), redirects
+standard streams to `/srv/rise-up/vss-mvp3/.run/<service>.log`, and polls health endpoints before reporting success.
 
 **Multi-user concurrency & permissions:**
 - Start operations serialise on `.run/native-services.lock` using `flock`, preventing TOCTOU startup races between teammates. Background daemonised processes close file descriptor 200 so the advisory lock is released upon launcher exit.
@@ -43,7 +43,7 @@ standard streams to `/srv/rise-up/vss/.run/<service>.log`, and polls health endp
 ```bash
 # SSH into the workstation
 ssh kwanz-ws
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
+cd /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 
 # Check service status
 ./native-services.sh status
@@ -62,19 +62,19 @@ are dead weight on disk. Running `skills/incident-operate-vm/scripts/prune-nativ
 and stopped containers after confirming the native virtual environment (`services/agent/.venv/bin/nat`) exists:
 
 ```bash
-ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh"
+ssh kwanz-ws "bash /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh"
 ```
 
 If the native agent virtual environment is not present, the script prompts before proceeding. Use
 `--non-interactive` only in an already-authorized automation context:
 
 ```bash
-ssh kwanz-ws "bash /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh --non-interactive"
+ssh kwanz-ws "bash /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/skills/incident-operate-vm/scripts/prune-native-images.sh --non-interactive"
 ```
 
 ### Virtual Environment & Editable Agent Reinstall (`services/agent`)
 
-The native agent runs out of `/srv/rise-up/vss/services/agent/.venv` using `nat serve`.
+The native agent runs out of `/srv/rise-up/vss-mvp3/services/agent/.venv` using `nat serve`.
 For changes in `services/agent/src` to take effect across native process restarts (`native-services.sh restart vss-agent`), the package must be installed in editable mode (`editable: true` in `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json`).
 Shared contract files are vendored in `services/agent/src/vss_agents/incident_contract/` from `contracts/` and synchronised with `python deploy/docker/developer-profiles/dev-profile-incident/contracts/sync.py` (`--check` mode verifies parity without copying).
 
@@ -83,10 +83,10 @@ Environment variables are captured at process start: editing `generated.env.remo
 **VM Agent Reinstall Procedure:**
 A full `uv sync` in `services/agent` on `kwanz-ws` fails because `nvdataset` only resolves from NVIDIA's internal artifactory. To relink `vss_agents` editably to the repo code and install dependencies:
 ```bash
-cd /srv/rise-up/vss/services/agent
+cd /srv/rise-up/vss-mvp3/services/agent
 uv pip install --python .venv/bin/python --no-deps --index-url https://pypi.org/simple -e .
 uv pip install --python .venv/bin/python supabase opencv-python-headless setuptools
-cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts
+cd /srv/rise-up/vss-mvp3/deploy/docker/developer-profiles/dev-profile-incident/.scripts
 ./native-services.sh restart vss-agent
 ```
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` contains `"editable": true` and `/proc/<pid>/environ` contains the Brev Switchyard URLs (`LLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`, `VLM_BASE_URL=https://switchyard-13doh4lsz.brevlab.com`).
@@ -164,7 +164,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
    ```
    `./.scripts/down.sh` stops native services and runs `docker compose -p mdx stop` to stop containers without removing them (containers and their data are kept; restart is `./start.sh --mode vm`). Note that exited orphan containers are no longer cleaned up by `down.sh`; run `docker compose -p mdx down --remove-orphans` manually when a clean slate is wanted (still never `-v`).
 3. **No Double Agent:**
-   Never start the `vss-agent` Docker container when the native `vss-agent` process is already running on port 8000.
+   Never start the `vss-agent` Docker container when the native `vss-agent` process is already running on port 8001.
    `start.sh` intentionally excludes `vss-agent` from its `docker compose up` command.
 4. **Cold Start & 503 Expectations:**
    Even in remote mode, cold startup requires time for VIOS, NvStreamer, and PostgreSQL to initialize. An HTTP 503
@@ -244,7 +244,7 @@ When troubleshooting unexpected failures:
    ```bash
    ./.scripts/health.sh
    # Or directly:
-   curl -s http://localhost:8000/health
+   curl -s http://localhost:8001/health
    ```
 3. **Inspect Application Logs:**
    ```bash

@@ -52,13 +52,13 @@ cd supabase/tests && uv run --no-project --python 3.12 --with pgserver --with 'p
 ## Architecture rules
 
 - **Reports are versioned snapshots:** each analysis writes an append-only `report_revisions` row (`kind='ai'`, JSONB `payload` and `evidence`, new `model_run_id`); a human edit is a later `kind='human'` revision. Re-generation is a new AI branch (`parent_id` NULL) and copies no earlier edits. `evidence_crops` and `query_results` key on `revision_id`.
-- **Two analysis modes** (`ANALYSIS_MODE`): `gateway` (console calls `vlm-gateway`; the console writes the AI revision, and no crops are made) and `agent` (console calls the native `vss-agent` for P1 only; the agent writes the AI revision and its R2 crops, and the console verifies it). Check a persistence change against both modes. Who writes which row: [`.docs/analysis-schema.md`](.docs/analysis-schema.md#6-agent-mode).
+- **Analysis (mvp3):** `POST /api/analysis` is agent mode only: the console calls the native `vss-agent` (`:8001`), which stores the analysis and its R2 crops and creates no report version. The console builds versions (Regenerate: agent `synthesize`, then `create_ai_revision`). `ANALYSIS_MODE` and the gateway path remain only in pre-mvp3 video-keyed routes. See [architecture §5](.docs/architecture.md#5-mvp3-incidents-with-several-videos).
 - **Both modes use `incident-contract-v4`** from `contracts/` (vendored in `services/agent/src/vss_agents/incident_contract/`), with strict validation and only the ID-only `id-normalization-v1` recovery. Every attempt is recorded in `model_runs.notes` with its outcome.
   - Never modify `model_runs.notes` after an attempt is written.
   - Never add a repair step that changes semantic content, or let repair affect eval results.
   - Contract changes bump `contracts/VERSION` and update eval and the console together (shared `contracts/fixtures/` guard both validators).
 - **Console code keeps the hexagonal layout:** routes get ports from `src/lib/container.ts`; only `src/modules/*/infrastructure/supabase/` and `src/lib/postgrest/` name tables, columns and `p_*` arguments. `npm test` enforces the import boundaries. Layout and rules: [`.docs/mvp2/console-hexagonal-architecture.md`](.docs/mvp2/console-hexagonal-architecture.md).
-- **Revisions are never edited.** A reviewer's edit is a new `human` revision; the official version is the video's `official_revision_id`, chosen explicitly (never infer "latest run wins").
+- **Revisions are never edited.** A reviewer's edit is a new `human` revision of the incident; the official version is the incident's `official_revision_id`, chosen explicitly (never infer "latest run wins").
 - **Failed attempts** (`contract_failed` / `request_failed`) are `model_runs` rows only, never reports. Count runs by outcome, not raw rows.
 - **PostgREST only from `kwanz-ws`** (port 5432 is DPI-blocked). PostgREST has no client transactions, so `report_revisions` inserts retry on a `revision_no` clash (SQLSTATE 23505).
 - **Storage:** R2 holds videos (`videos.filepath` is an **R2 key**, never a VST URL); Supabase holds rows; VIOS disk is only a cache.

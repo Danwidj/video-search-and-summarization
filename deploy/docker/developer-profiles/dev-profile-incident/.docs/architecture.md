@@ -26,13 +26,13 @@ flowchart TB
     end
 
     subgraph Tunnel["SSH Port Forwarding Tunnel"]
-        FwdAgent["localhost:8000 -> VM:8000"]
+        FwdAgent["localhost:8001 -> VM:8001"]
         FwdHAProxy["localhost:7777 -> VM:7777"]
     end
 
     subgraph VM["kwanz-ws Shared Workstation"]
         subgraph VMNative["Native Processes (High Feasibility / Fast Restart)"]
-            Agent["vss-agent<br/>(NAT Framework, Port 8000)"]
+            Agent["vss-agent<br/>(NAT Framework, Port 8001)"]
             VideoAnalytics["video-analytics-api<br/>(Optional, Port 8081)"]
             BehaviorAnalytics["behavior-analytics<br/>(Optional, no HTTP port; Kafka consumer)"]
         end
@@ -90,7 +90,7 @@ flowchart TB
 | `vlm-gateway` | Laptop | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds the Brev credential (`VLM_GATEWAY_API_KEY`) server-side and forwards `POST /v1/chat/completions` unchanged to `VLM_GATEWAY_BASE_URL` (default `https://switchyard-13doh4lsz.brevlab.com/v1`), model-agnostic, no streaming, `VLM_GATEWAY_TIMEOUT_SECONDS` (default 330, longer than the slowest per-model timeout in `contracts/inference.json`); `GET /health` answers `{"status": "ok"}`. Used in mock mode. A VM compose service (`vss-vlm-gateway`, `vlm-gateway/compose.yml`) exists, but `start.sh` never starts it |
 | `base_profile_mock` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU mock of the agent, VST and inference, started by `--mode mock`. Uploads go to R2; analyze writes a real AI revision to finals (`mock: true` in the response); evidence embeddings are deterministic; incident search, revision search and chat answer from `finals_snapshot.json`; stock chat, WebSocket HITL, RTSP and VST routes are canned |
 | `search_profile_mock` | Laptop | 7778 | Python (FastAPI / Uvicorn) | `mock-backend/search_profile_mock/` | Standalone mock of the stock search profile (agent search, VST sensor list, video-analytics `/frames`, Kibana and Elasticsearch stubs), plus incident search and revision search from the same snapshot; no incident chat or analyze |
-| `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
+| `vss-agent` | `kwanz-ws` | 8001 (mvp3; main keeps 8000) | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{video_name}/analyze`, `POST /api/v1/incidents/synthesize`, `POST /api/v1/incidents/match-judge`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, stores analyses (no report versions); remote inference via Brev |
 | `video-analytics-api` | `kwanz-ws` | 8081 | Node.js (Native) | `services/analytics/video-analytics-api/` | Optional MVP2 video analytics ingestion and query layer (`ENABLE_ANALYTICS=true`) |
 | `behavior-analytics` | `kwanz-ws` | none (8080 is a HAProxy/label placeholder) | Python (Native) | `services/analytics/behavior-analytics/` | Optional MVP2 behavior perception pipeline (`ENABLE_ANALYTICS=true`) |
 | `vss-haproxy-ingress` | `kwanz-ws` | 7777 | Docker container | `deploy/docker/services/infra/haproxy/` | Public reverse proxy on :7777: /api,/chat → vss-agent :8000; /vst,/storage → vss-vios-ingress :30888; /phoenix → :6006; optional analytics/kibana backends |
@@ -148,15 +148,15 @@ flowchart TD
     SelfHeal --> OpenTunnel
     Ready --> OpenTunnel
 
-    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8000, 7777<br/>then wait for localhost:8000/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
+    OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh; same forwards as .scripts/tunnel.sh)<br/>8001, 7777<br/>then wait for localhost:8001/health and localhost:7777/storage"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
-    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
+    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8001,<br/>ANALYSIS_MODE=agent"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
 ### SSH Tunnel Port Forwards
 
-VM mode forwards `localhost:8000` to the native `vss-agent` and `localhost:7777` to `vss-haproxy-ingress`. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
+VM mode forwards `localhost:8001` to the native `vss-agent` and `localhost:7777` to `vss-haproxy-ingress`. The forwards and their checks are in [`vm-api-contracts.md`](vm-api-contracts.md#tunnel); the VM address detection and SSH troubleshooting are in [`incident-profile-operations.md`](incident-profile-operations.md#3-laptop-to-vm-connectivity--ssh-troubleshooting).
 
 ### Two Supabase projects (one per phase)
 
@@ -174,7 +174,7 @@ What points at the database, and how it switches at the cutover:
 | `dev-profile-incident/.env.local` on each laptop (symlinked into `incident-console-v2/`, `vlm-gateway/`, `mock-backend/`) | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY`, `INCIDENT_DB_DSN` | Console, eval, mock backend in local mode, the copy and parity scripts | Each teammate sets the 3 finals values |
 | `.env.local` copies in other worktrees | same | Console or eval started from those worktrees | `.githooks/setup-worktree.sh` refreshes a copy that differs from the main worktree's file (never a symlink, never the main file); the freeze makes a stale one fail loudly |
 | `generated.env.remote` on `kwanz-ws` | `INCIDENT_SUPABASE_URL`, `INCIDENT_SUPABASE_SERVICE_ROLE_KEY` | Native `vss-agent` (search, chat, AI revision insert, evidence embeddings); `.scripts/native-services.sh` | Back up, set the two finals values, restart `vss-agent` ("ask first"; [`incident-operate-vm`](../skills/incident-operate-vm/SKILL.md)) |
-| `deploy/docker/services/agent/compose.yml` | `INCIDENT_SUPABASE_*` passthrough | The Docker `vss-agent` (not used; the native one owns :8000) | Nothing |
+| `deploy/docker/services/agent/compose.yml` | `INCIDENT_SUPABASE_*` passthrough | The Docker `vss-agent` (not used; the native one owns the agent port) | Nothing |
 | `eval/` | `INCIDENT_DB_DSN` or `INCIDENT_SUPABASE_*` from the same `.env.local` | P1/RP1 batch (outside this change) | Same `.env.local`; eval's storage is outside this change |
 
 The agent only **warns** when it cannot record a search query, so an agent still pointed at midterm keeps answering searches and silently loses the query logs: check that `queries` grows on finals after the switch. The cutover steps, checklist and rollback are in the [`incident-manage-database`](../skills/incident-manage-database/SKILL.md) skill.
@@ -200,6 +200,9 @@ Live values are in [`status.md`](status.md); the full procedure for editing `gen
 ---
 
 ## 4. Runtime Interaction Sequences
+
+> [!WARNING]
+> The console subsections and Sequences A and B below describe the pre-mvp3 (video-keyed) behaviour on `main`: video-keyed `/reports/<videoId>` and `/videos/<id>` routes, `ANALYSIS_MODE` gateway or agent, and the agent writing report versions. On the mvp3 branch they are superseded by [section 5](#5-mvp3-incidents-with-several-videos) for analysis, versions, merge, remove and matching. Sequence C and the library, dashboard and pagination subsections still describe the screens, which the Phase 6 UI work has not yet replaced.
 
 ### Console middle layer (ports and adapters)
 
@@ -418,3 +421,75 @@ sequenceDiagram
 
 > [!NOTE]
 > MVP2 shifted from real-time perception/Elasticsearch indexing to a hybrid pipeline combining VLM extraction (`incident-contract-v4`), object cropping through a detector port (today the remote VLM; local open-vocabulary detectors are evaluated in [`mvp2/eval.md`](mvp2/eval.md)), Supabase `pgvector` (`evidence_crops`), conversational Q&A (`chat-contract-v1`), and a VLM critic that is dormant by default (`query_results`). See [`mvp2/README.md`](mvp2/README.md) for the authoritative architecture and end-to-end data flow.
+
+## 5. mvp3: Incidents with Several Videos
+
+mvp3 lets several videos belong to one incident, with one combined report. Each video is analysed once; reports are rebuilt from the stored analyses. Why: [decisions.md](decisions.md). Schema and functions: [data.md](data.md). This section describes what is merged on `origin/mvp3`; the Phase 6 UI is not merged, so the screens still show the pre-mvp3 layout.
+
+### Model in one paragraph
+
+`incidents` is the root. A video (`videos.id` is its real, sanitised file name) belongs to exactly one incident. Each analysis run stores a `video_analyses` row (the latest per video wins) and creates no version. A version is a `report_revisions` row of the incident: append-only, with `video_names` as its immutable coverage and a payload `{overview, cameras: [{video, report}]}` whose camera reports are unchanged `incident-contract-v4`. `incidents.official_revision_id` points at one of the incident's own versions. The coverage note ("Does not include: ..." and "Includes a removed video: ...") is computed on read.
+
+### Flow
+
+```mermaid
+flowchart TD
+    Upload["Upload video to R2"] --> Analyse["POST /api/analysis"]
+    Analyse --> Agent1["Agent: POST /api/v1/incidents/{video_name}/analyze<br/>stores analysis + crops, no version"]
+    Agent1 --> Match["POST /api/suggestions/evaluate<br/>DB shortlist + agent match-judge"]
+    Match --> Sugg["incident_match_suggestions<br/>(pending, accepted, rejected)"]
+    Sugg -->|accept| Merge["merge_incidents"]
+    Sugg -->|reject| Remember["pair remembered"]
+    Analyse --> Build["POST /api/reports/{incidentId}/build<br/>(Regenerate, explicit)"]
+    Merge -.->|no rebuild| Build
+    Build --> Synth["Agent: POST /api/v1/incidents/synthesize<br/>overview + embedding, stateless"]
+    Synth --> Ver["create_ai_revision<br/>new version, coverage = current videos"]
+```
+
+- **Analyse** takes the latest signed URL for the video, calls the agent and records a `model_runs` row `<video name>@<UTC timestamp>`. The agent writes the analysis and crops. The route is agent mode only and runs inside 360 s.
+- **Regenerate** takes the latest analysis of every current video. It is the only step that creates a version. Merge and remove never regenerate.
+- **Matching** only suggests. The database shortlists by vector similarity (limit 5, similarity at least 0.3), the agent scores the shortlist, and scores at or above 0.5 are stored. Time is a hint, not a filter.
+
+### Deployment of the mvp3 agent
+
+The mvp3 agent is a native process from `/srv/rise-up/vss-mvp3` on GPU 0, listening on **8001** (`VSS_AGENT_PORT` in `generated.env.remote`; the scripts default to it). The main agent keeps 8000. VIOS, HAProxy, Redis and the rest of the Docker stack are shared. `start.sh` forwards `localhost:8001` and `localhost:7777`, and exports `INCIDENT_AGENT_BASE_URL=http://localhost:8001`.
+
+### R2 key prefix
+
+`R2_KEY_PREFIX` is empty by default (the old behaviour) and `mvp3/` on mvp3. The console and the agent add it only when they call R2. Database values (`videos` keys, evidence `image` keys, `thumbnail` keys) are prefix-free. The evidence sweep is scoped to the prefix.
+
+### Console API routes (merged on `origin/mvp3`)
+
+`incidentId` is the incident's number. Errors use `{error}` with the status shown.
+
+| Route | Body or query | Result |
+|---|---|---|
+| `POST /api/analysis` | upload: `{sensorId, filepath, filename, model?, additionalInstruction?}`; re-analysis: `{videoName, model?, additionalInstruction?}` | `{incidentId, videoName, analysisId, modelRunId, model, promptVersion, outcome}`. A new video that fails is removed again (its R2 object stays). No version is created. |
+| `POST /api/reports/[incidentId]/build` | `{note?}` | `{built: {incidentId, revisionId, revisionNo, modelRunId, videoNames, crops}}`. 422 no videos, 409 `{videos}` still unanalysed, 503 agent not configured, 502 or 504 agent failure. |
+| `DELETE /api/reports/[incidentId]/delete` | none | `{deleted: true, ...}`. Objects are removed before rows. |
+| `POST /api/reports/[incidentId]/merge` | `{sourceIncidentId}` | `{merged}`. The path incident is kept. Moves no files. |
+| `POST /api/videos/[videoId]/remove` | `{choice: 'delete' \| 'move'}` | `{removed}`. A move of the last video is refused. |
+| `GET /api/suggestions` | `?incidentId=` | pending suggestions, highest score first |
+| `POST /api/suggestions/evaluate` | `{incidentId}` | compares every video of the incident with the shortlist; decided pairs are skipped. 300 s limit. |
+| `POST /api/suggestions/[id]/accept` | `{incidentId?}` | merges; the kept incident defaults to the lower id |
+| `POST /api/suggestions/[id]/reject` | none | the pair is remembered |
+| `GET /api/reports` | sort, severity, scope (`all\|official`), match, entity and evidence filters, page | the library: one entry per incident, six per page |
+| `GET /api/reports/[incidentId]` | `?revision=&camera=` | the version (given, else official, else newest) with the overview, coverage verdict, camera list and that camera's report |
+| `GET /api/reports/[incidentId]/revisions` | none | versions newest first, each with its coverage verdict |
+| `GET /api/reports/[incidentId]/frame` | `?t=&video=` | a JPEG frame (needs `ffmpeg`; 503 without) |
+| `GET /api/reports/[incidentId]/evidence-image` | `?video=&image=` | a short-lived signed URL; 404 unless the video's records name the image |
+| `PATCH /api/reports/[incidentId]/edit` | `{parentId, editedBy, note?, camera?, edit?}`, or an overview edit (title, type, severity_level, description, location) | a new human version |
+| `POST /api/reports/[incidentId]/evidence-image` | multipart `file`, `itemId`, `video` (JPEG, PNG or WebP, up to 5 MB) | uploads to a new key `evidence/<video key>/edit-<n>/<itemId>.jpg`; never overwrites |
+| `POST /api/reports/[incidentId]/evidence-crop` | `{video, timestampSeconds, region}` | a crop; writes nothing |
+| `POST /api/reports/[incidentId]/evidence-sweep` | `{video, dryRun?, minAgeHours?}` | removes unreferenced images; dry run by default |
+| `PUT` and `DELETE /api/videos/[videoId]/official` | `{revisionId}` | sets or clears the official version. The path segment is an incident id (the name is kept from before mvp3). |
+| `POST /api/search` | `{query, incidentId?, videoName?}` (`incidentId` a positive integer as a string, `videoName` up to 255 chars; the query may be empty only when one is given) | ranked evidence hits naming incident and camera |
+| `POST /api/chat` | `incidentId`, `versionId` (positive integers; a draft needs `versionId`) | grounded answer over every camera of the version |
+| `GET /api/dashboard` | filters | counts incidents |
+
+The upload helper routes (`/api/uploads`, `/uploads/check`, `/uploads/r2`, `/uploads/complete`, `/uploads/thumbnail`) are unchanged.
+
+### Known leftovers on `origin/mvp3`
+
+- `GET /api/videos`, `POST /api/videos/[videoId]/runs`, `ANALYSIS_MODE` and the gateway client are still in the console and still use the pre-mvp3 video-keyed run code. They are stale against the mvp3 schema; do not use them.
+- The agent route `POST /api/v1/incidents/synthesize` was not mounted in the worker until PR #320 (merged). An agent started before that change answers `404` and Regenerate then fails with 502; restart it ([vm-api-contracts.md](vm-api-contracts.md#post-apiv1incidentssynthesize)).

@@ -3,13 +3,13 @@ name: incident-search
 description: Use to search incident evidence, ask grounded follow-up questions, inspect critic verdicts, or populate and check evidence crops through the incident profile's local mock or VM agent. Not for generating a report (use incident-analyze-video), batch evaluation (use incident-run-eval), or database migrations (use incident-manage-database).
 license: Apache-2.0
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   profile: "dev-profile-incident"
   tags: "incident search chat evidence crops retrieval"
 ---
 # Incident Search
 
-Use this skill for MVP2 natural-language search across the incident archive, grounded chat about search results, and checking how evidence crops reach search. Search and chat are always-on in the profile; there is no `--search` startup flag.
+Use this skill for natural-language search across the incident archive, grounded chat about an incident's report, and checking how evidence crops reach search. Since mvp3 an incident holds several videos (cameras): search, chat and the dashboard work **per incident**, and a hit names its incident and its camera (the video the item was seen in). Search and chat are always-on in the profile; there is no `--search` startup flag.
 
 Canonical facts:
 
@@ -23,16 +23,16 @@ Canonical facts:
 
 1. Start the profile with [`incident-start`](../incident-start/SKILL.md):
    - `./start.sh --mode mock` uses the mock backend on `127.0.0.1:7777` and needs no GPU or SSH.
-   - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8000`.
+   - `./start.sh --mode vm` uses the native `vss-agent` through the tunnel on `127.0.0.1:8001`.
 2. For live search or embeddings, the environment must point at the finals Supabase project. Never write to the frozen midterm project.
 3. A search needs populated `evidence_crops`. An empty result set can be a healthy response, but it does not prove the crop corpus is loaded.
 
 ## Search saved report revisions
 
-Finds whole incident reports by meaning, using one summary embedding per saved revision (the title and description). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8000`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
+Finds whole incident reports by meaning, using one summary embedding per saved version (the title and description). Each hit has `incident_id`, `revision_id` and `video_names` (the version's coverage). Revisions saved without a vector, including human revisions, do not appear. Run it against the VM agent (`localhost:8001`); the mocks answer it from their finals snapshot, so their results say nothing about relevance.
 
 ```bash
-curl -sS -X POST http://localhost:8000/api/v1/incidents/revisions/search \
+curl -sS -X POST http://localhost:8001/api/v1/incidents/revisions/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"fight at a bus stop","top_k":5}' | jq .
 ```
@@ -43,7 +43,7 @@ Send a natural-language query to the backend. The route embeds the query with th
 
 ```bash
 # VM mode
-curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
+curl -sS -X POST http://localhost:8001/api/v1/incidents/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"weapon used during a burglary","top_k":5}' | jq .
 
@@ -53,10 +53,10 @@ curl -sS -X POST http://localhost:7777/api/v1/incidents/search \
   -d '{"query":"crowbar used in burglary","top_k":3}' | jq .
 ```
 
-The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, `max_severity` and `video_id` (one incident only; `query` may then be empty and lists that incident's evidence in video time order). Each hit includes:
+The request accepts `query`, `top_k` (1–50), `min_similarity`, `hide_rejected`, and optional `filters` for `item_types`, `incident_types`, `min_severity`, `max_severity`, `incident_id` (one incident, every camera) and `video_id` (one camera; either may be used with an empty `query` to list that scope's evidence in video time order). Each hit includes:
 
-- `item`: entity, instrument or asset metadata, `timestamp_seconds`, optional normalized `bounding_box`, and `crop_image_url`;
-- `incident`: the parent incident, model run, playback URL and incident window; and
+- `item`: entity, instrument or asset metadata, the `video_id` (camera) it was seen in, `timestamp_seconds`, optional normalized `bounding_box`, and `crop_image_url`;
+- `incident`: the parent incident (`incident_id` is its number), model run, playback URL and incident window; and
 - `critic`: `unverified` unless the critic is on, then `confirmed`, `rejected` or `unverified`, with confidence and rationale.
 
 Treat similarity as retrieval ranking, not proof. With the critic on, its verdict is the visual check; otherwise inspect the crop and the source video. A crop URL is a signed/private object URL and may expire; use the parent playback URL and `timestamp_seconds` to inspect the source video when needed. `hide_rejected` is true by default.
@@ -67,12 +67,12 @@ The route persists the query and ranked verdicts in `queries` and `query_results
 
 Use chat for a follow-up question rather than treating a free-form answer as an ungrounded report. Send the full conversation history and, when narrowing the question, the incident or evidence crop IDs in `context`.
 
-The console's report page does this through its `/api/chat` route, with `context.scope: "incident"` and the report's video ID as `incident_id`. Its "Ask about this incident" panel also sends `version_id` (the version on screen, or the version being edited) and, while editing, the unsaved draft as `draft_report` (requires `version_id`); citations then come from that version or draft. A question about the official version with no draft finds no evidence, by decision ([`.docs/decisions.md`](../../.docs/decisions.md#2026-10-24-chat-about-the-official-version-uses-the-in-memory-chat-search-client-for-mvp2)).
+The console's report page does this through its `/api/chat` route (`{incidentId, versionId, draftReport?, messages}`; `incidentId` and `versionId` are positive integers). The route sends `context.scope: "incident"` and the incident's number as `incident_id`. `versionId` is the version on screen, or the version being edited; while editing, the unsaved draft goes as `draft_report` (requires `versionId`). Citations come from that version or draft and cover **every camera** of the version; each names its `video_id`. A question about the official version with no draft finds no evidence, by decision ([`.docs/decisions.md`](../../.docs/decisions.md)).
 
-The console's library (`/library`, Find evidence tab) runs search through its `POST /api/search` route (`{"query", "videoId"?}`), which calls the agent with `top_k` 20 (50 when `videoId` is set, passed as `filters.video_id`) and `min_similarity` 0, then adds each video's searched version to the hits. "See evidence" on a library card sends `videoId` with an empty query to list that incident's evidence.
+The console's library runs search through its `POST /api/search` route (`{"query", "incidentId"?, "videoName"?}`; `incidentId` is a positive integer written as a string, `videoName` is at most 255 characters). It calls the agent with `top_k` 20 (50 when an incident or camera is named, passed as `filters.incident_id` or `filters.video_id`) and `min_similarity` 0, then adds each incident's searched version to the hits. A query may be empty only when an incident or a camera is named; that lists its evidence whole, in video time order. `GET /api/dashboard` counts incidents, not videos.
 
 ```bash
-curl -sS -X POST http://localhost:8000/api/v1/incidents/chat \
+curl -sS -X POST http://localhost:8001/api/v1/incidents/chat \
   -H 'Content-Type: application/json' \
   -d '{
     "messages":[
@@ -88,10 +88,10 @@ Use `context.scope: "incident"` with `incident_id` for one incident, or include 
 
 ## How evidence crops reach search
 
-There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<videoId>/<uuid>/<itemId>.jpg`), listing the keys in the new `report_revisions.evidence`. Search reads `evidence_crops`, which holds each video's searchable revision (the official one, else the newest): the console calls `POST /api/v1/incidents/evidence-embeddings`, gets `{item_type, item_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself. Which call writes them for each event (mark official, analysis or re-run, Save) is in [`.docs/data.md`](../../.docs/data.md#evidence_crops).
+There is no loader script. The analyze route crops each evidence item and uploads it to R2 (`evidence/<video key>/<run>/<itemId>.jpg`, under `R2_KEY_PREFIX` in R2 only; database keys stay prefix-free) and stores the keys with the video's analysis. Search reads `evidence_crops`, which holds the incident's searchable version: each crop belongs to a camera, and the version is the official one, else the newest. The console calls `POST /api/v1/incidents/evidence-embeddings` when a version becomes searchable (Regenerate, make official, Save), gets `{item_type, item_id, video_id, embedding}` back (1024 dimensions, the model search uses) and writes the rows itself. Which call writes them for each event is in [`.docs/data.md`](../../.docs/data.md#evidence_crops).
 
 ```bash
-curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \
+curl -sS -X POST http://localhost:8001/api/v1/incidents/evidence-embeddings \
   -H 'Content-Type: application/json' -d '{"revision_id": 1}' | jq 'length, .[0] | del(.embedding)'
 ```
 
@@ -101,11 +101,11 @@ curl -sS -X POST http://localhost:8000/api/v1/incidents/evidence-embeddings \
 
 ```bash
 # Agent health and a bounded search smoke test
-curl -sS http://localhost:8000/health | jq .
-curl -sS -X POST http://localhost:8000/api/v1/incidents/search \
+curl -sS http://localhost:8001/health | jq .
+curl -sS -X POST http://localhost:8001/api/v1/incidents/search \
   -H 'Content-Type: application/json' -d '{"query":"weapon","top_k":5}' | jq '{total_hits, hits: [.hits[] | {rank, timestamp: .item.timestamp_seconds, verdict: .critic.verdict}]}'
 
-# Mock-mode smoke test instead: replace :8000 with :7777.
+# Mock-mode smoke test instead: replace :8001 with :7777.
 ```
 
 For a live run, confirm that crop URLs return an image response, the timestamp seeks into the parent playback window, and `queries`/`query_results` grow in finals. If the route returns hits but query persistence warns, stop and hand off to [`incident-operate-vm`](../incident-operate-vm/SKILL.md); do not silently treat the search as fully verified.
