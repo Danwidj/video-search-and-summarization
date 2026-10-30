@@ -44,7 +44,7 @@ import {
   withUploadedImages,
   type EditDraft,
 } from '@/modules/reports/domain/edit-draft';
-import { cameraOptions } from '@/lib/reports/cameras';
+import { cameraOptions, repeatsOverviewSummary } from '@/lib/reports/cameras';
 import { topBarActions } from '@/lib/reports/top-bar-actions';
 import type { IncidentReportView } from '@/modules/reports/application/types';
 import type { Overview } from '@/modules/reports/domain/envelope';
@@ -755,6 +755,7 @@ export function ReportPage({
         {mode === 'view' ? (
           <ReportPane
             compareHref={compareHref}
+            hideSummary={repeatsOverviewSummary(view.cameras, view.overview.description, report.structured.incident.description)}
             officialMissing={!officialRevision && revisions !== null}
             onSeek={seek}
             playerDuration={playerDuration}

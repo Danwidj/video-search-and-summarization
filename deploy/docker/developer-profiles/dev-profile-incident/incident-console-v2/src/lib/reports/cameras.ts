@@ -41,3 +41,17 @@ export const currentCameraCount = (cameras: readonly CameraView[]): number =>
 export function versionCoverageLabel(coveredVideos: number, incidentVideos: number, revisionNo: number): string {
   return `${coveredVideos} of ${incidentVideos} ${incidentVideos === 1 ? 'video' : 'videos'} in v${revisionNo}`;
 }
+
+/**
+ * True when the incident overview already says the camera's summary: an incident of one camera has no other camera to
+ * summarise, so the overview and the camera report carry the same text. A summary that differs (a reviewer edited one
+ * of them) stays visible.
+ */
+export function repeatsOverviewSummary(
+  cameras: readonly CameraView[],
+  overviewDescription: string | null,
+  cameraDescription: string | null,
+): boolean {
+  if (cameras.filter((camera) => camera.inVersion).length !== 1 || !overviewDescription || !cameraDescription) return false;
+  return overviewDescription.trim() === cameraDescription.trim();
+}
