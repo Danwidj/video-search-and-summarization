@@ -90,6 +90,30 @@ test('a match check leaves the file deciding, with no report built', async () =>
   assert.equal(item.matches, 2);
 });
 
+test('a match check with nothing left to decide leaves the file checked, not deciding, even after an automatic join', async () => {
+  const { deps } = harness({ evaluate: async () => ({ suggestions: 0, joined: { keptIncidentId: 3, mergedIncidentId: 7, score: 0.62 } }) });
+  const item = await check(analysed('a', 7), deps);
+  assert.equal(item.status, 'checked');
+  assert.equal(item.stage, 'report');
+  assert.equal(item.matches, 0);
+  assert.deepEqual(item.autoJoined, { incidentId: 3, score: 0.62 });
+  assert.deepEqual(retryChange({ ...item, status: 'failed' }), { status: 'checked', error: null, stage: 'report' });
+  assert.deepEqual(retryChange({ ...item, status: 'failed', matches: 1 }), { status: 'deciding', error: null, stage: 'report' });
+});
+
+test('a checked file builds at once, without reading the pending suggestions; the batch is not awaiting a decision', () => {
+  const items = [
+    analysed('a', 1, { status: 'checked', stage: 'report', checked: true, matches: 0 }),
+    analysed('b', 2, { status: 'deciding', stage: 'report', checked: true, matches: 1 }),
+  ];
+  assert.deepEqual(planBatch(items, null).build, [{ incidentId: 1, keys: ['a'] }]);
+  assert.deepEqual(planBatch(items, new Set([2])).build, [{ incidentId: 1, keys: ['a'] }]);
+  const summary = summariseBatch(items);
+  assert.equal(summary.deciding, 1);
+  assert.equal(summariseBatch(items.slice(0, 1)).deciding, 0);
+  assert.equal(summariseBatch(items.slice(0, 1)).settled, false, 'a checked file still has its report to build');
+});
+
 test('the stage order is upload, analyse, check matches, build report', async () => {
   const { calls, deps } = harness();
   let item = await run(file('a.mp4'), deps);
@@ -148,7 +172,7 @@ test('a failed match check retries only the check; a failed build retries only t
   const changes = [];
   await buildBatchIncident(7, ['a'], broken.deps, (key, change) => changes.push([key, change]));
   assert.deepEqual(changes.at(-1), ['a', { status: 'failed', stage: 'report', error: 'synthesis failed' }]);
-  const checked = analysed('a', 7, { status: 'failed', stage: 'report', checked: true });
+  const checked = analysed('a', 7, { status: 'failed', stage: 'report', checked: true, matches: 2 });
   assert.deepEqual(retryChange(checked), { status: 'deciding', error: null, stage: 'report' });
 });
 
