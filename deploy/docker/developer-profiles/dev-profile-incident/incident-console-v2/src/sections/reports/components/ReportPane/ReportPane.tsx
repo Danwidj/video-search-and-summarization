@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,9 @@ import { formatClock } from '@/modules/reports/domain/normalize';
 import { reportHeading, type ReportView, type StructuredEntity, type StructuredInstrument } from '@/modules/reports/domain/report-view';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 import { RunDetailsPanel } from '@/sections/reports/components/ReportRunDetails';
+
+/** Evidence cards (entities, the instruments they hold, assets) share one grid that fills the pane: two columns from phone width, three from large screens. */
+const EVIDENCE_GRID = 'grid grid-cols-2 items-start gap-3 lg:grid-cols-3';
 
 const capitalize = (value: string | null) => (value ? value[0].toUpperCase() + value.slice(1) : 'Unclassified');
 
@@ -34,6 +37,7 @@ export function ReportPane({
   onSeek,
   officialMissing = false,
   compareHref = null,
+  hideSummary = false,
 }: {
   report: ReportView;
   playerDuration: number | null;
@@ -42,6 +46,8 @@ export function ReportPane({
   officialMissing?: boolean;
   /** Link to compare this version with another AI version, when there is one. */
   compareHref?: string | null;
+  /** True when the incident overview above already says this summary. */
+  hideSummary?: boolean;
 }) {
   const { structured, modelOutput, run, differences, revision } = report;
   const { incident } = structured;
@@ -158,9 +164,11 @@ export function ReportPane({
             </span>
           )}
         </Row>
-        <Row label="Summary">
-          <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
-        </Row>
+        {!hideSummary && (
+          <Row label="Summary">
+            <span className="whitespace-pre-wrap">{incident.description ?? 'No summary was recorded.'}</span>
+          </Row>
+        )}
         <Row label="Severity rationale">
           <span className="text-foreground/75">{modelOutput?.severityReason ?? 'No model rationale was retained for this run.'}</span>
           {differences.severity && (
@@ -182,53 +190,36 @@ export function ReportPane({
           This version has no evidence items.
         </p>
       ) : (
-        <div className="mt-2 space-y-4" data-testid="evidence-grid">
+        <div className={`mt-3 ${EVIDENCE_GRID}`} data-testid="evidence-grid">
           {structured.entities.map((entity) => (
-            <div className="grid gap-3 sm:grid-cols-[6rem_1fr]" data-holder={entity.entityId} key={entity.entityId}>
-              <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Entity</span>
-              <div className="flex flex-wrap gap-3">
-                <EntityCard entity={entity} holds={heldBy(entity.entityId).map((instrument) => instrument.name)} onSeek={onSeek} />
-                {heldBy(entity.entityId).map((instrument) => (
-                  <InstrumentCard
-                    holder={holderTitle.get(entity.entityId)}
-                    instrument={instrument}
-                    key={instrument.instrumentId}
-                    onSeek={onSeek}
-                  />
-                ))}
-              </div>
-            </div>
+            <Fragment key={entity.entityId}>
+              <EntityCard entity={entity} holds={heldBy(entity.entityId).map((instrument) => instrument.name)} onSeek={onSeek} />
+              {heldBy(entity.entityId).map((instrument) => (
+                <InstrumentCard
+                  holder={holderTitle.get(entity.entityId)}
+                  instrument={instrument}
+                  key={instrument.instrumentId}
+                  onSeek={onSeek}
+                />
+              ))}
+            </Fragment>
           ))}
-          {unheld.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-[6rem_1fr]" data-holder="unknown">
-              <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Holder unknown</span>
-              <div className="flex flex-wrap gap-3">
-                {unheld.map((instrument) => (
-                  <InstrumentCard instrument={instrument} key={instrument.instrumentId} onSeek={onSeek} />
-                ))}
-              </div>
-            </div>
-          )}
-          {structured.assets.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-[6rem_1fr]" data-holder="assets">
-              <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Assets</span>
-              <div className="flex flex-wrap gap-3">
-                {structured.assets.map((asset) => (
-                  <Card
-                    evidence={asset.evidence}
-                    id={asset.assetId}
-                    key={asset.assetId}
-                    kind="asset"
-                    onSeek={onSeek}
-                    seconds={asset.timestampSeconds}
-                    title={asset.name}
-                  >
-                    <p className="text-muted-foreground">{asset.description}</p>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
+          {unheld.map((instrument) => (
+            <InstrumentCard instrument={instrument} key={instrument.instrumentId} onSeek={onSeek} />
+          ))}
+          {structured.assets.map((asset) => (
+            <Card
+              evidence={asset.evidence}
+              id={asset.assetId}
+              key={asset.assetId}
+              kind="asset"
+              onSeek={onSeek}
+              seconds={asset.timestampSeconds}
+              title={asset.name}
+            >
+              <p className="text-muted-foreground">{asset.description}</p>
+            </Card>
+          ))}
         </div>
       )}
 
@@ -382,7 +373,7 @@ function Card({
 }) {
   const at = seconds ?? evidence?.timestampSeconds ?? null;
   return (
-    <UICard className="w-64 max-w-full overflow-hidden text-xs" data-testid="evidence-card">
+    <UICard className="w-full min-w-0 overflow-hidden text-xs" data-testid="evidence-card">
       <button
         aria-label={at === null ? `${title} image` : `Play video from ${formatClock(at)}: ${title}`}
         className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
