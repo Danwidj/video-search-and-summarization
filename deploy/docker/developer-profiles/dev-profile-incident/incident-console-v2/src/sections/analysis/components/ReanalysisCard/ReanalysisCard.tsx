@@ -192,7 +192,7 @@ export function ReanalysisDialog({ videoName, onAttempted }: { videoName: string
     <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogTrigger asChild>
         <Button
-          aria-label="Re-analyse this incident"
+          aria-label="Re-analyse this camera"
           className="text-xs font-semibold"
           data-testid="reanalysis-trigger"
           size="sm"

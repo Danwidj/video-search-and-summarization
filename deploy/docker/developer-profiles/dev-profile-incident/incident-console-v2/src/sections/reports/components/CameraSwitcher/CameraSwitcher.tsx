@@ -1,30 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { CameraOption } from '@/lib/reports/cameras';
 
-/** Picks which camera feeds the player, the evidence frames and the report fields: toggles from sm, a select below. */
+/**
+ * Picks which camera feeds the player, the evidence frames and the report fields: toggles from sm, a select below.
+ * `actions` sit at the end of the bar and act on the camera being viewed (Remove video).
+ */
 export function CameraSwitcher({
   options,
   value,
   onChange,
+  actions = null,
 }: {
   options: CameraOption[];
   value: string | null;
   onChange: (video: string) => void;
+  actions?: ReactNode;
 }) {
+  const several = options.length > 1;
   return (
     <div
       className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-muted/40 px-5 py-2.5 sm:px-8"
       data-testid="camera-switcher"
     >
       <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Camera</span>
+      {!several && <span className="min-w-0 break-all text-xs font-semibold">{value ?? options[0]?.video}</span>}
       <ToggleGroup
         aria-label="Camera"
-        className="hidden min-w-0 flex-wrap sm:flex"
+        className={several ? 'hidden min-w-0 flex-wrap sm:flex' : 'hidden'}
         onValueChange={(next) => next && onChange(next)}
         size="sm"
         spacing={1}
@@ -43,13 +52,13 @@ export function CameraSwitcher({
             {option.video}
             {!option.selectable && (
               <Badge className="ml-1.5 px-1.5 text-[10px]" variant="secondary">
-                {option.reason?.includes('removed') ? 'removed' : 'unavailable'}
+                {option.badge}
               </Badge>
             )}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <div className="min-w-0 flex-1 sm:hidden">
+      <div className={several ? 'min-w-0 flex-1 sm:hidden' : 'hidden'}>
         <Select onValueChange={onChange} value={value ?? undefined}>
           <SelectTrigger aria-label="Camera" className="w-full" size="sm">
             <SelectValue placeholder="No camera can be shown" />
@@ -58,12 +67,13 @@ export function CameraSwitcher({
             {options.map((option) => (
               <SelectItem disabled={!option.selectable} key={option.video} value={option.video}>
                 {option.video}
-                {option.reason ? ` (${option.reason.includes('removed') ? 'removed' : 'unavailable'})` : ''}
+                {option.badge ? ` (${option.badge})` : ''}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+      {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
     </div>
   );
 }
