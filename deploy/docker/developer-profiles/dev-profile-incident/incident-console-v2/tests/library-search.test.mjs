@@ -184,7 +184,7 @@ test('/api/search refuses empty text and a missing agent, and reports an agent f
 
 test('the viewer cuts its frame through the report frame route and falls back to the crop', () => {
   const viewer = readFileSync(join(process.cwd(), 'src', 'sections', 'library', 'components', 'HitViewer', 'HitViewer.tsx'), 'utf8');
-  assert.match(viewer, /\/api\/reports\/\$\{encodeURIComponent\(hit\.incident\.incidentId\)\}\/frame\?t=/);
+  assert.match(viewer, /hitDisplay\(hit\.item, hit\.incident\.incidentId\)\.frameSrc/);
   assert.match(viewer, /<FrameViewer/);
   assert.match(viewer, /<EvidenceFrame/);
 });

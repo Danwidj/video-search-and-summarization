@@ -37,6 +37,11 @@ function evidenceOf(entries: EvidenceEntry[], type: EvidenceItemType, itemId: st
   return {
     image: entry.image,
     imageUrl: null,
+    frame: text(entry.frame),
+    frameUrl: null,
+    located: typeof entry.located === 'boolean' ? entry.located : null,
+    boxSeconds: num(entry.box_seconds),
+    imageGap: text(entry.image_gap),
     boundingBox: entry.bounding_box,
     timestampSeconds: entry.timestamp_seconds,
     uploaded: entry.source === 'upload',

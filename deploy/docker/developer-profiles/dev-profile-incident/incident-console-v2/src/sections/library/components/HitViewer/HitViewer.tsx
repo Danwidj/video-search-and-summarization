@@ -10,6 +10,7 @@ import { RelationshipLine } from '@/sections/library/components/HitCard';
 import { type SearchedVersion, hitKey, hitsInFrame, matchPercent, relationshipOf, reportHref } from '@/lib/library/search';
 import type { EvidenceSearchHit } from '@/modules/search/domain/search';
 import { formatClock } from '@/modules/reports/domain/normalize';
+import { hitDisplay } from '@/lib/evidence/evidence-view';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -33,13 +34,13 @@ export function HitViewer({
   useEffect(() => setSelectedKey(hitKey(hit)), [hit]);
 
   // The frame is cut from the video on demand; when it cannot be (no ffmpeg, no video), the enlarged crop stands in.
-  const frameSrc = `/api/reports/${encodeURIComponent(hit.incident.incidentId)}/frame?t=${hit.item.timestampSeconds}`;
+  const frameSrc = hitDisplay(hit.item, hit.incident.incidentId).frameSrc;
   const [frameReady, setFrameReady] = useState(false);
   useEffect(() => {
     setFrameReady(false);
     const probe = new Image();
     probe.onload = () => setFrameReady(true);
-    probe.src = frameSrc;
+    if (frameSrc) probe.src = frameSrc;
     return () => {
       probe.onload = null;
     };

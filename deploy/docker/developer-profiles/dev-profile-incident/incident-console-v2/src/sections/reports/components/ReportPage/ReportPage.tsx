@@ -801,6 +801,7 @@ export function ReportPage({
             hideSummary={repeatsOverviewSummary(view.cameras, view.overview.description, report.structured.incident.description)}
             officialMissing={!officialRevision && revisions !== null}
             evidence={view.evidence}
+            incidentId={incidentId}
             onPlayFrom={(video, seconds) => seekCitation({ videoName: video, timestampSeconds: seconds })}
             onSeek={seek}
             playerDuration={playerDuration}

@@ -138,7 +138,9 @@ async def test_crops_land_under_the_r2_prefix_and_the_stored_key_stays_prefix_fr
     client.get_paginator.return_value.paginate.return_value = [{}]
     store = R2EvidenceStore(bucket="bucket", client=client)
     service = CropEvidenceService(store=store)
-    crop = MagicMock(image_bytes=b"jpg", normalized_box=[0.1, 0.1, 0.5, 0.5])
+    crop = MagicMock(
+        image_bytes=b"jpg", normalized_box=[0.1, 0.1, 0.5, 0.5], frame_bytes=b"frame", box_seconds=1, located=True
+    )
     service.crop_item = MagicMock(return_value=crop)  # type: ignore[method-assign]
     service.is_detector_available = MagicMock(return_value=True)  # type: ignore[method-assign]
     set_crop_evidence_service(service)

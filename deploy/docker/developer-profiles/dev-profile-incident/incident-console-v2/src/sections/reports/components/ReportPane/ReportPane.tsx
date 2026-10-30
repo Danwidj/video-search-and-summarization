@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card as UICard, CardContent } from '@/components/ui/card';
+import { evidenceDisplay, evidenceLabel } from '@/lib/evidence/evidence-view';
 import { formatTimestamp } from '@/lib/time';
 import { severityStyle } from '@/lib/ui/severity';
 import { timestampWithinVideo } from '@/modules/contract/domain/video-bounds';
@@ -36,6 +37,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function ReportPane({
   report,
   evidence,
+  incidentId,
   playerDuration,
   onSeek,
   onPlayFrom,
@@ -46,6 +48,8 @@ export function ReportPane({
   report: ReportView;
   /** The evidence of every camera of the version, each item naming its video. */
   evidence: IncidentEvidenceItem[];
+  /** The incident the version belongs to; the frame of an older item is cut from its stored video. */
+  incidentId: string;
   playerDuration: number | null;
   onSeek: (seconds: number) => void;
   /** Opens a video (switching camera when it is not the open one) at a time. */
@@ -195,12 +199,12 @@ export function ReportPane({
       ) : (
         <div className={`mt-3 ${EVIDENCE_GRID}`} data-testid="evidence-grid">
           {evidence.map((item) => (
-            <Card item={item} key={`${item.video}/${item.kind}/${item.id}`} onOpen={setDetail} />
+            <Card incidentId={incidentId} item={item} key={`${item.video}/${item.kind}/${item.id}`} onOpen={setDetail} />
           ))}
         </div>
       )}
 
-      <EvidenceDetailDialog item={detail} onClose={() => setDetail(null)} onPlayFrom={onPlayFrom} />
+      <EvidenceDetailDialog incidentId={incidentId} item={detail} onClose={() => setDetail(null)} onPlayFrom={onPlayFrom} />
 
       <ModelSection title="Model event timeline" source={modelOutput?.source}>
         {windowEdited && original && original.startSeconds !== null && original.endSeconds !== null && (
@@ -333,9 +337,18 @@ function IdBadge({ id }: { id: string }) {
   );
 }
 
-/** One evidence item of any camera: its image opens the detail pop-up, and the card names the video it comes from. */
-function Card({ item, onOpen }: { item: IncidentEvidenceItem; onOpen: (item: IncidentEvidenceItem) => void }) {
+/** One evidence item of any camera: its whole frame with the box opens the detail pop-up, and the card names the video it comes from. */
+function Card({
+  incidentId,
+  item,
+  onOpen,
+}: {
+  incidentId: string;
+  item: IncidentEvidenceItem;
+  onOpen: (item: IncidentEvidenceItem) => void;
+}) {
   const { seconds } = item;
+  const shown = evidenceDisplay(item.evidence, incidentId, item.video);
   return (
     <UICard className="w-full min-w-0 overflow-hidden text-xs" data-testid="evidence-card">
       <button
@@ -345,17 +358,21 @@ function Card({ item, onOpen }: { item: IncidentEvidenceItem; onOpen: (item: Inc
         type="button"
       >
         <EvidenceFrame
-          aspect={2}
+          aspect={16 / 9}
+          box={shown.box}
           className="rounded-none!"
+          frameSrc={shown.frameSrc}
+          fullFrame
           kind={item.kind}
           label={item.title}
+          notLocated={shown.notLocated}
           seconds={seconds}
-          src={item.evidence?.imageUrl}
+          src={shown.src}
         />
       </button>
       <CardContent className="space-y-1 p-3">
         <h4 className="flex items-center gap-2 text-sm font-semibold">
-          <IdBadge id={item.id} />
+          <IdBadge id={evidenceLabel(item.video, item.id)} />
           <span className="min-w-0">{item.title}</span>
         </h4>
         <p className="break-all font-mono text-[11px] text-muted-foreground" data-testid="evidence-video">

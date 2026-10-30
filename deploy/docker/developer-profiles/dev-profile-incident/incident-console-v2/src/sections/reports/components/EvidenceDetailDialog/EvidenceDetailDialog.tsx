@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { IncidentEvidenceItem } from '@/modules/reports/domain/incident-evidence';
+import { evidenceDisplay, evidenceLabel } from '@/lib/evidence/evidence-view';
 import { formatClock } from '@/modules/reports/domain/normalize';
 import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
 
@@ -15,38 +16,43 @@ import { EvidenceFrame } from '@/sections/evidence/components/EvidenceFrame';
  * which opens that video at that time. Closes with Escape, the close button or a click outside.
  */
 export function EvidenceDetailDialog({
+  incidentId,
   item,
   onClose,
   onPlayFrom,
 }: {
+  incidentId: string;
   item: IncidentEvidenceItem | null;
   onClose: () => void;
   onPlayFrom: (video: string, seconds: number) => void;
 }) {
   return (
     <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
-      {item && <Detail item={item} onClose={onClose} onPlayFrom={onPlayFrom} />}
+      {item && <Detail incidentId={incidentId} item={item} onClose={onClose} onPlayFrom={onPlayFrom} />}
     </Dialog>
   );
 }
 
 function Detail({
+  incidentId,
   item,
   onClose,
   onPlayFrom,
 }: {
+  incidentId: string;
   item: IncidentEvidenceItem;
   onClose: () => void;
   onPlayFrom: (video: string, seconds: number) => void;
 }) {
   const { seconds } = item;
+  const shown = evidenceDisplay(item.evidence, incidentId, item.video);
   const canPlay = seconds !== null && item.playable;
   return (
     <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl" data-testid="evidence-dialog">
       <DialogHeader className="pr-8">
         <DialogTitle className="flex items-center gap-2 text-lg">
           <Badge className="shrink-0 px-1.5 py-0 font-mono text-[10px] font-bold" variant="outline">
-            {item.id}
+            {evidenceLabel(item.video, item.id)}
           </Badge>
           <span className="min-w-0">{item.title}</span>
         </DialogTitle>
@@ -55,7 +61,17 @@ function Detail({
           {seconds !== null && ` · ${formatClock(seconds)}`}
         </DialogDescription>
       </DialogHeader>
-      <EvidenceFrame aspect={16 / 9} kind={item.kind} label={`${item.title} image`} seconds={seconds} src={item.evidence?.imageUrl} />
+      <EvidenceFrame
+        aspect={16 / 9}
+        box={shown.box}
+        frameSrc={shown.frameSrc}
+        fullFrame
+        kind={item.kind}
+        label={`${item.title} image`}
+        notLocated={shown.notLocated}
+        seconds={seconds}
+        src={shown.src}
+      />
       <div className="grid gap-2 text-sm leading-6">
         <p className="whitespace-pre-wrap text-foreground/80" data-testid="evidence-dialog-description">
           {item.description || 'No description was recorded.'}
