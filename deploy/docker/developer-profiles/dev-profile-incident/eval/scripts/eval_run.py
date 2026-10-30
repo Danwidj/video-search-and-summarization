@@ -232,7 +232,7 @@ def generate_rp1_report(prediction: dict, *, max_retries: int = 2) -> dict:
 def run_one_video(
     db, *, model: str, category: str, filename: str, incident_id: str, r2_object_key: str, video_url: str,
     gt_p1_shaped: dict, model_run_id: str, split_manifest_ref: str, video_duration_seconds: float | None = None,
-    video_size_bytes: int | None = None, incident_only: bool = False, p1_call=None,
+    video_size_bytes: int | None = None, incident_only: bool = False, p1_call=None, score: bool = True,
 ) -> dict:
     """Steps 2-7 for one (model, video) pair. Returns the Step 7 per-video result dict.
 
@@ -247,11 +247,15 @@ def run_one_video(
     ``incident_only`` scores the incident fields only: no embedding check, no
     entity/instrument/asset matching and no RP1 (recorded as skipped).
 
+    ``score=False`` (the end-to-end profile) validates the output but scores nothing: no store write,
+    no embedding check, no judge request and no RP1. Its outcome and timing are kept; it is never an
+    accuracy result.
+
     Raises ``EvaluatorDependencyError`` (aborting the whole run) if the
     embedding server or LLM judge is unavailable or invalid for this video -
     never silently continues with a missing/default score treated as valid.
     """
-    if not incident_only:
+    if score and not incident_only:
         check_embedding_server_healthy(FROZEN_EMBEDDING_BASE_URL, expected_model=FROZEN_EMBEDDING_MODEL)
 
     # ``p1_call(model, video_url) -> P1Outcome`` is an experiment arm (experiment_runner.py); the default is
@@ -273,6 +277,13 @@ def run_one_video(
     contract_ok = p1_result.ok and policy["full_contract_ok"]
     core_ok = p1_result.ok and policy["core_ok"]
     prediction = policy["report"] if core_ok else dict(EMPTY_PREDICTION)
+
+    if not score:
+        return unscored_result(
+            filename=filename, incident_id=incident_id, category=category, model=model, model_run_id=model_run_id,
+            split_manifest_ref=split_manifest_ref, r2_object_key=r2_object_key, video_size_bytes=video_size_bytes,
+            video_duration_seconds=video_duration_seconds, p1_outcome=p1_outcome, policy=policy,
+            prediction=prediction, contract_ok=contract_ok, contract_error=contract_error, core_ok=core_ok)
 
     persist_prediction(db, incident_id, model_run_id, prediction)
 
@@ -362,6 +373,41 @@ def run_one_video(
     }
     # scored | contract_invalid | parse_failure are model outputs; timeout,
     # rate_limited and http_error are not and never count as a wrong prediction.
+    result["outcome"] = classify_outcome(result["p1_raw"], result["validation"])
+    return result
+
+
+def unscored_result(*, filename: str, incident_id: str, category: str, model: str, model_run_id: str,
+                    split_manifest_ref: str, r2_object_key: str, video_size_bytes: int | None,
+                    video_duration_seconds: float | None, p1_outcome, policy: dict, prediction: dict,
+                    contract_ok: bool, contract_error: str, core_ok: bool) -> dict:
+    """A validated but unscored video-run (``run_one_video(score=False)``): the same outcome and timing fields."""
+    p1_result = p1_outcome.result
+    result = {
+        "filename": filename, "incident_id": incident_id, "category": category, "model_id": model,
+        "prompt_version": contract.contract_version(), "inference_config": recorded_p1_config(),
+        "split_manifest_ref": split_manifest_ref, "run_id": model_run_id, "r2_object_key": r2_object_key,
+        "video": {"r2_object_key": r2_object_key, "size_bytes": video_size_bytes,
+                  "duration_seconds": video_duration_seconds,
+                  "duration_source": "mp4_mvhd" if video_duration_seconds is not None else None},
+        "timing": {"scope": "p1_http_round_trip", "p1_elapsed_s": p1_result.elapsed_s if p1_result.ok else None,
+                   "final_attempt_elapsed_s": p1_result.elapsed_s, "started_at": p1_result.started_at,
+                   "finished_at": p1_result.finished_at, "timeout_s": P1_TIMEOUT_SECONDS},
+        "scored": False,
+        "prediction_items": {k: len(prediction.get(k) or []) for k in ("entities", "instruments", "assets")},
+        "p1_raw": {"content": p1_result.content, "reasoning_content": p1_result.reasoning_content,
+                   "finish_reason": p1_result.finish_reason, "ok": p1_result.ok, "error": p1_result.error,
+                   "status_code": p1_result.status_code, "failure_kind": p1_result.failure_kind,
+                   "rate_limit": p1_outcome.summary(), "usage": (p1_result.raw or {}).get("usage") or {},
+                   "contract_ok": contract_ok, "contract_error": contract_error, "core_ok": core_ok},
+        "validation": {"contract_version": contract.contract_version(), "validation_policy": contract.POLICY_ID,
+                       "full_contract_ok": contract_ok, "core_ok": core_ok, "core_violations": policy["core"],
+                       "enrichment_violations": policy["enrichment"], "video_duration_seconds": video_duration_seconds,
+                       "video_bounds_checked": policy["video_bounds_checked"]},
+        "judge_calls": 0,
+        "judge_tokens": 0,
+        "methodology_version": methodology.METHODOLOGY_VERSION,
+    }
     result["outcome"] = classify_outcome(result["p1_raw"], result["validation"])
     return result
 

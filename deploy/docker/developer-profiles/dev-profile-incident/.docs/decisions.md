@@ -2,6 +2,16 @@
 
 Decisions that still shape `dev-profile-incident`, newest first. Each entry: decision, why, alternatives rejected, links. Superseded and purely historical decisions are removed; git history has them.
 
+### 2026-10-30: End-to-end VSS profile prepared with a per-request crop-call cap and its own budget (not approved to run)
+- **Decision:** the plan §F.2 profile runs C2 and C3 through the local experiment agent with cropping on, on 15 test clips (3 per category, `random.Random(20261027)`), 1 repeat, never scored (`purpose: profile`, `scoring: none`).
+  - **Agent:** a new experimental `/analyze` field `max_crop_calls` (1-200, gated by `INCIDENT_EXPERIMENTS_ENABLED=1`). One counter per request is checked before every grounding HTTP attempt, retries included. An experimental crops-on request without it is 400. Production requests are unchanged and uncapped. The response's `experiment.crop` reports crop wall time, calls, tokens, images and gaps.
+  - **Runner:** separate `budget.max_crop_calls` and `max_crop_tokens`, reserved before each video-run at the cap × (1 + retries) and 6,000 tokens per call. An attempt that may have cropped unseen counts at the cap.
+  - **Isolation:** `e2e-` ids and their own results. The preflight and the report re-hash every Stage 3 result file against its passed audit.
+- **Status:** configs, manifest, preflight (passing) and report tooling are ready. **No profile request has been sent; execution needs the owner's budget approval** ([plan](../eval/docs/experiments/e2e-profile-plan.md)).
+- **Why:** the box-call count is only known after P1, so the spend needs a bound the runner can enforce before each call (the reason the Stage 0 crop pilot was dropped). A cap of 40 covers the p95 of predicted items in Stage 3 (28); the one outlier (101 items) is truncated and counted.
+- **Alternatives rejected:** counting predicted items × 4 attempts as the bound (no hard stop inside a request); scoring the profile (its outputs are not accuracy results, and the judge adds cost); running it on the shared VM agent (ask-first, and it writes to shared storage).
+- **Links:** [profile plan](../eval/docs/experiments/e2e-profile-plan.md), [vm-api-contracts](vm-api-contracts.md#experimental-settings-prompt-experiments-pr-6b), [final report](../eval/docs/experiments/final-report.md).
+
 ### 2026-10-30: Stage 3 executed once under the frozen design, by an automated supervisor
 - **Decision:** the owner approved Stage 3 execution on 2026-10-29 under the frozen plan and caps, with end-to-end automation. `eval_stage3.py supervise` (`eval/stage3_automation.py`) ran it: preflight before every session, checkpointed 4-hour sessions, a progress log, then recovery-v1, both report views and an integrity audit. The 220 video-runs ran once (stage `20261029T124321Z-0953f2d3`); the audit passed.
 - **Outcome:** no ΔI comparison excludes zero. V1 minus base is +0.019 [-0.015, +0.055] in VSS and -0.011 [-0.045, +0.024] direct; VSS minus direct is -0.007 [-0.036, +0.024] (base) and +0.023 [-0.003, +0.050] (V1). Usage: 247 + 12 recovery P1 attempts, 2.01 M tokens, 865 judge calls, far within the caps. One attempt discarded after a judge `ReadTimeout` is not in the cost log and is disclosed ([results](../eval/docs/experiments/stage3-results.md)).

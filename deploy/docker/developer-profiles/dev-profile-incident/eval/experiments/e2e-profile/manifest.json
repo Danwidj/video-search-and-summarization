@@ -1,0 +1,96 @@
+{
+  "manifest": "e2e-profile-manifest-v1",
+  "plan": "ground-truth-and-prompt-experiments-plan \u00a7F.2 (end-to-end profile; latency and reliability only)",
+  "configs": {
+    "C2": {
+      "experiment_id": "e2e-c2-vss-base",
+      "file": "experiments/configs/e2e-c2-vss-base.json",
+      "file_sha256": "ea6f4df2d678c9505c87b96422603d1085940fba8084495f08cd99618c4c0a3d",
+      "stage3_counterpart": "s3-c2-vss-base",
+      "prompt_id": "p1-v4-base",
+      "prompt_sha256": "409ed9b3187a56be082bb2542abb243cc13762fdcae7739206d11455064cc4a8"
+    },
+    "C3": {
+      "experiment_id": "e2e-c3-vss-v1",
+      "file": "experiments/configs/e2e-c3-vss-v1.json",
+      "file_sha256": "ff4a1dcbdfa9a52b2f344de171c584efeb3ce8c6eb4c527ecec71994a5cef407",
+      "stage3_counterpart": "s3-c3-vss-v1",
+      "prompt_id": "p1-v4-e01-severity",
+      "prompt_sha256": "004746ea7d193fbba4af4c411c8baa2c7a1c9acfdd9d81fdaee19838024c4138"
+    }
+  },
+  "clips": {
+    "rule": "per category, random.Random(20261027).sample(sorted test clips, 3)",
+    "seed": 20261027,
+    "test": [
+      "Animal003",
+      "Animal006",
+      "Animal015",
+      "Assault012",
+      "Assault018",
+      "Assault050",
+      "Burglary005",
+      "Burglary013",
+      "Burglary071",
+      "Explosion004",
+      "Explosion014",
+      "Explosion051",
+      "RoadAccidents008",
+      "RoadAccidents024",
+      "RoadAccidents069"
+    ]
+  },
+  "order": {
+    "seed": 20261027,
+    "video_runs": 30,
+    "schedule_sha256": "43935b41450869574348a5dab521facd9c120ba0241036a52deaa3070a45f03c"
+  },
+  "caps": {
+    "per_config": {
+      "C2": {
+        "max_p1_calls": 45,
+        "max_p1_tokens": 1575000,
+        "max_judge_calls": 0,
+        "max_crop_calls": 720,
+        "max_crop_tokens": 4320000
+      },
+      "C3": {
+        "max_p1_calls": 45,
+        "max_p1_tokens": 1575000,
+        "max_judge_calls": 0,
+        "max_crop_calls": 720,
+        "max_crop_tokens": 4320000
+      }
+    },
+    "stage": {
+      "max_p1_calls": 90,
+      "max_p1_tokens": 3150000,
+      "max_judge_calls": 0,
+      "max_crop_calls": 1440,
+      "max_crop_tokens": 8640000
+    },
+    "max_crop_calls_per_request": [
+      40
+    ],
+    "crop_tokens_ceiling_per_call": 6000,
+    "p1_tokens_ceiling_per_attempt": 35000
+  },
+  "agent_code_sha256": {
+    "utils/crop_evidence.py": "2355dd3982e52c16cda319d5698e4d2d86f50ff753c72abf75f0f1a8aa254825",
+    "tools/incident_report_gen.py": "16bec11ac1041746e0b699026e617a20d55c8cd29224a0e10d7baf40fe9d32ca",
+    "api/incident_analyze.py": "7c25bece992d803bed8903b9af9f889a4492b86cf4dae4f5cfec8c586154f1ee"
+  },
+  "stage3_protected": {
+    "audit_at": "2026-10-30T07:18:10+00:00",
+    "files_sha256": {
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c1-direct-base/20261029T124321Z/results.json": "87713cd73e3c5c2cc22277ee8a70b8ef8164df9d7697facc6402441595300f35",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c2-vss-base/20261029T124321Z/results.json": "aff80fc9b8d46e2cd64d697c73e0ac58aae2d029af4063c60a8e5466394bd754",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c3-vss-v1/20261029T124321Z/results.json": "0b05e4f348a7e0df465211d31c4d0fb8ee7370a6e8aa6719d902b56f9685ea0e",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c4-direct-v1/20261029T124321Z/results.json": "542167627a2aa73a4f22cb216e373eeeaefd6d5a4dfb8870dcaef869247a3d10",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c1-direct-base-recovery/20261030T064627Z/merged-original+recovery-v1.json": "6ed9685a707101e0e27baff19b5cbbc2ea94f2e3743bc70ee3da97b059d2c2d8",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c2-vss-base-recovery/20261030T064627Z/merged-original+recovery-v1.json": "374099e47e132f1d8e159c14f114f38a0341b39e177702174c91995af48db75e",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c3-vss-v1-recovery/20261030T064627Z/merged-original+recovery-v1.json": "185f539acaa4d6697c4baf6e66d6af59df455b3b82383621a7e16c721b5dd58e",
+      "/home/hengz/video-search-and-summarization/deploy/docker/developer-profiles/dev-profile-incident/eval/eval_data/results/experiments/s3-c4-direct-v1-recovery/20261030T064627Z/merged-original+recovery-v1.json": "f16e50197498c888166c3471bac2698b74ff4ff09765d715ecdc7e4c000b2b38"
+    }
+  }
+}

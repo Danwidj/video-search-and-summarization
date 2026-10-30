@@ -28,6 +28,7 @@ import asyncio
 import base64
 from collections.abc import Iterable
 from collections.abc import Sequence
+import copy
 from dataclasses import dataclass
 import io
 import json
@@ -36,6 +37,7 @@ import math
 import os
 from pathlib import Path
 import re
+import threading
 import time
 from typing import Any
 from typing import Protocol
@@ -229,6 +231,86 @@ _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 _JSON_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$")
 
 
+class CropCallCapReachedError(RuntimeError):
+    """An experimental request used up its grounding-call cap; the item keeps an ``image_gap``."""
+
+
+class CropCallBudget:
+    """The grounding HTTP attempts one experimental request may make (retries included), and what they used.
+
+    One budget is shared by the request's concurrent crops, which run in worker threads, so it is locked.
+    An attempt beyond ``limit`` is refused before it is sent (``CropCallCapReachedError``).
+    """
+
+    def __init__(self, limit: int) -> None:
+        if limit < 1:
+            raise ValueError("a crop-call cap must be at least 1")
+        self.limit = limit
+        self.calls = 0
+        self.refused = 0
+        self.tokens = 0
+        self.calls_without_usage = 0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            if self.calls >= self.limit:
+                self.refused += 1
+                raise CropCallCapReachedError(f"crop-call cap of {self.limit} reached")
+            self.calls += 1
+
+    def record_response(self, resp: httpx.Response) -> None:
+        """Count the tokens a sent attempt reported; a reply without usage (other than a 429) is counted as such."""
+        try:
+            usage = resp.json().get("usage") or {}
+        except (ValueError, AttributeError):
+            usage = {}
+        total = int(
+            usage.get("total_tokens") or (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+        )
+        with self._lock:
+            if total:
+                self.tokens += total
+            elif resp.status_code != 429:
+                self.calls_without_usage += 1
+
+    def summary(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "cap": self.limit,
+                "calls": self.calls,
+                "refused_by_cap": self.refused,
+                "cap_reached": self.refused > 0,
+                "tokens": self.tokens,
+                "calls_without_usage": self.calls_without_usage,
+            }
+
+
+class BudgetedDetector:
+    """Any detector under a ``CropCallBudget``: one budgeted call per ``detect``."""
+
+    def __init__(self, detector: Any, budget: CropCallBudget) -> None:
+        self.detector = detector
+        self.budget = budget
+
+    def is_available(self) -> bool:
+        return bool(self.detector.is_available()) if hasattr(self.detector, "is_available") else True
+
+    def detect(self, frame: np.ndarray, query: str) -> Sequence[Detection | dict[str, Any]]:
+        self.budget.acquire()
+        detections: Sequence[Detection | dict[str, Any]] = (
+            self.detector.detect(frame, query) if hasattr(self.detector, "detect") else self.detector(frame, query)
+        )
+        return detections
+
+
+def with_call_budget(detector: Any, budget: CropCallBudget) -> Any:
+    """The detector for one budgeted request; ``DefaultDetector`` counts every HTTP attempt, including retries."""
+    if isinstance(detector, DefaultDetector):
+        return detector.with_call_budget(budget)
+    return BudgetedDetector(detector, budget)
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
     """Parse a JSON object from model output, tolerating Markdown code fences."""
     parsed = json.loads(_JSON_FENCE_PATTERN.sub("", text.strip()))
@@ -253,6 +335,7 @@ class DefaultDetector:
         base_url: str | None = None,
         api_key: str | None = None,
         timeout_seconds: float = 120.0,
+        call_budget: CropCallBudget | None = None,
     ) -> None:
         self.model_name = model_name or os.getenv("VLM_NAME") or DEFAULT_GROUNDING_MODEL
         self.min_score = min_score
@@ -263,6 +346,13 @@ class DefaultDetector:
             api_key if api_key is not None else os.getenv("VLM_GATEWAY_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         )
         self.timeout_seconds = timeout_seconds
+        self.call_budget = call_budget
+
+    def with_call_budget(self, budget: CropCallBudget) -> "DefaultDetector":
+        """A copy for one request whose HTTP attempts draw on ``budget`` (the shared detector is unchanged)."""
+        budgeted = copy.copy(self)
+        budgeted.call_budget = budget
+        return budgeted
 
     def is_available(self) -> bool:
         """Return True if the remote VLM endpoint is configured with credentials."""
@@ -275,12 +365,16 @@ class DefaultDetector:
     def _request_box(self, body: dict[str, Any]) -> dict[str, Any]:
         """POST the grounding request, retrying rate limits, server errors and unparseable replies."""
         for attempt in range(1, GROUNDING_MAX_ATTEMPTS + 1):
+            if self.call_budget is not None:
+                self.call_budget.acquire()  # before sending: a refused attempt is never made
             resp = httpx.post(
                 self._chat_url(),
                 json=body,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=self.timeout_seconds,
             )
+            if self.call_budget is not None:
+                self.call_budget.record_response(resp)
             last_attempt = attempt == GROUNDING_MAX_ATTEMPTS
             if resp.status_code in _RETRYABLE_STATUS_CODES and not last_attempt:
                 time.sleep(float(resp.headers.get("retry-after") or 2.0 * attempt))
@@ -408,6 +502,8 @@ def crop_evidence_item(
             raw_detections = detector(frame, label)
         else:
             return None
+    except CropCallCapReachedError:
+        raise
     except Exception as exc:
         logger.warning("Detector execution failed for query '%s': %s", label, exc)
         return None
@@ -664,7 +760,10 @@ class CropEvidenceService:
         items = evidence_items(report)
         batch = batch_id or (await active_store.next_batch_id(folder) if active_store is not None else "run-1")
 
-        detector_ready = detector is not None or self.is_detector_available()
+        if detector is not None:
+            detector_ready = bool(detector.is_available()) if hasattr(detector, "is_available") else True
+        else:
+            detector_ready = self.is_detector_available()
         semaphore = asyncio.Semaphore(EVIDENCE_CROP_CONCURRENCY)
 
         async def _crop_and_upload(entry: dict[str, Any]) -> None:
@@ -679,6 +778,9 @@ class CropEvidenceService:
                     crop = await asyncio.to_thread(
                         self.crop_item, video_ref, entry["timestamp_seconds"], entry["label"], active_detector
                     )
+                except CropCallCapReachedError as exc:
+                    entry["image_gap"] = f"crop-call cap reached: {exc}"
+                    return
                 except Exception as exc:
                     logger.warning("Evidence crop failed for %s %s: %s", video_id, entry["item_id"], exc)
                     entry["image_gap"] = f"crop failed: {type(exc).__name__}: {exc}"
