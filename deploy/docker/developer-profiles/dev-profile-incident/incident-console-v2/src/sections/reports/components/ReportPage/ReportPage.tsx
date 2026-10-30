@@ -59,6 +59,7 @@ import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { MergeIncidentDialog } from '@/sections/reports/components/MergeIncidentDialog';
 import { CameraSwitcher } from '@/sections/reports/components/CameraSwitcher';
+import { SuggestionBanner } from '@/sections/suggestions/components/SuggestionBanner';
 import { IncidentOverview } from '@/sections/reports/components/IncidentOverview';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
@@ -660,6 +661,8 @@ export function ReportPage({
             />
           </div>
         </div>
+
+        <SuggestionBanner incidentId={Number(incidentId)} onMerged={() => setAttempt((value) => value + 1)} />
 
         {mode === 'edit' && !officialRevision && revisions && (
           <Alert
