@@ -247,7 +247,9 @@ def test_a_production_response_keeps_exactly_its_documented_keys(monkeypatch):
     assert "skip_crops" not in tool.ainvoke.await_args.args[0]
 
 
-@pytest.mark.parametrize("extra", [{"experiment_prompt_id": "p1-v4-e01-x"}, {"skip_crops": True}])
+@pytest.mark.parametrize(
+    "extra", [{"experiment_prompt_id": "p1-v4-e01-x"}, {"skip_crops": True}, {"max_crop_calls": 10}]
+)
 def test_experimental_fields_are_refused_without_the_flag(monkeypatch, extra):
     monkeypatch.delenv(incident_experiments.EXPERIMENTS_FLAG, raising=False)
     client, tool = _client(result=OUTPUT)
@@ -286,6 +288,40 @@ def test_experiment_errors_map_to_their_status(monkeypatch, error, status):
     client, _ = _client(side_effect=error)
     response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "skip_crops": True})
     assert response.status_code == status
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"experiment_prompt_id": "p1-v4-e01-x"},  # crops on, no cap
+        {"skip_crops": True, "max_crop_calls": 10},  # a cap with nothing to cap
+    ],
+)
+def test_experimental_cropping_needs_exactly_a_cap(monkeypatch, extra):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, **extra})
+    assert response.status_code == 400
+    tool.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.parametrize("cap", [0, 201, 2.5])
+def test_an_out_of_range_crop_call_cap_is_422(monkeypatch, cap):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    client, tool = _client(result=OUTPUT)
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "max_crop_calls": cap})
+    assert response.status_code == 422
+    tool.ainvoke.assert_not_awaited()
+
+
+def test_a_crop_call_cap_is_forwarded_to_the_tool(monkeypatch):
+    monkeypatch.setenv(incident_experiments.EXPERIMENTS_FLAG, "1")
+    client, tool = _client(result=OUTPUT.model_copy(update={"experiment": EXPERIMENT, "revision_id": None}))
+    response = client.post(
+        "/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL, "max_crop_calls": 40, "skip_rp1": True}
+    )
+    assert response.status_code == 200
+    assert tool.ainvoke.await_args.args[0]["max_crop_calls"] == 40
 
 
 def test_an_experiment_cannot_carry_a_reviewer_prompt(monkeypatch):

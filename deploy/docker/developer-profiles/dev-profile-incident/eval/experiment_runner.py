@@ -67,9 +67,17 @@ SPLITS = ("dev", "test")
 CONFIG_KEYS = {"experiment_id", "description", "arm", "prompt_id", "model", "split", "ground_truth", "repeats",
                "budget", "pipeline", "frozen_baseline", "final", "selection_record", "baseline_ref", "videos",
                "purpose", "scoring"}
-SCORING = ("full", "incident_only")
-PURPOSES = ("experiment", "pilot")
+SCORING = ("full", "incident_only", "none")
+# profile: the end-to-end VSS profile (plan §F.2): latency and reliability only, cropping on, never accuracy.
+PURPOSES = ("experiment", "pilot", "profile")
 BUDGET_KEYS = ("max_p1_calls", "max_p1_tokens", "max_judge_calls")
+# The end-to-end profile's own resource budget for the cropping stage (grounding calls and their tokens).
+CROP_BUDGET_KEYS = ("max_crop_calls", "max_crop_tokens")
+PROFILE_ID_PREFIX = "e2e-"
+# The most one grounding call can use: one frame (at most 1,280 px on its long edge) plus the short box prompt and
+# max_tokens 512. A crop call that reports no usage, or one that may have run unseen, is counted at this ceiling.
+CROP_TOKENS_CEILING = 6000
+MAX_CROP_CALLS_PER_REQUEST = 200  # the agent's MAX_CROP_CALLS_LIMIT
 PRICING_PATH = EVAL_DIR / "experiments" / "pricing.json"
 JUDGE_CAPS_PATH = EVAL_DIR / "experiments" / "judge-caps.json"
 # D10: deterministic randomisation of the video order per repeat.
@@ -135,6 +143,10 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
     if not isinstance(config["repeats"], int) or config["repeats"] < 1:
         problems.append("repeats must be a whole number >= 1")
     for key in BUDGET_KEYS:
+        if key == "max_judge_calls" and config["scoring"] == "none":
+            if (config["budget"] or {}).get(key) != 0:
+                problems.append("budget.max_judge_calls must be 0 when scoring is none (no judge request is made)")
+            continue
         if not isinstance((config["budget"] or {}).get(key), int) or config["budget"][key] < 1:
             problems.append(f"budget.{key} must be a whole number >= 1 (hard cap)")
     if config["purpose"] not in PURPOSES:
@@ -146,6 +158,7 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
     if config["purpose"] == "experiment" and config["scoring"] != "full":
         problems.append("an experiment is scored in full (D9 needs the item F1 scores); incident_only is for pilots")
     pipeline = config["pipeline"] or {}
+    problems += profile_problems(config, pipeline)
     if pipeline.get("skip_rp1") is not True:
         problems.append("pipeline.skip_rp1 must be true: RP1 is not part of an extraction experiment")
     if pipeline.get("profile", "accuracy") == "accuracy" and pipeline.get("skip_crops") is not True:
@@ -163,13 +176,54 @@ def config_problems(config: dict, *, registry: dict | None = None, decisions_pat
     if not (config["ground_truth"] or {}).get("dir"):
         problems.append("ground_truth.dir must name a frozen ground-truth directory")
     if config["split"] == "test":
-        if config["final"] is not True:
+        # The end-to-end profile runs on test clips after Stage 3 but is never the final accuracy run.
+        if config["purpose"] != "profile" and config["final"] is not True:
             problems.append("the test split is only for the final, pre-registered run (final: true)")
         if not config["selection_record"] or not selection_record_exists(config["selection_record"], decisions_path):
             problems.append("a test run must name an existing .docs/decisions.md selection record (### heading)")
     elif config["final"]:
         problems.append("final runs are on the test split only")
     return problems
+
+
+def profile_problems(config: dict, pipeline: dict) -> list[str]:
+    """The end-to-end profile's rules: VSS, cropping on under a per-request cap, its own budget, no scoring."""
+    is_profile = config["purpose"] == "profile"
+    if pipeline.get("profile", "accuracy") == "end-to-end" and not is_profile:
+        return ["pipeline.profile end-to-end is for purpose profile only"]
+    if not is_profile:
+        return [] if config["scoring"] != "none" else ["scoring none is for the end-to-end profile only"]
+    problems = []
+    if not config["experiment_id"].startswith(PROFILE_ID_PREFIX):
+        problems.append(f"a profile experiment_id starts with {PROFILE_ID_PREFIX!r} (never a Stage 3 id)")
+    if config["arm"] != "vss":
+        problems.append("the end-to-end profile runs the vss arm only")
+    if pipeline.get("profile") != "end-to-end":
+        problems.append("a profile config sets pipeline.profile end-to-end")
+    if pipeline.get("skip_crops") is not False:
+        problems.append("the end-to-end profile runs with cropping on (pipeline.skip_crops false)")
+    cap = pipeline.get("max_crop_calls_per_request")
+    if not isinstance(cap, int) or isinstance(cap, bool) or not 1 <= cap <= MAX_CROP_CALLS_PER_REQUEST:
+        problems.append(f"pipeline.max_crop_calls_per_request must be a whole number in 1..{MAX_CROP_CALLS_PER_REQUEST}")
+    timeout = pipeline.get("request_timeout_s")
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout < 60:
+        problems.append("pipeline.request_timeout_s must be a whole number of seconds >= 60")
+    if config["scoring"] != "none":
+        problems.append("the end-to-end profile is never scored (scoring none): its outputs are not accuracy results")
+    if config["final"]:
+        problems.append("the end-to-end profile is never final (that is the Stage 3 accuracy run)")
+    if config["frozen_baseline"] is not True:
+        problems.append("the end-to-end profile runs once (frozen_baseline true)")
+    for key in CROP_BUDGET_KEYS:
+        if not isinstance((config["budget"] or {}).get(key), int) or config["budget"][key] < 1:
+            problems.append(f"budget.{key} must be a whole number >= 1 (hard cap)")
+    if set(config["budget"] or {}) - set(BUDGET_KEYS) - set(CROP_BUDGET_KEYS):
+        problems.append("budget has unknown keys")
+    return problems
+
+
+def is_profile(config: dict) -> bool:
+    return config.get("purpose") == "profile"
 
 
 def videos_for(config: dict, split: dict) -> list[str]:
@@ -211,6 +265,14 @@ def preflight(config: dict, split: dict, *, registry: dict | None = None, result
     if calls * P1_TOKENS_PLANNING_MEAN > config["budget"]["max_p1_tokens"]:
         raise ExperimentRefused(f"{calls} planned P1 calls need about {calls * P1_TOKENS_PLANNING_MEAN} tokens, more "
                                 f"than budget.max_p1_tokens {config['budget']['max_p1_tokens']}")
+    if is_profile(config):
+        cap = config["pipeline"]["max_crop_calls_per_request"]
+        if calls * cap > config["budget"]["max_crop_calls"]:
+            raise ExperimentRefused(f"{calls} planned requests x a cap of {cap} crop calls exceed budget.max_crop_calls "
+                                    f"{config['budget']['max_crop_calls']}")
+        if calls * cap * CROP_TOKENS_CEILING > config["budget"]["max_crop_tokens"]:
+            raise ExperimentRefused(f"{calls} planned requests x {cap} crop calls x {CROP_TOKENS_CEILING} tokens exceed "
+                                    f"budget.max_crop_tokens {config['budget']['max_crop_tokens']}")
     item = prompt_registry.entry(config["prompt_id"], registry)
     return {"experiment_id": config["experiment_id"], "arm": config["arm"], "model": config["model"],
             "prompt_id": item["id"], "prompt_sha256": item["sha256"], "split": config["split"],
@@ -339,6 +401,8 @@ def vss_call(config: dict, item: dict, *, incident_id: str, run_id: str, duratio
     def call(model: str, video_url: str):
         payload = {"video_url": video_url, "model": model, "model_run_id": run_id, "skip_rp1": True,
                    "skip_crops": config["pipeline"]["skip_crops"]}
+        if is_profile(config):  # cropping on under the per-request cap (the agent refuses crops-on without one)
+            payload["max_crop_calls"] = config["pipeline"]["max_crop_calls_per_request"]
         if duration:
             payload["video_duration_seconds"] = duration
         if item["id"] != prompt_registry.BASE_ID:
@@ -347,7 +411,7 @@ def vss_call(config: dict, item: dict, *, incident_id: str, run_id: str, duratio
         def once():
             started_at = _utc_now()
             response = post(f"{base}/api/v1/incidents/{incident_id}/analyze", payload,
-                            timeout=timeout or P1_TIMEOUT_SECONDS + 60)
+                            timeout=timeout or config["pipeline"].get("request_timeout_s") or P1_TIMEOUT_SECONDS + 60)
             return vss_chat_result(response, prompt_id=item["id"], prompt_sha256=item["sha256"], started_at=started_at,
                                    finished_at=_utc_now())
 
@@ -430,15 +494,39 @@ def call_usage(result: dict, pricing: dict, model: str) -> dict:
     judge_estimate = judge_calls * int(pricing["judge_tokens_per_call_estimate"])
     judge_priced = judge_tokens or judge_estimate
     cost = p1_tokens / 1e6 * _rate(pricing, model) + judge_priced / 1e6 * _rate(pricing, pricing["judge_model"])
-    return {"p1_attempts": len(attempts), "p1_prompt_tokens": usage.get("prompt_tokens"),
+    crop = crop_usage(result, attempts, unmetered)
+    return {**crop, "p1_attempts": len(attempts), "p1_prompt_tokens": usage.get("prompt_tokens"),
             "p1_completion_tokens": usage.get("completion_tokens"), "p1_total_tokens": p1_tokens,
             "p1_tokens_bound": p1_tokens + unmetered * P1_TOKENS_CEILING, "judge_calls": judge_calls,
             "judge_tokens": judge_tokens, "judge_tokens_estimate": judge_estimate,
             "cost_usd_provisional": round(cost, 6)}
 
 
+def crop_usage(result: dict, attempts: list[dict], unmetered: int) -> dict:
+    """The cropping stage of one end-to-end profile video-run, measured and bounded (empty for other runs).
+
+    ``crop_calls_bound`` is what the caps use: the calls the agent reported, plus the per-request cap for every
+    attempt that may have cropped unseen (one with no answer, such as a client-side timeout, while the agent may
+    still have been cropping). Tokens likewise, with ``CROP_TOKENS_CEILING`` per unreported call.
+    """
+    transport = result.get("transport") or {}
+    cap = transport.get("crop_cap")
+    if cap is None:
+        return {}
+    crop = (transport.get("experiment") or {}).get("crop") or {}
+    unseen = sum(1 for a in attempts if a.get("failure_kind") in ("timeout", "transport_error"))
+    calls = int(crop.get("calls") or 0)
+    tokens = int(crop.get("tokens") or 0)
+    unreported = int(crop.get("calls_without_usage") or 0)
+    return {"crop_calls": calls, "crop_calls_bound": calls + unseen * cap, "crop_tokens": tokens,
+            "crop_tokens_bound": tokens + (unreported + unseen * cap) * CROP_TOKENS_CEILING,
+            "crop_refused_by_cap": int(crop.get("refused_by_cap") or 0)}
+
+
 def judged_fields(gt_p1_shaped: dict, scoring: str) -> int:
     """Judged fields of one video: the incident description, plus (full) 1 per entity and 2 per instrument and asset."""
+    if scoring == "none":
+        return 0
     fields = 1
     if scoring == "full":
         fields += len(gt_p1_shaped.get("entities") or []) + 2 * len(gt_p1_shaped.get("instruments") or []) \
@@ -588,7 +676,9 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 "stopped": None, "videos": [], "schedule": {"seed": seed, "stage": started},
                 "usage": {"p1_calls": 0, "p1_attempts": 0, "p1_tokens": 0, "p1_tokens_bound": 0, "judge_calls": 0,
                           "judge_tokens": 0, "judge_tokens_estimate": 0,
-                          "cost_usd_provisional": 0.0, "pricing_provisional": pricing.get("provisional", True)}}
+                          "cost_usd_provisional": 0.0, "pricing_provisional": pricing.get("provisional", True),
+                          **({"crop_calls": 0, "crop_calls_bound": 0, "crop_tokens": 0, "crop_tokens_bound": 0,
+                              "crop_refused_by_cap": 0} if is_profile(c) else {})}}
                for c, plan in zip(configs, plans, strict=True)]
     for config, record in zip(configs, records, strict=True):
         if recovery is not None:
@@ -631,6 +721,13 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 reason = "max_p1_tokens (no room for this call's worst case)"
             elif used["judge_calls"] + judge_worst > budget["max_judge_calls"]:
                 reason = f"max_judge_calls (this video could need {judge_worst} judge requests)"
+            elif is_profile(config):
+                # Room for every attempt of this video-run to crop up to the per-request cap.
+                crop_worst = config["pipeline"]["max_crop_calls_per_request"] * (1 + retries_allowed)
+                if used["crop_calls_bound"] + crop_worst > budget["max_crop_calls"]:
+                    reason = f"max_crop_calls (this video-run could need {crop_worst} crop calls)"
+                elif used["crop_tokens_bound"] + crop_worst * CROP_TOKENS_CEILING > budget["max_crop_tokens"]:
+                    reason = "max_crop_tokens (no room for this video-run's worst case)"
             pause = None
             if session_seconds is not None and clock() - session_start >= session_seconds:
                 pause = f"session time limit ({session_seconds / 3600:.1f} h)"
@@ -667,9 +764,13 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
                 incident_id=incident_id, r2_object_key=video.get("r2_object_key"), video_url=video_url,
                 gt_p1_shaped=entry["p1_shaped"], model_run_id=run_ids[key], split_manifest_ref=str(SPLIT_PATH.name),
                 video_duration_seconds=video.get("duration_seconds"), video_size_bytes=video.get("size_bytes"),
-                p1_call=recording_call, incident_only=config["scoring"] == "incident_only")
+                p1_call=recording_call, incident_only=config["scoring"] == "incident_only",
+                **({"score": False} if config["scoring"] == "none" else {}))
             # The agent's own report of the call (P1-only time, end-to-end time, the prompt it used).
             result["transport"] = (seen[-1].result.raw or {}).get("agent") if seen else None
+            if is_profile(config):
+                result["transport"] = {**(result["transport"] or {}),
+                                       "crop_cap": config["pipeline"]["max_crop_calls_per_request"]}
             result.update(repeat=repeat, position=position, arm=config["arm"], prompt_id=config["prompt_id"])
             if recovery is not None:
                 result["recovers"] = recovery[config["experiment_id"]]["links"][(repeat, incident_id)]
@@ -684,6 +785,9 @@ def run_stage(configs: list[dict], *, split: dict, gt_index: dict, store, video_
             used["judge_calls"] += usage["judge_calls"]
             used["judge_tokens_estimate"] += usage["judge_tokens_estimate"]
             used["cost_usd_provisional"] = round(used["cost_usd_provisional"] + usage["cost_usd_provisional"], 6)
+            for key in ("crop_calls", "crop_calls_bound", "crop_tokens", "crop_tokens_bound", "crop_refused_by_cap"):
+                if key in used:
+                    used[key] += usage.get(key, 0)
             outcome_attempts = (result.get("p1_raw") or {}).get("rate_limit") or {}
             attempts += int(outcome_attempts.get("attempt_count") or 1)
             rate_limited += len(outcome_attempts.get("rate_limit_rejections") or [])

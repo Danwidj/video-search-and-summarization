@@ -316,6 +316,9 @@ def test_committed_configs_are_valid_dev_runs():
         if path.name.startswith("s3-"):  # the final test configs, checked in test_stage3.py
             assert config["split"] == "test" and config["final"] and config["frozen_baseline"]
             continue
+        if path.name.startswith("e2e-"):  # the end-to-end profile configs, checked in test_e2e_profile.py
+            assert config["purpose"] == "profile" and not config["final"] and config["frozen_baseline"]
+            continue
         assert config["split"] == "dev" and not config["final"]
         if config["pipeline"]["profile"] == "end-to-end":
             assert config["experiment_id"].startswith("pilot-")  # cropping only in the pilot (and the later profile)
