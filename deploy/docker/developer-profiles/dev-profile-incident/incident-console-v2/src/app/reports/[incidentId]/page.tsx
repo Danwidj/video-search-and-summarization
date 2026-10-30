@@ -9,9 +9,9 @@ export default async function ReportPage({
   searchParams,
 }: {
   params: Promise<{ incidentId: string }>;
-  searchParams: Promise<{ revision?: string; t?: string }>;
+  searchParams: Promise<{ revision?: string; camera?: string; t?: string }>;
 }) {
-  const [{ incidentId }, { revision, t }] = await Promise.all([params, searchParams]);
+  const [{ incidentId }, { revision, camera, t }] = await Promise.all([params, searchParams]);
 
   const parsed = revision === undefined ? null : Number(revision);
   const revisionId = parsed !== null && Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
@@ -20,7 +20,7 @@ export default async function ReportPage({
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <AppHeader active="library" subtitle="Report workspace" />
-      <ReportView revisionId={revisionId} startSeconds={startSeconds} incidentId={incidentId} />
+      <ReportView camera={camera?.trim() || null} revisionId={revisionId} startSeconds={startSeconds} incidentId={incidentId} />
     </main>
   );
 }
