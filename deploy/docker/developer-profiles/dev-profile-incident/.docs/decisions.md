@@ -10,6 +10,14 @@ Decisions that still shape `dev-profile-incident`, newest first. Each entry: dec
   - *Derive chips from the text in the console:* Rejected because it parses prose and breaks when the wording changes.
 - **Links:** [`vm-api-contracts.md`](vm-api-contracts.md#post-apiv1incidentsmatch-judge); `services/agent/src/vss_agents/api/incident_match_judge.py`.
 
+### 2026-10-30: The report page describes the incident; Remove video acts on the viewed camera until Regenerate
+- **Decision:** `get-report` returns `incidentVideos` and lists incident videos the open version lacks as cameras with `inVersion: false`. Video counts, Merge and the Remove dialog choice follow the incident. Remove video sits in the camera bar and still acts on the viewed camera, because a video missing from the version has no camera report. A page with no showable camera disables Re-analyse and Remove video with a reason and keeps Merge and Regenerate.
+- **Why:** After an accept or merge the open version predates the new video, so version-based counts made the Remove dialog call a non-last video the last one and misstate a destructive action.
+- **Alternatives rejected:**
+  - *Video picker in the Remove dialog:* more UI for a case Regenerate resolves.
+  - *Redirect to another version, or pick another video, for a page with no showable camera:* new flows for no gain.
+- **Links:** [architecture §5 Screens](architecture.md#screens-phase-6), [`incident-analyze-video`](../skills/incident-analyze-video/SKILL.md).
+
 ### 2026-10-30: Batch upload runs four stages per file, two files at a time, and isolates failures
 - **Decision:** Choosing several files runs each through Upload, Analyse, Build report and Check matches, with its own progress bar and error. At most two files run at once. A failed file stops at its stage and shows "Retry this video", which resumes there (a retry after a failed analyse re-analyses the stored video). An analyse refusal saying the video already exists is treated as already stored, so a retry does not fail on its own earlier attempt.
 - **Why:** One slow or unreadable clip (a 10-bit H.264 file, a model that returns invalid JSON) must not stop the rest, and re-uploading a large file to retry one later stage is waste. Every file builds its first report and checks matches itself, so batch members find each other whatever order they finish.

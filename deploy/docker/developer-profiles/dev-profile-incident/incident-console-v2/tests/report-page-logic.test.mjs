@@ -153,3 +153,24 @@ test('the report page seeks to ?t once, when the player has loaded its metadata'
   );
   assert.match(page, /id="back-to-library"[^>]*>\s*← Library\s*</);
 });
+
+// Item 1: after an accept or merge the open version covers one video while the incident holds three.
+const { cameraOptions, currentCameraCount } = await import('../src/lib/reports/cameras.ts');
+const { isLastVideo, removeChoices } = await import('../src/lib/reports/remove-video.ts');
+
+test('a version covering one of three incident videos counts the incident, not the version', () => {
+  const view = {
+    cameras: [
+      { video: 'a.mp4', current: true, inVersion: true, valid: true },
+      { video: 'b.mp4', current: true, inVersion: false, valid: false },
+      { video: 'c.mp4', current: true, inVersion: false, valid: false },
+    ],
+    incidentVideos: ['a.mp4', 'b.mp4', 'c.mp4'],
+  };
+  const videoCount = view.incidentVideos.length;
+  assert.equal(videoCount, 3);
+  assert.equal(currentCameraCount(view.cameras), 1);
+  assert.equal(isLastVideo(videoCount), false);
+  assert.deepEqual(removeChoices(videoCount), ['move', 'delete']);
+  assert.equal(cameraOptions(view.cameras).filter((option) => option.badge === 'not in this version').length, 2);
+});

@@ -47,6 +47,8 @@ export interface CameraView {
   video: string;
   /** The video is still in the incident; a camera of a removed video is history and cannot be picked. */
   current: boolean;
+  /** The open version holds a report for this video; false for an incident video added after the version was built. */
+  inVersion: boolean;
   /** The camera's report passes incident-contract-v4 validation, so the report panes can show it. */
   valid: boolean;
 }
@@ -57,7 +59,10 @@ export interface IncidentReportView {
   revision: IncidentRevisionSummary;
   overview: Overview;
   coverage: CoverageView;
+  /** The version's cameras first, then the incident's videos the version does not cover (inVersion false). */
   cameras: CameraView[];
+  /** Every video in the incident now, whichever version is open. */
+  incidentVideos: string[];
   /** The camera shown; null when no camera of the revision can be shown. */
   camera: string | null;
   /** The chosen camera's report in the shape the report panes read; null when no camera is chosen. */

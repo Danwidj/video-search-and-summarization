@@ -18,6 +18,7 @@ import {
   defaultRemoveChoice,
   effectiveRemoveChoice,
   incidentHref,
+  includingOfficial,
   isLastVideo,
   removeChoices,
   removeVideo,
@@ -44,15 +45,18 @@ export function RemoveVideoDialog({
   video: current,
   videoCount,
   versionCount,
+  hasOfficial,
   title,
   onRemoved,
 }: {
   incidentId: string;
   /** The real file name of the selected camera's video. */
   video: string;
-  /** Videos currently in the incident, this one included. */
+  /** Videos currently in the incident (not only in the open version), this one included. */
   videoCount: number;
   versionCount: number | null;
+  /** The incident has an official version; deleting the incident then deletes it too. */
+  hasOfficial: boolean;
   title: string;
   /** The video left the incident but the incident is still there: the page reloads without that camera. */
   onRemoved: () => void;
@@ -191,7 +195,7 @@ export function RemoveVideoDialog({
                   <span className="text-sm font-semibold">{last ? 'Delete the video and the incident' : 'Delete entirely'}</span>
                   <span className="text-xs font-normal leading-5 text-muted-foreground">
                     {last
-                      ? `Deletes the video, its analysis, evidence images and the stored file. Because nothing is left in the incident, Incident #${incidentId} and ${versionCount === null ? 'its versions' : noun(versionCount, 'version', 'versions')} (including the official one) are deleted too.`
+                      ? `Deletes the video, its analysis, evidence images and the stored file. Because nothing is left in the incident, Incident #${incidentId} and ${versionCount === null ? 'its versions' : noun(versionCount, 'version', 'versions')}${includingOfficial(hasOfficial)} are deleted too.`
                       : 'Deletes the video, its analysis, evidence images and the stored file. This cannot be undone.'}
                   </span>
                 </span>
@@ -243,8 +247,8 @@ export function RemoveVideoDialog({
                     {video} is the last video in this incident, so{' '}
                     <strong className="text-foreground">the incident is deleted with it</strong>. This permanently deletes the video from
                     storage and{' '}
-                    {versionCount === null ? 'all its versions' : <strong className="text-foreground">{allVersions(versionCount)}</strong>},
-                    including the official one, with their evidence images. Its link stops working. It cannot be undone.
+                    {versionCount === null ? 'all its versions' : <strong className="text-foreground">{allVersions(versionCount)}</strong>}
+                    {includingOfficial(hasOfficial)}, with their evidence images. Its link stops working. It cannot be undone.
                   </>
                 ) : (
                   <>
