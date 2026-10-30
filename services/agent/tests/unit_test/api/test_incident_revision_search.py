@@ -29,8 +29,9 @@ from vss_agents.api.incident_revision_search import create_incident_revision_sea
 from vss_agents.api.incident_search import EmbeddingUnavailableError
 
 HIT = {
+    "incident_id": 3,
     "revision_id": 7,
-    "video_id": "v1",
+    "video_names": ["front.mp4", "rear.mp4"],
     "revision_no": 2,
     "kind": "ai",
     "model_run_id": "run-1",
