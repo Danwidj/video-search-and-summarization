@@ -108,6 +108,7 @@ Finished items, newest first within each group, each with its outcome. Known iss
 
 ### Action items
 
+- **Done (2026-10-30, mvp3 Phase 7 group C1): library and dashboard fit a 390px screen; edit-mode time inputs cap at the video length.** The `/library` tab list scrolls inside itself (`overflow-x-auto`, `px-3` below `sm`) so the Matches count badge no longer widens the page (scrollWidth 405 to 390); the dashboard heatmap fits its card below `sm` (tight gaps, `p-0` cells; the 520px floor stays from `sm` up) instead of scrolling sideways inside it; the report edit pane's start and end inputs take `max` from the player duration, so they no longer report a maximum of 0. Class and `max` assertions: `tests/phone-layout-classes.test.mjs`.
 - **Done (2026-10-29): removed analysis history section from report page.** Removed orphaned `AdvancedReportTools` and bottom run history list from the report page; re-analysis is housed in the top bar.
 - **Done (2026-10-28, PR 272): AnalysisWorkspace upload target replaced with composed shadcn dropzone.** Replaced hand-written drag-and-drop button with accessible shadcn `Card`, `Button`, `Badge` and Lucide `Upload` dropzone over native file input.
 - **Done (2026-10-28, PR 271): panel resize handles swapped for shadcn Resizable.** Replaced hand-written `<hr>` horizontal separator in `ReportPage` with shadcn `ResizablePanelGroup` and `ResizableHandle`; retained vertical band height handle.
