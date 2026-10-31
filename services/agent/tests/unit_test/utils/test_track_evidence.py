@@ -35,11 +35,13 @@ from vss_agents.utils.track_evidence import best_moment
 from vss_agents.utils.track_evidence import build_tracks
 from vss_agents.utils.track_evidence import cut_at_replay
 from vss_agents.utils.track_evidence import is_hdr
+from vss_agents.utils.track_evidence import is_solid
 from vss_agents.utils.track_evidence import parse_probe
 from vss_agents.utils.track_evidence import run_tracking
 from vss_agents.utils.track_evidence import sensor_id_for
 from vss_agents.utils.track_evidence import track_json
 from vss_agents.utils.track_evidence import tracking_enabled
+from vss_agents.utils.track_evidence import visible_samples
 
 FIXTURES = Path(__file__).parent / "fixtures" / "perception"
 CLIP_8206 = ClipInfo(width=854, height=480, fps=29.97, frames=2823, duration_seconds=94.2)
@@ -135,7 +137,14 @@ class TestGroupingAndSampling:
 class TestAssociation:
     @staticmethod
     def _track(track_id: str, box, t: float = 10.0, score: float = 0.9) -> Track:
-        return Track(track_id, [Sample(t, box, score)])
+        """A solid track: three real detections ending at ``t``."""
+        return Track(track_id, [Sample(t - 0.4, box, score), Sample(t - 0.2, box, score), Sample(t, box, score)])
+
+    @staticmethod
+    def _ghost(box, t: float = 5.0) -> Track:
+        """The IMG_4569 shape: one real detection at ``t``, then tracker-only boxes drifting away from it."""
+        drift = [Sample(t + 0.2 * i, (box[0], box[1] - 40 * i, box[2], box[3] - 40 * i), -0.1) for i in range(1, 30)]
+        return Track("ghost", [Sample(t, box, 0.6), *drift])
 
     def test_the_entity_matches_the_track_it_overlaps(self):
         near = self._track("1", (100, 100, 500, 400))
@@ -163,6 +172,39 @@ class TestAssociation:
             [("E1", (100, 600, 500, 900), 10.0), ("E2", (100, 50, 500, 300), 10.0)], [left, right], 0.3
         )
         assert matched == {"E1": right, "E2": left}
+
+
+class TestGhostTracks:
+    PANEL = (15, 237, 492, 381)  # the model's box on the lift panel
+
+    def test_a_track_with_one_real_detection_is_not_solid(self):
+        assert not is_solid(TestAssociation._ghost(self.PANEL))
+        assert not is_solid(Track("1", [Sample(1.0, self.PANEL, 0.9)]))
+
+    def test_a_track_that_is_mostly_tracker_only_is_not_solid(self):
+        samples = [Sample(1.0, self.PANEL, 0.9), Sample(1.2, self.PANEL, 0.9)]
+        samples += [Sample(1.4 + 0.2 * i, self.PANEL, -0.1) for i in range(5)]
+        assert not is_solid(Track("1", samples))
+        samples += [Sample(2.5 + 0.2 * i, self.PANEL, 0.9) for i in range(5)]
+        assert is_solid(Track("1", samples))
+
+    def test_the_entity_box_on_the_ghosts_one_detection_matches_nothing(self):
+        ghost = TestAssociation._ghost(self.PANEL)
+        assert associate_tracks([("E1", self.PANEL, 5.038)], [ghost], 0.3) == {}
+        # the same box on a solid track still matches, so the ghost is the only thing that changed
+        solid = TestAssociation._track("1", self.PANEL, t=5.0)
+        assert associate_tracks([("E1", self.PANEL, 5.038)], [ghost, solid], 0.3) == {"E1": solid}
+
+    def test_tracker_only_boxes_far_from_the_last_detection_are_drift_not_visible(self):
+        ghost = TestAssociation._ghost(self.PANEL)
+        seen = visible_samples(ghost)
+        assert seen[0].t == 5.0 and max(sample.t for sample in seen) <= 6.0
+        assert len(seen) < len(ghost.samples)
+        assert visible_samples(Track("1", [Sample(1.0, self.PANEL, -0.1)])) == []
+
+    def test_best_moment_prefers_a_real_sample_over_a_larger_tracker_only_box(self):
+        track = Track("1", [Sample(1.0, (0, 0, 400, 400), 0.5), Sample(2.0, (0, 0, 800, 800), -0.1)])
+        assert best_moment(track).t == 1.0
 
 
 class TestBestMoment:

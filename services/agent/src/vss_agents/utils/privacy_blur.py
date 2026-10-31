@@ -19,11 +19,14 @@ No face model: a face is blurred by blurring the head of every person the analys
 frame was read. The heads come from two places, in order:
 
 1. **Person tracks** (``INCIDENT_TRACKING_ENABLED``): the head region (:func:`head_region`, the top
-   :data:`HEAD_FRACTION` of the box, padded) of every track's sample within :data:`TRACK_WINDOW_SECONDS` of the
-   frame's second, from all tracks, not only those matched to a report entity.
-2. **The open-vocabulary detector**: for a person item no track head covers, one ``detect`` call for
-   ``"the head of <label>"`` on the unblurred frame (one call against the request's ``CropCallBudget`` when it has
-   one); when it finds nothing, the head region of the item's own box.
+   :data:`HEAD_FRACTION` of the box, padded) of every track's visible sample within :data:`TRACK_WINDOW_SECONDS` of
+   the frame's second, from all tracks, not only those matched to a report entity. Tracker-only boxes that drift
+   away from the last real detection are not blurred.
+2. **The open-vocabulary detector**: for a person item no *solid* track head covers (a ghost track does not count),
+   one ``detect`` call for ``"the head of <label>"`` on the unblurred frame (one call against the request's
+   ``CropCallBudget`` when it has one). The detected head is blurred wherever it is, because the item's own box may
+   be wrong; the head region of the item's own box is blurred too unless the detected head sits inside it, and is
+   the only head when the detector finds nothing.
 
 Every stored frame is blurred on all those heads at its second (a person item's heads also apply to the other
 items' frames at the same second), and the crop is cut from the blurred frame, so a crop of an object shows a
@@ -40,6 +43,8 @@ from typing import Any
 
 import cv2
 import numpy as np
+
+from vss_agents.utils import track_evidence
 
 Box = tuple[int, int, int, int]  # [ymin, xmin, ymax, xmax] normalised to 0..1000
 
@@ -98,14 +103,23 @@ def overlaps(a: Sequence[float], b: Sequence[float]) -> bool:
     return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
 
 
-def track_heads_at(tracks: Iterable[Any], seconds: float, window: float = TRACK_WINDOW_SECONDS) -> list[Box]:
-    """The head region of every track's sample nearest to ``seconds``, for tracks with one within ``window``.
+def track_heads_at(
+    tracks: Iterable[track_evidence.Track],
+    seconds: float,
+    window: float = TRACK_WINDOW_SECONDS,
+    solid_only: bool = False,
+) -> list[Box]:
+    """The head region of every track's visible sample nearest to ``seconds``, for tracks with one within ``window``.
 
-    ``tracks`` are :class:`vss_agents.utils.track_evidence.Track` (anything with ``samples`` of ``t`` and ``box``).
+    Visible samples are real detections and tracker-only boxes soon after one (:func:`track_evidence.visible_samples`):
+    a ghost track's drifting boxes blur nothing. With ``solid_only`` only solid tracks count
+    (:func:`track_evidence.is_solid`), which is what decides whether a person's head is known from the tracks.
     """
     heads: list[Box] = []
     for track in tracks:
-        samples = getattr(track, "samples", None) or []
+        if solid_only and not track_evidence.is_solid(track):
+            continue
+        samples = track_evidence.visible_samples(track)
         if not samples:
             continue
         nearest = min(samples, key=lambda sample: abs(sample.t - seconds))
