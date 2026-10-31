@@ -67,17 +67,8 @@ if [ -n "$DOCKER_SERVICES" ]; then
     fi
   fi
 
-  # Map laptop-side service names to compose service names
-  compose_svcs=()
-  for svc in ${DOCKER_SERVICES}; do
-    case "$svc" in
-      vss-vios-streamprocessing) compose_svcs+=("streamprocessing-ms") ;;
-      vss-vios-nvstreamer)       compose_svcs+=("nvstreamer-2d-fusion") ;;
-      vss-vios-ingress)          compose_svcs+=("vst-ingress") ;;
-      vss-vios-postgres)         compose_svcs+=("centralizedb") ;;
-      *)                         compose_svcs+=("$svc") ;;
-    esac
-  done
+  # The laptop-side service names are the compose service names
+  read -r -a compose_svcs <<<"${DOCKER_SERVICES}"
 
   containers_to_stop=()
   if [ -f "$REPO_ROOT/deploy/docker/compose.yml" ]; then

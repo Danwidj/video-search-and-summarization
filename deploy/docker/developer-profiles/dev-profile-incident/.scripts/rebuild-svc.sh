@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 if [ -z "${1:-}" ]; then
   echo "usage: rebuild-svc.sh <service> [more services...]" >&2
   echo "  Native services: vss-agent, video-analytics-api, behavior-analytics" >&2
-  echo "  Docker services: vss-vios-streamprocessing, vss-vios-ingress, etc." >&2
+  echo "  Docker services: phoenix (elasticsearch with ENABLE_ANALYTICS=true)" >&2
   exit 1
 fi
 

@@ -181,14 +181,10 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
 
     try {
       changeStage('uploading');
-      const { sensorId, filePath, filename } = await upload(file, controller.signal, setUploadProgress);
-
-      changeStage('preparing');
-      await apiJson('/api/uploads/complete', { sensorId, filename });
+      const { filePath, filename } = await upload(file, controller.signal, setUploadProgress);
 
       changeStage('analyzing');
       const result = await apiJson<{ report: { videoId: string; revisionId: number } }>('/api/analysis', {
-        sensorId,
         filepath: filePath,
         filename,
         ...(model ? { model } : {}),

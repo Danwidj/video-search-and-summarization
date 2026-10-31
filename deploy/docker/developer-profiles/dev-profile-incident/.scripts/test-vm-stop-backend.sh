@@ -94,8 +94,8 @@ case "$1" in
     for a in "$@"; do
       case "$a" in
         ps)
-          echo "c_streamprocessing"
-          echo "c_redis"
+          echo "c_phoenix"
+          echo "c_elasticsearch"
           exit 0
           ;;
       esac
@@ -166,7 +166,7 @@ check_empty() {
   fi
 }
 
-DOCKER_SVCS="vss-vios-streamprocessing redis vss-haproxy-ingress"
+DOCKER_SVCS="phoenix elasticsearch"
 NATIVE_SVCS="vss-agent"
 
 # Test 1: Another session holds shared lock -> do not stop backend
@@ -203,7 +203,7 @@ out="$(bash "$SUT" "$LOCK_FILE" "$FAKE_REPO" "$DOCKER_SVCS" "$NATIVE_SVCS" 2>&1)
 check "last exit rc" "0" "$rc"
 check "last exit message" "last active session exited; stopping backend services on the VM..." "$out"
 check "native stop called" "stop vss-agent" "$(cat "$FAKE_NATIVE_LOG")"
-check "docker stop called" "stop c_streamprocessing c_redis" "$(cat "$FAKE_DOCKER_LOG")"
+check "docker stop called" "stop c_phoenix c_elasticsearch" "$(cat "$FAKE_DOCKER_LOG")"
 check "success message" "backend services stopped successfully." "$out"
 
 # Test 3: Containers are never removed (rm, down, -v never invoked)

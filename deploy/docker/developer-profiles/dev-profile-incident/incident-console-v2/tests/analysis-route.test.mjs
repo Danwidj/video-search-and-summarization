@@ -135,14 +135,14 @@ test('getServiceConfiguration parses ANALYSIS_MODE correctly', () => {
 });
 
 test('analysis route: rejects requests missing required fields', async () => {
-  const res1 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
+  const res1 = await POST(jsonRequest({}));
   assert.equal(res1.status, 400);
 
-  const res2 = await POST(jsonRequest({ sensorId: 's-1', filename: 'v.mp4' }));
+  const res2 = await POST(jsonRequest({ filename: 'v.mp4' }));
   assert.equal(res2.status, 400);
 
-  const res3 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4' }));
-  assert.equal(res3.status, 400);
+  const res3 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4' }));
+  assert.match((await res3.json()).error, /filepath and filename are required/);
 });
 
 test('analysis route: rejects an R2 key whose object is empty before calling inference', async () => {
@@ -153,7 +153,7 @@ test('analysis route: rejects an R2 key whose object is empty before calling inf
     return new Response('{}', { status: 200 });
   };
 
-  const response = await POST(jsonRequest({ sensorId: 'sensor-empty', filepath: 'uploads/sensor-empty/clip.mp4', filename: 'clip.mp4' }));
+  const response = await POST(jsonRequest({ filepath: 'uploads/sensor-empty/clip.mp4', filename: 'clip.mp4' }));
 
   assert.equal(response.status, 500);
   assert.equal(inferenceCalled, false);
@@ -164,7 +164,7 @@ test('gateway mode: configuration validation requires gatewayUrl and Supabase', 
   process.env.ANALYSIS_MODE = 'gateway';
   delete process.env.VLM_GATEWAY_URL;
 
-  const res1 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
+  const res1 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
   assert.equal(res1.status, 500);
   const data1 = await res1.json();
   assert.match(data1.error, /VLM_GATEWAY_URL is not configured/);
@@ -172,7 +172,7 @@ test('gateway mode: configuration validation requires gatewayUrl and Supabase', 
   process.env.VLM_GATEWAY_URL = 'http://gateway.test:8600';
   delete process.env.INCIDENT_SUPABASE_URL;
 
-  const res2 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
+  const res2 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
   assert.equal(res2.status, 500);
   const data2 = await res2.json();
   assert.match(data2.error, /Supabase PostgREST is not configured/);
@@ -183,7 +183,7 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   delete process.env.VLM_GATEWAY_URL;
   delete process.env.INCIDENT_AGENT_BASE_URL;
 
-  const res1 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
+  const res1 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
   assert.equal(res1.status, 500);
   const data1 = await res1.json();
   assert.match(data1.error, /INCIDENT_AGENT_BASE_URL is not configured/);
@@ -191,14 +191,11 @@ test('agent mode: configuration validation requires agentUrl and Supabase, but n
   process.env.INCIDENT_AGENT_BASE_URL = 'http://agent.test:8000';
   delete process.env.INCIDENT_SUPABASE_SERVICE_ROLE_KEY;
 
-  const res2 = await POST(jsonRequest({ sensorId: 's-1', filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
+  const res2 = await POST(jsonRequest({ filepath: 'uploads/s/v.mp4', filename: 'v.mp4' }));
   assert.equal(res2.status, 500);
   const data2 = await res2.json();
   assert.match(data2.error, /Supabase PostgREST is not configured/);
 });
-
-const { compactId } = await import('../src/lib/ids.ts');
-const compactVideoId = (sensorId) => compactId('v', sensorId);
 
 const contractFixture = (name) => readFileSync(join(process.cwd(), '..', 'contracts', 'fixtures', name), 'utf8');
 const validContractReport = () => JSON.parse(contractFixture('valid/full-report.json'));
@@ -232,7 +229,6 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
 
   const response = await POST(
     jsonRequest({
-      sensorId: 'sensor-camera-01',
       filepath: 'uploads/sensor-camera-01/clip.mp4',
       filename: 'clip.mp4',
     }),
@@ -280,7 +276,7 @@ test('agent mode: an unreadable video length is not sent, so the agent reads the
   videoBytes = null; // HeadObject answers, but the ranged reads find no MP4 header
   const recordedCalls = [];
   globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-nolen/clip.mp4');
-  const response = await POST(jsonRequest({ sensorId: 's-nolen', filepath: 'uploads/s-nolen/clip.mp4', filename: 'clip.mp4' }));
+  const response = await POST(jsonRequest({ filepath: 'uploads/s-nolen/clip.mp4', filename: 'clip.mp4' }));
   assert.equal(response.status, 200);
   const agentBody = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
   assert.ok(!('video_duration_seconds' in agentBody));
@@ -319,7 +315,7 @@ test('agent mode: a 422 carrying the raw output is validated and recorded like g
     'uploads/s-a422/clip.mp4',
   );
 
-  const response = await POST(jsonRequest({ sensorId: 's-a422', filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
+  const response = await POST(jsonRequest({ filepath: 'uploads/s-a422/clip.mp4', filename: 'clip.mp4' }));
 
   assert.equal(response.status, 422);
   const payload = await response.json();
@@ -362,7 +358,7 @@ for (const [label, version] of [
       'uploads/s-cv/clip.mp4',
     );
 
-    const response = await POST(jsonRequest({ sensorId: 's-cv', filepath: 'uploads/s-cv/clip.mp4', filename: 'clip.mp4' }));
+    const response = await POST(jsonRequest({ filepath: 'uploads/s-cv/clip.mp4', filename: 'clip.mp4' }));
 
     assert.equal(response.status, 502);
     const payload = await response.json();
@@ -402,7 +398,6 @@ test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt an
 
   const response = await POST(
     jsonRequest({
-      sensorId: 's-ai',
       filepath: 'uploads/s-ai/clip.mp4',
       filename: 'clip.mp4',
       additionalInstruction: '  Focus on the van.  ',
@@ -416,7 +411,7 @@ test('agent mode: the reviewer prompt is sent to the agent as reviewer_prompt an
 
   const again = [];
   globalThis.fetch = agentFetch(again, agentReply(), 'uploads/s-ai/clip.mp4');
-  assert.equal((await POST(jsonRequest({ sensorId: 's-ai', filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4' }))).status, 200);
+  assert.equal((await POST(jsonRequest({ filepath: 'uploads/s-ai/clip.mp4', filename: 'clip.mp4' }))).status, 200);
   assert.ok(!('reviewer_prompt' in JSON.parse(again.find((c) => c.url.includes('/api/v1/incidents/')).options.body)));
 });
 
@@ -427,7 +422,7 @@ test('agent mode: a chosen model is sent to the agent as model, not refused', as
   globalThis.fetch = agentFetch(recordedCalls, agentReply(), 'uploads/s-am/clip.mp4');
 
   const response = await POST(
-    jsonRequest({ sensorId: 's-am', filepath: 'uploads/s-am/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
+    jsonRequest({ filepath: 'uploads/s-am/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
   );
   assert.equal(response.status, 200);
   const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
@@ -441,11 +436,12 @@ test('agent mode: a revision the agent already stored is verified, not inserted 
   globalThis.fetch = agentFetch(
     recordedCalls,
     () => {
-      const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/api/v1/incidents/')).options.body);
+      const agentCall = recordedCalls.find((c) => c.url.includes('/api/v1/incidents/'));
+      const body = JSON.parse(agentCall.options.body);
       // The agent writes its AI revision against the console's model run before it answers.
       testDb.store.report_revisions.push({
         id: 41,
-        video_id: compactVideoId('s-ag'),
+        video_id: /\/api\/v1\/incidents\/([^/]+)\/analyze$/.exec(agentCall.url)[1],
         revision_no: 1,
         kind: 'ai',
         model_run_id: body.model_run_id,
@@ -455,7 +451,7 @@ test('agent mode: a revision the agent already stored is verified, not inserted 
     'uploads/s-ag/clip.mp4',
   );
 
-  const response = await POST(jsonRequest({ sensorId: 's-ag', filepath: 'uploads/s-ag/clip.mp4', filename: 'clip.mp4' }));
+  const response = await POST(jsonRequest({ filepath: 'uploads/s-ag/clip.mp4', filename: 'clip.mp4' }));
   const payload = await response.json();
   assert.equal(response.status, 200, JSON.stringify(payload));
   assert.equal(payload.report.revisionId, 41);
@@ -497,7 +493,6 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
 
   const response = await POST(
     jsonRequest({
-      sensorId: 'sensor-cam-02',
       filepath: 'uploads/sensor-cam-02/night.mp4',
       filename: 'night.mp4',
       model: 'nvidia/cosmos-3-super-reasoner',
@@ -601,7 +596,9 @@ test('gateway mode: sends the shared contract P1 request for the selected model 
   );
   const video = writes.find((w) => w.table === 'videos').body;
   assert.equal(video.filepath, 'uploads/sensor-cam-02/night.mp4');
-  assert.equal(video.source, 'sensor-cam-02');
+  assert.ok(!('source' in video), 'no sensor id is stored: uploads go to R2 only, never VST');
+  assert.equal(video.id, report.videoId);
+  assert.match(video.id, /^v[0-9a-f]{19}$/);
   assert.ok(!('duration' in video), 'the incident duration is not the video duration');
 
   // The upload flow only needs the run's identity to open its report page.
@@ -617,7 +614,7 @@ test('gateway mode: defaults to the configured VLM_MODEL when no model is sent',
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/s-d/clip.mp4');
 
-  const response = await POST(jsonRequest({ sensorId: 's-d', filepath: 'uploads/s-d/clip.mp4', filename: 'clip.mp4' }));
+  const response = await POST(jsonRequest({ filepath: 'uploads/s-d/clip.mp4', filename: 'clip.mp4' }));
 
   assert.equal(response.status, 200);
   const body = JSON.parse(recordedCalls.find((c) => c.url.includes('/v1/chat/completions')).options.body);
@@ -629,9 +626,7 @@ test('gateway mode: rejects a model outside the allowlist before calling anythin
   const recordedCalls = [];
   globalThis.fetch = gatewayFetch(recordedCalls, '{}', 'uploads/s-x/clip.mp4');
 
-  const response = await POST(
-    jsonRequest({ sensorId: 's-x', filepath: 'uploads/s-x/clip.mp4', filename: 'clip.mp4', model: 'some/other-model' }),
-  );
+  const response = await POST(jsonRequest({ filepath: 'uploads/s-x/clip.mp4', filename: 'clip.mp4', model: 'some/other-model' }));
 
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /Unsupported model/);
@@ -664,7 +659,7 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-bad/clip.mp4');
 
     const response = await POST(
-      jsonRequest({ sensorId: 's-bad', filepath: 'uploads/s-bad/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
+      jsonRequest({ filepath: 'uploads/s-bad/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
     );
 
     assert.equal(response.status, 422);
@@ -685,7 +680,7 @@ test('gateway mode: a contract failure is a 422 with no model repair call; only 
     assert.equal(row.prompt_version, 'incident-contract-v4');
     assert.equal(notes.status, 'contract_failed');
     assert.equal(notes.stage, 'contract_validation');
-    assert.equal(notes.videoId, compactVideoId('s-bad'));
+    assert.equal(notes.videoId, supabaseWrites(recordedCalls).find((w) => w.table === 'videos').body.id);
     assert.equal(notes.response.content, content, 'the original response is stored unaltered');
     assert.deepEqual(
       notes.validation.firstPass.map((v) => v.code),
@@ -709,7 +704,7 @@ test('gateway mode: a timeline outside the incident window is recorded, not fata
     globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-tl/clip.mp4');
 
     const response = await POST(
-      jsonRequest({ sensorId: 's-tl', filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
+      jsonRequest({ filepath: 'uploads/s-tl/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-super-reasoner' }),
     );
 
     assert.equal(response.status, 200, fixture);
@@ -743,7 +738,6 @@ test('gateway mode: an incident window outside the video is a core failure (422)
   globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
   let response = await POST(
     jsonRequest({
-      sensorId: 's-len',
       filepath: 'uploads/s-len/clip.mp4',
       filename: 'clip.mp4',
       model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
@@ -768,7 +762,6 @@ test('gateway mode: an incident window outside the video is a core failure (422)
   globalThis.fetch = gatewayFetch(recordedCalls, content, 'uploads/s-len/clip.mp4');
   response = await POST(
     jsonRequest({
-      sensorId: 's-len',
       filepath: 'uploads/s-len/clip.mp4',
       filename: 'clip.mp4',
       model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
@@ -790,7 +783,6 @@ test('gateway mode: an ID-only violation is repaired by id-normalization-v1 and 
 
   const response = await POST(
     jsonRequest({
-      sensorId: 's-rep',
       filepath: 'uploads/s-rep/clip.mp4',
       filename: 'clip.mp4',
       model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
@@ -892,7 +884,7 @@ test('gateway mode: request failures are recorded as request_failed with only th
     };
 
     const response = await POST(
-      jsonRequest({ sensorId: 's-req', filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
+      jsonRequest({ filepath: 'uploads/s-req/clip.mp4', filename: 'clip.mp4', model: 'nvidia/cosmos-3-nano-reasoner' }),
     );
 
     assert.equal(response.status, scenario.status, scenario.name);
@@ -919,7 +911,6 @@ test('gateway mode: every analysis of the same video creates a new model run', a
     globalThis.fetch = gatewayFetch(recordedCalls, JSON.stringify(validContractReport()), 'uploads/s-same/clip.mp4');
     const response = await POST(
       jsonRequest({
-        sensorId: 's-same',
         filepath: 'uploads/s-same/clip.mp4',
         filename: 'clip.mp4',
         model: 'nvidia/cosmos-3-nano-reasoner',
@@ -945,9 +936,7 @@ test('gateway mode: does not report success when persistence read-back is incomp
     });
   };
 
-  const response = await POST(
-    jsonRequest({ sensorId: 'sensor-missing', filepath: 'uploads/sensor-missing/clip.mp4', filename: 'clip.mp4' }),
-  );
+  const response = await POST(jsonRequest({ filepath: 'uploads/sensor-missing/clip.mp4', filename: 'clip.mp4' }));
 
   assert.equal(response.status, 500);
   const payload = await response.json();

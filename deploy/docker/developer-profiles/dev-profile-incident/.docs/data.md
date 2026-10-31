@@ -52,11 +52,11 @@ Primary registry of ingested video assets.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(sensorId)` for uploads (20 chars); clip-name ids (`Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Raw sensor ids are never used directly as `id`. |
+| `id` | `VARCHAR(20)` | PRIMARY KEY | Video identifier: `'v' + first 19 hex of sha256(random UUID)` for uploads (20 chars; rows uploaded before 2026-10-31 hashed the VST sensor id instead); clip-name ids (`Burglary012`, `RoadAccidents...`, `SYN-...`, `MOCK-...`) for fixture/eval rows. Raw sensor ids are never used directly as `id`. |
 | `filepath` | `VARCHAR(1024)` | NULLABLE | R2 object key (`uploads/<original file name>`, `anomaly/<category>/<clip>.mp4`, or `normal_videos/<clip>.mp4`; rows written before 2026-10-28 hold `uploads/<sensorId>/<uuid>.<ext>` until `migrate_r2_names.py` is applied). Older rows may hold an absolute VST path — validate with `isValidR2Key` before presigning. The console owns this column; the agent does not write `videos`. |
 | `uploaded_datetime` | `TIMESTAMP` | DEFAULT (now() AT TIME ZONE 'utc') | Naive UTC timestamp (`timestamp without time zone`) when uploaded. Some historical rows are NULL. |
 | `duration` | `INTEGER` | NULLABLE | Video duration in integer seconds |
-| `source` | `VARCHAR(512)` | NULLABLE | Sensor ID, ingestion source, or camera stream name |
+| `source` | `VARCHAR(512)` | NULLABLE | Ingestion source or camera stream name. NULL for console uploads since 2026-10-31 (uploads no longer go through VST); older upload rows keep the VST sensor id they were given. |
 | `official_revision_id` | `BIGINT` | NULLABLE; composite FK `(id, official_revision_id)` → `report_revisions(video_id, id)` | The video's official report revision. NULL = awaiting selection. Set/cleared only by `set_official_revision`. The old `selected_model_run_id`, `selected_by` and `selected_at` columns are gone. |
 | `official_since` | `TIMESTAMP` | NULLABLE | Naive UTC time the current official revision was marked; NULL when there is none. Set when the pointer moves to a different revision, kept when the same one is marked again, cleared with the pointer. Rows marked before the column existed were backfilled with the official revision's `created_at` (the real time was never recorded). |
 
@@ -404,7 +404,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 │   │   └── <clip-name>.mp4
 ├── normal_videos/                   # baseline non-incident clips
 │   └── <clip-name>.mp4
-├── uploads/                         # all new user uploads (real VST fallback and local mock)
+├── uploads/                         # all new user uploads (the console's own R2 upload, both modes)
 │   └── <original file name>         # flat; a taken name gets -2, -3 before the extension
 ├── thumbnails/                      # browser-captured report-card screenshots for new uploads
 │   └── <video-key>.webp             # e.g. thumbnails/uploads/Animal001_x264.mp4.webp
@@ -416,7 +416,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 ```
 
 > [!NOTE]
-> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original file name>` in both local-mock and real-VST flows; the VLM's later incident classification does not move or rename the object.
+> The `anomaly/` subfolders are reserved for classified seed/evaluation data. New user uploads are classification-neutral and use `uploads/<original file name>` in both modes; the VLM's later incident classification does not move or rename the object.
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
@@ -424,7 +424,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
-> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes its VST camera first (`DELETE /vst/api/v1/sensor/<videos.source>` with the `streamId` header; a row without `source` is resolved by the one live sensor whose name equals the file name without its extension; a camera VST no longer has counts as removed), then every object under `evidence/<video key>/`, then the video row; if the camera, a listing or a removal fails the row stays, so the delete can be repeated. Videos deleted before 2026-10-25 left their images behind ([status](status.md#7-archive)), and the sweep refuses an unknown video.
+> Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes its video and thumbnail objects, then every object under `evidence/<video key>/`, then the video row; if a listing or a removal fails the row stays, so the delete can be repeated. Uploads create no VST camera, so the delete calls nothing on VST. Videos deleted before 2026-10-25 left their images behind ([status](status.md#7-archive)), and the sweep refuses an unknown video.
 
 ### Key Validation & Generation Rules
 
