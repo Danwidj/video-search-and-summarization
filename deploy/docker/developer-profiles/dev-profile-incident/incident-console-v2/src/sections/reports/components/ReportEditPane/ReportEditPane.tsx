@@ -71,7 +71,7 @@ export function ReportEditPane({
 }) {
   const [picking, setPicking] = useState<PairRow['b'] | null>(null);
   // The track of the saved item the picked draft item came from: the picker scrubs it instead of the whole video.
-  const [pickingTrack, setPickingTrack] = useState<{ key: string; url: string } | null>(null);
+  const [pickingTrack, setPickingTrack] = useState<string | null>(null);
   const pairing = pairReport(a, draft);
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) =>
@@ -91,8 +91,7 @@ export function ReportEditPane({
   };
   const replace = (row: PairRow) => {
     if (!row.b) return;
-    const saved = row.a?.evidence;
-    setPickingTrack(saved?.track && saved.trackUrl ? { key: saved.track, url: saved.trackUrl } : null);
+    setPickingTrack(row.a?.evidence?.track ?? null);
     setPicking(row.b);
   };
   const applyPick = (item: NonNullable<PairRow['b']>, pick: FramePick) => {
@@ -370,7 +369,7 @@ export function ReportEditPane({
           label={draftItemName(picking) || 'evidence'}
           onClose={() => setPicking(null)}
           onPick={(pick) => applyPick(picking, pick)}
-          track={pickingTrack}
+          trackKey={pickingTrack}
           range={
             isDraftEntity(picking) && picking.firstSeenSeconds !== null
               ? { first: picking.firstSeenSeconds, last: picking.lastSeenSeconds ?? picking.firstSeenSeconds }

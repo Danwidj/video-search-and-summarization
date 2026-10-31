@@ -29,34 +29,33 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 const FRAME_SETTLE_MS = 150;
 
 // Track files by R2 key, loaded once per item for the page's life; a failed or malformed file is remembered as null.
+// They come through the console (evidence-track route): R2 has no CORS rule for the console origin.
 const trackFiles = new Map<string, Promise<TrackSample[] | null>>();
-function loadTrack(track: { key: string; url: string }): Promise<TrackSample[] | null> {
-  let file = trackFiles.get(track.key);
+function loadTrack(videoId: string, key: string): Promise<TrackSample[] | null> {
+  let file = trackFiles.get(key);
   if (!file) {
-    file = fetch(track.url)
+    file = fetch(`/api/reports/${encodeURIComponent(videoId)}/evidence-track?key=${encodeURIComponent(key)}`)
       .then((response) => (response.ok ? response.json() : null))
       .then(parseTrack)
       .catch(() => null);
-    trackFiles.set(track.key, file);
+    trackFiles.set(key, file);
   }
   return file;
 }
 
 /** The item's track samples: undefined while loading, null without a track or when its file cannot be read. */
-function useTrack(track: { key: string; url: string } | null): TrackSample[] | null | undefined {
-  const key = track?.key ?? null;
-  const url = track?.url ?? null;
-  const [samples, setSamples] = useState<TrackSample[] | null | undefined>(key && url ? undefined : null);
+function useTrack(videoId: string, key: string | null): TrackSample[] | null | undefined {
+  const [samples, setSamples] = useState<TrackSample[] | null | undefined>(key ? undefined : null);
   useEffect(() => {
-    if (!key || !url) return;
+    if (!key) return;
     let live = true;
-    loadTrack({ key, url }).then((loaded) => {
+    loadTrack(videoId, key).then((loaded) => {
       if (live) setSamples(loaded);
     });
     return () => {
       live = false;
     };
-  }, [key, url]);
+  }, [videoId, key]);
   return samples;
 }
 
@@ -77,7 +76,7 @@ export function EvidenceFramePicker({
   label,
   initialSeconds,
   range,
-  track = null,
+  trackKey = null,
   onPick,
   onClose,
 }: {
@@ -86,8 +85,8 @@ export function EvidenceFramePicker({
   label: string;
   initialSeconds: number;
   range: SecondsRange | null;
-  /** The item's track file (R2 key and signed URL), when it has one. */
-  track?: { key: string; url: string } | null;
+  /** The R2 key of the item's person track file, when it has one. */
+  trackKey?: string | null;
   onPick: (pick: FramePick) => void;
   onClose: () => void;
 }) {
@@ -98,7 +97,7 @@ export function EvidenceFramePicker({
   const [drag, setDrag] = useState<{ from: FramePoint; to: FramePoint } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const samples = useTrack(track);
+  const samples = useTrack(videoId, trackKey);
   const span = samples ? trackSpan(samples) : null;
   const [frameSeconds, setFrameSeconds] = useState<number | null>(null);
   const seen = usableRange(range);

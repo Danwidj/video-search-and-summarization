@@ -168,6 +168,7 @@ test('the picker loads the track once per item and scrubs it in whole seconds th
   assert.match(picker, /aria-label="Track second"[\s\S]*?step=\{1\}/, 'the scrubber moves in whole seconds');
   assert.match(picker, /const box = !drawn && trackBox \? \[\.\.\.trackBox\] : regionBox\(region\);/);
   const pane = await readFile(new URL('reports/components/ReportEditPane/ReportEditPane.tsx', components), 'utf8');
-  assert.match(pane, /track=\{pickingTrack\}/);
-  assert.match(pane, /saved\?\.track && saved\.trackUrl \? \{ key: saved\.track, url: saved\.trackUrl \} : null/);
+  assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-track\?key=/, 'read through the console, not R2');
+  assert.match(pane, /trackKey=\{pickingTrack\}/);
+  assert.match(pane, /setPickingTrack\(row\.a\?\.evidence\?\.track \?\? null\)/, "the saved item's track");
 });
