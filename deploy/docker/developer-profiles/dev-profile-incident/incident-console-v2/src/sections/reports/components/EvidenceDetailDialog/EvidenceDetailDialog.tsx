@@ -93,7 +93,7 @@ function Detail({
     }
   };
   return (
-    <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl" data-testid="evidence-dialog">
+    <DialogContent className="max-h-[calc(100dvh-2rem)] auto-rows-max overflow-y-auto sm:max-w-3xl" data-testid="evidence-dialog">
       <DialogHeader className="pr-8">
         <DialogTitle className="flex items-center gap-2 text-lg">
           <Badge className="shrink-0 px-1.5 py-0 font-mono text-[10px] font-bold" variant="outline">
