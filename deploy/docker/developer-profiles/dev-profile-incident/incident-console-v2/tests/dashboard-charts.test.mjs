@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { assetRows, dashboardView, delta, formatDay, severityRows, typeRows } from '../src/modules/dashboard/domain/charts.ts';
+import { assetRows, dashboardView, delta, formatDay, severityRows, typeRows, unratedReports } from '../src/modules/dashboard/domain/charts.ts';
 import { severityChartColor } from '../src/lib/ui/severity.ts';
 
 const analytics = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'dashboard-rpc.json'), 'utf8'));
@@ -25,6 +25,14 @@ test('every chart row adds up: official plus not yet official is the total', () 
     severityRows(analytics).map((row) => row.key),
     ['high', 'medium', 'low'],
   );
+});
+
+test('reports with no severity are counted apart from the severity bands', () => {
+  const withBands = (total, high, medium, low) => ({ ...analytics, total, severity: { high, medium, low } });
+  assert.equal(unratedReports(withBands(6, 3, 2, 1)), 0);
+  assert.equal(unratedReports(withBands(8, 3, 2, 1)), 2);
+  assert.equal(unratedReports(withBands(3, 0, 0, 0)), 3);
+  assert.equal(unratedReports(withBands(0, 0, 0, 0)), 0);
 });
 
 test('a period comparison and a trend day read as written', () => {

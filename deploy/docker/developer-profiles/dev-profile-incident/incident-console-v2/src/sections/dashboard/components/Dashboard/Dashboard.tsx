@@ -15,6 +15,7 @@ import {
   severityRows,
   type SplitRow,
   typeRows,
+  unratedReports,
 } from '@/modules/dashboard/domain/charts';
 import { getViewerTimeZone } from '@/lib/time';
 import { severityChartColor } from '@/lib/ui/severity';
@@ -230,8 +231,9 @@ export function Dashboard() {
                 <SeverityDonut
                   emptyText={emptyText}
                   onSelect={(row) => toggle('severity', row.key)}
-                  rows={d.total ? severityRows(d) : []}
+                  rows={severityRows(d)}
                   selected={filters.severity}
+                  unrated={unratedReports(d)}
                 />
               ),
               'h-48',
@@ -459,18 +461,20 @@ function SeverityDonut({
   emptyText,
   selected,
   onSelect,
+  unrated,
 }: {
   rows: SplitRow[];
   emptyText: string;
   selected: string;
   onSelect: (row: SplitRow) => void;
+  unrated: number;
 }) {
-  if (!rows.length) return <NoData text={emptyText} />;
-  const total = rows.reduce((sum, row) => sum + row.total, 0);
+  const rated = rows.reduce((sum, row) => sum + row.total, 0);
+  if (!rated) return <NoData text={unrated ? 'These reports have no severity.' : emptyText} />;
   const summary = rows.map((row) => `${row.label} ${row.total}`).join(', ');
   return (
     <div className="flex flex-col gap-5 sm:flex-row sm:items-center xl:flex-col">
-      <div aria-label={`Severity of ${total} reports: ${summary}`} className="relative mx-auto size-40 shrink-0" role="img">
+      <div aria-label={`Severity of ${rated} rated reports: ${summary}`} className="relative mx-auto size-40 shrink-0" role="img">
         <ChartContainer config={severityConfig} className="aspect-square size-full">
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent hideLabel />} />
@@ -482,7 +486,7 @@ function SeverityDonut({
               isAnimationActive={false}
               nameKey="key"
               outerRadius="96%"
-              stroke="#fff"
+              stroke="var(--card)"
               strokeWidth={2}
             >
               {rows.map((row) => (
@@ -492,8 +496,8 @@ function SeverityDonut({
           </PieChart>
         </ChartContainer>
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-semibold text-ink">{total}</span>
-          <span className="text-xs text-ink-caption">reports</span>
+          <span className="text-2xl font-semibold text-ink">{rated}</span>
+          <span className="text-xs text-ink-caption">{unrated ? 'rated' : 'reports'}</span>
         </div>
       </div>
       <ul className="grid min-w-0 flex-1 gap-1">
@@ -526,6 +530,7 @@ function SeverityDonut({
             </li>
           );
         })}
+        {unrated > 0 && <li className="px-2 pt-1 text-xs text-ink-caption">No severity: {unrated}</li>}
       </ul>
     </div>
   );
