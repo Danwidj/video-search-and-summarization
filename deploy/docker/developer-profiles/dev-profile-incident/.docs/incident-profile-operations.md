@@ -213,8 +213,8 @@ Run through these checks before any live demo or presentation:
 
 Verify deployment health against this checklist before declaring a build ready:
 
-- [ ] **Video Ingestion:** Upload an `.mp4` clip via `incident-console-v2`. Verify that chunked upload succeeds,
-      the clip is stored in Cloudflare R2 as a classification-neutral `uploads/<original file name>` key in both modes (no hash or UUID in the name), `HeadObject` reports a nonzero size, and a playback URL generates.
+- [ ] **Video Ingestion:** Upload an `.mp4` clip and a phone `.MOV` via `incident-console-v2` (`ffmpeg` and `ffprobe` on the laptop's PATH). Verify that the upload succeeds,
+      the clip is stored in Cloudflare R2 as a classification-neutral `uploads/<original name>.mp4` key in both modes (no hash or UUID in the name; the `.MOV` shows the **Converting to H.264** step and is stored as H.264 MP4 at its original resolution, the H.264 `.mp4` is stored without conversion), `HeadObject` reports a nonzero size, and a playback URL generates.
 - [ ] **Automated Report Generation:** Trigger incident analysis. Verify all structured fields populate
       (type, severity, confidence, summary, timeline, entities, instruments, assets). Confirm ambiguous footage
       gracefully degrades (e.g. empty persons array, unconfirmed start time).

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert/strict';
+import { readFile, writeFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import { mock, test } from 'node:test';
 
@@ -57,6 +58,32 @@ mock.module('@aws-sdk/client-s3', {
   },
 });
 
+// A fake ffprobe and ffmpeg: a file whose bytes spell "hevc" probes as a QuickTime HEVC
+// recording and converts into "converted!", everything else probes as an H.264 MP4.
+const commands = [];
+let ffmpegFails = false;
+const probeJson = (brand, codec, pixFmt) =>
+  JSON.stringify({
+    streams: [{ codec_type: 'video', codec_name: codec, pix_fmt: pixFmt, width: 3840, height: 2160, r_frame_rate: '30/1' }],
+    format: { duration: '23.8', tags: { major_brand: brand } },
+  });
+mock.module(new URL('../src/lib/video/command.ts', import.meta.url).href, {
+  namedExports: {
+    CommandMissingError: class CommandMissingError extends Error {},
+    runCommand: async (command, args) => {
+      commands.push(command);
+      if (command === 'ffprobe') {
+        const kind = await readFile(args.at(-1), 'utf8');
+        const stdout = kind === 'hevc' ? probeJson('qt  ', 'hevc', 'yuv420p10le') : probeJson('isom', 'h264', 'yuv420p');
+        return { code: 0, stdout, stderr: '', timedOut: false };
+      }
+      if (ffmpegFails) return { code: 1, stdout: '', stderr: 'Invalid data found when processing input', timedOut: false };
+      await writeFile(args.at(-1), 'converted!');
+      return { code: 0, stdout: '', stderr: '', timedOut: false };
+    },
+  },
+});
+
 const { POST } = await import('../src/app/api/uploads/r2/route.ts');
 const { POST: CHECK } = await import('../src/app/api/uploads/check/route.ts');
 const { POST: POST_THUMBNAIL } = await import('../src/app/api/uploads/thumbnail/route.ts');
@@ -76,6 +103,24 @@ test('rejects a request missing required fields', async () => {
   assert.equal(response.status, 400);
 });
 
+test('a file over the upload cap is refused with 413 before anything runs', async () => {
+  commands.length = 0;
+  const huge = { size: 5 * 1024 ** 3 + 1, type: 'video/mp4', stream: () => new ReadableStream() };
+  Object.setPrototypeOf(huge, Blob.prototype);
+  const form = new FormData();
+  form.append('filename', 'huge.mp4');
+  const request = new Request('http://localhost/api/uploads/r2', { method: 'POST', body: form });
+  request.formData = async () =>
+    new Map([
+      ['file', huge],
+      ['filename', 'huge.mp4'],
+    ]);
+  const response = await POST(request);
+  assert.equal(response.status, 413);
+  assert.match((await response.json()).error, /5 GB upload limit/);
+  assert.deepEqual(commands, [], 'neither ffprobe nor ffmpeg ran');
+});
+
 test('putR2Video refuses a body over the R2 single-upload cap before ever calling S3', async () => {
   puts.length = 0;
   await assert.rejects(
@@ -92,16 +137,49 @@ const check = (filename) =>
 test('keeps a clean file name as the key and never adds an id', async () => {
   puts.length = 0;
   stored.clear();
+  commands.length = 0;
   const response = await POST(multipartRequest({ file: mp4(1, 2, 3, 4), filename: 'Lobby_camera 2.mp4' }));
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.filePath, 'uploads/Lobby_camera_2.mp4', 'a space is the one change, and it is reported by the check route');
+  assert.equal(payload.converted, false, 'an H.264 MP4 is stored as it is');
   assert.equal(isValidR2Key(payload.filePath), true);
   assert.equal(puts.length, 1, 'the route must PUT the video to R2 exactly once');
   assert.equal(puts[0].Key, payload.filePath);
   assert.equal(puts[0].IfNoneMatch, '*', 'R2 itself refuses to replace an existing object');
-  assert.equal(puts[0].ContentLength, 4);
+  assert.equal(puts[0].ContentLength, 4, 'the original bytes, untouched');
+  assert.equal(puts[0].ContentType, 'video/mp4');
   assert.equal(heads.at(-1).Key, payload.filePath, 'the stored object is verified');
+  assert.deepEqual(commands, ['ffprobe'], 'the file is probed and ffmpeg never runs');
+});
+
+test('a phone HEVC .MOV is converted to H.264 and stored under its .mp4 name', async () => {
+  puts.length = 0;
+  stored.clear();
+  commands.length = 0;
+  const mov = new Blob(['hevc'], { type: 'video/quicktime' });
+  const response = await POST(multipartRequest({ file: mov, filename: 'IMG_9170.MOV' }));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload, { filePath: 'uploads/IMG_9170.mp4', name: 'IMG_9170.mp4', converted: true });
+  assert.deepEqual(commands, ['ffprobe', 'ffmpeg']);
+  assert.equal(puts[0].ContentLength, 'converted!'.length, 'the converted file is what is stored and verified');
+  assert.equal(puts[0].ContentType, 'video/mp4');
+  assert.equal(heads.at(-1).Key, 'uploads/IMG_9170.mp4');
+});
+
+test('a file ffmpeg rejects is 422 with its message, and nothing is stored', async () => {
+  puts.length = 0;
+  stored.clear();
+  ffmpegFails = true;
+  try {
+    const response = await POST(multipartRequest({ file: new Blob(['hevc']), filename: 'bad.mov' }));
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).error, 'ffmpeg could not convert the video: Invalid data found when processing input');
+    assert.equal(puts.length, 0);
+  } finally {
+    ffmpegFails = false;
+  }
 });
 
 test('an attacker-controlled filename cannot leave the uploads folder', async () => {
