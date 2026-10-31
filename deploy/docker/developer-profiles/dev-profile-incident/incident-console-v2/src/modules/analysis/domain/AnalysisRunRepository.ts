@@ -52,6 +52,8 @@ export interface AnalysisAttemptRecord {
     chunkTimeline?: unknown[];
     /** Agent mode, caption pass on: the agent's chunking telemetry, or { skipped: reason }, as returned. */
     chunking?: Record<string, unknown>;
+    /** Agent mode, person tracking on: the agent's tracking summary ({enabled, matched, tracks, elapsed_ms, skipped}) as returned. */
+    tracking?: Record<string, unknown>;
   } | null;
   /**
    * firstPass: every violation of the original response, each with its

@@ -9,6 +9,9 @@ import type { EvidenceEmbedding, EvidenceEntry } from '@/modules/reports/domain/
 /** Turns a stored object key into a short-lived URL the browser can play or show. */
 export type SignStorageKey = (storageKey: string) => Promise<string>;
 
+/** Reads a stored JSON object (an evidence track); throws when it cannot be read or is not JSON. */
+export type ReadStoredJson = (storageKey: string) => Promise<unknown>;
+
 /** Deletes a stored video object and everything derived from it (its thumbnail). */
 export type RemoveStoredVideo = (storageKey: string) => Promise<unknown>;
 

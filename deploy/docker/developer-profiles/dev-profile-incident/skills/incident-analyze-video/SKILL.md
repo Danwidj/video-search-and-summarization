@@ -77,6 +77,7 @@ There is no verify step and no review status. A report is its list of revisions;
 Run the [end-to-end checklist](../../.docs/incident-profile-operations.md#7-end-to-end-verification-checklist). Minimum checks after one analysis:
 
 - The report page shows type, severity, confidence, summary, timeline and evidence, and the video plays from a fresh 1-hour signed R2 URL.
+- With person tracking (agent `INCIDENT_TRACKING_ENABLED=1`), a matched person's box follows them over the video in View mode, each tracked card has a presence bar that seeks, and a card click selects its box. The samples come from `GET /api/reports/<videoId>/track?revision=<id>&type=entity&item=<E1>` (`{samples: [{t, box}]}`, 404 without a track); the run's notes keep the agent's `tracking` summary as `response.tracking`.
 - `videos.filepath` is a classification-neutral **R2 key** (`uploads/<original name>.mp4` in both modes), **not** a `http://10.131.1.5:...` VST URL. The agent no longer writes `videos` (see [`.docs/decisions.md`](../../.docs/decisions.md) 2026-10-16).
 - There is a new `model_runs` row and a new AI revision in History, and the previous runs still appear in the run picker.
 - The analysis response was 200; `verifying the persisted report in PostgREST failed` means inference completed but the durable row graph is incomplete and must not be treated as a finished report.
