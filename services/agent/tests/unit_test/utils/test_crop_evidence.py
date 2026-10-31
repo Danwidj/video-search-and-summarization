@@ -19,6 +19,7 @@ import base64
 from collections.abc import Generator
 import copy
 import io
+import json
 from pathlib import Path
 import tempfile
 from typing import ClassVar
@@ -56,6 +57,10 @@ from vss_agents.utils.crop_evidence import parse_zoom_reply
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 from vss_agents.utils.crop_evidence import zoom_crop
 from vss_agents.utils.crop_evidence import zoom_names_enabled
+from vss_agents.utils.track_evidence import Sample
+from vss_agents.utils.track_evidence import Track
+from vss_agents.utils.track_evidence import TrackingOutcome
+from vss_agents.utils.track_evidence import TrackingRequest
 
 
 @pytest.fixture
@@ -623,6 +628,113 @@ class TestCropEvidenceService:
         set_crop_evidence_service(custom)
         assert get_crop_evidence_service() is custom
         set_crop_evidence_service(orig)
+
+
+class TestTrackingEvidence:
+    """Tracks decide the best moment of a matched person and are stored beside the evidence."""
+
+    DETECTOR = FakeDetector(detections=[Detection(box=[200, 200, 600, 600], score=0.95, label="person")])
+
+    @staticmethod
+    def _request(outcome: TrackingOutcome) -> TrackingRequest:
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            return outcome
+
+        return TrackingRequest(sensor_id="incident-x-run", runner=runner)
+
+    @staticmethod
+    def _track() -> Track:
+        # the person overlaps the located box at second 0 and is biggest, and most confident, at second 1.5
+        return Track(
+            "7",
+            [
+                Sample(0.0, (210, 210, 590, 590), 0.9),
+                Sample(1.5, (100, 100, 900, 900), 0.95),
+                Sample(1.9, (300, 300, 400, 400), 0.4),
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_matched_person_gets_the_best_moment_the_track_file_and_its_span(
+        self, tiny_video_path: Path
+    ) -> None:
+        store = InMemoryEvidenceStore()
+        request = self._request(TrackingOutcome(tracks=[self._track()], elapsed_ms=12.0))
+        service = CropEvidenceService(detector=self.DETECTOR, store=store)
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path,
+            video_id="v",
+            video_key="uploads/a.mp4",
+            report=REPORT,
+            batch_id="run-1",
+            tracking=request,
+        )
+        person, instrument, asset = results
+        assert person["track"] == "evidence/uploads/a.mp4/run-1/E1-track.json"
+        assert (person["track_first_seen_seconds"], person["track_last_seen_seconds"]) == (0.0, 1.9)
+        assert person["located"] is True and person["box_seconds"] == 1.5
+        assert person["bounding_box"] == pytest.approx([100, 100, 900, 900], abs=60)  # the moment's box plus padding
+        assert person["image"] == "evidence/uploads/a.mp4/run-1/E1.jpg"
+        stored = json.loads(await store.get_image(person["track"]))
+        assert [row["t"] for row in stored] == [0.0, 1.5, 1.9]
+        for other in (instrument, asset):
+            assert "track" not in other and other["box_seconds"] == other["timestamp_seconds"]
+        assert request.summary.matched == 1 and request.summary.tracks == 1 and request.summary.skipped is None
+
+    @pytest.mark.asyncio
+    async def test_an_entity_that_overlaps_no_track_keeps_its_ordinary_result(self, tiny_video_path: Path) -> None:
+        elsewhere = Track("9", [Sample(0.0, (800, 800, 950, 950), 0.9)])
+        service = CropEvidenceService(detector=self.DETECTOR, store=InMemoryEvidenceStore())
+        request = self._request(TrackingOutcome(tracks=[elsewhere]))
+        results = await service.process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
+        )
+        assert all("track" not in r for r in results)
+        assert results[0]["bounding_box"] == pytest.approx([200, 200, 600, 600], abs=60)
+        assert results[0]["box_seconds"] == 0
+        assert request.summary.matched == 0 and request.summary.tracks == 1
+
+    @pytest.mark.asyncio
+    async def test_a_skipped_run_leaves_every_entry_as_it_was_and_reports_why(self, tiny_video_path: Path) -> None:
+        plain = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b")
+        request = self._request(TrackingOutcome(skipped="no frames from perception"))
+        tracked = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
+        )
+        assert tracked == plain
+        assert request.summary.skipped == "no frames from perception" and request.summary.matched == 0
+
+    @pytest.mark.asyncio
+    async def test_a_runner_that_raises_never_fails_the_evidence(self, tiny_video_path: Path) -> None:
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            raise RuntimeError("boom")
+
+        request = TrackingRequest(sensor_id="s", runner=runner)
+        results = await CropEvidenceService(
+            detector=self.DETECTOR, store=InMemoryEvidenceStore()
+        ).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, batch_id="b", tracking=request
+        )
+        assert len(results) == 3 and all(r["image"] for r in results)
+        assert request.summary.skipped is not None and "boom" not in request.summary.skipped
+
+    @pytest.mark.asyncio
+    async def test_without_a_store_tracking_is_skipped_and_never_started(self, tiny_video_path: Path) -> None:
+        started = []
+
+        async def runner(video_ref: object, *, sensor_id: str, **_: object) -> TrackingOutcome:
+            started.append(sensor_id)
+            return TrackingOutcome()
+
+        request = TrackingRequest(sensor_id="s", runner=runner)
+        await CropEvidenceService(detector=self.DETECTOR, store=None).process_incident_report(
+            video_ref=tiny_video_path, video_id="v", report=REPORT, tracking=request
+        )
+        assert started == [] and request.summary.skipped
 
 
 class TestZoomSecondLook:

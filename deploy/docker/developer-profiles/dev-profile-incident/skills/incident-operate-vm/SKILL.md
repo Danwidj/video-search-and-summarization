@@ -74,6 +74,8 @@ uv pip install --python .venv/bin/python supabase opencv-python-headless setupto
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
 ```
 
+Person tracking (`INCIDENT_TRACKING_ENABLED=1`) also needs `ffmpeg` and `ffprobe` on the agent's PATH and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Install them user-locally, not system-wide.
+
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` has `"editable": true`.
 
 ### 4. `generated.env.remote` rules
