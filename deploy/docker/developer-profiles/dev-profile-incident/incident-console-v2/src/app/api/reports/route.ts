@@ -22,7 +22,7 @@ const REVISION_SEARCH_TIMEOUT_MS = 30_000;
 const SORTS = new Set(['newest', 'oldest', 'severity-high', 'severity-low', 'confidence-high', 'confidence-low']);
 const SEVERITIES = new Set(['all', 'low', 'medium', 'high', '1', '2', '3', '4', '5']);
 
-const SCOPES = new Set(['all', 'official']);
+const SCOPES = new Set(['all', 'official', 'not_official']);
 const MATCHES = new Set(['contains', 'exact']);
 const ENTITY_TYPES = new Set(['human', 'animal', 'unknown']);
 const MAX_EVIDENCE_FILTERS = 10;

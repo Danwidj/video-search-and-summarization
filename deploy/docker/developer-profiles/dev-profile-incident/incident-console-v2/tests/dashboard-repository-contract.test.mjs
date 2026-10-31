@@ -34,6 +34,7 @@ const BOUNDED = {
   dayOfWeek: null,
   hour: null,
   timezone: 'UTC',
+  scope: 'all',
 };
 const ALL_TIME = { ...BOUNDED, periodStart: null, periodEnd: null };
 
@@ -62,6 +63,11 @@ for (const [name, make] of Object.entries(implementations)) {
       assert.deepEqual(await make().getDashboard(BOUNDED), analytics);
     });
 
+    test('a report-status query keeps its scope', async () => {
+      const repository = make();
+      assert.deepEqual(await repository.getDashboard({ ...BOUNDED, scope: 'not_official' }), analytics);
+    });
+
     test('an all-time query has no previous-period comparison', async () => {
       assert.deepEqual(await make().getDashboard(ALL_TIME), { ...analytics, previous: null });
     });
@@ -69,9 +75,17 @@ for (const [name, make] of Object.entries(implementations)) {
 }
 
 describe('get_incident_dashboard mapping', () => {
-  test('the query becomes the seven RPC arguments, with the period as naive UTC', () => {
+  test('the query becomes the eight RPC arguments, with the period as naive UTC', () => {
     assert.deepEqual(
-      dashboardRpcArgs({ ...BOUNDED, type: 'assault', severity: 'high', dayOfWeek: 2, hour: 23, timezone: 'Asia/Singapore' }),
+      dashboardRpcArgs({
+        ...BOUNDED,
+        type: 'assault',
+        severity: 'high',
+        dayOfWeek: 2,
+        hour: 23,
+        timezone: 'Asia/Singapore',
+        scope: 'official',
+      }),
       {
         p_period_start: '2026-08-30T00:00:00.000',
         p_period_end: '2026-09-29T00:00:00.000',
@@ -80,6 +94,7 @@ describe('get_incident_dashboard mapping', () => {
         p_day_of_week: 2,
         p_hour: 23,
         p_timezone: 'Asia/Singapore',
+        p_scope: 'official',
       },
     );
     assert.deepEqual(dashboardRpcArgs(ALL_TIME), {
@@ -90,6 +105,7 @@ describe('get_incident_dashboard mapping', () => {
       p_day_of_week: null,
       p_hour: null,
       p_timezone: 'UTC',
+      p_scope: 'all',
     });
   });
 
@@ -100,10 +116,21 @@ describe('get_incident_dashboard mapping', () => {
     assert.equal(mapped.previous, null);
     assert.deepEqual(mapped.revisions, { ai: 0, human: 0 });
     assert.deepEqual(mapped.types, [
-      { type: 'assault', count: 0, severity: { low: 0, medium: 0, high: 0 }, entities: [], instruments: [], assets: [] },
+      {
+        type: 'assault',
+        count: 0,
+        official: 0,
+        notOfficial: 0,
+        severity: { low: 0, medium: 0, high: 0 },
+        entities: [],
+        instruments: [],
+        assets: [],
+      },
     ]);
-    assert.deepEqual(mapped.heatmap, [{ day: null, hour: null, count: 2 }]);
+    assert.deepEqual(mapped.heatmap, [{ day: null, hour: null, count: 2, official: 0, notOfficial: 0 }]);
     assert.deepEqual(mapped.modelCoverage, []);
     assert.deepEqual(dashboardFromRpc(null).trend, []);
+    assert.deepEqual(dashboardFromRpc(null).severityByScope.notOfficial, { low: 0, medium: 0, high: 0 });
+    assert.equal(dashboardFromRpc(null).official, 0);
   });
 });

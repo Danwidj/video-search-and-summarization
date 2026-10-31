@@ -311,12 +311,13 @@ export function Library() {
               />
               <Select
                 label="Status"
-                onChange={(value) => apply({ official: value === 'official' })}
+                onChange={(value) => apply({ scope: value as IncidentFilters['scope'] })}
                 options={[
                   ['', 'Any status'],
                   ['official', 'Has an official version'],
+                  ['not_official', 'Not yet official'],
                 ]}
-                value={filters.official ? 'official' : ''}
+                value={filters.scope}
               />
               <Select
                 label="Severity"

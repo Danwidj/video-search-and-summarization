@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // get_incident_dashboard: DashboardQuery -> RPC arguments, and its JSON ->
-// DashboardAnalytics field by field. For every result its SQL can build
-// (supabase/functions-final.sql) the output equals
-// the input; the defaults only apply to a malformed result.
+// DashboardAnalytics field by field. For every result its SQL can build (the
+// latest definition in supabase/migrations/) the output equals the input; the
+// defaults only apply to a malformed result.
 
-import type { DashboardAnalytics, ModelCoverage, RankedValue, SeverityCounts, TypeDetail } from '@/modules/dashboard/domain/types';
+import type {
+  DashboardAnalytics,
+  ModelCoverage,
+  OfficialSplit,
+  RankedValue,
+  SeverityCounts,
+  SplitRankedValue,
+  TypeDetail,
+} from '@/modules/dashboard/domain/types';
 import type { DashboardQuery } from '@/modules/dashboard/domain/DashboardRepository';
 
 type Row = Record<string, unknown>;
@@ -16,6 +24,10 @@ const count = (value: unknown): number => (typeof value === 'number' && Number.i
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 const ranked = (value: unknown): RankedValue[] => asRows(value).map((item) => ({ label: text(item.label), count: count(item.count) }));
+
+const split = (item: Row): OfficialSplit => ({ official: count(item.official), notOfficial: count(item.notOfficial) });
+const splitRanked = (value: unknown): SplitRankedValue[] =>
+  asRows(value).map((item) => ({ label: text(item.label), count: count(item.count), ...split(item) }));
 
 function severityCounts(value: unknown): SeverityCounts {
   const item = asRow(value);
@@ -34,6 +46,7 @@ export function dashboardRpcArgs(query: DashboardQuery): Row {
     p_day_of_week: query.dayOfWeek,
     p_hour: query.hour,
     p_timezone: query.timezone,
+    p_scope: query.scope,
   };
 }
 
@@ -41,10 +54,12 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
   const result = asRow(value);
   const videos = asRow(result.videos);
   const revisions = asRow(result.revisions);
+  const severityByScope = asRow(result.severityByScope);
   // NULL for an all-time period, else one row of counts.
   const previous = result.previous && typeof result.previous === 'object' ? asRow(result.previous) : null;
   return {
     total: count(result.total),
+    ...split(result),
     videos: {
       uploaded: count(videos.uploaded),
       withOfficial: count(videos.withOfficial),
@@ -57,27 +72,33 @@ export function dashboardFromRpc(value: unknown): DashboardAnalytics {
     averageConfidence: numberOrNull(result.averageConfidence),
     confidenceNotProvided: count(result.confidenceNotProvided),
     severity: severityCounts(result.severity),
+    severityByScope: {
+      official: severityCounts(severityByScope.official),
+      notOfficial: severityCounts(severityByScope.notOfficial),
+    },
     revisions: { ai: count(revisions.ai), human: count(revisions.human) },
     types: asRows(result.types).map(
       (item): TypeDetail => ({
         type: text(item.type),
         count: count(item.count),
+        ...split(item),
         severity: severityCounts(item.severity),
         entities: ranked(item.entities),
         instruments: ranked(item.instruments),
         assets: ranked(item.assets),
       }),
     ),
-    trend: asRows(result.trend).map((item) => ({ date: text(item.date), count: count(item.count) })),
+    trend: asRows(result.trend).map((item) => ({ date: text(item.date), count: count(item.count), ...split(item) })),
     heatmap: asRows(result.heatmap).map((item) => ({
       day: numberOrNull(item.day),
       hour: numberOrNull(item.hour),
       count: count(item.count),
+      ...split(item),
     })),
     confidence: asRows(result.confidence).map((item) => ({ bucket: count(item.bucket), count: count(item.count) })),
     entityTypes: ranked(result.entityTypes),
     topInstruments: ranked(result.topInstruments),
-    topAssets: ranked(result.topAssets),
+    topAssets: splitRanked(result.topAssets),
     threatLevels: asRows(result.threatLevels).map((item) => ({ level: count(item.level), count: count(item.count) })),
     modelCoverage: asRows(result.modelCoverage).map(
       (item): ModelCoverage => ({

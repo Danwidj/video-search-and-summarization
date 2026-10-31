@@ -12,8 +12,8 @@ export interface IncidentFilters {
   type: string;
   /** '', a band (low, medium, high) or one level (1 to 5). */
   severity: string;
-  /** Only the official version of each incident. */
-  official: boolean;
+  /** Report status: '' for every incident, or only those whose shown version is official or not yet official. */
+  scope: '' | 'official' | 'not_official';
   /** Version kind: '', ai or human. */
   kind: string;
   entity: string;
@@ -34,7 +34,7 @@ export const EMPTY_FILTERS: IncidentFilters = {
   search: '',
   type: '',
   severity: '',
-  official: false,
+  scope: '',
   kind: '',
   entity: '',
   instrument: '',
@@ -78,7 +78,7 @@ export function parseFilters(query: URLSearchParams): IncidentFilters {
     search: get('search'),
     type: get('type') === 'all' ? '' : get('type'),
     severity: get('severity') === 'all' ? '' : get('severity'),
-    official: get('scope') === 'official',
+    scope: get('scope') === 'official' || get('scope') === 'not_official' ? (get('scope') as IncidentFilters['scope']) : '',
     kind: get('kind') === 'all' ? '' : get('kind'),
     entity: get('entity'),
     instrument: get('instrument'),
@@ -109,7 +109,7 @@ export function filterParams(filters: IncidentFilters): URLSearchParams {
   set('instrument', filters.instrument);
   set('asset', filters.asset);
   set('entityType', filters.entityType);
-  if (filters.official) p.set('scope', 'official');
+  if (filters.scope) p.set('scope', filters.scope);
   if (filters.exact) p.set('match', 'exact');
   set('after', filters.after);
   set('before', filters.before);
@@ -135,7 +135,7 @@ export function activeFilters(f: IncidentFilters): ActiveFilter[] {
   const chips: ActiveFilter[] = [];
   if (f.search.trim()) chips.push({ key: 'search', label: `Text: ${f.search.trim()}`, clear: { search: '' } });
   if (f.type) chips.push({ key: 'type', label: `Type: ${f.type}`, clear: { type: '' } });
-  if (f.official) chips.push({ key: 'official', label: 'Official only', clear: { official: false } });
+  if (f.scope) chips.push({ key: 'scope', label: f.scope === 'official' ? 'Official only' : 'Not yet official', clear: { scope: '' } });
   if (f.severity) chips.push({ key: 'severity', label: `Severity: ${SEVERITY_LABEL[f.severity] ?? f.severity}`, clear: { severity: '' } });
   if (f.kind) chips.push({ key: 'kind', label: f.kind === 'human' ? 'Human versions' : 'AI versions', clear: { kind: '' } });
   if (f.entityType) chips.push({ key: 'entityType', label: `Entity type: ${f.entityType}`, clear: { entityType: '' } });

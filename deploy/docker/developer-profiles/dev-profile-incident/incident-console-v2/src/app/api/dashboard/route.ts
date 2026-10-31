@@ -4,14 +4,16 @@ import { NextResponse } from 'next/server';
 
 import { getDbAdapters } from '@/lib/container';
 import { errorResponse } from '@/lib/http';
-import type { DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
+import type { DashboardScope, DashboardSeverity } from '@/modules/dashboard/domain/DashboardRepository';
 import { isValidTimeZone, parseStoredTimestamp } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
 const PERIODS = new Set(['7', '30', 'all']);
 const SEVERITIES = new Set(['low', 'medium', 'high']);
+const SCOPES = new Set(['all', 'official', 'not_official']);
 const isSeverity = (value: string): value is DashboardSeverity => SEVERITIES.has(value);
+const isScope = (value: string): value is DashboardScope => SCOPES.has(value);
 
 function integerParameter(params: URLSearchParams, name: string, minimum: number, maximum: number): number | null {
   const raw = params.get(name);
@@ -26,11 +28,13 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const period = params.get('days') || '30';
     const severity = params.get('severity') || null;
+    const scope = params.get('scope') || 'all';
     const tzParam = params.get('timezone');
     if (tzParam !== null && !isValidTimeZone(tzParam)) return NextResponse.json({ error: 'Invalid dashboard timezone' }, { status: 400 });
     const timezone = tzParam || 'UTC';
     if (!PERIODS.has(period)) return NextResponse.json({ error: 'Invalid dashboard period' }, { status: 400 });
     if (severity !== null && !isSeverity(severity)) return NextResponse.json({ error: 'Invalid severity filter' }, { status: 400 });
+    if (!isScope(scope)) return NextResponse.json({ error: 'Invalid report status' }, { status: 400 });
 
     const { dashboard } = getDbAdapters();
     const requestedStart = params.get('after');
@@ -57,6 +61,7 @@ export async function GET(request: Request) {
       dayOfWeek: integerParameter(params, 'day', 0, 6),
       hour: integerParameter(params, 'hour', 0, 23),
       timezone,
+      scope,
     });
     return NextResponse.json({ analytics });
   } catch (error) {

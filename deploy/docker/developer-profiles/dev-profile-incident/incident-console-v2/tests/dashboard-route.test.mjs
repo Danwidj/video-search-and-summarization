@@ -49,6 +49,31 @@ test('dashboard rejects invalid timezone parameter before Supabase', async () =>
   assert.equal(called, false);
 });
 
+test('dashboard defaults to every report and forwards a report status', async () => {
+  const bodies = [];
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ total: 0 }));
+  };
+  await GET(new Request('http://localhost/api/dashboard'));
+  await GET(new Request('http://localhost/api/dashboard?scope=not_official'));
+  assert.deepEqual(
+    bodies.map((body) => body.p_scope),
+    ['all', 'not_official'],
+  );
+});
+
+test('dashboard rejects an unknown report status before Supabase', async () => {
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response('{}');
+  };
+  const response = await GET(new Request('http://localhost/api/dashboard?scope=draft'));
+  assert.equal(response.status, 400);
+  assert.equal(called, false);
+});
+
 test('dashboard rejects invalid heatmap coordinates before Supabase', async () => {
   let called = false;
   globalThis.fetch = async () => {

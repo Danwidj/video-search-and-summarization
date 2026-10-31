@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // list_incident_report_summaries: ReportListQuery -> RPC arguments, and its
-// JSON -> ReportList field by field. Its SQL
-// (supabase/functions-final.sql) builds every summary
-// with exactly these keys and null for an empty column, so for every result it
+// JSON -> ReportList field by field. Its SQL (the latest definition in
+// supabase/migrations/) builds every summary with exactly these keys and null for an empty column, so for every result it
 // can build the output equals the input; the defaults only apply to a
 // malformed result.
 

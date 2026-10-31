@@ -9,7 +9,7 @@ test('a dashboard link round-trips through the filters', () => {
     'scope=official&after=2026-09-01T00:00:00&before=2026-09-30T00:00:00&day=2&entityType=vehicle&instrument=Knife&match=exact&fromTime=09:00&toTime=09:59:59.999',
   );
   const filters = parseFilters(query);
-  assert.equal(filters.official, true);
+  assert.equal(filters.scope, 'official');
   assert.equal(filters.exact, true);
   assert.deepEqual(Object.fromEntries(filterParams(filters)), Object.fromEntries(query));
 });
@@ -21,15 +21,31 @@ test('defaults are left out of the query and "all" means no filter', () => {
 });
 
 test('every active filter is one removable chip that clears only itself', () => {
-  const filters = { ...EMPTY_FILTERS, search: ' blade ', type: 'assault', official: true, severity: 'high', after: '2026-09-01T00:00:00' };
+  const filters = {
+    ...EMPTY_FILTERS,
+    search: ' blade ',
+    type: 'assault',
+    scope: 'official',
+    severity: 'high',
+    after: '2026-09-01T00:00:00',
+  };
   const chips = activeFilters(filters);
   assert.deepEqual(
     chips.map((chip) => chip.key),
-    ['search', 'type', 'official', 'severity', 'date'],
+    ['search', 'type', 'scope', 'severity', 'date'],
   );
-  assert.deepEqual({ ...filters, ...chips[2].clear }.official, false);
+  assert.deepEqual({ ...filters, ...chips[2].clear }.scope, '');
   const allCleared = Object.assign({}, ...chips.map((chip) => chip.clear));
   assert.equal(activeFilters({ ...filters, ...allCleared }).length, 0);
+});
+
+test('the not-yet-official scope survives the URL and has its own chip', () => {
+  const filters = parseFilters(new URLSearchParams('scope=not_official'));
+  assert.equal(filters.scope, 'not_official');
+  assert.equal(filterParams(filters).get('scope'), 'not_official');
+  assert.equal(activeFilters(filters)[0].label, 'Not yet official');
+  assert.equal(parseFilters(new URLSearchParams('scope=all')).scope, '');
+  assert.equal(filterParams(parseFilters(new URLSearchParams('scope=all'))).has('scope'), false);
 });
 
 test('date presets count back from local midnight', () => {
