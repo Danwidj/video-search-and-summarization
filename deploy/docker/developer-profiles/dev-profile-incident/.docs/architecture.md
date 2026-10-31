@@ -54,9 +54,9 @@ flowchart TB
     end
 
     %% Laptop connections
-    UI -->|Mock Mode Inference| Gateway
+    UI -->|Mock Mode Inference, dashboard chart requests| Gateway
     UI -->|Mock Mode Upload| Mock
-    UI -->|VM Mode HTTP /analyze| FwdAgent
+    UI -->|VM Mode HTTP /analyze, /incidents/charts| FwdAgent
     UI -->|Video upload /api/uploads/r2 & Presigned URLs| R2
     UI -->|REST report_revisions insert| Supabase
     UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
@@ -78,7 +78,7 @@ flowchart TB
 | Component | Host | Port | Runtime Type | Primary Source / Owner File | Responsibility |
 |---|---|---|---|---|---|
 | `incident-console-v2` | Laptop | 3200 | Node.js (Next.js 15 App Router) | `incident-console-v2/` | Primary user interface: video upload, report versions (View and Edit modes, History, official), `/library` search, report chat, report display |
-| `vlm-gateway` | Laptop | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds the Brev credential (`VLM_GATEWAY_API_KEY`) server-side and forwards `POST /v1/chat/completions` unchanged to `VLM_GATEWAY_BASE_URL` (default `https://switchyard-13doh4lsz.brevlab.com/v1`), model-agnostic, no streaming, `VLM_GATEWAY_TIMEOUT_SECONDS` (default 330, longer than the slowest per-model timeout in `contracts/inference.json`); `GET /health` answers `{"status": "ok"}`. Used in mock mode. A VM compose service (`vss-vlm-gateway`, `vlm-gateway/compose.yml`) exists, but `start.sh` never starts it |
+| `vlm-gateway` | Laptop | 8600 | Python (FastAPI / Uvicorn) | `vlm-gateway/app.py` | Holds the Brev credential (`VLM_GATEWAY_API_KEY`) server-side and forwards `POST /v1/chat/completions` unchanged to `VLM_GATEWAY_BASE_URL` (default `https://switchyard-13doh4lsz.brevlab.com/v1`), model-agnostic, no streaming, `VLM_GATEWAY_TIMEOUT_SECONDS` (default 330, longer than the slowest per-model timeout in `contracts/inference.json`); `GET /health` answers `{"status": "ok"}`. Used in mock mode for analysis, and in vm mode only for dashboard chart requests. A VM compose service (`vss-vlm-gateway`, `vlm-gateway/compose.yml`) exists, but `start.sh` never starts it |
 | `base_profile_mock` | Laptop | 7777 | Python (FastAPI / Uvicorn) | `mock-backend/base_profile_mock/` | Zero-GPU mock of the agent, VST and inference, started by `--mode mock`. Uploads go to R2; analyze writes a real AI revision to finals (`mock: true` in the response); evidence embeddings are deterministic; incident search, revision search and chat answer from `finals_snapshot.json`; stock chat, WebSocket HITL, RTSP and VST routes are canned |
 | `search_profile_mock` | Laptop | 7778 | Python (FastAPI / Uvicorn) | `mock-backend/search_profile_mock/` | Standalone mock of the stock search profile (agent search, VST sensor list, video-analytics `/frames`, Kibana and Elasticsearch stubs), plus incident search and revision search from the same snapshot; no incident chat or analyze |
 | `vss-agent` | `kwanz-ws` | 8000 | Python (Native `nat serve`) | `services/agent/` | Core VSS agent: incident analysis, search, and chat workflows (`/api/v1/incidents/{id}/analyze`, `POST /api/v1/incidents/search`, `POST /api/v1/incidents/revisions/search`, `POST /api/v1/incidents/chat`), tool calling, report persistence; remote inference via Brev |
@@ -143,7 +143,7 @@ flowchart TD
 
     OpenTunnel["Open backgrounded SSH tunnel (inline in start.sh)<br/>8000 only<br/>then wait for localhost:8000/health"] --> CheckConsole{--no-console?}
     CheckConsole -->|yes| Hold["Hold tunnel open (wait)"]
-    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent"]
+    CheckConsole -->|no| VMInit["Export INCIDENT_AGENT_BASE_URL=http://localhost:8000,<br/>ANALYSIS_MODE=agent;<br/>start vlm-gateway for chart requests,<br/>VLM_GATEWAY_URL=http://127.0.0.1:8600"]
     VMInit --> RunV2VM["Launch incident-console-v2 (Port 3200)"]
 ```
 
@@ -208,7 +208,8 @@ Server-only variables, read from `incident-console-v2/.env.local` (a symlink to 
 | Variable | Use |
 |---|---|
 | `ANALYSIS_MODE` | `gateway` (default) or `agent` |
-| `VLM_GATEWAY_URL` | the gateway, required in gateway mode |
+| `VLM_GATEWAY_URL` | the gateway, required in gateway mode and for dashboard chart requests in either mode; `start.sh` exports `http://127.0.0.1:8600` in both |
+| `CHART_MODEL` | the text model that reads dashboard chart requests (default `nvidia/nemotron-3-ultra`) |
 | `INCIDENT_AGENT_BASE_URL` | the agent or the mock (chat, search, embeddings, and analysis in agent mode); uploads do not use it |
 | `VLM_MODEL` | default model in the picker, one of `contracts/inference.json` (default `nvidia/cosmos-3-nano-reasoner`) |
 | `CONTRACTS_DIR` | the shared `contracts/` directory (default `../contracts`) |
@@ -263,6 +264,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 - The total, its official and not-yet-official counts, and the type and asset rows link to `/library?scope=all|official|not_official&...` with the same period and filters, using `match=exact` for asset names, so the Library total equals the clicked number. The URL is the reports page's filter state. Severity rows and heatmap cells filter the page instead.
 - Before the first load the panels show skeletons, and a failed first load shows an error with Try again: the page never shows a 0 it has not loaded. A failed refresh keeps the last figures under an error.
 - The period window is computed in the browser after mount and sent as zoneless UTC; the API reads it as UTC.
+- **Ask for a chart:** `POST /api/dashboard/chart {request, chartType, timezone}` takes one request and the user's bar or pie, and answers `{kind: 'chart', chart}`, `{kind: 'unsupported'}` or `{kind: 'needs_bar'}`. The model only picks a strict `ChartSpec` from the allowlist in `modules/dashboard/domain/chart-spec.ts`; `generateChart` runs `getDashboard` (plus one query per report status for report charts), builds the rows, title and labels itself, and sends the figures to VSS `chart_generator` on the agent through the `ChartRenderer` port. The image comes back inside the response as a data URL; no records means nothing is drawn. Invalid input is 400, a missing `VLM_GATEWAY_URL` or `INCIDENT_AGENT_BASE_URL` 503, and a failed model or drawing call a plain 502 ([decision](decisions.md#2026-10-31-dashboard-chart-requests-a-model-picks-an-allowlisted-spec-our-code-fetches-the-figures-and-vss-chart_generator-draws-them)).
 - The trend days, the heatmap and the weekday/hour cross-filters use the viewer's local time: `GET /api/dashboard` forwards the browser's detected `timezone` (e.g. `America/New_York`) to `p_timezone`, which groups and filters `generated_datetime` in that zone. `/library` detects the same zone itself, so drill-down links carry no timezone and the totals still match. The old `/reports` URL redirects to `/library` with its query string.
 
 ### Report versions: View, Edit and History

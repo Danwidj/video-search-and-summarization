@@ -26,6 +26,7 @@ from nat.data_models.config import Config
 from nat.front_ends.fastapi.fastapi_front_end_plugin_worker import FastApiFrontEndPluginWorker
 
 from vss_agents.api.incident_analyze import register_incident_analyze_routes
+from vss_agents.api.incident_charts import register_incident_charts_routes
 from vss_agents.api.incident_chat import register_incident_chat_routes
 from vss_agents.api.incident_evidence_embeddings import register_incident_evidence_embeddings_routes
 from vss_agents.api.incident_revision_search import register_incident_revision_search_routes
@@ -103,6 +104,8 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         - ``POST /api/v1/incidents/evidence-embeddings`` — passage embeddings
           for a report revision's evidence, called by the console when a
           revision is made official.
+        - ``POST /api/v1/incidents/charts`` — draws the figures the console
+          sends with ``chart_generator``.
 
         Raises:
             ValueError: when ``streaming_ingest`` is missing from the config.
@@ -140,3 +143,4 @@ class CustomFastApiFrontEndWorker(FastApiFrontEndPluginWorker):
         register_incident_revision_search_routes(app)
         register_incident_chat_routes(app)
         register_incident_evidence_embeddings_routes(app)
+        register_incident_charts_routes(app, builder)
