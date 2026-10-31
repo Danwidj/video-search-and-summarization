@@ -7,7 +7,16 @@ import { MAX_UPLOAD_NAME_LENGTH, firstFreeName, inspectUploadName, nameWithCount
 
 test('a clean name is kept as it is', () => {
   assert.deepEqual(inspectUploadName('Assault018_x264.mp4'), { name: 'Assault018_x264.mp4', unsafeChars: [], truncated: false });
-  assert.equal(inspectUploadName('Café_(2).mov').name, 'Café_(2).mov');
+  assert.equal(inspectUploadName('Café_(2).mp4').name, 'Café_(2).mp4');
+});
+
+test('the stored name always ends in .mp4, because every stored video is an H.264 MP4', () => {
+  assert.deepEqual(inspectUploadName('IMG_9170.MOV'), { name: 'IMG_9170.mp4', unsafeChars: [], truncated: false });
+  assert.equal(inspectUploadName('Café_(2).mov').name, 'Café_(2).mp4');
+  assert.equal(inspectUploadName('clip.webm').name, 'clip.mp4');
+  assert.equal(inspectUploadName('clip.MP4').name, 'clip.mp4');
+  assert.equal(inspectUploadName('noext').name, 'noext.mp4');
+  assert.equal(inspectUploadName('   ').name, 'video.mp4');
 });
 
 test('unsafe characters become _ and are listed once each', () => {
@@ -25,7 +34,7 @@ test('a path is reduced to its last segment and flagged', () => {
 test('dots cannot make a hidden or traversing name, and an empty name gets a default', () => {
   assert.equal(inspectUploadName('..a..b.mp4').name.startsWith('.'), false);
   assert.equal(inspectUploadName('a..b.mp4').name.includes('..'), false);
-  assert.equal(inspectUploadName('   ').name, 'video');
+  assert.equal(inspectUploadName('   ').name, 'video.mp4');
 });
 
 test('only a name over the limit is truncated, and the extension survives', () => {
@@ -35,6 +44,8 @@ test('only a name over the limit is truncated, and the extension survives', () =
   assert.equal(long.truncated, true);
   assert.equal(long.name.length, MAX_UPLOAD_NAME_LENGTH);
   assert.ok(long.name.endsWith('.mp4'));
+  const longStem = inspectUploadName('a'.repeat(MAX_UPLOAD_NAME_LENGTH));
+  assert.deepEqual([longStem.truncated, longStem.name.length, longStem.name.endsWith('.mp4')], [true, MAX_UPLOAD_NAME_LENGTH, true]);
 });
 
 test('a counter goes before the extension and keeps the name within the limit', () => {

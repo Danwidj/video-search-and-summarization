@@ -26,6 +26,7 @@ class FakeXhr {
     requests.push({ method: this.method, url: this.url, body });
     this.pending = setTimeout(() => {
       this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 });
+      this.upload.onload?.();
       [this.status, this.responseText] = [r2Answer[0], JSON.stringify(r2Answer[1])];
       this.onload?.();
     }, 0);
@@ -57,7 +58,7 @@ test('the video is uploaded once, straight to R2 through the console, and nothin
   const progress = [];
   const uploaded = await uploadVideo(clip(), new AbortController().signal, (value) => progress.push(value));
 
-  assert.deepEqual(uploaded, { filePath: 'uploads/clip.mp4', filename: 'clip.mp4' });
+  assert.deepEqual(uploaded, { filePath: 'uploads/clip.mp4', filename: 'clip.mp4', converted: false });
   // Node has no <video> to capture a thumbnail from, so the R2 upload is the only request.
   assert.deepEqual(
     requests.map(({ method, url }) => `${method} ${url}`),
@@ -67,6 +68,29 @@ test('the video is uploaded once, straight to R2 through the console, and nothin
   assert.equal(form.get('filename'), 'clip.mp4');
   assert.equal(form.get('file').size, 10);
   assert.deepEqual(progress, [50, 100]);
+});
+
+test('a .MOV is sent under its .mp4 name, the converting callback fires once the bytes are up, and the answer says it was converted', async () => {
+  r2Answer = [200, { filePath: 'uploads/IMG_9170.mp4', name: 'IMG_9170.mp4', converted: true }];
+  const events = [];
+  const mov = new File([new Uint8Array(10)], 'IMG_9170.MOV', { type: 'video/quicktime' });
+  const uploaded = await uploadVideo(
+    mov,
+    new AbortController().signal,
+    (value) => events.push(`progress ${value}`),
+    () => events.push('uploaded'),
+  );
+  assert.deepEqual(uploaded, { filePath: 'uploads/IMG_9170.mp4', filename: 'IMG_9170.mp4', converted: true });
+  assert.equal(requests[0].body.get('filename'), 'IMG_9170.mp4');
+  assert.deepEqual(events, ['progress 50', 'uploaded', 'progress 100']);
+});
+
+test("a conversion the console refuses surfaces ffmpeg's message", async () => {
+  r2Answer = [422, { error: 'ffmpeg could not convert the video: Invalid data found when processing input' }];
+  await assert.rejects(
+    uploadVideo(clip(), new AbortController().signal, () => {}),
+    /ffmpeg could not convert the video: Invalid data found/,
+  );
 });
 
 test('an R2 upload the console refuses surfaces its error', async () => {
