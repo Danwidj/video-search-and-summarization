@@ -312,6 +312,7 @@ export function draftToStructured(draft: EditDraft): Structured {
     uploaded: false,
     track: null,
     trackUrl: null,
+    clipUrl: null,
     trackFirstSeenSeconds: null,
     trackLastSeenSeconds: null,
   });
