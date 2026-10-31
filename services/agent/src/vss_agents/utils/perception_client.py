@@ -185,9 +185,9 @@ class HttpPerceptionClient:
     ) -> None:
         self.nvstreamer_url = (nvstreamer_url or _env_url(NVSTREAMER_URL_ENV_VAR, DEFAULT_NVSTREAMER_URL)).rstrip("/")
         self.provision_url = (provision_url or _env_url(PROVISION_URL_ENV_VAR, DEFAULT_PROVISION_URL)).rstrip("/")
-        self.analytics_url = (analytics_url or _env_url(VIDEO_ANALYTICS_URL_ENV_VAR, DEFAULT_VIDEO_ANALYTICS_URL)).rstrip(
-            "/"
-        )
+        self.analytics_url = (
+            analytics_url or _env_url(VIDEO_ANALYTICS_URL_ENV_VAR, DEFAULT_VIDEO_ANALYTICS_URL)
+        ).rstrip("/")
         self._client = client
 
     async def _request(self, method: str, url: str, timeout: float = CALL_TIMEOUT_SECONDS, **kwargs: Any) -> Any:
