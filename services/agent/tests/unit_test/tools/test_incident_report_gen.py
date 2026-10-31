@@ -45,6 +45,7 @@ from vss_agents.tools.incident_report_gen import revision_embedding
 from vss_agents.tools.incident_report_gen import rp1_request_body
 from vss_agents.tools.incident_report_gen import run_p1
 from vss_agents.tools.incident_report_gen import run_rp1
+from vss_agents.utils import track_evidence
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
 
 from ..utils.test_video_duration import mp4
@@ -693,3 +694,57 @@ class TestP1Retry:
             await TestEndToEnd()._run(lambda _request: _completion(""), tool_input=self.INPUT)
         assert len(calls) == 1
         assert [a["outcome"] for a in caught.value.attempts] == ["failed"]
+
+
+class TestTracking:
+    """INCIDENT_TRACKING_ENABLED gates person tracking for production requests only."""
+
+    INPUT = IncidentReportGenInput(
+        incident_id="v1", video_url=VIDEO_URL, model_run_id="run1", video_key="uploads/a.mp4"
+    )
+
+    @staticmethod
+    def _handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return _completion(json.dumps(MODEL_OUTPUT) if "response_format" in body else "INCIDENT REPORT")
+
+    @pytest.mark.asyncio
+    async def test_the_flag_is_off_by_default_and_the_response_has_no_tracking(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_TRACKING_ENABLED", raising=False)
+        result, _ = await TestEndToEnd()._run(self._handler, tool_input=self.INPUT)
+        assert result.tracking is None
+
+    @pytest.mark.asyncio
+    async def test_the_flag_on_returns_the_tracking_summary(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_TRACKING_ENABLED", "1")
+        result, _ = await TestEndToEnd()._run(self._handler, tool_input=self.INPUT)
+        assert set(result.tracking) == {"enabled", "matched", "tracks", "elapsed_ms", "skipped"}
+        assert result.tracking["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_skip_crops_never_tracks_even_with_the_flag_on(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_TRACKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_EXPERIMENTS_ENABLED", "1")
+        tool_input = self.INPUT.model_copy(update={"skip_crops": True})
+        result, _ = await TestEndToEnd()._run(self._handler, tool_input=tool_input)
+        assert result.tracking is None
+
+    def test_a_request_gets_its_own_sensor_id_per_run(self):
+        a = track_evidence.TrackingRequest(sensor_id=track_evidence.sensor_id_for("uploads/a.mp4", "run1"))
+        b = track_evidence.TrackingRequest(sensor_id=track_evidence.sensor_id_for("uploads/a.mp4", "run2"))
+        assert a.sensor_id != b.sensor_id
+
+    @pytest.mark.asyncio
+    async def test_a_failure_in_evidence_cropping_leaves_the_analysis_and_names_the_skip(self):
+        service = MagicMock()
+        service.process_incident_report = AsyncMock(side_effect=RuntimeError("boom"))
+        request = track_evidence.TrackingRequest(sensor_id="s")
+        set_crop_evidence_service(service)
+        try:
+            entries = await collect_evidence(
+                video_url=VIDEO_URL, incident_id="v1", report=TestCollectEvidence.REPORT, tracking=request
+            )
+        finally:
+            set_crop_evidence_service(None)
+        assert request.summary.skipped == "evidence cropping failed"
+        assert entries and all(e["image"] is None for e in entries)

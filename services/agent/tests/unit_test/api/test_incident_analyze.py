@@ -78,7 +78,9 @@ def test_passes_incident_id_video_url_and_model_run_id_to_the_tool():
     tool.ainvoke.assert_awaited_once_with(
         {"incident_id": "v1", "video_url": VIDEO_URL, "model_run_id": "run1", "skip_rp1": True}
     )
-    assert response.json() == {k: v for k, v in OUTPUT.model_dump().items() if k not in EXPERIMENT_OUTPUT_FIELDS}
+    assert response.json() == {
+        k: v for k, v in OUTPUT.model_dump().items() if k not in EXPERIMENT_OUTPUT_FIELDS and k != "tracking"
+    }
 
 
 def test_re_generation_passes_model_and_reviewer_prompt_to_the_tool():
@@ -247,6 +249,14 @@ PRODUCTION_KEYS = {
     "video_bounds_unchecked_reason",
 }
 EXPERIMENT = {"prompt_id": "p1-v4-e01-x", "prompt_sha256": "a" * 64, "skip_crops": True, "persisted": False}
+
+
+def test_a_tracking_summary_is_kept_in_the_response_only_when_the_tool_returned_one():
+    summary = {"enabled": True, "matched": 1, "tracks": 3, "elapsed_ms": 9.0, "skipped": None}
+    client, _ = _client(result=OUTPUT.model_copy(update={"tracking": summary}))
+    response = client.post("/api/v1/incidents/v1/analyze", json={"video_url": VIDEO_URL})
+    assert response.json()["tracking"] == summary
+    assert set(response.json()) == PRODUCTION_KEYS | {"tracking"}
 
 
 def test_a_production_response_keeps_exactly_its_documented_keys(monkeypatch):
