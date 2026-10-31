@@ -616,7 +616,11 @@ class DefaultDetector:
         raise RuntimeError("unreachable")  # pragma: no cover
 
     def _chat_json(self, images: Sequence[bytes], text: str, max_tokens: int = 256) -> dict[str, Any]:
-        """One unbudgeted chat completion (images first, then ``text``) parsed as a JSON object."""
+        """One unbudgeted chat completion (images first, then ``text``) parsed as a JSON object.
+
+        A rate limit or server error is retried once after ``retry-after`` (default 2 s); the gateway answers 429
+        when a report's items are checked concurrently.
+        """
         body = {
             "model": self.model_name,
             "messages": [
@@ -640,14 +644,19 @@ class DefaultDetector:
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
-        resp = httpx.post(
-            self._chat_url(),
-            json=body,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            timeout=ZOOM_TIMEOUT_SECONDS,
-        )
-        resp.raise_for_status()
-        return parse_json_object(resp.json()["choices"][0]["message"]["content"])
+        for attempt in (1, 2):
+            resp = httpx.post(
+                self._chat_url(),
+                json=body,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=ZOOM_TIMEOUT_SECONDS,
+            )
+            if resp.status_code in _RETRYABLE_STATUS_CODES and attempt == 1:
+                time.sleep(float(resp.headers.get("retry-after") or 2.0))
+                continue
+            resp.raise_for_status()
+            return parse_json_object(resp.json()["choices"][0]["message"]["content"])
+        raise RuntimeError("unreachable")  # pragma: no cover
 
     def zoom_name(
         self, jpeg: bytes, *, item_type: str, name: str, description: str, context_jpeg: bytes | None = None

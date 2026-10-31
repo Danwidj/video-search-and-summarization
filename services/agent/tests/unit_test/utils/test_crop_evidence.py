@@ -863,6 +863,23 @@ class TestZoomSecondLook:
         assert "soccer ball" not in contents[0][1]["text"] and "soccer ball" not in contents[1][2]["text"]
         assert '"soccer ball"' in contents[2][0]["text"] and '"plastic bag"' in contents[2][0]["text"]
 
+    def test_a_rate_limited_zoom_call_is_retried_once(self) -> None:
+        detector = DefaultDetector(api_key="k")
+        limited = MagicMock(status_code=429, headers={"retry-after": "0"})
+        ok = MagicMock(status_code=200, headers={})
+        ok.json.return_value = {
+            "choices": [{"message": {"content": '{"name": "bag", "description": "", "confidence": 1}'}}]
+        }
+        with (
+            patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[limited, ok, limited, limited]) as post,
+            patch("vss_agents.utils.crop_evidence.time.sleep") as sleep,
+        ):
+            assert detector._chat_json([b"jpeg"], "look")["name"] == "bag"
+            limited.raise_for_status.side_effect = RuntimeError("429")
+            with pytest.raises(RuntimeError):
+                detector._chat_json([b"jpeg"], "look")  # a second 429 is not retried again
+        assert post.call_count == 4 and sleep.call_count == 2
+
     def test_disagreeing_looks_skip_the_merge_call_and_keep_the_report(self) -> None:
         detector = DefaultDetector(api_key="k")
 
