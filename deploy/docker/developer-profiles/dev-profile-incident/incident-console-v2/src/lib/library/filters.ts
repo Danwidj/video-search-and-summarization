@@ -12,7 +12,7 @@ export interface IncidentFilters {
   type: string;
   /** '', a band (low, medium, high) or one level (1 to 5). */
   severity: string;
-  /** Only the official version of each incident. */
+  /** Report status: '' for every incident, or only those whose shown version is official or not yet official. */
   scope: '' | 'official' | 'not_official';
   /** Version kind: '', ai or human. */
   kind: string;
