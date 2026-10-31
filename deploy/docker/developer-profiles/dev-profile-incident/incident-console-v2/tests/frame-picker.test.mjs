@@ -80,10 +80,8 @@ test('the picker is a dialog that crops through the evidence-crop route and hand
   assert.match(picker, /\/api\/reports\/\$\{encodeURIComponent\(videoId\)\}\/evidence-crop/);
   assert.match(picker, /body: JSON\.stringify\(\{ timestampSeconds: seconds, region \}\)/);
   assert.match(picker, /const blob = await response\.blob\(\);/, 'the crop is held as a blob in the browser');
-  assert.match(
-    picker,
-    /onPick\(\{ blob, previewUrl: URL\.createObjectURL\(blob\), timestampSeconds: seconds, box: regionBox\(region\) \}\)/,
-  );
+  assert.match(picker, /const box = !drawn && trackBox \? \[\.\.\.trackBox\] : regionBox\(region\);/, 'a drawn rectangle is the box');
+  assert.match(picker, /onPick\(\{ blob, previewUrl: URL\.createObjectURL\(blob\), timestampSeconds: seconds, box \}\)/);
   assert.doesNotMatch(picker, /itemId/, 'the crop needs no item ID: Save uploads it under the item key');
   assert.match(picker, /Escape/, 'Escape closes the picker unless a crop is running');
   assert.match(
@@ -106,7 +104,11 @@ test('Edit mode offers Replace image on each draft card and applies the pick to 
     /imageTimestampSeconds: pick\.timestampSeconds,\s*imageBox: pick\.box/,
     'the frame second and box are stored for the save path',
   );
-  assert.match(pane, /timestampSeconds: pick\.timestampSeconds/, "the picked frame becomes the item's most visible second");
+  assert.match(
+    pane,
+    /timestampSeconds: outsideSpan \? item\.timestampSeconds : pick\.timestampSeconds/,
+    "the picked frame becomes the item's most visible second unless it is outside the entity's first to last seen",
+  );
   const page = await readFile(new URL('reports/components/ReportPage/ReportPage.tsx', components), 'utf8');
   assert.match(page, /videoSrc=\{report\.run\.playbackUrl\}/);
 });
