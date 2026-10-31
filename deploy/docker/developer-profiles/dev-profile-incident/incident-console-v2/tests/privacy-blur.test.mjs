@@ -259,6 +259,20 @@ test("the toggle on: the clip is cut blurred from the item's track and recorded 
   ]);
 });
 
+test("an object's track is never read as heads: the blurred clip of an instrument uses the recorded heads only", async () => {
+  const trackKey = `${RUN}/I1-track.json`;
+  const store = fakeStore({ [trackKey]: [{ t: 6.5, box: [100, 100, 500, 400], score: 0.9 }] });
+  const instrument = entry('I1', {
+    item_type: 'instrument',
+    track: trackKey,
+    track_source: 'object-tracker',
+    blur_regions: [[300, 600, 400, 700]],
+  });
+  assert.equal(await clipFor(clipRecord([instrument], { blurFaces: true }), 'I1', store, 'instrument'), `signed:${RUN}/I1-clip-blur.mp4`);
+  assert.deepEqual(store.calls.read, [], 'the object track is not read for the blur');
+  assert.deepEqual(store.calls.cut[0].regions, [{ box: [275, 575, 425, 725], fromSeconds: null, toSeconds: null }]);
+});
+
 test('a run analysed with blur gets a blurred clip even after the toggle was switched off', async () => {
   const store = fakeStore();
   const record = clipRecord([entry('E1', { blur_regions: [] })], { runBlurred: true });

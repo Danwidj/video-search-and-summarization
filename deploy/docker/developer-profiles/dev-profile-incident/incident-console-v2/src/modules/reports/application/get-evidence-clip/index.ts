@@ -102,7 +102,8 @@ export async function getEvidenceClip(incidents: IncidentRepository, store: Clip
   if (!pending) {
     const blur = async (): Promise<BlurSource | null> => {
       if (!blurred) return null;
-      const trackKey = typeof entry.track === 'string' && TRACK_KEY.test(entry.track) ? entry.track : null;
+      // Only a person's track is a track of heads; an instrument's or asset's (object tracker) is a box on the object.
+      const trackKey = request.itemType === 'entity' && typeof entry.track === 'string' && TRACK_KEY.test(entry.track) ? entry.track : null;
       let track: TrackSample[] | null = null;
       if (trackKey) {
         try {
