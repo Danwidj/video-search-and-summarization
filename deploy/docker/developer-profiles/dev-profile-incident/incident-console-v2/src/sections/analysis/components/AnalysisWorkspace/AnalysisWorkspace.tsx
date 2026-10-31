@@ -4,7 +4,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Upload } from 'lucide-react';
 import { cn } from 'cn';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -13,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { BatchFileRow } from '@/sections/analysis/components/BatchFileRow';
+import { useBatchUpload } from '@/sections/analysis/hooks/use-batch-upload';
 import { checkUploadName, type UploadNameReport, useVideoUpload } from '@/sections/analysis/hooks/use-video-upload';
 
 import {
@@ -92,6 +95,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState('');
   const { upload } = useVideoUpload();
+  const batch = useBatchUpload();
 
   function changeStage(newStage: StageKey) {
     setStage(newStage);
@@ -194,6 +198,21 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
     setUploadProgress(0);
   }
 
+  /** One file on an empty page runs as a single upload; several, or any added to a batch, are queued. */
+  function chooseFiles(selected: File[]) {
+    if (selected.length === 0) return;
+    if (batch.items.length === 0 && selected.length === 1) {
+      chooseFile(selected[0]);
+      return;
+    }
+    // A finished or failed single upload gives way to the batch.
+    setFile(null);
+    setStage('idle');
+    setNameNotice(null);
+    setError(null);
+    batch.add(selected, model);
+  }
+
   async function analyze() {
     if (!file) return;
     const controller = new AbortController();
@@ -238,6 +257,15 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
   const busy = ['uploading', 'converting', 'analyzing', 'saving'].includes(stage);
   const progressValue = getStageProgress(stage, uploadProgress, lastActiveStage);
   const announcement = getStageAnnouncement(stage, uploadProgress, error, convertingSeconds);
+  const { summary } = batch;
+  const batchHeadline = [
+    `Batch of ${summary.total} ${summary.total === 1 ? 'video' : 'videos'}: ${summary.done} done`,
+    summary.pending > 0 ? `${summary.pending} to go` : '',
+    summary.failed > 0 ? `${summary.failed} failed` : '',
+    summary.cancelled > 0 ? `${summary.cancelled} cancelled` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <Card
@@ -247,7 +275,11 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
       <input
         accept="video/mp4,video/x-matroska,video/quicktime,video/webm,.mp4,.mkv,.mov,.webm"
         className="sr-only"
-        onChange={(event) => chooseFile(event.target.files?.[0] || null)}
+        multiple
+        onChange={(event) => {
+          chooseFiles(Array.from(event.target.files ?? []));
+          event.target.value = '';
+        }}
         ref={inputRef}
         type="file"
       />
@@ -260,7 +292,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
             htmlFor="analysis-model"
           >
             <span className="whitespace-nowrap">Vision-language model</span>
-            <Select disabled={busy} onValueChange={(value) => setModel(value)} value={model}>
+            <Select disabled={busy || batch.summary.pending > 0} onValueChange={(value) => setModel(value)} value={model}>
               <SelectTrigger className="normal-case tracking-normal sm:w-auto sm:min-w-[19rem] sm:shrink-0" id="analysis-model">
                 <SelectValue placeholder="Choose model" />
               </SelectTrigger>
@@ -276,7 +308,71 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
         </Card>
       )}
 
-      {file && previewUrl ? (
+      {batch.items.length > 0 ? (
+        <div className="flex flex-col gap-4" data-testid="batch">
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{batchHeadline}</span>
+              <span className="font-mono font-semibold text-foreground">{batch.summary.percent}%</span>
+            </div>
+            <Progress
+              aria-label="Batch progress"
+              aria-valuenow={batch.summary.percent}
+              aria-valuetext={batchHeadline}
+              className="h-2 w-full"
+              value={batch.summary.percent}
+            />
+            <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {batchHeadline}
+            </div>
+          </div>
+          <ul className="flex flex-col gap-3" aria-label="Videos in this batch">
+            {batch.items.map((item) => (
+              <BatchFileRow item={item} key={item.key} onRemove={batch.remove} />
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-3">
+            {batch.summary.settled ? (
+              <>
+                <Button asChild className="h-11 flex-1 rounded-full text-sm font-semibold" size="lg">
+                  <Link href="/library">Go to library</Link>
+                </Button>
+                <Button className="h-11 rounded-full text-sm font-semibold" onClick={batch.clear} size="lg" type="button" variant="outline">
+                  Start a new batch
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button className="h-11 flex-1 rounded-full text-sm font-semibold" disabled size="lg" type="button">
+                  Working on {batch.summary.pending} {batch.summary.pending === 1 ? 'video' : 'videos'}, one at a time…
+                </Button>
+                <Button
+                  className="h-11 rounded-full text-sm font-semibold"
+                  onClick={batch.cancel}
+                  size="lg"
+                  type="button"
+                  variant="outline"
+                >
+                  Cancel batch
+                </Button>
+              </>
+            )}
+            <Button
+              className="h-11 rounded-full text-sm font-semibold"
+              onClick={() => inputRef.current?.click()}
+              size="lg"
+              type="button"
+              variant="outline"
+            >
+              <Plus data-icon="inline-start" />
+              Add videos
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Each video becomes its own report. Cancelling drops the queued videos; a video already converting or analysing finishes.
+          </p>
+        </div>
+      ) : file && previewUrl ? (
         <div className="overflow-hidden rounded-[1.45rem] bg-ink text-white">
           <div className="relative aspect-video w-full min-w-0 min-h-0 overflow-hidden bg-black flex items-center justify-center">
             <video className="max-h-full max-w-full object-contain" controls preload="metadata" src={previewUrl}>
@@ -334,7 +430,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
           onDrop={(event) => {
             event.preventDefault();
             setDragging(false);
-            chooseFile(event.dataTransfer.files[0] || null);
+            chooseFiles(Array.from(event.dataTransfer.files));
           }}
         >
           <CardHeader className="flex w-full flex-col items-center gap-3 p-0">
@@ -345,10 +441,11 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
               New analysis
             </Badge>
             <CardTitle className="text-2xl font-semibold tracking-tight text-foreground" id="upload-title">
-              Drop a video here
+              Drop videos here
             </CardTitle>
             <CardDescription className="max-w-sm text-sm leading-6 text-muted-foreground" id="upload-description">
               MP4, MKV, MOV, or WebM. Analysis starts automatically after selection, uses the model above and can take several minutes.
+              Several videos run one after another, each to its own report.
             </CardDescription>
           </CardHeader>
           <CardContent className="mt-6 flex flex-col items-center p-0">
@@ -360,7 +457,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
         </Card>
       )}
 
-      {error && !file && (
+      {error && !file && batch.items.length === 0 && (
         <Alert variant="destructive" className="mt-4">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
