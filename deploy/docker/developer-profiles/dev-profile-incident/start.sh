@@ -97,6 +97,13 @@
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
 #                            behavior-analytics natively, plus elasticsearch in Docker
+#   ENABLE_TRACKING          set to 'true' (vm mode only, default 'false') to also start the
+#                            person-tracking stack on the VM after Phoenix and the agent, via
+#                            .scripts/tracking-stack.sh start: NvStreamer, DeepStream perception
+#                            (RT-DETR warehouse), Kafka, Logstash, Elasticsearch and the
+#                            video-analytics API. Stages the RT-DETR model on first use; the first
+#                            start builds TensorRT engines (about 10 minutes). Stopped again by
+#                            vm-stop-backend.sh when the last session exits.
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 set -euo pipefail
@@ -241,6 +248,7 @@ trap cleanup EXIT INT TERM HUP
 if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
+  ENABLE_TRACKING="${ENABLE_TRACKING:-false}"
 
   # Docker appliances: only Phoenix (VIOS/VST, HAProxy, Redis and Kafka were dropped)
   default_docker_services="phoenix"
@@ -439,6 +447,18 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     fi
 
     echo "start.sh: missing services started successfully."
+  fi
+
+  if [ "$ENABLE_TRACKING" = "true" ]; then
+    echo "=== Person-tracking stack (ENABLE_TRACKING=true) ==="
+    tracking_rc=0
+    # shellcheck disable=SC2029
+    vm_ssh_limited $((VSS_COMPOSE_UP_TIMEOUT + 900)) "$VSS_SSH_TARGET" \
+      "bash '$vm_profile_dir/.scripts/tracking-stack.sh' start" || tracking_rc=$?
+    if [ "$tracking_rc" -ne 0 ]; then
+      echo "start.sh: the tracking stack did not come up (exit $tracking_rc); see the [tracking] lines above." >&2
+      exit 1
+    fi
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
