@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Cuts a few seconds of a video into an H.264 MP4 with the ffmpeg on PATH, for an evidence clip. ffmpeg seeks by HTTP
+// Cuts a few seconds of a video into an H.264 MP4 with the ffmpeg from lib/video/host-binaries.ts, for an evidence clip. ffmpeg seeks by HTTP
 // range over the signed R2 URL, so the video is never downloaded whole. Video only (no audio track, ever), the source's
 // size up to 1920x1080, faststart so the browser can start playing before the whole clip has arrived. faststart rewrites
 // the file after encoding, so the clip is written to a temporary file rather than piped. A clip of a video with the privacy

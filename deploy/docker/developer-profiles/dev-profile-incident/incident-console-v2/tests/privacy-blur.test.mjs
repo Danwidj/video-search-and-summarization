@@ -74,6 +74,7 @@ mock.module('node:child_process', {
 const privacy = await import('../src/modules/reports/domain/privacy-blur.ts');
 const { evidenceClipKey } = await import('../src/modules/reports/domain/evidence-clip.ts');
 const { ffmpegClipArguments } = await import('../src/lib/video/ffmpeg-clip.ts');
+const { resolveHostBinary } = await import('../src/lib/video/host-binaries.ts');
 const { getEvidenceClip } = await import('../src/modules/reports/application/get-evidence-clip/index.ts');
 const { InMemoryIncidentRepository } = await import('../src/modules/reports/infrastructure/memory/incidents.ts');
 const { structuredFromPayload } = await import('../src/modules/reports/domain/payload-view.ts');
@@ -316,6 +317,7 @@ test('the clip route reads videos.blur_faces and cuts the blurred clip through t
   );
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { url: `https://signed.r2.test/${RUN}/E1-clip-blur.mp4` });
+  assert.equal(spawned[0].command, resolveHostBinary('ffmpeg'), 'the blurred clip is cut with the resolved ffmpeg');
   const args = spawned[0].args;
   assert.equal(args[args.indexOf('-map') + 1], '[blurred]');
   assert.match(args[args.indexOf('-filter_complex') + 1], /boxblur/);
