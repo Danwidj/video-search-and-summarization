@@ -5,6 +5,7 @@
 // Supabase rows are mapped by lib/adapters/supabase/mappers/report.ts.
 
 import { timestampWithinVideo } from '@/modules/contract/domain/validate';
+import { chunkTimelineFrom } from '@/modules/reports/domain/chunk-timeline';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
 import type { ModelOutput, ReportView, RunDetails, TimelineCheck, TimelineEvent } from '@/modules/reports/domain/report-view';
@@ -196,6 +197,7 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     modelRunId,
     structured,
     modelOutput,
+    chunkTimeline: notes.kind === 'contract' ? chunkTimelineFrom(notes.response.chunkTimeline) : [],
     run,
     revision: record.revision,
     official: { officialRevisionId: record.video.officialRevisionId, isOfficial: record.revision.isOfficial },
