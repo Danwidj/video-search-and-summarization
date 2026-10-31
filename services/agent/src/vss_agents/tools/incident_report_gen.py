@@ -469,18 +469,7 @@ async def collect_evidence(
     except Exception as exc:
         logger.warning("incident_report_gen: evidence cropping failed for %s: %s", incident_id, exc)
         reason = f"evidence cropping failed: {type(exc).__name__}: {exc}"
-        return [
-            {
-                **item,
-                "bounding_box": None,
-                "image": None,
-                "frame": None,
-                "located": None,
-                "box_seconds": None,
-                "image_gap": reason,
-            }
-            for item in crop_evidence.evidence_items(report)
-        ]
+        return crop_evidence.blank_evidence_entries(report, image_gap=reason, zoom_gap=reason)
 
 
 def crop_telemetry(evidence: list[dict[str, Any]], budget: crop_evidence.CropCallBudget, elapsed_s: float) -> dict:
@@ -643,18 +632,12 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             )
 
         if tool_input.skip_crops:
-            evidence = [
-                {
-                    **item,
-                    "bounding_box": None,
-                    "image": None,
-                    "frame": None,
-                    "located": None,
-                    "box_seconds": None,
-                    "image_gap": "evidence cropping skipped (skip_crops)",
-                }
-                for item in crop_evidence.evidence_items(report)
-            ]
+            # No crop means no located item, so the zoomed second look is off as well.
+            evidence = crop_evidence.blank_evidence_entries(
+                report,
+                image_gap="evidence cropping skipped (skip_crops)",
+                zoom_gap="zoomed second look skipped (skip_crops)",
+            )
         elif experiment is not None:
             # An experimental crop run uses its own temporary in-memory store: isolated from every other
             # request, holding no production data, never written to disk or R2, and discarded on return.
