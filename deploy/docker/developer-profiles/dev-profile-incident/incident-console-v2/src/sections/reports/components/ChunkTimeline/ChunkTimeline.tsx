@@ -32,8 +32,10 @@ export function ChunkTimeline({
     // Scroll the strip itself: scrollIntoView would also scroll the page.
     const top = row.offsetTop;
     const bottom = top + row.offsetHeight;
+    // A window taller than the strip is aligned by its top, so its time and first lines show.
     if (top < list.scrollTop) list.scrollTo({ top, behavior: 'smooth' });
-    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTo({ top: bottom - list.clientHeight, behavior: 'smooth' });
+    else if (bottom > list.scrollTop + list.clientHeight)
+      list.scrollTo({ top: Math.min(top, bottom - list.clientHeight), behavior: 'smooth' });
   }, [active]);
 
   return (
@@ -41,10 +43,11 @@ export function ChunkTimeline({
       <div className="flex items-baseline gap-3 px-5 pt-2 pb-1 sm:px-8">
         <h2 className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Caption timeline</h2>
         <span className="text-xs text-muted-foreground">
-          {windows.length} {windows.length === 1 ? 'window' : 'windows'} captioned before the report; select one to jump there
+          Model captions of {windows.length} {windows.length === 1 ? 'window' : 'windows'}, written before the report: context, not
+          evidence. Select one to jump there.
         </span>
       </div>
-      <ol className="relative m-0 max-h-36 list-none overflow-y-auto px-3 pb-2 sm:px-6" ref={listRef}>
+      <ol className="relative m-0 max-h-44 list-none overflow-y-auto px-3 pb-2 sm:px-6" ref={listRef}>
         {windows.map((window, index) => (
           <li key={`${window.startSeconds}-${window.endSeconds}`}>
             <button
