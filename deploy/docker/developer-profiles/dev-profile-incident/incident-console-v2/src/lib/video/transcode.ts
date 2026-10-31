@@ -7,7 +7,7 @@
 // is stored byte for byte, anything else is converted with ffmpeg: video only
 // (no audio, ever), same width, height and frame rate, faststart so the moov
 // header is at the front (lib/video/mp4-duration.ts reads it by range). Both
-// binaries are expected on PATH, like the frame route's ffmpeg.
+// binaries come from lib/video/host-binaries.ts, like the frame route's ffmpeg.
 
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';

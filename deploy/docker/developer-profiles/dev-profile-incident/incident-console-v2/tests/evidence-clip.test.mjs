@@ -85,6 +85,7 @@ mock.module('node:child_process', {
 const { CLIP_SECONDS, clipButton, clipCentreSeconds, clipWindow, evidenceClipKey, evidenceClipUrl } = await import(
   '../src/modules/reports/domain/evidence-clip.ts'
 );
+const { resolveHostBinary } = await import('../src/lib/video/host-binaries.ts');
 const { getEvidenceClip } = await import('../src/modules/reports/application/get-evidence-clip/index.ts');
 const { getReport } = await import('../src/modules/reports/application/get-report/index.ts');
 const { InMemoryIncidentRepository } = await import('../src/modules/reports/infrastructure/memory/incidents.ts');
@@ -307,7 +308,7 @@ test('the route cuts the clip once from the signed video URL, stores it as video
   assert.equal(first.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await first.json(), { url: `https://signed.r2.test/${CLIP_KEY}` });
   assert.equal(spawned.length, 1);
-  assert.equal(spawned[0].command, 'ffmpeg');
+  assert.equal(spawned[0].command, resolveHostBinary('ffmpeg'), 'the clip is cut with the resolved ffmpeg');
   assert.equal(spawned[0].args[spawned[0].args.indexOf('-i') + 1], `https://signed.r2.test/${VIDEO_KEY}`);
   const put = commands.find((c) => c.constructor.name === 'PutObjectCommand');
   assert.equal(put.input.Key, CLIP_KEY);

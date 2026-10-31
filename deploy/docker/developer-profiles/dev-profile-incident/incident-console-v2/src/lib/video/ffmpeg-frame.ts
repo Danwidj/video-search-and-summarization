@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Decodes one frame of a video as a JPEG with the ffmpeg on PATH, optionally
+// Decodes one frame of a video as a JPEG with the ffmpeg from lib/video/host-binaries.ts, optionally
 // cropped to a rectangle given as fractions of the frame. ffmpeg seeks by HTTP
 // range over the signed R2 URL, so the video is never downloaded whole.
 
@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 
 import type { FrameRegion } from '@/lib/evidence/frame-geometry';
 import { FrameRequestError } from '@/lib/evidence/frame-request';
+import { resolveHostBinary } from '@/lib/video/host-binaries';
 
 const TIMEOUT_MS = 20_000;
 const MAX_JPEG_BYTES = 10 * 1024 * 1024;
@@ -44,7 +45,9 @@ export function ffmpegFrameArguments(inputUrl: string, seconds: number, region: 
 
 export async function extractFrameJpeg(inputUrl: string, seconds: number, region: FrameRegion | null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn('ffmpeg', ffmpegFrameArguments(inputUrl, seconds, region), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(resolveHostBinary('ffmpeg'), ffmpegFrameArguments(inputUrl, seconds, region), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     const chunks: Buffer[] = [];
     let size = 0;
     let stderr = '';
