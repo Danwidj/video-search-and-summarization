@@ -705,6 +705,19 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                 video_key=tool_input.video_key,
                 tracking=tracking,
             )
+        if tracking is not None:
+            logger.info("incident_report_gen: tracking for %s: %s", tool_input.incident_id, tracking.summary.to_dict())
+            for entry in evidence:
+                if entry.get("track"):
+                    logger.info(
+                        "incident_report_gen: %s matched track %s (%s s to %s s), frame %s at %s s",
+                        entry["item_id"],
+                        entry["track"],
+                        entry.get("track_first_seen_seconds"),
+                        entry.get("track_last_seen_seconds"),
+                        entry.get("frame"),
+                        entry.get("box_seconds"),
+                    )
         # An experimental request never writes a report revision: its output is an experiment result.
         revision_id = (
             None
