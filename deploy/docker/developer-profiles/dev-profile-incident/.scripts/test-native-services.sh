@@ -302,16 +302,16 @@ tracking_off="$(unset INCIDENT_TRACKING_ENABLED; ENV_FILE="$tracking_env"; sourc
 assert_eq "false" "$tracking_off" "an env file INCIDENT_TRACKING_ENABLED=false wins"
 
 # -----------------------------------------------------------------------------
-# Caption pass and alert check: on for vss-agent by default, the env file can turn them off
+# Caption pass on for vss-agent by default (the env file can turn it off); the alert check stays off
 # -----------------------------------------------------------------------------
 # shellcheck disable=SC1090
-pass_default="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED $INCIDENT_ALERTS_ENABLED")"
-assert_eq "1 1" "$pass_default" "INCIDENT_CHUNKING_ENABLED and INCIDENT_ALERTS_ENABLED default to 1"
+pass_default="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED ${INCIDENT_ALERTS_ENABLED:-}")"
+assert_eq "1 " "$pass_default" "INCIDENT_CHUNKING_ENABLED defaults to 1 and INCIDENT_ALERTS_ENABLED stays unset"
 pass_env="$TMP/pass-off.env"
-printf 'INCIDENT_CHUNKING_ENABLED=0\nINCIDENT_ALERTS_ENABLED=0\n' >"$pass_env"
+printf 'INCIDENT_CHUNKING_ENABLED=0\nINCIDENT_ALERTS_ENABLED=1\n' >"$pass_env"
 # shellcheck disable=SC1090
-pass_off="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; ENV_FILE="$pass_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED $INCIDENT_ALERTS_ENABLED")"
-assert_eq "0 0" "$pass_off" "an env file with both set to 0 wins"
+pass_off="$(unset INCIDENT_CHUNKING_ENABLED INCIDENT_ALERTS_ENABLED; ENV_FILE="$pass_env"; source "$SUT" status >/dev/null; echo "$INCIDENT_CHUNKING_ENABLED ${INCIDENT_ALERTS_ENABLED:-}")"
+assert_eq "0 1" "$pass_off" "the env file wins for both (chunking off, alerts on)"
 
 # -----------------------------------------------------------------------------
 # ffmpeg and ffprobe: reported by status, installed into the tools dir when missing

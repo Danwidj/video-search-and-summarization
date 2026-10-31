@@ -130,14 +130,14 @@ load_env
 # tracking stack down the agent skips the step and the analysis runs as before.
 export INCIDENT_TRACKING_ENABLED="${INCIDENT_TRACKING_ENABLED:-true}"
 
-# The caption pass and the alert check are on for vss-agent unless the env file (or the caller) sets
-# them to 0. The agent reads only "1" as on. With either off the analysis runs without that step.
+# The caption pass is on for vss-agent unless the env file (or the caller) sets it to 0; the agent reads
+# only "1" as on, and with it off the analysis runs without it. The alert check (INCIDENT_ALERTS_ENABLED)
+# stays off unless the env file sets it to 1.
 export INCIDENT_CHUNKING_ENABLED="${INCIDENT_CHUNKING_ENABLED:-1}"
-export INCIDENT_ALERTS_ENABLED="${INCIDENT_ALERTS_ENABLED:-1}"
 
 # ffmpeg and ffprobe (caption pass, tracking) come from the repo-local tools dir when the host has none;
 # _start_vss_agent installs them there on first start. See media-tools.sh.
-# shellcheck source=media-tools.sh
+# shellcheck source=SCRIPTDIR/media-tools.sh
 source "${SCRIPT_DIR}/media-tools.sh"
 PATH="$(media_tools_path)"
 export PATH
