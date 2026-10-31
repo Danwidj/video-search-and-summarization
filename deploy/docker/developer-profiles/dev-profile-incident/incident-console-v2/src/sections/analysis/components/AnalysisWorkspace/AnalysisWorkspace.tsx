@@ -337,7 +337,7 @@ export function AnalysisWorkspace({ initialStage, initialUploadProgress, initial
             chooseFile(event.dataTransfer.files[0] || null);
           }}
         >
-          <CardHeader className="flex flex-col items-center gap-3 p-0">
+          <CardHeader className="flex w-full flex-col items-center gap-3 p-0">
             <div className="upload-orbit mx-auto flex size-16 items-center justify-center rounded-full border border-primary/20 bg-background text-primary shadow-lg shadow-primary/10">
               <Upload className="size-8" aria-hidden="true" />
             </div>
