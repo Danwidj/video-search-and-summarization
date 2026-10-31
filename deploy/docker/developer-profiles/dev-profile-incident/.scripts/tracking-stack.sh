@@ -135,7 +135,7 @@ ds_ready() { curl -sf --max-time 5 http://localhost:9000/api/v1/ready | grep -q 
 check_name_conflicts() {
   local name proj
   for name in kafka elasticsearch logstash vss-vios-nvstreamer vss-rtvi-cv vss-video-analytics-api; do
-    proj="$("${DOCKER[@]}" inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$name" 2>/dev/null || true)"
+    proj="$("${DOCKER[@]}" inspect --type container -f '{{index .Config.Labels "com.docker.compose.project"}}' "$name" 2>/dev/null || true)"
     if [ -n "$proj" ] && [ "$proj" != "$PROJECT" ]; then
       fail "container '${name}' already exists under compose project '${proj}' (this run uses '${PROJECT}'); the stock compose uses fixed names, so stop and remove that stack's containers first."
     fi
