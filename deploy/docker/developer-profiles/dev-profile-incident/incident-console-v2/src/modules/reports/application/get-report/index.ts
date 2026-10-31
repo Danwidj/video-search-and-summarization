@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Get report: one revision's view for the report page, with its video and
-// evidence images (the whole frame and the crop) signed for the browser.
+// evidence images (the whole frame and the crop) and person tracks signed for the browser.
 
 import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import { toReportView } from '@/modules/reports/application/report-view';
 import type { SignStorageKey } from '@/modules/reports/application/types';
 
-/** Signs each item's frame and image so the browser can show them; one that cannot be signed is shown as missing. */
+/** Signs each item's frame, image and track so the browser can show them; one that cannot be signed is shown as missing. */
 async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<ReportView> {
   const signed = new Map<string, string | null>();
-  const urlOf = async (image: string | null) => {
+  const urlOf = async (image: string | null | undefined) => {
     if (!image) return null;
     if (!signed.has(image)) signed.set(image, await sign(image).catch(() => null));
     return signed.get(image) ?? null;
@@ -20,8 +20,12 @@ async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<Re
   await Promise.all(
     items.map(async (item) => {
       if (item.evidence) {
-        const [imageUrl, frameUrl] = await Promise.all([urlOf(item.evidence.image), urlOf(item.evidence.frame)]);
-        item.evidence = { ...item.evidence, imageUrl, frameUrl };
+        const [imageUrl, frameUrl, trackUrl] = await Promise.all([
+          urlOf(item.evidence.image),
+          urlOf(item.evidence.frame),
+          urlOf(item.evidence.track),
+        ]);
+        item.evidence = { ...item.evidence, imageUrl, frameUrl, trackUrl };
       }
     }),
   );

@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import type { FrameRegion } from '@/lib/evidence/frame-geometry';
+import { videoFrameUrl } from '@/lib/evidence/evidence-view';
+import { boxRegion, type FrameRegion } from '@/lib/evidence/frame-geometry';
 import {
   dragRegion,
   pickSeconds,
@@ -19,15 +20,56 @@ import {
   type FramePoint,
   type SecondsRange,
 } from '@/lib/evidence/frame-picker';
+import { parseTrack, trackBoxAt, trackSecond, trackSpan, type TrackSample } from '@/lib/evidence/track';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
 const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
+
+/** How long the scrubber rests on a second before its frame is cut, so a drag does not cut every second it passes. */
+const FRAME_SETTLE_MS = 150;
+
+// Track files by R2 key, loaded once per item for the page's life; a failed or malformed file is remembered as null.
+const trackFiles = new Map<string, Promise<TrackSample[] | null>>();
+function loadTrack(track: { key: string; url: string }): Promise<TrackSample[] | null> {
+  let file = trackFiles.get(track.key);
+  if (!file) {
+    file = fetch(track.url)
+      .then((response) => (response.ok ? response.json() : null))
+      .then(parseTrack)
+      .catch(() => null);
+    trackFiles.set(track.key, file);
+  }
+  return file;
+}
+
+/** The item's track samples: undefined while loading, null without a track or when its file cannot be read. */
+function useTrack(track: { key: string; url: string } | null): TrackSample[] | null | undefined {
+  const key = track?.key ?? null;
+  const url = track?.url ?? null;
+  const [samples, setSamples] = useState<TrackSample[] | null | undefined>(key && url ? undefined : null);
+  useEffect(() => {
+    if (!key || !url) return;
+    let live = true;
+    loadTrack({ key, url }).then((loaded) => {
+      if (live) setSamples(loaded);
+    });
+    return () => {
+      live = false;
+    };
+  }, [key, url]);
+  return samples;
+}
 
 /**
  * A dialog where the reviewer scrubs the video to a frame and drags a rectangle
  * on it. Use this crop cuts the rectangle from that frame on the server and
  * hands the JPEG back to the caller. It is held in the browser: nothing is
  * written to R2 until the draft is saved.
+ *
+ * An item with a person track scrubs the track instead: whole seconds from its
+ * first to its last, the frame cut by the frame route with the track's box at
+ * that second drawn on it, and that box is the crop unless the reviewer drags
+ * their own. A track file that cannot be read leaves the ordinary picker.
  */
 export function EvidenceFramePicker({
   videoId,
@@ -35,6 +77,7 @@ export function EvidenceFramePicker({
   label,
   initialSeconds,
   range,
+  track = null,
   onPick,
   onClose,
 }: {
@@ -43,6 +86,8 @@ export function EvidenceFramePicker({
   label: string;
   initialSeconds: number;
   range: SecondsRange | null;
+  /** The item's track file (R2 key and signed URL), when it has one. */
+  track?: { key: string; url: string } | null;
   onPick: (pick: FramePick) => void;
   onClose: () => void;
 }) {
@@ -53,8 +98,30 @@ export function EvidenceFramePicker({
   const [drag, setDrag] = useState<{ from: FramePoint; to: FramePoint } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const region: FrameRegion | null = drag ? dragRegion(drag.from, drag.to) : null;
+  const samples = useTrack(track);
+  const span = samples ? trackSpan(samples) : null;
+  const [frameSeconds, setFrameSeconds] = useState<number | null>(null);
   const seen = usableRange(range);
+
+  // When the track arrives, the scrubber moves onto it: the opening second, rounded and kept inside the track.
+  useEffect(() => {
+    if (!samples) return;
+    const start = trackSecond(initialSeconds, trackSpan(samples));
+    setSeconds(start);
+    setFrameSeconds(start);
+    setDrag(null);
+  }, [samples, initialSeconds]);
+  const onTrack = span !== null;
+  useEffect(() => {
+    if (!onTrack || frameSeconds === seconds) return;
+    const timer = setTimeout(() => setFrameSeconds(seconds), FRAME_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [onTrack, seconds, frameSeconds]);
+
+  const trackBox = samples && frameSeconds !== null ? trackBoxAt(samples, frameSeconds) : null;
+  const drawn = drag ? dragRegion(drag.from, drag.to) : null;
+  // On a track the crop is the track's box at the frame shown, unless the reviewer drew their own on that frame.
+  const region: FrameRegion | null = drawn ?? (trackBox && frameSeconds === seconds ? boxRegion(trackBox) : null);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -65,6 +132,11 @@ export function EvidenceFramePicker({
   }, [busy, onClose]);
 
   const seek = (value: number) => {
+    if (span) {
+      setSeconds(trackSecond(value, span));
+      setDrag(null);
+      return;
+    }
     const next = pickSeconds(value, duration, range);
     setSeconds(next);
     if (videoRef.current) videoRef.current.currentTime = next;
@@ -111,7 +183,8 @@ export function EvidenceFramePicker({
         throw new Error(body?.error ?? `The crop failed (${response.status})`);
       }
       const blob = await response.blob();
-      onPick({ blob, previewUrl: URL.createObjectURL(blob), timestampSeconds: seconds, box: regionBox(region) });
+      const box = !drawn && trackBox ? [...trackBox] : regionBox(region);
+      onPick({ blob, previewUrl: URL.createObjectURL(blob), timestampSeconds: seconds, box });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The crop failed');
       setBusy(false);
@@ -141,18 +214,29 @@ export function EvidenceFramePicker({
         </DialogDescription>
 
         <div className="relative mt-1 aspect-video select-none overflow-hidden rounded-xl bg-black">
-          <video
-            className="h-full w-full object-fill"
-            muted
-            onLoadedMetadata={(event) => {
-              const length = event.currentTarget.duration;
-              setDuration(Number.isFinite(length) && length > 0 ? length : null);
-            }}
-            playsInline
-            preload="auto"
-            ref={videoRef}
-            src={videoSrc}
-          />
+          {span && frameSeconds !== null ? (
+            // biome-ignore lint/performance/noImgElement: a JPEG the console's own frame route cuts; next/image would re-encode it
+            <img
+              alt={`Frame at ${formatClock(frameSeconds)}`}
+              className="h-full w-full object-fill"
+              data-testid="frame-picker-track-frame"
+              draggable={false}
+              src={videoFrameUrl(videoId, frameSeconds)}
+            />
+          ) : (
+            <video
+              className="h-full w-full object-fill"
+              muted
+              onLoadedMetadata={(event) => {
+                const length = event.currentTarget.duration;
+                setDuration(Number.isFinite(length) && length > 0 ? length : null);
+              }}
+              playsInline
+              preload="auto"
+              ref={videoRef}
+              src={videoSrc}
+            />
+          )}
           <div
             className="absolute inset-0 cursor-crosshair touch-none"
             data-testid="frame-picker-surface"
@@ -164,25 +248,47 @@ export function EvidenceFramePicker({
           {region && (
             <div
               className="pointer-events-none absolute border-2 border-white bg-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
-              data-testid="frame-picker-box"
+              data-testid={drawn || !trackBox ? 'frame-picker-box' : 'frame-picker-track-box'}
               style={{ left: percent(region.x), top: percent(region.y), width: percent(region.w), height: percent(region.h) }}
             />
           )}
         </div>
 
-        <Slider
-          aria-label="Frame second"
-          className="mt-2 w-full"
-          disabled={duration === null || busy}
-          max={seen === null ? (duration ?? 0) : Math.min(seen.last, duration ?? seen.last)}
-          min={seen?.first ?? 0}
-          onValueChange={([val]) => seek(val)}
-          step={0.1}
-          value={[seconds]}
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Scrub to the frame, then drag a rectangle on it. The image is cut from that frame.
-        </p>
+        {span ? (
+          <>
+            <Slider
+              aria-label="Track second"
+              className="mt-2 w-full"
+              data-testid="frame-picker-track-scrubber"
+              disabled={busy || span.first === span.last}
+              max={span.last}
+              min={span.first}
+              onValueChange={([val]) => seek(val)}
+              step={1}
+              value={[seconds]}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Tracked {formatClock(span.first)}–{formatClock(span.last)}. Drag or use the arrow keys to pick a second; the box follows the
+              person. Drag a rectangle to draw your own instead.
+            </p>
+          </>
+        ) : (
+          <>
+            <Slider
+              aria-label="Frame second"
+              className="mt-2 w-full"
+              disabled={duration === null || busy || samples === undefined}
+              max={seen === null ? (duration ?? 0) : Math.min(seen.last, duration ?? seen.last)}
+              min={seen?.first ?? 0}
+              onValueChange={([val]) => seek(val)}
+              step={0.1}
+              value={[seconds]}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Scrub to the frame, then drag a rectangle on it. The image is cut from that frame.
+            </p>
+          </>
+        )}
         {error && (
           <Alert className="mt-2" variant="destructive">
             <AlertDescription>{error}</AlertDescription>

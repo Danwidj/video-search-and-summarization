@@ -70,6 +70,8 @@ export function ReportEditPane({
   onSeek: (seconds: number) => void;
 }) {
   const [picking, setPicking] = useState<PairRow['b'] | null>(null);
+  // The track of the saved item the picked draft item came from: the picker scrubs it instead of the whole video.
+  const [pickingTrack, setPickingTrack] = useState<{ key: string; url: string } | null>(null);
   const pairing = pairReport(a, draft);
   const patchIncident = (patch: Partial<EditDraft['incident']>) => onChange({ ...draft, incident: { ...draft.incident, ...patch } });
   const patchEntity = (key: string, patch: Partial<EditDraft['entities'][number]>) =>
@@ -88,12 +90,21 @@ export function ReportEditPane({
     if (a) onChange(revertDraftItem(draft, a, row));
   };
   const replace = (row: PairRow) => {
-    if (row.b) setPicking(row.b);
+    if (!row.b) return;
+    const saved = row.a?.evidence;
+    setPickingTrack(saved?.track && saved.trackUrl ? { key: saved.track, url: saved.trackUrl } : null);
+    setPicking(row.b);
   };
   const applyPick = (item: NonNullable<PairRow['b']>, pick: FramePick) => {
     if (item.pendingImage && item.imageUrl) URL.revokeObjectURL(item.imageUrl);
+    // A track can run past the report's first to last seen, which the edit must keep the item's own second inside;
+    // such a pick changes the image's second only.
+    const outsideSpan =
+      isDraftEntity(item) &&
+      item.firstSeenSeconds !== null &&
+      (pick.timestampSeconds < item.firstSeenSeconds || pick.timestampSeconds > (item.lastSeenSeconds ?? item.firstSeenSeconds));
     const frame = {
-      timestampSeconds: pick.timestampSeconds,
+      timestampSeconds: outsideSpan ? item.timestampSeconds : pick.timestampSeconds,
       image: null,
       imageUrl: pick.previewUrl,
       pendingImage: pick.blob,
@@ -359,6 +370,7 @@ export function ReportEditPane({
           label={draftItemName(picking) || 'evidence'}
           onClose={() => setPicking(null)}
           onPick={(pick) => applyPick(picking, pick)}
+          track={pickingTrack}
           range={
             isDraftEntity(picking) && picking.firstSeenSeconds !== null
               ? { first: picking.firstSeenSeconds, last: picking.lastSeenSeconds ?? picking.firstSeenSeconds }

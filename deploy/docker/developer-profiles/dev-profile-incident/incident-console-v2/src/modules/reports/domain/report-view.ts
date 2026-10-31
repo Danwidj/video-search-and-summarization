@@ -49,6 +49,12 @@ export interface ItemEvidence {
   timestampSeconds: number | null;
   /** True for an image a reviewer uploaded (no bounding box in the video frame). */
   uploaded: boolean;
+  /** R2 key and signed URL of a matched person's track file (`<itemId>-track.json`); null or absent for an item without a track. */
+  track?: string | null;
+  trackUrl?: string | null;
+  /** The track's span in video seconds, beside the report's own first and last seen; null or absent without a track. */
+  trackFirstSeenSeconds?: number | null;
+  trackLastSeenSeconds?: number | null;
 }
 
 // timestampSeconds: when the item is most clearly visible; label: its short detector label.

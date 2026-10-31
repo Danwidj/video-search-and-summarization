@@ -56,6 +56,13 @@ function editOf(record) {
   };
 }
 
+test("getReport signs a tracked item's track file beside its image", async () => {
+  const record = withImage('evidence/v/u/E1.jpg');
+  record.entities[0].evidence = { ...record.entities[0].evidence, track: 'evidence/v/u/E1-track.json' };
+  const view = await getReport(new InMemoryIncidentRepository([record]), V, null, async (key) => `https://signed/${key}`);
+  assert.equal(view.structured.entities[0].evidence.trackUrl, 'https://signed/evidence/v/u/E1-track.json');
+});
+
 test('getReport signs the stored video key and the item images, and refuses a revision without a video object', async () => {
   const incidents = new InMemoryIncidentRepository([withImage('evidence/v/u/E1.jpg')]);
   const signed = [];
