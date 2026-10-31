@@ -911,3 +911,116 @@ class TestChunkedCaptions(TestEndToEnd):
         assert result.chunk_timeline is None and result.chunking is None
         assert result.experiment is not None and result.revision_id is None
         persist.assert_not_awaited()
+
+
+class TestChunkAlerts(TestChunkedCaptions):
+    """The alert check after the caption pass: flag off, a match, no match, a malformed answer, no timeline."""
+
+    def _with_alert_answer(self, requests: list[dict], answer: str):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method != "POST":
+                return _completion(json.dumps(MODEL_OUTPUT))
+            body = json.loads(request.content)
+            requests.append(body)
+            if body["messages"][0]["role"] == "system" and "alert rules" in body["messages"][0]["content"]:
+                return _completion(answer)
+            return _completion(json.dumps(MODEL_OUTPUT))
+
+        return handler
+
+    @staticmethod
+    def _alert_calls(requests: list[dict]) -> list[dict]:
+        return [r for r in requests if r["messages"][0]["role"] == "system"]
+
+    @pytest.mark.asyncio
+    async def test_flag_off_makes_no_alert_call_and_no_alert_fields(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.delenv("INCIDENT_ALERTS_ENABLED", raising=False)
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, return_value=CAPTIONS):
+            result, _ = await self._run(self._with_alert_answer(requests, "{}"), tool_input=self._input())
+        assert self._alert_calls(requests) == []
+        assert result.chunk_alerts is None and result.alerting is None
+        assert result.chunk_timeline == CAPTIONS.timeline
+
+    @pytest.mark.asyncio
+    async def test_a_match_is_returned_beside_the_unchanged_timeline(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        requests: list[dict] = []
+        answer = json.dumps(
+            {"rules": [{"rule_id": "unattended-bag-picked-up", "matches": [{"window": 0, "reason": "E1 takes I1."}]}]}
+        )
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, return_value=CAPTIONS):
+            result, _ = await self._run(self._with_alert_answer(requests, answer), tool_input=self._input())
+        calls = self._alert_calls(requests)
+        assert len(calls) == 1 and calls[0]["model"] == incident_contract.rp1_request()["model"]
+        assert CAPTIONS.timeline[0]["caption"] in calls[0]["messages"][1]["content"]
+        assert [(a["rule_id"], a["window_index"], a["start"], a["end"], a["reason"]) for a in result.chunk_alerts] == [
+            ("unattended-bag-picked-up", 0, 0.0, 20.0, "E1 takes I1.")
+        ]
+        assert result.chunk_alerts[0]["rule"]
+        assert result.alerting["matches"] == 1 and result.alerting["windows"] == 1
+        assert result.chunk_timeline == CAPTIONS.timeline  # entries unchanged
+        assert result.revision_id == 7
+
+    @pytest.mark.asyncio
+    async def test_no_match_is_an_empty_list(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        requests: list[dict] = []
+        answer = json.dumps({"rules": [{"rule_id": "person-falls", "matches": []}]})
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, return_value=CAPTIONS):
+            result, _ = await self._run(self._with_alert_answer(requests, answer), tool_input=self._input())
+        assert result.chunk_alerts == [] and result.alerting["matches"] == 0
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_answer_leaves_the_alerts_out_and_the_analysis_stands(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(chunk_captions, "caption_video", new_callable=AsyncMock, return_value=CAPTIONS):
+            result, persist = await self._run(
+                self._with_alert_answer(requests, "Sorry, I cannot help."), tool_input=self._input()
+            )
+        assert result.chunk_alerts is None
+        assert result.alerting["skipped"].startswith("the alert answer is not JSON")
+        assert result.revision_id == 7 and persist.await_args.kwargs["report"] == result.report
+
+    @pytest.mark.asyncio
+    async def test_no_timeline_skips_the_check_with_a_reason(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        requests: list[dict] = []
+        with patch.object(
+            chunk_captions,
+            "caption_video",
+            new_callable=AsyncMock,
+            side_effect=chunk_captions.ChunkCaptionError("ffmpeg is not installed on the agent host"),
+        ):
+            result, _ = await self._run(self._with_alert_answer(requests, "{}"), tool_input=self._input())
+        assert self._alert_calls(requests) == []
+        assert result.chunk_alerts is None
+        assert result.alerting == {
+            "skipped": "no chunk timeline (caption pass skipped: ffmpeg is not installed on the agent host)"
+        }
+
+    @pytest.mark.asyncio
+    async def test_chunking_off_skips_the_check_with_a_reason(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_CHUNKING_ENABLED", raising=False)
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        requests: list[dict] = []
+        result, _ = await self._run(self._with_alert_answer(requests, "{}"), tool_input=self._input())
+        assert self._alert_calls(requests) == []
+        assert result.chunk_alerts is None
+        assert result.alerting == {"skipped": "no chunk timeline (INCIDENT_CHUNKING_ENABLED is off)"}
+
+    @pytest.mark.asyncio
+    async def test_an_experimental_request_never_checks_alerts(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_CHUNKING_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_ALERTS_ENABLED", "1")
+        monkeypatch.setenv("INCIDENT_EXPERIMENTS_ENABLED", "1")
+        requests: list[dict] = []
+        result, _ = await self._run(self._with_alert_answer(requests, "{}"), tool_input=self._input(skip_crops=True))
+        assert self._alert_calls(requests) == []
+        assert result.chunk_alerts is None and result.alerting is None
