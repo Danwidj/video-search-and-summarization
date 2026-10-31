@@ -6,6 +6,7 @@
 
 import { timestampWithinVideo } from '@/modules/contract/domain/validate';
 import { chunkAlertsFrom } from '@/modules/reports/domain/chunk-alerts';
+import { runBlurredFaces } from '@/modules/reports/domain/privacy-blur';
 import { chunkTimelineFrom } from '@/modules/reports/domain/chunk-timeline';
 import type { RevisionRecord } from '@/modules/reports/domain/IncidentRepository';
 import { canonicalIncidentType, parseTimestamp } from '@/modules/reports/domain/normalize';
@@ -203,6 +204,10 @@ export function toReportView(record: RevisionRecord, playbackUrl: string): Repor
     run,
     revision: record.revision,
     official: { officialRevisionId: record.video.officialRevisionId, isOfficial: record.revision.isOfficial },
+    privacy: {
+      blurFaces: record.video.blurFaces === true,
+      runBlurred: notes.kind === 'contract' && runBlurredFaces(notes.response),
+    },
     differences,
   };
 }

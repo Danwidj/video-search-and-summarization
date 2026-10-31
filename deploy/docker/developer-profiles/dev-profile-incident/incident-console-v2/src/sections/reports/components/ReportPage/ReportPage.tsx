@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +51,7 @@ import type { RevisionSummary } from '@/modules/reports/domain/revision';
 import { trackedReportItems } from '@/modules/reports/domain/track';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { ChunkTimeline } from '@/sections/reports/components/ChunkTimeline';
+import { PrivacyControls } from '@/sections/reports/components/PrivacyControls';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
@@ -229,6 +231,15 @@ export function ReportPage({
     setSaveProblems([]);
     setNote('');
   }, []);
+
+  // The face-blur toggle's re-analysis finished: its new version replaces what the page shows.
+  const showAnalysedVersion = useCallback(
+    (id: number | null) => {
+      setAttempt((value) => value + 1);
+      if (id !== null) router.push(`/reports/${encodeURIComponent(videoId)}?revision=${id}`);
+    },
+    [router, videoId],
+  );
 
   const openVersion = (id: number) => {
     setMode('view');
@@ -415,6 +426,16 @@ export function ReportPage({
               {heading}
               <span className="ml-2 font-normal text-muted-foreground">{filename}</span>
             </h1>
+            {report.privacy.runBlurred && (
+              <Badge
+                data-testid="faces-blurred-badge"
+                title="The faces in this version's evidence frames, crops and clips are blurred"
+                variant="secondary"
+              >
+                Faces blurred
+              </Badge>
+            )}
+            <PrivacyControls blurFaces={report.privacy.blurFaces} onAnalysed={showAnalysedVersion} videoId={videoId} />
             <ReanalysisDialog onAttempted={() => setAttempt((value) => value + 1)} videoId={videoId} />
             <Button
               aria-expanded={chatOpen}

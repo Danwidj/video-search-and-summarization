@@ -28,6 +28,8 @@ export function jobFromRow(row: Record<string, unknown>): AnalysisJob {
     heartbeatAt: text(row.heartbeat_at),
     videoId: text(row.video_id),
     revisionId: integer(row.revision_id),
+    reanalyseVideoId: text(row.reanalyse_video_id),
+    blurFaces: row.blur_faces === true,
   };
 }
 
@@ -45,7 +47,15 @@ export class SupabaseAnalysisJobAdapter implements AnalysisJobRepository {
   }
 
   async enqueue(job: NewAnalysisJob): Promise<AnalysisJob> {
-    return jobFromRow(await this.db.insertRow('analysis_jobs', { file_path: job.filePath, filename: job.filename, model: job.model }));
+    return jobFromRow(
+      await this.db.insertRow('analysis_jobs', {
+        file_path: job.filePath,
+        filename: job.filename,
+        model: job.model,
+        ...(job.reanalyseVideoId ? { reanalyse_video_id: job.reanalyseVideoId } : {}),
+        ...(job.blurFaces ? { blur_faces: true } : {}),
+      }),
+    );
   }
 
   async list(recent: number): Promise<AnalysisJob[]> {

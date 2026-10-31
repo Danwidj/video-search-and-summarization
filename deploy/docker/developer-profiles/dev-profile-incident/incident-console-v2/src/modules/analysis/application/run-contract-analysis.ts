@@ -84,6 +84,8 @@ export interface ContractAnalysisInput {
   additionalInstruction?: unknown;
   /** Present only for a newly uploaded video; its row is created once and never reset. */
   newVideo?: { uploadedAt: string };
+  /** The video's privacy toggle: agent mode asks the agent to blur the faces in the stored evidence (gateway mode stores none). */
+  blurFaces?: boolean;
 }
 
 export interface ContractAnalysisResult {
@@ -277,6 +279,7 @@ export async function runContractAnalysis(
         promptSha256: ports.catalog.promptSha256(),
         schemaSha256: ports.catalog.schemaSha256(),
         videoDurationSeconds,
+        ...(input.blurFaces ? { blurFaces: true as const } : {}),
       },
     };
 
@@ -298,6 +301,7 @@ export async function runContractAnalysis(
             model: model.id,
             additionalInstruction,
             videoDurationSeconds,
+            blurFaces: input.blurFaces === true,
           },
           AbortSignal.timeout(model.timeout_seconds * 1000),
         );
@@ -337,6 +341,7 @@ export async function runContractAnalysis(
         chunk_alerts?: unknown;
         alerting?: unknown;
         tracking?: unknown;
+        privacy?: unknown;
       };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
@@ -392,6 +397,9 @@ export async function runContractAnalysis(
       // Person tracking (agent INCIDENT_TRACKING_ENABLED): its summary {enabled, matched, tracks, elapsed_ms, skipped}, as returned.
       if (agentP1.tracking && typeof agentP1.tracking === 'object' && !Array.isArray(agentP1.tracking))
         response.tracking = agentP1.tracking as Record<string, unknown>;
+      // Privacy blur (blur_faces asked): the agent's summary, so the report can say its images were blurred.
+      if (agentP1.privacy && typeof agentP1.privacy === 'object' && !Array.isArray(agentP1.privacy))
+        response.privacy = agentP1.privacy as Record<string, unknown>;
 
       if (agentP1.contract_version !== ports.catalog.contractVersion()) {
         const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${ports.catalog.contractVersion()})`;

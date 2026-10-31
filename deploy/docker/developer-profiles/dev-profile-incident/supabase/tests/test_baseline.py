@@ -740,6 +740,27 @@ with tempfile.TemporaryDirectory() as tmp:
         assert one(conn, "SELECT has_function_privilege('service_role', 'public.claim_analysis_job(integer)', 'EXECUTE')")[0]
         conn.execute("SET ROLE service_role")
 
+    # Privacy blur (20261101090000_video_blur_faces.sql).
+    @test("privacy blur: the toggle defaults to off, and a re-analysis job names its video and goes with it")
+    def _():
+        conn.execute("INSERT INTO public.videos (id, filepath) VALUES ('vb', 'uploads/vb.mp4')")
+        assert one(conn, "SELECT blur_faces FROM public.videos WHERE id = 'vb'")[0] is False
+        conn.execute("UPDATE public.videos SET blur_faces = true WHERE id = 'vb'")
+        refused(conn, "UPDATE public.videos SET blur_faces = NULL WHERE id = 'vb'", contains="blur_faces")
+        upload = enqueue("upload.mp4")
+        assert one(conn, "SELECT reanalyse_video_id, blur_faces FROM public.analysis_jobs WHERE id = %s", (upload,)) == (None, False)
+        job = one(conn, "INSERT INTO public.analysis_jobs (file_path, filename, model, reanalyse_video_id, blur_faces) "
+                        "VALUES ('uploads/vb.mp4', 'vb.mp4', 'model-a', 'vb', true) RETURNING id")[0]
+        claimed = conn.execute("SELECT id, reanalyse_video_id, blur_faces FROM public.claim_analysis_job(180)").fetchone()
+        assert claimed == (upload, None, False), "jobs still run oldest first"
+        claimed = conn.execute("SELECT id, reanalyse_video_id, blur_faces FROM public.claim_analysis_job(180)").fetchone()
+        assert claimed == (job, "vb", True), claimed
+        refused(conn, "INSERT INTO public.analysis_jobs (file_path, filename, reanalyse_video_id) VALUES ('k', 'k', 'nope')",
+                contains="analysis_jobs_reanalyse_video_id_fkey")
+        conn.execute("DELETE FROM public.videos WHERE id = 'vb'")
+        assert one(conn, "SELECT count(*) FROM public.analysis_jobs WHERE id = %s", (job,))[0] == 0
+        assert finish(upload, 1, "failed", error="x")[0][1] == "failed"
+
     @test("deleting a video removes its revisions, crops and query results")
     def _():
         conn.execute("INSERT INTO public.queries (id, query_text) VALUES ('q1', 'man')")
