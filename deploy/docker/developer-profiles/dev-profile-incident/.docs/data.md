@@ -27,7 +27,7 @@ tables (`incidents`, `reports`, `entities`, `instruments`, `assets`, `human_repo
 ### The report model
 
 - **An upload analysis appends one AI revision.** `kind='ai'`, a new `model_run_id`, the full
-  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`), and `parent_id` NULL.
+  contract report as `payload` JSONB, the evidence list as `evidence` JSONB (one entry per item: `item_type`, `item_id`, `timestamp_seconds`, `frame` (R2 key of the whole video frame), `image` (R2 key of the crop, what evidence search embeds), `bounding_box` (the crop box in that frame), `box_seconds` (the second the frame was read at), `located` (false when the detector found nothing: a frame, no crop, no box), `image_gap`; for a person matched to a track, with `INCIDENT_TRACKING_ENABLED` on, also `track` (R2 key of the track JSON), `track_first_seen_seconds` and `track_last_seen_seconds`, and `frame`, `image`, `bounding_box` and `box_seconds` are those of the track's best moment), and `parent_id` NULL.
   The agent writes it (`IncidentDB.insert_ai_revision`); the console never edits it.
 - **A human edit appends a human revision.** `save_human_revision` writes `kind='human'`,
   `parent_id` = the revision the reviewer opened, the full edited report as `payload`, and the
@@ -412,6 +412,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 └── evidence/                        # evidence images: agent crops and reviewer replacements
     └── <video-key>/run-<N>/<itemId>.jpg    # AI crops (what evidence search embeds), one run-<N> per analysis
         <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
+        <video-key>/run-<N>/<itemId>-track.json # person tracking only: [{t, box, score}], t in seconds, box [top,left,bottom,right] on 0..1000, at most 5 per second
         <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
@@ -420,7 +421,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > In addition to the five fixture categories, live R2 storage includes `assault/` and `shooting/`.
 > The `Report/` prefix is a 0-byte directory marker and is unused by code.
 > The `evidence/` tree holds two writers' images, both under `evidence/<video key>/` where `<video key>` is `videos.filepath` (item ids `E#`, `I#` and `A#` are unique across types). No key holds a hash or UUID, and no key is ever overwritten: each write takes the next free number, and the put is conditional (`If-None-Match: *`):
-> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason;
+> - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason; with `INCIDENT_TRACKING_ENABLED` a person matched to a track also has `<itemId>-track.json` in the same run (`score` -0.1 marks a sample the tracker carried without a detection) ([decision](decisions.md#2026-10-31-person-tracks-give-matched-evidence-its-best-moment-and-a-track-file));
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
