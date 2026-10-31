@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { PictureInPicture2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -47,12 +47,14 @@ import {
 } from '@/modules/reports/domain/edit-draft';
 import { reportHeading, type ReportView } from '@/modules/reports/domain/report-view';
 import type { RevisionSummary } from '@/modules/reports/domain/revision';
+import { trackedReportItems } from '@/modules/reports/domain/track';
 import { ReanalysisDialog } from '@/sections/analysis/components/ReanalysisCard';
 import { ChunkTimeline } from '@/sections/reports/components/ChunkTimeline';
 import { ReportChat } from '@/sections/reports/components/ReportChat';
 import { ReportEditPane } from '@/sections/reports/components/ReportEditPane';
 import { ReportPane } from '@/sections/reports/components/ReportPane';
 import { ReportVersions } from '@/sections/reports/components/ReportVersions';
+import { TrackOverlay } from '@/sections/reports/components/TrackOverlay';
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; report: ReportView };
 
@@ -173,6 +175,16 @@ export function ReportPage({
 
   // The browser's own Picture-in-Picture window floats over other tabs and apps, like YouTube's miniplayer.
   const ready = state.status === 'ready';
+
+  // Tracked people: a box that follows each one in the player, selected from its evidence card. A new version starts unselected.
+  const [trackSelection, setTrackSelection] = useState<{ revisionId: number; id: string } | null>(null);
+  const shownReport = state.status === 'ready' ? state.report : null;
+  const trackedItems = useMemo(() => (shownReport ? trackedReportItems(shownReport.structured) : []), [shownReport]);
+  const selectedTrackId = trackSelection && trackSelection.revisionId === shownReport?.revisionId ? trackSelection.id : null;
+  const selectTrack = useCallback(
+    (id: string | null) => setTrackSelection(id && shownReport ? { revisionId: shownReport.revisionId, id } : null),
+    [shownReport],
+  );
   useEffect(() => {
     const video = videoRef.current;
     if (!ready || !video) return;
@@ -474,6 +486,19 @@ export function ReportPage({
                     >
                       <track kind="captions" />
                     </video>
+                    {mode === 'view' && !inPip && trackedItems.length > 0 && (
+                      <TrackOverlay
+                        frameAspect={videoAspect}
+                        items={trackedItems.map((item) => ({
+                          id: item.id,
+                          label: item.label,
+                          colour: item.colour,
+                          trackUrl: item.trackUrl,
+                        }))}
+                        selectedId={selectedTrackId}
+                        video={videoRef}
+                      />
+                    )}
                     {inPip && (
                       <div
                         className="absolute inset-0 grid place-items-center bg-black/90 p-3 text-center text-xs text-white"
@@ -561,8 +586,10 @@ export function ReportPage({
             compareHref={compareHref}
             officialMissing={!officialRevision && revisions !== null}
             onSeek={seek}
+            onSelectTrack={selectTrack}
             playerDuration={playerDuration}
             report={report}
+            selectedTrackId={selectedTrackId}
           />
         ) : draft && editBase ? (
           <ReportEditPane

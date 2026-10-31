@@ -20,7 +20,8 @@ import {
   type FramePoint,
   type SecondsRange,
 } from '@/lib/evidence/frame-picker';
-import { parseTrack, trackBoxAt, trackSecond, trackSpan, type TrackSample } from '@/lib/evidence/track';
+import { scrubberBoxAt, trackSecond, trackSpan } from '@/lib/evidence/track';
+import { parseTrackSamples, type TrackSample } from '@/modules/reports/domain/track';
 import { formatClock } from '@/modules/reports/domain/normalize';
 
 const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
@@ -28,34 +29,37 @@ const percent = (fraction: number) => `${+(fraction * 100).toFixed(3)}%`;
 /** How long the scrubber rests on a second before its frame is cut, so a drag does not cut every second it passes. */
 const FRAME_SETTLE_MS = 150;
 
-// Track files by R2 key, loaded once per item for the page's life; a failed or malformed file is remembered as null.
-// They come through the console (evidence-track route): R2 has no CORS rule for the console origin.
+// Tracks by their console URL (the track route reads R2 on the server), loaded once per item for the page's life; one
+// that fails to load or has no samples is remembered as null.
 const trackFiles = new Map<string, Promise<TrackSample[] | null>>();
-function loadTrack(videoId: string, key: string): Promise<TrackSample[] | null> {
-  let file = trackFiles.get(key);
+function loadTrack(url: string): Promise<TrackSample[] | null> {
+  let file = trackFiles.get(url);
   if (!file) {
-    file = fetch(`/api/reports/${encodeURIComponent(videoId)}/evidence-track?key=${encodeURIComponent(key)}`)
+    file = fetch(url)
       .then((response) => (response.ok ? response.json() : null))
-      .then(parseTrack)
+      .then((body) => {
+        const samples = parseTrackSamples(body?.samples);
+        return samples?.length ? samples : null;
+      })
       .catch(() => null);
-    trackFiles.set(key, file);
+    trackFiles.set(url, file);
   }
   return file;
 }
 
-/** The item's track samples: undefined while loading, null without a track or when its file cannot be read. */
-function useTrack(videoId: string, key: string | null): TrackSample[] | null | undefined {
-  const [samples, setSamples] = useState<TrackSample[] | null | undefined>(key ? undefined : null);
+/** The item's track samples: undefined while loading, null without a track or when it cannot be read. */
+function useTrack(url: string | null): TrackSample[] | null | undefined {
+  const [samples, setSamples] = useState<TrackSample[] | null | undefined>(url ? undefined : null);
   useEffect(() => {
-    if (!key) return;
+    if (!url) return;
     let live = true;
-    loadTrack(videoId, key).then((loaded) => {
+    loadTrack(url).then((loaded) => {
       if (live) setSamples(loaded);
     });
     return () => {
       live = false;
     };
-  }, [videoId, key]);
+  }, [url]);
   return samples;
 }
 
@@ -76,7 +80,7 @@ export function EvidenceFramePicker({
   label,
   initialSeconds,
   range,
-  trackKey = null,
+  trackUrl = null,
   onPick,
   onClose,
 }: {
@@ -85,8 +89,8 @@ export function EvidenceFramePicker({
   label: string;
   initialSeconds: number;
   range: SecondsRange | null;
-  /** The R2 key of the item's person track file, when it has one. */
-  trackKey?: string | null;
+  /** The console URL of the item's person track (ItemEvidence.trackUrl), when it has one. */
+  trackUrl?: string | null;
   onPick: (pick: FramePick) => void;
   onClose: () => void;
 }) {
@@ -97,7 +101,7 @@ export function EvidenceFramePicker({
   const [drag, setDrag] = useState<{ from: FramePoint; to: FramePoint } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const samples = useTrack(videoId, trackKey);
+  const samples = useTrack(trackUrl);
   const span = samples ? trackSpan(samples) : null;
   const [frameSeconds, setFrameSeconds] = useState<number | null>(null);
   const seen = usableRange(range);
@@ -117,7 +121,7 @@ export function EvidenceFramePicker({
     return () => clearTimeout(timer);
   }, [onTrack, seconds, frameSeconds]);
 
-  const trackBox = samples && frameSeconds !== null ? trackBoxAt(samples, frameSeconds) : null;
+  const trackBox = samples && frameSeconds !== null ? scrubberBoxAt(samples, frameSeconds) : null;
   const drawn = drag ? dragRegion(drag.from, drag.to) : null;
   // On a track the crop is the track's box at the frame shown, unless the reviewer drew their own on that frame.
   const region: FrameRegion | null = drawn ?? (trackBox && frameSeconds === seconds ? boxRegion(trackBox) : null);

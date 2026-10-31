@@ -91,7 +91,7 @@ export function ReportEditPane({
   };
   const replace = (row: PairRow) => {
     if (!row.b) return;
-    setPickingTrack(row.a?.evidence?.track ?? null);
+    setPickingTrack(row.a?.evidence?.trackUrl ?? null);
     setPicking(row.b);
   };
   const applyPick = (item: NonNullable<PairRow['b']>, pick: FramePick) => {
@@ -369,7 +369,7 @@ export function ReportEditPane({
           label={draftItemName(picking) || 'evidence'}
           onClose={() => setPicking(null)}
           onPick={(pick) => applyPick(picking, pick)}
-          trackKey={pickingTrack}
+          trackUrl={pickingTrack}
           range={
             isDraftEntity(picking) && picking.firstSeenSeconds !== null
               ? { first: picking.firstSeenSeconds, last: picking.lastSeenSeconds ?? picking.firstSeenSeconds }

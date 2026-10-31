@@ -1,30 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Get report: one revision's view for the report page, with its video and
-// evidence images (the whole frame and the crop) and person tracks signed for the browser.
+// evidence images (the whole frame and the crop) signed for the browser, and
+// each person's track pointed at the console's own track route.
 
 import type { IncidentRepository } from '@/modules/reports/domain/IncidentRepository';
 import type { ReportView } from '@/modules/reports/domain/report-view';
 import { toReportView } from '@/modules/reports/application/report-view';
 import type { SignStorageKey } from '@/modules/reports/application/types';
+import type { EvidenceItemType } from '@/modules/reports/domain/revision';
 
-/** Signs each item's frame, image and track so the browser can show them; one that cannot be signed is shown as missing. */
+/** The console route the browser reads one item's track samples from (R2 has no CORS rule for the console origin). */
+export function evidenceTrackUrl(videoId: string, revisionId: number, itemType: EvidenceItemType, itemId: string): string {
+  const query = new URLSearchParams({ revision: String(revisionId), type: itemType, item: itemId });
+  return `/api/reports/${encodeURIComponent(videoId)}/track?${query}`;
+}
+
+/** Signs each item's frame and image so the browser can show them; one that cannot be signed is shown as missing. */
 async function withImageUrls(view: ReportView, sign: SignStorageKey): Promise<ReportView> {
   const signed = new Map<string, string | null>();
-  const urlOf = async (image: string | null | undefined) => {
+  const urlOf = async (image: string | null) => {
     if (!image) return null;
     if (!signed.has(image)) signed.set(image, await sign(image).catch(() => null));
     return signed.get(image) ?? null;
   };
-  const items = [...view.structured.entities, ...view.structured.instruments, ...view.structured.assets];
+  const { entities, instruments, assets } = view.structured;
+  const items = [
+    ...entities.map((item) => ({ item, type: 'entity' as const, id: item.entityId })),
+    ...instruments.map((item) => ({ item, type: 'instrument' as const, id: item.instrumentId })),
+    ...assets.map((item) => ({ item, type: 'asset' as const, id: item.assetId })),
+  ];
   await Promise.all(
-    items.map(async (item) => {
+    items.map(async ({ item, type, id }) => {
       if (item.evidence) {
-        const [imageUrl, frameUrl, trackUrl] = await Promise.all([
-          urlOf(item.evidence.image),
-          urlOf(item.evidence.frame),
-          urlOf(item.evidence.track),
-        ]);
+        const [imageUrl, frameUrl] = await Promise.all([urlOf(item.evidence.image), urlOf(item.evidence.frame)]);
+        const trackUrl = item.evidence.track ? evidenceTrackUrl(view.videoId, view.revisionId, type, id) : null;
         item.evidence = { ...item.evidence, imageUrl, frameUrl, trackUrl };
       }
     }),

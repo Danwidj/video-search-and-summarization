@@ -232,6 +232,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
           completion_tokens: 117,
           elapsed_ms: 5840,
         },
+        tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
       };
       return new Response(JSON.stringify(mockAgentResponse), {
         status: 200,
@@ -299,6 +300,7 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         completion_tokens: 117,
         elapsed_ms: 5840,
       },
+      tracking: { enabled: true, matched: 2, tracks: 3, elapsed_ms: 91000, skipped: null },
     },
     'only what the agent returned, the caption pass included',
   );

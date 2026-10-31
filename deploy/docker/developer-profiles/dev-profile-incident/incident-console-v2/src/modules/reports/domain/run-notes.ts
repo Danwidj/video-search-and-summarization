@@ -29,6 +29,8 @@ export interface ContractRunResponse {
   chunkTimeline?: unknown;
   /** Agent mode with the caption pass on: the agent's chunking telemetry, or { skipped: reason }. */
   chunking?: Record<string, unknown>;
+  /** Agent mode with person tracking on: the agent's tracking summary {enabled, matched, tracks, elapsed_ms, skipped}. */
+  tracking?: Record<string, unknown>;
 }
 
 export type ValidStatus = 'valid_first_pass' | 'valid_after_structural_repair';
