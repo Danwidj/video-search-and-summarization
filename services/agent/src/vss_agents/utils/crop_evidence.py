@@ -33,16 +33,23 @@ the current name makes the model confirm a wrong one, and a close-up alone can n
 and to the matching item of the report payload when the model says ``changed`` with confidence at least 0.7; the
 item id, label, timestamps and an entity's ``type`` are never changed. Zoom calls are outside ``CropCallBudget``
 (the grounding cap of an experimental request) and a failed or slow call never fails the analysis.
+
+Privacy blur (``blur_faces`` on ``/analyze``, :mod:`vss_agents.utils.privacy_blur`): every stored frame and crop has
+the heads of the people at its second pixelated before it is encoded, from all person tracks and, for a person no
+track covers, one detector call for the head. The second look still sees the unblurred close-up.
 """
 
 from abc import ABC
 from abc import abstractmethod
 import asyncio
 import base64
+from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Sequence
 import copy
 from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import replace
 import io
 import json
 import logging
@@ -65,6 +72,7 @@ import numpy as np
 from PIL import Image
 from PIL import ImageDraw
 
+from vss_agents.utils import privacy_blur
 from vss_agents.utils import track_evidence
 from vss_agents.utils.optional_cv2 import ensure_codecs
 from vss_agents.utils.r2 import get_r2_client
@@ -99,6 +107,10 @@ class CropResult:
     located: bool = True
     zoom_bytes: bytes | None = None  # the close-up the second look names (25% margin, upscaled); never stored
     zoom_frame_bytes: bytes | None = None  # the whole frame with the box drawn, the second look's context; never stored
+    # Kept only when the privacy blur asks for it (``keep_frame``): the decoded frame and the crop's pixel box
+    # [y0, x0, y1, x1], so the stored images can be encoded again from a blurred frame. Never stored.
+    frame: np.ndarray | None = field(default=None, compare=False, repr=False)
+    crop_px: tuple[int, int, int, int] | None = None
 
 
 # Seconds tried, in order, around the requested one when the detector finds nothing there.
@@ -791,7 +803,7 @@ class FakeZoomNamer:
         return parse_zoom_reply(parse_json_object(reply) if isinstance(reply, str) else reply)
 
 
-def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult | None:
+def _not_located_result(frame: np.ndarray, seconds: int | float, keep_frame: bool = False) -> CropResult | None:
     """The frame alone: no crop and no box, so nothing downstream mistakes it for a located object."""
     frame_h, frame_w = frame.shape[:2]
     frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
@@ -805,13 +817,12 @@ def _not_located_result(frame: np.ndarray, seconds: int | float) -> CropResult |
         frame_bytes=frame_bytes,
         box_seconds=seconds,
         located=False,
+        frame=frame if keep_frame else None,
     )
 
 
-def _locate_in_frame(
-    frame: np.ndarray, seconds: int | float, raw_detections: Any, label: str, min_score: float
-) -> CropResult | None:
-    """The crop of the best usable detection of one frame, or None when the detector found no usable box."""
+def _parse_detections(raw_detections: Any, label: str) -> list[Detection]:
+    """A detector's answer as ``Detection`` objects (it may return dicts or look-alike objects)."""
     parsed_detections: list[Detection] = []
     for d in raw_detections or []:
         if isinstance(d, Detection):
@@ -823,6 +834,19 @@ def _locate_in_frame(
             parsed_detections.append(Detection(box=list(box), score=score, label=lbl))
         elif hasattr(d, "box") and hasattr(d, "score"):
             parsed_detections.append(Detection(box=list(d.box), score=float(d.score), label=getattr(d, "label", label)))
+    return parsed_detections
+
+
+def _locate_in_frame(
+    frame: np.ndarray,
+    seconds: int | float,
+    raw_detections: Any,
+    label: str,
+    min_score: float,
+    keep_frame: bool = False,
+) -> CropResult | None:
+    """The crop of the best usable detection of one frame, or None when the detector found no usable box."""
+    parsed_detections = _parse_detections(raw_detections, label)
     if not parsed_detections:
         return None
 
@@ -850,6 +874,8 @@ def _locate_in_frame(
         box_seconds=seconds,
         zoom_bytes=zoom_crop(frame, best.box),
         zoom_frame_bytes=zoom_context_frame(frame, best.box),
+        frame=frame if keep_frame else None,
+        crop_px=(c_ymin, c_xmin, c_ymax, c_xmax),
     )
 
 
@@ -861,6 +887,7 @@ def crop_evidence_item(
     min_score: float = 0.0,
     not_located_fallback: bool = False,
     retry_offsets: Sequence[int] = (),
+    keep_frame: bool = False,
 ) -> CropResult | None:
     """Locate an evidence object in a video at the specified timestamp using a detector.
 
@@ -875,6 +902,7 @@ def crop_evidence_item(
         retry_offsets: Seconds added to ``timestamp_seconds`` and tried in order when the detector finds
             nothing there; the first hit wins and ``box_seconds`` records the second it was found at. Every
             second tried is one detector call against the request's crop-call budget.
+        keep_frame: Keep the decoded frame on the result (``frame``) so the privacy blur can encode it again.
 
     Returns:
         CropResult or None when nothing is found or detector is unavailable.
@@ -911,12 +939,12 @@ def crop_evidence_item(
         except Exception as exc:
             logger.warning("Detector execution failed for query '%s': %s", label, exc)
             return None
-        found = _locate_in_frame(frame, seconds, raw_detections, label, min_score)
+        found = _locate_in_frame(frame, seconds, raw_detections, label, min_score, keep_frame)
         if found is not None:
             return found
 
     if not_located_fallback and first_frame is not None:
-        return _not_located_result(first_frame, timestamp_seconds)
+        return _not_located_result(first_frame, timestamp_seconds, keep_frame)
     return None
 
 
@@ -1174,6 +1202,7 @@ class CropEvidenceService:
         timestamp_seconds: int | float,
         label: str,
         detector: Any | None = None,
+        keep_frame: bool = False,
     ) -> CropResult | None:
         """Locate an evidence item with the configured detector, retrying nearby seconds (the frame alone when not found)."""
         active_detector = detector if detector is not None else self.detector
@@ -1184,6 +1213,7 @@ class CropEvidenceService:
             active_detector,
             not_located_fallback=True,
             retry_offsets=LOCATE_RETRY_OFFSETS,
+            keep_frame=keep_frame,
         )
 
     async def process_incident_report(
@@ -1198,6 +1228,7 @@ class CropEvidenceService:
         store: EvidenceStore | None = None,
         tracking: track_evidence.TrackingRequest | None = None,
         zoom_names: bool | None = None,
+        privacy: privacy_blur.PrivacySummary | None = None,
     ) -> list[dict[str, Any]]:
         """Locate every entity, instrument and asset of a report and upload its frame and crop.
 
@@ -1216,6 +1247,11 @@ class CropEvidenceService:
         checked or ignored) and corrects the matching item of ``report`` **in place**, so the payload the caller
         persists agrees with the evidence. Zoom calls run inside the item's concurrency slot and outside any
         ``CropCallBudget``: ``max_crop_calls`` counts grounding attempts only. A zoom failure never fails the item.
+
+        Privacy blur (``privacy`` given): after the locate step, tracking and the best-moment re-cut, and before
+        anything is uploaded, every frame is blurred on the heads of :func:`_blur_evidence` and the crop is cut from
+        the blurred frame. Each entry records the regions as ``blur_regions`` (normalised boxes, ``[]`` when none)
+        and ``privacy`` is filled in. An item whose blur fails stores no image at all (``image_gap`` says why).
         """
         active_detector = detector if detector is not None else self.detector
         zoom_on = zoom_names_enabled() if zoom_names is None else zoom_names
@@ -1253,8 +1289,14 @@ class CropEvidenceService:
                 return
             async with semaphore:
                 try:
+                    # keep_frame only with the blur on, so a crop_item override with the older signature still works
                     crop = await asyncio.to_thread(
-                        self.crop_item, video_ref, entry["timestamp_seconds"], entry["label"], active_detector
+                        self.crop_item,
+                        video_ref,
+                        entry["timestamp_seconds"],
+                        entry["label"],
+                        active_detector,
+                        **({"keep_frame": True} if privacy is not None else {}),
                     )
                 except CropCallCapReachedError as exc:
                     entry["image_gap"] = f"crop-call cap reached: {exc}"
@@ -1318,7 +1360,12 @@ class CropEvidenceService:
                 if frame is None:
                     return None
                 return _locate_in_frame(
-                    frame, moment.t, [Detection(box=list(moment.box), score=1.0)], entry["label"], 0.0
+                    frame,
+                    moment.t,
+                    [Detection(box=list(moment.box), score=1.0)],
+                    entry["label"],
+                    0.0,
+                    keep_frame=privacy is not None,
                 )
 
             try:
@@ -1367,9 +1414,103 @@ class CropEvidenceService:
                     verdict.confidence,
                 )
 
+        async def _detect_head(entry: dict[str, Any], crop: CropResult) -> privacy_blur.Box | None:
+            """One detector call for the item's head on the unblurred frame; None when it finds none or fails."""
+            if crop.frame is None or not detector_ready or privacy is None:
+                return None
+            privacy.head_queries += 1
+            query = privacy_blur.HEAD_QUERY.format(label=entry["label"])
+            try:
+                port: Any = active_detector  # a detector port or a plain callable, like crop_evidence_item takes
+                detect: Callable[[np.ndarray, str], Any] = port.detect if hasattr(port, "detect") else port
+                async with semaphore:
+                    raw = await asyncio.to_thread(detect, crop.frame, query)
+            except Exception as exc:  # the cap included: the item then falls back to its own box
+                logger.warning("Head detection failed for %s %s: %s", video_id, entry["item_id"], type(exc).__name__)
+                return None
+            boxes = [d.box for d in _parse_detections(raw, query) if privacy_blur.valid_box(d.box)]
+            if not boxes:
+                return None
+            head = privacy_blur.pad_box(boxes[0], privacy_blur.DETECTED_HEAD_PADDING)
+            if crop.located and crop.normalized_box and not privacy_blur.centre_inside(head, crop.normalized_box):
+                return None  # another person's head: the item's own box stands in
+            return head
+
+        def _blurred(crop: CropResult, regions: list[privacy_blur.Box]) -> CropResult:
+            """The crop result encoded again from the frame blurred on ``regions`` (the decoded frame is dropped)."""
+            if crop.frame is None:
+                raise RuntimeError("the decoded frame was not kept")
+            if not regions:
+                return replace(crop, frame=None)
+            frame = privacy_blur.blur_frame(crop.frame, regions)
+            frame_bytes = encode_jpeg(frame, quality=FRAME_JPEG_QUALITY)
+            image_bytes = None
+            if crop.image_bytes is not None and crop.crop_px is not None:
+                y0, x0, y1, x1 = crop.crop_px
+                image_bytes = encode_jpeg(frame[y0:y1, x0:x1], quality=85)
+                if image_bytes is None:
+                    raise RuntimeError("the blurred crop could not be encoded")
+            if frame_bytes is None:
+                raise RuntimeError("the blurred frame could not be encoded")
+            return replace(crop, frame_bytes=frame_bytes, image_bytes=image_bytes, frame=None)
+
+        async def _blur_evidence(tracks: Sequence[track_evidence.Track]) -> None:
+            """Blur the heads at each frame's second: every track's, then each person item's own when no track covers it."""
+            assert privacy is not None
+
+            def seconds_of(entry: dict[str, Any], crop: CropResult) -> float:
+                return float(crop.box_seconds if crop.box_seconds is not None else entry["timestamp_seconds"])
+
+            people: list[tuple[float, privacy_blur.Box]] = []
+            for entry in entries:
+                crop = crops.get(entry["item_id"])
+                if entry["item_type"] != "entity" or crop is None:
+                    continue
+                seconds = seconds_of(entry, crop)
+                box = crop.normalized_box if crop.located else None
+                track_heads = privacy_blur.track_heads_at(tracks, seconds)
+                if box and any(privacy_blur.centre_inside(head, box) for head in track_heads):
+                    privacy.track_heads += 1
+                    continue
+                head = await _detect_head(entry, crop)
+                if head is not None:
+                    privacy.detector_heads += 1
+                    people.append((seconds, head))
+                elif box:
+                    privacy.box_heads += 1
+                    people.append((seconds, privacy_blur.head_region(box)))
+                else:
+                    privacy.unblurred_people += 1
+
+            for entry in entries:
+                crop = crops.get(entry["item_id"])
+                if crop is None:
+                    continue
+                seconds = seconds_of(entry, crop)
+                regions = privacy_blur.unique_regions(
+                    [
+                        *privacy_blur.track_heads_at(tracks, seconds),
+                        *(head for at, head in people if abs(at - seconds) <= privacy_blur.TRACK_WINDOW_SECONDS),
+                    ]
+                )
+                try:
+                    crops[entry["item_id"]] = await asyncio.to_thread(_blurred, crop, regions)
+                except Exception as exc:
+                    # Fail closed: an image that could not be blurred is never stored.
+                    logger.warning("Privacy blur failed for %s %s: %s", video_id, entry["item_id"], exc)
+                    crops.pop(entry["item_id"], None)
+                    entry["image_gap"] = f"privacy blur failed, so no image was stored: {type(exc).__name__}"
+                    privacy.failed += 1
+                    continue
+                entry["blur_regions"] = [list(region) for region in regions]
+                if regions:
+                    privacy.frames += 1
+                    privacy.regions += len(regions)
+
         entries = blank_evidence_entries(report, image_gap=None)
         await asyncio.gather(*(_crop(entry) for entry in entries))
 
+        all_tracks: list[track_evidence.Track] = []
         matched_tracks: dict[str, track_evidence.Track] = {}
         if tracking is not None and tracking_task is not None:
             try:
@@ -1377,6 +1518,7 @@ class CropEvidenceService:
             except Exception as exc:  # run_tracking never raises; a custom runner might
                 logger.warning("Tracking failed for %s: %s", video_id, type(exc).__name__)
                 outcome = track_evidence.TrackingOutcome(skipped=f"tracking failed: {type(exc).__name__}")
+            all_tracks = outcome.tracks
             tracking.summary.tracks = len(outcome.tracks)
             tracking.summary.elapsed_ms = outcome.elapsed_ms
             tracking.summary.skipped = outcome.skipped
@@ -1396,6 +1538,9 @@ class CropEvidenceService:
             candidates = track_evidence.associate_tracks(located, outcome.tracks, tracking.min_iou)
             recut = await asyncio.gather(*(_recut(by_id[item_id], track) for item_id, track in candidates.items()))
             matched_tracks = {item_id: track for item_id, track in zip(candidates, recut, strict=True) if track}
+
+        if privacy is not None:
+            await _blur_evidence(all_tracks)
 
         await asyncio.gather(*(_upload(entry, matched_tracks.get(entry["item_id"])) for entry in entries))
 

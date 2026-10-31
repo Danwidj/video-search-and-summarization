@@ -48,6 +48,7 @@ from vss_agents.tools.incident_report_gen import run_rp1
 from vss_agents.utils import chunk_captions
 from vss_agents.utils import track_evidence
 from vss_agents.utils.crop_evidence import set_crop_evidence_service
+from vss_agents.utils.privacy_blur import PrivacySummary
 
 from ..utils.test_video_duration import mp4
 from ..utils.test_video_duration import range_server
@@ -759,6 +760,44 @@ class TestTracking:
             set_crop_evidence_service(None)
         assert request.summary.skipped == "evidence cropping failed"
         assert entries and all(e["image"] is None for e in entries)
+
+
+class TestPrivacyBlur:
+    """blur_faces turns the privacy blur on for the evidence step and returns its summary."""
+
+    INPUT = TestTracking.INPUT
+
+    @pytest.mark.asyncio
+    async def test_off_by_default_the_response_has_no_privacy(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_TRACKING_ENABLED", raising=False)
+        result, _ = await TestEndToEnd()._run(TestTracking._handler, tool_input=self.INPUT)
+        assert result.privacy is None
+
+    @pytest.mark.asyncio
+    async def test_blur_faces_returns_the_privacy_summary(self, monkeypatch):
+        monkeypatch.delenv("INCIDENT_TRACKING_ENABLED", raising=False)
+        tool_input = self.INPUT.model_copy(update={"blur_faces": True})
+        result, _ = await TestEndToEnd()._run(TestTracking._handler, tool_input=tool_input)
+        assert result.privacy == PrivacySummary().to_dict()
+
+    @pytest.mark.asyncio
+    async def test_collect_evidence_hands_the_summary_to_the_evidence_service(self):
+        service = MagicMock()
+        service.process_incident_report = AsyncMock(return_value=[])
+        privacy = PrivacySummary()
+        set_crop_evidence_service(service)
+        try:
+            await collect_evidence(video_url=VIDEO_URL, incident_id="v1", report={}, privacy=privacy)
+        finally:
+            set_crop_evidence_service(None)
+        assert service.process_incident_report.await_args.kwargs["privacy"] is privacy
+
+    @pytest.mark.asyncio
+    async def test_skip_crops_has_nothing_to_blur(self, monkeypatch):
+        monkeypatch.setenv("INCIDENT_EXPERIMENTS_ENABLED", "1")
+        tool_input = self.INPUT.model_copy(update={"skip_crops": True, "blur_faces": True})
+        result, _ = await TestEndToEnd()._run(TestTracking._handler, tool_input=tool_input)
+        assert result.privacy is None
 
 
 CAPTIONS = chunk_captions.ChunkCaptions(

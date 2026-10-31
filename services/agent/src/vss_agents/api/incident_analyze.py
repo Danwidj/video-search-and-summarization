@@ -47,6 +47,9 @@ With ``INCIDENT_TRACKING_ENABLED`` on, a production response adds ``tracking`` (
 elapsed_ms, skipped}``); with it off the key is absent. With ``INCIDENT_ALERTS_ENABLED`` on, it adds ``alerting``
 (telemetry or ``{skipped}``) and ``chunk_alerts`` (``[{rule_id, rule, window_index, start, end, reason}]``, null
 when the check was skipped); with it off both keys are absent.
+``blur_faces: true`` pixelates the heads of the people in every stored evidence frame and crop and adds
+``privacy`` (``{blur_faces, regions, frames, heads, head_queries, failed}``) to the response, and each evidence
+entry gains ``blur_regions``; without it the key is absent and the evidence is unchanged.
 """
 
 from __future__ import annotations
@@ -140,6 +143,14 @@ class AnalyzeIncidentRequest(BaseModel):
         ),
     )
 
+    blur_faces: bool = Field(
+        default=False,
+        description=(
+            "Pixelate the heads of the people in every stored evidence frame and crop (person tracks, else one "
+            "detector call for a person item's head). Model calls still see the unblurred images."
+        ),
+    )
+
     def is_experimental(self) -> bool:
         return self.experiment_prompt_id is not None or self.skip_crops or self.max_crop_calls is not None
 
@@ -207,6 +218,8 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
             tool_input["skip_crops"] = True
         if body.max_crop_calls is not None:
             tool_input["max_crop_calls"] = body.max_crop_calls
+        if body.blur_faces:
+            tool_input["blur_faces"] = True
 
         try:
             result = await incident_report_gen_tool.ainvoke(tool_input)
@@ -247,7 +260,7 @@ def create_incident_analyze_router(config: Any, builder: WorkflowBuilder) -> API
         if not body.is_experimental():
             for key in EXPERIMENT_OUTPUT_FIELDS:  # production responses keep exactly their documented shape
                 response.pop(key, None)
-        for key in ("tracking", "chunk_alerts", "alerting"):
+        for key in ("tracking", "chunk_alerts", "alerting", "privacy"):
             if response.get(key) is None and (key != "chunk_alerts" or response.get("alerting") is None):
                 response.pop(key, None)  # tracking or alerts off (the default): the response is exactly as it was
         return response
