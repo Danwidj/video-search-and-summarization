@@ -21,8 +21,6 @@ import { HttpIncidentAgent } from '@/modules/analysis/infrastructure/agent/incid
 import { R2VideoObjectStore } from '@/modules/analysis/infrastructure/r2/video-object-store';
 import type { ContractCatalog } from '@/modules/contract/domain/ContractCatalog';
 import { defaultContractCatalog } from '@/modules/contract/infrastructure/loader';
-import type { RemoveVstSensor } from '@/modules/reports/application/types';
-import { removeVstSensor } from '@/modules/videos/infrastructure/vst/sensor';
 
 /** Outbound contract catalog port: provides shared prompts, schemas and model allowlists. */
 export function getContractCatalog(): ContractCatalog {
@@ -59,9 +57,4 @@ export function getAnalysisPorts(config: ServiceConfiguration = getServiceConfig
     catalog: defaultContractCatalog,
     randomUUID,
   };
-}
-
-/** The VST camera deletion port, reached through INCIDENT_VST_BASE_URL (the agent URL when unset). */
-export function getRemoveVstSensor(config: ServiceConfiguration = getServiceConfiguration()): RemoveVstSensor {
-  return (video) => removeVstSensor(config, video);
 }

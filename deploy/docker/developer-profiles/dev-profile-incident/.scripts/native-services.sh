@@ -205,8 +205,7 @@ _start_vss_agent() {
     return 1
   fi
 
-  # Loopback by default: the agent has no auth. vss-haproxy-ingress (host network) reaches it at
-  # 127.0.0.1 via VSS_AGENT_BACKEND_HOST (compose.override.yml); the laptop uses the SSH tunnel.
+  # Loopback by default: the agent has no auth. The laptop reaches it through the SSH tunnel.
   local log_file="${RUN_DIR}/${svc}.log"
   local pid_file="${RUN_DIR}/${svc}.pid"
 

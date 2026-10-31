@@ -7,7 +7,9 @@
 #
 # Modes (via --mode or VSS_START_MODE, default: vm):
 #   vm    — real VM agent (checks/deploys kwanz-ws over SSH, opens the SSH
-#           tunnel). Exports ANALYSIS_MODE=agent so v2 calls the agent's
+#           tunnel for the agent on :8000 only; uploads go straight from the
+#           console to R2, and the VM runs no VST/HAProxy). Exports
+#           ANALYSIS_MODE=agent so v2 calls the agent's
 #           /analyze endpoint directly. No local vlm-gateway. The search route
 #           (POST /api/v1/incidents/search) is always mounted on vss-agent (:8000)
 #           with an always-on VLM critic and persisted ranking/verdicts.
@@ -25,8 +27,9 @@
 # and is never started.
 #
 # Architecture (Native vs Docker Split):
-#   - DOCKER SERVICES: Foundational appliance containers (VIOS/VST, HAProxy,
-#     Postgres, Redis, Phoenix, and optional Kafka/ElasticSearch).
+#   - DOCKER SERVICES: Phoenix only (the trace viewer used for eval), plus
+#     Elasticsearch with ENABLE_ANALYTICS=true. VIOS/VST, HAProxy, Redis and
+#     Kafka are no longer part of the deployment: uploads go straight to R2.
 #   - NATIVE SERVICES: Fast-iterating application modules running directly
 #     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
@@ -81,9 +84,6 @@
 #                            VSS_SSH_HOST (default: kwanz-ws) sets the host.
 #   VSS_SSH_USER             VM username override (see VSS_SSH_TARGET above)
 #   VSS_SSH_HOST             VM hostname (default: kwanz-ws)
-#   VSS_VM_IP                VM address for the tunnel forwards. If unset, detected
-#                            from the VM over SSH (its default-route source address),
-#                            falling back to 10.131.1.5 if detection fails.
 #   VSS_REPO_ROOT            the VM's shared checkout (default: /srv/rise-up/vss)
 #   VSS_REPO_URL             git URL to clone if the VM has no checkout (default: this
 #                            clone's `origin`)
@@ -96,7 +96,7 @@
 #   --no-console             bring the backend and tunnel up, skip incident-console-v2,
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
-#                            behavior-analytics natively, plus elasticsearch/kafka in Docker
+#                            behavior-analytics natively, plus elasticsearch in Docker
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 set -euo pipefail
@@ -159,17 +159,6 @@ LOCK_SSH_PID=""
 LOCK_LOG=""
 LOCK_HELD=0
 CLEANUP_RUNNING=""
-
-# Laptop-side name -> compose service name for the Docker appliances.
-map_docker_service() {
-  case "$1" in
-    vss-vios-streamprocessing) echo "streamprocessing-ms" ;;
-    vss-vios-nvstreamer)       echo "nvstreamer-2d-fusion" ;;
-    vss-vios-ingress)          echo "vst-ingress" ;;
-    vss-vios-postgres)         echo "centralizedb" ;;
-    *)                         echo "$1" ;;
-  esac
-}
 
 # Every process below pid, found through parent pids (pgrep -P works on Linux and macOS).
 descendants() {
@@ -253,8 +242,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
 
-  # Base Docker infrastructure (appliances)
-  default_docker_services="vss-vios-streamprocessing vss-vios-nvstreamer vss-vios-ingress vss-haproxy-ingress vss-vios-postgres redis phoenix kafka"
+  # Docker appliances: only Phoenix (VIOS/VST, HAProxy, Redis and Kafka were dropped)
+  default_docker_services="phoenix"
   if [ "${ENABLE_ANALYTICS}" = "true" ]; then
     default_docker_services="${default_docker_services} elasticsearch"
   fi
@@ -274,7 +263,6 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   if ! vm_preflight_ssh; then
     exit 1
   fi
-  VSS_VM_IP="$(vm_detect_ip)"
 
   VSS_PULL_TIMEOUT="${VSS_PULL_TIMEOUT:-1800}"
   VSS_COMPOSE_UP_TIMEOUT="${VSS_COMPOSE_UP_TIMEOUT:-600}"
@@ -414,10 +402,7 @@ if [ "$VSS_START_MODE" = "vm" ]; then
     # Cases 2 and 3 (services stopped, repo/images not downloaded): vm-ensure-docker.sh
     # runs on the VM and clones/pulls what is missing, then runs a bounded `compose up`.
     if [ "${#docker_missing[@]}" -gt 0 ]; then
-      compose_services=()
-      for svc in "${docker_missing[@]}"; do
-        compose_services+=("$(map_docker_service "$svc")")
-      done
+      compose_services=("${docker_missing[@]}")
       echo "--- starting missing Docker appliances (${docker_missing[*]}) over SSH ---"
       docker_rc=0
       # ssh joins its arguments into one string, so quote them (an empty repo URL must survive).
@@ -457,17 +442,14 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   fi
 
   echo "=== NEXT STEP — Opening the SSH tunnel (laptop-side, backgrounded) ==="
-  for port in 8000 7777; do
-    if holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
-      echo "start.sh: laptop port $port is already in use by $holder, so the tunnel cannot forward it." >&2
-      echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
-      exit 1
-    fi
-  done
+  if holder="$(lsof -nP -iTCP:8000 -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1" (pid "$2")"}')" && [ -n "$holder" ]; then
+    echo "start.sh: laptop port 8000 is already in use by $holder, so the tunnel cannot forward it." >&2
+    echo "  Stop that process (a previous start.sh/tunnel.sh?) and re-run." >&2
+    exit 1
+  fi
   TUNNEL_LOG="$(mktemp)"
   ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o BatchMode=yes \
     -L 8000:127.0.0.1:8000 \
-    -L 7777:"$VSS_VM_IP":7777 \
     "$VSS_SSH_TARGET" 2>"$TUNNEL_LOG" &
   TUNNEL_PID=$!
 
@@ -502,38 +484,8 @@ if [ "$VSS_START_MODE" = "vm" ]; then
   echo "  agent ok (localhost:8000 -> VM loopback :8000)"
   echo "  search route ready (POST http://localhost:8000/api/v1/incidents/search, always-on critic)"
 
-  echo "  waiting for the tunneled proxy health check (localhost:7777)..."
-  proxy_ok=""
-  proxy_deadline=$((SECONDS + 60))
-  while [ "$SECONDS" -lt "$proxy_deadline" ]; do
-    if curl -sf -I --max-time 5 http://localhost:7777/storage 2>/dev/null | grep -qi accept-ranges; then
-      proxy_ok=1
-      break
-    fi
-    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
-      break
-    fi
-    sleep 2
-  done
-  if [ -z "$proxy_ok" ]; then
-    echo "start.sh: the tunneled proxy never came up on localhost:7777." >&2
-    # The SSH log repeats one line per failed connection; show each distinct line once.
-    tunnel_err="$(sed 's/^channel [0-9]*: //' "$TUNNEL_LOG" | sort -u | head -n 3 | tr '\n' ';')"
-    if ssh "${VSS_SSH_OPTS[@]}" "$VSS_SSH_TARGET" 'curl -sf -I --max-time 5 http://localhost:7777/storage' 2>/dev/null | grep -qi accept-ranges; then
-      echo "  The proxy is healthy ON the VM, but the tunnel cannot reach it at ${VSS_VM_IP}:7777${tunnel_err:+ (${tunnel_err})}." >&2
-      echo "  Fix: the SSH connection or forward is blocked; check the SSH target and VSS_VM_IP." >&2
-    else
-      [ -n "$tunnel_err" ] && echo "  SSH tunnel said: ${tunnel_err}" >&2
-      echo "  The proxy does not answer on the VM either: the vss-haproxy-ingress container may be down or restarting. Check: ssh $VSS_SSH_TARGET 'docker logs --tail 40 vss-haproxy-ingress'" >&2
-    fi
-    echo "  Run ./.scripts/tunnel-check.sh for a per-port breakdown." >&2
-    cleanup
-    exit 1
-  fi
-  echo "  proxy ok (localhost:7777 -> ${VSS_VM_IP}:7777)"
 
   export INCIDENT_AGENT_BASE_URL="http://localhost:8000"
-  export INCIDENT_VST_BASE_URL="http://localhost:7777"
   export ANALYSIS_MODE="agent"
 elif [ "$VSS_START_MODE" = "mock" ]; then
   # Each local service reads its own .env.local symlink to the shared
@@ -587,9 +539,6 @@ elif [ "$VSS_START_MODE" = "mock" ]; then
 fi
 
 echo "  INCIDENT_AGENT_BASE_URL=${INCIDENT_AGENT_BASE_URL}"
-if [ -n "${INCIDENT_VST_BASE_URL:-}" ]; then
-  echo "  INCIDENT_VST_BASE_URL=${INCIDENT_VST_BASE_URL}"
-fi
 if [ -n "${VLM_GATEWAY_URL:-}" ]; then
   echo "  VLM_GATEWAY_URL=${VLM_GATEWAY_URL}"
 fi

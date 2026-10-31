@@ -17,10 +17,8 @@ export const maxDuration = 120;
  * the name is taken the file is stored as `name-2.ext`, `name-3.ext`, ... and
  * an existing object is never overwritten.
  *
- * Real VST/NvStreamer's chunk-upload response never includes a durable R2
- * object key — only mock-backend's own reimplementation does its own R2
- * upload to fake that field. This route lets the browser hand the file to
- * the console itself for that case, keeping R2 credentials server-side only.
+ * This is the only upload: the browser hands the file to the console, which
+ * keeps the R2 credentials server-side. Nothing is sent to VST.
  */
 export async function POST(request: Request) {
   try {

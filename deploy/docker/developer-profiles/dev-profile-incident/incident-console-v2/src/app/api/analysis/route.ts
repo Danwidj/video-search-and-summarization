@@ -14,7 +14,6 @@ import { compactId } from '@/lib/ids';
 export const maxDuration = 360;
 
 interface AnalysisRequest {
-  sensorId?: string;
   filepath?: string;
   filename?: string;
   model?: string;
@@ -55,8 +54,8 @@ export async function POST(request: Request) {
       throw new Error(`reading the analysis request failed: ${detail}`);
     }
 
-    if (!input.sensorId || !input.filepath || !input.filename) {
-      return NextResponse.json({ error: 'sensorId, filepath, and filename are required' }, { status: 400 });
+    if (!input.filepath || !input.filename) {
+      return NextResponse.json({ error: 'filepath and filename are required' }, { status: 400 });
     }
 
     let config: ServiceConfiguration;
@@ -67,15 +66,17 @@ export async function POST(request: Request) {
       throw new Error(`validating service configuration failed: ${detail}`);
     }
 
+    const ports = getAnalysisPorts(config);
     const { run, revisionId } = await runContractAnalysis(
       {
-        videoId: compactId('v', input.sensorId),
+        // Each upload is a new video, so it gets a fresh id.
+        videoId: compactId('v', ports.randomUUID()),
         r2Key: input.filepath,
         model: input.model ?? config.vlmModel,
         additionalInstruction: input.additionalInstruction,
-        newVideo: { sensorId: input.sensorId, uploadedAt: new Date().toISOString() },
+        newVideo: { uploadedAt: new Date().toISOString() },
       },
-      getAnalysisPorts(config),
+      ports,
       config.analysisMode,
     );
 

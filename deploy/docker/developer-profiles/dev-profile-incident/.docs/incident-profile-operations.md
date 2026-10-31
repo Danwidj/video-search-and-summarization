@@ -23,7 +23,7 @@ The team shares a remote GPU development workstation (`kwanz-ws`), accessible vi
 
 Fast-iterating application modules run directly as native processes on `kwanz-ws` rather than inside
 Docker containers. This reduces code-change cycles from ~3-minute container rebuilds to ~2-second process restarts.
-Heavy media appliances, proprietary toolchains, and backing infrastructure remain containerized.
+Only Phoenix (the trace viewer used for eval, plus Elasticsearch with `ENABLE_ANALYTICS=true`) runs in Docker. VIOS/VST, HAProxy, Redis and Kafka are removed from the deployment: `start.sh` neither starts nor checks them, and they are being deleted from the VM ([decision](decisions.md)).
 
 The split, the policy behind it, the ports and the networking of every service are in [`architecture.md`](architecture.md#native-vs-docker-service-split-policy).
 
@@ -99,7 +99,7 @@ The primary UI (`incident-console-v2`) runs locally on developer laptops. Runnin
 
 ### SSH Port Tunneling (Manual / Standalone)
 
-`start.sh --mode vm` manages the tunnel automatically. `start.sh` and `.scripts/tunnel.sh` detect the VM's LAN address over SSH (`ip -4 route get 1.1.1.1`, `src` field) unless `VSS_VM_IP` is set, and fall back to `10.131.1.5` if detection fails. If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
+`start.sh --mode vm` manages the tunnel automatically. It forwards only `localhost:8000` to the agent on the VM loopback, so no VM address is needed. If you need to open or test the tunnel manually for debugging (do **not** run this on `kwanz-ws` itself):
 
 ```bash
 cd deploy/docker/developer-profiles/dev-profile-incident
@@ -145,7 +145,7 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
 
 **Troubleshooting Gotchas:**
 - **SSH Preflight Fails:** `start.sh` prints the cause and next step (table above). Beyond that, ensure your `Host kwanz-ws` entry in `~/.ssh/config` has the correct `HostName` and `User`.
-- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`), and a proxy failure (unreachable `vss-haproxy-ingress` on `${VSS_VM_IP}:7777`).
+- **Tunnel never comes up:** `start.sh` tells apart a laptop port already in use, a tunnel that exited (SSH connection or forward blocked, or `VSS_AGENT_HOST` on the VM bound to LAN instead of `127.0.0.1`: agent healthy on the VM but unreachable at loopback), and an agent that crashed after starting (read `$VSS_REPO_ROOT/.run/vss-agent.log`). It forwards only `:8000`; the console does not use `vss-haproxy-ingress` (`:7777`).
 - **Wrong User Account:** Each teammate has a provisioned account on `kwanz-ws`. Configure `User <your-vm-username>` under `Host kwanz-ws` in `~/.ssh/config` (or set `export VSS_SSH_USER="<your-vm-username>"` in your shell rc). No interactive prompt is shown.
 
 ---
@@ -167,11 +167,11 @@ Tunnel listeners bind to the laptop loopback only (ssh `-L` default; do not add 
    Never start the `vss-agent` Docker container when the native `vss-agent` process is already running on port 8000.
    `start.sh` intentionally excludes `vss-agent` from its `docker compose up` command.
 4. **Cold Start & 503 Expectations:**
-   Even in remote mode, cold startup requires time for VIOS, NvStreamer, and PostgreSQL to initialize. An HTTP 503
+   Even in remote mode, cold startup requires time for the agent to initialize. An HTTP 503
    during the first 60–90 seconds is normal readiness latency. Verify with `.scripts/health.sh` before modifying
    configuration.
 5. **Permanent `unless-stopped` Restart Policy:**
-   Upstream compose files configure several core appliances (`redis`, `vss-haproxy-ingress`, `centralizedb`, `vst-ingress`, `vss-ui`, `elasticsearch`, `logstash`, `kibana`) with `restart: always`. `streamprocessing-ms` has upstream `restart: unless-stopped`, but its `deploy.restart_policy.condition: always` takes precedence over `restart`. Both cause Docker to resurrect them on every host reboot even after a deliberate stop. In `dev-profile-incident/compose.override.yml`, the persistent appliances and stack services are set to `restart: unless-stopped`, and `streamprocessing-ms` also gets `deploy.restart_policy.condition: unless-stopped`. `nvstreamer-2d-fusion` keeps its upstream `on-failure` deploy policy, which already leaves it stopped after a reboot. When the stack is deliberately stopped (via `./.scripts/down.sh` or `docker compose -p mdx stop`), containers stay stopped across VM reboots.
+   Upstream compose files configure several core appliances (`redis`, `vss-haproxy-ingress`, `centralizedb`, `vst-ingress`, `vss-ui`, `elasticsearch`, `logstash`, `kibana`; most of them now removed from the deployment) with `restart: always`. `streamprocessing-ms` has upstream `restart: unless-stopped`, but its `deploy.restart_policy.condition: always` takes precedence over `restart`. Both cause Docker to resurrect them on every host reboot even after a deliberate stop. In `dev-profile-incident/compose.override.yml`, the persistent appliances and stack services are set to `restart: unless-stopped`, and `streamprocessing-ms` also gets `deploy.restart_policy.condition: unless-stopped`. `nvstreamer-2d-fusion` keeps its upstream `on-failure` deploy policy, which already leaves it stopped after a reboot. When the stack is deliberately stopped (via `./.scripts/down.sh` or `docker compose -p mdx stop`), containers stay stopped across VM reboots.
 6. **Local processes stop with `start.sh` (both modes):**
    The console runs as a background job that `start.sh` waits on, so Ctrl-C, a `kill <pid>` of `start.sh` alone (SIGTERM) and closing the terminal (SIGHUP) all run its cleanup at once. Cleanup stops each local job with every process it started (`uv run` -> `uvicorn`, `npm run dev` -> `next dev` -> `next-server`), found through parent pids (`pgrep -P`), because killing only the wrapper leaves its server listening. `eval/tests/test_start_script.py` checks this with fake `uv`, `npm` and `curl`.
 7. **Stop on Last Exit (`start.sh` VM Mode):**
@@ -187,10 +187,10 @@ The untracked deployment environment file on `kwanz-ws` (`generated.env.remote`)
 2. **Dual-IP Network Topology:** `HOST_IP` must be set to the workstation's internal network IP (`.scripts/vm-ensure-docker.sh` detects and updates stale entries automatically) for inter-container communication, while `EXTERNAL_IP` must be `localhost` so response URLs function over developer SSH port tunnels.
 3. **Base Config for Incident Profile:** `VSS_AGENT_CONFIG_FILE` must reference the `dev-profile-base` agent configuration; the shipped search configuration lacks the required `report_agent` and `video_report_gen` modules.
 4. **Evaluation Directory Guard:** `REPORT_REFERENCE_BASE_DIR` must be defined (e.g. `/tmp`) to satisfy the NAT configuration schema and prevent startup crashes.
-5. **Stream Processor Port Alignment:** `STREAM_PROCESSOR_HTTP_PORT` must be 10000 — the streamprocessing HTTP port that vss-vios-ingress (:30888) proxies `/vst/api/v1` and `/vst/storage` to.
+5. **Stream Processor Port Alignment:** `STREAM_PROCESSOR_HTTP_PORT` was 10000, the streamprocessing port behind `vss-vios-ingress`. VIOS is removed from the deployment, so it no longer matters.
 6. **Remote Endpoint Format** and 7. **Client Type Enforcement:** bare base URLs and `_type: openai` (`LLM_MODEL_TYPE` / `VLM_MODEL_TYPE`); the rules and reasons are in [`architecture.md`](architecture.md#inference-rules--requirements).
 8. **Search Embedding Credentials:** Search query embeddings and evidence crop loader embeddings use the NVIDIA-hosted endpoint (`https://integrate.api.nvidia.com/v1/embeddings`) with `NVIDIA_API_KEY` (or `NGC_CLI_API_KEY`) from `generated.env.remote`; the Brev key cannot call `/v1/embeddings`. Can be overridden with `EVIDENCE_EMBEDDING_BASE_URL`, `EVIDENCE_EMBEDDING_MODEL`, and `EVIDENCE_EMBEDDING_API_KEY`. The loader and search route must use the same model (`nvidia/llama-nemotron-embed-vl-1b-v2` at 1024 dimensions).
-9. **Loopback Agent Bind:** `VSS_AGENT_HOST` defaults to `127.0.0.1` because the agent has no authentication and holds the database admin key. An old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or updated to `127.0.0.1`. `vss-haproxy-ingress` (host network) reaches it via `VSS_AGENT_BACKEND_HOST=127.0.0.1` in `compose.override.yml` (the shared haproxy template defaults it to `HOST_IP` for other profiles), and the tunnel forwards `-L 8000:127.0.0.1:8000`, which resolves on the VM. Rolling this out needs a haproxy recreate (`compose up -d`) and an agent restart (`native-services.sh restart vss-agent`). The browser-side `vss-ui` (which calls `${HOST_IP}:8000`) is not deployed in this profile.
+9. **Loopback Agent Bind:** `VSS_AGENT_HOST` defaults to `127.0.0.1` because the agent has no authentication and holds the database admin key. An old `VSS_AGENT_HOST=0.0.0.0` in `generated.env.remote` must be removed or updated to `127.0.0.1`. `VSS_AGENT_BACKEND_HOST=127.0.0.1` in `compose.override.yml` was for `vss-haproxy-ingress`, which is removed from the deployment. The tunnel forwards `-L 8000:127.0.0.1:8000`, which resolves on the VM. Rolling this out needs a haproxy recreate (`compose up -d`) and an agent restart (`native-services.sh restart vss-agent`). The browser-side `vss-ui` (which calls `${HOST_IP}:8000`) is not deployed in this profile.
 10. **GPU rule: only GPU 0 is used on `kwanz-ws`; GPU 1 is never used, because it belongs to another user.** Every VSS Docker service and native process is pinned to GPU 0 (`CUDA_VISIBLE_DEVICES=0`, `NVIDIA_VISIBLE_DEVICES=0`, `RT_CV_DEVICE_ID=0`, `RT_EMBED_DEVICE_ID=0`, `RTVI_EMBED_NVIDIA_VISIBLE_DEVICES=0`, `FIXED_SHARED_DEVICE_IDS=0`, `RESERVED_DEVICE_IDS=0` in `.env`; `device_ids: ["0"]` on `streamprocessing-ms`, `sensor-ms` and `rtvi-embed` and both `*_VISIBLE_DEVICES` variables on all five GPU services in `compose.override.yml`; `CUDA_VISIBLE_DEVICES` and `NVIDIA_VISIBLE_DEVICES` defaulted to 0 in `start.sh`, `native-services.sh`, `vm-ensure-docker.sh` and `vm-stop-backend.sh`). That covers the services `start.sh` runs (`streamprocessing-ms`, `nvstreamer-2d-fusion`, native `vss-agent`) and the stock services it never starts (`perception-2d-fusion`, `rtvi-embed`, `sensor-ms`). Never move a VSS workload to GPU 1, even when GPU 0 is busy ([decision](decisions.md#2026-10-19-pin-all-vss-docker-appliances-and-native-services-to-gpu-0-only)).
 
 > [!NOTE]
@@ -251,9 +251,8 @@ When troubleshooting unexpected failures:
    # Native agent logs
    ./.scripts/logs.sh vss-agent
 
-   # Docker appliance logs
-   docker logs --tail 100 vss-haproxy-ingress
-   docker logs --tail 100 vss-vios-ingress
+   # Docker appliance logs (Phoenix is the only one start.sh runs)
+   docker logs --tail 100 phoenix
    ```
 4. **Handle Partial Deploys:**
    If `start.sh` reports a partial deployment, let its self-healing logic attempt to bring up missing services,
