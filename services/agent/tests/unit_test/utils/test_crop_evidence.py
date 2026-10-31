@@ -40,6 +40,7 @@ from vss_agents.utils.crop_evidence import FakeDetector
 from vss_agents.utils.crop_evidence import FakeZoomNamer
 from vss_agents.utils.crop_evidence import InMemoryEvidenceStore
 from vss_agents.utils.crop_evidence import R2EvidenceStore
+from vss_agents.utils.crop_evidence import ZoomLook
 from vss_agents.utils.crop_evidence import ZoomVerdict
 from vss_agents.utils.crop_evidence import apply_box_padding
 from vss_agents.utils.crop_evidence import crop_evidence_item
@@ -48,6 +49,7 @@ from vss_agents.utils.crop_evidence import evidence_items
 from vss_agents.utils.crop_evidence import evidence_key
 from vss_agents.utils.crop_evidence import extract_frame
 from vss_agents.utils.crop_evidence import get_crop_evidence_service
+from vss_agents.utils.crop_evidence import looks_agree
 from vss_agents.utils.crop_evidence import next_run_batch_id
 from vss_agents.utils.crop_evidence import normalize_box
 from vss_agents.utils.crop_evidence import parse_zoom_reply
@@ -859,8 +861,46 @@ class TestZoomSecondLook:
         assert contents[1][1]["image_url"]["url"].endswith(base64.b64encode(b"jpeg").decode())
         # The blind looks never see the report's name; only the merge does.
         assert "soccer ball" not in contents[0][1]["text"] and "soccer ball" not in contents[1][2]["text"]
-        assert '"soccer ball"' in contents[2][0]["text"] and "plastic bag" in contents[2][0]["text"]
-        assert "both looks agree" in contents[2][0]["text"]
+        assert '"soccer ball"' in contents[2][0]["text"] and '"plastic bag"' in contents[2][0]["text"]
+
+    def test_disagreeing_looks_skip_the_merge_call_and_keep_the_report(self) -> None:
+        detector = DefaultDetector(api_key="k")
+
+        def reply(content: str) -> MagicMock:
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"choices": [{"message": {"content": content}}]}
+            return response
+
+        replies = [
+            reply('{"name": "wheelchair", "description": "", "confidence": 0.8}'),
+            reply('{"name": "shoe", "description": "", "confidence": 0.6}'),
+        ]
+        with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=replies) as post:
+            verdict = detector.zoom_name(
+                b"jpeg", item_type="asset", name="soccer ball", description="A ball.", context_jpeg=b"frame"
+            )
+        assert post.call_count == 2  # no text merge
+        assert verdict == ZoomVerdict(
+            name="soccer ball",
+            description="A ball.",
+            confidence=0.6,
+            changed=False,
+            seen={"frame": "wheelchair", "close_up": "shoe"},
+        )
+
+    @pytest.mark.parametrize(
+        ("first", "second", "agree"),
+        [
+            ("plastic bag", "crumpled plastic bag", True),
+            ("A plastic bag", "plastic bag", True),
+            ("Plastic Bag", "plastic bag", True),
+            ("wheelchair", "shoe", False),
+            ("black bag", "black ball", False),
+            ("", "bag", False),
+        ],
+    )
+    def test_looks_agree_on_content_words(self, first: str, second: str, agree: bool) -> None:
+        assert looks_agree(ZoomLook(first, "", 1.0), ZoomLook(second, "", 1.0)) is agree
 
     def test_without_a_context_frame_the_close_up_is_the_only_look(self) -> None:
         detector = DefaultDetector(api_key="k")
@@ -877,6 +917,24 @@ class TestZoomSecondLook:
         with patch("vss_agents.utils.crop_evidence.httpx.post", side_effect=[look, merge]) as post:
             verdict = detector.zoom_name(b"jpeg", item_type="asset", name="bag", description="")
         assert post.call_count == 2 and verdict.seen == {"frame": "bag", "close_up": "bag"}
+
+    @pytest.mark.asyncio
+    async def test_disagreeing_looks_keep_the_report_and_say_so(self, tiny_video_path: Path) -> None:
+        report = copy.deepcopy(REPORT)
+        service = self._service(FakeZoomNamer())
+        service.namer.replies["cash register"] = ZoomVerdict(
+            name="cash register",
+            description="Store register",
+            confidence=0.0,
+            changed=False,
+            seen={"frame": "wheelchair", "close_up": "shoe"},
+        )
+        by_id = await self._run(service, tiny_video_path, report, zoom_names=True)
+        asset = by_id["A1"]
+        assert asset["item_name"] == "cash register" and asset["zoom_checked"] is True
+        assert asset["zoom_seen"] == {"frame": "wheelchair", "close_up": "shoe"}
+        assert asset["zoom_gap"] == "looks disagree, report kept: frame saw 'wheelchair', close_up saw 'shoe'"
+        assert report == REPORT
 
     def test_the_default_detector_raises_on_a_malformed_zoom_reply(self) -> None:
         detector = DefaultDetector(api_key="k")

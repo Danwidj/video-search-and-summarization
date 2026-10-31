@@ -131,8 +131,8 @@ class ZoomLook:
 class ZoomVerdict:
     """The second look's outcome for one item: the name and description it stands by, and how sure it is.
 
-    ``seen`` records the blind looks (``frame`` and ``close_up``) so a reviewer can see what the model saw
-    even when nothing changed.
+    ``seen`` records the blind looks (``frame`` and ``close_up``: the name each gave an object, the description
+    each gave a person) so a reviewer can see what the model saw even when nothing changed.
     """
 
     name: str
@@ -215,33 +215,45 @@ def look_prompt(item_type: str, with_close_up: bool) -> str:
     )
 
 
-def merge_prompt(item_type: str, name: str, description: str, frame_look: ZoomLook, close_up_look: ZoomLook) -> str:
-    """The text-only merge: the report's text against two blind looks; a change needs the looks to agree.
+_LOOK_STOP_WORDS = frozenset({"a", "an", "the", "some", "small", "large", "big", "little"})
+
+
+def _look_words(name: str) -> frozenset[str]:
+    return frozenset(word for word in re.findall(r"[a-z0-9]+", name.lower()) if word not in _LOOK_STOP_WORDS)
+
+
+def looks_agree(first: ZoomLook, second: ZoomLook) -> bool:
+    """Whether two blind looks named the same thing: equal content words, or one name inside the other.
+
+    "plastic bag" agrees with "crumpled plastic bag"; "wheelchair" does not agree with "shoe". Decided in code,
+    not by the merge model, which proved unreliable at it.
+    """
+    a, b = _look_words(first.name), _look_words(second.name)
+    return bool(a and b) and (a <= b or b <= a)
+
+
+def merge_prompt(item_type: str, name: str, description: str, look: ZoomLook) -> str:
+    """The text-only merge: the report's text against what the agreeing blind looks found.
 
     The report's name is kept out of the vision calls because a model that reads "soccer ball" next to a
-    25-pixel smudge confirms "soccer ball"; here it only arbitrates between what the looks found and what the
-    report says.
+    25-pixel smudge confirms "soccer ball"; here the model only reconciles what the looks found with what the
+    report says, and it is only asked when the two looks agree (:func:`looks_agree`).
     """
-    looks = (
-        f'Looking at the whole frame, a model named it "{frame_look.name}" ("{frame_look.description}", confidence '
-        f'{frame_look.confidence:.2f}). Looking at a close-up of the box, it named it "{close_up_look.name}" '
-        f'("{close_up_look.description}", confidence {close_up_look.confidence:.2f}).'
-    )
+    found = f'A close look at the video frame found: "{look.name}" ({look.description}).'
     if item_type == "entity":
         rule = (
-            'The entity type is fixed: return it unchanged as "name". Keep the report\'s description unless both looks '
-            "agree it is wrong about the person's appearance (clothing, build, what they carry); then correct only the "
-            "wrong parts and keep what the report says about their behaviour and context."
+            'The entity type is fixed: return it unchanged as "name". Keep the report\'s description unless the close '
+            "look shows it is wrong about the person's appearance (clothing, build, what they carry); then correct "
+            "only the wrong parts and keep what the report says about their behaviour and context."
         )
     else:
         rule = (
-            "Keep the report's name and description unless both looks agree with each other and show the report is "
-            "wrong about what the object is; then correct the name (one to four plain words) and only the wrong parts "
-            "of the description, keeping what the report says about context. If the looks disagree with each other, "
-            "keep the report's text and lower your confidence."
+            "Keep the report's name and description unless the close look shows the report is wrong about what the "
+            "object is; then correct the name (one to four plain words) and only the wrong parts of the description, "
+            "keeping what the report says about context."
         )
     return (
-        f'An incident report lists an {item_type} named "{name}" with the description: "{description}". {looks} '
+        f'An incident report lists an {item_type} named "{name}" with the description: "{description}". {found} '
         f'{rule} Return JSON only, in the form {{"name": "<name>", "description": "<description>", "changed": <true '
         'when either differs from the report>, "confidence": <0 to 1: how sure you are the result is right>}.'
     )
@@ -642,9 +654,10 @@ class DefaultDetector:
     ) -> ZoomVerdict:
         """The second look on the same endpoint and model as grounding; outside any ``CropCallBudget``.
 
-        Three small calls: a blind look at the frame with the box drawn (``context_jpeg``), a blind look at that
-        frame plus the close-up ``jpeg``, then a text-only merge of the two looks with the report's text
-        (:func:`merge_prompt`). Without ``context_jpeg`` the close-up alone is the only look. The verdict's
+        Up to three small calls: a blind look at the frame with the box drawn (``context_jpeg``), a blind look at
+        that frame plus the close-up ``jpeg``, and, only when the two looks agree (:func:`looks_agree`), a text-only
+        merge of what they found with the report's text (:func:`merge_prompt`); disagreeing looks keep the report's
+        text with no merge call. Without ``context_jpeg`` the close-up alone is the only look. The verdict's
         confidence is the lowest of the calls. Every call is a single attempt with its own, shorter timeout: the
         caller treats any error as "not checked" and the analysis stands. Raises ``httpx.HTTPError`` on transport
         or status errors and ``ValueError`` on a reply that is not the strict JSON asked for.
@@ -656,15 +669,21 @@ class DefaultDetector:
             )
         else:
             frame_look = close_up_look = parse_look_reply(self._chat_json([jpeg], look_prompt(item_type, False)))
-        merged = parse_zoom_reply(
-            self._chat_json([], merge_prompt(item_type, name, description, frame_look, close_up_look))
-        )
+        seen = {
+            "frame": frame_look.description if item_type == "entity" else frame_look.name,
+            "close_up": close_up_look.description if item_type == "entity" else close_up_look.name,
+        }
+        look_confidence = min(frame_look.confidence, close_up_look.confidence)
+        if not looks_agree(frame_look, close_up_look):  # no merge call: the report stands, both looks are recorded
+            return ZoomVerdict(name=name, description=description, confidence=look_confidence, changed=False, seen=seen)
+        # The close-up look carries the detail; the frame look confirmed it names the same thing.
+        merged = parse_zoom_reply(self._chat_json([], merge_prompt(item_type, name, description, close_up_look)))
         return ZoomVerdict(
             name=merged.name,
             description=merged.description,
-            confidence=min(merged.confidence, frame_look.confidence, close_up_look.confidence),
+            confidence=min(merged.confidence, look_confidence),
             changed=merged.changed,
-            seen={"frame": frame_look.name, "close_up": close_up_look.name},
+            seen=seen,
         )
 
     def detect(self, frame: np.ndarray, query: str) -> list[Detection]:
@@ -727,8 +746,8 @@ class FakeDetector:
 class FakeZoomNamer:
     """In-memory second-look fixture: a canned reply per current item name.
 
-    A reply is a parsed JSON dict, a raw reply string (parsed like a model's, so a malformed one raises) or an
-    exception to raise. An item with no reply is confirmed unchanged at confidence 1. Every call is recorded.
+    A reply is a parsed JSON dict, a raw reply string (parsed like a model's, so a malformed one raises), a ready
+    ``ZoomVerdict`` or an exception to raise. An item with no reply is confirmed unchanged at confidence 1. Every call is recorded.
     """
 
     def __init__(self, replies: dict[str, Any] | None = None) -> None:
@@ -752,6 +771,8 @@ class FakeZoomNamer:
             raise reply
         if reply is None:
             return ZoomVerdict(name=name, description=description, confidence=1.0, changed=False)
+        if isinstance(reply, ZoomVerdict):
+            return reply
         return parse_zoom_reply(parse_json_object(reply) if isinstance(reply, str) else reply)
 
 
@@ -1073,6 +1094,10 @@ def apply_zoom_verdict(entry: dict[str, Any], report: dict[str, Any], verdict: Z
     entry["zoom_confidence"] = verdict.confidence
     entry["zoom_seen"] = verdict.seen
     if not verdict.changed:
+        if entry["item_type"] != "entity" and verdict.seen and len(set(verdict.seen.values())) > 1:
+            entry["zoom_gap"] = "looks disagree, report kept: " + ", ".join(
+                f"{where} saw {what!r}" for where, what in verdict.seen.items()
+            )
         return False
     if verdict.confidence < ZOOM_CONFIDENCE_THRESHOLD:
         entry["zoom_gap"] = (
