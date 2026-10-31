@@ -18,6 +18,7 @@ There is one Supabase project per project phase ([decision](decisions.md)): **fi
 - `20261028090000_r2_rename.sql` — adds `apply_r2_rename` (used once by [`supabase/r2/migrate_r2_names.py`](../supabase/r2/migrate_r2_names.py)) and lets it, and nothing else, change a revision's `evidence` column.
 - `20261031090000_dashboard_official_else_newest.sql` — rewrites `get_incident_dashboard` to count official, else newest, with the official split and `p_scope`, and adds `not_official` to `list_incident_report_summaries`.
 - `20261031120000_analysis_jobs.sql` — adds the background analysis queue: the `analysis_jobs` table and `claim_analysis_job`, `touch_analysis_job`, `finish_analysis_job`, `retry_analysis_job` and `cancel_analysis_job`.
+- `20261101090000_video_blur_faces.sql` — the privacy blur: adds `videos.blur_faces`, `analysis_jobs.reanalyse_video_id` and `analysis_jobs.blur_faces`, and `claim_queued_analysis_job`; `claim_analysis_job` (what consoles built before it call) now claims upload jobs only.
 
 Which of these are applied to finals is in [`status.md`](status.md#3-database-status). The midterm history is archived, never to be pushed, in [`supabase/midterm/`](../supabase/midterm/README.md). The SQL harness in `supabase/tests/` builds the schema on a throwaway local Postgres.
 
@@ -61,6 +62,7 @@ Primary registry of ingested video assets.
 | `source` | `VARCHAR(512)` | NULLABLE | Ingestion source or camera stream name. NULL for console uploads since 2026-10-31 (uploads no longer go through VST); older upload rows keep the VST sensor id they were given. |
 | `official_revision_id` | `BIGINT` | NULLABLE; composite FK `(id, official_revision_id)` → `report_revisions(video_id, id)` | The video's official report revision. NULL = awaiting selection. Set/cleared only by `set_official_revision`. The old `selected_model_run_id`, `selected_by` and `selected_at` columns are gone. |
 | `official_since` | `TIMESTAMP` | NULLABLE | Naive UTC time the current official revision was marked; NULL when there is none. Set when the pointer moves to a different revision, kept when the same one is marked again, cleared with the pointer. Rows marked before the column existed were backfilled with the official revision's `created_at` (the real time was never recorded). |
+| `blur_faces` | `BOOLEAN` | NOT NULL, DEFAULT false | The report page's face-blur toggle ([what is blurred](#privacy-blur)). Set only by `PUT /api/videos/<id>/privacy`, which also queues a re-analysis job; every later analysis of the video (that job, and a manual re-analysis) asks the agent for `blur_faces`, and every evidence clip of the video is cut blurred. |
 
 #### `queries`
 
@@ -193,8 +195,10 @@ The console's background analysis queue: one row per uploaded video waiting for,
 | `heartbeat_at` | `TIMESTAMP` | NULLABLE | Naive UTC time of the running claim's latest heartbeat (every 15 s); NULL when not running |
 | `video_id` | `VARCHAR(20)` | NULLABLE; FK → `videos.id` ON DELETE SET NULL | The analysed video, once done |
 | `revision_id` | `BIGINT` | NULLABLE; FK → `report_revisions.id` ON DELETE SET NULL | The new AI revision, once done |
+| `reanalyse_video_id` | `VARCHAR(20)` | NULLABLE; FK → `videos.id` ON DELETE CASCADE | The existing video a re-analysis job analyses again (queued by the face-blur toggle); NULL for an upload job. Only `claim_queued_analysis_job` claims such a job |
+| `blur_faces` | `BOOLEAN` | NOT NULL, DEFAULT false | Whether the job's analysis asks the agent for `blur_faces` |
 
-Deleting a video keeps its job rows as history with `video_id` and `revision_id` set to NULL. Indexes: `(status, created_at, id)` for the claim, `(created_at DESC)` for the list. RLS is on; only `service_role` can read or write.
+Deleting a video keeps its upload job rows as history with `video_id` and `revision_id` set to NULL, and deletes its re-analysis jobs. Indexes: `(status, created_at, id)` for the claim, `(created_at DESC)` for the list. RLS is on; only `service_role` can read or write.
 
 ### Relationships
 
@@ -210,11 +214,11 @@ Deleting a video keeps its job rows as history with `video_id` and `revision_id`
 - `query_results.query_id` → `queries.id` and `query_results.revision_id` →
   `report_revisions.id` (both CASCADE).
 - `analysis_jobs.video_id` → `videos.id` and `analysis_jobs.revision_id` → `report_revisions.id`
-  (both SET NULL).
+  (both SET NULL); `analysis_jobs.reanalyse_video_id` → `videos.id` (CASCADE).
 
 Deleting a `videos` row removes its `report_revisions`, their `evidence_crops` and any
 `query_results` that reference those revisions. `model_runs` and `queries` rows are not deleted by
-that cascade; `analysis_jobs` rows stay, with their links cleared.
+that cascade; upload `analysis_jobs` rows stay, with their links cleared, and re-analysis jobs of the video go with it.
 
 ---
 
@@ -360,7 +364,8 @@ All `VOLATILE`, `SECURITY INVOKER`, `search_path = ''`, `service_role` only, and
 
 | Function | Does | Returns |
 |---|---|---|
-| `claim_analysis_job(p_stale_seconds DEFAULT 180)` | First recovers stale running jobs (no heartbeat, else start, for `p_stale_seconds`): back to `queued` when `attempts < 2`, else `failed` with "The console stopped twice while analysing this video". Then claims the oldest queued job (`created_at`, `id`; `FOR UPDATE SKIP LOCKED`): `running`, `attempts + 1`, `started_at` and `heartbeat_at` now | The claimed row, or no rows |
+| `claim_queued_analysis_job(p_stale_seconds, p_uploads_only)` | First recovers stale running jobs (no heartbeat, else start, for `p_stale_seconds`): back to `queued` when `attempts < 2`, else `failed` with "The console stopped twice while analysing this video". Then claims the oldest queued job (`created_at`, `id`; `FOR UPDATE SKIP LOCKED`), passing over re-analysis jobs when `p_uploads_only`: `running`, `attempts + 1`, `started_at` and `heartbeat_at` now. The console calls it with `p_uploads_only` false | The claimed row, or no rows |
+| `claim_analysis_job(p_stale_seconds DEFAULT 180)` | `claim_queued_analysis_job(p_stale_seconds, true)`: what consoles built before `20261101090000` call, so they never take a re-analysis job they would run as a new upload | The claimed row, or no rows |
 | `touch_analysis_job(p_id, p_attempt)` | Heartbeat for a running claim | `true`, or `false` when the claim is no longer running |
 | `finish_analysis_job(p_id, p_attempt, p_status, p_error, p_video_id, p_revision_id)` | `done` (needs the video and revision) or `failed` (blank reason becomes "The analysis failed"), only for the running claim | The row, or no rows |
 | `retry_analysis_job(p_id)` | `failed` or `cancelled` back to `queued`, attempts 0, timestamps, reason and links cleared | The row, or no rows |
@@ -461,6 +466,7 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
         <video-key>/run-<N>/<itemId>-frame.jpg  # the whole video frame the box was found in, native size (the console draws the box on it)
         <video-key>/run-<N>/<itemId>-track.json # person tracking only: [{t, box, score}], t in seconds, box [top,left,bottom,right] on 0..1000, at most 5 per second
         <video-key>/{run,edit}-<N>/<itemId>-clip.mp4 # evidence clip: about 4 s around the item's second, H.264, no audio, cut by the console on first play
+        <video-key>/{run,edit}-<N>/<itemId>-clip-blur.mp4 # the same clip with the faces blurred (video with blur_faces on, or a run analysed with it)
         <video-key>/edit-<N>/<itemId>.jpg   # reviewer replacements, one edit-<N> per upload
 ```
 
@@ -472,9 +478,18 @@ anomaly-detection-dataset/            # bucket name comes from R2_BUCKET
 > - the analyze route's crops (`CropEvidenceService`, `services/agent/src/vss_agents/utils/crop_evidence.py`, uploaded by `R2EvidenceStore`, `run-<N>` with N one above the highest existing run of that video), listed in `report_revisions.evidence`; an item without an image carries an `image_gap` reason; with `INCIDENT_TRACKING_ENABLED` a person matched to a track also has `<itemId>-track.json` in the same run (`score` -0.1 marks a sample the tracker carried without a detection; the console reads it on the server through `GET /api/reports/[videoId]/track`, taking the key from the revision's evidence entry, because R2 has no CORS rule for the console origin, and keeps only `t` and `box`) ([decision](decisions.md#2026-10-31-person-tracks-give-matched-evidence-its-best-moment-and-a-track-file));
 > - reviewer replacements, uploaded by the console's `POST /api/reports/<videoId>/evidence-image` during Save, as `edit-<N>` with the smallest free N.
 > - evidence clips, cut by the console's `POST /api/reports/<videoId>/evidence-clip` on an item's first Play clip and stored as `<itemId>-clip.mp4` in the folder of the item's frame, image or track (conditional put; a second request signs the stored clip). No revision names a clip: it is a cache derived from the video, so the sweep counts one older than `minAgeHours` as an orphan and removes it, and the next play cuts it again; deleting the video removes it with the rest of `evidence/<video key>/`.
+> - blurred evidence clips, stored as `<itemId>-clip-blur.mp4` beside the plain one, under their own key so a plain clip is never served for a video with the face-blur toggle on (or for a run analysed with it); see [privacy blur](#privacy-blur).
 > - Two analyses of one video that start at the same moment can pick the same `run-<N>`; the conditional put stops the overwrite, so one of them fails instead of replacing the other.
 >
 > Which revision's images are searchable is decided by the `evidence_crops` table above. No writer deletes an image. `POST /api/reports/<videoId>/evidence-sweep` removes only images no revision or `evidence_crops` row of the video names and that are older than `minAgeHours` (default 24, at least 1; dry run by default). Deleting a video removes its video and thumbnail objects, then every object under `evidence/<video key>/`, then the video row; if a listing or a removal fails the row stays, so the delete can be repeated. Uploads create no VST camera, so the delete calls nothing on VST. Videos deleted before 2026-10-25 left their images behind ([status](status.md#7-archive)), and the sweep refuses an unknown video.
+
+### Privacy blur
+
+`videos.blur_faces` on means every analysis of the video asks the agent for `blur_faces` ([decision](decisions.md#2026-11-01-privacy-blur-blurs-the-head-region-of-person-tracks-and-detector-heads-not-a-face-model)):
+
+- **Stored frames and crops (agent):** every `run-<N>/<itemId>-frame.jpg` and `<itemId>.jpg` of that run has the heads of the people at its second pixelated before it is encoded, so no unblurred head of those people reaches R2. The heads are the head region (top 30 % of the box, raised and widened by 10 %) of every person track's sample within 0.5 s, from all tracks, not only matched ones; a person item no track head covers gets one detector call for `the head of <label>` (counted by an experimental request's `CropCallBudget`), else the head region of its own box. A person item's head also applies to other items' frames at the same second, and a crop is cut from the blurred frame, so an object's crop shows a blurred head only where one overlaps it. Each evidence entry records the regions as `blur_regions` (normalised `[ymin, xmin, ymax, xmax]`, `[]` when none), and the run's `model_runs.notes` response holds the agent's `privacy` summary. Model calls (P1, the zoomed second look) still see the unblurred images.
+- **Evidence clips (console):** cut blurred and stored as `<itemId>-clip-blur.mp4`: per second, the head region of the item's own track samples; for the whole clip, the entry's `blur_regions` grown by a quarter (people move), else a located person's own head region. An item with none of these (an object analysed before the toggle, with no `blur_regions`) gets no blurred clip (422).
+- **Not blurred:** the source video in R2 and the report player, older runs' images (they stay in the version history as they were), and a reviewer's own replacement crop drawn in edit mode (`edit-<N>/`).
 
 ### Key Validation & Generation Rules
 
