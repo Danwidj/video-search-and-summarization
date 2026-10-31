@@ -18,6 +18,12 @@
 Runs the same calls as ``incident-console-v2`` (gateway mode, P1 only) and the ``eval/`` benchmark
 (see ``.docs/analysis-schema.md`` in the incident profile):
 
+0. **Caption pass** (``INCIDENT_CHUNKING_ENABLED=1``, production requests only) - the clip is cut into
+   overlapping windows, each captioned by the same VLM at its full frame rate, and the timed captions are
+   appended to the P1 request as one more user message (``utils/chunk_captions.py``). The prompt file,
+   ``inference.json`` and the schema are untouched. A failure of this pass never fails the analysis:
+   ``chunking.skipped`` carries the reason and P1 runs without context. Experimental requests
+   (``experiment_prompt_id``, ``skip_crops``, ``max_crop_calls``) never run it, so eval runs are unchanged.
 1. **P1** - the video as a signed R2 URL first, then the contract extraction prompt (plus the
    reviewer prompt of a re-generation, framed exactly as the console frames its additional
    instruction), with the contract JSON Schema enforced through ``response_format`` and the fixed
@@ -58,6 +64,7 @@ from typing import Annotated
 from typing import Any
 from typing import Literal
 from urllib.parse import urlsplit
+import uuid
 
 import httpx
 from nat.builder.builder import Builder
@@ -72,6 +79,7 @@ from pydantic import Field
 from vss_agents import incident_contract
 from vss_agents.incident_contract import IncidentExtractionError
 from vss_agents.tools import incident_experiments
+from vss_agents.utils import chunk_captions
 from vss_agents.utils import crop_evidence
 from vss_agents.utils import incident_db
 from vss_agents.utils import video_duration
@@ -246,6 +254,21 @@ class IncidentReportGenOutput(BaseModel):
     )
     p1_elapsed_ms: float | None = Field(default=None, description="Experimental requests only: the P1 round trip.")
     usage: dict[str, Any] | None = Field(default=None, description="Experimental requests only: P1 token usage.")
+    chunk_timeline: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Caption pass (INCIDENT_CHUNKING_ENABLED): one entry per window, {start, end, caption, events: "
+            "[{start, end, text}]} in whole-video seconds; null when the pass did not run."
+        ),
+    )
+    chunking: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Caption pass telemetry (window_seconds, overlap_seconds, num_frames, model, calls, retries, "
+            "prompt_tokens, completion_tokens, elapsed_ms), or {skipped: reason}; null when the flag is off or "
+            "the request is experimental."
+        ),
+    )
 
 
 class VideoLength(BaseModel):
@@ -276,18 +299,29 @@ def _chat_completions_url(base_url: str) -> str:
 
 
 def p1_request_body(
-    model: str, video_url: str, reviewer_prompt: str | None = None, prompt_text: str | None = None
+    model: str,
+    video_url: str,
+    reviewer_prompt: str | None = None,
+    prompt_text: str | None = None,
+    context_block: str | None = None,
 ) -> dict[str, Any]:
-    """The P1 request. ``prompt_text`` (a verified registry prompt) replaces only the prompt text."""
+    """The P1 request. ``prompt_text`` (a verified registry prompt) replaces only the prompt text.
+
+    ``context_block`` (the caption pass's timed captions) is one more user message after the video message,
+    so the stored prompt text and the request settings stay exactly the contract's.
+    """
     content: list[dict[str, Any]] = [
         {"type": "video_url", "video_url": {"url": video_url}},
         {"type": "text", "text": incident_contract.extraction_prompt() if prompt_text is None else prompt_text},
     ]
     if reviewer_prompt:
         content.append({"type": "text", "text": f"{REVIEWER_PROMPT_PREAMBLE}\n<<<\n{reviewer_prompt}\n>>>"})
+    messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
+    if context_block:
+        messages.append({"role": "user", "content": context_block})
     return {
         "model": model,
-        "messages": [{"role": "user", "content": content}],
+        "messages": messages,
         "stream": False,
         **incident_contract.p1_request(),
         "response_format": incident_contract.response_format(),
@@ -340,17 +374,19 @@ async def run_p1(
     video_duration_seconds: float | None = None,
     prompt_text: str | None = None,
     telemetry: dict[str, Any] | None = None,
+    context_block: str | None = None,
 ) -> tuple[dict[str, Any], str, str | None]:
     """One P1 call parsed strictly. Returns ``(report, raw_content, finish_reason)``.
 
     With ``video_duration_seconds`` the video-bounds rules apply; without it they cannot.
     ``telemetry``, when given, receives ``p1_elapsed_ms`` (the HTTP round trip) and ``usage``.
+    ``context_block`` is the caption pass's context message (see :func:`p1_request_body`).
     """
     model_name = model or config.vlm_model_name
     started = time.perf_counter()
     response = await client.post(
         _chat_completions_url(config.vlm_base_url),
-        json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text),
+        json=p1_request_body(model_name, video_url, reviewer_prompt, prompt_text, context_block),
     )
     if telemetry is not None:
         telemetry["p1_elapsed_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
@@ -550,6 +586,57 @@ async def persist_revision(
         return None
 
 
+async def run_caption_pass(
+    client: httpx.AsyncClient,
+    config: IncidentReportGenConfig,
+    tool_input: IncidentReportGenInput,
+    model_name: str,
+    video_duration_seconds: float | None,
+) -> chunk_captions.ChunkCaptions | None:
+    """The caption pass of a production request. Never raises.
+
+    ``None`` when ``INCIDENT_CHUNKING_ENABLED`` is not ``1`` (the response then carries no chunking fields).
+    Otherwise the captions and their telemetry, or an empty timeline with ``telemetry = {"skipped": reason}``
+    when the pass did not run (short clip, unknown length, ffmpeg missing, a failed window call, ...): the
+    analysis goes on without context.
+    """
+    try:
+        settings = chunk_captions.chunk_settings()
+    except ValueError as exc:
+        logger.warning("incident_report_gen: chunking settings rejected, caption pass skipped: %s", exc)
+        return chunk_captions.ChunkCaptions(timeline=[], telemetry={"skipped": f"bad chunking settings: {exc}"})
+    if not settings.enabled:
+        return None
+    if video_duration_seconds is None:
+        reason = "video length unknown"
+        logger.warning("incident_report_gen: caption pass skipped for %s: %s", tool_input.incident_id, reason)
+        return chunk_captions.ChunkCaptions(timeline=[], telemetry={"skipped": reason})
+    try:
+        captions = await chunk_captions.caption_video(
+            video_url=tool_input.video_url,
+            video_key=tool_input.video_key or tool_input.incident_id,
+            run_id=tool_input.model_run_id or uuid.uuid4().hex[:12],
+            duration_seconds=video_duration_seconds,
+            client=client,
+            vlm_base_url=config.vlm_base_url,
+            model=model_name,
+            settings=settings,
+        )
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, chunk_captions.ChunkCaptionError) else f"{type(exc).__name__}: {exc}"
+        logger.warning("incident_report_gen: caption pass skipped for %s: %s", tool_input.incident_id, reason)
+        return chunk_captions.ChunkCaptions(timeline=[], telemetry={"skipped": reason})
+    logger.info(
+        "incident_report_gen: caption pass for %s: %d windows, %d calls, %d retries, %.0f ms",
+        tool_input.incident_id,
+        len(captions.timeline),
+        captions.telemetry["calls"],
+        captions.telemetry["retries"],
+        captions.telemetry["elapsed_ms"],
+    )
+    return captions
+
+
 def experiment_settings(tool_input: IncidentReportGenInput, reviewer_prompt: str | None) -> dict[str, Any] | None:
     """``None`` for a production request; for an experimental one, what it uses, after every gate.
 
@@ -609,6 +696,11 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
         api_key = os.environ.get(config.api_key_env, "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         async with httpx.AsyncClient(timeout=config.request_timeout_seconds, headers=headers) as client:
+            captions = (
+                None
+                if experiment is not None
+                else await run_caption_pass(client, config, tool_input, model_name, video_length.seconds)
+            )
             try:
                 report, raw_output, finish_reason, p1_attempts = await run_p1_with_retry(
                     client,
@@ -619,6 +711,7 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
                     video_duration_seconds=video_length.seconds,
                     prompt_text=prompt_text,
                     telemetry=telemetry,
+                    context_block=captions.context if captions else None,
                 )
             except IncidentExtractionError as exc:
                 if experiment is not None:  # the caller must still see which prompt produced the rejected output
@@ -695,6 +788,8 @@ async def incident_report_gen(config: IncidentReportGenConfig, builder: Builder)
             experiment=experiment,
             p1_elapsed_ms=(telemetry or {}).get("p1_elapsed_ms"),
             usage=(telemetry or {}).get("usage") if telemetry is not None else None,
+            chunk_timeline=captions.timeline if captions else None,
+            chunking=captions.telemetry if captions else None,
         )
 
     yield FunctionInfo.create(

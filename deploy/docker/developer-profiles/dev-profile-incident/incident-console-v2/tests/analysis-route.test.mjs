@@ -218,6 +218,20 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
         contract_version: contractVersion(),
         raw_output: JSON.stringify(rawContract),
         finish_reason: 'stop',
+        chunk_timeline: [
+          { start: 0, end: 20, caption: '[0.0s-20.0s] E1 forces A1.', events: [{ start: 0, end: 20, text: 'E1 forces A1.' }] },
+        ],
+        chunking: {
+          window_seconds: 20,
+          overlap_seconds: 2,
+          num_frames: 32,
+          model: 'agent/vlm-on-the-vm',
+          calls: 1,
+          retries: 0,
+          prompt_tokens: 8516,
+          completion_tokens: 117,
+          elapsed_ms: 5840,
+        },
       };
       return new Response(JSON.stringify(mockAgentResponse), {
         status: 200,
@@ -268,7 +282,26 @@ test('agent mode: calls agent analyze endpoint with video_url and model_run_id, 
   const modelRun = supabaseWrites.find((w) => w.table === 'model_runs').body;
   assert.equal(modelRun.model_name, 'agent/vlm-on-the-vm');
   const notes = JSON.parse(modelRun.notes).incidentConsoleV2;
-  assert.deepEqual(notes.response, { content: JSON.stringify(rawContract), finishReason: 'stop' }, 'only what the agent returned');
+  assert.deepEqual(
+    notes.response,
+    {
+      content: JSON.stringify(rawContract),
+      finishReason: 'stop',
+      chunkTimeline: [{ start: 0, end: 20, caption: '[0.0s-20.0s] E1 forces A1.', events: [{ start: 0, end: 20, text: 'E1 forces A1.' }] }],
+      chunking: {
+        window_seconds: 20,
+        overlap_seconds: 2,
+        num_frames: 32,
+        model: 'agent/vlm-on-the-vm',
+        calls: 1,
+        retries: 0,
+        prompt_tokens: 8516,
+        completion_tokens: 117,
+        elapsed_ms: 5840,
+      },
+    },
+    'only what the agent returned, the caption pass included',
+  );
 });
 
 test('agent mode: an unreadable video length is not sent, so the agent reads the header itself', async () => {

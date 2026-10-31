@@ -46,6 +46,7 @@ VSS Agent provides composable tools and agents for video understanding:
 
 - Python >= 3.13
 - [uv](https://docs.astral.sh/uv/) package manager
+- `ffmpeg` on `PATH` for the incident profile's chunked captioning (`INCIDENT_CHUNKING_ENABLED=1`); without it that pass is skipped with a reason and the analysis still runs
 
 ## Installation
 
