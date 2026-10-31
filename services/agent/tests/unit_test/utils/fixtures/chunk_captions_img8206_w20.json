@@ -1,0 +1,75 @@
+{
+ "clip": "IMG_8206_480.mp4",
+ "duration_s": 94.1941,
+ "window_s": 20.0,
+ "overlap_s": 2.0,
+ "model": "nvidia/cosmos-3-nano-reasoner",
+ "chunks": [
+  {
+   "index": 0,
+   "start": 0.0,
+   "end": 20.0,
+   "usage": {
+    "completion_tokens": 117,
+    "prompt_tokens": 8516,
+    "total_tokens": 8633
+   },
+   "content": "[0.0s-20.0s] The video shows a static view of an indoor hallway with wooden paneling on the walls and ceiling. Two elevators are visible, one with a digital display showing '21:08' and another with a screen displaying an advertisement. A small object, possibly a piece of trash, lies on the tiled floor near the center of the hallway. In the background, through glass doors, a room with blue walls and some furniture is visible. The lighting is consistent throughout, suggesting no significant changes in time or activity."
+  },
+  {
+   "index": 1,
+   "start": 18.0,
+   "end": 38.0,
+   "usage": {
+    "completion_tokens": 147,
+    "prompt_tokens": 8516,
+    "total_tokens": 8663
+   },
+   "content": "[0.0s-20.0s] The video shows a static view of an indoor hallway with wooden paneling on the walls and ceiling, tiled flooring, and two elevators on the right side. A digital display above the elevators shows \"BKT 2198\" in red text. To the left, there is a glass-walled meeting room labeled \"MEETING ROOM\" with blue walls inside, containing tables and chairs. A black trash bin is positioned near the entrance of the meeting room. In the center of the hallway, a small object, possibly a piece of paper or debris, lies on the floor. The scene remains unchanged throughout the video, with no visible movement or activity."
+  },
+  {
+   "index": 2,
+   "start": 36.0,
+   "end": 56.0,
+   "usage": {
+    "completion_tokens": 124,
+    "prompt_tokens": 8516,
+    "total_tokens": 8640
+   },
+   "content": "[0.0s-20.0s] The video shows a static view of an indoor hallway with wooden paneling and tiled flooring. An elevator is visible on the right side, with its doors open. A digital display above the elevator shows changing numbers, indicating floor selection or status. To the left, there is a glass-walled meeting room labeled 'MEETING ROOM' with blue seating inside. A small object, possibly a piece of trash or debris, lies on the floor near the center of the hallway. The lighting is bright and consistent throughout the scene, with no movement or activity observed."
+  },
+  {
+   "index": 3,
+   "start": 54.0,
+   "end": 74.0,
+   "usage": {
+    "completion_tokens": 168,
+    "prompt_tokens": 8516,
+    "total_tokens": 8684
+   },
+   "content": "[0.0s-20.0s] The video shows a static view of a modern, well-lit indoor hallway with wooden paneling and tiled flooring. On the right side, there is an elevator with a digital display above it showing the time as 21:59. A small screen mounted on the wall next to the elevator displays various images, including people and scenes. In the background, through a glass partition, a meeting room labeled 'MEETING LOUNGE' is visible, featuring blue walls, yellow chairs, and tables. A black trash bin is positioned near the entrance of the meeting room. A small object, possibly a piece of debris or a toy, lies on the floor near the center of the hallway. The scene remains unchanged throughout the video, with no visible movement or activity."
+  },
+  {
+   "index": 4,
+   "start": 72.0,
+   "end": 92.0,
+   "usage": {
+    "completion_tokens": 310,
+    "prompt_tokens": 8516,
+    "total_tokens": 8826
+   },
+   "content": "[0.0s-8.5s] The video shows a static view of a modern hallway with wooden paneling, tiled flooring, and an elevator on the right side. A television screen mounted above the elevator displays a news broadcast. In the background, a glass-walled meeting room labeled 'MEETING ROOM' is visible, featuring blue walls and yellow chairs. A small object, possibly a piece of debris or a toy, lies on the floor near the center of the hallway. A fire extinguisher is mounted on the wall to the right of the elevator.\n\n[8.5s-12.6s] Two men enter the hallway from the meeting room area. One man, wearing a blue shirt and dark pants, runs toward the small object on the floor and trips over it, falling forward. The second man, wearing a white shirt and light-colored shorts, follows closely behind and also trips over the same object, landing on top of the first man. Both men are now on the floor near the base of the stairs leading down from the hallway.\n\n[12.6s-20.0s] The man in the white shirt attempts to help the man in the blue shirt, who remains on the floor. The man in the white shirt kneels beside him, appearing to check on his condition or offer assistance. Meanwhile, a woman in dark clothing emerges from the meeting room and walks toward the scene, observing the situation. The television above the elevator continues to display the news broadcast throughout the incident."
+  },
+  {
+   "index": 5,
+   "start": 90.0,
+   "end": 94.194,
+   "usage": {
+    "completion_tokens": 129,
+    "prompt_tokens": 1897,
+    "total_tokens": 2026
+   },
+   "content": "[0.0s-4.2s] A man in a blue shirt is lying on the floor near a wall, appearing to be in distress or injured, while another man in a white shirt kneels beside him, seemingly providing assistance or checking on his condition. In the background, a person stands near a glass partition, observing the scene. The setting is an indoor hallway with wooden paneling, tiled flooring, and two elevators visible on the right side. A digital display screen is mounted above one of the elevators, showing a message and an image. The lighting is bright, with ceiling lights illuminating the area."
+  }
+ ]
+}

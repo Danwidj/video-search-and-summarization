@@ -361,19 +361,25 @@ sequenceDiagram
     UI->>Tunnel: POST localhost:8000/api/v1/incidents/[id]/analyze {model_run_id, video_url, skip_rp1: true}
     Tunnel->>Agent: Forward analyze request
 
-    Agent->>Brev: P1 (video URL first, contract prompt, strict response_format) - same call as gateway mode
+    opt INCIDENT_CHUNKING_ENABLED=1 on the agent (caption pass; skipped for clips of 30 s or less)
+        Agent->>R2: GET video once; ffmpeg cuts 20 s windows (2 s overlap); PutObject scratch/analyze/<key>/<run>/<i>.mp4
+        Agent->>Brev: One caption call per window (stock caption prompt, at most 4 in flight, 429 retried)
+        Brev-->>Agent: [Xs-Ys] captions, offset to whole-video seconds (chunk_timeline)
+        Agent->>R2: DeleteObjects scratch/analyze/<key>/<run>/ (always, in finally)
+    end
+    Agent->>Brev: P1 (video URL first, contract prompt, strict response_format; plus one context message with the captions when the pass ran) - same call as gateway mode
     Brev->>R2: GET video via presigned URL
     Brev-->>Agent: Schema-constrained JSON
     Agent->>Agent: Strict parse under core-scored-v1 (+ id-normalization-v1), derive duration; core violation -> 422 with raw_output
     Note over Agent,Brev: skip_rp1 - no RP1 call, like gateway mode (standalone calls run RP1)
     Note over Agent,DB: The agent inserts the AI revision and returns revision_id; the console records the run
 
-    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason, revision_id}
+    Agent-->>Tunnel: Return {report, report_text, model, contract_version, raw_output, finish_reason, revision_id, chunk_timeline, chunking}
     Tunnel-->>UI: Forward agent response
 
     UI->>UI: Strict parse + schema + cross-field rules under policy core-scored-v1; id-normalization-v1 only if needed
     alt valid_first_pass / valid_after_structural_repair
-        UI->>DB: model_runs (immutable notes: request, raw response, validation, repair, report)
+        UI->>DB: model_runs (immutable notes: request, raw response with chunkTimeline and chunking, validation, repair, report)
         UI->>DB: Verify the agent's AI revision (insert it only when revision_id is missing)
         UI->>DB: Read back and verify
         UI-->>User: Redirect to /reports/[videoId]?revision=[revisionId]

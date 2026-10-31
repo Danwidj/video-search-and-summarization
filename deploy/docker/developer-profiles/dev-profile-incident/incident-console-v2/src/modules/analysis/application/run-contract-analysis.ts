@@ -332,6 +332,8 @@ export async function runContractAnalysis(
         contract_version?: unknown;
         revision_id?: unknown;
         evidence?: unknown;
+        chunk_timeline?: unknown;
+        chunking?: unknown;
       };
       let agentP1: AgentP1 | null = null;
       if (agentResponse.ok) {
@@ -376,6 +378,10 @@ export async function runContractAnalysis(
       if (typeof agentP1.revision_id === 'number' && Number.isInteger(agentP1.revision_id)) fromAgent.revisionId = agentP1.revision_id;
       if (Array.isArray(agentP1.evidence)) fromAgent.evidence = evidenceEntries(agentP1.evidence);
       if (typeof agentP1.finish_reason === 'string') response.finishReason = agentP1.finish_reason;
+      // The caption pass (agent INCIDENT_CHUNKING_ENABLED): kept in the run's notes as the agent returned them.
+      if (Array.isArray(agentP1.chunk_timeline)) response.chunkTimeline = agentP1.chunk_timeline;
+      if (agentP1.chunking && typeof agentP1.chunking === 'object' && !Array.isArray(agentP1.chunking))
+        response.chunking = agentP1.chunking as Record<string, unknown>;
 
       if (agentP1.contract_version !== ports.catalog.contractVersion()) {
         const message = `Agent contract version (${String(agentP1.contract_version ?? 'missing')}) does not match console (${ports.catalog.contractVersion()})`;
