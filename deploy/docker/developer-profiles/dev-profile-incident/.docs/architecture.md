@@ -54,9 +54,9 @@ flowchart TB
     end
 
     %% Laptop connections
-    UI -->|Mock Mode Inference| Gateway
+    UI -->|Mock Mode Inference, dashboard chart requests| Gateway
     UI -->|Mock Mode Upload| Mock
-    UI -->|VM Mode HTTP /analyze| FwdAgent
+    UI -->|VM Mode HTTP /analyze, /incidents/charts| FwdAgent
     UI -->|Video upload /api/uploads/r2 & Presigned URLs| R2
     UI -->|REST report_revisions insert| Supabase
     UI -->|/rpc/save_human_revision, /rpc/set_official_revision| Supabase
