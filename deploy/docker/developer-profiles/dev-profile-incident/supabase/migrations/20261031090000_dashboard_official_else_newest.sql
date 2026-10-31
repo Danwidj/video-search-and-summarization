@@ -13,6 +13,9 @@
 -- It gains p_scope ('all', 'official' or 'not_official', as in the Library), which narrows the
 -- incident statistics and the previous-period comparison to one report status. The video counts
 -- and model coverage are independent of it. That is a new argument, so the old signature is dropped.
+-- A caller that omits p_scope gets official reports only: a console from before this change labels
+-- its numbers official, so it must keep seeing only official reports. The current console always
+-- sends p_scope.
 --
 -- Its trend days now use p_timezone, as the heatmap and the weekday and hour filters do.
 --
@@ -193,7 +196,7 @@ CREATE OR REPLACE FUNCTION public.get_incident_dashboard(
     p_day_of_week INTEGER DEFAULT NULL::INTEGER,
     p_hour INTEGER DEFAULT NULL::INTEGER,
     p_timezone TEXT DEFAULT 'UTC'::TEXT,
-    p_scope TEXT DEFAULT 'all'::TEXT
+    p_scope TEXT DEFAULT 'official'::TEXT
 ) RETURNS JSONB
 LANGUAGE sql STABLE SET search_path = ''
 AS $function$
@@ -225,8 +228,8 @@ dimension_filtered AS (
           WHEN 'low' THEN severity <= 2 WHEN 'medium' THEN severity = 3 WHEN 'high' THEN severity >= 4 ELSE FALSE END)
       AND (p_day_of_week IS NULL OR day_of_week = p_day_of_week)
       AND (p_hour IS NULL OR hour_of_day = p_hour)
-      AND (COALESCE(p_scope, 'all') <> 'official' OR is_official)
-      AND (COALESCE(p_scope, 'all') <> 'not_official' OR NOT is_official)
+      AND (COALESCE(p_scope, 'official') <> 'official' OR is_official)
+      AND (COALESCE(p_scope, 'official') <> 'not_official' OR NOT is_official)
 ),
 filtered AS (
     SELECT * FROM dimension_filtered

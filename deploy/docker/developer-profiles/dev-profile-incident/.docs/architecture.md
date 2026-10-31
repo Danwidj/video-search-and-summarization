@@ -257,7 +257,7 @@ time constraints. The API forwards inclusive day boundaries, optional time-of-da
 
 `GET /api/dashboard` calls the service-role-only `get_incident_dashboard` RPC through `DashboardRepository.getDashboard`. It counts **one report per video: the official revision, else the newest**, the Library's rule, and reports how many are official and how many are not yet official. Nothing is marked official by being counted.
 - The page shows six fixed displays: Total reports (with official and not-yet-official counts), Incidents over time, Incidents by type, Severity breakdown, Top targeted assets, and Activity by day and hour. Every one shows the split. The RPC still returns the other sections (entity types, instruments, threat levels, confidence, model coverage) for the port's other callers.
-- `DashboardQuery.scope` (`all`, `official`, `not_official`; `GET /api/dashboard?scope=`) narrows the statistics to one report status, and defaults to `all`.
+- `DashboardQuery.scope` (`all`, `official`, `not_official`; `GET /api/dashboard?scope=`) narrows the statistics to one report status. The route defaults to `all` and always sends it to the RPC.
 - All-time video counts are shown as a static note on the Total card.
 - Evidence statistics are normalised asset names (and canonical entity types and instrument names in the RPC), counted per distinct incident.
 - The total, its official and not-yet-official counts, and the type and asset rows link to `/library?scope=all|official|not_official&...` with the same period and filters, using `match=exact` for asset names, so the Library total equals the clicked number. The URL is the reports page's filter state. Severity rows and heatmap cells filter the page instead.

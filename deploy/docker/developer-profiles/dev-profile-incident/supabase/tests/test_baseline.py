@@ -329,6 +329,7 @@ with tempfile.TemporaryDirectory() as tmp:
         conn.execute("SELECT public.set_official_revision(%s, %s, %s)", ("v1", ai1, json.dumps(crops)))
 
     def dashboard_of(**kwargs):
+        kwargs.setdefault("p_scope", "all")
         named = ", ".join(f"{key} => %({key})s" for key in kwargs)
         return one(conn, f"SELECT public.get_incident_dashboard({named})", kwargs)[0]
 
@@ -377,9 +378,16 @@ with tempfile.TemporaryDirectory() as tmp:
         assert (official["official"], official["notOfficial"]) == (1, 0), official
         assert [t["type"] for t in official["types"]] == ["assault"], official["types"]
         assert (dashboard_of(p_scope="not_official")["official"]) == 0
-        assert dashboard_of(p_scope=None)["total"] == 3
+        assert dashboard_of(p_scope=None)["total"] == 1
         bounds = {"p_period_start": "2026-01-01 00:00:00", "p_period_end": "2099-01-01 00:00:00"}
         assert dashboard_of(**bounds, p_scope="official")["previous"]["total"] == 0, "the comparison is scoped too"
+
+    @test("a caller that omits the report status, like a console from before it existed, sees official reports only")
+    def _():
+        omitted = one(conn, "SELECT public.get_incident_dashboard()")[0]
+        assert omitted["total"] == 1 and omitted["revisions"] == {"ai": 1, "human": 0}, omitted
+        assert [t["type"] for t in omitted["types"]] == ["assault"], omitted["types"]
+        assert omitted["videos"] == dashboard_of()["videos"]
 
     @test("the dashboard with no official revision still counts every report and marks nothing official")
     def _():

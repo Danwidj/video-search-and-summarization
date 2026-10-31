@@ -314,7 +314,9 @@ Counts each video once through `searchable_revision_id`: its **official revision
 the same rule as the library and search (migration `20261031090000_dashboard_official_else_newest.sql`).
 It only reads `videos.official_revision_id`, to report the split, and never sets it. Filtered by the
 revision's `created_at` plus optional type, severity band, weekday and hour (in `p_timezone`, default
-UTC) and `p_scope` (`all`, `official` or `not_official`, default `all`). Returns `total` with
+UTC) and `p_scope` (`all`, `official` or `not_official`; a caller that omits it gets `official`,
+because a console from before this change labels its numbers official; the console always sends
+it). Returns `total` with
 `official` and `notOfficial`, all-time `videos` counts (`uploaded`, `withOfficial`,
 `awaitingSelection`, `withoutReport`), `previous`, `severity` and `severityByScope`, `revisions`
 (`ai`/`human`), types with per-type evidence, daily `trend` (days in `p_timezone`), `heatmap`,
