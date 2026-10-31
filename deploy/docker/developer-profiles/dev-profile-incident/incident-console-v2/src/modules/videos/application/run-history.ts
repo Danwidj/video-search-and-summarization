@@ -43,7 +43,6 @@ function fromNotes(entry: RunHistoryEntry, notes: unknown): RunHistoryEntry {
               operations: Array.isArray(parsed.repair.operations) ? (parsed.repair.operations as Array<Record<string, unknown>>) : [],
             }
           : null,
-      enrichmentIssues: [...new Set(parsed.enrichment.map((violation) => violation.code))],
     };
   }
   if (parsed.kind === 'failed-attempt') {

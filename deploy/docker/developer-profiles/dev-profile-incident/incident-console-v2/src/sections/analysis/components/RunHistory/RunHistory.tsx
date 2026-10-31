@@ -151,11 +151,6 @@ function RunRow({
           </AlertDescription>
         </Alert>
       )}
-      {run.enrichmentIssues && run.enrichmentIssues.length > 0 && (
-        <p className="mt-2 text-muted-foreground" data-testid="enrichment-issues">
-          Unscored model output: {run.enrichmentIssues.map(describeCode).join('; ')}
-        </p>
-      )}
       {run.repair && (
         <p className="mt-2 text-amber-800">
           Contract repair applied (IDs only) · {run.repair.ruleSet}:{' '}
