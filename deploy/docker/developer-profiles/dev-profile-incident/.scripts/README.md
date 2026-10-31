@@ -14,7 +14,7 @@ executable scripts, ready to run individually. Since the native split ([architec
 | `.scripts/vm-ensure-docker.sh` | — (new) | VM (piped by `start.sh`) | Bounded Docker deploy on the VM (clone, env check, `HOST_IP` fix, pull, `compose up`). Tests: `test-vm-ensure-docker.sh` |
 | `.scripts/vm-stop-backend.sh` | — (new) | VM (piped by `start.sh`) | Stop the backend when the last `start.sh` session exits (never removes containers or volumes). Tests: `test-vm-stop-backend.sh` |
 | `.scripts/native-services.sh` | — (new) | VM | `start`/`stop`/`restart`/`status`/`logs` for the native services. Tests: `test-native-services.sh` |
-| `.scripts/tracking-stack.sh` | — (new) | VM (started by `start.sh` with `ENABLE_TRACKING=true`) | `start`/`stop`/`status`/`restart-perception` for the person-tracking stack (stages the RT-DETR model, never removes containers) |
+| `.scripts/tracking-stack.sh` | — (new) | VM (started by `start.sh` unless `ENABLE_TRACKING=false`) | `start`/`stop`/`status`/`restart-perception` for the person-tracking stack (stages the RT-DETR model, never removes containers) |
 | `.scripts/status.sh` | `mdx-ps` | VM | Containers, native services and `nvidia-smi` |
 | `.scripts/down.sh` | `mdx-down` | VM | Stop native services and containers without removing them (never `-v`, never `dev-profile.sh down`) |
 | `.scripts/health.sh` | `mdx-health` | laptop/VM | Agent health probe on `:8000/health` |

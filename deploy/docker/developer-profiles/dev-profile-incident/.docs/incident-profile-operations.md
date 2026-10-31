@@ -57,7 +57,12 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 
 ### Person-tracking stack (`.scripts/tracking-stack.sh`, `ENABLE_TRACKING=true`)
 
-Off by default. `ENABLE_TRACKING=true ./start.sh` runs `tracking-stack.sh start` on the VM after Phoenix; `vm-stop-backend.sh` runs `stop` when the last session exits. On the VM:
+On by default in vm mode (since 31 Oct 2026): `./start.sh --mode vm` runs `tracking-stack.sh start` on the VM after Phoenix; `vm-stop-backend.sh` runs `stop` when the last session exits. `native-services.sh` starts `vss-agent` with `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it, and the agent needs `ffmpeg` and `ffprobe` on its `PATH` ([agent reinstall](../skills/incident-operate-vm/SKILL.md#3-agent-editable-reinstall)).
+
+- **Turn it off:** `ENABLE_TRACKING=false ./start.sh` skips the stack; the agent then reports `tracking.skipped` and the analysis runs as before. To stop the agent trying at all, set `INCIDENT_TRACKING_ENABLED=false` in `generated.env.remote` (ask first) and `./native-services.sh restart vss-agent`.
+- **Latency:** an analysis takes about the clip's length plus 10 s longer (31 Oct 2026: 24 s clip 56 s, 49 s clip 79 s, 94 s clip 132 s in total). An agent run is bounded by the model's 300 s timeout (`contracts/inference.json`), so clips over about 3 minutes may time out.
+
+On the VM:
 
 ```bash
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts

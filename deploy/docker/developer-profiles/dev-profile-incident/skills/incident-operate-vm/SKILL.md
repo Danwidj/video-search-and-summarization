@@ -1,6 +1,6 @@
 ---
 name: incident-operate-vm
-description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix only; VIOS, HAProxy, Redis and Kafka are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
+description: Use to deploy, restart, inspect, debug or tear down the incident backend on the kwanz-ws VM - native services (vss-agent, analytics) via native-services.sh, Docker appliances (Phoenix, plus the person-tracking stack started by default; VIOS, HAProxy and Redis are removed) via compose, generated.env.remote, and the agent editable reinstall. Not for the laptop launch (use incident-start) and never via NVIDIA's dev-profile.sh / vss-deploy-profile.
 license: Apache-2.0
 metadata:
   version: "0.1.3"
@@ -57,7 +57,7 @@ cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scrip
 | Refresh one service | `./rebuild-svc.sh <service>`: restarts native services, rebuilds and recreates Docker ones |
 | Start missing appliances | From `deploy/docker`: `docker compose -f compose.yml -f developer-profiles/dev-profile-incident/compose.override.yml --env-file developer-profiles/dev-profile-incident/generated.env.remote up -d <services>` |
 | Stop everything safely | `./down.sh` from `.scripts/` (native stop + `docker compose -p mdx stop`, no `-v`). Containers and data are kept; restart is `./start.sh --mode vm`. Exited orphan containers are no longer cleaned up by `down.sh`; use manual `docker compose -p mdx down --remove-orphans` when a clean slate is wanted (still never `-v`). Stack appliances use `unless-stopped` via `compose.override.yml`, so stopped containers stay stopped across VM reboots. |
-| Person-tracking stack (`ENABLE_TRACKING`) | `./tracking-stack.sh start\|stop\|status\|restart-perception`: NvStreamer, perception (RT-DETR, GPU 0 about 7.6 GB), Kafka, Logstash, Elasticsearch, video-analytics API `:8081`. `start` stages the RT-DETR model with `ngc` when missing; the first start builds engines (about 10 min). `stop` keeps containers, volumes and engines. `status` is the health check (`stream-count`, not `/ready`). HDR clips crash DeepStream. Details: [operations §2](../../.docs/incident-profile-operations.md#person-tracking-stack-scriptstracking-stacksh-enable_trackingtrue). |
+| Person-tracking stack (`ENABLE_TRACKING`, on by default; `ENABLE_TRACKING=false ./start.sh` skips it) | `./tracking-stack.sh start\|stop\|status\|restart-perception`: NvStreamer, perception (RT-DETR, GPU 0 about 7.6 GB), Kafka, Logstash, Elasticsearch, video-analytics API `:8081`. `start` stages the RT-DETR model with `ngc` when missing; the first start builds engines (about 10 min). `stop` keeps containers, volumes and engines. `status` is the health check (`stream-count`, not `/ready`). HDR clips crash DeepStream. Details: [operations §2](../../.docs/incident-profile-operations.md#person-tracking-stack-scriptstracking-stacksh-enable_trackingtrue). |
 | Load NGC credentials | `source ./ngc-env.sh` |
 | Populate or refresh search evidence (`evidence_crops`) | Use [`incident-search`](../incident-search/SKILL.md). |
 
@@ -74,7 +74,7 @@ uv pip install --python .venv/bin/python supabase opencv-python-headless setupto
 cd /srv/rise-up/vss/deploy/docker/developer-profiles/dev-profile-incident/.scripts && ./native-services.sh restart vss-agent
 ```
 
-Person tracking (`INCIDENT_TRACKING_ENABLED=1`) also needs `ffmpeg` and `ffprobe` on the agent's PATH and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Install them user-locally, not system-wide.
+Person tracking is on for the agent by default: `native-services.sh` exports `INCIDENT_TRACKING_ENABLED=true` unless `generated.env.remote` sets it (set `false` there and restart to turn it off). It also needs `ffmpeg` and `ffprobe` on the agent's PATH (the VM has none on its system PATH; `native-services.sh` adds `~/.local/bin`, so a static build there works) and the perception stack on localhost (:31000, :9000, :8081); without them tracking is skipped and the analysis is unaffected. Install them user-locally, not system-wide. Check with `tr '\0' '\n' < /proc/<pid>/environ | grep ^INCIDENT_TRACKING_ENABLED=` and a `tracking` line in `.run/vss-agent.log` after an analysis.
 
 Verify that `.venv/lib/python3.13/site-packages/vss_agents-*.dist-info/direct_url.json` has `"editable": true`.
 

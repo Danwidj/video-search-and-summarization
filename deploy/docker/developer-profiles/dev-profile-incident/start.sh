@@ -29,9 +29,10 @@
 # and is never started.
 #
 # Architecture (Native vs Docker Split):
-#   - DOCKER SERVICES: Phoenix only (the trace viewer used for eval), plus
-#     Elasticsearch with ENABLE_ANALYTICS=true. VIOS/VST, HAProxy, Redis and
-#     Kafka are no longer part of the deployment: uploads go straight to R2.
+#   - DOCKER SERVICES: Phoenix (the trace viewer used for eval), plus
+#     Elasticsearch with ENABLE_ANALYTICS=true, plus the person-tracking stack
+#     (ENABLE_TRACKING, on by default; see below). VIOS/VST, HAProxy and Redis
+#     are no longer part of the deployment: uploads go straight to R2.
 #   - NATIVE SERVICES: Fast-iterating application modules running directly
 #     on kwanz-ws (vss-agent via NAT framework, plus optional analytics
 #     video-analytics-api and behavior-analytics).
@@ -99,13 +100,15 @@
 #                            and hold the tunnel open (for checking the VM side only)
 #   ENABLE_ANALYTICS         set to 'true' to include video-analytics-api and
 #                            behavior-analytics natively, plus elasticsearch in Docker
-#   ENABLE_TRACKING          set to 'true' (vm mode only, default 'false') to also start the
-#                            person-tracking stack on the VM after Phoenix and the agent, via
+#   ENABLE_TRACKING          vm mode only, default 'true': also start the person-tracking stack
+#                            on the VM after Phoenix and the agent, via
 #                            .scripts/tracking-stack.sh start: NvStreamer, DeepStream perception
-#                            (RT-DETR warehouse), Kafka, Logstash, Elasticsearch and the
+#                            (RT-DETR warehouse, GPU 0), Kafka, Logstash, Elasticsearch and the
 #                            video-analytics API. Stages the RT-DETR model on first use; the first
 #                            start builds TensorRT engines (about 10 minutes). Stopped again by
-#                            vm-stop-backend.sh when the last session exits.
+#                            vm-stop-backend.sh when the last session exits. Set 'false' to skip
+#                            the stack: the agent (INCIDENT_TRACKING_ENABLED, on by default via
+#                            native-services.sh) then skips tracking and analysis runs as before.
 #   INCIDENT_DOCKER_SERVICES space-separated list of Docker services to expect/run
 #   INCIDENT_NATIVE_SERVICES space-separated list of native VM services to expect/run
 set -euo pipefail
@@ -261,7 +264,7 @@ start_vlm_gateway() {
 if [ "$VSS_START_MODE" = "vm" ]; then
   VSS_REPO_ROOT="${VSS_REPO_ROOT:-/srv/rise-up/vss}"
   ENABLE_ANALYTICS="${ENABLE_ANALYTICS:-false}"
-  ENABLE_TRACKING="${ENABLE_TRACKING:-false}"
+  ENABLE_TRACKING="${ENABLE_TRACKING:-true}"
 
   # Docker appliances: only Phoenix (VIOS/VST, HAProxy, Redis and Kafka were dropped)
   default_docker_services="phoenix"
